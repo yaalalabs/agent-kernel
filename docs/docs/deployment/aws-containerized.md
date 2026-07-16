@@ -6,24 +6,52 @@ sidebar_position: 4
 
 Deploy agents to AWS ECS Fargate for consistent, low-latency execution.
 
-## Architecture
+Two topologies are supported:
+
+| Mode | Containers | Selected by | Best for |
+|------|-----------|-------------|----------|
+| **Simple REST** | One (runs `RESTAPI`) | `queue_mode = false` (default) in Terraform; app entrypoint `RESTAPI.run` | Moderate traffic, simplest setup |
+| **Scalable queue mode** | Two (IO container + Agent Runner service) | `queue_mode = true` in Terraform; entrypoints `ECSIOHandler.run` + `ECSAgentRunner.run`; `execution.queues.*` config | High throughput, long-running agents, backpressure control |
+
+:::note Protocol support
+ECS containers serve JSON REST. Token streaming (SSE/WebSocket) and the WebSocket `async`/`stream` execution modes are currently **not available on ECS**; they are AWS Lambda serverless features. In the single-container REST mode `execution.mode: stream` would serve SSE via the built-in REST server, but the scalable queue mode supports `rest_sync` and `rest_async` only.
+:::
+
+## Simple REST Architecture
+
+A single ECS service runs the built-in FastAPI server; request handling and agent execution happen in the same container.
 
 ```mermaid
 graph TB
-    A[User] --> B[Application Load Balancer]
-    B --> C[ECS Service]
+    A[User] --> B[API Gateway]
+    B --> LB[Application Load Balancer]
+    LB --> C[ECS Service]
     C --> D[Fargate Task 1]
     C --> E[Fargate Task 2]
     C --> F[Fargate Task N]
-    
-    D --> G[Agent Kernel]
+
+    D --> G["Agent Kernel<br/>RESTAPI + ChatService + Runtime"]
     E --> G
     F --> G
-    
-    G --> H[Redis/ElastiCache]
-    G --> I[DynamoDB]
-    
+
+    G --> H[(Redis / Valkey<br/>ElastiCache)]
+    G --> I[(DynamoDB)]
+
     style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+**Entrypoint (`app.py`)**:
+
+```python
+from agentkernel.api import RESTAPI
+from agentkernel.openai import OpenAIModule
+
+OpenAIModule([...])
+
+runner = RESTAPI.run
+
+if __name__ == "__main__":
+    runner()
 ```
 
 ## Prerequisites
@@ -40,38 +68,81 @@ Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/
 ## Scalable Queue Mode
 
 For high-throughput or long-running agents, use the two-container queue architecture.
-The IO container and the Agent Runner are separate ECS services sharing SQS queues.
+The IO container and the Agent Runner are separate ECS services sharing SQS FIFO queues, so request ingestion and agent execution scale independently.
 
 ```mermaid
-graph TB
+graph LR
     A[Client] --> B[API Gateway]
     B --> C[ALB]
     C --> D["IO Container<br/>(ECSIOHandler)"]
 
-    D --> |Thread 1 — ECSQueueRequestHandler| E[Input Queue SQS]
-    D --> |Thread 2 — ECSOutputConsumer| F[Output Queue SQS]
+    D -->|"enqueue (rest-api thread)"| E[/Input Queue<br/>SQS FIFO/]
+    E --> G["Agent Runner container<br/>(ECSAgentRunner)"]
+    G --> F[/Output Queue<br/>SQS FIFO/]
+    F -->|"output-consumer threads"| D
+    D --> H[(DynamoDB<br/>Response Store)]
+    H -.->|poll| D
 
-    E --> G["Agent Runner<br/>(ECSAgentRunner)"]
-    G --> F
-    F --> H[DynamoDB Response Store]
+    G <--> S[(Session Store)]
 
     style D fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-### Container 1 — IO container (`ECSIOHandler`)
+### Multi-Threading Design
 
-`ECSIOHandler.run()` starts two threads via `ThreadRunner`:
+Both containers are internally multi-threaded, managed by `ThreadRunner` (one daemon `threading.Thread` per task, gated by a semaphore, with uniform crash/shutdown handling):
 
-- **Thread 1** — `RESTAPI.run(handlers=[ECSQueueRequestHandler()])`: FastAPI/uvicorn. Handles `POST /api/v1/chat` (enqueues to Input Queue, then either waits on DynamoDB or returns a `request_id`) and `GET /api/v1/chat/{session_id}` (polls DynamoDB for the result).
-- **Thread 2** — `ECSOutputConsumer.run()`: polls the Output Queue and writes results to DynamoDB (REST modes) or broadcasts via WebSocket. Internally this "thread" is actually `execution.queues.output.no_of_consumers` (default 5) independent long-poll threads, so multiple output messages are processed concurrently.
+```mermaid
+graph TB
+    subgraph IO["Container 1 - IO container (ECSIOHandler.run, max_workers=2)"]
+        T1["Thread rest-api<br/>uvicorn + ECSQueueRequestHandler<br/>POST /api/v1/chat · GET /api/v1/chat/{session_id}"]
+        subgraph OC["Thread output-queue-consumer - ECSOutputConsumer.run()"]
+            OC1[sqs-consumer-0]
+            OC2["sqs-consumer-1<br/>(output.no_of_consumers, default 2)"]
+        end
+    end
 
-If any thread crashes, `ThreadRunner` triggers a graceful shutdown: the output-consumer pool
-finishes in-flight messages first (it cooperates via a shared `shutdown_event`), then
-`os._exit(1)` is called so ECS restarts the task cleanly. The REST API thread doesn't check
-`shutdown_event` and is simply terminated at that point along with everything else.
+    subgraph AR["Container 2 - Agent Runner (ECSAgentRunner.run, max_workers=N)"]
+        AR1[sqs-consumer-0]
+        AR2[sqs-consumer-1]
+        AR3["sqs-consumer-N<br/>(input.no_of_consumers, default 5)"]
+    end
 
-**Entrypoint — `app_rest_service.py`** (no agent definitions):
+    T1 -->|SendMessage| IQ[/Input Queue/]
+    IQ -->|long poll| AR1
+    IQ -->|long poll| AR2
+    IQ -->|long poll| AR3
+    AR1 -->|SendMessage| OQ[/Output Queue/]
+    AR2 -->|SendMessage| OQ
+    AR3 -->|SendMessage| OQ
+    OQ -->|long poll| OC1
+    OQ -->|long poll| OC2
+    OC1 --> RS[(Response Store)]
+    OC2 --> RS
+    RS -.->|poll for request_id| T1
+
+    style T1 fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style RS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+- Each `sqs-consumer-*` thread runs an independent blocking long-poll loop (`poll → process → delete`), checking a shared `ThreadRunner.shutdown_event` between iterations.
+- Consumer thread counts are configured per queue: `execution.queues.input.no_of_consumers` (default **5**, Agent Runner) and `execution.queues.output.no_of_consumers` (default **2**, IO container). These settings are ECS-only; Lambda ignores them.
+- `execution.queues.batch_size` controls `MaxNumberOfMessages` per SQS receive call; it is injected by Terraform and should never be set in `config.yaml`.
+
+**Failure and shutdown propagation**: if any consumer thread crashes, `ThreadRunner` triggers a graceful shutdown: it sets the shared `shutdown_event`, the sibling consumer threads finish their in-flight message and exit their loops, and then `os._exit(1)` is called so ECS restarts the task cleanly. The `rest-api` thread (uvicorn) never checks `shutdown_event` and is marked `awaited_on_shutdown=False`, so the drain doesn't wait on it; it is simply terminated when `os._exit(1)` fires. Per-message processing errors do **not** kill a consumer thread; the message is left undeleted and retried after the SQS visibility timeout.
+
+### Container 1: IO container (`ECSIOHandler`)
+
+`ECSIOHandler.run()` starts two peer tasks via `ThreadRunner`:
+
+- **`rest-api` thread**: `RESTAPI.run(handlers=[ECSQueueRequestHandler()])`, FastAPI/uvicorn.
+  - `POST /api/v1/chat`: validates `session_id` + `prompt`, generates a `request_id` (UUID), and enqueues to the Input Queue with `MessageGroupId = session_id` and `MessageDeduplicationId = request_id`. In `rest_sync` mode it then polls the response store for that `request_id` and returns the reply on the same connection (504 if it never arrives); in `rest_async` mode it returns `{"status": "ACCEPTED", "request_id": ...}` immediately.
+  - `GET /api/v1/chat/{session_id}?request_id=...` (`rest_async` only, 404 otherwise): reads the response store, validates the stored reply's `session_id` matches the path (so a reply can't be read under the wrong session), and returns the body or `NOT_FOUND` while still processing.
+  - The IO container registers **no agents**; agent validation and execution happen only in the Agent Runner.
+- **`output-queue-consumer` thread**: `ECSOutputConsumer.run()` spawns `execution.queues.output.no_of_consumers` (default **2**) long-poll threads on the Output Queue, each writing `{session_id, request_id, body}` records to the response store. On permanent failure (message exceeded `max_receive_count`), it writes an error record to the store so the waiting HTTP caller gets an error instead of hanging.
+
+**Entrypoint (`app_rest_service.py`)** (no agent definitions):
 
 ```python
 from agentkernel.aws import ECSIOHandler
@@ -82,11 +153,11 @@ if __name__ == "__main__":
     runner()
 ```
 
-### Container 2 — Agent Runner (`ECSAgentRunner`)
+### Container 2: Agent Runner (`ECSAgentRunner`)
 
-Extends `ECSSQSConsumer` (which in turn extends the shared `QueueConsumer` base also used by Lambda's `LambdaSQSConsumer`): runs `execution.queues.input.no_of_consumers` (default 5) independent threads, each polling the Input Queue in a blocking loop, executing the agent, and putting the result on the Output Queue.
+Extends `ECSSQSConsumer` (which in turn extends the shared `QueueConsumer` base also used by Lambda's `LambdaSQSConsumer`): runs `execution.queues.input.no_of_consumers` (default **5**) independent threads, each polling the Input Queue in a blocking loop, executing the agent through the full `Runtime.run()` pipeline (hooks, guardrails, session persistence), and putting the result on the Output Queue with the same `request_id`. On permanent failure it forwards an error body to the Output Queue so the client still receives a response.
 
-**Entrypoint — `app_agent_runner.py`**:
+**Entrypoint (`app_agent_runner.py`)**:
 
 ```python
 from agentkernel.aws import ECSAgentRunner
@@ -209,10 +280,10 @@ ECS Service auto-scaling maintains capacity during failures and load spikes.
 
 In queue mode, the Agent Runner scales automatically based on queue depth using a custom CloudWatch metric (`Custom/ECS/BacklogPerTask`). A Lambda function runs every minute, computes `BacklogPerTask = QueueDepth / max(RunningTasks, 1)`, and a Target Tracking policy adjusts the task count to keep this metric at or below `backlog_target`.
 
-Enable this in the `scaling_config` block — see [Scalable Queue Mode](#scalable-queue-mode) for configuration details.
+Enable this in the `scaling_config` block; see [Scalable Queue Mode](#scalable-queue-mode) for configuration details.
 
 **Auto-scaling triggers:**
-- Queue backlog per task (queue mode — recommended)
+- Queue backlog per task (queue mode, recommended)
 - CPU utilization
 - Memory utilization
 - Custom CloudWatch metrics
@@ -317,11 +388,11 @@ export AK_SESSION__CACHE__SIZE=256  # Enable in-memory caching
 
 Provision the cluster with `create_valkey_cluster = true`; the module injects
 `AK_SESSION__VALKEY__URL` into the task definition. Note that the env var alone does not switch the
-backend — the `config.yaml` baked into the image must set `session.type: valkey`. Valkey is the
+backend: the `config.yaml` baked into the image must set `session.type: valkey`. Valkey is the
 open-source Redis fork, offered on ElastiCache at a lower price point and wire-compatible with
 Redis. Requires the `agentkernel[valkey]` extra.
 
-[See Valkey configuration details →](/docs/core-concepts/session#valkey-storage)
+[See Valkey configuration details →](../core-concepts/session.md#valkey-storage)
 
 ### DynamoDB (Serverless Option)
 

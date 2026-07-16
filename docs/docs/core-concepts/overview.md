@@ -25,9 +25,10 @@ graph TB
     
     subgraph "Execution Modes"
         G[CLI]
-        H[REST API]
-        I[AWS Lambda / Azure Functions]
+        H[REST API + SSE Streaming]
+        I[AWS Lambda / Azure Functions / GCP Cloud Run]
         J[AWS ECS / Azure Container Apps]
+        W[WebSocket - AWS]
         K[MCP Server]
         L[A2A Server]
     end
@@ -42,6 +43,7 @@ graph TB
     F --> H
     F --> I
     F --> J
+    F --> W
     F --> K
     F --> L
     
@@ -105,8 +107,8 @@ from agentkernel.core import Runner
 **Key Features:**
 - Framework-specific execution
 - Async/await support
-- Error handling and retry logic
-- Fault-tolerant execution patterns
+- Token-level streaming via `stream()` (OpenAI Agents SDK, LangGraph, Google ADK)
+- Error handling and fault-tolerant execution patterns
 
 [Learn more about Runners →](./runner)
 
@@ -124,8 +126,8 @@ session = Session(id="user-123")
 
 **Key Features:**
 - Conversation history tracking
-- State persistence (in-memory, Redis, or DynamoDB)
-- Thread management
+- State persistence (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, or Firestore)
+- Volatile and non-volatile caches
 - Context preservation
 
 [Learn more about Sessions →](./session)
@@ -157,18 +159,28 @@ The global orchestrator that manages all agents and execution.
 from agentkernel.core import Runtime
 
 # Runtime is the central registry
-runtime = Runtime.get()
-agent = runtime.get_agent("my-agent")
+runtime = Runtime.current()
+agent = runtime.agents().get("my-agent")
 ```
 
 **Key Features:**
 - Global agent registry
+- `run()` and `stream()` execution pipelines with pre/post hooks
 - Centralized configuration
-- Execution coordination
 - Service integration (API, MCP, A2A)
 - Fault tolerance and health monitoring
 
 [Learn more about Runtime →](./runtime)
+
+### Beyond the Six: Hooks, Services, and Streaming
+
+Around these abstractions, the kernel provides:
+
+- **Hooks**: `PreHook`/`PostHook` classes attached per-agent or system-wide. Pre-hooks can rewrite or halt requests (guardrails, RAG injection); post-hooks transform replies and can filter individual streaming tokens via `on_stream_chunk()`. [Hooks guide →](../integrations/hooks)
+- **AgentService / ChatService**: high-level conversation utilities used by the CLI, REST API, and deployment handlers. `run_multi()` executes multi-modal requests; `stream_multi()` yields token-level `StreamChunk`s.
+- **Execution modes**: the same application supports direct execution, SSE streaming (`execution.mode: stream`), and on AWS, queue-backed (`rest_sync`/`rest_async`) and WebSocket (`async`/`stream`) modes. [Execution flow →](../architecture/execution-flow)
+- **Conversation threads**: optional persistent, named conversation history with REST read APIs. [Threads →](../advanced/threads)
+- **Multimodal attachments**: image/file preprocessing via a system pre-hook with pluggable attachment stores. [Multimodal →](../advanced/multimodal)
 
 ## How They Work Together
 
@@ -270,10 +282,11 @@ Common configuration options:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `AK_LOG_LEVEL` | Logging level | `INFO` |
-| `AK_SESSION__TYPE` | Session storage backend | `in_memory` |
+| `AK_LOGGING__AK__LEVEL` | Agent Kernel logging level | not overridden |
+| `AK_SESSION__TYPE` | Session storage backend (`in_memory`, `redis`, `valkey`, `dynamodb`, `cosmosdb`, `firestore`) | `in_memory` |
 | `AK_SESSION__REDIS__URL` | Redis connection URL | `redis://localhost:6379` |
 | `AK_SESSION__DYNAMODB__TABLE_NAME` | DynamoDB table name | - |
+| `AK_EXECUTION__MODE` | Execution mode (`rest_sync`, `rest_async`, `stream`, `async`) | direct |
 
 [Learn more about Configuration →](./configuration)
 
@@ -308,7 +321,7 @@ CrewAIModule([general_agent, math_agent])
 # Behind the scenes:
 # - CrewAIModule creates Agent instances
 # - Each Agent gets a Runner
-# - All agents registered with Runtime.get()
+# - All agents registered with Runtime.current()
 
 # 4. Execute using CLI (or API, Lambda, etc.)
 if __name__ == "__main__":
@@ -361,7 +374,7 @@ knowledgeBuilder = KnowledgeBuilder(
 )
 ```
 
-The agent generates queries like `SELECT * FROM <MONGO_SOURCE> WHERE status = 'active'` and the semantic map resolves placeholders at runtime. If you deploy to a different environment, you simply provide a different map—the agent's query logic never changes.
+The agent generates queries like `SELECT * FROM <MONGO_SOURCE> WHERE status = 'active'` and the semantic map resolves placeholders at runtime. If you deploy to a different environment, you simply provide a different map; the agent's query logic never changes.
 
 **KB Router Pattern**
 
@@ -373,8 +386,8 @@ In practice, an agent often needs to decide *which* backend to query for a given
 This keeps agents focused on domain logic while the router handles backend selection.
 
 When you have multiple knowledge bases, you can provide explicit instructions to your agent about routing decisions. The agent then uses these instructions plus the schema information to intelligently decide:
-- **Which KB to read from** – e.g., "For customer data, query the MongoDB backend. For company policies, query the Sheets backend."
-- **Which KB to write to** – e.g., "Store graph relationships in Neo4j using explicit Cypher. Store unstructured notes in ChromaDB."
+- **Which KB to read from**: e.g., "For customer data, query the MongoDB backend. For company policies, query the Sheets backend."
+- **Which KB to write to**: e.g., "Store graph relationships in Neo4j using explicit Cypher. Store unstructured notes in ChromaDB."
 
 ```python
 router_agent = CrewAgent(
@@ -482,7 +495,7 @@ Or explore specific use cases:
 - [Deployment](../deployment/overview) - Production deployment options
 - [Session Management](./session) - Session configuration and lifecycle
 - [Memory Management](../architecture/memory-management) - Advanced memory features and caching
-- [Knowledge Bases](../architecture/knowledge-bases) -  knowledge backends and KB routing
+- [Knowledge Bases](../advanced/knowledge-bases) -  knowledge backends and KB routing
 
 ---
 

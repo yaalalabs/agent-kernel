@@ -95,7 +95,7 @@ Post-execution hooks run **after** an agent generates a response. They can:
 
 When an agent is configured for structured output (e.g., `output_type` in the OpenAI
 Agents SDK or `output_schema` in Google ADK), post-execution hooks receive the
-`AgentReplyAny` object itself — **not a stringified version**. The structured result
+`AgentReplyAny` object itself, **not a stringified version**. The structured result
 is available on `reply.content` as a dict, and hooks can inspect or modify it in
 place, exactly as they do with the other reply types:
 
@@ -121,6 +121,33 @@ log or render replies as text keep working unchanged. See the per-framework
 configuration in the [framework docs](../frameworks/overview).
 
 See [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai_structured) for a complete example with a post-execution hook that modifies a structured reply.
+
+### Streaming Hooks (`on_stream_chunk`)
+
+When the application runs in streaming mode (`execution.mode: stream`), the agent reply arrives as a sequence of token deltas rather than one final reply. Post-execution hooks can intercept **each token** before it reaches the client by overriding `on_stream_chunk`:
+
+```python
+from agentkernel import PostHook
+
+class TokenRedactionHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        return agent_reply  # non-streaming path
+
+    async def on_stream_chunk(self, session, requests, agent, delta: str) -> str | None:
+        if "secret" in delta.lower():
+            return None          # drop this token entirely
+        return delta.replace("internal", "[redacted]")  # or modify it
+
+    def name(self):
+        return "TokenRedactionHook"
+```
+
+- The default implementation passes each delta through unchanged, so existing hooks keep working in streaming mode without changes.
+- Returning `None` drops the token; returning a modified string replaces it.
+- Pre-execution hooks run **before** streaming starts; if one halts, the client receives a single error chunk (`done: true`) and the agent never runs.
+- `on_run` post-hooks are **not** called for streamed runs (there is no single final reply to transform); token-level filtering via `on_stream_chunk` is the streaming counterpart.
+
+**Use Cases:** token-level redaction/PII masking, profanity filtering, stop-sequence enforcement, streaming analytics.
 
 ## Implementing Hooks
 

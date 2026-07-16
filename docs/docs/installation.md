@@ -53,6 +53,12 @@ pip install agentkernel[langgraph]
 pip install agentkernel[adk]
 ```
 
+### Smolagents
+
+```bash
+pip install agentkernel[smolagents]
+```
+
 ### Multiple Frameworks
 
 You can install support for multiple frameworks at once:
@@ -85,11 +91,38 @@ For deploying to Azure (Functions, Container Apps):
 pip install agentkernel[azure]
 ```
 
-For both AWS and Azure:
+For deploying to GCP (Cloud Run, includes Firestore session support):
 
 ```bash
-pip install agentkernel[aws,azure]
+pip install agentkernel[gcp]
 ```
+
+For multiple clouds:
+
+```bash
+pip install agentkernel[aws,azure,gcp]
+```
+
+### Session / State Stores
+
+```bash
+pip install agentkernel[redis]    # Redis session/response/attachment stores
+pip install agentkernel[valkey]   # Valkey session/response stores (Redis fork)
+```
+
+### Optional Features
+
+```bash
+pip install agentkernel[multimodal]  # Image/file attachment support
+pip install agentkernel[thread]      # Conversation threads (LLM auto-naming)
+pip install agentkernel[mcp]         # MCP server
+pip install agentkernel[a2a]         # Agent-to-Agent server
+pip install agentkernel[langfuse]    # Langfuse tracing
+pip install agentkernel[openllmetry] # OpenLLMetry tracing
+pip install agentkernel[auth]        # JWT auth helpers
+```
+
+Messaging integrations each have their own extra: `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`. Knowledge base backends: `chromadb`, `neo4j`, `trino`.
 
 ### CLI Testing
 
@@ -104,7 +137,7 @@ pip install agentkernel[cli]
 Install everything (all frameworks and cloud providers):
 
 ```bash
-pip install agentkernel[openai,crewai,langgraph,adk,api,aws,azure,cli]
+pip install agentkernel[openai,crewai,langgraph,adk,smolagents,api,aws,azure,gcp,cli]
 ```
 
 ## Using UV Package Manager
@@ -182,7 +215,7 @@ Agent Kernel can be configured using environment variables or a configuration fi
 
 ```bash
 # Set log level
-export AK_LOG_LEVEL=INFO
+export AK_LOGGING__AK__LEVEL=INFO
 
 # Set session storage - Redis
 export AK_SESSION__TYPE=redis

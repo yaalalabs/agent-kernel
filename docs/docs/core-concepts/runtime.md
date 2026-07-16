@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # Runtime
 
-The **Runtime** is the global orchestrator that manages all agents, sessions, and execution across Agent Kernel. You can skip this section if you are not planning to contribute to Aent Kernel.
+The **Runtime** is the global orchestrator that manages all agents, sessions, and execution across Agent Kernel. You can skip this section if you are not planning to contribute to Agent Kernel.
 
 ## Overview
 
@@ -32,9 +32,36 @@ graph TB
 The Runtime:
 - **Maintains** global agent registry
 - **Manages** sessions across requests
-- **Provides** centralized configuration
-- **Coordinates** execution across modes (CLI, API, Lambda)
+- **Executes** agents through `run()` (single reply) and `stream()` (token-level `StreamChunk`s)
+- **Applies** pre/post hooks around every execution, including system hooks (input/output guardrails, multimodal preprocessing)
+- **Coordinates** execution across modes (CLI, API, Lambda, queue consumers)
 - **Enables** service integration (MCP, A2A)
+
+## The run() Pipeline
+
+`Runtime.run(agent, session, requests)` is the central execution method used by every surface:
+
+1. Acquires the session lock (`async with session`); concurrent requests for the same session are serialized, and `Session.current()` becomes available.
+2. Runs **pre-hooks**: the agent's hooks first, then system hooks (input guardrails, multimodal). A pre-hook can rewrite the request list, or halt execution by returning an `AgentReply`; the agent never runs in that case.
+3. Calls `agent.runner.run(agent, session, requests)` for framework execution.
+4. Runs **post-hooks**: system hooks (output guardrails) first, then the agent's hooks. Each must return a valid `AgentReply`.
+5. Persists the session via the configured `SessionStore`.
+6. Clears the session's volatile cache in a `finally` block.
+
+## The stream() Pipeline
+
+`Runtime.stream(agent, session, requests)` is the streaming counterpart (used when `execution.mode: stream`). It shares the same pre-hook pipeline, then:
+
+- Iterates `agent.runner.stream(...)`, passing each token delta through every post-hook's `on_stream_chunk()`; a hook returning `None` drops that token (useful for redaction/filtering).
+- Yields a `StreamChunk(delta=...)` per surviving token, then a final `StreamChunk(done=True, session_id=...)`.
+- If a pre-hook halts, yields a single `StreamChunk(error=..., done=True)`.
+- Stores the session and clears the volatile cache in `finally`, same as `run()`.
+
+```python
+async for chunk in runtime.stream(agent, session, requests):
+    if chunk.delta:
+        print(chunk.delta, end="")
+```
 
 ## Singleton Pattern
 
@@ -242,14 +269,14 @@ runtime.register(custom_agent)
 
 ```python
 # when MCP server is enabled
-# AK_MCP_ENABLED=true
+# AK_MCP__ENABLED=true
 ```
 
 ### A2A Integration
 
 ```python
 # for all registered agents
-# AK_A2A_ENABLED=true
+# AK_A2A__ENABLED=true
 ```
 
 ### REST API Integration
@@ -275,12 +302,12 @@ runtime = Runtime.current()
 
 ### Configuration Before Execution
 
-Set environment variables before importing:
+Set environment variables before the configuration is first loaded:
 
 ```python
 import os
-os.environ["AK_SESSION_STORAGE"] = "redis"
-os.environ["AK_REDIS_URL"] = "redis://localhost:6379"
+os.environ["AK_SESSION__TYPE"] = "redis"
+os.environ["AK_SESSION__REDIS__URL"] = "redis://localhost:6379"
 
 # Now import and use
 from agentkernel.core import Runtime
@@ -292,6 +319,7 @@ runtime = Runtime.current()
 - Runtime is the global orchestrator
 - Maintains agent registry
 - Manages sessions
+- `run()` executes with the full hook pipeline; `stream()` yields token-level `StreamChunk`s
 - Provides centralized configuration
 - Supports multiple execution modes
 - Use `Runtime.current()` to access the active runtime instance

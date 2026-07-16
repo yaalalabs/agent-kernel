@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Tools
 
-Tools allow agents to perform actions and access external data. Agent Kernel provides a **framework-agnostic** way of writing tool functions that work across all supported frameworks — OpenAI Agents SDK, CrewAI, LangGraph, and Google ADK.
+Tools allow agents to perform actions and access external data. Agent Kernel provides a **framework-agnostic** way of writing tool functions that work across all supported frameworks: OpenAI Agents SDK, CrewAI, LangGraph, and Google ADK.
 
 ## Overview
 
@@ -36,7 +36,7 @@ async def search_database(query: str, limit: int = 10) -> str:
 ```
 
 :::tip
-Write clear docstrings for your tool functions — they are used as the tool description that helps the LLM understand when and how to use the tool.
+Write clear docstrings for your tool functions; they are used as the tool description that helps the LLM understand when and how to use the tool.
 :::
 
 ## Binding Tools to Agents
@@ -238,6 +238,6 @@ This makes it easy to migrate agents between frameworks without rewriting tool l
 
 ## Next Steps
 
-- [Agent](./agent) — Learn about agent wrapping and identification
-- [Runner](./runner) — Understand execution strategies
-- [Framework Integration](../frameworks/overview) — Framework-specific details
+- [Agent](./agent): Learn about agent wrapping and identification
+- [Runner](./runner): Understand execution strategies
+- [Framework Integration](../frameworks/overview): Framework-specific details

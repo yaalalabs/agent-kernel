@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Conversation Threads
 
-Agent Kernel supports **persistent, named conversation threads** — every chat exchange is recorded against its
+Agent Kernel supports **persistent, named conversation threads**: every chat exchange is recorded against its
 `session_id` and becomes readable over REST, so UIs can show a user's conversation list and full history across
 restarts and devices.
 
@@ -29,14 +29,14 @@ sequenceDiagram
 
 ### Key Design Decisions
 
-- **A thread is keyed by `session_id`** — no separate thread id. The thread is auto-created on a session's
+- **A thread is keyed by `session_id`**, with no separate thread id. The thread is auto-created on a session's
   first chat request; every later request with the same `session_id` appends to it.
 - **`user_id` becomes required** on every chat request once threads are enabled; requests without it are
   rejected with 400.
-- **Pluggable storage** — in-memory, Redis, DynamoDB, Firestore, or Cosmos DB.
-- **Optional, pluggable authorization** — you supply an `Authoriser` that validates a Bearer token against
+- **Pluggable storage**: in-memory, Redis, DynamoDB, Firestore, or Cosmos DB.
+- **Optional, pluggable authorization**: you supply an `Authoriser` that validates a Bearer token against
   *your* authentication provider; Agent Kernel never authenticates users itself.
-- **Streaming included** — with `execution.mode: stream`, the user message is recorded before the stream
+- **Streaming included**: with `execution.mode: stream`, the user message is recorded before the stream
   starts and the assistant message is assembled from the streamed deltas on completion.
 
 :::caution Platform scope
@@ -47,7 +47,7 @@ duplicate, divergent state.
 
 ## Enabling Thread Support
 
-Add a `thread` block to `config.yaml` — its presence turns the feature on:
+Add a `thread` block to `config.yaml`; its presence turns the feature on:
 
 ```yaml
 thread:
@@ -78,9 +78,9 @@ concise title of at most `thread.naming.max_length` characters. Gibberish or mea
 get a generic title ("New conversation") instead of becoming the name. The call happens once per thread,
 inline on the session's first chat request (~0.5–2s), never on later messages.
 
-Naming never fails thread creation: if `litellm` is not installed (it is an optional dependency — install
+Naming never fails thread creation: if `litellm` is not installed (it is an optional dependency; install
 it with the `thread` extra, `pip install "agentkernel[thread]"`), no API key is present, or the model call
-errors, the name falls back to a truncated prompt prefix — the first `max_length` characters, trimmed at a
+errors, the name falls back to a truncated prompt prefix: the first `max_length` characters, trimmed at a
 word boundary and suffixed with an ellipsis. The fallback is never silent: a missing `litellm` is warned
 about once at startup with the install hint, and every failed naming call logs a warning.
 
@@ -108,7 +108,7 @@ class MyNaming(ThreadNamingStrategy):
 ConversationThreadManager.set_naming_strategy(MyNaming())
 ```
 
-Threads whose name was explicitly supplied — a `thread_name` on any chat request — are marked
+Threads whose name was explicitly supplied (a `thread_name` on any chat request) are marked
 `name_locked: true` in their metadata and are never renamed automatically. No naming call is made for them.
 
 ## Reading Threads
@@ -128,7 +128,7 @@ in the previous page (`null` on the last page).
 
 ## Renaming Threads
 
-There is no dedicated rename endpoint — send `thread_name` on any later chat request for the same
+There is no dedicated rename endpoint. Send `thread_name` on any later chat request for the same
 `session_id` to rename its thread. Only the name changes (every other thread field is fixed at creation),
 the thread is marked `name_locked: true`, and blank names are ignored. Resending the same `thread_name` on
 every request is cheap: the name is only written when it actually changes.
@@ -141,7 +141,7 @@ curl -X POST http://localhost:8000/api/v1/chat \
 
 ## Authorization
 
-Thread routes are **open** until you supply an `Authoriser` — a small base class you subclass to validate the
+Thread routes are **open** until you supply an `Authoriser`, a small base class you subclass to validate the
 Bearer token against your own authentication provider and resolve the caller's `user_id`:
 
 ```python
@@ -162,10 +162,10 @@ RESTAPI.run(handlers=[AgentRESTRequestHandler(), ThreadRESTRequestHandler(author
 
 With an `Authoriser` configured:
 
-- Requests must carry `Authorization: Bearer <token>` — missing/malformed headers and rejected tokens get 401.
+- Requests must carry `Authorization: Bearer <token>`; missing/malformed headers and rejected tokens get 401.
 - Listings are always scoped to the authorised user.
 - Reading another user's thread returns 403. (Renaming flows through the chat request and rides its trust
-  model — whoever can chat on a `session_id` can rename its thread.)
+  model: whoever can chat on a `session_id` can rename its thread.)
 
 :::caution Open until configured
 Without an `Authoriser`, any caller who knows a `session_id` can read its thread. Deploy behind network-level
@@ -183,7 +183,7 @@ thread:
     prefix: "ak:thread:"
     ttl: 2592000                   # seconds; 0 disables expiry
 
-# DynamoDB — table needs partition key `session_id` (S) and sort key `sk` (S)
+# DynamoDB - table needs partition key `session_id` (S) and sort key `sk` (S)
 thread:
   type: dynamodb
   dynamodb:
@@ -195,11 +195,11 @@ thread:
   type: firestore
   firestore:
     collection_name: "ak-agent-threads"
-    project_id: "my-gcp-project"   # optional — inferred from ADC when omitted
+    project_id: "my-gcp-project"   # optional, inferred from ADC when omitted
     database_id: "(default)"       # optional
     ttl: 2592000                   # seconds; 0 disables
 
-# Cosmos DB (Table API, partitioned by session_id — no TTL support)
+# Cosmos DB (Table API, partitioned by session_id, no TTL support)
 thread:
   type: cosmosdb
   cosmosdb:
@@ -209,12 +209,12 @@ thread:
 
 ## Attachments in Thread Mode
 
-Attachment support is still decided by `multimodal.enabled` — the `thread` block alone is text-only:
+Attachment support is still decided by `multimodal.enabled`; the `thread` block alone is text-only:
 
 - **`thread` only**: requests carrying images/files are rejected with 400.
 - **`thread` + `multimodal.enabled: true`**: attachment bytes are saved to the multimodal attachment store and
   each thread message keeps only an `attachment_id` reference. Use a shared attachment store (`in_memory`,
-  `redis`, or `dynamodb`) — `storage_type: session_cache` is rejected in thread mode.
+  `redis`, or `dynamodb`); `storage_type: session_cache` is rejected in thread mode.
 
 ```yaml
 multimodal:
@@ -227,5 +227,5 @@ thread:
 
 ## Examples
 
-- [`examples/api/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/thread-openai) — text-only threads with a demo `Authoriser`
-- [`examples/api/multimodal/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/multimodal/thread-openai) — threads with image/file attachments
+- [`examples/api/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/thread-openai): text-only threads with a demo `Authoriser`
+- [`examples/api/multimodal/thread-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/multimodal/thread-openai): threads with image/file attachments

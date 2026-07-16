@@ -41,7 +41,6 @@ const sidebars = {
         'architecture/overview',
         'architecture/execution-flow',
         'architecture/memory-management',
-        'architecture/knowledge-bases'
       ],
     },
     {
@@ -130,6 +129,7 @@ const sidebars = {
         'advanced/multi-agent',
         'advanced/multimodal',
         'advanced/threads',
+        'advanced/knowledge-bases',
         'advanced/queue-mode-guide',
         {
           type: 'category',

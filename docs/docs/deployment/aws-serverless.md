@@ -6,9 +6,25 @@ sidebar_position: 3
 
 Deploy agents to AWS Lambda for auto-scaling, serverless execution.
 
+## Execution Modes at a Glance
+
+The serverless stack supports four execution modes (`execution.mode` / Terraform `execution_mode`), plus a simple no-queue deployment:
+
+| Mode | Transport | Reply delivery | Lambdas required |
+|------|-----------|----------------|------------------|
+| Simple (no queue) | REST | JSON on the same connection | Request handler only |
+| `rest_sync` | REST | JSON on the same connection - request handler polls the response store server-side | Request handler, agent runner, response handler |
+| `rest_async` | REST | `202 ACCEPTED` + `request_id`; client polls `GET` | Request handler, agent runner, response handler |
+| `async` | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Request handler, agent runner, response handler, WS connection handler |
+| `stream` | WebSocket | One `STREAM_CHUNK` push per token (`ServerlessStreamAgentRunner`) | Request handler, agent runner (stream), response handler, WS connection handler |
+
+:::info No SSE on Lambda
+Token streaming on AWS serverless is delivered over **WebSocket**, not SSE; API Gateway REST endpoints can't stream SSE from standard Lambda integrations. For SSE streaming use the self-hosted/containerized REST server instead. See [Execution Flow](/docs/architecture/execution-flow) for end-to-end sequence diagrams of each mode.
+:::
+
 ## Architecture
 
-### Normal Mode: using request handler for chat processing
+### Simple Mode: single request-handler Lambda (no queues)
 ```mermaid
 graph LR
     A[User] <--> B[API Gateway]
@@ -74,7 +90,7 @@ graph LR
     style I fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-#### STREAM (WebSocket token streaming) mode — queue-based
+#### STREAM (WebSocket token streaming) mode: queue-based
 ```mermaid
 graph LR
     A[User] <--> B[WebSocket API Gateway]
@@ -101,7 +117,7 @@ graph LR
     style I fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-#### STREAM (WebSocket token streaming) mode — direct (no queues)
+#### STREAM (WebSocket token streaming) mode: direct (no queues)
 ```mermaid
 graph LR
     A[User] <--> B[WebSocket API Gateway]
@@ -201,9 +217,9 @@ handler = Lambda.handler
 
 The Lambda router automatically reads the following environment variables to correctly map incoming API paths:
 
-- **API_BASE_PATH** – Base path mapping without leading slash. Example: `api` or `prod`
-- **API_VERSION** – Version segment. Example: `v1`
-- **AGENT_ENDPOINT** – The default chat endpoint segment. Example: `chat`
+- **API_BASE_PATH**: Base path mapping without leading slash. Example: `api` or `prod`
+- **API_VERSION**: Version segment. Example: `v1`
+- **AGENT_ENDPOINT**: The default chat endpoint segment. Example: `chat`
 
 These environment variables are automatically configured by the Terraform module based on the `api_base_path`, `api_version`, and `agent_endpoint` variables in your Terraform configuration.
 
@@ -236,7 +252,7 @@ Authentication infrastructure will only be created if you define an `authorizer`
 - `environment_variables` - Environment variables for authorizer
 
 **Important Notes**:
-- For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), the `authorizer` object **cannot** be set — authentication is handled exclusively by the WebSocket connection handler Lambda
+- For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), the `authorizer` object **cannot** be set; authentication is handled exclusively by the WebSocket connection handler Lambda
 - The bearer token must include a `userId` claim for WebSocket connections
 - If the `authorizer` object is not provided or any required field is missing, no authorizer infrastructure will be created and your REST endpoints will be publicly accessible
 - For WebSocket modes, the connection handler Lambda implements its own authentication logic via `WebsocketConnectionHandler.set_auth_validator()`
@@ -501,7 +517,7 @@ handler = ServerlessAgentRunner.handle
 
 See [examples/aws-serverless/scalable-openai/lambda_agent_runner.py](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai/lambda_agent_runner.py) for the reference implementation.
 
-> **STREAM mode**: When `execution.mode = stream`, use `ServerlessStreamAgentRunner` in place of `ServerlessAgentRunner`. The only difference is the import — the handler is the same. `ServerlessStreamAgentRunner` calls the chat service in streaming mode and sends each yielded token chunk as a **separate SQS message** to the output queue, each with a unique deduplication ID. The response handler then broadcasts each message individually to the WebSocket client.
+> **STREAM mode**: When `execution.mode = stream`, use `ServerlessStreamAgentRunner` in place of `ServerlessAgentRunner`. The only difference is the import; the handler is the same. `ServerlessStreamAgentRunner` calls the chat service in streaming mode and sends each yielded token chunk as a **separate SQS message** to the output queue, each with a unique deduplication ID. The response handler then broadcasts each message individually to the WebSocket client.
 
 ```python
 from agents import Agent
@@ -653,7 +669,7 @@ For production deployments, it is recommended to build and publish Lambda artifa
 | `ecr_image_uri`     | `Image`                      | Existing container image URI (for example, `account.dkr.ecr.region.amazonaws.com/repo:tag`). Terraform deploys the specified image directly. |
 
 
-`package_path` and `lambda_package_s3`/`ecr_image_uri` are mutually exclusive — set only one per handler.
+`package_path` and `lambda_package_s3`/`ecr_image_uri` are mutually exclusive; set only one per handler.
 
 | Package Type | Development                                 | Production                                      |
 | ------------ | ------------------------------------------- | ----------------------------------------------- |
@@ -770,7 +786,7 @@ curl -X POST https://{api-id}.execute-api.us-east-1.amazonaws.com/agents/api/v1/
 **2. Poll for the response**
 
 `session_id` is required in the poll body and must match the `session_id` the
-response was stored under — the poll endpoint validates this and returns
+response was stored under; the poll endpoint validates this and returns
 `NOT_FOUND` on a mismatch, so clients must send back the same `session_id`
 used in the original submit request.
 
@@ -865,10 +881,10 @@ All messages pushed to the client carry a `type` field:
 
 | Type | Mode | Payload fields |
 |------|------|----------------|
-| `CHAT_RESPONSE` | `async` | `result`, `session_id` — complete agent response sent once |
+| `CHAT_RESPONSE` | `async` | `result`, `session_id` - complete agent response sent once |
 | `STREAM_CHUNK` | `stream` | `delta` (token text), `done` (bool), `session_id`; on error: `error`, `done: true`, `session_id` |
-| `CHAT_QUEUED` | `async` / `stream` | `status`, `message`, `request_id` — queue acknowledgement (queue mode only) |
-| `SYSTEM_RESPONSE` | both | `status`, `message` — unknown route or internal error |
+| `CHAT_QUEUED` | `async` / `stream` | `status`, `message`, `request_id` - queue acknowledgement (queue mode only) |
+| `SYSTEM_RESPONSE` | both | `status`, `message` - unknown route or internal error |
 
 **Custom Routes**
 
@@ -950,7 +966,7 @@ When you use queue-backed execution, configure the `execution` block:
 
 The response store is configured as a single object with one selected backend:
 
-**Note**: When using WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), the response store is not created and not used — responses are broadcast directly through the WebSocket connection. The response store is required only for `rest_sync` and `rest_async` modes. Setting `create_redis_response_store = true`, `create_valkey_response_store = true`, or `create_dynamodb_response_store = true` in Terraform while using a WebSocket mode now fails validation during planning/apply.
+**Note**: When using WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), the response store is not created and not used; responses are broadcast directly through the WebSocket connection. The response store is required only for `rest_sync` and `rest_async` modes. Setting `create_redis_response_store = true`, `create_valkey_response_store = true`, or `create_dynamodb_response_store = true` in Terraform while using a WebSocket mode now fails validation during planning/apply.
 
 ```json
 {
@@ -995,7 +1011,7 @@ export AK_EXECUTION__RESPONSE_STORE__DELAY=5
 
 ### WebSocket Configuration
 
-For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), you need to configure WebSocket API settings in your `config.yaml`. Both modes use the same WebSocket infrastructure — the only difference is how the agent response is delivered to the client (one full message vs per-token chunks).
+For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), you need to configure WebSocket API settings in your `config.yaml`. Both modes use the same WebSocket infrastructure; the only difference is how the agent response is delivered to the client (one full message vs per-token chunks).
 
 ```yaml
 websocket_api:
@@ -1106,7 +1122,7 @@ module "serverless_agents" {
     input_queue_name  = "input-queue"
     output_queue_name = "output-queue"
 
-    # Visibility timeouts — must be >= the corresponding Lambda timeout
+    # Visibility timeouts - must be >= the corresponding Lambda timeout
     input_queue_visibility_timeout  = 60
     output_queue_visibility_timeout = 60
 
