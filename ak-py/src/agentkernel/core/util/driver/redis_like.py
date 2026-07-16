@@ -7,14 +7,13 @@ the client library via ``_from_url``, ``_error_class``, and ``_backend_name``.
 
 from __future__ import annotations
 
-import logging
-import threading
+from abc import abstractmethod
 from typing import Any, Optional
 
-from .base import connect_with_retries
+from .base import BaseDriver
 
 
-class _RedisLikeDriver:
+class _RedisLikeDriver(BaseDriver):
     """
     Shared connection lifecycle and generic command surface for Redis-compatible
     backends (the ``valkey`` client is a fork of ``redis-py`` with an identical API).
@@ -28,7 +27,7 @@ class _RedisLikeDriver:
 
     # subclasses set these
     _backend_name: str = "RedisLike"
-    _error_class: type = Exception
+    _error_class: type[BaseException] = Exception
 
     def __init__(self, url: str, prefix: str = "", ttl: int = 0, decode_responses: bool = False):
         """
@@ -40,17 +39,16 @@ class _RedisLikeDriver:
         :param ttl: TTL in seconds applied by :meth:`set` and :meth:`expire` (0 disables).
         :param decode_responses: Whether the client decodes responses to strings.
         """
+        super().__init__(f"ak.core.util.driver.{self._backend_name.lower()}")
         self._url = url
         self._prefix = prefix
         self._ttl = int(ttl)
         self._decode_responses = decode_responses
         self._client = None
-        self._lock = threading.Lock()
-        self._log = logging.getLogger(f"ak.core.util.driver.{self._backend_name.lower()}")
 
+    @abstractmethod
     def _from_url(self, url: str, **kwargs):
         """Create a client from a URL using the concrete backend's library."""
-        raise NotImplementedError
 
     @property
     def client(self):
@@ -99,7 +97,7 @@ class _RedisLikeDriver:
             client.ping()
             return client
 
-        self._client = connect_with_retries(connect, self._error_class, self._log)
+        self._client = self._connect_with_retries(connect, self._error_class)
 
     def key(self, suffix: str) -> str:
         """

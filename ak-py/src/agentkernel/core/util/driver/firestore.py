@@ -1,17 +1,15 @@
 """Shared Google Firestore connection driver. Requires the ``gcp`` extra."""
 
 import datetime
-import logging
-import threading
 from typing import Optional
 
-from .base import connect_with_retries
+from .base import BaseDriver
 
 # Fields that are not data keys and must be excluded when reading back keys
 _RESERVED_FIELDS = {"expiry_time"}
 
 
-class FirestoreDriver:
+class FirestoreDriver(BaseDriver):
     """
     Firestore connection driver.
 
@@ -40,13 +38,12 @@ class FirestoreDriver:
         :param ttl: TTL in seconds; when > 0, :meth:`put` sets an ``expiry_time``
             datetime field a Firestore TTL policy can use (0 disables).
         """
+        super().__init__("ak.core.util.driver.firestore")
         self._collection_name = collection_name
         self._project_id = project_id
         self._database_id = database_id
         self._ttl = int(ttl) if ttl else 0
         self._client = None
-        self._lock = threading.Lock()
-        self._log = logging.getLogger("ak.core.util.driver.firestore")
 
     @property
     def collection(self):
@@ -76,7 +73,7 @@ class FirestoreDriver:
             self._log.debug("Connected to Firestore collection %s", self._collection_name)
             return client
 
-        self._client = connect_with_retries(connect, Exception, self._log)
+        self._client = self._connect_with_retries(connect, Exception)
 
     def put(self, session_id: str, key: str, value: bytes) -> None:
         """

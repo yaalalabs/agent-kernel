@@ -68,13 +68,13 @@ the ping/reconnect and connect timeout the session drivers already had.
 ```
 ak-py/src/agentkernel/core/util/driver/
 ├── __init__.py        # no eager imports of optional client libraries
-├── base.py            # shared retry helper, parameterized by exception scope
-├── redis_like.py      # _RedisLikeDriver — all Redis/Valkey logic, client-library-agnostic
+├── base.py            # BaseDriver ABC: connect lock, logger, retry helper, abstract _connect()
+├── redis_like.py      # _RedisLikeDriver(BaseDriver) — all Redis/Valkey logic, client-library-agnostic
 ├── redis.py           # RedisDriver(_RedisLikeDriver)
 ├── valkey.py          # ValkeyDriver(_RedisLikeDriver)   (requires the `valkey` extra)
-├── dynamodb.py        # DynamoDBDriver
-├── cosmosdb.py        # CosmosDBDriver                   (requires the `azure` extra)
-└── firestore.py       # FirestoreDriver                  (requires the `gcp` extra)
+├── dynamodb.py        # DynamoDBDriver(BaseDriver)
+├── cosmosdb.py        # CosmosDBDriver(BaseDriver)       (requires the `azure` extra)
+└── firestore.py       # FirestoreDriver(BaseDriver)      (requires the `gcp` extra)
 ```
 
 Three rules govern the package:
@@ -119,8 +119,12 @@ All driver state (client handle, connection lock, parameters) is instance state 
 `_connect()` shadows them with instance attributes; that pattern must not be carried over — it is
 incompatible with the per-instance `threading.Lock` anyway.
 
-The retry helper in `base.py` takes the exception type(s) to retry on as a parameter, preserving
-each family's current scope: `_RedisLikeDriver` passes its `_error_class`
+`base.py` defines `BaseDriver`, an ABC every driver inherits from. It owns the state every driver
+would otherwise duplicate — the per-instance connect `threading.Lock` and the logger — declares
+`_connect()` as an abstract method (each driver's "build client, health-check, assign" step), and
+provides the retry helper as the `_connect_with_retries()` method. The helper takes the exception
+type(s) to retry on as a parameter, preserving each family's current scope: `_RedisLikeDriver`
+passes its `_error_class`
 (`redis.RedisError`/`valkey.ValkeyError`), so non-connection errors — e.g. a malformed-URL
 `ValueError` from `from_url` — fail fast instead of burning 3 × 2 s of retries; the
 DynamoDB/Cosmos/Firestore drivers pass `Exception`, keeping their current broad scope (boto3,
@@ -133,14 +137,15 @@ Since `valkey-py` mirrors `redis-py`'s API, all logic lives once in `_RedisLikeD
 concrete classes only supply the client library:
 
 ```python
-class _RedisLikeDriver:
+class _RedisLikeDriver(BaseDriver):
     # subclasses set these
-    _backend_name: str            # "Redis" / "Valkey" — used in log messages
-    _error_class: type[Exception] # redis.RedisError / valkey.ValkeyError
+    _backend_name: str                # "Redis" / "Valkey" — used in log messages
+    _error_class: type[BaseException] # redis.RedisError / valkey.ValkeyError
 
     def __init__(self, url: str, prefix: str = "", ttl: int = 0, decode_responses: bool = False): ...
 
-    def _from_url(self, url: str, **kwargs): ...   # abstract: redis.from_url / valkey.from_url
+    @abstractmethod
+    def _from_url(self, url: str, **kwargs): ...   # redis.from_url / valkey.from_url
 
     @property
     def client(self): ...        # lazy connect; else ping, reconnect on _error_class;
@@ -447,9 +452,11 @@ the driver classes were internal (never exported from `agentkernel` or the subsy
 
 **Files:** `core/util/driver/__init__.py`, `base.py`, `redis_like.py`, `redis.py`, `valkey.py` (all new)
 
-1. Add `base.py` with the shared retry helper (`retries=3`, `delay=2`, re-raise last error) used by
-   all drivers. It takes the exception type(s) to retry on as a parameter; exceptions outside that
-   scope propagate immediately without retries.
+1. Add `base.py` with the `BaseDriver` ABC all drivers inherit from: it owns the connect lock and
+   logger, declares `_connect()` as an abstract method, and provides the shared retry helper as
+   the `_connect_with_retries()` method (`retries=3`, `delay=2`, re-raise last error). The helper
+   takes the exception type(s) to retry on as a parameter; exceptions outside that scope propagate
+   immediately without retries.
 2. Implement `_RedisLikeDriver` in `redis_like.py` with the full command surface above, the lazy
    `client` property with ping/reconnect (retrying on `_error_class`, with `_connect()` guarded by
    a `threading.Lock` whose holder re-verifies before connecting: `_client` is still `None` on

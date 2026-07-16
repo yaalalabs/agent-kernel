@@ -1,17 +1,15 @@
 """Shared Azure Cosmos DB (Table API) connection driver. Requires the ``azure`` extra."""
 
-import logging
-import threading
 import time
 from typing import Optional
 
 from azure.core.exceptions import ResourceNotFoundError
 from azure.data.tables import TableServiceClient
 
-from .base import connect_with_retries
+from .base import BaseDriver
 
 
-class CosmosDBDriver:
+class CosmosDBDriver(BaseDriver):
     """
     Cosmos DB Table API connection driver.
 
@@ -31,13 +29,12 @@ class CosmosDBDriver:
         :param table_name: Cosmos DB table name.
         :param ttl: TTL in seconds for manual TTL management (0 disables).
         """
+        super().__init__("ak.core.util.driver.cosmosdb")
         self._connection_string = connection_string
         self._table_name = table_name
         self._ttl = int(ttl) if ttl else 0
         self._table_service_client = None
         self._table_client = None
-        self._lock = threading.Lock()
-        self._log = logging.getLogger("ak.core.util.driver.cosmosdb")
 
     @property
     def table_client(self):
@@ -68,7 +65,7 @@ class CosmosDBDriver:
             self._log.debug("Connected to Cosmos DB Table %s", self._table_name)
             return service_client, table_client
 
-        self._table_service_client, self._table_client = connect_with_retries(connect, Exception, self._log)
+        self._table_service_client, self._table_client = self._connect_with_retries(connect, Exception)
 
     def put(self, session_id: str, key: str, value: bytes) -> None:
         """

@@ -1,17 +1,15 @@
 """Shared DynamoDB connection driver."""
 
-import logging
-import threading
 import time
 from typing import Any, Optional
 
 import boto3
 from boto3.dynamodb.conditions import Key as DDBKey
 
-from .base import connect_with_retries
+from .base import BaseDriver
 
 
-class DynamoDBDriver:
+class DynamoDBDriver(BaseDriver):
     """
     DynamoDB connection driver parameterized by table and key schema.
 
@@ -41,14 +39,13 @@ class DynamoDBDriver:
         :param ttl: TTL in seconds; when > 0, :meth:`put` attaches an ``expiry_time``
             attribute (UNIX epoch seconds).
         """
+        super().__init__("ak.core.util.driver.dynamodb")
         self._table_name = table_name
         self._partition_key = partition_key
         self._sort_key = sort_key
         self._region = region
         self._ttl = int(ttl) if ttl else 0
         self._table = None
-        self._lock = threading.Lock()
-        self._log = logging.getLogger("ak.core.util.driver.dynamodb")
 
     @property
     def table(self):
@@ -75,7 +72,7 @@ class DynamoDBDriver:
             self._log.debug("Connected to DynamoDB table %s", self._table_name)
             return table
 
-        self._table = connect_with_retries(connect, Exception, self._log)
+        self._table = self._connect_with_retries(connect, Exception)
 
     def _item_key(self, pk_value: Any, sk_value: Any = None) -> dict:
         """Composes the primary-key dict from partition and (optional) sort key values."""
