@@ -53,11 +53,12 @@ First built-in backends should cover all three deployment models:
 
 ## Design Output
 
-- [spec.md](spec.md) — the reviewable design specification for the sandbox capability
-  (interface, data types, RBAC/permission model, config, factory/registration, backends,
-  errors, testing, requirements checklist). This is the artifact intended to become the
-  design portion of the implementation PR; the `ak-dev-review-pr` skill reviews any `spec.md`
-  before implementation code.
+- [docs/specs/ak-133/design.md](../../../docs/specs/ak-133/design.md) — the reviewed
+  design spec for the sandbox capability (ticket AK-133), written via the staged
+  `ak-dev-write-spec` flow (design.md → spec.md → plan.md). The detailed implementation
+  spec (`docs/specs/ak-133/spec.md`) follows once the design review settles. Earlier
+  single-document drafts (`specs/sandbox/SPEC.md`, this skill's own `spec.md`) were
+  retired on 2026-07-15 in favor of the staged documents.
 
 ## Research Streams & Artifacts
 
