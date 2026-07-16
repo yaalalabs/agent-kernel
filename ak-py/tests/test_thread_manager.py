@@ -204,7 +204,7 @@ class TestConversationThreadManager:
         original = AKConfig.get().multimodal.enabled
         AKConfig.get().multimodal.enabled = False
         try:
-            requests = [AgentRequestText(text="just text")]
+            requests = [AgentRequestText(prompt="just text")]
             rebuilt, refs = thread_enabled.store_attachments("s1", requests)
             assert refs == []
             assert rebuilt is requests  # unchanged, same list
@@ -218,7 +218,7 @@ class TestConversationThreadManager:
         AKConfig.get().multimodal.storage_type = "session_cache"
         try:
             with pytest.raises(ValueError, match="session_cache"):
-                thread_enabled.store_attachments("s1", [AgentRequestText(text="hi")])
+                thread_enabled.store_attachments("s1", [AgentRequestText(prompt="hi")])
         finally:
             AKConfig.get().multimodal.enabled = original_enabled
             AKConfig.get().multimodal.storage_type = original_storage
@@ -230,7 +230,7 @@ class TestConversationThreadManager:
         AKConfig.get().multimodal.storage_type = "in_memory"
         try:
             requests = [
-                AgentRequestText(text="look at these"),
+                AgentRequestText(prompt="look at these"),
                 AgentRequestImage(image_data="aW1n", name="pic.png", mime_type="image/png"),
                 AgentRequestFile(file_data="ZmlsZQ==", name="doc.pdf", mime_type="application/pdf"),
             ]

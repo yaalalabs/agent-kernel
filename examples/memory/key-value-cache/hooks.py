@@ -36,7 +36,7 @@ class RAGHook(PreHook):
 
         # NOTE:  we are assuming single text request for simplicity
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests  # No text prompt to validate
 

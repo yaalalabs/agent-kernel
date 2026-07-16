@@ -82,9 +82,9 @@ class BaseGuardrailUtil:
         text_parts = []
         for req in requests:
             if isinstance(req, AgentRequestText):
-                text_parts.append(req.text)
+                text_parts.append(req.prompt)
             elif hasattr(req, "text"):
-                text_parts.append(str(req.text))
+                text_parts.append(str(req.prompt))
         return "\n".join(text_parts)
 
     @staticmethod
@@ -94,9 +94,9 @@ class BaseGuardrailUtil:
         :param agent_reply: Agent reply
         """
         if isinstance(agent_reply, AgentReplyText):
-            return agent_reply.text
+            return agent_reply.response
         elif isinstance(agent_reply, AgentReplyAny):
             return str(agent_reply)
         elif hasattr(agent_reply, "text"):
-            return str(agent_reply.text)
+            return str(agent_reply.response)
         return ""

@@ -61,7 +61,7 @@ class TestCrewAIRunnerStructuredOutput:
     async def test_pydantic_output_returns_agent_reply_any(self):
         runner = CrewAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="research AI")]
+        requests = [AgentRequestText(prompt="research AI")]
         agent = _mock_agent(output_pydantic=ResearchReport)
         output = _crew_output(pydantic=ResearchReport(topic="AI", score=9), raw='{"topic": "AI", "score": 9}')
 
@@ -77,7 +77,7 @@ class TestCrewAIRunnerStructuredOutput:
     async def test_json_dict_output_returns_agent_reply_any(self):
         runner = CrewAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="research AI")]
+        requests = [AgentRequestText(prompt="research AI")]
         agent = _mock_agent(output_json=ResearchReport)
         output = _crew_output(json_dict={"topic": "AI", "score": 7}, raw='{"topic": "AI", "score": 7}')
 
@@ -92,7 +92,7 @@ class TestCrewAIRunnerStructuredOutput:
     async def test_structured_output_is_added_to_transcript(self):
         runner = CrewAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="research AI")]
+        requests = [AgentRequestText(prompt="research AI")]
         agent = _mock_agent(output_pydantic=ResearchReport)
         output = _crew_output(pydantic=ResearchReport(topic="AI", score=9), raw='{"topic": "AI", "score": 9}')
 
@@ -108,7 +108,7 @@ class TestCrewAIRunnerStructuredOutput:
     async def test_raw_only_output_returns_text(self):
         runner = CrewAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="say hi")]
+        requests = [AgentRequestText(prompt="say hi")]
         agent = _mock_agent()
         output = _crew_output(raw="Hi there!")
 
@@ -117,13 +117,13 @@ class TestCrewAIRunnerStructuredOutput:
             reply = await runner.run(agent, session, requests)
 
         assert isinstance(reply, AgentReplyText)
-        assert reply.text == "Hi there!"
+        assert reply.response == "Hi there!"
 
     @pytest.mark.asyncio
     async def test_output_config_forwarded_to_task(self):
         runner = CrewAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="research AI")]
+        requests = [AgentRequestText(prompt="research AI")]
         agent = _mock_agent(output_pydantic=ResearchReport)
         output = _crew_output(raw="ok")
 
@@ -221,15 +221,15 @@ class TestCrewAIRunnerRun:
             patch("agentkernel.framework.crewai.crewai.Task") as task_cls,
             patch.object(runner, "_memory", return_value=None),
         ):
-            reply = await runner.run(mock_agent, session, [AgentRequestText(text="Who won the 1996 cricket world cup?")])
+            reply = await runner.run(mock_agent, session, [AgentRequestText(prompt="Who won the 1996 cricket world cup?")])
             assert isinstance(reply, AgentReplyText)
-            assert reply.text == "Sri Lanka"
+            assert reply.response == "Sri Lanka"
             # First turn has no history
             assert task_cls.call_args.kwargs["description"] == "Who won the 1996 cricket world cup?"
 
             crew_cls.return_value.kickoff_async.return_value.raw = "India, Pakistan and Sri Lanka"
-            reply = await runner.run(mock_agent, session, [AgentRequestText(text="Which countries hosted the tournament?")])
-            assert reply.text == "India, Pakistan and Sri Lanka"
+            reply = await runner.run(mock_agent, session, [AgentRequestText(prompt="Which countries hosted the tournament?")])
+            assert reply.response == "India, Pakistan and Sri Lanka"
 
             description = task_cls.call_args.kwargs["description"]
             assert "User: Who won the 1996 cricket world cup?" in description
@@ -248,7 +248,7 @@ class TestCrewAIRunnerRun:
             patch.object(runner, "_memory", return_value=None),
         ):
             for i in range(CrewAIRunner.TRANSCRIPT_MAX_LINES):
-                await runner.run(mock_agent, session, [AgentRequestText(text=f"question {i}")])
+                await runner.run(mock_agent, session, [AgentRequestText(prompt=f"question {i}")])
 
         transcript = session.get(CrewAIRunner.TRANSCRIPT_KEY)
         assert len(transcript) == CrewAIRunner.TRANSCRIPT_MAX_LINES
@@ -269,9 +269,9 @@ class TestCrewAIRunnerRun:
             patch("agentkernel.framework.crewai.crewai.Task"),
             patch.object(runner, "_memory", return_value=memory),
         ):
-            reply = await runner.run(mock_agent, session, [AgentRequestText(text="hello")])
+            reply = await runner.run(mock_agent, session, [AgentRequestText(prompt="hello")])
 
-        assert reply.text == "still works"
+        assert reply.response == "still works"
         # Broken memory is not handed to the crew
         assert crew_cls.call_args.kwargs["memory"] is None
 
@@ -289,6 +289,6 @@ class TestCrewAIRunnerRun:
             patch("agentkernel.framework.crewai.crewai.Task"),
             patch.object(runner, "_memory", return_value=None),
         ):
-            await runner.run(mock_agent, session, [AgentRequestText(text="hello")])
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="hello")])
 
         assert session.get(CrewAIRunner.TRANSCRIPT_KEY) == []

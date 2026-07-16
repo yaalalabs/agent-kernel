@@ -26,7 +26,7 @@ class TestOpenAIRunnerErrorHandling:
         """Test that None replies are converted to empty strings"""
         runner = OpenAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
 
         # Patch at the module level where it's imported
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
@@ -45,14 +45,14 @@ class TestOpenAIRunnerErrorHandling:
             assert isinstance(reply, AgentReplyText)
             # The code does: reply_text = "" if reply is None else str(reply)
             # So None should become empty string
-            assert reply.text in ("", "None")  # Accept both since we're testing error handling
+            assert reply.response in ("", "None")  # Accept both since we're testing error handling
 
     @pytest.mark.asyncio
     async def test_runner_with_normal_text_reply(self):
         """Test normal text reply handling"""
         runner = OpenAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="what is 2+2?")]
+        requests = [AgentRequestText(prompt="what is 2+2?")]
         expected_reply = "The answer is 4"
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
@@ -67,14 +67,14 @@ class TestOpenAIRunnerErrorHandling:
             reply = await runner.run(mock_agent, session, requests)
 
             assert isinstance(reply, AgentReplyText)
-            assert reply.text == expected_reply
+            assert reply.response == expected_reply
 
     @pytest.mark.asyncio
     async def test_runner_handles_generic_exception(self):
         """Test that generic exceptions are caught and normalized"""
         runner = OpenAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="test")]
+        requests = [AgentRequestText(prompt="test")]
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             # Simulate Runner.run() raising an exception
@@ -88,14 +88,14 @@ class TestOpenAIRunnerErrorHandling:
 
             assert isinstance(reply, AgentReplyText)
             # Error should be normalized - should start with "Error"
-            assert reply.text.startswith("Error")
+            assert reply.response.startswith("Error")
 
     @pytest.mark.asyncio
     async def test_runner_handles_service_unavailable_error(self):
         """Test that 503 Service Unavailable errors are properly normalized"""
         runner = OpenAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="test query")]
+        requests = [AgentRequestText(prompt="test query")]
 
         class ServiceUnavailableError(Exception):
             def __init__(self):
@@ -113,14 +113,14 @@ class TestOpenAIRunnerErrorHandling:
 
             assert isinstance(reply, AgentReplyText)
             # Should contain error message (user_facing_error_message provides normalized format)
-            assert "Error" in reply.text
+            assert "Error" in reply.response
 
     @pytest.mark.asyncio
     async def test_runner_handles_rate_limit_error(self):
         """Test that rate limit errors are properly normalized"""
         runner = OpenAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="too many requests")]
+        requests = [AgentRequestText(prompt="too many requests")]
 
         class RateLimitError(Exception):
             def __init__(self):
@@ -138,14 +138,14 @@ class TestOpenAIRunnerErrorHandling:
 
             assert isinstance(reply, AgentReplyText)
             # Should have error message
-            assert "Error" in reply.text
+            assert "Error" in reply.response
 
     @pytest.mark.asyncio
     async def test_runner_normalizes_numeric_reply(self):
         """Test that numeric replies are converted to strings"""
         runner = OpenAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="what is 2+2?")]
+        requests = [AgentRequestText(prompt="what is 2+2?")]
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             mock_run_result = MagicMock()
@@ -159,8 +159,8 @@ class TestOpenAIRunnerErrorHandling:
             reply = await runner.run(mock_agent, session, requests)
 
             assert isinstance(reply, AgentReplyText)
-            assert reply.text == "42"
-            assert isinstance(reply.text, str)
+            assert reply.response == "42"
+            assert isinstance(reply.response, str)
 
 
 class TestOpenAIRunnerStructuredOutput:
@@ -170,7 +170,7 @@ class TestOpenAIRunnerStructuredOutput:
     async def test_pydantic_final_output_returns_agent_reply_any(self):
         runner = OpenAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="extract the event")]
+        requests = [AgentRequestText(prompt="extract the event")]
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             mock_run_result = MagicMock()
@@ -190,7 +190,7 @@ class TestOpenAIRunnerStructuredOutput:
     async def test_dict_final_output_returns_agent_reply_any(self):
         runner = OpenAIRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="extract the event")]
+        requests = [AgentRequestText(prompt="extract the event")]
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             mock_run_result = MagicMock()

@@ -230,7 +230,7 @@ class AgentInstagramRequestHandler(RESTRequestHandler):
 
             # Add text if present
             if message_text:
-                requests.append(AgentRequestText(text=message_text))
+                requests.append(AgentRequestText(prompt=message_text))
 
             # Process attachments (images and files)
             if attachments:

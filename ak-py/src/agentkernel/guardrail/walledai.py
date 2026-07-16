@@ -109,7 +109,7 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
                 continue
 
             has_text_request = True
-            raw_text = req.text
+            raw_text = req.prompt
 
             if not raw_text:
                 new_requests.append(req)
@@ -120,14 +120,14 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
             except Exception as e:
                 log.error(f"Safety validation error: {e}")
                 return AgentReplyText(
-                    text="I apologize, but I'm unable to process your request at this time. Please try again later.",
+                    response="I apologize, but I'm unable to process your request at this time. Please try again later.",
                     prompt=raw_text,
                 )
 
             if isinstance(safety_res, dict) and "data" in safety_res:
                 if not safety_res["data"]["safety"][0]["isSafe"]:
                     log.info("Blocked unsafe input due to safety concerns")
-                    return AgentReplyText(text="I cannot fulfill this request as it violates safety guidelines.")
+                    return AgentReplyText(response="I cannot fulfill this request as it violates safety guidelines.")
 
             if not pii_enabled:
                 new_requests.append(req)
@@ -143,7 +143,7 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
 
                 log.error(f"Redaction error: {e}")
                 return AgentReplyText(
-                    text="I apologize, but I'm unable to process your request at this time. Please try again later.",
+                    response="I apologize, but I'm unable to process your request at this time. Please try again later.",
                     prompt=raw_text,
                 )
 
@@ -156,7 +156,7 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
                     mapping_updated = True
 
                 log.debug(f"masked_text: {masked_text}")
-                new_requests.append(AgentRequestText(text=masked_text))
+                new_requests.append(AgentRequestText(prompt=masked_text))
                 continue
 
             new_requests.append(req)
@@ -204,10 +204,10 @@ class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
             return agent_reply.model_copy(update={"content": self._unmask(agent_reply.content, mapping)})
 
         if isinstance(agent_reply, AgentReplyImage):
-            return agent_reply.model_copy(update={"text": self._unmask(agent_reply.text, mapping)})
+            return agent_reply.model_copy(update={"response": self._unmask(agent_reply.response, mapping)})
 
         if isinstance(agent_reply, AgentReplyText):
-            return agent_reply.model_copy(update={"text": self._unmask(agent_reply.text, mapping)})
+            return agent_reply.model_copy(update={"response": self._unmask(agent_reply.response, mapping)})
 
         # Fallback for unknown reply types
         return agent_reply

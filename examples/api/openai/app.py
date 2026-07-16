@@ -61,7 +61,7 @@ class RAGPreHook(PreHook):
         prompt = ""
         for req in requests:
             if isinstance(req, AgentRequestText):
-                prompt = req.text
+                prompt = req.prompt
 
             if isinstance(req, AgentRequestAny) and req.name == "additional_context":
                 additional_context = req.content
@@ -77,7 +77,7 @@ class RAGPreHook(PreHook):
         # Otherwise, add the bank agent to the prompt
         modified_prompt = prompt + ". My bank agent was " + bank_agent + "."
 
-        return [AgentRequestText(text=modified_prompt)]
+        return [AgentRequestText(prompt=modified_prompt)]
 
     def name(self) -> str:
         return "bank_agent_prehook"

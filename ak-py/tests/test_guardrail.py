@@ -33,15 +33,15 @@ def mock_agent():
 def sample_requests():
     """Fixture to create sample agent requests."""
     return [
-        AgentRequestText(text="Hello, world!"),
-        AgentRequestText(text="How are you?"),
+        AgentRequestText(prompt="Hello, world!"),
+        AgentRequestText(prompt="How are you?"),
     ]
 
 
 @pytest.fixture
 def sample_reply():
     """Fixture to create a sample agent reply."""
-    return AgentReplyText(text="I'm doing great!", prompt="How are you?")
+    return AgentReplyText(response="I'm doing great!", prompt="How are you?")
 
 
 class TestInputGuardrail:
@@ -70,7 +70,7 @@ class TestOutputGuardrail:
         guardrail = OutputGuardrail()
         result = await guardrail.on_run(mock_session, sample_requests, mock_agent, sample_reply)
         assert result == sample_reply
-        assert result.text == "I'm doing great!"
+        assert result.response == "I'm doing great!"
 
     def test_name(self):
         """Test that OutputGuardrail.name returns correct name."""
@@ -186,7 +186,7 @@ class TestOpenAIOutputGuardrail:
         guardrail = OpenAIOutputGuardrail()
         result = await guardrail.on_run(mock_session, sample_requests, mock_agent, sample_reply)
         assert result == sample_reply
-        assert result.text == "I'm doing great!"
+        assert result.response == "I'm doing great!"
 
     def test_name(self):
         """Test that OpenAIOutputGuardrail.name returns correct name."""
@@ -203,7 +203,7 @@ class TestBaseGuardrailUtil:
     """Tests for the shared text extraction utilities."""
 
     def test_extract_text_from_text_reply(self):
-        reply = AgentReplyText(text="hello", prompt="hi")
+        reply = AgentReplyText(response="hello", prompt="hi")
         assert BaseGuardrailUtil._extract_text_from_reply(reply) == "hello"
 
     def test_extract_text_from_structured_reply_returns_json(self):

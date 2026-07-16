@@ -172,7 +172,7 @@ agent = runtime.agents().get("assistant")
 session = runtime.sessions().get("user-123") or runtime.sessions().new("user-123")
 
 # Preferred: run through the Runtime so hooks and persistence apply
-reply = await runtime.run(agent, session, [AgentRequestText(text="Hello")])
+reply = await runtime.run(agent, session, [AgentRequestText(prompt="Hello")])
 ```
 
 For most applications, the higher-level [`AgentService`](../architecture/execution-flow#2-request-building-and-agent-resolution) is more convenient than touching runners at all.

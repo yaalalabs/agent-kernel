@@ -109,7 +109,7 @@ class OpenAIRunner(BaseRunner):
                 continue
 
             if isinstance(req, AgentRequestText):
-                text = req.text
+                text = req.prompt
                 prompt = prompt + "\n" + text if prompt else text
                 message_content.append({"role": "user", "content": text})
 
@@ -177,7 +177,7 @@ class OpenAIRunner(BaseRunner):
             prompt, message_content = self._process_requests(requests)
 
             if not message_content:
-                return AgentReplyText(text="Sorry. No valid content found in the requests")
+                return AgentReplyText(response="Sorry. No valid content found in the requests")
 
             input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
             reply = (await Runner.run(agent.agent, input_data, session=session_to_use)).final_output
@@ -187,9 +187,9 @@ class OpenAIRunner(BaseRunner):
                 return structured
 
             reply_text = "" if reply is None else str(reply)
-            return AgentReplyText(text=reply_text, prompt=prompt)
+            return AgentReplyText(response=reply_text, prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()

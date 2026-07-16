@@ -88,8 +88,8 @@ from agentkernel.core.model import AgentReplyText, AgentRequest, AgentRequestTex
 
 class DummyRunner(Runner):
     async def run(self, agent, session, requests):
-        prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
-        return AgentReplyText(text=f"ok:{prompt}")
+        prompt = requests[0].prompt if isinstance(requests[0], AgentRequestText) else ""
+        return AgentReplyText(response=f"ok:{prompt}")
 
     async def stream(self, agent, session, requests):
         # Runner.stream() is abstract — implement even in test doubles.
@@ -125,8 +125,8 @@ async def test_runtime_run():
     runtime.register(agent)
     session = runtime.sessions().new("test-session")
 
-    result = await runtime.run(agent, session, [AgentRequestText(text="hello")])
-    assert result.text == "ok:hello"
+    result = await runtime.run(agent, session, [AgentRequestText(prompt="hello")])
+    assert result.response == "ok:hello"
 ```
 
 ### Monkeypatching Config
@@ -191,7 +191,7 @@ async def test_pre_hook_modifies_request():
         async def on_run(self, session, agent, requests):
             for req in requests:
                 if isinstance(req, AgentRequestText):
-                    req.text = req.text.upper()
+                    req.prompt = req.prompt.upper()
             return requests
         def name(self): return "test_hook"
 
@@ -204,7 +204,7 @@ async def test_pre_hook_modifies_request():
 async def test_pre_hook_halts_execution():
     class BlockingHook(PreHook):
         async def on_run(self, session, agent, requests):
-            return AgentReplyText(text="blocked", prompt="")
+            return AgentReplyText(response="blocked", prompt="")
         def name(self): return "blocking_hook"
 
     # When a PreHook returns AgentReply, Runtime.run() returns it immediately

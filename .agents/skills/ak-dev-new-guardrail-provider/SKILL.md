@@ -144,7 +144,7 @@ class <Provider>OutputGuardrail(BaseGuardrailUtil, Base<Provider>Guardrail, Outp
         if result.is_flagged:
             message = self._build_intervention_message(result)
             logger.warning(f"Output guardrail triggered: {message}")
-            agent_reply.text = message
+            agent_reply.response = message
             return agent_reply
 
         # 4. Content is safe, return unchanged
@@ -242,7 +242,7 @@ async def test_input_guardrail_passes_safe_content():
     guardrail = <Provider>InputGuardrail()
     # Mock the validation to return safe
     guardrail._validate = AsyncMock(return_value=MockResult(is_flagged=False))
-    requests = [AgentRequestText(text="What is 2+2?")]
+    requests = [AgentRequestText(prompt="What is 2+2?")]
     result = await guardrail.on_run(session, agent, requests)
     assert isinstance(result, list)  # passed through
 
@@ -250,7 +250,7 @@ async def test_input_guardrail_passes_safe_content():
 async def test_input_guardrail_blocks_unsafe_content():
     guardrail = <Provider>InputGuardrail()
     guardrail._validate = AsyncMock(return_value=MockResult(is_flagged=True))
-    requests = [AgentRequestText(text="unsafe content")]
+    requests = [AgentRequestText(prompt="unsafe content")]
     result = await guardrail.on_run(session, agent, requests)
     assert isinstance(result, AgentReplyText)  # halted
 ```

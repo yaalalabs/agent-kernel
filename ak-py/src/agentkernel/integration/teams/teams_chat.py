@@ -146,7 +146,7 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
             # Build requests list with text, files, and images
             requests = []
             if text:
-                requests.append(AgentRequestText(text=text))
+                requests.append(AgentRequestText(prompt=text))
 
             # Process attachments (images and files)
             if activity.attachments:

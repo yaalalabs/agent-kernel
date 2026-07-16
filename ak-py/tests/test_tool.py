@@ -60,7 +60,7 @@ def mock_session():
 
 @pytest.fixture
 def mock_requests():
-    return [AgentRequestText(text="hello")]
+    return [AgentRequestText(prompt="hello")]
 
 
 @pytest.fixture
@@ -92,7 +92,7 @@ class TestToolContextProperties:
     def test_requests_property(self, tool_context, mock_requests):
         assert tool_context.requests is mock_requests
         assert len(tool_context.requests) == 1
-        assert tool_context.requests[0].text == "hello"
+        assert tool_context.requests[0].prompt == "hello"
 
 
 # ToolContext.get / .set / .reset (contextvars)

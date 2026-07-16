@@ -10,15 +10,15 @@ class AgentRequestText(BaseModel):
     """
     AgentRequestText encapsulates a text request to an agent.
 
-    text: str  : This is the user input text
+    prompt: str  : This is the user input text
     type: Literal["text"]
     """
 
-    text: str
+    prompt: str
     type: Literal["text"] = "text"
 
     def __str__(self) -> str:
-        return self.text
+        return self.prompt
 
 
 class AgentRequestFile(BaseModel):
@@ -90,22 +90,25 @@ class AgentReplyText(AgentRequestText):
     """
     AgentReplyText encapsulates a text reply from an agent.
 
+    response: str : This is the agent output text
     prompt: str : The text prompt sent to the agent
 
-    Inherits fields `text` and `type` from AgentRequestText.
+    Inherits `prompt` (input) and `type` from AgentRequestText; `prompt` is made
+    optional here, and `response` holds the agent output.
     """
 
     prompt: str = ""
+    response: str = ""
 
     def __str__(self) -> str:
-        return self.text
+        return self.response
 
 
 class AgentReplyImage(BaseModel):
     """
     AgentReplyImage encapsulates a text & image reply from an agent.
 
-    text: str  : This is the agent output text
+    response: str  : This is the agent output text
     prompt: str : The text prompt sent to the agent
     image_data: str  : This should be base64 encoded string
     name: str : name of the image
@@ -113,7 +116,7 @@ class AgentReplyImage(BaseModel):
     mime_type: str | None = None : Optional. The IANA standard MIME type of the image
     """
 
-    text: str
+    response: str
     prompt: str = ""
     image_data: str
     name: str
@@ -121,7 +124,7 @@ class AgentReplyImage(BaseModel):
     mime_type: str | None = None
 
     def __str__(self) -> str:
-        return f"{self.text}. Image {self.name} is attached."
+        return f"{self.response}. Image {self.name} is attached."
 
 
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef]

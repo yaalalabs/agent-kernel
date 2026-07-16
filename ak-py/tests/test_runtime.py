@@ -29,8 +29,8 @@ class DummyRunner(Runner):
         return True
 
     async def run(self, agent, session, requests):
-        prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
-        return AgentReplyText(text=f"ok:{prompt}")
+        prompt = requests[0].prompt if isinstance(requests[0], AgentRequestText) else ""
+        return AgentReplyText(response=f"ok:{prompt}")
 
     async def stream(self, agent, session, requests):
         raise NotImplementedError()
@@ -140,8 +140,8 @@ async def test_runtime_run_calls_runner(monkeypatch):
     runtime.register(agent)
     session = runtime.sessions().new("s1")
 
-    out = await runtime.run(agent, session, [AgentRequestText(text="ping")])
-    assert out.text == "ok:ping"
+    out = await runtime.run(agent, session, [AgentRequestText(prompt="ping")])
+    assert out.response == "ok:ping"
 
 
 @pytest.mark.asyncio
@@ -686,7 +686,7 @@ async def test_post_hook_receives_structured_reply_object(monkeypatch):
     runtime.register(agent)
     session = runtime.sessions().new("s-structured-1")
 
-    out = await runtime.run(agent, session, [AgentRequestText(text="weather?")])
+    out = await runtime.run(agent, session, [AgentRequestText(prompt="weather?")])
 
     assert spy.received is structured_reply
     assert spy.received.content == {"city": "Colombo"}
@@ -703,7 +703,7 @@ async def test_post_hook_returning_structured_reply_passes_validation(monkeypatc
     runtime.register(agent)
     session = runtime.sessions().new("s-structured-2")
 
-    out = await runtime.run(agent, session, [AgentRequestText(text="weather?")])
+    out = await runtime.run(agent, session, [AgentRequestText(prompt="weather?")])
 
     assert isinstance(out, AgentReplyAny)
     assert out.content == {"city": "Colombo", "moderated": True}
@@ -720,7 +720,7 @@ async def test_pre_hook_halt_with_structured_reply(monkeypatch):
     runtime.register(agent)
     session = runtime.sessions().new("s-structured-3")
 
-    out = await runtime.run(agent, session, [AgentRequestText(text="anything")])
+    out = await runtime.run(agent, session, [AgentRequestText(prompt="anything")])
 
     assert out is halt_reply
     assert runner.was_called is False
@@ -737,7 +737,7 @@ async def test_stream_pre_hook_halt_with_structured_reply(monkeypatch):
     runtime.register(agent)
     session = runtime.sessions().new("s-structured-4")
 
-    chunks = [chunk async for chunk in runtime.stream(agent, session, [AgentRequestText(text="anything")])]
+    chunks = [chunk async for chunk in runtime.stream(agent, session, [AgentRequestText(prompt="anything")])]
 
     assert len(chunks) == 1
     assert chunks[0].done is True

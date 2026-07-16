@@ -40,7 +40,7 @@ class GuardRailHook(PreHook):
     BLOCKED_KEYWORDS = ["hack", "illegal", "exploit"]
     
     async def on_run(self, session, agent, requests):
-        prompt = requests[0].text.lower()
+        prompt = requests[0].prompt.lower()
         
         for keyword in self.BLOCKED_KEYWORDS:
             if keyword in prompt:
@@ -56,7 +56,7 @@ class GuardRailHook(PreHook):
 ```python
 class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
-        prompt = requests[0].text
+        prompt = requests[0].prompt
         
         # Search your knowledge base
         context = await search_knowledge_base(prompt)
@@ -66,7 +66,7 @@ class RAGHook(PreHook):
         
 Question: {prompt}"""
         
-        return [AgentRequestText(text=enriched_prompt)]
+        return [AgentRequestText(prompt=enriched_prompt)]
 ```
 
 **💡 Pro Tip: Custom Data in REST API Mode**
@@ -126,7 +126,7 @@ These run **after** your agent generates a response. Ideal for:
 class DisclaimerHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         disclaimer = "\n\n*This is AI-generated. Verify important decisions.*"
-        agent_reply.text += disclaimer
+        agent_reply.response += disclaimer
         return agent_reply
 ```
 
@@ -320,9 +320,9 @@ from agentkernel import AgentRequestText
 class SimpleRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Add context from your knowledge base
-        context = get_relevant_context(requests[0].text)
-        enriched = f"Context: {context}\n\nQuestion: {requests[0].text}"
-        return [AgentRequestText(text=enriched)]
+        context = get_relevant_context(requests[0].prompt)
+        enriched = f"Context: {context}\n\nQuestion: {requests[0].prompt}"
+        return [AgentRequestText(prompt=enriched)]
     
     def name(self):
         return "SimpleRAGHook"

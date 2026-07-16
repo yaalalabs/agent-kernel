@@ -223,7 +223,7 @@ with custom_runtime:
     
     # Execute agent with this runtime
     from agentkernel.core.model import AgentRequestText
-    requests = [AgentRequestText(text="Hello")]
+    requests = [AgentRequestText(prompt="Hello")]
     result = await custom_runtime.run(agent, session, requests)
 ```
 

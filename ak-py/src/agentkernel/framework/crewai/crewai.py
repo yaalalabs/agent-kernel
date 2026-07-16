@@ -337,15 +337,15 @@ class CrewAIRunner(Runner):
                 if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
                 if isinstance(req, AgentRequestText):
-                    prompt = prompt + "\n" + req.text if prompt else req.text
+                    prompt = prompt + "\n" + req.prompt if prompt else req.prompt
                 else:
                     return AgentReplyText(
-                        text="Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment",
+                        response="Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment",
                         prompt=prompt,
                     )
 
             if prompt.strip() == "":
-                return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+                return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
 
             memory = self._memory(session)
             if memory:
@@ -386,7 +386,7 @@ class CrewAIRunner(Runner):
                     reply_text = "" if raw_reply is None else str(raw_reply)
                 else:
                     reply_text = "" if reply is None else str(reply)
-                agent_reply = AgentReplyText(text=reply_text, prompt=prompt)
+                agent_reply = AgentReplyText(response=reply_text, prompt=prompt)
 
             if transcript is not None:
                 transcript.append(f"User: {prompt}")
@@ -395,7 +395,7 @@ class CrewAIRunner(Runner):
 
             return agent_reply
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()

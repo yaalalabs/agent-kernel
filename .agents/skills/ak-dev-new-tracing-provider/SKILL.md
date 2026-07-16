@@ -132,7 +132,7 @@ class <Provider>OpenAIRunner(OpenAIRunner):
         ) as span:
             try:
                 result = await super().run(agent, session, requests)
-                span.set_attribute("output_length", len(result.text) if hasattr(result, 'text') else 0)
+                span.set_attribute("output_length", len(result.response) if hasattr(result, 'response') else 0)
                 span.set_status("OK")
                 return result
             except Exception as e:

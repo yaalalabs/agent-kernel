@@ -509,7 +509,7 @@ from agentkernel.deployment.common import ThreadRunner
 ```
 User Input
     → AgentService.run(prompt)
-        → AgentRequestText(text=prompt)
+        → AgentRequestText(prompt=prompt)
         → Runtime.run(agent, session, requests)
             → async with session:                    # acquire lock, set context
             → PreHooks (agent hooks, then system)    # guardrails, multimodal, RAG, etc.

@@ -270,7 +270,7 @@ class GuardRailHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request (assuming single text request)
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests  # No text to validate
         
@@ -307,7 +307,7 @@ class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request (assuming single text request)
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests  # No text to enrich
         
@@ -322,7 +322,7 @@ class RAGHook(PreHook):
 Question: {prompt}
 
 Please answer the question using the provided context."""
-            return [AgentRequestText(text=enriched_prompt)]
+            return [AgentRequestText(prompt=enriched_prompt)]
         
         # No relevant context found - return original
         return requests
@@ -343,7 +343,7 @@ class ModerationHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         # Extract text from reply
         if isinstance(agent_reply, AgentReplyText):
-            reply_text = agent_reply.text
+            reply_text = agent_reply.response
         else:
             return agent_reply  # Can't moderate non-text replies
         
@@ -382,7 +382,7 @@ class DisclaimerHook(PostHook):
         
         # Add disclaimer to text replies
         if isinstance(agent_reply, AgentReplyText):
-            return AgentReplyText(text=agent_reply.text + disclaimer)
+            return AgentReplyText(response=agent_reply.response + disclaimer)
         
         return agent_reply
     
@@ -407,7 +407,7 @@ class AnalyticsHook(PreHook):
         # Extract text for logging (if available)
         prompt_text = None
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt_text = requests[0].text
+            prompt_text = requests[0].prompt
         
         # Log the interaction
         self.logger.log({
@@ -474,7 +474,7 @@ class RobustRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
@@ -482,7 +482,7 @@ class RobustRAGHook(PreHook):
             context = self.knowledge_base.search(prompt)
             if context:
                 enriched = self._enrich_prompt(prompt, context)
-                return [AgentRequestText(text=enriched)]
+                return [AgentRequestText(prompt=enriched)]
         except Exception as e:
             # Log error but don't crash
             self.logger.error(f"RAG lookup failed: {e}")
@@ -511,20 +511,20 @@ class OptimizedRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
         # Check cache first
         cache_key = hash(prompt)
         if cache_key in self.cache:
-            return [AgentRequestText(text=self.cache[cache_key])]
+            return [AgentRequestText(prompt=self.cache[cache_key])]
         
         # Perform lookup
         enriched = self._do_rag(prompt)
         self.cache[cache_key] = enriched
         
-        return [AgentRequestText(text=enriched)]
+        return [AgentRequestText(prompt=enriched)]
     
     def name(self):
         return "OptimizedRAGHook"
@@ -546,17 +546,17 @@ class ConfigurableGuardRailHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
         # Validate based on configuration
         if len(prompt) > self.max_length:
-            return AgentReplyText(text=f"Input too long (max {self.max_length} chars)")
+            return AgentReplyText(response=f"Input too long (max {self.max_length} chars)")
         
         for keyword in self.blocked_keywords:
             if keyword in prompt.lower():
-                return AgentReplyText(text=f"Cannot process requests about '{keyword}'")
+                return AgentReplyText(response=f"Cannot process requests about '{keyword}'")
         
         return requests
     
@@ -580,7 +580,7 @@ class AsyncRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
@@ -591,7 +591,7 @@ class AsyncRAGHook(PreHook):
         if results:
             context = "\n".join([r.text for r in results])
             enriched = f"Context:\n{context}\n\nQuestion: {prompt}"
-            return [AgentRequestText(text=enriched)]
+            return [AgentRequestText(prompt=enriched)]
         
         return requests
     
@@ -623,7 +623,7 @@ class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
@@ -631,7 +631,7 @@ class RAGHook(PreHook):
         context = self._search_knowledge_base(prompt)
         if context:
             enriched = f"Context: {context}\n\nQuestion: {prompt}"
-            return [AgentRequestText(text=enriched)]
+            return [AgentRequestText(prompt=enriched)]
         return requests
     
     def _search_knowledge_base(self, query):
@@ -647,13 +647,13 @@ class GuardRailHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
         for keyword in self.BLOCKED:
             if keyword in prompt.lower():
-                return AgentReplyText(text=f"Cannot assist with '{keyword}'")
+                return AgentReplyText(response=f"Cannot assist with '{keyword}'")
         return requests
     
     def name(self):
@@ -662,7 +662,7 @@ class GuardRailHook(PreHook):
 class DisclaimerHook(PostHook):   
     async def on_run(self, session, requests, agent, agent_reply):
         if isinstance(agent_reply, AgentReplyText):
-            return AgentReplyText(text=agent_reply.text + "\n\n*Disclaimer: AI-generated content.*")
+            return AgentReplyText(response=agent_reply.response + "\n\n*Disclaimer: AI-generated content.*")
         return agent_reply
     
     def name(self):
@@ -872,7 +872,7 @@ OpenAIModule([agent]).pre_hook(agent, [...]).post_hook(agent, [...])
 
 ```python
 # ❌ Wrong: Halts execution
-return AgentReplyText(text="Execution halted")
+return AgentReplyText(response="Execution halted")
 
 # ✅ Correct: Continues execution
 return requests  # or modified requests list
@@ -888,16 +888,16 @@ return requests  # or modified requests list
 # ❌ Wrong: Returns original
 async def on_run(self, session, agent, requests):
     if requests and isinstance(requests[0], AgentRequestText):
-        prompt = requests[0].text
+        prompt = requests[0].prompt
         enriched = f"Context: {context}\n{prompt}"
     return requests  # Returns original!
 
 # ✅ Correct: Returns modified
 async def on_run(self, session, agent, requests):
     if requests and isinstance(requests[0], AgentRequestText):
-        prompt = requests[0].text
+        prompt = requests[0].prompt
         enriched = f"Context: {context}\n{prompt}"
-        return [AgentRequestText(text=enriched)]  # Returns modified
+        return [AgentRequestText(prompt=enriched)]  # Returns modified
 ```
 
 ### Hooks Executing in Wrong Order

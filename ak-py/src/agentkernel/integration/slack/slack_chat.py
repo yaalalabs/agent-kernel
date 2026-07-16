@@ -130,7 +130,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             # Build requests list with text, files, and images
             requests = []
             if question:
-                requests.append(AgentRequestText(text=question))
+                requests.append(AgentRequestText(prompt=question))
 
             # Process files and images
             failed_files = []

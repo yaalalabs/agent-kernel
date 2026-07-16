@@ -461,7 +461,7 @@ class RAGPreHook(PreHook):
         prompt = ""
         for req in requests:
             if isinstance(req, AgentRequestText):
-                prompt = req.text
+                prompt = req.prompt
                 break
 
         # Retrieve relevant context (your RAG logic here)
@@ -470,7 +470,7 @@ class RAGPreHook(PreHook):
         # Modify the prompt with additional context
         if context:
             enhanced_prompt = f"Context: {context}\n\nUser question: {prompt}"
-            return [AgentRequestText(text=enhanced_prompt)]
+            return [AgentRequestText(prompt=enhanced_prompt)]
 
         return requests
 
@@ -493,7 +493,7 @@ class DisclaimerPostHook(PostHook):
     async def on_run(
         self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
     ) -> AgentReply:
-        agent_reply.text += "\n\n_Disclaimer: This is AI-generated content._"
+        agent_reply.response += "\n\n_Disclaimer: This is AI-generated content._"
         return agent_reply
 
     def name(self) -> str:

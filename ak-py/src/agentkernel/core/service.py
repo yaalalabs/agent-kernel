@@ -124,11 +124,11 @@ class AgentService:
 
         :param prompt: Prompt to send to the agent.
         """
-        requests = [AgentRequestText(text=prompt)]
+        requests = [AgentRequestText(prompt=prompt)]
 
         result = await self.run_multi(requests)
         if isinstance(result, AgentReplyText):
-            result = result.text
+            result = result.response
         elif isinstance(result, AgentReplyAny):
             result = str(result)
         else:

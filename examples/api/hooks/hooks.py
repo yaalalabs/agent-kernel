@@ -49,7 +49,7 @@ class GuardRailHook(PreHook):
         """
         # NOTE:  we are assuming single text request for simplicity
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests  # No text prompt to validate
 
@@ -62,7 +62,7 @@ class GuardRailHook(PreHook):
                     f"I apologize, but I cannot assist with requests related to '{keyword}'. "
                     "Please ask a different question that complies with ethical guidelines."
                 )
-                return AgentReplyText(text=rejection_message)
+                return AgentReplyText(response=rejection_message)
 
         # Check for excessively long inputs (potential abuse)
         if len(prompt) > 5000:
@@ -123,7 +123,7 @@ class RAGHook(PreHook):
         """
         # NOTE:  we are assuming single text request for simplicity
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests  # No text prompt to validate
 
@@ -147,7 +147,7 @@ Please use this context to help answer the following question:
 
 If the context is relevant, incorporate it into your answer. If not, answer based on your general knowledge."""
 
-            return [AgentRequestText(text=enriched_prompt)]  # Note: We assume that there is only one text request
+            return [AgentRequestText(prompt=enriched_prompt)]  # Note: We assume that there is only one text request
 
         # No relevant context found - proceed with original prompt
         return requests
@@ -184,7 +184,7 @@ class DisclaimerHook(PostHook):
                               agent reply. For subsequent posthooks, this is the reply modified by previous posthooks in the chain.
         :return: The modified reply with disclaimer appended
         """
-        agent_reply.text = agent_reply.text + self.DISCLAIMER
+        agent_reply.response = agent_reply.response + self.DISCLAIMER
         return agent_reply
 
     def name(self) -> str:
