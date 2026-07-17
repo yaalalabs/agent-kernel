@@ -93,23 +93,20 @@ class AgentReplyText(AgentRequestText):
     response: str : This is the agent output text
     prompt: str : The text prompt sent to the agent
 
-    Inherits `prompt` (input) and `type` from AgentRequestText; `prompt` is made
-    optional here, and `response` holds the agent output.
+    Inherits `prompt` (input) and `type` from AgentRequestText, and `response` holds the agent output.
     """
 
-    prompt: str = ""
     response: str = ""
 
     def __str__(self) -> str:
         return self.response
 
 
-class AgentReplyImage(BaseModel):
+class AgentReplyImage(AgentRequestText):
     """
     AgentReplyImage encapsulates a text & image reply from an agent.
 
     response: str  : This is the agent output text
-    prompt: str : The text prompt sent to the agent
     image_data: str  : This should be base64 encoded string
     name: str : name of the image
     type: Literal["image"]
@@ -117,7 +114,6 @@ class AgentReplyImage(BaseModel):
     """
 
     response: str
-    prompt: str = ""
     image_data: str
     name: str
     type: Literal["image"] = "image"
