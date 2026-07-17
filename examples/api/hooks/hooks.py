@@ -67,7 +67,7 @@ class GuardRailHook(PreHook):
         # Check for excessively long inputs (potential abuse)
         if len(prompt) > 5000:
             return AgentReplyText(
-                text="Your input is too long. Please keep your questions concise (under 5000 characters)."
+                response="Your input is too long. Please keep your questions concise (under 5000 characters)."
             )
         # Prompt is safe - proceed with execution
         return requests
