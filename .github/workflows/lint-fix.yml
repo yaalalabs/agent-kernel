@@ -1,0 +1,68 @@
+name: Lint and Commit
+
+on:
+  workflow_dispatch:
+    inputs:
+      lint_target:
+        description: 'Which lint command to run'
+        required: true
+        type: choice
+        default: lint-all
+        options:
+          - lint
+          - lint-examples
+          - lint-all
+      branch:
+        description: 'Branch to lint and commit the formatting changes to'
+        required: true
+        type: string
+
+jobs:
+  lint-fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Reject protected branches
+        env:
+          # Branches that are not allowed to be linted/committed to.
+          PROTECTED_BRANCHES: "develop"
+          TARGET_BRANCH: ${{ inputs.branch }}
+        run: |
+          for branch in $PROTECTED_BRANCHES; do
+            if [ "$TARGET_BRANCH" = "$branch" ]; then
+              echo "❌ Linting and committing directly to '$TARGET_BRANCH' is not allowed."
+              exit 1
+            fi
+          done
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Run lint
+        run: make ${{ inputs.lint_target }}
+
+      - name: Commit and push formatting changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No formatting changes to commit."
+            exit 0
+          fi
+          git add -A
+          git commit -m "chore: apply ${{ inputs.lint_target }} formatting"
+          git push origin HEAD:${{ inputs.branch }}
