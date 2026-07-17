@@ -21,6 +21,10 @@ Rename the input field `AgentRequestText.text` to `prompt`, and rename the agent
 
 - Rename `AgentRequestText.text` → `prompt` (field, type stays `str`).
   - Update the class docstring and `__str__` (returns `self.prompt`).
+- Add an optional `prompt: str = ""` field to `AgentRequestImage` so an image request/reply can
+  carry its originating text prompt, and so `AgentReplyImage` can inherit `prompt` from it (see
+  "Reply models"). Update the `AgentRequestImage` docstring accordingly. This is a small additive
+  change beyond the pure rename; the field is optional so existing constructions are unaffected.
 - Update every construction `AgentRequestText(text=...)` → `AgentRequestText(prompt=...)` and every read `req.text` → `req.prompt`, including:
   - Core: `service.py:127`, `chat_service.py:42,56`, `multimodal/hooks.py:155,169,172`.
   - Framework runners (isinstance + `.text` read): `framework/openai/openai.py:111-112`, `adk/adk.py:113-114`, `langgraph/langgraph.py:339-340`, `crewai/crewai.py:339-340`, `smolagents/smolagents.py:142-143`, `trace/langfuse/langgraph.py:39-40`.
@@ -32,7 +36,7 @@ Rename the input field `AgentRequestText.text` to `prompt`, and rename the agent
 - `AgentReplyText`: the agent-output value currently held in the inherited `text` field becomes an explicit `response` field.
   - Keep inheriting from `AgentRequestText` so the reply carries `prompt` (input); override `prompt` with a default to preserve the current optional behaviour (`prompt: str = ""`, was `model.py:98`).
   - Add `response: str = ""`; `__str__` returns `self.response`.
-- `AgentReplyImage`: rename `text` → `response` (output); leave `prompt` (input) and image fields unchanged; `__str__` uses `self.response`.
+- `AgentReplyImage`: reparent from `BaseModel` onto `AgentRequestImage` so it inherits `prompt` (input) and the image fields (`image_data`, `name`, `type`, `mime_type`) instead of redeclaring them; the former `text` output field becomes an explicit `response: str`; `__str__` uses `self.response`. (This replaces the earlier plan of keeping it a standalone `BaseModel` and merely renaming `text` → `response`.)
 - `AgentReplyAny`: `prompt` (input) unchanged; `from_output(..., prompt=...)` signature unchanged. Whether the output field `content` is renamed is an open question (see below) — default recommendation is to leave it `content`.
 - The `AgentReply` union alias (`model.py:128`) and `core/__init__.py` re-exports (`:20,22,23,24`) are unaffected by field renames (class names unchanged).
 

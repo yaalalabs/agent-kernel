@@ -26,8 +26,10 @@ source consumers move together.
   `guardrail/{guardrail,walledai,bedrock,openai}.py`, 7 integration chat handlers,
   docstrings in `core/{hooks,runtime,service}.py`.
 - **Steps:**
-  1. `core/model.py`: rename `AgentRequestText.text → prompt`; add `AgentReplyText.response`
-     (`__str__` returns it); rename `AgentReplyImage.text → response`; update docstrings
+  1. `core/model.py`: rename `AgentRequestText.text → prompt`; add optional `prompt: str = ""` to
+     `AgentRequestImage`; add `AgentReplyText.response` (`__str__` returns it); reparent
+     `AgentReplyImage` onto `AgentRequestImage` and replace its `text` output field with
+     `response` (image + `prompt` fields now inherited, no longer redeclared); update docstrings
      (design.md "Request model" / "Reply models").
   2. Update every `AgentRequestText(text=...)` construction and `req.text` read
      (design.md "Request model" site list).
