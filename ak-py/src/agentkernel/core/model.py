@@ -46,6 +46,7 @@ class AgentRequestImage(BaseModel):
     type: Literal["image"]
     mime_type: str | None = None : Optional. The IANA standard MIME type of the image
     """
+
     prompt: str = ""
     image_data: str
     name: str
