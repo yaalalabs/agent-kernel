@@ -4,7 +4,7 @@ import pytest
 
 from agentkernel.core.base import Agent, Session
 from agentkernel.core.config import AKConfig
-from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
+from agentkernel.core.model import AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequestText
 from agentkernel.guardrail.guardrail import (
     BaseGuardrailUtil,
     InputGuardrail,
@@ -213,3 +213,8 @@ class TestBaseGuardrailUtil:
         content = {"city": "Colombo", "temp_c": 31}
         reply = AgentReplyAny(content=content)
         assert BaseGuardrailUtil._extract_text_from_reply(reply) == json.dumps(content)
+
+    def test_extract_text_from_image_reply(self):
+        """Image replies must have their caption text scanned, not silently skipped."""
+        reply = AgentReplyImage(response="a caption", image_data="base64data", name="pic.png")
+        assert BaseGuardrailUtil._extract_text_from_reply(reply) == "a caption"
