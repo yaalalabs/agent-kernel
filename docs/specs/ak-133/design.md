@@ -206,9 +206,12 @@ Research backing: [.agents/skills/ak-dev-sandbox-research/](../../../.agents/ski
   - **In-process await** (thread/embedded flavors): the tool awaits a future; no polling.
   - **Suspend/resume** (queue-backed flavors; the only mode for Lambda runners): the tool returns
     a task handle and the turn ends; the broker's completion event on the **agent input queue**
-    re-invokes the session with a framework-agnostic task-completion `AgentRequest` — a new core
-    request type, the one core touchpoint of this design. Pending tasks are registered in
-    `session.nv_cache`; completions are deduped by `task_id`.
+    re-invokes the session with a framework-agnostic task-completion request. It rides the
+    existing `AgentRequestAny` channel (extra request-body fields already become
+    `AgentRequestAny` objects handled only by pre-hooks) — no new core request type is needed,
+    so core is touched only at the three established wiring points (config section, system-tool
+    factory, system pre-hook registration). Pending tasks are registered in `session.nv_cache`;
+    completions are deduped by `task_id`.
   - **Bounded DB poll** (Lambda runners, optional) for sub-second executions.
   - One client call with a wait policy promotes long executions to task handles; pure
     asynchronous submit-and-end-turn tasks are first-class.
@@ -377,4 +380,8 @@ graph LR
     queue rejected (no selective receive on SQS, receive amplification, DLQ interference, no
     lookup-by-id); Lambda runners are suspend/resume only; per-runner reply-to queues deferred;
     workload-profile routing adopted; per-cloud terraform modules own provisioning.
+  - Resolved 2026-07-16 (stage-2 detailing, flagged as a design deviation): the task-completion
+    re-invocation needs no new core `AgentRequest` type — it rides the existing
+    `AgentRequestAny` extra-field channel, shrinking the core touchpoints to the three
+    established wiring points (see `spec.md`).
 - Implementation staging: to be agreed next and captured in `plan.md` (Stage 3), not here.
