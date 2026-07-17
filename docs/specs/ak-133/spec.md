@@ -1,8 +1,8 @@
 # AK-133: Sandbox capability — Implementation Spec
 
-> Status: stage 2 of the approved design ([design.md](design.md), review completed 2026-07-16,
-> PR #364). Both stages ship on this branch deliberately (fast-moving single-branch flow);
-> `plan.md` (stage 3) follows.
+> Status: **Approved** — spec review completed 2026-07-17 (PR #364). Stage 2 of the approved
+> design ([design.md](design.md), review completed 2026-07-16). Both stages ship on this branch
+> deliberately (fast-moving single-branch flow). Stage 3: [plan.md](plan.md).
 
 This spec details the implementation of the sandbox capability approved in
 [design.md](design.md): a new `agentkernel/sandbox/` package providing the `Sandbox`/

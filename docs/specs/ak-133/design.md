@@ -397,4 +397,4 @@ graph LR
     consolidated to `embedded`/`thread`/`sqs`(+`k8s_pod` future) with worker compute chosen at
     provisioning; `SandboxManager` is public API (custom-tool-author surface); test files split
     `test_sandbox*.py`.
-- Implementation staging: to be agreed next and captured in `plan.md` (Stage 3), not here.
+- Implementation staging: captured in [plan.md](plan.md) (stage 3).
