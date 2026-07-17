@@ -4,11 +4,12 @@ Breaks the rename in [design.md](design.md) into ordered iterations. No spec.md 
 change — it is a mechanical rename with no behavioural component, and design.md already enumerates
 every file; plan steps reference design.md sections directly.
 
-**Prerequisite — resolve design.md open questions.** The plan assumes the recommended answers:
+**Prerequisite — design.md decisions (resolved on AK-166).** The five questions in design.md
+"Resolved decisions" were signed off on the AK-166 ticket before this branch landed:
 `AgentReplyAny.content` keeps its name, clean break (no compatibility aliases), reply `prompt`
 stays optional (`= ""`), versioned doc snapshots excluded. The backward-compatibility decision
-(clean break vs. aliases) needs an explicit maintainer sign-off before Iteration 1 — it changes
-what Iteration 1 does to `core/model.py`.
+(clean break vs. aliases) — which determines what Iteration 1 does to `core/model.py` — carries
+that explicit maintainer sign-off.
 
 **Why the source sweep is one iteration:** `AgentReplyText` inherits from `AgentRequestText`, so
 renaming `text → prompt` on the request immediately collides with the reply's existing `prompt`
@@ -41,7 +42,7 @@ source consumers move together.
 ## Iteration 2: Tests
 
 - **Goal:** Full suite green.
-- **Files:** the 16 files in design.md "Tests": `test_model.py`, `test_runtime.py`,
+- **Files:** the 15 files in design.md "Tests": `test_runtime.py`,
   `test_module.py`, `test_tool.py`, `test_tool_adk.py`, `test_api_http.py`, the 5 runner tests,
   `test_guardrail.py`, `test_guardrail_walledai.py`, `test_thread_chat_service.py`,
   `test_thread_multimodal_hook.py`, `test_thread_manager.py`.
@@ -54,10 +55,9 @@ source consumers move together.
 ## Iteration 3: Docs and examples
 
 - **Goal:** All active docs and examples show the new field names.
-- **Files:** design.md "Documentation & skills" doc list — `docs/docs/core-concepts/{runner,runtime}.md`,
-  `docs/docs/architecture/{execution-flow,memory-management}.md`, `docs/docs/integrations/hooks.md`,
-  `docs/docs/advanced/multimodal.md`, `docs/docs/frameworks/{crewai,google-adk,langgraph,smolagents}.md`,
-  `docs/blog/2025-12-18-*.md`, `docs/blog/2026-03-10-*.md`; examples: `examples/api/hooks/*`,
+- **Files:** design.md "Documentation & skills" verified doc list — `docs/docs/core-concepts/{runner,runtime}.md`,
+  `docs/docs/architecture/memory-management.md`, `docs/docs/integrations/hooks.md`,
+  `docs/blog/2025-12-18-hooks-and-smart-memory.md`; examples: `examples/api/hooks/*`,
   `examples/api/openai/app.py`, `examples/api/openai_structured/*`, `examples/cli/openai_structured/*`,
   `examples/memory/key-value-cache/hooks.py`.
 - **Steps:**

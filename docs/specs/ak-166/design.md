@@ -55,7 +55,7 @@ Rename the input field `AgentRequestText.text` to `prompt`, and rename the agent
 ### Tests
 
 - Update all constructions, isinstance checks, and attribute assertions that use `text`/`.text` on requests/replies to `prompt`/`response`:
-  - `test_model.py`, `test_runtime.py`, `test_module.py`, `test_tool.py`, `test_tool_adk.py`, `test_api_http.py`.
+  - `test_runtime.py`, `test_module.py`, `test_tool.py`, `test_tool_adk.py`, `test_api_http.py`. (`test_model.py` is excluded — its only relevant line is `AgentReplyAny(content=..., prompt=...)`, both names unchanged.)
   - Runner tests: `test_openai_runner.py`, `test_adk_runner.py`, `test_crewai_runner.py`, `test_langgraph_runner.py`, `test_smolagents_runner.py`.
   - Guardrail tests: `test_guardrail.py`, `test_guardrail_walledai.py`.
   - Thread/multimodal tests: `test_thread_chat_service.py`, `test_thread_multimodal_hook.py`, `test_thread_manager.py`.
@@ -63,12 +63,12 @@ Rename the input field `AgentRequestText.text` to `prompt`, and rename the agent
 
 ### Documentation & skills
 
-- Active docs referencing `AgentRequestText(text=...)`, `AgentReplyText(text=...)`, `.text`, `reply.content`: `docs/docs/core-concepts/{runner,runtime}.md`, `docs/docs/architecture/{execution-flow,memory-management}.md`, `docs/docs/integrations/hooks.md`, `docs/docs/advanced/multimodal.md`, `docs/docs/frameworks/{crewai,google-adk,langgraph,smolagents}.md` (openai.md has no matches), `docs/blog/2025-12-18-*.md`, `docs/blog/2026-03-10-*.md`.
+- Active docs referencing the renamed fields (`AgentRequestText(text=...)`, `AgentReplyText(text=...)`, `.text`) — verified against the base branch: `docs/docs/core-concepts/{runner,runtime}.md`, `docs/docs/architecture/memory-management.md`, `docs/docs/integrations/hooks.md`, `docs/blog/2025-12-18-hooks-and-smart-memory.md`. No change needed on `docs/docs/architecture/execution-flow.md`, `docs/docs/advanced/multimodal.md`, or `docs/blog/2026-03-10-*.md` (zero occurrences), nor on `docs/docs/frameworks/{crewai,google-adk,langgraph,smolagents}.md` (match only on `AgentReplyAny`/`content` prose; `content` keeps its name). `openai.md` has no matches.
 - Dev skills under `.agents/skills/`: `ak-dev-architecture`, `ak-dev-testing-conventions`, `ak-dev-new-framework-integration`, `ak-dev-new-guardrail-provider`, `ak-dev-new-messaging-integration`, `ak-dev-new-tracing-provider`.
   - `ak-dev-new-tracing-provider/SKILL.md:135` needs a deliberate edit, not a mechanical rename: `len(result.text) if hasattr(result, 'text') else 0` — the `'text'` string literal inside `hasattr` won't be caught by an attribute rename and would silently fall through to the `else 0` branch.
   - `.claude/skills/` holds real file copies (not symlinks) of the dev skills, kept aligned by the `chore(auto): sync skills/docs` automation — either rely on that sync or update the copies in the same change so the diff stays clean.
 - User skills under `ak-py/src/agentkernel/skills/`: `ak-add-capabilities/SKILL.md` (includes `agent_reply.text += ...`). `ak-build/SKILL.md` only describes `AgentReplyAny.content` / `str(reply)` — it changes only if the `content` rename open question resolves to yes.
-- Source docstrings: `core/model.py`, `core/hooks.py:34,66`, `core/runtime.py:194`, `core/service.py:144`, `crewai.py` docstrings.
+- Source docstrings that name the field: `core/model.py` (field descriptions at :13, :93, :95, :108). (`core/hooks.py`, `core/runtime.py:194`, and `core/service.py:144` say "text prompt"/`content` only as prose — no field rename there; `crewai.py`'s `.text` usages are code already covered under the framework runners above.)
 - Examples: `examples/api/hooks/*`, `examples/api/openai/app.py`, `examples/api/openai_structured/*`, `examples/cli/openai_structured/*`, `examples/memory/key-value-cache/hooks.py:38-39` (includes `agent_reply.text` mutation examples).
 
 ## Non-goals
@@ -79,10 +79,12 @@ Rename the input field `AgentRequestText.text` to `prompt`, and rename the agent
 - Not changing any behaviour: reply/response payload shapes, structured-output semantics, guardrail masking logic, and `str()` renderings stay identical.
 - Not editing frozen versioned doc snapshots under `docs/versioned_docs/version-*` (subject to the scope open question below).
 
-## Open questions
+## Resolved decisions
 
-- **Does `AgentReplyAny.content` rename to `response`?** The task says rename the response content "from text to response"; `AgentReplyAny`'s output is a `dict` named `content`, not `text`. Recommendation: **leave it `content`** (distinct type/semantics; renaming ripples into `from_output`, `walledai.py:204`, and many `reply.content` tests/docs). Confirm.
-- **Confirm the third clause interpretation.** "Replace any remaining prompt fields in reply models with response where applicable" is read here as: resolve the `AgentReplyText` inheritance conflict by giving it an explicit `response` output field while the inherited field carries `prompt` (input). No reply field that holds *input* is renamed to `response`. Confirm this matches intent.
-- **Backward compatibility.** External users construct/read these models directly (`AgentRequestText(text=...)`, `agent_reply.text`), so this is a breaking change. Options: (a) clean break with a version/changelog note (recommended — simplest, matches the rename intent), or (b) add Pydantic field aliases / deprecation shims for a transition period. Decide before spec.
-- **Reply `prompt` field default.** Keep `prompt: str = ""` (optional) on reply models to preserve current construction ergonomics? Recommendation: **yes**.
-- **Versioned doc snapshots.** Exclude `docs/versioned_docs/version-*` (historical archives of past releases)? Recommendation: **exclude**.
+All five questions below were resolved on the AK-166 ticket (approved there before this branch landed); the recommended answers were adopted.
+
+- **`AgentReplyAny.content` keeps its name** (not renamed to `response`). `AgentReplyAny`'s output is a `dict` named `content`, semantically distinct from the text-reply field; renaming would ripple into `from_output`, `walledai.py:204`, and many `reply.content` tests/docs for no benefit.
+- **Third-clause interpretation confirmed.** "Replace any remaining prompt fields in reply models with response where applicable" resolves the `AgentReplyText` inheritance conflict by giving it an explicit `response` output field while the inherited field carries `prompt` (input). No reply field that holds *input* is renamed to `response`.
+- **Backward compatibility: clean break** (no Pydantic aliases / deprecation shims). External users construct/read these models directly (`AgentRequestText(text=...)`, `agent_reply.text`), so this is a breaking change, shipped with a version/changelog note. Approved on AK-166 — this satisfies the maintainer sign-off the plan's prerequisite calls for.
+- **Reply `prompt` field stays optional** (`prompt: str = ""`) to preserve current construction ergonomics.
+- **Versioned doc snapshots excluded** (`docs/versioned_docs/version-*` — historical archives of past releases are left untouched).
