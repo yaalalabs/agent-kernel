@@ -10,7 +10,7 @@ license: Apache-2.0
 metadata:
   author: yaalalabs
   category: developer
-  status: research-complete-design-pending
+  status: research-complete-design-approved
 ---
 
 # Sandbox Capability Research
@@ -53,12 +53,15 @@ First built-in backends should cover all three deployment models:
 
 ## Design Output
 
-- [docs/specs/ak-133/design.md](../../../docs/specs/ak-133/design.md) — the proposed
-  design spec for the sandbox capability (ticket AK-133; stage 1, under review), written
-  via the staged `ak-dev-write-spec` flow (design.md → spec.md → plan.md). The detailed
-  implementation spec (`docs/specs/ak-133/spec.md`) follows once the design review
-  settles. Earlier single-document drafts (`specs/sandbox/SPEC.md`, this skill's own
-  `spec.md`) were retired on 2026-07-15 in favor of the staged documents.
+- [docs/specs/ak-133/design.md](../../../docs/specs/ak-133/design.md) — the **approved**
+  design spec for the sandbox capability (ticket AK-133; stage 1 review completed
+  2026-07-16 via PR #364), written via the staged `ak-dev-write-spec` flow
+  (design.md → spec.md → plan.md).
+- [docs/specs/ak-133/spec.md](../../../docs/specs/ak-133/spec.md) — the stage-2
+  implementation spec, shipped on the same branch as the design (deliberate single-branch
+  flow). The implementation plan (`plan.md`, stage 3) follows.
+- Earlier single-document drafts (`specs/sandbox/SPEC.md`, this skill's own `spec.md`)
+  were retired on 2026-07-15 in favor of the staged documents.
 
 ## Research Streams & Artifacts
 

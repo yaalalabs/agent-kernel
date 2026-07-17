@@ -1,5 +1,9 @@
 # AK-133: Sandbox capability — Implementation Spec
 
+> Status: stage 2 of the approved design ([design.md](design.md), review completed 2026-07-16,
+> PR #364). Both stages ship on this branch deliberately (fast-moving single-branch flow);
+> `plan.md` (stage 3) follows.
+
 This spec details the implementation of the sandbox capability approved in
 [design.md](design.md): a new `agentkernel/sandbox/` package providing the `Sandbox`/
 `SandboxProvider` interfaces, sandbox sessions, the RBAC permission boundary, the
@@ -7,9 +11,9 @@ queue-decoupled sandbox broker with workload-profile routing, seven first-party 
 the config/factory/tool wiring that follows AK's guardrail and multimodal precedents.
 [design.md](design.md) is the requirements source; this document is the how.
 
-One deviation from design.md was found while detailing (flagged for design re-review, and
-design.md has been updated alongside this spec): the task-completion re-invocation does **not**
-need a new core `AgentRequest` type. Completion events ride the existing `AgentRequestAny`
+One deviation from the original design was found while detailing and has been accepted into the
+design (design.md updated, resolution logged 2026-07-16): the task-completion re-invocation does
+**not** need a new core `AgentRequest` type. Completion events ride the existing `AgentRequestAny`
 channel — `BaseRunRequest` allows extra fields (`core/model.py:226`) and
 `RequestBuilder._attach_additional_context` already converts unknown body fields into
 `AgentRequestAny` objects handled only by pre-hooks (`core/chat_service.py:117-130`). Core is
@@ -30,7 +34,7 @@ ak-py/src/agentkernel/sandbox/
 ├── manager.py             # SandboxManager (agent-side façade, singleton)
 ├── factory.py             # SandboxProviderFactory + broker-flavor resolution
 ├── hooks.py               # SandboxPreHook + SandboxPreHookFactory (task-completion ingestion)
-├── tools.py               # system tools: run_code, run_command, check_sandbox_task
+├── tools.py               # system tools: run_code, run_command, write/read_sandbox_file, check_sandbox_task
 ├── testing.py             # FakeSandboxProvider + SandboxProviderContract (public, for BYO backends)
 ├── broker/
 │   ├── __init__.py
@@ -101,7 +105,7 @@ class IsolationTier(str, Enum):
 class SandboxCapabilities(BaseModel):
     isolation: IsolationTier            # mandatory, no default — declared honestly per provider
     shell: bool = False                 # execute_command supported
-    languages: list[str] = ["python"]   # languages accepted by execute_code
+    languages: list[str] = Field(default_factory=lambda: ["python"])  # languages accepted by execute_code
     files: bool = False                 # upload_file / download_file supported
     package_install: bool = False       # install_packages supported
     stateful: bool = False              # variables persist across execute_code calls in one sandbox
@@ -120,9 +124,9 @@ class SandboxResult(BaseModel):
     stdout: str = ""
     stderr: str = ""
     exit_code: int = 0                  # non-zero exit is a RESULT, not an exception
-    output_files: list[SandboxFile] = []
+    output_files: list[SandboxFile] = Field(default_factory=list)
     sandbox_session_id: str = ""        # stamped by the manager/worker before returning
-    provider_data: dict[str, Any] = {}  # provider-specific escape hatch; never required by callers
+    provider_data: dict[str, Any] = Field(default_factory=dict)  # provider-specific escape hatch; never required by callers
 
 class SandboxSession(BaseModel):
     sandbox_session_id: str             # uuid4 hex, minted by SandboxManager
@@ -144,14 +148,14 @@ class SandboxTask(BaseModel):
 class SandboxPrincipal(BaseModel):
     mode: Literal["agent", "user"] = "agent"
     subject: str                        # agent name, or resolved user identifier
-    credentials: dict[str, Any] = {}    # provider-interpreted (role ARN, K8s user/groups, RunAs user)
-    groups: list[str] = []
+    credentials: dict[str, Any] = Field(default_factory=dict)    # provider-interpreted (role ARN, K8s user/groups, RunAs user)
+    groups: list[str] = Field(default_factory=list)
 
 class SandboxPolicy(BaseModel):
     network_egress: Literal["allow", "deny", "allowlist"] = "allow"
-    network_allow: list[str] = []       # domains and/or CIDRs when egress == "allowlist"
-    fs_allow_read: list[str] = []       # empty = provider default
-    fs_allow_write: list[str] = []
+    network_allow: list[str] = Field(default_factory=list)       # domains and/or CIDRs when egress == "allowlist"
+    fs_allow_read: list[str] = Field(default_factory=list)       # empty = provider default
+    fs_allow_write: list[str] = Field(default_factory=list)
     cpu: float | None = None            # cores
     memory_mb: int | None = None
     timeout: float = 120.0              # per-execution wall clock, seconds
@@ -300,6 +304,12 @@ class SandboxManager:
   SandboxTask.model_dump()}}`. Plain dicts (not model instances) so the pickle-based session
   serde (`core/session/serde.py`) stays version-stable. `per_runtime` scope keeps its single
   shared entry in a class-level dict instead (process memory, by design).
+- **`per_runtime` concurrency — no pooling in v1** (closing the design's deferred
+  pooling/warm-start item): `per_runtime` maps to exactly one shared sandbox session per
+  profile, and its executions are serialized by the per-session lock. Deployments needing
+  parallel stateless throughput use `per_call` scope and scale broker workers horizontally
+  instead. An N-sandbox pool behind the shared session (with warm-start) is a documented later
+  optimization; v1 reserves no config surface for it.
 - **Session resolution**: explicit `sandbox_session_id` → registry lookup, miss →
   `SandboxSessionNotFoundError`. Omitted → the scope's default session for the resolved profile
   (registry key `default:<profile>`), created on first use. `per_call` → fresh ephemeral entry,
@@ -390,15 +400,29 @@ Flavors:
     `task_id`, configured by a `sandbox.broker.response_store` block with the same shape as
     `execution.response_store` (`_ResponseStoreConfig`, `core/config.py:295-301`). Records carry
     a TTL (`sandbox.broker.response_ttl`, default 86400 s).
+  - **Broker-side session inventory** (the durable backing for the idle sweep): on every
+    create/attach the worker upserts a record keyed `session:<sandbox_session_id>` into the same
+    response store — `{provider_type, sandbox_id, profile, idle_timeout, last_used_at}` — and
+    refreshes `last_used_at` on every operation; records carry TTL
+    `max(2 × idle_timeout, response_ttl)` so a dead worker's records still expire. This
+    inventory is broker-internal (the agent-side nv_cache registry remains the source of truth
+    for addressing).
   - **Workers**: `SandboxBrokerRunner(ECSSQSConsumer)` (`ecs_worker.py`) — container entry point
     polling the request queue, exported from `agentkernel.deployment.aws`; and
     `lambda_worker.lambda_handler` — the serverless worker, wired to the request queue by the
     terraform module's event source mapping. Both delegate each message to `BrokerWorkerCore`.
-    The ECS worker additionally runs the idle-session sweep (one scan per
-    `sandbox.broker.sweep_interval`, default 300 s, destroying sandboxes whose registry entry in
-    the response DB has expired past `idle_timeout`). The Lambda flavor refuses (fail-fast at
-    `submit`) requests whose effective timeout exceeds 840 s (14 min, 1 min under the platform
-    ceiling).
+    The ECS worker additionally runs the idle-session sweep: one pass per
+    `sandbox.broker.sweep_interval` (default 300 s) enumerates the broker-side session inventory
+    (below) via the store's native scan — DynamoDB `Scan` with `begins_with("session:")`,
+    Redis/Valkey `SCAN` on the key prefix, implemented per backend in `ecs_worker.py` — destroys
+    sandboxes idle past their `idle_timeout`, and deletes the inventory record; the agent-side
+    registry self-heals on next touch via `SandboxGoneError`.
+  - **Fail-fast timeout ceiling**: `submit()` (client-side) rejects with `SandboxPolicyError`
+    any request whose effective timeout exceeds `sandbox.broker.worker_timeout_ceiling` when
+    set — satisfying the design's "rejected at request time, not at execution death" without
+    the client guessing the worker's compute form. The terraform module outputs the ceiling
+    (840 s — one minute under the Lambda platform limit — in serverless mode; null in
+    server_based mode) into `AK_SANDBOX__BROKER__WORKER_TIMEOUT_CEILING`.
   - **Completion delivery** (DB-first, in order): (a) write the `SandboxCompletion` to the
     response DB; (b) if `wait_deadline` is `None` or `now > wait_deadline`, emit the completion
     event to the **agent input queue** (`execution.queues.input.url`) as a `BaseRunRequest`-shaped
@@ -452,9 +476,12 @@ caught and returned as `{"error": ...}` strings — tools never raise into the f
 - `write_sandbox_file(path, content, sandbox_session_id=None, profile=None)` /
   `read_sandbox_file(path, sandbox_session_id=None, profile=None)` — the design's tool-level
   file operations (workspace mode): UTF-8 text content, delegating to
-  `SandboxManager.upload`/`download`; reads capped at `tool_output_max_chars`; registered only
-  makes sense where a profile declares `files` (the tool returns the capability error string
-  otherwise).
+  `SandboxManager.upload`/`download`; reads capped at `tool_output_max_chars`.
+
+All five tools register unconditionally when the capability is enabled — registration is
+profile-agnostic because the profile is chosen per call; invoking a file tool against a profile
+whose provider lacks `files` returns the capability-error string like any other unsupported
+operation.
 - `check_sandbox_task(task_id)` — `SandboxManager.task_status`: registry first, then
   `broker.result()` (the response-DB lookup for suspend/resume recovery — "the user can come
   back and check").
@@ -561,9 +588,9 @@ class _SandboxIdentityConfig(BaseModel):
 
 class _SandboxPolicyConfig(BaseModel):
     network_egress: str = Field(default="allow", pattern="^(allow|deny|allowlist)$")
-    network_allow: list[str] = []
-    fs_allow_read: list[str] = []
-    fs_allow_write: list[str] = []
+    network_allow: list[str] = Field(default_factory=list)
+    fs_allow_read: list[str] = Field(default_factory=list)
+    fs_allow_write: list[str] = Field(default_factory=list)
     cpu: Optional[float] = None
     memory_mb: Optional[int] = None
     timeout: float = 120.0
@@ -577,6 +604,10 @@ class _SandboxBrokerConfig(BaseModel):
     sweep_interval: int = Field(default=300)
     request_queue_url: Optional[str] = None            # sqs flavor (terraform output)
     object_store_bucket: Optional[str] = None          # sqs flavor (terraform output)
+    worker_timeout_ceiling: Optional[float] = Field(
+        default=None,
+        description="Max effective execution timeout (s) the provisioned worker supports; terraform output — 840 in serverless mode, null in server_based. None = no ceiling.",
+    )
     response_store: Optional[_ResponseStoreConfig] = None  # sqs flavor; reuses the existing model
 
 class _SandboxProfileConfig(BaseModel):
@@ -585,7 +616,7 @@ class _SandboxProfileConfig(BaseModel):
     idle_timeout: int = Field(default=1800)
     identity: _SandboxIdentityConfig = Field(default_factory=_SandboxIdentityConfig)
     policy: _SandboxPolicyConfig = Field(default_factory=_SandboxPolicyConfig)
-    params: dict[str, Any] = {}                         # dotted-path providers
+    params: dict[str, Any] = Field(default_factory=dict)                         # dotted-path providers
     local_subprocess: Optional[_SandboxLocalSubprocessConfig] = None
     docker: Optional[_SandboxDockerConfig] = None
     e2b: Optional[_SandboxE2BConfig] = None
@@ -600,7 +631,7 @@ class _SandboxConfig(BaseModel):
     principal_resolver: Optional[str] = None            # dotted path
     tool_output_max_chars: int = Field(default=8000)
     broker: _SandboxBrokerConfig = Field(default_factory=_SandboxBrokerConfig)
-    profiles: dict[str, _SandboxProfileConfig] = {}
+    profiles: dict[str, _SandboxProfileConfig] = Field(default_factory=dict)
     # single-backend sugar (synthesized into profiles["default"] by a model_validator
     # when profiles is empty and type is set):
     type: Optional[str] = None
@@ -636,8 +667,9 @@ All intentional; none reachable unless `sandbox.enabled: true` except 1–3:
 2. `SystemToolFactory.get_all()` gains a config read of `AKConfig.get().sandbox` (returns no
    extra tools while disabled).
 3. `AKConfig` gains the `sandbox` section — new keys appear in generated config docs.
-4. With sandbox **enabled**: three system tools register on all agents and the system-prompt
-   suffix (`core/tool.py:181-197`) grows by their descriptions.
+4. With sandbox **enabled**: five system tools (`run_code`, `run_command`,
+   `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`) register on all agents and
+   the system-prompt suffix (`core/tool.py:181-197`) grows by their descriptions.
 5. With sandbox **enabled**: an inbound request body carrying a `sandbox_task_completion` extra
    field is intercepted by `SandboxPreHook` (consumed, deduped, or halted) instead of flowing to
    the agent as an ignored `AgentRequestAny`.
@@ -760,7 +792,8 @@ Ordered by `plan.md`; listed here for completeness:
   `mode = "serverless" | "server_based"` selects Lambda vs ECS worker; provisions request
   queue, response store table, object-store bucket, worker compute + IAM (queue-restricted
   producers/consumers per the trust boundary); **outputs** `request_queue_url`,
-  `response_store_table`, `object_store_bucket` for the `AK_SANDBOX__BROKER__*` env handoff.
+  `response_store_table`, `object_store_bucket`, and `worker_timeout_ceiling` (840 in
+  serverless mode, null in server_based) for the `AK_SANDBOX__BROKER__*` env handoff.
 - New dev skill `.agents/skills/ak-dev-new-sandbox-provider/` cloned from
   `ak-dev-new-guardrail-provider`'s structure once the interface lands; the research skill's
   status metadata flips per its own maintenance note.

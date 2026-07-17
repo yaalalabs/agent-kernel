@@ -1,5 +1,7 @@
 # AK-133: Sandbox capability — pluggable code execution, workspaces, and runtime attach
 
+> Status: **Approved** — design review completed 2026-07-16 (PR #364). Stage 2: [spec.md](spec.md).
+
 Add a framework-agnostic, pluggable sandbox capability: one interface through which agents execute
 LLM-generated code, work in a persistent isolated workspace, or attach to an existing runtime —
 with a first-class permission boundary (dual identity model + fail-closed policy) and an open
@@ -137,7 +139,8 @@ Research backing: [.agents/skills/ak-dev-sandbox-research/](../../../.agents/ski
 
 ### Sandbox sessions, lifecycle, and binding
 
-- `SandboxManager` (internal, agent-side) owns the cross-cutting logic so providers stay small:
+- `SandboxManager` (public API, agent-side — the supported surface for custom tool authors)
+  owns the cross-cutting logic so providers stay small:
   the sandbox-session registry and its `nv_cache` persistence, scope defaulting, invoking the
   `PrincipalResolver`, per-handle serialization (see concurrency contract), and delegation to the
   broker client. Tools and custom tool authors go through it, never through providers directly.
@@ -215,10 +218,15 @@ Research backing: [.agents/skills/ak-dev-sandbox-research/](../../../.agents/ski
   - **Bounded DB poll** (Lambda runners, optional) for sub-second executions.
   - One client call with a wait policy promotes long executions to task handles; pure
     asynchronous submit-and-end-turn tasks are first-class.
-- Broker flavors by deployment mode: `embedded` (in-process, opt-in per profile — no decoupling,
-  a deliberate operator trade), `thread` (CLI, REST API), `container` (containerized mode),
-  `ecs` (AWS server-based — long workloads), `lambda` (AWS serverless — stateless, short
-  workloads only, with fail-fast rejection of timeouts above its ceiling), `k8s_pod` (future).
+- Broker flavors — every deployment mode has one, and clients stay flavor-agnostic: in-process
+  `embedded` (opt-in per profile — no decoupling, a deliberate operator trade) and `thread`
+  (CLI, REST API); one queue-backed flavor per cloud — v1 `sqs`, whose worker compute is a
+  provisioning-time choice (Lambda for serverless: short, stateless workloads with fail-fast
+  rejection of timeouts above the provisioned ceiling; an ECS container for server-based and
+  containerized modes: long workloads); `k8s_pod` (future). *(Consolidated 2026-07-16 during
+  design review from the earlier per-mode list — the worker's compute form is a provisioning
+  choice, not a client-visible flavor; the former `container`/`ecs`/`lambda` flavors are the
+  `sqs` worker's deployment forms.)*
 - Broker contract is stateless — every request message is self-sufficient; live-handle caching is
   a server-based-flavor optimization.
 - Provisioning: a per-cloud terraform module (AWS only in v1; serverless-vs-server-based chosen
@@ -310,8 +318,9 @@ Research backing: [.agents/skills/ak-dev-sandbox-research/](../../../.agents/ski
 
 ### Testing
 
-- Consolidated `ak-py/tests/test_sandbox.py`; no real network, no Docker daemon required
-  (backend integration tests marked and skipped by default).
+- Tests under `ak-py/tests/test_sandbox*.py` (capability core, broker, providers — file split
+  per `spec.md`); no real network, no Docker daemon required (backend integration tests marked
+  and skipped by default).
 - A fake in-memory provider (analogous to the in-memory attachment store) exercises the full
   surface, and doubles as a reusable **provider contract test suite** for BYO backends.
 - Coverage required: capability matrix (declared-unsupported ops raise), fail-closed policy and
@@ -380,8 +389,12 @@ graph LR
     queue rejected (no selective receive on SQS, receive amplification, DLQ interference, no
     lookup-by-id); Lambda runners are suspend/resume only; per-runner reply-to queues deferred;
     workload-profile routing adopted; per-cloud terraform modules own provisioning.
-  - Resolved 2026-07-16 (stage-2 detailing, flagged as a design deviation): the task-completion
-    re-invocation needs no new core `AgentRequest` type — it rides the existing
+  - Resolved 2026-07-16 (found during stage-2 detailing, accepted into the design): the
+    task-completion re-invocation needs no new core `AgentRequest` type — it rides the existing
     `AgentRequestAny` extra-field channel, shrinking the core touchpoints to the three
     established wiring points (see `spec.md`).
+  - Resolved 2026-07-16 (design review, PR #364): design **approved**; broker flavor list
+    consolidated to `embedded`/`thread`/`sqs`(+`k8s_pod` future) with worker compute chosen at
+    provisioning; `SandboxManager` is public API (custom-tool-author surface); test files split
+    `test_sandbox*.py`.
 - Implementation staging: to be agreed next and captured in `plan.md` (Stage 3), not here.
