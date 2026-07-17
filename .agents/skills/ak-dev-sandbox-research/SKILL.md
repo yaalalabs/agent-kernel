@@ -59,7 +59,7 @@ First built-in backends should cover all three deployment models:
   (design.md → spec.md → plan.md).
 - [docs/specs/ak-133/spec.md](../../../docs/specs/ak-133/spec.md) — the stage-2
   implementation spec, shipped on the same branch as the design (deliberate single-branch
-  flow). The implementation plan (`plan.md`, stage 3) follows.
+  flow), and [plan.md](../../../docs/specs/ak-133/plan.md) (stage 3) completes the set.
 - Earlier single-document drafts (`specs/sandbox/SPEC.md`, this skill's own `spec.md`)
   were retired on 2026-07-15 in favor of the staged documents.
 

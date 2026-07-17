@@ -49,9 +49,10 @@ spec.md — steps below reference its sections.
 - **Files:** `sandbox/tools.py`, `sandbox/hooks.py`; `core/tool.py` (`SystemToolFactory`
   block), `core/runtime.py` (third system pre-hook).
 - **Steps:** spec §System tools, §Task-completion ingestion, §Consumer changes.
-- **Verify:** `uv run pytest tests/test_sandbox_tools.py tests/test_runtime.py` — tool
-  gating on/off, JSON contract, duplicate-completion halt; existing runtime/guardrail tests
-  green (hook-cache reset fixture already covers the third entry).
+- **Verify:** `uv run pytest tests/test_sandbox.py -k "tool" tests/test_runtime.py` — tool
+  gating on/off, JSON contract, duplicate-completion halt (tool coverage lives in
+  `test_sandbox.py` per spec §Testing); existing runtime/guardrail tests green (hook-cache
+  reset fixture already covers the third entry).
 
 ## Iteration 5: Thread broker flavor + wait-policy promotion
 
@@ -128,10 +129,10 @@ spec.md — steps below reference its sections.
 - **Goal:** the full spec §Testing matrix is present and green; no coverage gaps against the
   design's requirements checklist.
 - **Files:** `tests/test_sandbox.py`, `tests/test_sandbox_broker.py`,
-  `tests/test_sandbox_providers.py`, `tests/test_sandbox_tools.py` (fill any assertions not
-  landed with their iteration).
-- **Steps:** walk spec §Testing item by item; only `tests/test_runtime.py` among existing
-  files is touched (no patch targets move elsewhere — verified in spec).
+  `tests/test_sandbox_providers.py` (fill any assertions not landed with their iteration).
+- **Steps:** walk spec §Testing item by item; no existing test file changes (verified in spec
+  §Testing — the autouse hook-cache reset in `tests/test_runtime.py:15-23` already
+  accommodates the third system pre-hook, and no patch targets move).
 - **Verify:** `cd ak-py && uv run pytest` and `make lint-check-all` both clean.
 
 ## Iteration 12: Sync docs and skills

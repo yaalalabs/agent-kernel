@@ -740,6 +740,12 @@ only real subprocesses are `local_subprocess` tests running `sys.executable`):
     id; `per_call` destroys in `finally`; stale handle (`SandboxGoneError` on attach) recreates
     under the same id; idle-timeout expiry closes on next touch.
   - Single-backend config sugar synthesizes `profiles["default"]`.
+  - Agent surface (system tools): `SystemToolFactory.get_all()` returns the five sandbox tools
+    when enabled and none when disabled; each tool's JSON contract (result echoes
+    `sandbox_session_id`; promotion returns a task handle; machinery errors surface as
+    `{"error": ...}` strings, never exceptions); file tools against a non-`files` profile
+    return the capability-error string; `check_sandbox_task` resolves from the registry and
+    from `broker.result()`.
 - **`ak-py/tests/test_sandbox_broker.py`** — broker mechanics:
   - `embedded` and `thread` flavors end-to-end against `FakeSandboxProvider` (thread flavor:
     handles never touched from the caller loop — asserted via loop-identity capture).
