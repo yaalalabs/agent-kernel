@@ -53,12 +53,12 @@ First built-in backends should cover all three deployment models:
 
 ## Design Output
 
-- [docs/specs/ak-133/design.md](../../../docs/specs/ak-133/design.md) — the reviewed
-  design spec for the sandbox capability (ticket AK-133), written via the staged
-  `ak-dev-write-spec` flow (design.md → spec.md → plan.md). The detailed implementation
-  spec (`docs/specs/ak-133/spec.md`) follows once the design review settles. Earlier
-  single-document drafts (`specs/sandbox/SPEC.md`, this skill's own `spec.md`) were
-  retired on 2026-07-15 in favor of the staged documents.
+- [docs/specs/ak-133/design.md](../../../docs/specs/ak-133/design.md) — the proposed
+  design spec for the sandbox capability (ticket AK-133; stage 1, under review), written
+  via the staged `ak-dev-write-spec` flow (design.md → spec.md → plan.md). The detailed
+  implementation spec (`docs/specs/ak-133/spec.md`) follows once the design review
+  settles. Earlier single-document drafts (`specs/sandbox/SPEC.md`, this skill's own
+  `spec.md`) were retired on 2026-07-15 in favor of the staged documents.
 
 ## Research Streams & Artifacts
 
@@ -83,9 +83,9 @@ Detailed findings live in `references/`:
   - Multimodal storage: `AttachmentStore(ABC)` + `_build_driver()` factory
     keyed on `storage_type`, per-backend config sub-models, `ValueError` when
     the selected backend's config block is missing.
-  - Config: new `_SandboxConfig` section registered on `AKConfig`
-    (`ak-py/src/agentkernel/core/config.py` ~line 340), env-overridable via
-    `AK_SANDBOX__...`.
+  - Config: new `_SandboxConfig` section registered on the root `AKConfig` model
+    (`ak-py/src/agentkernel/core/config.py` — `class AKConfig`, section fields
+    currently ~379–405), env-overridable via `AK_SANDBOX__...`.
   - Optional deps: one extras group per backend in `ak-py/pyproject.toml`.
   - Exports: keep implementation internal; config-driven instantiation via
     factory (like guardrails). Only export what users must construct directly
@@ -177,32 +177,33 @@ Detailed findings live in `references/`:
   AK should expose isolation tier as a queryable/declared backend property,
   not just imply "sandboxed = safe" uniformly across backends.
 
-## Open Design Questions
+## Design Questions — all resolved by [docs/specs/ak-133/design.md](../../../docs/specs/ak-133/design.md)
 
-- Is the sandbox exposed to agents as a `SystemTool` (like
-  `AnalyzeAttachmentsTool`), as a `ToolBuilder`-bound plain function, or both?
-- Sandbox lifecycle binding: per-call, per-session (stored/reconnected via
-  session state), or per-runtime? Likely config-driven with per-session as the
-  default for workspace mode.
-- How to represent the permission boundary: a `SandboxPolicy` /
-  `ExecutionPrincipal` object resolved per-invocation (from `ToolContext` /
-  `Session`), mapped by each backend to its native mechanism (K8s
-  impersonation, IAM roles, container user/caps, network policy)?
-- Capability negotiation: backends differ (network egress control, snapshots,
-  port exposure, streaming). Minimal core interface + optional capability
-  flags/mixins, or fat interface with `NotImplementedError`? Leaning toward
-  flags (a `SandboxCapabilities` object) per both research streams — no
-  framework or provider surveyed does formal `supports(x)` negotiation, but a
-  typed flags object is more discoverable than duck typing and every backend
-  (even Azure/Bedrock's narrow contract) can honestly declare its flags.
-- Sync vs async: AK core is async (`Runner.run` is async) — sandbox interface
-  should be async-first. AutoGen 0.4's `CodeExecutor` ABC is the closest
-  prior-art shape to imitate (see framework-abstractions reference).
-- Registration mechanism for third-party backends: closed enum + lazy import
-  (AK's existing guardrail/multimodal pattern) vs. open dotted-path + Pydantic
-  config schema (AutoGen 0.4's `Component` system). The latter better serves
-  the explicit no-vendor-lock-in goal — leaning toward adopting it, possibly
-  with a short pre-registered list of first-party backends for convenience.
+Every question this research left open has been decided in the design spec; do
+not re-litigate them here — propose changes against `design.md` instead.
+
+- Agent exposure → **system tools** auto-registered via `SystemToolFactory`,
+  plus `ToolContext` access for custom tool authors (design.md § Agent
+  exposure).
+- Lifecycle binding → config-driven `sandbox.scope`: `per_session` (default) /
+  `per_call` / `per_runtime`, with an explicit agent-visible **sandbox
+  session** (`sandbox_session_id`) abstraction (design.md § Sandbox sessions,
+  lifecycle, and binding).
+- Permission boundary → `SandboxPrincipal` (agent/user modes) resolved
+  per-invocation by a pluggable `PrincipalResolver`, plus `SandboxPolicy`
+  with strict fail-closed enforcement, mapped by each backend to its native
+  mechanism (design.md § Permission boundary).
+- Capability negotiation → typed `SandboxCapabilities` flags object with a
+  mandatory declared `IsolationTier`; optional operations raise
+  `SandboxCapabilityError` (design.md § Core interface).
+- Sync vs async → async-first, AutoGen 0.4 `CodeExecutor` as prior-art shape
+  (design.md § Core interface).
+- Registration → built-in short names via lazy import **plus** open
+  dotted-path + Pydantic-config BYO registration (design.md § Factory and BYO
+  registration).
+- Decided beyond the original questions: a queue-decoupled **sandbox broker**
+  with workload-profile routing and database-first completions (design.md
+  § Sandbox broker).
 
 ## How to Continue This Research
 

@@ -90,8 +90,14 @@ Research backing: [.agents/skills/ak-dev-sandbox-research/](../../../.agents/ski
   (`stdout`, `stderr`, `exit_code`, `output_files`, `provider_data` escape hatch); exceptions are
   reserved for failures of the sandbox *machinery*.
 - Concurrency contract: a `Sandbox` instance is not thread-safe or event-loop-portable — used only
-  from the creating event loop, at most one in-flight execute call. AK guarantees this because
-  `Runtime.run()` holds the session lock for the turn.
+  from the creating event loop, at most one in-flight execute call. Providers may assume it; who
+  upholds it depends on the path:
+  - `per_session`/`per_call` synchronous execution: guaranteed by core today — `Runtime.run()`
+    holds the session lock for the turn, and a sandbox session belongs to one AK `Session`.
+  - `per_runtime` (shared across AK sessions), brokered, and suspended-task executions: the
+    session lock is not sufficient — the component that owns the live handle (the
+    `SandboxManager` in-process, the broker worker remotely) serializes access per sandbox
+    session (mechanism is `spec.md` detail).
 
 ### Permission boundary (RBAC) — first-class for all modes
 
@@ -131,6 +137,10 @@ Research backing: [.agents/skills/ak-dev-sandbox-research/](../../../.agents/ski
 
 ### Sandbox sessions, lifecycle, and binding
 
+- `SandboxManager` (internal, agent-side) owns the cross-cutting logic so providers stay small:
+  the sandbox-session registry and its `nv_cache` persistence, scope defaulting, invoking the
+  `PrincipalResolver`, per-handle serialization (see concurrency contract), and delegation to the
+  broker client. Tools and custom tool authors go through it, never through providers directly.
 - Every sandbox is addressed through a **sandbox session**: a logical identity with a stable
   `sandbox_session_id`, decoupled from the provider's live handle (which may be reattached or
   recreated behind the same ID).
@@ -163,81 +173,65 @@ Research backing: [.agents/skills/ak-dev-sandbox-research/](../../../.agents/ski
   `sandbox_session_id`).
 - Deterministic teardown — no orphaned containers/VMs (a recurring smolagents failure mode):
   `close()`/`destroy()` idempotent; `per_session` `close()` releases the live handle without
-  destroying backend state needed for a later attach, and ending an AK session destroys all its
-  sandbox sessions; `per_runtime` sandboxes (which have no session close path) register a
-  process-exit fallback (`atexit`/signal).
+  destroying backend state needed for a later attach.
+  - AK sessions end silently today (store TTL expiry or process exit — core has no session-end
+    event), so sandbox-session teardown must not depend on one. Teardown triggers are: explicit
+    destroy (tool/manager call), `per_call` scope completion, and — as the backstop against
+    orphans — a mandatory **idle timeout on every sandbox session**, enforced provider-side where
+    the backend supports it (E2B/Daytona auto-stop, ECS-broker sweeps) and broker-side otherwise.
+  - `per_runtime` sandboxes additionally register a process-exit fallback (`atexit`/signal).
 
 ### Sandbox broker — decoupled execution plane
 
 - In deployed modes, agent processes never drive providers directly: a **sandbox broker** sits
   between the agentic system and the sandboxes, decoupled by an input queue and a completion path.
-  - Callers (tools, `SandboxManager`) use one broker client interface everywhere; whether a call
-    executes in-process (embedded), via in-memory queues to a broker thread, or via SQS to a
-    remote broker is resolved from configuration (optionally per request). Callers cannot tell
-    the difference — transport stays orthogonal to backend type.
-  - The client interface and message contract are public (custom flavors register via the same
-    dotted-path mechanism as providers).
-- Trust boundary:
-  - Backend credentials (Docker socket, SaaS API keys, IAM roles) are held only by the broker;
-    agent processes never see them.
-  - Every execution request is an auditable message: code, workload profile, principal, policy.
-- Workload-profile routing:
-  - The broker owns a routing table: **workload profile** → backend type + scope + policy +
-    identity mode. Agents name a profile (or use the default); they never name providers directly.
-  - A single-backend configuration is the degenerate one-profile case.
-  - Capabilities are declared per profile, so the tool layer can advertise what each profile
-    supports; fail-closed policy/capability checks run broker-side per profile.
-- Completion contract — database-first:
-  - Result payloads above an inline threshold go to an object store (S3 on AWS); queue messages
-    carry references, never large payloads.
-  - Every completion is written to the response DB (the source of truth, with TTL) **before** any
-    notification is emitted; recovery and late lookup are always by `task_id` against the DB.
-  - Completion events are transient notifications; queues self-clean via message retention. There
-    is deliberately no housekeeping/migration job — SQS cannot be queried by id, the DB can.
-  - Terminal-message guarantee: exactly one terminal completion (success, failure, or timeout)
-    per task; the broker's DLQ path feeds a failure completion, never a silent black hole.
+- One broker client interface everywhere: whether a call executes in-process (embedded), over
+  in-memory queues to a broker thread, or over SQS to a remote broker is resolved from
+  configuration (optionally per request) — callers cannot tell the difference, and transport
+  stays orthogonal to backend type. The client interface and message contract are public (custom
+  flavors register via the same dotted-path mechanism as providers).
+- Trust boundary: backend credentials (Docker socket, SaaS API keys, IAM roles) are held only by
+  the broker; queue access is IAM-restricted; every execution request is an auditable message
+  (code, workload profile, principal, policy).
+- Workload-profile routing: the broker owns a routing table — **workload profile** → backend +
+  scope + policy + identity mode. Agents name a profile (or use the default), never a provider;
+  capabilities are declared, and fail-closed checks enforced, per profile. A single-backend
+  configuration is the degenerate one-profile case.
+- Completion contract is **database-first**: every completion is persisted to the response DB
+  (the source of truth, with TTL) before any notification; queue events are transient and queues
+  self-clean — there is deliberately no housekeeping/migration job. Large payloads travel as
+  object-store references, never inline. Exactly one terminal completion (success, failure, or
+  timeout) per task — the broker's DLQ path feeds a failure completion, never a silent black hole.
 - Completion patterns — wait capability is a property of the runner flavor, not the broker:
-  - **In-process await** (thread/embedded flavors): the tool awaits an asyncio future; no polling.
-  - **Suspend/resume** (all queue-backed flavors; the only mode for Lambda runners): the tool
-    returns a task handle and the turn ends, releasing the worker; the broker's completion event
-    is posted to the **agent input queue** and re-invokes the session with a framework-agnostic
-    task-completion `AgentRequest` — a new core request type, the one core touchpoint of this
-    design. Pending tasks are registered in `session.nv_cache` (`task_id` → sandbox session,
-    status, submitted-at); runners dedupe at-least-once completions by `task_id`.
-  - **Bounded DB poll** (Lambda runners, optional): a short capped poll window for sub-second
-    executions, then fall back to suspend/resume.
-  - One client call with a wait policy: await up to a flavor-specific threshold, then promote to
-    a task handle. Pure asynchronous tasks are first-class — an agent may submit, end its
-    execution, and be re-invoked only when the completion message arrives.
-- Broker flavors:
-
-  | Flavor | Runs as | Deployment mode | Notes |
-  |---|---|---|---|
-  | `embedded` | direct in-process call | any (opt-in per profile) | no decoupling; credentials in the agent process — a deliberate operator trade |
-  | `thread` | broker thread + in-memory queues | CLI, REST API | local default; near-zero overhead |
-  | `container` | dedicated container | containerized | |
-  | `ecs` | ECS service | AWS server-based | long workloads; may cache live handles |
-  | `lambda` | Lambda function | AWS serverless | stateless, short workloads only (15-minute ceiling); pre-warming deferred |
-  | `k8s_pod` | Kubernetes pod | on-premise (future) | deferred |
-
-- Statelessness contract: every request message is self-sufficient (profile, principal, policy,
-  `sandbox_session_id`, reconnect handle). Live-handle caching is an optimization permitted in
-  server-based flavors; the Lambda flavor declares itself unsuitable for live-handle-dependent
-  operation.
-- Fail-fast timeout validation: a policy timeout exceeding the selected flavor's ceiling
-  (Lambda: 15 minutes) is rejected at request time, not at execution death.
-- Provisioning: a per-cloud terraform module provisions broker, queues, object store, and response
-  DB, and **outputs the interface** (queue URLs/ARNs, bucket, table names) that application config
-  consumes. v1 ships the AWS module only; the serverless-vs-server-based flavor choice is made
-  inside the module.
+  - **In-process await** (thread/embedded flavors): the tool awaits a future; no polling.
+  - **Suspend/resume** (queue-backed flavors; the only mode for Lambda runners): the tool returns
+    a task handle and the turn ends; the broker's completion event on the **agent input queue**
+    re-invokes the session with a framework-agnostic task-completion `AgentRequest` — a new core
+    request type, the one core touchpoint of this design. Pending tasks are registered in
+    `session.nv_cache`; completions are deduped by `task_id`.
+  - **Bounded DB poll** (Lambda runners, optional) for sub-second executions.
+  - One client call with a wait policy promotes long executions to task handles; pure
+    asynchronous submit-and-end-turn tasks are first-class.
+- Broker flavors by deployment mode: `embedded` (in-process, opt-in per profile — no decoupling,
+  a deliberate operator trade), `thread` (CLI, REST API), `container` (containerized mode),
+  `ecs` (AWS server-based — long workloads), `lambda` (AWS serverless — stateless, short
+  workloads only, with fail-fast rejection of timeouts above its ceiling), `k8s_pod` (future).
+- Broker contract is stateless — every request message is self-sufficient; live-handle caching is
+  a server-based-flavor optimization.
+- Provisioning: a per-cloud terraform module (AWS only in v1; serverless-vs-server-based chosen
+  inside the module) provisions broker, queues, object store, and response DB, and **outputs the
+  interface** (queue URLs/ARNs, bucket, table names) that application config consumes.
 - Coupling: the broker client interface and message contract live in `agentkernel/sandbox/`;
   cloud flavors are deployment adapters under `deployment/aws/` (loaded via the dotted-path
   mechanism) — the existing coupling rule holds.
+- Detailed mechanics (message schema, DB/TTL layout, offload thresholds, dedup registry, flavor
+  internals) are `spec.md` (stage 2) material, per the agreed broker discussion recorded under
+  Open questions.
 
 ### Configuration
 
 - New `sandbox:` section on `AKConfig`, registered with the other capability sections on the root
-  model (`core/config.py:375-405`); env-overridable via `AK_SANDBOX__...`.
+  model (`core/config.py:378-405`); env-overridable via `AK_SANDBOX__...`.
 - Keys: `enabled` (default `false` — capability fully inert when off), `default_profile`,
   `profiles` (the workload-profile routing table: name → backend `type`, `scope`, `policy`
   (network/filesystem/resources/timeout/strict), `identity`, backend sub-config),

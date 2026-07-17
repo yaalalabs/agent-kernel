@@ -65,9 +65,11 @@ constructors — unless pass-through is deliberately added later.
 
 ### 3c. System-hook wiring point (`core/runtime.py`)
 
-- Line 12: imports guardrail factories; line 27: multimodal factory.
-- Line 48: `Runtime._system_pre_hooks = [InputGuardrailFactory.get(), MultimodalPreHookFactory.get()]`
-- Line 56: `Runtime._system_post_hooks = [OutputGuardrailFactory.get()]`
+(Line numbers as of 2026-07-16; the symbol names are authoritative.)
+
+- Line 12: imports guardrail factories; line 28: multimodal factory.
+- Line 49: `Runtime._system_pre_hooks = [InputGuardrailFactory.get(), MultimodalPreHookFactory.get()]`
+- Line 57: `Runtime._system_post_hooks = [OutputGuardrailFactory.get()]`
 
 If the sandbox is exposed as a system tool (like multimodal's
 `AnalyzeAttachmentsTool`) it needs an equivalent injection point; if it's a
@@ -75,16 +77,21 @@ hook, it plugs in here directly.
 
 ### 3d. Config sections (`core/config.py`)
 
-- `_GuardrailParamConfig` (210–217): `enabled: bool`,
+(Line numbers as of 2026-07-16; the symbol names are authoritative — they
+drift whenever `develop` adds config sections.)
+
+- `_GuardrailParamConfig` (~265): `enabled: bool`,
   `type: str = Field(pattern="^(openai|bedrock|walledai)$")`, provider-specific
-  optional fields; `_GuardrailConfig` (220–222) nests input/output.
-- `_MultimodalConfig` (179–202): `enabled`, `storage_type` regex enumerating
-  backends, optional per-backend sub-models (`redis`, `dynamodb`) defined at
-  168–176.
-- Root registration ~lines 336–340 via `default_factory`. A new
+  optional fields; `_GuardrailConfig` (~275) nests input/output.
+- `_MultimodalConfig` (~189): `enabled`, `storage_type` regex enumerating
+  backends, optional per-backend sub-models
+  (`_MultimodalStorageRedisConfig` ~178, `_MultimodalStorageDynamoDBConfig`
+  ~184).
+- Root registration: section fields on `class AKConfig` (~378, fields ~379–405)
+  via `default_factory`. A new
   `sandbox: _SandboxConfig = Field(default_factory=_SandboxConfig)` goes here.
 - Env-overridable: nested `AK_SECTION__FIELD` vars (e.g.
-  `AK_SANDBOX__E2B__API_KEY`); singleton via `AKConfig.get()` (348–370).
+  `AK_SANDBOX__E2B__API_KEY`); singleton via `AKConfig.get()` (~413).
 
 ### 3e. Optional dependencies (`ak-py/pyproject.toml`)
 
