@@ -1,19 +1,9 @@
----
-name: ak-dev-sandbox-research
-description: >
-  Research companion for designing Agent Kernel's pluggable sandbox capability.
-  Use this skill when researching sandbox providers, designing the Sandbox
-  interface, or resuming/extending the sandbox research effort. Captures the
-  agreed scope, research findings (provider landscape, prior-art abstractions,
-  AK codebase patterns), design constraints, and open questions.
-license: Apache-2.0
-metadata:
-  author: yaalalabs
-  category: developer
-  status: research-complete-design-approved
----
-
 # Sandbox Capability Research
+
+> Supporting research for the sandbox capability (issue #494). This folder holds the
+> investigation that informed [design.md](../design.md). It was formerly the
+> `ak-dev-sandbox-research` dev skill and was relocated here as change-scoped research
+> (per the `ak-dev-write-spec` `research/` convention).
 
 ## Goal
 
@@ -53,25 +43,24 @@ First built-in backends should cover all three deployment models:
 
 ## Design Output
 
-- [docs/specs/ak-133/design.md](../../../docs/specs/ak-133/design.md) — the **approved**
-  design spec for the sandbox capability (ticket AK-133; stage 1 review completed
-  2026-07-16 via PR #364), written via the staged `ak-dev-write-spec` flow
-  (design.md → spec.md → plan.md).
-- [docs/specs/ak-133/spec.md](../../../docs/specs/ak-133/spec.md) — the stage-2
-  implementation spec, shipped on the same branch as the design (deliberate single-branch
-  flow), and [plan.md](../../../docs/specs/ak-133/plan.md) (stage 3) completes the set.
-- Earlier single-document drafts (`specs/sandbox/SPEC.md`, this skill's own `spec.md`)
+- [design.md](../design.md) — the **approved** design spec for the sandbox capability
+  (issue #494; stage 1 review completed 2026-07-16 via PR #364), written via the staged
+  `ak-dev-write-spec` flow (design.md → spec.md → plan.md).
+- [spec.md](../spec.md) — the stage-2 implementation spec, shipped on the same branch as
+  the design (deliberate single-branch flow), and [plan.md](../plan.md) (stage 3) completes
+  the set.
+- Earlier single-document drafts (`specs/sandbox/SPEC.md`, this research's earlier `spec.md`)
   were retired on 2026-07-15 in favor of the staged documents.
 
 ## Research Streams & Artifacts
 
-Detailed findings live in `references/`:
+Detailed findings live alongside this README:
 
 | Reference | Contents | Status |
 |---|---|---|
-| [references/ak-codebase-patterns.md](references/ak-codebase-patterns.md) | How AK's existing pluggable capabilities are built (guardrail factory, multimodal storage, config, extras, exports) and the recommended layout for the sandbox capability | done |
-| [references/provider-landscape.md](references/provider-landscape.md) | Survey of sandbox providers: cloud SaaS (startup + platform + hyperscaler-native), self-hosted/OSS, in-process; isolation models, SDKs, pricing, capability matrix | done, except Google Vertex AI code execution (unresearched — see reference's §G) |
-| [references/framework-abstractions.md](references/framework-abstractions.md) | Prior art: how smolagents, AutoGen/AG2, LangChain/LangGraph, OpenAI Agents SDK, CrewAI, Google ADK, Claude Agent SDK/Claude Code, OpenHands, Open Interpreter, LlamaIndex abstract code execution; interface-design lessons | done |
+| [ak-codebase-patterns.md](ak-codebase-patterns.md) | How AK's existing pluggable capabilities are built (guardrail factory, multimodal storage, config, extras, exports) and the recommended layout for the sandbox capability | done |
+| [provider-landscape.md](provider-landscape.md) | Survey of sandbox providers: cloud SaaS (startup + platform + hyperscaler-native), self-hosted/OSS, in-process; isolation models, SDKs, pricing, capability matrix | done, except Google Vertex AI code execution (unresearched — see reference's §G) |
+| [framework-abstractions.md](framework-abstractions.md) | Prior art: how smolagents, AutoGen/AG2, LangChain/LangGraph, OpenAI Agents SDK, CrewAI, Google ADK, Claude Agent SDK/Claude Code, OpenHands, Open Interpreter, LlamaIndex abstract code execution; interface-design lessons | done |
 
 ## Key Facts Established So Far
 
@@ -180,7 +169,7 @@ Detailed findings live in `references/`:
   AK should expose isolation tier as a queryable/declared backend property,
   not just imply "sandboxed = safe" uniformly across backends.
 
-## Design Questions — all resolved by [docs/specs/ak-133/design.md](../../../docs/specs/ak-133/design.md)
+## Design Questions — all resolved by [design.md](../design.md)
 
 Every question this research left open has been decided in the design spec; do
 not re-litigate them here — propose changes against `design.md` instead.
@@ -217,6 +206,6 @@ not re-litigate them here — propose changes against `design.md` instead.
 3. Weigh every interface decision against the three usage modes and the two
    RBAC identity models in the Agreed Scope section — a design that only
    serves the code-interpreter mode is insufficient.
-4. Update the references and this SKILL.md as findings land; when the design
-   is settled, spin off `ak-dev-new-sandbox-provider` (clone the structure of
-   `ak-dev-new-guardrail-provider`) and mark this skill's status accordingly.
+4. Update these research files as findings land. The contributor guide
+   `ak-dev-new-sandbox-provider` (cloned from the structure of
+   `ak-dev-new-guardrail-provider`) is spun off separately once the interface lands.

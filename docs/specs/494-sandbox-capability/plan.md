@@ -149,8 +149,9 @@ spec.md — steps below reference its sections.
     factory short name → config block → extra → contract tests → example → docs checklist).
   - Skill inventories: `docs/docs/agent-skills.md` (fifteen → sixteen + table row) and
     `docs/specs/agent-skills.md` (table row + directory-tree entry).
-  - `.agents/skills/ak-dev-sandbox-research/SKILL.md`: status → implemented; its
-    "How to Continue" step 4 (spin off the provider skill) is satisfied by this iteration.
+  - `docs/specs/494-sandbox-capability/research/` (formerly the `ak-dev-sandbox-research`
+    skill, relocated here): its "How to Continue" note about spinning off the provider skill
+    is satisfied by this iteration.
   - `.agents/skills/ak-dev-architecture/SKILL.md`: add the sandbox capability to the
     directory structure and pluggable-capability lists.
   - Verified no-update-needed: integration/messaging skills, framework-adapter skills (no

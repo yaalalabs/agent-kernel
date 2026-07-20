@@ -9,7 +9,7 @@ registration mechanism so switching or adding backends is a config change, never
 In deployed modes a queue-decoupled **sandbox broker** separates the agentic system from sandbox
 execution, so throughput, credentials, and workload routing scale independently of agent workers.
 
-Research backing: [.agents/skills/ak-dev-sandbox-research/](../../../.agents/skills/ak-dev-sandbox-research/SKILL.md)
+Research backing: [research/](research/README.md)
 (provider landscape, prior-art framework abstractions, AK codebase patterns).
 
 ## Motivation
@@ -382,7 +382,7 @@ graph LR
 - None outstanding on the design.
   - Resolved 2026-07-15: issue is #494 (JIRA AK-133); `local_subprocess` ships in v1; `per_runtime` scope is
     in v1; network egress default stays `allow`; the pre-staged draft specs
-    (`specs/sandbox/SPEC.md`, `.agents/skills/ak-dev-sandbox-research/spec.md`) were deleted in
+    (`specs/sandbox/SPEC.md`, the research's earlier `spec.md`) were deleted in
     favor of this document.
   - Resolved 2026-07-16 (broker discussion): queue-decoupled sandbox broker ("broker", not
     "emulator") with DB-first completions and no housekeeping job; receive-and-filter on a shared
