@@ -1,4 +1,4 @@
-# AK-133: Sandbox capability — pluggable code execution, workspaces, and runtime attach
+# #494: Sandbox capability — pluggable code execution, workspaces, and runtime attach
 
 > Status: **Approved** — design review completed 2026-07-16 (PR #364). Stage 2: [spec.md](spec.md).
 
@@ -380,7 +380,7 @@ graph LR
 ## Open questions
 
 - None outstanding on the design.
-  - Resolved 2026-07-15: ticket is AK-133; `local_subprocess` ships in v1; `per_runtime` scope is
+  - Resolved 2026-07-15: issue is #494 (JIRA AK-133); `local_subprocess` ships in v1; `per_runtime` scope is
     in v1; network egress default stays `allow`; the pre-staged draft specs
     (`specs/sandbox/SPEC.md`, `.agents/skills/ak-dev-sandbox-research/spec.md`) were deleted in
     favor of this document.

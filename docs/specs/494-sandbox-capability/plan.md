@@ -1,4 +1,4 @@
-# AK-133: Sandbox capability — Implementation Plan
+# #494: Sandbox capability — Implementation Plan
 
 Ordered breakdown of [spec.md](spec.md) (approved 2026-07-17) into iterations. Each iteration
 leaves the branch working and testable; local, dependency-free value lands first (iterations

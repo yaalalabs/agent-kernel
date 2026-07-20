@@ -1,4 +1,4 @@
-# AK-133: Sandbox capability — Implementation Spec
+# #494: Sandbox capability — Implementation Spec
 
 > Status: **Approved** — spec review completed 2026-07-17 (PR #364). Stage 2 of the approved
 > design ([design.md](design.md), review completed 2026-07-16). Both stages ship on this branch
