@@ -6,6 +6,8 @@ is returned as a :class:`agentkernel.sandbox.model.SandboxResult`. These excepti
 signal failures of the sandbox *machinery* only.
 """
 
+from typing import Optional
+
 
 class SandboxError(Exception):
     """Base class for all sandbox capability errors."""
@@ -16,7 +18,24 @@ class SandboxConfigError(SandboxError):
 
 
 class SandboxCapabilityError(SandboxError):
-    """An operation the selected provider does not declare in its ``SandboxCapabilities``."""
+    """An operation the selected provider does not declare in its ``SandboxCapabilities``.
+
+    Raised either as ``SandboxCapabilityError(subject, capability)`` (e.g. the sandbox or
+    provider class name plus the missing capability) or ``SandboxCapabilityError(capability)``.
+    """
+
+    def __init__(self, *args: str) -> None:
+        self.subject: Optional[str] = None
+        self.capability: str = ""
+        if len(args) == 2:
+            self.subject, self.capability = args[0], args[1]
+            message = f"{self.subject} does not support capability: {self.capability}"
+        elif len(args) == 1:
+            self.capability = args[0]
+            message = f"unsupported capability: {self.capability}"
+        else:
+            message = ""
+        super().__init__(message)
 
 
 class SandboxPolicyError(SandboxError):

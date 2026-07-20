@@ -7,8 +7,11 @@ test_sandbox_broker.py / test_sandbox_providers.py.
 import pytest
 from pydantic import ValidationError
 
+from agentkernel.core.base import Session
 from agentkernel.core.config import AKConfig, _SandboxConfig, _SandboxDockerConfig, _SandboxProfileConfig
 from agentkernel.sandbox import errors
+from agentkernel.sandbox.base import Sandbox
+from agentkernel.sandbox.errors import SandboxCapabilityError
 from agentkernel.sandbox.model import (
     IsolationTier,
     SandboxCapabilities,
@@ -16,6 +19,8 @@ from agentkernel.sandbox.model import (
     SandboxPrincipal,
     SandboxResult,
 )
+from agentkernel.sandbox.principal import AgentPrincipalResolver
+from agentkernel.sandbox.testing import FakeSandboxProvider, SandboxProviderContract
 
 
 @pytest.fixture(autouse=True)
@@ -173,3 +178,79 @@ def test_config_env_override(monkeypatch):
     assert cfg.sandbox.tool_output_max_chars == 1234
     # sugar synthesis still runs after env-sourced fields are set
     assert cfg.sandbox.profiles["default"].type == "docker"
+
+
+# --------------------------------------------------------------------------- #
+# ABCs, provider contract, principal resolver (base.py / testing.py / principal.py)
+# --------------------------------------------------------------------------- #
+
+
+class TestFakeProviderContract(SandboxProviderContract):
+    """Run the reusable provider contract suite against FakeSandboxProvider."""
+
+    @pytest.fixture
+    def provider(self):
+        return FakeSandboxProvider()
+
+
+@pytest.mark.asyncio
+async def test_capability_matrix_undeclared_ops_raise():
+    # The fake declares package_install=False, so the base ABC raises for it, while the
+    # declared operations (shell, files) succeed.
+    provider = FakeSandboxProvider()
+    sandbox = await provider.create(principal=SandboxPrincipal(subject="a"), policy=SandboxPolicy())
+    try:
+        assert (await sandbox.execute_command("echo hi")).exit_code == 0
+        await sandbox.upload_file("f.txt", b"x")
+        assert await sandbox.download_file("f.txt") == b"x"
+        with pytest.raises(SandboxCapabilityError):
+            await sandbox.install_packages(["pkg"])
+    finally:
+        await sandbox.close()
+
+
+@pytest.mark.asyncio
+async def test_capability_abc_defaults_raise_for_optional_ops():
+    # A minimal Sandbox overriding only the mandatory surface inherits the raising
+    # defaults for every optional operation.
+    class _MinimalSandbox(Sandbox):
+        def __init__(self):
+            self.id = "minimal"
+
+        async def execute_code(self, code, language="python", timeout=None):
+            return SandboxResult(stdout=code)
+
+        async def close(self):
+            pass
+
+    sandbox = _MinimalSandbox()
+    with pytest.raises(SandboxCapabilityError):
+        await sandbox.execute_command("x")
+    with pytest.raises(SandboxCapabilityError):
+        await sandbox.upload_file("p", b"")
+    with pytest.raises(SandboxCapabilityError):
+        await sandbox.download_file("p")
+    with pytest.raises(SandboxCapabilityError):
+        await sandbox.install_packages(["p"])
+
+
+def test_capability_error_message_forms():
+    two = SandboxCapabilityError("DockerSandbox", "shell")
+    assert two.subject == "DockerSandbox" and two.capability == "shell"
+    assert "shell" in str(two)
+
+    one = SandboxCapabilityError("principal_user")
+    assert one.subject is None and one.capability == "principal_user"
+    assert "principal_user" in str(one)
+
+
+@pytest.mark.asyncio
+async def test_principal_resolver_default_agent_identity():
+    class _StubAgent:
+        name = "stub-agent"
+
+    principal = await AgentPrincipalResolver().resolve(Session("s1"), _StubAgent())
+    assert principal.mode == "agent"
+    assert principal.subject == "stub-agent"
+    assert principal.credentials == {}
+    assert principal.groups == []

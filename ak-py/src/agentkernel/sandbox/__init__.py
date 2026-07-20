@@ -5,12 +5,14 @@ isolated workspace, or attach to an existing runtime, with a first-class permiss
 boundary and an open provider-registration mechanism.
 
 This module is the capability's public surface. As the implementation lands across
-iterations it grows to export the ``Sandbox``/``SandboxProvider``/``SandboxBroker``/
-``PrincipalResolver`` ABCs, ``SandboxManager``, and the ``testing`` contract suite.
-The concrete factory, hooks, tools, providers, and brokers stay internal.
+iterations it grows to export ``SandboxBroker`` and ``SandboxManager``. The reusable
+provider contract suite lives in ``agentkernel.sandbox.testing`` and is imported
+explicitly from test code (it depends on pytest), so it is deliberately not re-exported
+here. The concrete factory, hooks, tools, providers, and brokers stay internal.
 """
 
 from . import errors
+from .base import Sandbox, SandboxProvider
 from .model import (
     IsolationTier,
     SandboxCapabilities,
@@ -21,9 +23,14 @@ from .model import (
     SandboxSession,
     SandboxTask,
 )
+from .principal import AgentPrincipalResolver, PrincipalResolver
 
 __all__ = [
     "errors",
+    "Sandbox",
+    "SandboxProvider",
+    "PrincipalResolver",
+    "AgentPrincipalResolver",
     "IsolationTier",
     "SandboxCapabilities",
     "SandboxFile",
