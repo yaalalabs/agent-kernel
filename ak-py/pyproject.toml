@@ -152,6 +152,18 @@ multimodal = [
     "litellm>=1.74.9",
     "python-multipart>=0.0.12",
 ]
+sandbox-docker = [
+    "docker>=7.0.0",
+]
+e2b = [
+    "e2b-code-interpreter>=2.0.0",
+]
+daytona = [
+    "daytona>=0.10.0",
+]
+kubernetes = [
+    "kubernetes>=30.0.0",
+]
 
 [project.scripts]
 ak = "agentkernel.cli.ak:main"
