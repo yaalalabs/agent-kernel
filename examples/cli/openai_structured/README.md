@@ -14,7 +14,7 @@ In-process consumers can use `AgentService.run_multi()` to get the reply object 
 directly — no re-parsing needed:
 
 ```python
-reply = await service.run_multi([AgentRequestText(text="...")])
+reply = await service.run_multi([AgentRequestText(prompt="...")])
 if isinstance(reply, AgentReplyAny):
     data = reply.content  # dict
 ```

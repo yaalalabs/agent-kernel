@@ -32,6 +32,20 @@ graph LR
 | **Smolagents** | Lightweight tool-driven agents | Medium | Yes |
 | **LiveKit Agents** *(coming soon)* | Real-time voice/video agents | Medium | Yes |
 
+## Capability Matrix
+
+Not every Agent Kernel capability is available on every framework:
+
+| Capability | OpenAI Agents | CrewAI | LangGraph | Google ADK | Smolagents |
+|------------|:---:|:---:|:---:|:---:|:---:|
+| Token streaming (`execution.mode: stream`) | ✅ | ❌ | ✅ | ✅ | ❌ |
+| Structured output (`AgentReplyAny`) | ✅ `output_type` | ✅ module-level `output_pydantic`/`output_json` | ✅ `response_format` | ✅ `output_schema` | ✅ dict/Pydantic `final_answer` |
+| Portable tools (`ToolBuilder`) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Multimodal attachments | ✅ | ✅* | ✅* | ✅ | ✅* |
+| Hooks / guardrails / sessions / deployments | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+\* Multimodal preprocessing (the attachment pre-hook and `analyze_attachments` tool) is framework-agnostic; direct image/file input via the REST API is currently documented for OpenAI Agents SDK and Google ADK. CrewAI and Smolagents raise `NotImplementedError` for streaming; use the default synchronous mode (or `rest_sync` on AWS) with those frameworks.
+
 ## Choosing a Framework
 
 ### OpenAI Agents SDK

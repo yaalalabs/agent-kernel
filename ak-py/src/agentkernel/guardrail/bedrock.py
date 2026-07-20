@@ -196,7 +196,7 @@ class BedrockInputGuardrail(BaseGuardrailUtil, BaseBedrockGuardrail, InputGuardr
                     "I apologize, but I'm unable to process this request as it may violate content safety guidelines. "
                     "Please rephrase your question or try a different topic."
                 )
-                return AgentReplyText(text=message, prompt=input_text)
+                return AgentReplyText(response=message, prompt=input_text)
 
             # Validation passed
             log.debug("Input passed Bedrock guardrail validation")
@@ -206,7 +206,7 @@ class BedrockInputGuardrail(BaseGuardrailUtil, BaseBedrockGuardrail, InputGuardr
             log.error(f"boto3 not available but Bedrock guardrails are enabled: {e}")
             input_text = self._extract_text_from_requests(requests)
             return AgentReplyText(
-                text="I apologize, but I'm unable to process your request at this time due to a configuration issue. "
+                response="I apologize, but I'm unable to process your request at this time due to a configuration issue. "
                 "Please contact support if this problem persists.",
                 prompt=input_text,
             )
@@ -214,7 +214,7 @@ class BedrockInputGuardrail(BaseGuardrailUtil, BaseBedrockGuardrail, InputGuardr
             log.error(f"Error during Bedrock input guardrail validation: {e}")
             input_text = self._extract_text_from_requests(requests)
             return AgentReplyText(
-                text="I apologize, but I'm unable to process your request at this time. "
+                response="I apologize, but I'm unable to process your request at this time. "
                 "Please try again or contact support if this issue continues.",
                 prompt=input_text,
             )
@@ -273,7 +273,7 @@ class BedrockOutputGuardrail(BaseGuardrailUtil, BaseBedrockGuardrail, OutputGuar
                     "Please try rephrasing your question."
                 )
 
-                return AgentReplyText(text=message, prompt=getattr(agent_reply, "prompt", ""))
+                return AgentReplyText(response=message, prompt=getattr(agent_reply, "prompt", ""))
 
             # Validation passed
             log.debug("Output passed Bedrock guardrail validation")

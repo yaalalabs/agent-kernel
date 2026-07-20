@@ -13,8 +13,8 @@ class DummyRunner(Runner):
         return True
 
     async def run(self, agent, session, requests):
-        prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
-        return AgentReplyText(text=f"ok:{prompt}")
+        prompt = requests[0].prompt if isinstance(requests[0], AgentRequestText) else ""
+        return AgentReplyText(response=f"ok:{prompt}")
 
     async def stream(self, agent, session, requests):
         raise NotImplementedError()

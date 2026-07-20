@@ -35,7 +35,7 @@ def thread_enabled():
 def _mock_handler(session: Session):
     """Build a mocked AgentHandler whose run returns a fixed reply."""
     handler = MagicMock()
-    handler.run_sync.return_value = AgentReplyText(text="agent says hi")
+    handler.run_sync.return_value = AgentReplyText(response="agent says hi")
     handler.get_response_session_id.side_effect = lambda sid: sid
     handler.service.session = session
     return handler

@@ -17,79 +17,67 @@ graph TB
     D --> F[CrewAI Runner]
     D --> G[LangGraph Runner]
     D --> H[Google ADK Runner]
-    
-    E --> I[Execute]
-    F --> I
-    G --> I
-    H --> I
-    
+    D --> I[Smolagents Runner]
+
+    E --> J["run() / stream()"]
+    F --> J
+    G --> J
+    H --> J
+    I --> J
+
     style C fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 ## What is a Runner?
 
 A Runner:
-- **Executes** framework-specific agent logic
-- **Manages** session state during execution
-- **Handles** async/await execution patterns
-- **Provides** consistent error handling
+- **Executes** framework-specific agent logic (`run()`)
+- **Streams** token deltas for frameworks that support it (`stream()`)
+- **Converts** Agent Kernel request models to framework-native input, and framework output back to `AgentReply` models
+- **Manages** framework session state within the Agent Kernel `Session`
+- **Creates** the `ToolContext` so tools can access the runtime, agent, session, and requests
 
 ## Runner Interface
 
 ```python
-from agentkernel.core import Runner, Session
+from abc import ABC, abstractmethod
+from typing import AsyncGenerator
+from agentkernel.core import Session
+from agentkernel.core.model import AgentReply, AgentRequest
 
 class Runner(ABC):
-    def __init__(self, name: str):
-        self._name = name
-    
     @abstractmethod
-    async def run(self, agent: Any, session: Session, prompt: Any) -> Any:
-        """Run the agent with the provided prompt"""
-        pass
+    async def run(self, agent: "Agent", session: Session, requests: list[AgentRequest]) -> AgentReply:
+        """Execute the agent with the given requests within the session context."""
+
+    @abstractmethod
+    async def stream(self, agent: "Agent", session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+        """Yield token deltas for streaming execution (execution.mode: stream)."""
 ```
+
+- `run()` takes a **list of typed requests** (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`, `AgentRequestAny`), not a raw prompt string, and returns an `AgentReply`.
+- `stream()` is an async generator of raw token strings. `Runtime.stream()` wraps each delta in a `StreamChunk` and passes it through post-hook filtering before it reaches the client.
 
 ## Framework Runners
 
-### OpenAI Runner
+| Runner | Framework | Native token streaming |
+|--------|-----------|------------------------|
+| `OpenAIRunner` | OpenAI Agents SDK | ✅ (`Runner.run_streamed`) |
+| `LangGraphRunner` | LangGraph | ✅ (`astream_events`) |
+| `GoogleADKRunner` | Google ADK | ✅ (SSE streaming mode) |
+| `CrewAIRunner` | CrewAI | ❌ raises `NotImplementedError` |
+| `SmolagentsRunner` | Smolagents | ❌ raises `NotImplementedError` |
 
-Executes OpenAI Agents SDK agents:
+Each runner follows the same shape internally:
 
 ```python
-from agentkernel.openai import OpenAIRunner
-
 class OpenAIRunner(Runner):
-    async def run(self, agent, session, prompt):
-        # Get or create OpenAI session
-        # Execute agent with prompt
-        # Return result
-```
-
-### CrewAI Runner
-
-Executes CrewAI agents:
-
-```python
-from agentkernel.crewai import CrewAIRunner
-
-class CrewAIRunner(Runner):
-    async def run(self, agent, session, prompt):
-        # Execute CrewAI kickoff
-        # Return result
-```
-
-### LangGraph Runner
-
-Executes LangGraph compiled graphs:
-
-```python
-from agentkernel.langgraph import LangGraphRunner
-
-class LangGraphRunner(Runner):
-    async def run(self, agent, session, prompt):
-        # Invoke graph with state
-        # Handle streaming if enabled
-        # Return result
+    async def run(self, agent, session, requests):
+        # 1. Restore framework-specific session state from the AK session
+        # 2. Convert AgentRequest models to framework-native input
+        # 3. Create ToolContext, execute the framework's run API
+        # 4. Save updated framework state back into the session
+        # 5. Convert the result to AgentReplyText / AgentReplyImage / AgentReplyAny
 ```
 
 ## Reply Types
@@ -104,7 +92,7 @@ Every runner returns an `AgentReply` from `run()`. The union covers three reply 
 
 All reply types carry the `prompt` that was sent to the agent.
 
-### Structured replies — `AgentReplyAny` {#structured-replies}
+### Structured replies: `AgentReplyAny` {#structured-replies}
 
 When an agent is configured to produce structured output (see the per-framework
 "Structured Output" sections under [Frameworks](../frameworks/overview)), the runner
@@ -115,7 +103,7 @@ from agentkernel.core.model import AgentReplyAny
 
 reply = await runner.run(agent, session, requests)
 if isinstance(reply, AgentReplyAny):
-    data = reply.content          # dict — no re-parsing needed
+    data = reply.content          # dict, no re-parsing needed
 ```
 
 - `content` holds the structured result as a JSON-compatible dict. Pydantic model
@@ -129,62 +117,81 @@ Structured output applies to **non-streaming** execution only. Streamed runs emi
 token-by-token text deltas and are not parsed into structured replies.
 :::
 
+## Streaming Execution
+
+When `execution.mode: stream` is configured, the pipeline calls `Runner.stream()` instead of `run()`:
+
+```python
+async for delta in runner.stream(agent, session, requests):
+    print(delta, end="")   # raw token strings
+```
+
+In practice you rarely call this directly; use `AgentService.stream_multi()` or the REST API, which wrap the deltas in `StreamChunk` objects (`delta`, `done`, `error`, `session_id`) and run the post-hook `on_stream_chunk()` filter on every token:
+
+```python
+async for chunk in service.stream_multi(requests):
+    if chunk.error:
+        ...
+    elif chunk.delta:
+        print(chunk.delta, end="")
+```
+
+Frameworks without native token streaming (CrewAI, Smolagents) raise `NotImplementedError`; use the default synchronous mode (or `rest_sync` on AWS) with those frameworks.
+
 ## Execution Flow
 
 ```mermaid
 sequenceDiagram
-    participant C as Caller
+    participant RT as Runtime
     participant R as Runner
     participant S as Session
     participant F as Framework
-    participant A as Agent
-    
-    C->>R: run(agent, session, prompt)
-    R->>S: Load session state
-    S-->>R: Current state
-    R->>F: Execute with framework
-    F->>A: Run agent logic
-    A-->>F: Result
-    F-->>R: Framework result
-    R->>S: Update session state
-    R-->>C: Return result
+
+    RT->>R: run(agent, session, requests)
+    R->>S: get framework state (session.get)
+    S-->>R: current state
+    R->>R: convert requests to native input,<br/>create ToolContext
+    R->>F: framework execution (LLM calls, tools, handoffs)
+    F-->>R: native result
+    R->>S: update framework state (session.set)
+    R-->>RT: AgentReply
 ```
+
+Note that hooks, session locking, and persistence are handled by `Runtime.run()` *around* the runner; the runner itself only deals with framework execution and state conversion. See [Execution Flow](../architecture/execution-flow) for the full pipeline.
 
 ## Using Runners
 
-Runners are typically accessed through agents:
+Runners are typically accessed through agents, and invoked via the Runtime (which applies hooks and persistence):
 
 ```python
 from agentkernel.core import Runtime
+from agentkernel.core.model import AgentRequestText
 
-runtime = Runtime.get()
-agent = runtime.get_agent("assistant")
+runtime = Runtime.current()
+agent = runtime.agents().get("assistant")
+session = runtime.sessions().get("user-123") or runtime.sessions().new("user-123")
 
-# Get the runner from the agent
-runner = agent.runner
-
-# Execute
-result = await runner.run(agent, session, prompt)
+# Preferred: run through the Runtime so hooks and persistence apply
+reply = await runtime.run(agent, session, [AgentRequestText(prompt="Hello")])
 ```
+
+For most applications, the higher-level [`AgentService`](../architecture/execution-flow#2-request-building-and-agent-resolution) is more convenient than touching runners at all.
 
 ## Session Integration
 
-Runners work closely with Sessions to maintain state:
+Runners work closely with Sessions to maintain state. Each framework stores its own state under its own key:
 
 ```python
-async def run(self, agent, session, prompt):
-    # Get framework-specific session from AK session
-    framework_session = session.get(f"{agent.name}_session")
-    
-    if not framework_session:
-        # Create new framework session
-        framework_session = self._create_session()
-        session.set(f"{agent.name}_session", framework_session)
-    
-    # Execute with session
-    result = await self._execute(agent, framework_session, prompt)
-    
-    # Session automatically persisted
+async def run(self, agent, session, requests):
+    # Get framework-specific state from the AK session
+    framework_state = session.get("openai")   # e.g. "openai", "langgraph", ...
+
+    if not framework_state:
+        framework_state = self._create_state()
+
+    result = await self._execute(agent, framework_state, requests)
+
+    session.set("openai", framework_state)    # persisted by Runtime after the run
     return result
 ```
 
@@ -196,19 +203,19 @@ Always use `await` when calling runners:
 
 ```python
 # Correct
-result = await runner.run(agent, session, prompt)
+reply = await runtime.run(agent, session, requests)
 
 # Incorrect
-result = runner.run(agent, session, prompt)  # Returns coroutine
+reply = runtime.run(agent, session, requests)  # Returns coroutine
 ```
 
 ### Error Handling
 
-Wrap runner execution in try-except:
+Wrap execution in try-except:
 
 ```python
 try:
-    result = await runner.run(agent, session, prompt)
+    reply = await runtime.run(agent, session, requests)
 except Exception as e:
     logger.error(f"Runner error: {e}")
     # Handle error appropriately
@@ -216,13 +223,15 @@ except Exception as e:
 
 ## Summary
 
-- Runners execute framework-specific agent logic
+- Runners execute framework-specific agent logic and expose both `run()` and `stream()`
 - Each framework has its own Runner implementation
-- Runners manage session state during execution
-- Always use async/await pattern
+- OpenAI Agents SDK, LangGraph, and Google ADK support token streaming; CrewAI and Smolagents do not
+- Runners convert typed requests/replies and manage framework session state
+- Always use async/await, and prefer `Runtime.run()`/`AgentService` over calling runners directly
 
 ## Next Steps
 
 - [Session Management](./session)
 - [Module Organization](./module)
 - [Framework Integration](../frameworks/overview)
+- [Execution Flow](../architecture/execution-flow)

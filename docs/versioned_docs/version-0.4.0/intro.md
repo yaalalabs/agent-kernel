@@ -8,7 +8,7 @@ slug: /
 **An Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
-🧠 **Knowledge Base Support** - Agent Kernel now includes a backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph), and Starburst Galaxy (SQL/analytics). Give your agents durable, cross-session knowledge with semantic search and graph query capabilities. [Learn more →](/docs/next/architecture/knowledge-bases)
+🧠 **Knowledge Base Support** - Agent Kernel now includes a backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph), and Starburst Galaxy (SQL/analytics). Give your agents durable, cross-session knowledge with semantic search and graph query capabilities. [Learn more →](./architecture/knowledge-bases.md)
 :::
 
 ## What is Agent Kernel?
@@ -97,7 +97,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools
   - `semantic_map` keeps agent prompts portable across deployments
   - You can also build your own backend by implementing a `KnowledgeBase` adapter and registering it with `KnowledgeBuilder`
-  [Learn more about knowledge bases →](/docs/next/architecture/knowledge-bases)
+  [Learn more about knowledge bases →](./architecture/knowledge-bases.md)
 - **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching
   - In-memory (development)

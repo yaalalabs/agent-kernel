@@ -20,7 +20,7 @@ or override generate_name entirely for any other logic (optionally calling
 self._complete for the LLM call).
 
 The strategy runs only at thread creation, and never for threads whose name was
-explicitly supplied (name_locked) — see docs/specs/conversation-thread-support.md.
+explicitly supplied (name_locked) — see docs/specs/348-conversation-thread-support/design.md.
 """
 
 import importlib.util

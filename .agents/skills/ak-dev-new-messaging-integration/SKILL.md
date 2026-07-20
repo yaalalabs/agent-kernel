@@ -88,7 +88,7 @@ class Agent<Platform>RequestHandler(RESTRequestHandler):
         # 2. Build request list
         requests = []
         if text:
-            requests.append(AgentRequestText(text=text))
+            requests.append(AgentRequestText(prompt=text))
 
         for attachment in attachments:
             # Handle images
@@ -118,7 +118,7 @@ class Agent<Platform>RequestHandler(RESTRequestHandler):
         reply = await service.run_multi(requests)
 
         # 4. Send reply back via platform API
-        await self._send_reply(user_id, reply.text)
+        await self._send_reply(user_id, reply.response)
 
     async def _download_file(self, url: str) -> str:
         """Download a file and return base64-encoded content."""

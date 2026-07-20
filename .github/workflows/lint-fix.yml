@@ -1,0 +1,83 @@
+name: Lint and Commit
+
+on:
+  workflow_dispatch:
+    inputs:
+      lint_target:
+        description: 'Which lint command to run'
+        required: true
+        type: choice
+        default: lint-all
+        options:
+          - lint
+          - lint-examples
+          - lint-all
+      branch:
+        description: 'Branch to lint and commit the formatting changes to'
+        required: true
+        type: string
+
+concurrency:
+  group: lint-fix-${{ inputs.branch }}
+
+jobs:
+  lint-fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Reject protected branches
+        env:
+          # Branches that are not allowed to be linted/committed to.
+          PROTECTED_BRANCHES: "develop"
+          TARGET_BRANCH: ${{ inputs.branch }}
+        run: |
+          for branch in $PROTECTED_BRANCHES; do
+            if [ "$TARGET_BRANCH" = "$branch" ]; then
+              echo "❌ Linting and committing directly to '$TARGET_BRANCH' is not allowed."
+              exit 1
+            fi
+          done
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: yaalalabs
+          repositories: |
+            agent-kernel
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.branch }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Run lint
+        run: make ${{ inputs.lint_target }}
+
+      - name: Commit and push formatting changes
+        env:
+          TARGET_BRANCH: ${{ inputs.branch }}
+        run: |
+          git config user.name "agent-kernel-ci[bot]"
+          git config user.email "agent-kernel-ci[bot]@users.noreply.github.com"
+          git add -- '*.py'
+          if git diff --cached --quiet; then
+            echo "No formatting changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: apply ${{ inputs.lint_target }} formatting"
+          git push origin "HEAD:$TARGET_BRANCH"

@@ -111,7 +111,7 @@ class GoogleADKRunner(BaseRunner):
                 continue
 
             if isinstance(req, AgentRequestText):
-                text = req.text
+                text = req.prompt
                 prompt = prompt + "\n" + text if prompt else text
                 parts.append(types.Part(text=text))
 
@@ -207,7 +207,7 @@ class GoogleADKRunner(BaseRunner):
             prompt, parts = self._process_requests(requests)
 
             if not parts:
-                return AgentReplyText(text="Sorry. No valid content found in the requests")
+                return AgentReplyText(response="Sorry. No valid content found in the requests")
 
             user_id, runner, ctx = await self._setup_session_context(agent, session, requests)
             with ctx:
@@ -220,9 +220,9 @@ class GoogleADKRunner(BaseRunner):
                     return AgentReplyAny(content=parsed.model_dump(mode="json"), prompt=prompt)
                 except ValidationError:
                     self._log.warning(f"Agent '{agent.name}' has output_schema set but reply is not valid JSON for it; returning text")
-            return AgentReplyText(text=reply, prompt=prompt)
+            return AgentReplyText(response=reply, prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
 
     async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
         """

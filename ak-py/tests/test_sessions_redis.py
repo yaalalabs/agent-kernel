@@ -1,29 +1,17 @@
 import pytest
 import redis
 
-from agentkernel.core.session import redis as redis_module
-from agentkernel.core.session.redis import RedisDriver
-
-
-def _make_cfg():
-    class FakeCfg:
-        class session:
-            type = "redis"
-
-            class redis:
-                url = "redis://localhost:6379"
-                ttl = 60
-                prefix = "ak:test:"
-
-    return FakeCfg
+from agentkernel.core.session.redis import RedisSessionStore
+from agentkernel.core.util.driver import base as driver_base
+from agentkernel.core.util.driver import redis as redis_driver_module
+from agentkernel.core.util.driver.redis import RedisDriver
 
 
 def test_connect_raises_after_retries(monkeypatch):
-    """The corrected RedisDriver re-raises the last error once retries are exhausted
+    """The shared RedisDriver re-raises the last error once retries are exhausted
     instead of leaving a None client that later fails with AttributeError."""
-    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _make_cfg()))
     # Avoid the 2-second back-off sleeps between the three attempts.
-    monkeypatch.setattr(redis_module.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(driver_base.time, "sleep", lambda *_: None)
 
     calls = {"n": 0}
 
@@ -31,9 +19,23 @@ def test_connect_raises_after_retries(monkeypatch):
         calls["n"] += 1
         raise redis.ConnectionError("boom")
 
-    monkeypatch.setattr(redis_module.redis, "from_url", always_fail)
+    monkeypatch.setattr(redis_driver_module.redis, "from_url", always_fail)
 
-    driver = RedisDriver()
+    driver = RedisDriver(url="redis://localhost:6379", prefix="ak:test:", ttl=60)
     with pytest.raises(redis.RedisError):
         _ = driver.client
     assert calls["n"] == 3
+
+
+def test_missing_config_block_raises(monkeypatch):
+    """A missing session.redis block raises a ValueError (matching the Valkey store)
+    instead of an AttributeError from the config reads."""
+
+    class FakeCfg:
+        class session:
+            type = "redis"
+            redis = None
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    with pytest.raises(ValueError, match="session.redis config block is required"):
+        RedisSessionStore()

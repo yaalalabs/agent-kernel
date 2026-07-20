@@ -18,9 +18,9 @@ import uuid
 from typing import List, Optional, Tuple
 
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
-from azure.data.tables import TableServiceClient
 
 from ...config import AKConfig
+from ...util.driver.cosmosdb import CosmosDBDriver
 from ..model import Thread, ThreadMessage, _utc_now
 from .base import ThreadStore, paginate
 
@@ -46,9 +46,6 @@ class CosmosDBThreadStore(ThreadStore):
     Cosmos DB Table API-backed implementation of the ThreadStore interface.
     """
 
-    _table_service_client = None
-    _table_client = None
-
     def __init__(self):
         self._log = logging.getLogger("ak.thread.store.cosmosdb")
         cfg = AKConfig.get().thread.cosmosdb
@@ -56,43 +53,7 @@ class CosmosDBThreadStore(ThreadStore):
             raise ValueError("AKConfig.thread.cosmosdb.connection_string must be set to use CosmosDBThreadStore")
         if not cfg.table_name:
             raise ValueError("AKConfig.thread.cosmosdb.table_name must be set to use CosmosDBThreadStore")
-        self._connection_string = cfg.connection_string
-        self._table_name = cfg.table_name
-
-    @property
-    def table_client(self):
-        """
-        Returns the Azure Table client, connecting lazily if needed.
-        """
-        if self._table_client is None:
-            self._connect()
-        return self._table_client
-
-    def _connect(self):
-        """
-        Establish a connection to Cosmos DB Table API, with retries.
-        """
-        retries = 3
-        delay = 2
-        last_err: Optional[Exception] = None
-        for attempt in range(retries):
-            try:
-                self._log.debug("Connecting to Cosmos DB Table API")
-                self._table_service_client = TableServiceClient.from_connection_string(conn_str=self._connection_string)
-                self._table_client = self._table_service_client.get_table_client(table_name=self._table_name)
-                try:
-                    self._table_client.get_entity(partition_key="__health_check__", row_key="__health_check__")
-                except ResourceNotFoundError:
-                    pass  # Expected — just checking the table is accessible
-                self._log.debug("Connected to Cosmos DB Table %s", self._table_name)
-                return
-            except Exception as e:
-                last_err = e
-                self._log.warning("Cosmos DB connection attempt %s failed: %s", attempt + 1, e)
-                if attempt < retries - 1:
-                    time.sleep(delay)
-        if last_err:
-            raise last_err
+        self._driver = CosmosDBDriver(connection_string=cfg.connection_string, table_name=cfg.table_name)
 
     def create(self, thread: Thread) -> Thread:
         """
@@ -113,7 +74,7 @@ class CosmosDBThreadStore(ThreadStore):
             "updated_at": metadata.updated_at.isoformat(),
         }
         try:
-            self.table_client.create_entity(entity=entity)
+            self._driver.table_client.create_entity(entity=entity)
         except ResourceExistsError:
             return self.load_metadata(thread.session_id)
         return metadata
@@ -135,7 +96,7 @@ class CosmosDBThreadStore(ThreadStore):
         thread.name = name
         thread.name_locked = True
         try:
-            self.table_client.update_entity(
+            self._driver.table_client.update_entity(
                 entity={
                     "PartitionKey": session_id,
                     "RowKey": _META_ROW,
@@ -154,7 +115,7 @@ class CosmosDBThreadStore(ThreadStore):
         :return: The thread metadata, or None if it does not exist.
         """
         try:
-            entity = self.table_client.get_entity(partition_key=session_id, row_key=_META_ROW)
+            entity = self._driver.table_client.get_entity(partition_key=session_id, row_key=_META_ROW)
         except ResourceNotFoundError:
             return None
         payload = entity.get("data")
@@ -173,11 +134,11 @@ class CosmosDBThreadStore(ThreadStore):
         :raises KeyError: If the thread does not exist.
         """
         try:
-            self.table_client.get_entity(partition_key=session_id, row_key=_META_ROW)
+            self._driver.table_client.get_entity(partition_key=session_id, row_key=_META_ROW)
         except ResourceNotFoundError:
             raise KeyError(f"Thread {session_id} not found")
 
-        self.table_client.upsert_entity(
+        self._driver.table_client.upsert_entity(
             entity={
                 "PartitionKey": session_id,
                 "RowKey": f"{_MSG_PREFIX}{_new_seq()}",
@@ -186,7 +147,7 @@ class CosmosDBThreadStore(ThreadStore):
         )
         from azure.data.tables import UpdateMode
 
-        self.table_client.update_entity(
+        self._driver.table_client.update_entity(
             entity={"PartitionKey": session_id, "RowKey": _META_ROW, "updated_at": _utc_now().isoformat()},
             mode=UpdateMode.MERGE,
         )
@@ -208,7 +169,7 @@ class CosmosDBThreadStore(ThreadStore):
         # defensively before slicing so intra-window reordering can't misorder a page.
         needed = offset + limit + 1
         collected = []
-        for entity in self.table_client.query_entities(query_filter=query_filter):
+        for entity in self._driver.table_client.query_entities(query_filter=query_filter):
             collected.append(entity)
             if len(collected) >= needed:
                 break
@@ -240,7 +201,7 @@ class CosmosDBThreadStore(ThreadStore):
         query_filter = " and ".join(filters)
 
         threads = []
-        for entity in self.table_client.query_entities(query_filter=query_filter):
+        for entity in self._driver.table_client.query_entities(query_filter=query_filter):
             payload = entity.get("data")
             if payload is None:
                 continue
@@ -257,11 +218,11 @@ class CosmosDBThreadStore(ThreadStore):
 
         This is a destructive operation intended for development/testing only.
         """
-        for entity in self.table_client.list_entities():
+        for entity in self._driver.table_client.list_entities():
             partition_key = entity.get("PartitionKey")
             row_key = entity.get("RowKey")
             if partition_key and row_key:
                 try:
-                    self.table_client.delete_entity(partition_key=partition_key, row_key=row_key)
+                    self._driver.table_client.delete_entity(partition_key=partition_key, row_key=row_key)
                 except Exception as delete_err:
                     self._log.warning("Failed to delete entity %s/%s: %s", partition_key, row_key, delete_err)

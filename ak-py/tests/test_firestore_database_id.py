@@ -21,6 +21,21 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 
+def _make_driver():
+    """Build a FirestoreDriver from the AKConfig session.firestore block. The shared
+    driver takes explicit constructor parameters instead of reading AKConfig itself."""
+    from agentkernel.core.config import AKConfig
+    from agentkernel.core.util.driver.firestore import FirestoreDriver
+
+    cfg = AKConfig.get().session.firestore
+    return FirestoreDriver(
+        collection_name=cfg.collection_name,
+        project_id=cfg.project_id,
+        database_id=cfg.database_id,
+        ttl=cfg.ttl,
+    )
+
+
 class TestFirestoreDatabaseIdBugCondition(unittest.TestCase):
     """
     Property 1: Bug Condition - Named Database Connection
@@ -91,9 +106,7 @@ class TestFirestoreDatabaseIdBugCondition(unittest.TestCase):
         mock_doc_ref.to_dict.return_value = {"test_key": b"test_value"}
 
         # Import and initialize FirestoreDriver
-        from agentkernel.core.session.firestore import FirestoreDriver
-
-        driver = FirestoreDriver()
+        driver = _make_driver()
 
         # Trigger connection by accessing collection
         _ = driver.collection
@@ -148,9 +161,7 @@ class TestFirestoreDatabaseIdBugCondition(unittest.TestCase):
         mock_collection.stream.return_value = []
 
         # Import and initialize FirestoreDriver
-        from agentkernel.core.session.firestore import FirestoreDriver
-
-        driver = FirestoreDriver()
+        driver = _make_driver()
 
         # Test put operation
         driver.put("session1", "key1", b"value1")
@@ -221,9 +232,7 @@ class TestFirestoreDatabaseIdBugCondition(unittest.TestCase):
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
 
-        from agentkernel.core.session.firestore import FirestoreDriver
-
-        driver = FirestoreDriver()
+        driver = _make_driver()
 
         # This assertion will FAIL on unfixed code because _database_id attribute doesn't exist
         self.assertTrue(
@@ -294,9 +303,7 @@ class TestFirestorePreservation(unittest.TestCase):
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
 
-        from agentkernel.core.session.firestore import FirestoreDriver
-
-        driver = FirestoreDriver()
+        driver = _make_driver()
         _ = driver.collection  # Trigger connection
 
         # BASELINE BEHAVIOR: When database_id is not specified, the client should
@@ -338,9 +345,7 @@ class TestFirestorePreservation(unittest.TestCase):
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
 
-        from agentkernel.core.session.firestore import FirestoreDriver
-
-        driver = FirestoreDriver()
+        driver = _make_driver()
         _ = driver.collection  # Trigger connection
 
         # BASELINE BEHAVIOR: project_id should be passed to client
@@ -377,9 +382,7 @@ class TestFirestorePreservation(unittest.TestCase):
         mock_client.collection.return_value = mock_collection
         mock_collection.document.return_value = mock_document
 
-        from agentkernel.core.session.firestore import FirestoreDriver
-
-        driver = FirestoreDriver()
+        driver = _make_driver()
 
         # Perform a put operation
         driver.put("session1", "key1", b"value1")
@@ -425,9 +428,7 @@ class TestFirestorePreservation(unittest.TestCase):
         mock_collection.limit.return_value = mock_collection
         mock_collection.stream.return_value = []
 
-        from agentkernel.core.session.firestore import FirestoreDriver
-
-        driver = FirestoreDriver()
+        driver = _make_driver()
 
         # Test put operation
         driver.put("session1", "key1", b"value1")
@@ -481,9 +482,7 @@ class TestFirestorePreservation(unittest.TestCase):
         mock_client_class.return_value = mock_client
         mock_client.collection.return_value = mock_collection
 
-        from agentkernel.core.session.firestore import FirestoreDriver
-
-        driver = FirestoreDriver()
+        driver = _make_driver()
 
         # Verify driver uses the configured values
         self.assertEqual(driver._collection_name, "custom_collection")
@@ -551,9 +550,7 @@ class TestFirestorePreservation(unittest.TestCase):
         # Document has both session keys and reserved fields
         mock_doc_ref.to_dict.return_value = {"key1": b"value1", "key2": b"value2", "expiry_time": datetime.datetime.now(datetime.timezone.utc)}
 
-        from agentkernel.core.session.firestore import FirestoreDriver
-
-        driver = FirestoreDriver()
+        driver = _make_driver()
 
         # Get all keys
         keys = driver.get_all_keys("session1")
@@ -615,9 +612,7 @@ class TestFirestorePreservationPropertyBased(unittest.TestCase):
                 mock_client_class.return_value = mock_client
                 mock_client.collection.return_value = mock_collection
 
-                from agentkernel.core.session.firestore import FirestoreDriver
-
-                driver = FirestoreDriver()
+                driver = _make_driver()
                 _ = driver.collection
 
                 # Verify collection is accessed with correct name
@@ -659,9 +654,7 @@ class TestFirestorePreservationPropertyBased(unittest.TestCase):
                 mock_client.collection.return_value = mock_collection
                 mock_collection.document.return_value = mock_document
 
-                from agentkernel.core.session.firestore import FirestoreDriver
-
-                driver = FirestoreDriver()
+                driver = _make_driver()
                 driver.put("session1", "key1", b"value1")
 
                 # Verify expiry_time behavior based on TTL
@@ -707,9 +700,7 @@ class TestFirestorePreservationPropertyBased(unittest.TestCase):
                 mock_client = MagicMock()
                 mock_client_class.return_value = mock_client
 
-                from agentkernel.core.session.firestore import FirestoreDriver
-
-                driver = FirestoreDriver()
+                driver = _make_driver()
                 _ = driver.collection
 
                 # Verify project is passed to client
@@ -742,9 +733,7 @@ class TestFirestorePreservationPropertyBased(unittest.TestCase):
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
 
-        from agentkernel.core.session.firestore import FirestoreDriver
-
-        driver = FirestoreDriver()
+        driver = _make_driver()
         _ = driver.collection
 
         # BASELINE BEHAVIOR: When project_id is None, project parameter should not be passed

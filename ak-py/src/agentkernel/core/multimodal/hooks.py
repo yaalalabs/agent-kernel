@@ -166,10 +166,10 @@ class MultimodalPreHook(PreHook):
 
         if last_text_idx >= 0:
             last_text_req = filtered_requests[last_text_idx]
-            filtered_requests[last_text_idx] = AgentRequestText(text=f"{last_text_req.text}{desc_text}")
+            filtered_requests[last_text_idx] = AgentRequestText(prompt=f"{last_text_req.prompt}{desc_text}")
         else:
             # No text at all (attachments only) — description becomes the query
-            filtered_requests.append(AgentRequestText(text=desc_text.strip()))
+            filtered_requests.append(AgentRequestText(prompt=desc_text.strip()))
 
         return filtered_requests
 

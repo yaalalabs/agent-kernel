@@ -79,13 +79,13 @@ class TestWalledAIOutputGuardrail:
     async def test_text_reply_is_unmasked_as_text(self, guardrail, mock_session):
         """Test that AgentReplyText unmasking behavior is unchanged."""
         mock_session.get_non_volatile_cache().set(WALLEDAI_PII_MAPPING_KEY, {"[NAME_1]": "John Doe"})
-        reply = AgentReplyText(text="Hello [NAME_1]!", prompt="greet")
+        reply = AgentReplyText(response="Hello [NAME_1]!", prompt="greet")
 
         with patch.object(AKConfig, "get", return_value=_pii_config()):
             result = await guardrail.on_run(mock_session, [], Mock(), reply)
 
         assert isinstance(result, AgentReplyText)
-        assert result.text == "Hello John Doe!"
+        assert result.response == "Hello John Doe!"
         assert result.prompt == "greet"
 
     @pytest.mark.asyncio
@@ -114,7 +114,7 @@ class TestWalledAIOutputGuardrail:
         """Test that AgentReplyImage is returned as AgentReplyImage with text unmasked and image data preserved."""
         mock_session.get_non_volatile_cache().set(WALLEDAI_PII_MAPPING_KEY, {"[NAME_1]": "John Doe"})
         reply = AgentReplyImage(
-            text="badge of [NAME_1]",
+            response="badge of [NAME_1]",
             image_data="base64encodeddata",
             name="badge.png",
             mime_type="image/png",
@@ -125,7 +125,7 @@ class TestWalledAIOutputGuardrail:
             result = await guardrail.on_run(mock_session, [], Mock(), reply)
 
         assert isinstance(result, AgentReplyImage)
-        assert result.text == "badge of John Doe"
+        assert result.response == "badge of John Doe"
         assert result.image_data == "base64encodeddata"
         assert result.name == "badge.png"
         assert result.mime_type == "image/png"

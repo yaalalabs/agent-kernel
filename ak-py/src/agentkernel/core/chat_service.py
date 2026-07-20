@@ -39,7 +39,7 @@ class RequestBuilder:
         :param req: Base run request containing prompt, images, files, and additional context
         :return: List of AgentRequest objects for processing
         """
-        requests = [AgentRequestText(text=req.prompt)]
+        requests = [AgentRequestText(prompt=req.prompt)]
         RequestBuilder._add_images(requests, req.images)
         RequestBuilder._add_files(requests, req.files)
         RequestBuilder._attach_additional_context(req, requests)
@@ -53,7 +53,7 @@ class RequestBuilder:
                     or a multipart/upload-style request defined elsewhere)
         :return: List of AgentRequest objects for processing
         """
-        requests = [AgentRequestText(text=req.prompt)]
+        requests = [AgentRequestText(prompt=req.prompt)]
 
         # If this is a BaseRunRequest, it contains FileData/ImageData objects
         # (base64 or URLs) — handle them synchronously. Otherwise, assume

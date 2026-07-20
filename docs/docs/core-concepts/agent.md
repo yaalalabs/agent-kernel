@@ -140,12 +140,12 @@ OpenAIModule([specialist2])
 
 # All agents are now available
 from agentkernel.core import Runtime
-runtime = Runtime.get()
+runtime = Runtime.current()
 
-supervisor_agent = runtime.get_agent("supervisor")
-specialist1_agent = runtime.get_agent("specialist1")
-specialist2_agent = runtime.get_agent("specialist2")
-specialist3_agent = runtime.get_agent("specialist3")
+supervisor_agent = runtime.agents().get("supervisor")
+specialist1_agent = runtime.agents().get("specialist1")
+specialist2_agent = runtime.agents().get("specialist2")
+specialist3_agent = runtime.agents().get("specialist3")
 ```
 
 Agent interactions are handled by the underlying framework's collaboration mechanisms.
@@ -158,8 +158,8 @@ Agents can be exposed for A2A communication:
 
 ```python
 # Enable A2A in configuration
-# AK_A2A_ENABLED=true
-# AK_A2A_URL=https://your-domain.com/a2a
+# AK_A2A__ENABLED=true
+# AK_A2A__URL=https://your-domain.com/a2a
 
 # Agents automatically generate A2A capability cards
 # describing their skills and interfaces
@@ -178,7 +178,7 @@ Agents can be exposed as MCP tools:
 
 ```python
 # Enable MCP in configuration
-# AK_MCP_ENABLED=true
+# AK_MCP__ENABLED=true
 
 # Agents become callable as MCP tools
 # from other AI systems
@@ -235,10 +235,10 @@ Every agent has a unique name used for identification:
 ```python
 from agentkernel.core import Runtime
 
-runtime = Runtime.get()
+runtime = Runtime.current()
 
 # Get agent by name
-agent = runtime.get_agent("assistant")
+agent = runtime.agents().get("assistant")
 print(agent.name)  # "assistant"
 ```
 
@@ -253,7 +253,7 @@ The name is derived from framework-specific properties:
 Each agent has an associated Runner that handles execution:
 
 ```python
-agent = runtime.get_agent("assistant")
+agent = runtime.agents().get("assistant")
 runner = agent.runner
 
 # Runner executes the agent
@@ -280,10 +280,10 @@ graph TD
 ```python
 from agentkernel.core import Runtime
 
-runtime = Runtime.get()
+runtime = Runtime.current()
 
 # Get a specific agent
-agent = runtime.get_agent("assistant")
+agent = runtime.agents().get("assistant")
 
 # List all registered agents
 all_agents = runtime.get_all_agents()
@@ -313,8 +313,8 @@ Access the underlying framework agent:
 ```python
 from agentkernel.core import Runtime
 
-runtime = Runtime.get()
-ak_agent = runtime.get_agent("assistant")
+runtime = Runtime.current()
+ak_agent = runtime.agents().get("assistant")
 
 # Access the underlying OpenAI agent
 openai_agent = ak_agent.agent
@@ -378,9 +378,9 @@ def route_to_agent(query: str) -> str:
     else:
         return "general"
 
-runtime = Runtime.get()
+runtime = Runtime.current()
 agent_name = route_to_agent(user_query)
-agent = runtime.get_agent(agent_name)
+agent = runtime.agents().get(agent_name)
 ```
 
 ## Summary

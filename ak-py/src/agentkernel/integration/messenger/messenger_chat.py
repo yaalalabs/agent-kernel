@@ -211,7 +211,7 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
 
             # Add text if present
             if message_text:
-                requests.append(AgentRequestText(text=message_text))
+                requests.append(AgentRequestText(prompt=message_text))
 
             # Process attachments (images and files)
             if attachments:
@@ -312,7 +312,7 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
             # Provide a user-facing indication that an attachment failed to process.
             try:
                 requests.append(
-                    AgentRequestText(text="I couldn't process one of your attachments. " "Please try again or send it in a different format.")
+                    AgentRequestText(prompt="I couldn't process one of your attachments. " "Please try again or send it in a different format.")
                 )
             except Exception as inner_e:
                 self._log.error(f"Error while adding attachment failure notice: {inner_e}\n{traceback.format_exc()}")

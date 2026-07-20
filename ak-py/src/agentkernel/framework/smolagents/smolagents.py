@@ -140,15 +140,15 @@ class SmolagentsRunner(Runner):
                 if isinstance(req, AgentRequestAny):
                     continue
                 if isinstance(req, AgentRequestText):
-                    prompt = prompt + "\n" + req.text if prompt else req.text
+                    prompt = prompt + "\n" + req.prompt if prompt else req.prompt
                 else:
                     return AgentReplyText(
-                        text="Sorry. Smolagents runner is unable to handle content other than text at the moment",
+                        response="Sorry. Smolagents runner is unable to handle content other than text at the moment",
                         prompt=prompt,
                     )
 
             if not prompt.strip():
-                return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+                return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
 
             # Rehydrate framework memory from the AgentKernel session before execution.
             self._hydrate_memory(agent, session)
@@ -163,9 +163,9 @@ class SmolagentsRunner(Runner):
             if structured is not None:
                 return structured
 
-            return AgentReplyText(text=str(reply), prompt=prompt)
+            return AgentReplyText(response=str(reply), prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()

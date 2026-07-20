@@ -225,7 +225,7 @@ class TestWrapInvocationWithContext:
         runtime = MagicMock(spec=Runtime)
         agent = MockAgent()
         session = Session("test-session")
-        requests = [AgentRequestText(text="hi")]
+        requests = [AgentRequestText(prompt="hi")]
         return AKToolContext(runtime, agent, session, requests)
 
     def test_sync_wrapper_invokes_function_with_correct_args(self):
@@ -363,7 +363,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("runner-test-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
@@ -398,7 +398,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("fetch-test-session")
-        requests = [AgentRequestText(text="test")]
+        requests = [AgentRequestText(prompt="test")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
@@ -438,7 +438,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("cleanup-test-session")
-        requests = [AgentRequestText(text="cleanup")]
+        requests = [AgentRequestText(prompt="cleanup")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
@@ -474,7 +474,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("no-state-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
@@ -503,7 +503,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("order-test-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
         mock_agent.name = "test-agent"
@@ -539,7 +539,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("args-test-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
         mock_agent.name = "my-agent"
@@ -572,14 +572,14 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("error-test-session")
-        requests = [AgentRequestText(text="fail")]
+        requests = [AgentRequestText(prompt="fail")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
         with patch.object(Runtime, "current", side_effect=RuntimeError("runtime error")):
             result = await runner.run(mock_agent, session, requests)
 
-        assert result.text == "Error: runtime error"
+        assert result.response == "Error: runtime error"
 
     @pytest.mark.asyncio
     async def test_run_returns_no_content_for_empty_requests(self):
@@ -595,14 +595,14 @@ class TestGoogleADKRunnerToolContext:
         mock_agent = MagicMock()
 
         result = await runner.run(mock_agent, session, requests)
-        assert "No valid content" in result.text
+        assert "No valid content" in result.response
 
     @pytest.mark.asyncio
     async def test_stream_yields_partial_event_text(self):
         """stream() yields text only from partial events via run_async with SSE mode."""
         runner = GoogleADKRunner()
         session = Session("stream-partial-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         mock_agent = MagicMock()
 
         partial_event = MagicMock()
@@ -636,7 +636,7 @@ class TestGoogleADKRunnerToolContext:
         """stream() does not yield text from non-partial events."""
         runner = GoogleADKRunner()
         session = Session("stream-non-partial-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         mock_agent = MagicMock()
 
         event = MagicMock()

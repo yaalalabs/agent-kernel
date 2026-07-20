@@ -95,7 +95,7 @@ See [Tools](../core-concepts/tools) for the full guide on writing and binding to
 
 ## Structured Output
 
-SmolAgents has no first-class schema parameter — the agent returns whatever value is passed to `final_answer`. Agent Kernel detects the value's type: a dict or Pydantic instance is returned as an `AgentReplyAny` whose `content` is the result as a dict; anything else is stringified into an `AgentReplyText` as before:
+SmolAgents has no first-class schema parameter; the agent returns whatever value is passed to `final_answer`. Agent Kernel detects the value's type: a dict or Pydantic instance is returned as an `AgentReplyAny` whose `content` is the result as a dict; anything else is stringified into an `AgentReplyText` as before:
 
 ```python
 from smolagents import CodeAgent

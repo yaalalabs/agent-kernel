@@ -45,7 +45,7 @@ class TestMultimodalPreHookThreadMode:
 
         session = Session("s1")
         requests = [
-            AgentRequestText(text="what is this?"),
+            AgentRequestText(prompt="what is this?"),
             AgentRequestAttachmentRef(attachment_id=pre_id),
         ]
 
@@ -53,32 +53,32 @@ class TestMultimodalPreHookThreadMode:
 
         # Binary stripped, description injected referencing the pre-stored id
         assert len(result) == 1
-        assert pre_id in result[0].text
-        assert "a small test image" in result[0].text
+        assert pre_id in result[0].prompt
+        assert "a small test image" in result[0].prompt
         # The hook did not save a new attachment — count unchanged
         assert len(InMemoryAttachmentStore._attachments) == count_before
 
     def test_thread_mode_missing_ref_is_skipped(self, multimodal_enabled):
         session = Session("s1")
         requests = [
-            AgentRequestText(text="what is this?"),
+            AgentRequestText(prompt="what is this?"),
             AgentRequestAttachmentRef(attachment_id="does-not-exist"),
         ]
         result = _run_hook(session, requests)
         # No attachment resolved → no description injected, original text preserved
         assert len(result) == 1
-        assert result[0].text == "what is this?"
+        assert result[0].prompt == "what is this?"
 
     def test_thread_off_saves_raw_image_normally(self, multimodal_enabled):
         session = Session("s1")
         requests = [
-            AgentRequestText(text="what is this?"),
+            AgentRequestText(prompt="what is this?"),
             AgentRequestImage(image_data="aW1n", name="pic.png", mime_type="image/png"),
         ]
 
         result = _run_hook(session, requests)
 
         assert len(result) == 1
-        assert "a small test image" in result[0].text
+        assert "a small test image" in result[0].prompt
         # The hook saved the attachment itself
         assert len(InMemoryAttachmentStore._attachments) == 1

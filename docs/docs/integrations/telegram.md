@@ -172,7 +172,7 @@ Each chat maintains conversation history:
 - Images/files from earlier messages can be referenced and re-analyzed via `analyze_attachments`
 - Multi-turn conversations with rich context
 - Works seamlessly with OpenAI GPT-4o and compatible models
-- **Session-scoped storage**: Files are stored in each chat's own session cache, isolated per user — one user cannot access another user's attachments
+- **Session-scoped storage**: Files are stored in each chat's own session cache, isolated per user; one user cannot access another user's attachments
 
 ### Custom Command Handler
 

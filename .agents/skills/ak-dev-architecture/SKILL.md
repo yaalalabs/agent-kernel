@@ -149,7 +149,7 @@ Provides image and file attachment support via a pluggable storage and PreHook a
 | Backend | Class | Module | Key traits |
 |---------|-------|--------|------------|
 | In-memory | `InMemoryAttachmentStore` | `storage/in_memory.py` | `ClassVar` dict, ephemeral, zero setup |
-| Redis | `RedisAttachmentStore` | `storage/redis.py` | Persistent, TTL, connection pooling |
+| Redis | `RedisAttachmentStore` | `storage/redis.py` | Persistent, TTL, shared `RedisDriver` (lazy connect, retry, ping/reconnect) |
 | DynamoDB | `DynamoDBAttachmentStore` | `storage/dynamodb.py` | Serverless/AWS, TTL via `expiry_time` |
 | Session cache | `SessionNonVolatileCacheAttachmentStore` | `storage/session_cache.py` | Legacy, stores in `nv_cache` (not recommended) |
 
@@ -239,6 +239,26 @@ Pluggable storage backends agents can read from and write to as tools:
 - **`KnowledgeBuilder`** (`knowledgebuilder.py`): Wraps one or more `KnowledgeBase` instances and `build()`s plain-function tools (`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`) for binding via a framework's `ToolBuilder`
 - **Backends**: `ChromaManager` (vector, `chroma.py`), `Neo4jManager` (graph, `neo4j.py`), `StarburstManager` (read-only SQL via Trino, `starburst.py`) — each behind an optional dependency extra (`chromadb`, `neo4j`, `trino`)
 
+## Shared Database Drivers (`ak-py/src/agentkernel/core/util/driver/`)
+
+The Session, Multimodal attachment, Response Store, and Thread backends share one set of
+connection drivers: `RedisDriver`, `ValkeyDriver` (both subclassing `_RedisLikeDriver`),
+`DynamoDBDriver`, `CosmosDBDriver`, and `FirestoreDriver`. Three rules govern the package:
+
+1. **Drivers never read `AKConfig`** — all connection parameters are explicit constructor
+   arguments; config reading and validation stay in the stores and factories
+2. **Drivers own the connection lifecycle** (lazy connect, 3-retry/2s back-off, Redis/Valkey
+   ping health-check with reconnect, `socket_connect_timeout=5`, TTL plumbing) plus a generic
+   command surface; key schemas, serialization, and data layouts stay in the store classes
+3. **Drivers expose their native handle** (`client` / `table` / `table_client` / `collection`)
+   for consumers whose data operations exceed the generic surface (e.g. the DynamoDB/Cosmos/
+   Firestore thread stores)
+
+`driver/__init__.py` has no eager imports — `redis`, `valkey`, `azure`, and `gcp` extras stay
+optional; consumers import the concrete module (`from agentkernel.core.util.driver.redis import
+RedisDriver`). Connect/reconnect is serialized by a per-instance `threading.Lock`, so drivers
+are safe to share across threads (e.g. response stores under `ECSOutputConsumer`).
+
 ## Directory Structure
 
 ```
@@ -256,6 +276,7 @@ ak-py/src/agentkernel/
 │   ├── chat_service.py      # ChatService, RequestBuilder, AgentHandler, ResponseBuilder
 │   ├── logger.py            # Logging setup
 │   ├── util/                # Shared utilities
+│   │   └── driver/          # Shared DB connection drivers (Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
 │   └── session/             # Session store implementations
 │       ├── base.py           # SessionStore, SessionCache
 │       ├── serde.py          # Session (de)serialization helpers
@@ -488,7 +509,7 @@ from agentkernel.deployment.common import ThreadRunner
 ```
 User Input
     → AgentService.run(prompt)
-        → AgentRequestText(text=prompt)
+        → AgentRequestText(prompt=prompt)
         → Runtime.run(agent, session, requests)
             → async with session:                    # acquire lock, set context
             → PreHooks (agent hooks, then system)    # guardrails, multimodal, RAG, etc.

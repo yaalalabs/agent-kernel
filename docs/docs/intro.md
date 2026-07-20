@@ -8,23 +8,25 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
-🧠 **Knowledge Base Support** - Agent Kernel now includes a backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph) and Starburst Galaxy (SQL/analytics). Give your agents durable, cross-session knowledge with semantic search and graph query capabilities. [Learn more →](/docs/next/architecture/knowledge-bases)
+🧵 **Conversation Threads** - Persistent, named conversation threads with auto-naming and REST APIs for listing threads and reading history. [Learn more →](/docs/next/advanced/threads)
+
+🧠 **Knowledge Base Support** - Backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph) and Starburst Galaxy (SQL/analytics). [Learn more →](/docs/next/advanced/knowledge-bases)
 :::
 
 ## What is Agent Kernel?
 
-Agent Kernel is an **open-source runtime** that lets you build, test and deploy AI agents to production in days instead of months. It works with any major AI framework — OpenAI, LangGraph, CrewAI, Google ADK — and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, or your own servers with zero platform code. Built-in integrations for Slack, WhatsApp and more mean your agents can reach users instantly.
+Agent Kernel is an **open-source runtime** that lets you build, test and deploy AI agents to production in days instead of months. It works with any major AI framework (OpenAI Agents SDK, LangGraph, CrewAI, Google ADK, Smolagents) and can run agents from multiple frameworks together in a single runtime. It deploys to AWS, Azure, GCP, or your own servers with zero platform code, and scales from a single REST container to queue-backed, token-streaming production topologies. Built-in integrations for Slack, WhatsApp and more mean your agents can reach users instantly.
 
-**Think of it like Express.js for web servers, or Spring Boot for Java microservices** — but for AI agents. It gives you the scaffolding, execution environment, session management and deployment infrastructure so you can focus on writing the logic that matters.
+**Think of it like Express.js for web servers, or Spring Boot for Java microservices**, but for AI agents. It gives you the scaffolding, execution environment, session management and deployment infrastructure so you can focus on writing the logic that matters.
 
 **Supported Python Versions:** 3.12 - 3.13.x
-**Supported Cloud Platforms:** AWS, Azure
+**Supported Cloud Platforms:** AWS, Azure, GCP
 
 It's not:
 - A substitute for popular agent frameworks and SDKs like LangGraph, OpenAI Agents, CrewAI, or Google ADK
 - Another heavy abstraction that you have to learn
 
-It's a **lightweight, thin adapter** that wraps your existing agents and instantly provides everything else — testing, deployment, integrations, session management, observability.
+It's a **lightweight, thin adapter** that wraps your existing agents and instantly provides everything else: testing, deployment, integrations, session management, observability.
 
 ```mermaid
 ---
@@ -37,14 +39,13 @@ flowchart LR
     D["CrewAI"] --> B
     E["LangGraph"] --> B
     F["Google ADK"] --> B
-    SA["Smol Agents *(soon)*"] --> B
+    SA["Smolagents"] --> B
     LK["LiveKit *(soon)*"] --> B
     G["Test Framework"]
     B --> G
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style B fill:#2e4555,stroke:#fff,stroke-width:2px,color:#fff
     style G fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
-    style SA fill:#555,stroke:#fff,stroke-width:1px,color:#ccc,stroke-dasharray: 5 5
     style LK fill:#555,stroke:#fff,stroke-width:1px,color:#ccc,stroke-dasharray: 5 5
 ```
 
@@ -70,15 +71,20 @@ Agent Kernel provides pre-built execution capabilities:
 - **Multi-Cloud Serverless Deployment** for scalable production
   - AWS Lambda
   - Azure Functions
+  - GCP Cloud Run (scale-to-zero)
 - **Multi-Cloud Containerized Deployment** for consistent loads
   - AWS ECS/Fargate
   - Azure Container Apps
+  - GCP Cloud Run (always-on)
+- **Scalable Queue Mode (AWS)**: SQS-backed decoupling of request handling and agent execution, with retries, DLQs, and backlog-based auto-scaling on Lambda and ECS
+- **Token Streaming**: SSE streaming on the REST API, and WebSocket token streaming on AWS serverless
+- **WebSocket Delivery (AWS)**: real-time push of full responses (`async` mode) or per-token chunks (`stream` mode)
 - **MCP Server** for Model Context Protocol tool publishing
 - **A2A Server** for Agent-to-Agent communication
 
 ### Multi-Cloud Architecture
 
-Deploy the same agent code to **AWS or Azure** without modification. Agent Kernel provides:
+Deploy the same agent code to **AWS, Azure, or GCP** without modification. Agent Kernel provides:
 - Cloud-agnostic agent development
 - Provider-specific optimizations
 - Consistent APIs across clouds
@@ -97,13 +103,14 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools
   - `semantic_map` keeps agent prompts portable across deployments
   - You can also build your own backend by implementing a `KnowledgeBase` adapter and registering it with `KnowledgeBuilder`
-  [Learn more about knowledge bases →](/docs/next/architecture/knowledge-bases)
+  [Learn more about knowledge bases →](/docs/next/advanced/knowledge-bases)
 - **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching
   - In-memory (development)
-  - Redis (AWS & Azure)
-  - DynamoDB (AWS serverless)
-  - Cosmos DB (Azure serverless)
+  - Redis / Valkey (all clouds)
+  - DynamoDB (AWS)
+  - Cosmos DB (Azure)
+  - Firestore (GCP)
   - **Volatile Cache**: Request-scoped temporary storage for RAG context, file content, and intermediate data
   - **Non-Volatile Cache**: Session-persistent storage for user preferences, metadata, and configurations
   
@@ -115,15 +122,18 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - **Early termination**: Pre-hooks can halt execution and return custom responses
 - **Fault Tolerance**: Production-grade resilience
   - Multi-AZ deployments for high availability
-  - Automatic failure recovery and retry mechanisms
-  - Health monitoring and auto-scaling (auto-scaling will be made available soon)
+  - Automatic failure recovery and retry mechanisms (SQS visibility-timeout retries and DLQs in queue mode)
+  - Health monitoring and auto-scaling (backlog-based auto-scaling in AWS queue mode)
   - Persistent state across failures
 - **Traceability**: Track and audit all agent operations
   - LangFuse
   - OpenLLMetry
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
+- **Multimodal Attachments**: Image and file support with pluggable attachment storage and on-demand vision analysis
+- **Conversation Threads**: Persistent, named threads with auto-naming and REST read APIs
+- **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, and Smolagents
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
-- **Governance**: Guardrails and human in the middle capabilities are coming soon
+- **Governance**: Input/output guardrails with OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI (including PII redaction)
 
 ## Key Features
 
@@ -171,7 +181,7 @@ Two types of cache with identical APIs but different lifecycles:
   - Persists across multiple requests
   - Share data between hooks and tools
 
-**Multiple backends with multi-cloud support** - swap between in-memory (local), Redis (AWS & Azure), DynamoDB (AWS), or Cosmos DB (Azure) with just environment variables.
+**Multiple backends with multi-cloud support** - swap between in-memory (local), Redis/Valkey, DynamoDB (AWS), Cosmos DB (Azure), or Firestore (GCP) with just environment variables.
 
 [Read the advanced memory guide →](/docs/architecture/memory-management)
 
@@ -183,9 +193,9 @@ Agent Kernel currently supports:
 - **CrewAI** - Role-based multi-agent framework
 - **LangGraph** - Graph-based agent orchestration
 - **Google ADK** - Google's Agent Development Kit
+- **Smolagents** - Hugging Face's lightweight agentic framework
 
 Coming soon:
-- **Smol Agents** - Hugging Face's lightweight agentic framework
 - **LiveKit Agents** - Real-time audio/video agent framework for voice-enabled AI applications
 
 ### Flexible Deployment
@@ -202,6 +212,7 @@ flowchart LR
     B -- API --> D["REST API Server"] & G["MCP Server"] & H["A2A Server"]
     B -- AWS Cloud --> E["AWS Lambda"] & F["AWS ECS/Fargate"]
     B -- Azure Cloud --> K["Azure Functions"] & L["Azure Container Apps"]
+    B -- GCP Cloud --> Q["Cloud Run (serverless)"] & R["Cloud Run (always-on)"]
     D -- Integration --> I["Slack"] & J["WhatsApp"] & M["Messenger"] & N["Instagram"] & O["Telegram"] & P["Gmail"] & T["Teams"]
 
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
@@ -209,6 +220,8 @@ flowchart LR
     style F fill:#FF9900,stroke:#fff,stroke-width:2px,color:#fff
     style K fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
     style L fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
+    style Q fill:#4285F4,stroke:#fff,stroke-width:2px,color:#fff
+    style R fill:#4285F4,stroke:#fff,stroke-width:2px,color:#fff
     style I fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
     style M fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff
@@ -243,9 +256,10 @@ if __name__ == "__main__":
 
 You can:
 - Test locally with the CLI
-- Deploy to **AWS Lambda** or **Azure Functions** with one line-change (multi-cloud!)
-- Deploy to **AWS ECS/Fargate** or **Azure Container Apps** for containerized workloads
-- Expose as a REST API
+- Deploy to **AWS Lambda**, **Azure Functions**, or **GCP Cloud Run** with one line-change (multi-cloud!)
+- Deploy to **AWS ECS/Fargate**, **Azure Container Apps**, or **GCP Cloud Run (always-on)** for containerized workloads
+- Expose as a REST API, with SSE token streaming via `execution.mode: stream`
+- Scale out with SQS-backed queue mode and WebSocket delivery on AWS
 - Integrate with MCP or A2A protocols
 
 All without changing your agent code!
@@ -255,16 +269,16 @@ All without changing your agent code!
 Agent Kernel is built for four types of teams:
 
 ### Software Companies (Services)
-Development houses and IT services firms with clients asking for AI-powered solutions. Agent Kernel lets them stand up AI agent capabilities quickly without a 6-month R&D cycle — focusing developer time on client-specific agent logic, not infrastructure.
+Development houses and IT services firms with clients asking for AI-powered solutions. Agent Kernel lets them stand up AI agent capabilities quickly without a 6-month R&D cycle, focusing developer time on client-specific agent logic, not infrastructure.
 
 ### Software Companies (Products)
-SaaS and enterprise software companies wanting to embed AI agents into their products. Agent Kernel's framework-agnostic design eliminates lock-in — add intelligent agents today, switch frameworks tomorrow, and your platform code never changes.
+SaaS and enterprise software companies wanting to embed AI agents into their products. Agent Kernel's framework-agnostic design eliminates lock-in: add intelligent agents today, switch frameworks tomorrow, and your platform code never changes.
 
 ### AI Startups
-Early to growth-stage startups building AI-native products. With open-source, no licensing costs, and full deployment infrastructure (Terraform, Docker) out of the box, startups go from prototype to production in days — not quarters.
+Early to growth-stage startups building AI-native products. With open-source, no licensing costs, and full deployment infrastructure (Terraform, Docker) out of the box, startups go from prototype to production in days, not quarters.
 
 ### Domain Experts
-Subject matter experts in finance, healthcare, legal, education, or other fields who want to build AI products without a fulltime engineering team. Agent Kernel dramatically reduces the software engineering surface area — define your agent logic, and Agent Kernel handles the rest.
+Subject matter experts in finance, healthcare, legal, education, or other fields who want to build AI products without a fulltime engineering team. Agent Kernel dramatically reduces the software engineering surface area: define your agent logic, and Agent Kernel handles the rest.
 
 → **[Explore all use cases →](/use-cases)**
 

@@ -21,9 +21,10 @@ graph TB
     
     subgraph "Storage Backends"
         D[In-Memory<br/>Development]
-        E[Redis<br/>AWS & Azure Production]
-        F[DynamoDB<br/>AWS Serverless]
-        G[Cosmos DB<br/>Azure Serverless]
+        E[Redis / Valkey<br/>All clouds]
+        F[DynamoDB<br/>AWS]
+        G[Cosmos DB<br/>Azure]
+        H[Firestore<br/>GCP]
     end
     
     A --> B
@@ -32,6 +33,7 @@ graph TB
     C --> E
     C --> F
     C --> G
+    C --> H
     
     style B fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style C fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
@@ -45,10 +47,11 @@ A Session:
 - **Manages** thread context for multi-turn conversations
 - **Supports** multiple storage backends with **multi-cloud support**:
   - In-memory (development)
-  - Redis (AWS & Azure production)
+  - Redis (AWS, Azure & GCP production)
   - Valkey (AWS production; open-source Redis fork)
   - DynamoDB (AWS serverless)
   - Cosmos DB (Azure serverless)
+  - Firestore (GCP)
 - **Stores** framework-specific state separately per agent
 - **Enables** session-scoped caching and memory management
 
@@ -94,7 +97,7 @@ In API mode, you control session IDs to manage user conversations:
 POST /api/v1/chat
 {
   "agent": "assistant",
-  "message": "Hello!",
+  "prompt": "Hello!",
   "session_id": "user-123-conversation-1"
 }
 ```
@@ -150,9 +153,9 @@ export AK_SESSION__TYPE=in_memory
 - Non-critical data
 - Single-instance deployments
 
-### Redis Storage (AWS & Azure) {#redis-storage}
+### Redis Storage (AWS, Azure & GCP) {#redis-storage}
 
-Persistent, high-performance storage for production deployments on both AWS and Azure:
+Persistent, high-performance storage for production deployments on AWS (ElastiCache), Azure (Azure Cache for Redis), and GCP (Memorystore):
 
 ```bash
 export AK_SESSION__TYPE=redis
@@ -168,11 +171,11 @@ export AK_SESSION__REDIS__PREFIX=ak:sessions:
 - ✅ Supports distributed/multi-process deployments
 - ✅ Configurable TTL for automatic cleanup
 - ✅ Redis Cluster for high availability
-- ✅ **Multi-cloud support**: AWS ElastiCache & Azure Managed Redis
+- ✅ **Multi-cloud support**: AWS ElastiCache, Azure Cache for Redis & GCP Memorystore
 - ✅ Ideal for containerized deployments (ECS/Fargate, Azure Container Apps)
 
 **Use When:**
-- Production containerized deployments (AWS or Azure)
+- Production containerized deployments (AWS, Azure, or GCP)
 - Multi-instance applications
 - High-throughput requirements
 - Need for sub-millisecond session access
@@ -296,6 +299,33 @@ export AK_SESSION__COSMOSDB__TTL=604800  # 7 days (0 to disable)
 - Appropriate Azure permissions (connection string or managed identity)
 
 **Note**: Agent Kernel's Terraform modules automatically create the required Cosmos DB resources with proper configuration.
+
+### Firestore Storage (GCP) {#firestore-storage}
+
+Serverless, fully-managed storage for GCP deployments:
+
+```bash
+export AK_SESSION__TYPE=firestore
+export AK_SESSION__FIRESTORE__COLLECTION_NAME=ak_sessions  # default: ak_sessions
+export AK_SESSION__FIRESTORE__PROJECT_ID=my-project        # optional, inferred from ADC if omitted
+export AK_SESSION__FIRESTORE__DATABASE_ID="(default)"      # optional
+export AK_SESSION__FIRESTORE__TTL=604800                   # 7 days (0 to disable)
+```
+
+**Characteristics:**
+- ✅ Serverless, fully managed by Google Cloud
+- ✅ Auto-scaling capacity, multi-region replication
+- ✅ No infrastructure management, pay-per-use pricing
+- ✅ Ideal for Cloud Run deployments
+- ⚠️ Higher latency than Redis/Memorystore
+
+**How it works:** one Firestore document per `session_id`, with one field per session key. The store writes an `expiry_time` timestamp field on each document; enable a **Firestore TTL policy** on the collection pointing at `expiry_time` for automatic document expiry.
+
+**Use When:**
+- GCP Cloud Run deployments (serverless or always-on)
+- GCP-native infrastructure with minimal operational overhead
+
+**Note**: The GCP Terraform modules create the Firestore database and inject the `AK_SESSION__*` environment variables automatically when `create_firestore_db = true`. Requires the `agentkernel[gcp]` extra.
 
 ### Session Caching (Redis, Valkey, DynamoDB & Cosmos DB)
 
@@ -440,7 +470,7 @@ Configure session behavior via environment variables or configuration files.
 export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'dynamodb' (AWS), 'cosmosdb' (Azure)
 
 # ============================================
-# Redis Configuration (AWS & Azure)
+# Redis Configuration (AWS, Azure & GCP)
 # ============================================
 export AK_SESSION__REDIS__URL=redis://localhost:6379
 export AK_SESSION__REDIS__PASSWORD=your-password
@@ -516,6 +546,13 @@ export AK_SESSION__REDIS__URL=redis://azure-redis-endpoint:6379
 export AK_SESSION__CACHE__SIZE=256  # Enable with sticky sessions
 ```
 
+*GCP (Cloud Run always-on):*
+```bash
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://memorystore-endpoint:6379
+export AK_SESSION__CACHE__SIZE=256  # Enable with sticky sessions
+```
+
 **Serverless Deployments:**
 
 *AWS Lambda:*
@@ -534,6 +571,14 @@ export AK_SESSION__COSMOSDB__TABLE_ENDPOINT=https://your-account.documents.azure
 export AK_SESSION__COSMOSDB__CONNECTION_STRING=AccountEndpoint=https://...;AccountKey=...
 export AK_SESSION__COSMOSDB__TTL=604800
 # Caching not recommended for Azure Functions (stateless invocations)
+```
+
+*GCP Cloud Run (scale-to-zero):*
+```bash
+export AK_SESSION__TYPE=firestore
+export AK_SESSION__FIRESTORE__COLLECTION_NAME=ak_sessions
+export AK_SESSION__FIRESTORE__TTL=604800
+# Caching not recommended for scale-to-zero deployments
 ```
 
 [See deployment guides for detailed configuration →](/docs/deployment/overview)
@@ -597,7 +642,7 @@ session.clear()
 
 # For complete removal (advanced usage)
 from agentkernel.core import Runtime
-runtime = Runtime.get()
+runtime = Runtime.current()
 runtime.session_manager.delete_session(session_id)
 ```
 
@@ -682,7 +727,7 @@ For advanced scenarios, access the session manager directly:
 ```python
 from agentkernel.core import Runtime
 
-runtime = Runtime.get()
+runtime = Runtime.current()
 session_manager = runtime.session_manager
 
 # Get or create session

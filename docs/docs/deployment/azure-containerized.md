@@ -6,6 +6,10 @@ sidebar_position: 6
 
 Deploy agents to Azure Container Apps for consistent, low-latency execution.
 
+:::note Supported execution modes
+Container Apps runs Agent Kernel's built-in REST server (`RESTAPI.run`), so it supports synchronous JSON REST **and SSE token streaming** (`execution.mode: stream`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK). Queue-based execution and WebSocket delivery are currently AWS-only; see the [Deployment Overview](./overview#execution-modes).
+:::
+
 ## Architecture
 
 ```mermaid

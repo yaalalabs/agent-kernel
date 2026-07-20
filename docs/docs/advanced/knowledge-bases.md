@@ -16,23 +16,23 @@ This builds on top of core session and memory concepts:
 
 `KnowledgeBase` is an abstract interface implemented by concrete backends:
 
-- `ChromaManager` – ChromaDB vector store for semantic text recall.
-- `Neo4jManager` – Neo4j graph database for entities and relationships.
-- `StarburstManager` – Starburst Galaxy (read-only SQL via Trino) for querying structured data in MongoDB, Google Sheets, PostgreSQL, and other Trino-connected sources.
+- `ChromaManager`: ChromaDB vector store for semantic text recall.
+- `Neo4jManager`: Neo4j graph database for entities and relationships.
+- `StarburstManager`: Starburst Galaxy (read-only SQL via Trino) for querying structured data in MongoDB, Google Sheets, PostgreSQL, and other Trino-connected sources.
 
 For Starburst operational details, see Starburst Galaxy documentation:
 - https://docs.starburst.io/starburst-galaxy/
 
 Each backend implements:
 
-- `backend_name: str` – unique identifier (used by tools and schemas).
-- `add_schema(schema_config: dict)` – register backend‑specific schema/usage metadata.
-- `schema() -> Mapping[str, Any>` – returns a JSON‑serializable schema describing capabilities and payload shapes.
-- `connect(**kwargs) -> None` – establish any underlying client connections.
-- `write(records: Iterable[Record], **kwargs) -> None` – persist records (`{"text": ..., "metadata": ...}`).
-- `read(query: str, limit: int = N, **kwargs) -> list[Record]` – retrieve relevant records.
-- `format_results(rows: list[Record]) -> str` – helper for formatting results for the agent.
-- `get_description() -> str` – human‑readable description for routing decisions.
+- `backend_name: str`: unique identifier (used by tools and schemas).
+- `add_schema(schema_config: dict)`: register backend‑specific schema/usage metadata.
+- `schema() -> Mapping[str, Any>`: returns a JSON‑serializable schema describing capabilities and payload shapes.
+- `connect(**kwargs) -> None`: establish any underlying client connections.
+- `write(records: Iterable[Record], **kwargs) -> None`: persist records (`{"text": ..., "metadata": ...}`).
+- `read(query: str, limit: int = N, **kwargs) -> list[Record]`: retrieve relevant records.
+- `format_results(rows: list[Record]) -> str`: helper for formatting results for the agent.
+- `get_description() -> str`: human‑readable description for routing decisions.
 
 All backends live under `agentkernel.knowledgebase`:
 
@@ -48,10 +48,10 @@ from agentkernel.knowledgebase.starburst import StarburstManager
 
 `KnowledgeBuilder` composes one or more `KnowledgeBase` instances and exposes a **small set of tools** that can be bound to any supported agent framework:
 
-- `get_schemas()` – returns JSON with each backend’s schema/metadata.
-- `read_kb(backend: str, query: str, limit: int = 3)` – query a specific backend.
-- `write_kb(backend: str, text: str, ..., query: str, params_json: str, ...)` – write to a backend (write semantics are backend-specific).
-- `get_all_kb_descriptions()` – short descriptions of each registered backend.
+- `get_schemas()`: returns JSON with each backend’s schema/metadata.
+- `read_kb(backend: str, query: str, limit: int = 3)`: query a specific backend.
+- `write_kb(backend: str, text: str, ..., query: str, params_json: str, ...)`: write to a backend (write semantics are backend-specific).
+- `get_all_kb_descriptions()`: short descriptions of each registered backend.
 
 Important: `StarburstManager` is read-only. Use `read_kb` for Starburst backends and do not route `write_kb` calls to Starburst.
 
@@ -88,7 +88,7 @@ kb_tools = KnowledgeBuilder([v_db, g_db]).build()
   - Reduces agent hallucinations by centralizing backend-specific details in the deployment configuration.
 
 3. Examples:
-  - Vector store (Chroma): no physical table name needed — map to the backend name when helpful: `"<VECTOR_STORE>": "ChromaDB"`.
+  - Vector store (Chroma): no physical table name needed; map to the backend name when helpful: `"<VECTOR_STORE>": "ChromaDB"`.
   - Graph (Neo4j): map to a named graph or connection string: `"<GRAPH>": "neo4j.default.graph"`.
   - Starburst/Trino (Sheets/Mongo): map logical placeholders to SQL FROM targets: `"<SHEETS_SOURCE>": "TABLE(kb_sheets.system.sheet(id => 'SHEET_ID'))"` or `"<MONGO_SOURCE>": "catalog.schema.table"`.
 
@@ -198,7 +198,7 @@ See the per-backend READMEs for step-by-step usage and routing behavior:
 
 ## Custom KnowledgeBase Adapters
 
-You can bring your own storage backend by subclassing `KnowledgeBase`. Any backend registered with `KnowledgeBuilder` — built-in or custom — is exposed to agents through the same `read_kb` / `write_kb` / `get_schemas` tools.
+You can bring your own storage backend by subclassing `KnowledgeBase`. Any backend registered with `KnowledgeBuilder` (built-in or custom) is exposed to agents through the same `read_kb` / `write_kb` / `get_schemas` tools.
 
 ### Minimal implementation
 

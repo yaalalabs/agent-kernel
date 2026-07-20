@@ -87,7 +87,7 @@ See [Tools](../core-concepts/tools) for the full guide on writing and binding to
 
 ## Structured Output
 
-CrewAI configures structured output on the `Task` (`output_pydantic` / `output_json`), not on the agent — and Agent Kernel builds the task internally per run. Pass the model class to the module constructor, keyed by agent role; the runner forwards it into the task it creates:
+CrewAI configures structured output on the `Task` (`output_pydantic` / `output_json`), not on the agent, and Agent Kernel builds the task internally per run. Pass the model class to the module constructor, keyed by agent role; the runner forwards it into the task it creates:
 
 ```python
 from crewai import Agent as CrewAgent

@@ -89,7 +89,7 @@ function WhatsNewBanner() {
           to plug in any backend.
         </span>
         <Link
-          to="/docs/next/architecture/knowledge-bases"
+          to="/docs/next/advanced/knowledge-bases"
           className={styles.whatsNewLink}
           ref={linkRef}
         >

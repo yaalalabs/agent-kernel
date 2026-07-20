@@ -8,7 +8,7 @@ Build and run your first AI agent with Agent Kernel in under 5 minutes!
 
 :::info Requirements
 **Python Version:** 3.12 - 3.13.x (Python 3.14+ support to be available soon)  
-**Cloud Platforms:** AWS, Azure (multi-cloud support)
+**Cloud Platforms:** AWS, Azure, GCP (multi-cloud support)
 :::
 
 ## Choose Your Framework
@@ -539,8 +539,8 @@ See [session configuration](./core-concepts/configuration.md#session-storage) fo
 # Sessions automatically track conversation history
 # Each user/conversation gets a unique session ID
 # Configure via environment variables:
-# AK_SESSION_STORAGE=redis
-# AK_REDIS_URL=redis://localhost:6379
+# AK_SESSION__TYPE=redis
+# AK_SESSION__REDIS__URL=redis://localhost:6379
 ```
 
 ## Examples Gallery

@@ -14,10 +14,10 @@ ECS (containerized) deployments.
 Queue mode decouples the HTTP request from the agent processing by placing an SQS FIFO
 queue between the caller and the Agent Runner. This gives you:
 
-- **Backpressure control** – the queue absorbs burst traffic.
-- **Ordered processing per session** – `MessageGroupId = SessionID` keeps chat turns in order.
-- **Automatic retries** – failed messages reappear after the visibility timeout expires.
-- **Deduplication** – `MessageDeduplicationId` prevents the same message being processed twice.
+- **Backpressure control**: the queue absorbs burst traffic.
+- **Ordered processing per session**: `MessageGroupId = SessionID` keeps chat turns in order.
+- **Automatic retries**: failed messages reappear after the visibility timeout expires.
+- **Deduplication**: `MessageDeduplicationId` prevents the same message being processed twice.
 
 Two sub-modes are supported:
 
@@ -32,31 +32,25 @@ Two sub-modes are supported:
 
 ### Components
 
+```mermaid
+graph TB
+    C[Client] -->|"POST /api/{version}/{endpoint}"| GW[API Gateway HTTP]
+    GW --> RH[Request Handler Lambda]
+    RH -->|SendMessage| IQ[/Input SQS FIFO Queue/]
+    IQ -->|Event Source Mapping| AR["Agent Runner Lambda<br/>scales 1:1 with queue batches"]
+    AR -->|SendMessage| OQ[/Output SQS FIFO Queue/]
+    OQ -->|Event Source Mapping| RSH[Response Handler Lambda]
+    RSH -->|rest_sync / rest_async| RS[(DynamoDB / Redis / Valkey<br/>Response Store)]
+    RSH -->|"async / stream (WebSocket)"| WS[WebSocket API Gateway<br/>PostToConnection]
+    RS -.->|poll| RH
+    IQ -. "visibility timeout retries,<br/>DLQ after maxReceiveCount" .- IQ
+
+    style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style RSH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
-Client
-  │
-  ▼
-API Gateway (HTTP)
-  │  POST /api/{version}/{endpoint}
-  ▼
-Request Handler Lambda
-  │  puts message on Input Queue
-  ▼
-Input SQS FIFO Queue  ──────────────────────────────────────────────────────┐
-  │  Event Source Mapping (batch = 1 per Lambda)                            │
-  ▼                                                                          │
-Agent Runner Lambda (scales 1:1 with queue batches)                         │ visibility
-  │  processes message, puts result on Output Queue                         │ timeout
-  ▼                                                                          │
-Output SQS FIFO Queue ◄─────────────────────────────────────────────────────┘
-  │  Event Source Mapping
-  ▼
-Response Handler Lambda
-  │
-  ├─► (REST Sync / REST Async / Streaming)  writes to DynamoDB Response Store
-  │
-  └─► (Async/WebSocket)  sends directly via WebSocket PostToConnection
-```
+
+In `stream` mode the Agent Runner Lambda (`ServerlessStreamAgentRunner`) sends **one output-queue message per token chunk**, and the Response Handler broadcasts each as a `STREAM_CHUNK` WebSocket message.
 
 ### SQS Queue Design
 
@@ -135,62 +129,86 @@ Both `ECSSQSConsumer` subclasses (`ECSAgentRunner` and `ECSOutputConsumer`) are
 themselves internally multi-threaded: `ECSSQSConsumer.run()` starts `num_consumers`
 independent long-lived threads (also via `ThreadRunner`), each running its own
 blocking long-poll loop against the same queue. So "Thread 2" of the IO container
-is really `no_of_consumers` output-queue-polling threads, and the Agent Runner
-container runs `no_of_consumers` input-queue-polling threads — not a single loop.
-`num_consumers` defaults to 5 and is configured per-queue via
-`execution.queues.input.no_of_consumers` / `execution.queues.output.no_of_consumers`
-(ECS only — ignored by Lambda). If any consumer thread crashes, `ThreadRunner` triggers a
+is really `output.no_of_consumers` output-queue-polling threads, and the Agent Runner
+container runs `input.no_of_consumers` input-queue-polling threads, not a single loop.
+The defaults differ per queue: `execution.queues.input.no_of_consumers` defaults to **5**
+and `execution.queues.output.no_of_consumers` defaults to **2** (ECS only; both ignored
+by Lambda). If any consumer thread crashes, `ThreadRunner` triggers a
 graceful shutdown: it sets a shared `shutdown_event`, waits for the sibling consumer
 threads in that same pool to finish their current poll/message and return, then calls
 `os._exit(1)` so ECS restarts the whole task. The REST API thread does not check
-`shutdown_event` — it is simply terminated along with everything else the moment
+`shutdown_event`; it is simply terminated along with everything else the moment
 `os._exit(1)` fires.
+
+```mermaid
+graph TB
+    subgraph IO["IO container - ECSIOHandler.run()"]
+        T1["rest-api thread<br/>FastAPI/uvicorn + ECSQueueRequestHandler"]
+        subgraph OCP["output-queue-consumer thread pool"]
+            OC1["sqs-consumer-0 .. N<br/>(output.no_of_consumers, default 2)"]
+        end
+    end
+
+    subgraph ARC["Agent Runner container - ECSAgentRunner.run()"]
+        AR1["sqs-consumer-0 .. N<br/>(input.no_of_consumers, default 5)"]
+    end
+
+    T1 -->|SendMessage| IQ[/Input Queue/]
+    IQ -->|long poll| AR1
+    AR1 -->|SendMessage| OQ[/Output Queue/]
+    OQ -->|long poll| OC1
+    OC1 --> RS[(DynamoDB Response Store)]
+    RS -.->|"poll by request_id"| T1
+
+    style T1 fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style RS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+:::note
+Streaming and WebSocket delivery are **not available in ECS queue mode**; those are
+AWS Lambda serverless features. ECS queue mode supports `rest_sync` and `rest_async`,
+with replies always delivered through the response store.
+:::
 
 ### Python Class Hierarchy
 
 | Class | Container | Role |
 |-------|-----------|------|
 | `ECSIOHandler` | IO container | Entrypoint: starts Thread 1 + Thread 2 via `ThreadRunner` |
-| `ECSQueueRequestHandler` | IO container / Thread 1 | FastAPI: `POST /api/v1/chat` enqueues; `GET /api/v1/chat/{id}` polls |
-| `ECSOutputConsumer` | IO container / Thread 2 | Extends `ECSSQSConsumer` — runs `no_of_consumers` threads polling Output Queue → DynamoDB / WebSocket |
-| `ECSAgentRunner` | Agent Runner container | Extends `ECSSQSConsumer` — runs `no_of_consumers` threads polling Input Queue, running the agent, sending to Output Queue |
+| `ECSQueueRequestHandler` | IO container / Thread 1 | FastAPI: `POST /api/v1/chat` enqueues; `GET /api/v1/chat/{session_id}?request_id=...` polls |
+| `ECSOutputConsumer` | IO container / Thread 2 | Extends `ECSSQSConsumer`; runs `output.no_of_consumers` (default 2) threads polling Output Queue → response store |
+| `ECSAgentRunner` | Agent Runner container | Extends `ECSSQSConsumer`; runs `input.no_of_consumers` (default 5) threads polling Input Queue, running the agent, sending to Output Queue |
 | `ECSSQSConsumer` | both | Extends `QueueConsumer`; spins up `num_consumers` poll-loop threads via `ThreadRunner`; each thread does its own long-poll/retry/permanent-failure handling |
-| `QueueConsumer` | shared (Lambda + ECS) | Abstract base declaring `poll`, `process_message`, `on_permanent_failure`, `delete_message` — also the base of `LambdaSQSConsumer` (the Lambda-side equivalent, which leaves `poll`/`delete_message` unimplemented since the SQS Event Source Mapping handles those for Lambda) |
+| `QueueConsumer` | shared (Lambda + ECS) | Abstract base declaring `poll`, `process_message`, `on_permanent_failure`, `delete_message`; also the base of `LambdaSQSConsumer` (the Lambda-side equivalent, which leaves `poll`/`delete_message` unimplemented since the SQS Event Source Mapping handles those for Lambda) |
 | `ThreadRunner` | both | Runs N callables as peer threads; on a crash it either exits immediately or, if the failing task opts into `graceful=True` (the SQS consumer pools do), sets a shared `shutdown_event` and waits for sibling tasks in that same `run()` call to finish before calling `os._exit(1)` |
 
-### Request Flow — REST Sync
+### Request Flow: REST Sync
 
-```
-Client
-  │
-  ▼
-API Gateway (HTTP)
-  │  routes to ALB via VPC Link
-  ▼
-ALB → ECSIOHandler container
-        │
-        ├── Thread 1 — ECSQueueRequestHandler (FastAPI/uvicorn)
-        │     PUT message on Input Queue
-        │     poll DynamoDB Response Store
-        │     return response on same connection
-        │
-        └── Thread 2 — ECSOutputConsumer.run()
-              poll Output Queue → write to DynamoDB Response Store
-  │
-  ▼
-Input SQS FIFO Queue
-  │
-  ▼
-ECSAgentRunner container (separate ECS service, auto-scales)
-  │  polls Input Queue, runs agent, puts result on Output Queue
-  ▼
-Output SQS FIFO Queue
-  │
-  ▼
-ECSOutputConsumer (Thread 2)  →  DynamoDB Response Store
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant GW as API Gateway → ALB
+    participant T1 as ECSQueueRequestHandler<br/>(IO container, rest-api thread)
+    participant IQ as Input SQS FIFO Queue
+    participant AR as ECSAgentRunner container<br/>(auto-scales)
+    participant OQ as Output SQS FIFO Queue
+    participant T2 as ECSOutputConsumer<br/>(IO container, consumer threads)
+    participant RS as DynamoDB Response Store
+
+    C->>GW: POST /api/v1/chat
+    GW->>T1: forward
+    T1->>IQ: SendMessage (group=session_id, dedup=request_id)
+    IQ->>AR: long poll receive
+    AR->>AR: ChatService → Runtime.run()
+    AR->>OQ: SendMessage (same request_id)
+    OQ->>T2: long poll receive
+    T2->>RS: add_message {session_id, request_id, body}
+    T1->>RS: poll by request_id (retry_count × delay)
+    T1-->>C: 200 JSON on same connection (504 on timeout)
 ```
 
-### Request Flow — REST Async
+### Request Flow: REST Async
 
 Identical infrastructure to REST Sync. The difference is purely in `ECSQueueRequestHandler`:
 
@@ -201,7 +219,7 @@ Identical infrastructure to REST Sync. The difference is purely in `ECSQueueRequ
 
 ### Entrypoint Code
 
-**IO container — `app_rest_service.py`** (no agent definitions):
+**IO container, `app_rest_service.py`** (no agent definitions):
 
 ```python
 from agentkernel.aws import ECSIOHandler
@@ -212,7 +230,7 @@ if __name__ == "__main__":
     runner()
 ```
 
-**Agent Runner container — `app_agent_runner.py`**:
+**Agent Runner container, `app_agent_runner.py`**:
 
 ```python
 from agentkernel.aws import ECSAgentRunner
@@ -228,9 +246,9 @@ if __name__ == "__main__":
 
 ### Required AWS Resources
 
-- `aws_sqs_queue` — Input Queue (FIFO)
-- `aws_sqs_queue` — Output Queue (FIFO)
-- `aws_dynamodb_table` — Response Store (keyed by `request_id`, with TTL)
+- `aws_sqs_queue`: Input Queue (FIFO)
+- `aws_sqs_queue`: Output Queue (FIFO)
+- `aws_dynamodb_table`: Response Store (keyed by `request_id`, with TTL)
 - IAM for IO container task role: `sqs:SendMessage` on Input Queue; `sqs:ReceiveMessage / DeleteMessage / ChangeMessageVisibility` on Output Queue; `dynamodb:PutItem / GetItem / Query / DeleteItem` on Response Store
 - IAM for Agent Runner task role: `sqs:ReceiveMessage / DeleteMessage / ChangeMessageVisibility` on Input Queue; `sqs:SendMessage` on Output Queue
 
@@ -258,6 +276,11 @@ AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS   = <no_of_consumers>  # input-queu
 AK_EXECUTION__QUEUES__BATCH_SIZE               = <batch_size>      # Terraform-set only, never in config.yaml
 ```
 
+> The Terraform module deliberately sets the app-level `MAX_RECEIVE_COUNT` to **one below**
+> the SQS redrive `maxReceiveCount`. That way the application writes a graceful error
+> response (to the response store) on its final attempt *before* SQS moves the message to
+> the dead-letter queue, so the HTTP caller never hangs waiting for a reply.
+
 ### Scaling the Agent Runner ECS Service
 
 Unlike Lambda (which auto-scales 1:1 with queue batches), ECS needs an explicit scaling
@@ -278,14 +301,14 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | Aspect | Lambda | ECS |
 |--------|--------|-----|
 | Input Queue trigger | Event Source Mapping (push) | `ECSAgentRunner` polls (`ECSSQSConsumer.run`) |
-| Partial failure | `batchItemFailures` return value | Failed messages not deleted — visibility timeout retries |
+| Partial failure | `batchItemFailures` return value | Failed messages not deleted, visibility timeout retries |
 | Scaling | Automatic, 1 Lambda per batch | `backlog-per-task` target tracking policy |
 | Response Handler | Separate Lambda triggered by Output Queue ESM | `ECSOutputConsumer` (Thread 2 in IO container) |
 | Crash recovery | Lambda restarts automatically | `ThreadRunner` drains sibling consumer threads gracefully, then calls `os._exit(1)` → ECS restarts the task |
 
 ---
 
-## Summary — Implementation Status
+## Summary: Implementation Status
 
 | Component | Lambda | ECS |
 |-----------|--------|-----|
@@ -295,4 +318,5 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | Output Queue Consumer | ✅ `modules/response-handler/` (separate Lambda) | ✅ `ECSOutputConsumer` (Thread 2 in IO container) |
 | DynamoDB Response Store | ✅ serverless stack | ✅ containerized stack |
 | Thread management | N/A | ✅ `ThreadRunner` (`deployment/common/thread_runner.py`) |
-| WebSocket Mode | ✅ `modules/websocket-api-gateway/` + `modules/ws-connection-handler/` | ⚠️ `ECSOutputConsumer` supports WebSocket broadcast; API Gateway WebSocket wiring not yet in TF module |
+| WebSocket Mode (`async`) | ✅ `modules/websocket-api-gateway/` + `modules/ws-connection-handler/` | ❌ Not supported, replies delivered via response store only |
+| Streaming Mode (`stream`) | ✅ `ServerlessStreamAgentRunner` → one SQS message per chunk → WebSocket `STREAM_CHUNK` | ❌ Not supported in queue mode |

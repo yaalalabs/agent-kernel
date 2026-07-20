@@ -1,6 +1,6 @@
 import pytest
 
-from agentkernel.deployment.aws.core.response_store import valkey as valkey_module
+from agentkernel.core.util.driver import valkey as valkey_driver_module
 from agentkernel.deployment.aws.core.response_store.handler import ResponseDBHandler
 from agentkernel.deployment.aws.core.response_store.valkey import ValkeyResponseStore
 
@@ -10,25 +10,31 @@ class FakeValkeyClient:
 
     def __init__(self):
         self.store: dict[str, str] = {}
-        self.expirations: dict[str, int] = {}
+        self.set_ex: dict[str, int] = {}
 
-    def set(self, key, value):
+    def ping(self):
+        return True
+
+    def set(self, key, value, ex=None, nx=False):
+        if nx and key in self.store:
+            return None
         self.store[key] = value
+        if ex is not None:
+            self.set_ex[key] = ex
+        return True
 
     def get(self, key):
         return self.store.get(key)
 
-    def expire(self, name, time):
-        self.expirations[name] = time
-
-    def delete(self, key):
-        self.store.pop(key, None)
+    def delete(self, *keys):
+        for key in keys:
+            self.store.pop(key, None)
 
 
 @pytest.fixture
 def fake_client(monkeypatch):
     client = FakeValkeyClient()
-    monkeypatch.setattr(valkey_module.valkey.Valkey, "from_url", classmethod(lambda cls, *a, **k: client))
+    monkeypatch.setattr(valkey_driver_module.valkey, "from_url", lambda *a, **k: client)
     return client
 
 
@@ -36,18 +42,34 @@ def _message(request_id="req-1", body=None):
     return {"request_id": request_id, "session_id": "s-1", "body": body or {"text": "hi"}}
 
 
+def test_client_is_created_lazily_on_first_operation(monkeypatch):
+    client = FakeValkeyClient()
+    calls = {"n": 0}
+
+    def from_url(*a, **k):
+        calls["n"] += 1
+        return client
+
+    monkeypatch.setattr(valkey_driver_module.valkey, "from_url", from_url)
+    store = ValkeyResponseStore(url="valkey://localhost:6379")
+    assert calls["n"] == 0  # no eager connect in __init__
+    store.add_message(_message("abc"))
+    assert calls["n"] == 1
+
+
 def test_add_message_stores_under_prefixed_key(fake_client):
     store = ValkeyResponseStore(url="valkey://localhost:6379", prefix="ak:resp:", ttl=0)
     store.add_message(_message("abc"))
     assert "ak:resp:abc" in fake_client.store
-    # ttl == 0 disables expiry
-    assert "ak:resp:abc" not in fake_client.expirations
+    # ttl == 0 disables expiry (no ex passed to SET)
+    assert "ak:resp:abc" not in fake_client.set_ex
 
 
 def test_add_message_applies_ttl_when_positive(fake_client):
     store = ValkeyResponseStore(url="valkey://localhost:6379", prefix="ak:resp:", ttl=120)
     store.add_message(_message("abc"))
-    assert fake_client.expirations["ak:resp:abc"] == 120
+    # TTL is applied atomically via SET ... EX
+    assert fake_client.set_ex["ak:resp:abc"] == 120
 
 
 def test_get_message_miss_returns_none(fake_client):

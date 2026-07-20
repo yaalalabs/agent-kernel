@@ -3,7 +3,7 @@ from __future__ import annotations
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
 from ..core.hooks import PostHook, PreHook
-from ..core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestText
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequest, AgentRequestText
 
 
 class InputGuardrail(PreHook):
@@ -82,9 +82,7 @@ class BaseGuardrailUtil:
         text_parts = []
         for req in requests:
             if isinstance(req, AgentRequestText):
-                text_parts.append(req.text)
-            elif hasattr(req, "text"):
-                text_parts.append(str(req.text))
+                text_parts.append(req.prompt)
         return "\n".join(text_parts)
 
     @staticmethod
@@ -94,9 +92,9 @@ class BaseGuardrailUtil:
         :param agent_reply: Agent reply
         """
         if isinstance(agent_reply, AgentReplyText):
-            return agent_reply.text
+            return agent_reply.response
         elif isinstance(agent_reply, AgentReplyAny):
             return str(agent_reply)
-        elif hasattr(agent_reply, "text"):
-            return str(agent_reply.text)
+        elif isinstance(agent_reply, AgentReplyImage):
+            return str(agent_reply.response)
         return ""

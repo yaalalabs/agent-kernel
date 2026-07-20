@@ -34,7 +34,7 @@ class TestLangGraphRunnerStructuredOutput:
     async def test_structured_response_model_returns_agent_reply_any(self):
         runner = LangGraphRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="weather in Colombo?")]
+        requests = [AgentRequestText(prompt="weather in Colombo?")]
         result = {
             "messages": [_message("WeatherResponse(city='Colombo', conditions='sunny')")],
             "structured_response": WeatherResponse(city="Colombo", conditions="sunny"),
@@ -51,7 +51,7 @@ class TestLangGraphRunnerStructuredOutput:
     async def test_structured_response_dict_returns_agent_reply_any(self):
         runner = LangGraphRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="weather?")]
+        requests = [AgentRequestText(prompt="weather?")]
         result = {
             "messages": [_message("...")],
             "structured_response": {"city": "Colombo", "conditions": "sunny"},
@@ -67,12 +67,12 @@ class TestLangGraphRunnerStructuredOutput:
     async def test_without_structured_response_returns_last_message_text(self):
         runner = LangGraphRunner()
         session = Session("test-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         result = {"messages": [_message("first"), _message("Hi there!")]}
         agent = _mock_agent(result)
 
         reply = await runner.run(agent, session, requests)
 
         assert isinstance(reply, AgentReplyText)
-        assert reply.text == "Hi there!"
+        assert reply.response == "Hi there!"
         assert reply.prompt == "hello"

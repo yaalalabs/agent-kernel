@@ -1,8 +1,10 @@
 import pytest
 import valkey
 
-from agentkernel.core.session import valkey as valkey_module
-from agentkernel.core.session.valkey import ValkeyDriver, ValkeySessionStore
+from agentkernel.core.session.valkey import ValkeySessionStore
+from agentkernel.core.util.driver import base as driver_base
+from agentkernel.core.util.driver import valkey as valkey_driver_module
+from agentkernel.core.util.driver.valkey import ValkeyDriver
 
 
 class FakeValkeyClient:
@@ -55,7 +57,7 @@ def _make_cfg(ttl: int = 60):
 @pytest.fixture
 def fake_client(monkeypatch):
     client = FakeValkeyClient()
-    monkeypatch.setattr(valkey_module.valkey, "from_url", lambda *a, **k: client)
+    monkeypatch.setattr(valkey_driver_module.valkey, "from_url", lambda *a, **k: client)
     return client
 
 
@@ -125,9 +127,8 @@ def test_clear_removes_prefixed_keys(fake_client, monkeypatch):
 
 
 def test_connect_raises_after_retries(monkeypatch):
-    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _make_cfg(60)))
     # Avoid the 2-second back-off sleeps between the three attempts.
-    monkeypatch.setattr(valkey_module.time, "sleep", lambda *_: None)
+    monkeypatch.setattr(driver_base.time, "sleep", lambda *_: None)
 
     calls = {"n": 0}
 
@@ -135,9 +136,9 @@ def test_connect_raises_after_retries(monkeypatch):
         calls["n"] += 1
         raise valkey.ConnectionError("boom")
 
-    monkeypatch.setattr(valkey_module.valkey, "from_url", always_fail)
+    monkeypatch.setattr(valkey_driver_module.valkey, "from_url", always_fail)
 
-    driver = ValkeyDriver()
+    driver = ValkeyDriver(url="valkey://localhost:6379", prefix="ak:test:", ttl=60)
     with pytest.raises(valkey.ValkeyError):
         _ = driver.client
     # Three attempts, then the last error re-raised (not a None-client AttributeError).

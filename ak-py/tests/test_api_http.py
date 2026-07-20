@@ -405,6 +405,6 @@ class TestResponseBuilderStructuredResult:
         from agentkernel.core.chat_service import ResponseBuilder
         from agentkernel.core.model import AgentReplyText
 
-        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyText(text="hello"))
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyText(response="hello"))
 
         assert response["result"] == "hello"
