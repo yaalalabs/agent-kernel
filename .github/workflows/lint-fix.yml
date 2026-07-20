@@ -17,6 +17,9 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: lint-fix-${{ inputs.branch }}
+
 jobs:
   lint-fix:
     runs-on: ubuntu-latest
@@ -36,11 +39,21 @@ jobs:
             fi
           done
 
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: yaalalabs
+          repositories: |
+            agent-kernel
+
       - name: Checkout code
         uses: actions/checkout@v5
         with:
           ref: ${{ inputs.branch }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -56,13 +69,15 @@ jobs:
         run: make ${{ inputs.lint_target }}
 
       - name: Commit and push formatting changes
+        env:
+          TARGET_BRANCH: ${{ inputs.branch }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
+          git config user.name "agent-kernel-ci[bot]"
+          git config user.email "agent-kernel-ci[bot]@users.noreply.github.com"
+          git add -- '*.py'
+          if git diff --cached --quiet; then
             echo "No formatting changes to commit."
             exit 0
           fi
-          git add -A
           git commit -m "chore: apply ${{ inputs.lint_target }} formatting"
-          git push origin HEAD:${{ inputs.branch }}
+          git push origin "HEAD:$TARGET_BRANCH"
