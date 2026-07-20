@@ -384,3 +384,27 @@ class TestRESTAPIIntegration:
         with patch("uvicorn.run") as mock_uvicorn:
             RESTAPI.run([None])
             mock_uvicorn.assert_called_once()
+
+
+class TestResponseBuilderStructuredResult:
+    """Tests for ResponseBuilder handling of structured (AgentReplyAny) results."""
+
+    def test_structured_result_serialized_as_json_string(self):
+        import json
+
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyAny
+
+        content = {"city": "Colombo", "temp_c": 31}
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyAny(content=content))
+
+        assert response["result"] == json.dumps(content)
+        assert response["session_id"] == "session-1"
+
+    def test_text_result_unchanged(self):
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyText
+
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyText(response="hello"))
+
+        assert response["result"] == "hello"

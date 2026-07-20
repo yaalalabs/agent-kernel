@@ -102,6 +102,35 @@ Both sync and async functions are supported. Async functions are automatically p
 
 See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
 
+## Structured Output
+
+Build the agent with LangGraph's `response_format` parameter (e.g., `create_react_agent`). The result then contains a `structured_response` alongside the messages; Agent Kernel detects it and returns an `AgentReplyAny` whose `content` is the result as a dict:
+
+```python
+from langgraph.prebuilt import create_react_agent
+from pydantic import BaseModel
+from agentkernel.langgraph import LangGraphModule
+
+class WeatherResponse(BaseModel):
+    city: str
+    conditions: str
+
+graph = create_react_agent(
+    model="openai:gpt-4o",
+    tools=[get_weather],
+    response_format=WeatherResponse,
+)
+graph.name = "weather"
+
+LangGraphModule([graph])
+```
+
+Pydantic results are converted via `model_dump()`; graphs without `response_format` continue to return `AgentReplyText` from the last message. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
+
+:::info Streaming limitation
+Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.
+:::
+
 ## Features
 
 - ✅ Graph-based workflows
@@ -109,6 +138,7 @@ See [Tools](../core-concepts/tools) for the full guide on writing and binding to
 - ✅ State management
 - ✅ Checkpointing
 - ✅ Framework-agnostic tool binding
+- ✅ Structured output (`response_format` → `AgentReplyAny`)
 
 ## Example
 

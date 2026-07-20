@@ -6,6 +6,10 @@ sidebar_position: 5
 
 Deploy agents to Azure Functions for auto-scaling, serverless execution.
 
+:::note Supported execution modes
+Azure Functions supports **synchronous REST** execution (`AzureFunctions.handler` processes one request per invocation and returns a single JSON response). Queue-based execution modes (`rest_sync`/`rest_async`), WebSocket delivery, and token streaming are currently AWS-only; see the [Deployment Overview](./overview#execution-modes) for the full protocol matrix. If you need SSE streaming on Azure, use [Azure Container Apps](./azure-containerized), which runs the built-in REST server.
+:::
+
 ## Architecture
 
 ```mermaid
@@ -67,12 +71,23 @@ After deployment:
 POST https://{function-app-name}.azurewebsites.net/api/chat
 ```
 
-Body:
+Body (note the `body` envelope; the handler validates the inner payload as a chat request):
 
 ```json
 {
-  "agent": "assistant",
-  "message": "Hello!",
+  "body": {
+    "agent": "assistant",
+    "prompt": "Hello!",
+    "session_id": "user-123"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "result": "Agent response here",
   "session_id": "user-123"
 }
 ```

@@ -65,7 +65,8 @@ These skills help developers contributing to Agent Kernel itself. They are part 
 | `ak-dev-sync-skills-from-branch` | Syncing skills from branch deltas: inspect new commits plus staged/unstaged changes, map capability impact, then add/update/remove developer and user skills, evals, and catalogs |
 | `ak-dev-sync-docs-from-branch` | Syncing documentation from branch deltas: inspect new commits plus staged/unstaged changes, then update root docs, package docs, docs-site pages, deployment READMEs, example READMEs, and example references |
 | `ak-dev-sync-skills-and-docs-from-commit` | Syncing skills and docs from a commit hash: validate eligible merged PR commit on develop, analyze commit delta, update dev/user skills and docs surfaces, then support automation PR flow with circular-update prevention |
-| `ak-dev-review-pr` | Reviewing a PR against architecture, code quality, and testing skills: fetch PR via `gh`, prioritize spec.md review, verify and dedupe findings, post a single batched review with inline comments |
+| `ak-dev-write-spec` | Writing spec documents for a planned change under `docs/specs/<ticket>/` in three ordered stages: a concise point-form design spec (`design.md`) reviewed first, then a detailed implementation spec (`spec.md`), then a concise iteration-by-iteration plan (`plan.md`) the PR review checks the code against |
+| `ak-dev-review-pr` | Reviewing a PR against architecture, code quality, and testing skills: fetch PR via `gh`, prioritize spec document review (`design.md`/`spec.md`/`plan.md` under `docs/specs/<ticket>/`, each judged at its own stage's altitude), verify and dedupe findings, post a single batched review with inline comments |
 | `ak-dev-testing-conventions` | Testing patterns: pytest, async testing, DummyRunner/DummyAgent, monkeypatching config, session context tests, hook testing, Test.compare(), test modes |
 | `ak-dev-code-quality` | Standards: black/isort (150 line length core, 120 examples), conventional commits, PR workflow, version bumping via `scripts/bump_version.py` |
 
@@ -81,7 +82,7 @@ These skills help end users building agent projects with Agent Kernel. They are 
 | `ak-build` | Add tools, agents, and handoffs to an existing project. Reads the project's framework, agents, tools, and config first, then generates context-aware code. Covers all supported frameworks with gotcha guards. |
 | `ak-add-integration` | Add messaging integrations: Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail. Per-platform config, code, env vars, setup instructions. Multiple integrations pattern. |
 | `ak-cloud-deploy` | Deploy to AWS, Azure, or GCP: 6 deployment modes (AWS Lambda, AWS ECS Fargate, Azure Functions, Azure Container Apps, GCP Cloud Run serverless, GCP Cloud Run containerized) plus AWS execution modes (`rest_sync`, `rest_async`, `async`), queue/scalable mode, API Gateway authorizers, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images on both serverless and containerized). |
-| `ak-add-capabilities` | Add guardrails (OpenAI/Bedrock/WalledAI), tracing (Langfuse/OpenLLMetry), session persistence (Redis/DynamoDB/CosmosDB/Firestore), knowledge bases (ChromaDB/Neo4j/Starburst/custom), MCP, A2A, custom hooks (PreHook/PostHook), multimodal. |
+| `ak-add-capabilities` | Add guardrails (OpenAI/Bedrock/WalledAI), tracing (Langfuse/OpenLLMetry), session persistence (Redis/DynamoDB/CosmosDB/Firestore), knowledge bases (ChromaDB/Neo4j/Starburst/custom), MCP, A2A, custom hooks (PreHook/PostHook), multimodal, conversation thread support (in-memory/Redis/DynamoDB/Firestore/CosmosDB). |
 | `ak-test` | Test setup (fuzzy/judge/fallback modes, CLI/API patterns) + 8 debugging scenarios: no agents available, session not persisting, ToolContext errors, guardrail blocking, import errors, Redis connection, Terraform failures, webhook issues. |
 
 ## CLI Design
@@ -171,6 +172,7 @@ Package user skills for Claude's marketplace. Submit for review.
 ├── ak-dev-sync-docs-from-branch/SKILL.md
 ├── ak-dev-sync-skills-from-branch/SKILL.md
 ├── ak-dev-new-tracing-provider/SKILL.md
+├── ak-dev-write-spec/SKILL.md
 ├── ak-dev-review-pr/SKILL.md
 └── ak-dev-testing-conventions/SKILL.md
 
@@ -293,7 +295,7 @@ User skills don't have a prefix — they're the primary audience and should have
 
 - **`ak-cloud-deploy`**: Complete Terraform configurations for all 4 deployment targets. Users shouldn't have to write Terraform from scratch — the skill generates all files (main.tf, variables.tf, outputs.tf, terraform.tfvars, backend.tf, Dockerfile, deploy.sh) using AK's published Terraform modules.
 
-- **`ak-add-capabilities`**: A "shopping list" skill — pick what you need (guardrails, tracing, session persistence, MCP, A2A, hooks, multimodal) and get the exact config + code. Each capability is independent.
+- **`ak-add-capabilities`**: A "shopping list" skill — pick what you need (guardrails, tracing, session persistence, MCP, A2A, hooks, multimodal, conversation threads) and get the exact config + code. Each capability is independent.
 
 - **`ak-test`**: Combines test setup (often overlooked) with a debugging FAQ. The 8 debugging scenarios were chosen based on the most common issues: misconfigured agents, session problems, import errors, infrastructure failures.
 

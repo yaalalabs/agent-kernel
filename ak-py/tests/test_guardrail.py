@@ -4,8 +4,9 @@ import pytest
 
 from agentkernel.core.base import Agent, Session
 from agentkernel.core.config import AKConfig
-from agentkernel.core.model import AgentReplyText, AgentRequestText
+from agentkernel.core.model import AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequestText
 from agentkernel.guardrail.guardrail import (
+    BaseGuardrailUtil,
     InputGuardrail,
     InputGuardrailFactory,
     OutputGuardrail,
@@ -32,15 +33,15 @@ def mock_agent():
 def sample_requests():
     """Fixture to create sample agent requests."""
     return [
-        AgentRequestText(text="Hello, world!"),
-        AgentRequestText(text="How are you?"),
+        AgentRequestText(prompt="Hello, world!"),
+        AgentRequestText(prompt="How are you?"),
     ]
 
 
 @pytest.fixture
 def sample_reply():
     """Fixture to create a sample agent reply."""
-    return AgentReplyText(text="I'm doing great!", prompt="How are you?")
+    return AgentReplyText(response="I'm doing great!", prompt="How are you?")
 
 
 class TestInputGuardrail:
@@ -69,7 +70,7 @@ class TestOutputGuardrail:
         guardrail = OutputGuardrail()
         result = await guardrail.on_run(mock_session, sample_requests, mock_agent, sample_reply)
         assert result == sample_reply
-        assert result.text == "I'm doing great!"
+        assert result.response == "I'm doing great!"
 
     def test_name(self):
         """Test that OutputGuardrail.name returns correct name."""
@@ -185,7 +186,7 @@ class TestOpenAIOutputGuardrail:
         guardrail = OpenAIOutputGuardrail()
         result = await guardrail.on_run(mock_session, sample_requests, mock_agent, sample_reply)
         assert result == sample_reply
-        assert result.text == "I'm doing great!"
+        assert result.response == "I'm doing great!"
 
     def test_name(self):
         """Test that OpenAIOutputGuardrail.name returns correct name."""
@@ -196,3 +197,24 @@ class TestOpenAIOutputGuardrail:
         """Test that OpenAIOutputGuardrail inherits from OutputGuardrail."""
         guardrail = OpenAIOutputGuardrail()
         assert isinstance(guardrail, OutputGuardrail)
+
+
+class TestBaseGuardrailUtil:
+    """Tests for the shared text extraction utilities."""
+
+    def test_extract_text_from_text_reply(self):
+        reply = AgentReplyText(response="hello", prompt="hi")
+        assert BaseGuardrailUtil._extract_text_from_reply(reply) == "hello"
+
+    def test_extract_text_from_structured_reply_returns_json(self):
+        """Structured replies must be scanned as their JSON serialization, not skipped."""
+        import json
+
+        content = {"city": "Colombo", "temp_c": 31}
+        reply = AgentReplyAny(content=content)
+        assert BaseGuardrailUtil._extract_text_from_reply(reply) == json.dumps(content)
+
+    def test_extract_text_from_image_reply(self):
+        """Image replies must have their caption text scanned, not silently skipped."""
+        reply = AgentReplyImage(response="a caption", image_data="base64data", name="pic.png")
+        assert BaseGuardrailUtil._extract_text_from_reply(reply) == "a caption"

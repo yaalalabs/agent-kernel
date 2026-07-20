@@ -88,6 +88,7 @@ class SessionStoreBuilder(Builder):
 
         IN_MEMORY = "IN_MEMORY"
         REDIS = "REDIS"
+        VALKEY = "VALKEY"
         DYNAMODB = "DYNAMODB"
         COSMOSDB = "COSMOSDB"
         FIRESTORE = "FIRESTORE"
@@ -126,7 +127,7 @@ class SessionStoreBuilder(Builder):
             or InMemorySessionStore (for all other types).
 
         :raises: Any exceptions raised by SessionStoreBuilder.Types.from_str(), AKConfig.get(),
-            RedisDriver(), RedisSessionStore(), or InMemorySessionStore() initialization.
+            RedisSessionStore(), or InMemorySessionStore() initialization.
         """
         session_store_type: SessionStoreBuilder.Types = SessionStoreBuilder.Types.from_str(AKConfig.get().session.type)
         Builder._log.info(f"Building {session_store_type} session store")
@@ -134,6 +135,15 @@ class SessionStoreBuilder(Builder):
             from .session.redis import RedisSessionStore
 
             return RedisSessionStore(cache=SessionCacheBuilder.build())
+        elif session_store_type == SessionStoreBuilder.Types.VALKEY:
+            try:
+                from .session.valkey import ValkeySessionStore
+            except ImportError as e:
+                raise ImportError(
+                    "The 'valkey' package is required for session.type: valkey. Install it with: pip install agentkernel[valkey]"
+                ) from e
+
+            return ValkeySessionStore(cache=SessionCacheBuilder.build())
         elif session_store_type == SessionStoreBuilder.Types.DYNAMODB:
             from .session.dynamodb import DynamoDBSessionStore
 

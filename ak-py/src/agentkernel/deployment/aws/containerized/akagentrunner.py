@@ -81,9 +81,11 @@ class ECSAgentRunner(ECSSQSConsumer):
             )
 
         SQSHandler.send_message_to_output_queue(
-            message_group_id=record_attributes["message_group_id"],
-            message_deduplication_id=record_attributes["message_deduplication_id"],
             message_body=message_body,
+            attributes={
+                "message_group_id": record_attributes["message_group_id"],
+                "message_deduplication_id": record_attributes["message_deduplication_id"],
+            },
             request_id=record_attributes["request_id"],
             user_id=record_attributes["user_id"],
             custom_message_attributes=custom_attributes,

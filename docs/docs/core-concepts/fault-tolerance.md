@@ -13,7 +13,7 @@ Fault tolerance in Agent Kernel encompasses:
 - **Application-level recovery** - Graceful handling of application errors and crashes
 - **State persistence** - Preservation of conversation state across failures
 - **Health monitoring** - Continuous health checks and automatic remediation
-- **Retry mechanisms** - Intelligent retry logic for transient failures (available soon)
+- **Retry mechanisms** - In queue mode, SQS visibility-timeout retries with configurable `max_receive_count` and optional dead-letter queues; failed messages surface as error responses instead of hanging clients
 
 ```mermaid
 graph TB
@@ -54,11 +54,16 @@ ecs_desired_count = 3              # Number of tasks to maintain
 ecs_health_check_endpoint = "/health"
 ```
 
-#### Service Auto-Scaling (Available soon)
+#### Service Auto-Scaling
 - Scale out during high load, scale in during low load
-- Target tracking based on CPU, memory, or request count
-- Scheduled scaling for predictable traffic patterns
+- In queue mode: backlog-per-task target tracking, where a scheduled Lambda publishes `BacklogPerTask = queue depth / running tasks` to CloudWatch and a target-tracking policy keeps it at or below `backlog_target` (enabled via the `scaling_config` Terraform block)
+- Target tracking based on CPU, memory, or request count also available
 - Maintains service capacity during failures
+
+#### Thread-Level Recovery (Queue Mode)
+- Each container's SQS consumer threads are supervised by `ThreadRunner`
+- A crashed consumer thread triggers a **graceful shutdown**: sibling threads finish their in-flight message, then the process exits and ECS restarts the task
+- Per-message processing errors never kill a thread; the message is retried after the SQS visibility timeout
 
 #### Network Resilience
 - Connection draining ensures graceful shutdown
@@ -78,7 +83,7 @@ Lambda deployments are inherently fault-tolerant with AWS-managed infrastructure
 
 #### Built-In Resilience
 - **Multi-AZ by default** - Lambda functions automatically run across availability zones
-- **Automatic retry** - Failed invocations retried automatically (available soon)
+- **Automatic retry** - In queue mode, failed messages are reported via `batchItemFailures` and retried after the SQS visibility timeout; messages exceeding `max_receive_count` trigger a graceful error response (and optionally land in a DLQ)
 - **No server management** - AWS handles all infrastructure failures
 - **Infinite scaling** - Automatically scales to handle any load
 
@@ -182,22 +187,30 @@ Configure your load balancer to use the health endpoint:
 - **Healthy threshold**: 2 consecutive successes
 - **Unhealthy threshold**: 2 consecutive failures
 
-## Retry Logic (Available soon)
+## Retry Logic
 
-Agent Kernel implements intelligent retry mechanisms:
+### Queue-Mode Retries (AWS)
+
+In queue-backed deployments, retries are message-driven and fully configurable:
+
+- **Visibility-timeout retries**: a message whose processing fails is not deleted; it reappears on the queue after the visibility timeout and is retried.
+- **`max_receive_count`**: `execution.queues.input.max_receive_count` / `output.max_receive_count` (default 3) bound the retry attempts. On exhaustion, `on_permanent_failure` sends an error response downstream (output queue → response store or WebSocket), so the client receives an error instead of waiting forever.
+- **Dead-letter queues**: optional per-queue DLQs catch messages that exceed the SQS redrive `maxReceiveCount`. The Terraform modules set the app-level limit one below the SQS limit so a graceful error is delivered before DLQ redrive.
+- **Response-store read retries**: `execution.response_store.retry_count` × `delay` control how long `rest_sync` waits for a reply before returning a timeout.
 
 ### Framework-Level Retries
-Each runner implementation includes:
-- Exponential backoff for LLM API calls
-- Configurable retry attempts
-- Circuit breaker patterns
-- Graceful degradation
+
+LLM-call retry policies (exponential backoff, etc.) are handled by the underlying agent frameworks and LLM SDKs; configure them on the framework side.
 
 
 ## Monitoring and Alerting
 
 ### CloudWatch Metrics (AWS)
-Available soon!
+
+Standard Lambda/ECS metrics (invocations, errors, duration, task counts) are available out of the box. Queue-mode deployments additionally get:
+
+- SQS queue metrics (`ApproximateNumberOfMessages`, message age) for the input/output queues and DLQs
+- The custom `Custom/ECS/BacklogPerTask` metric published by the scaling Lambda in ECS queue mode; alarm on it to catch sustained backlog growth
 
 ## Testing Fault Tolerance
 

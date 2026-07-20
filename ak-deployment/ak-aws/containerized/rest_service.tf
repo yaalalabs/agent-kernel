@@ -20,6 +20,7 @@ module "rest_service" {
   container_name = local.container_name
 
   redis_url                    = local.redis_url
+  valkey_url                   = local.valkey_url
   create_dynamodb_memory_table = var.create_dynamodb_memory_table
   dynamodb_memory_table_arn    = local.dynamodb_memory_table_arn
   dynamodb_memory_table_name   = local.dynamodb_memory_table_name

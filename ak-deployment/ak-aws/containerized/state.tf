@@ -4,11 +4,12 @@ data "aws_vpc" "provided" {
 }
 
 locals {
-  vpc_id                     = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
-  vpc_cidr                   = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
-  subnet_ids                 = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
-  redis_url                  = var.create_redis_cluster == true ? module.redis[0].url : null
-  dynamodb_memory_table_arn  = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
+  vpc_id                    = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
+  vpc_cidr                  = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
+  subnet_ids                = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
+  redis_url                 = var.create_redis_cluster == true ? module.redis[0].url : null
+  valkey_url                = var.create_valkey_cluster == true ? module.valkey[0].url : null
+  dynamodb_memory_table_arn = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
   prefix                     = "${var.product_alias}-${var.env_alias}-${var.module_name}"
   service_name               = "${local.prefix}-service"
@@ -75,6 +76,18 @@ module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
   version       = "0.6.1"
   count         = var.create_redis_cluster == true ? 1 : 0
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  product_alias = var.product_alias
+  vpc_cidr      = local.vpc_cidr
+  vpc_id        = local.vpc_id
+  subnet_ids    = local.subnet_ids
+}
+
+module "valkey" {
+  source        = "yaalalabs/ak-common/aws//modules/valkey"
+  version       = "0.6.1"
+  count         = var.create_valkey_cluster == true ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias

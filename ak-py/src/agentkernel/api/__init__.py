@@ -13,3 +13,4 @@ except importlib.metadata.PackageNotFoundError:
 
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
 from .http import RESTAPI
+from .thread import ThreadRESTRequestHandler

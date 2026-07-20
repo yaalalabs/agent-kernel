@@ -6,6 +6,10 @@ sidebar_position: 7
 
 Deploy Agent Kernel agents as always-on containerized services on **GCP Cloud Run** with `min_instance_count ≥ 1`. Uses the [`yaalalabs/ak-containerized/google`](https://registry.terraform.io/modules/yaalalabs/ak-containerized/google) Terraform module.
 
+:::note Supported execution modes
+Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous JSON REST **and SSE token streaming** (`execution.mode: stream`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK). Queue-based execution and WebSocket delivery are currently AWS-only; see the [Deployment Overview](./overview#execution-modes).
+:::
+
 ## Overview
 
 | Component | GCP Service |
@@ -18,7 +22,7 @@ Deploy Agent Kernel agents as always-on containerized services on **GCP Cloud Ru
 | Networking | VPC + VPC Access Connector + Cloud NAT |
 | Observability | Cloud Logging (built-in) |
 
-**Key difference from GCP Serverless:** This module defaults to `min_instance_count = 1` — at least one instance is always running, eliminating cold starts and providing consistent low-latency responses.
+**Key difference from GCP Serverless:** This module defaults to `min_instance_count = 1`: at least one instance is always running, eliminating cold starts and providing consistent low-latency responses.
 
 ## Prerequisites
 
@@ -36,7 +40,7 @@ Deploy Agent Kernel agents as always-on containerized services on **GCP Cloud Ru
 
 ## Agent Code
 
-Use `agentkernel.gcp.CloudRun` as the entry point — identical to the serverless variant:
+Use `agentkernel.gcp.CloudRun` as the entry point, identical to the serverless variant:
 
 ```python
 from agentkernel.gcp import CloudRun
@@ -158,12 +162,12 @@ terraform apply
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `project_id` | ✅ | — | GCP project ID |
-| `region` | ✅ | — | GCP region (e.g. `us-central1`) |
-| `product_alias` | ✅ | — | Short name for resource naming |
-| `env_alias` | ✅ | — | Environment label (e.g. `dev`, `prod`) |
-| `module_name` | ✅ | — | Module identifier |
-| `package_path` | ✅ | — | Path to Docker build context |
+| `project_id` | ✅ | - | GCP project ID |
+| `region` | ✅ | - | GCP region (e.g. `us-central1`) |
+| `product_alias` | ✅ | - | Short name for resource naming |
+| `env_alias` | ✅ | - | Environment label (e.g. `dev`, `prod`) |
+| `module_name` | ✅ | - | Module identifier |
+| `package_path` | ✅ | - | Path to Docker build context |
 | `container_port` | ❌ | `8000` | Port the container listens on |
 | `create_redis_cluster` | ❌ | `false` | Create Memorystore Redis |
 | `create_firestore_db` | ❌ | `false` | Create Firestore database |
@@ -191,8 +195,8 @@ terraform apply
 
 See working examples in the repository:
 
-- [`examples/gcp-containerized/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-containerized/openai) — Basic deployment with Redis
-- [`examples/gcp-containerized/openai-auth`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-containerized/openai-auth) — With JWT authentication
+- [`examples/gcp-containerized/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-containerized/openai): Basic deployment with Redis
+- [`examples/gcp-containerized/openai-auth`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-containerized/openai-auth): With JWT authentication
 
 ## Teardown
 

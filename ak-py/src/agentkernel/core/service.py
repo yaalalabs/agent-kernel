@@ -3,7 +3,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 from ..core import Agent, AgentRequest, Runtime, Session
-from ..core.model import AgentReply, AgentReplyText, AgentRequestText, StreamChunk
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequestText, StreamChunk
 
 
 class AgentService:
@@ -124,11 +124,13 @@ class AgentService:
 
         :param prompt: Prompt to send to the agent.
         """
-        requests = [AgentRequestText(text=prompt)]
+        requests = [AgentRequestText(prompt=prompt)]
 
         result = await self.run_multi(requests)
         if isinstance(result, AgentReplyText):
-            result = result.text
+            result = result.response
+        elif isinstance(result, AgentReplyAny):
+            result = str(result)
         else:
             result = "Non-text reply given"
 

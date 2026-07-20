@@ -6,7 +6,7 @@ from langfuse import Langfuse, propagate_attributes
 from langfuse.langchain import CallbackHandler
 
 from ...core import Session
-from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.util.error_util import user_facing_error_message
 from ...framework.langgraph.langgraph import LangGraphRunner, LangGraphSessionConfigModel, LangGraphSessionConfigurable
 
@@ -37,15 +37,15 @@ class LangFuseLangGraph(LangGraphRunner):
                 if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
                 if isinstance(req, AgentRequestText):
-                    prompt = prompt + "\n" + req.text if prompt else req.text
+                    prompt = prompt + "\n" + req.prompt if prompt else req.prompt
                 else:
                     return AgentReplyText(
-                        text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
+                        response="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
                         prompt=prompt,
                     )
 
             if prompt.strip() == "":
-                return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+                return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
 
             with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
                 with self._client.start_as_current_observation(name="Agent Kernel LangGraph", as_type="span") as span:
@@ -58,9 +58,13 @@ class LangFuseLangGraph(LangGraphRunner):
                         input={"messages": [HumanMessage(content=prompt)]},
                         config=config,
                     )
+                    structured = AgentReplyAny.from_output(result.get("structured_response"), prompt)
+                    if structured is not None:
+                        span.update(input=prompt, output=str(structured))
+                        return structured
                     last_message = result["messages"][-1]
 
                     span.update(input=prompt, output=last_message.content)
-            return AgentReplyText(text=last_message.content, prompt=prompt)
+            return AgentReplyText(response=last_message.content, prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)

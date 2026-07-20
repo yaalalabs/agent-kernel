@@ -85,6 +85,38 @@ CrewAIModule([agent])
 
 See [Tools](../core-concepts/tools) for the full guide on writing and binding tools.
 
+## Structured Output
+
+CrewAI configures structured output on the `Task` (`output_pydantic` / `output_json`), not on the agent, and Agent Kernel builds the task internally per run. Pass the model class to the module constructor, keyed by agent role; the runner forwards it into the task it creates:
+
+```python
+from crewai import Agent as CrewAgent
+from pydantic import BaseModel
+from agentkernel.crewai import CrewAIModule
+
+class ResearchReport(BaseModel):
+    topic: str
+    score: int
+
+agent = CrewAgent(
+    role="Researcher",
+    goal="Research topics and score their relevance",
+    backstory="You are a meticulous researcher",
+    verbose=False,
+)
+
+CrewAIModule([agent], output_pydantic={"Researcher": ResearchReport})
+# or: CrewAIModule([agent], output_json={"Researcher": ResearchReport})
+```
+
+To change the schema after the module is loaded, set it on the wrapped agent instead: `module.get_agent("Researcher").output_pydantic = ResearchReport`.
+
+With `output_pydantic`, the `CrewOutput.pydantic` result is converted via `model_dump()`; with `output_json`, `CrewOutput.json_dict` is used directly. Plain-text crews continue to return `AgentReplyText` from `CrewOutput.raw`. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
+
+:::info Streaming limitation
+Structured output applies to non-streaming execution only. (CrewAI does not support streaming in Agent Kernel.)
+:::
+
 ## Features
 
 - ✅ Role-based agents
@@ -92,6 +124,7 @@ See [Tools](../core-concepts/tools) for the full guide on writing and binding to
 - ✅ Sequential execution
 - ✅ Hierarchical teams
 - ✅ Framework-agnostic tool binding
+- ✅ Structured output (`output_pydantic` / `output_json` → `AgentReplyAny`)
 
 ## Example
 

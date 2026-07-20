@@ -7,12 +7,13 @@ from crewai import Agent, Crew, Memory, Task
 from crewai.memory import MemoryRecord, ScopeInfo
 from crewai.memory.storage.backend import StorageBackend as Storage
 from crewai.tools import tool as crewai_tool
+from pydantic import BaseModel
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
-from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
@@ -336,15 +337,15 @@ class CrewAIRunner(Runner):
                 if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
                     continue
                 if isinstance(req, AgentRequestText):
-                    prompt = prompt + "\n" + req.text if prompt else req.text
+                    prompt = prompt + "\n" + req.prompt if prompt else req.prompt
                 else:
                     return AgentReplyText(
-                        text="Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment",
+                        response="Sorry. Agent kernel CrewAI runner is unable to handle content other than text at the moment",
                         prompt=prompt,
                     )
 
             if prompt.strip() == "":
-                return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+                return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
 
             memory = self._memory(session)
             if memory:
@@ -357,10 +358,16 @@ class CrewAIRunner(Runner):
                     memory = None
 
             transcript = self._transcript(session)
+            output_pydantic = getattr(agent, "output_pydantic", None)
+            output_json = getattr(agent, "output_json", None)
+            schema = output_pydantic or output_json
+            expected_output = f"A structured response conforming to the {schema.__name__} schema" if schema is not None else "An answer is plain text"
             task = Task(
                 description=self._describe(prompt, transcript),
-                expected_output="An answer is plain text",
+                expected_output=expected_output,
                 agent=agent.agent,
+                output_pydantic=output_pydantic,
+                output_json=output_json,
             )
             crew = Crew(
                 agents=agent.crew,
@@ -369,20 +376,26 @@ class CrewAIRunner(Runner):
                 memory=memory,
             )
             reply = await crew.kickoff_async(inputs={})
-            if hasattr(reply, "raw"):
-                raw_reply = reply.raw
-                reply_text = "" if raw_reply is None else str(raw_reply)
+            if isinstance(getattr(reply, "pydantic", None), BaseModel):
+                agent_reply: AgentReply = AgentReplyAny(content=reply.pydantic.model_dump(mode="json"), prompt=prompt)
+            elif isinstance(getattr(reply, "json_dict", None), dict):
+                agent_reply = AgentReplyAny(content=reply.json_dict, prompt=prompt)
             else:
-                reply_text = "" if reply is None else str(reply)
+                if hasattr(reply, "raw"):
+                    raw_reply = reply.raw
+                    reply_text = "" if raw_reply is None else str(raw_reply)
+                else:
+                    reply_text = "" if reply is None else str(reply)
+                agent_reply = AgentReplyText(response=reply_text, prompt=prompt)
 
             if transcript is not None:
                 transcript.append(f"User: {prompt}")
-                transcript.append(f"Assistant: {reply_text}")
+                transcript.append(f"Assistant: {str(agent_reply)}")
                 del transcript[: -self.TRANSCRIPT_MAX_LINES]
 
-            return AgentReplyText(text=reply_text, prompt=prompt)
+            return agent_reply
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()
@@ -401,17 +414,31 @@ class CrewAIAgent(BaseAgent):
     CrewAIAgent class provides an agent wrapping for CrewAI based agents.
     """
 
-    def __init__(self, name: str, runner: CrewAIRunner, agent: Agent, crew: list[Agent]):
+    def __init__(
+        self,
+        name: str,
+        runner: CrewAIRunner,
+        agent: Agent,
+        crew: list[Agent],
+        output_pydantic: type[BaseModel] | None = None,
+        output_json: type[BaseModel] | None = None,
+    ):
         """
         Initializes a CrewAIAgent instance.
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
         :param agent: The CrewAI agent instance.
         :param crew: List of CrewAI agents in the crew.
+        :param output_pydantic: Optional Pydantic model class forwarded to the Task built per run,
+        making the agent produce structured output (returned as an AgentReplyAny).
+        :param output_json: Optional Pydantic model class forwarded to the Task built per run as its
+        JSON output schema (returned as an AgentReplyAny).
         """
         super().__init__(name, runner)
         self._agent = agent
         self._crew = crew
+        self._output_pydantic = output_pydantic
+        self._output_json = output_json
         self._attach_system_tools()
         self._setup_system_prompt()
 
@@ -421,6 +448,36 @@ class CrewAIAgent(BaseAgent):
         Returns the CrewAI agent instance.
         """
         return self._agent
+
+    @property
+    def output_pydantic(self) -> type[BaseModel] | None:
+        """
+        Returns the Pydantic model class used for structured task output, if configured.
+        """
+        return self._output_pydantic
+
+    @output_pydantic.setter
+    def output_pydantic(self, model: type[BaseModel] | None) -> None:
+        """
+        Sets the Pydantic model class forwarded to the Task built per run.
+        :param model: The Pydantic model class, or None to disable structured output.
+        """
+        self._output_pydantic = model
+
+    @property
+    def output_json(self) -> type[BaseModel] | None:
+        """
+        Returns the Pydantic model class used as the JSON output schema, if configured.
+        """
+        return self._output_json
+
+    @output_json.setter
+    def output_json(self, model: type[BaseModel] | None) -> None:
+        """
+        Sets the Pydantic model class forwarded to the Task built per run as its JSON output schema.
+        :param model: The Pydantic model class, or None to disable structured output.
+        """
+        self._output_json = model
 
     @property
     def crew(self) -> list[Agent]:
@@ -474,11 +531,22 @@ class CrewAIModule(Module):
     CrewAIModule class provides a module for CrewAI based agents.
     """
 
-    def __init__(self, agents: list[Agent], runner: CrewAIRunner = None):
+    def __init__(
+        self,
+        agents: list[Agent],
+        runner: CrewAIRunner = None,
+        output_pydantic: dict[str, type[BaseModel]] | None = None,
+        output_json: dict[str, type[BaseModel]] | None = None,
+    ):
         """
         Initializes a CrewAIModule instance.
         :param agents: List of agents in the module.
         :param runner: Custom runner associated with the module.
+        :param output_pydantic: Optional mapping of agent role to the Pydantic model class forwarded
+        to the Task built per run, making the agent produce structured output (returned as an
+        AgentReplyAny).
+        :param output_json: Optional mapping of agent role to the Pydantic model class forwarded to
+        the Task built per run as its JSON output schema (returned as an AgentReplyAny).
         """
         super().__init__()
         if runner is not None:
@@ -487,6 +555,8 @@ class CrewAIModule(Module):
             self.runner = Trace.get().crewai()
         else:
             self.runner = CrewAIRunner()
+        self._output_pydantic = output_pydantic or {}
+        self._output_json = output_json or {}
         self.load(agents)
 
     def _wrap(self, agent: Agent, agents: List[Agent]) -> BaseAgent:
@@ -496,7 +566,14 @@ class CrewAIModule(Module):
         :param agents: List of agents in the module.
         :return: CrewAIAgent instance.
         """
-        return CrewAIAgent(agent.role, self.runner, agent, agents)
+        return CrewAIAgent(
+            agent.role,
+            self.runner,
+            agent,
+            agents,
+            output_pydantic=self._output_pydantic.get(agent.role),
+            output_json=self._output_json.get(agent.role),
+        )
 
     def load(self, agents: list[Agent]) -> "CrewAIModule":
         """

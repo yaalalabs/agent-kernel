@@ -139,9 +139,8 @@ class DefaultEndpointsHandler:
             raise ValueError("session_id is required")
 
         response = SQSHandler.send_message_to_input_queue(
-            message_body=request_body,
-            message_group_id=session_id,
-            message_deduplication_id=payload.request_id,
+            message_body=request_body.model_dump(exclude_none=True),
+            attributes={"message_deduplication_id": payload.request_id},
             request_id=payload.request_id,
             user_id=payload.user_id,
         )

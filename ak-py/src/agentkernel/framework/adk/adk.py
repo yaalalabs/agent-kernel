@@ -16,9 +16,11 @@ from google.adk.runners import Runner
 from google.adk.sessions import BaseSessionService, InMemorySessionService
 from google.adk.tools import FunctionTool, ToolContext
 from google.genai import types
+from pydantic import ValidationError
 
 from agentkernel.core.model import (
     AgentReply,
+    AgentReplyAny,
     AgentReplyText,
     AgentRequest,
     AgentRequestAny,
@@ -81,6 +83,7 @@ class GoogleADKRunner(BaseRunner):
         Initializes a GoogleADKRunner instance.
         """
         super().__init__(FRAMEWORK)
+        self._log = logging.getLogger("ak.adk.runner")
 
     @staticmethod
     def _session(session: Session) -> GoogleADKSession | None:
@@ -108,7 +111,7 @@ class GoogleADKRunner(BaseRunner):
                 continue
 
             if isinstance(req, AgentRequestText):
-                text = req.text
+                text = req.prompt
                 prompt = prompt + "\n" + text if prompt else text
                 parts.append(types.Part(text=text))
 
@@ -204,14 +207,22 @@ class GoogleADKRunner(BaseRunner):
             prompt, parts = self._process_requests(requests)
 
             if not parts:
-                return AgentReplyText(text="Sorry. No valid content found in the requests")
+                return AgentReplyText(response="Sorry. No valid content found in the requests")
 
             user_id, runner, ctx = await self._setup_session_context(agent, session, requests)
             with ctx:
                 reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
-            return AgentReplyText(text=reply, prompt=prompt)
+
+            output_schema = getattr(agent.agent, "output_schema", None)
+            if output_schema is not None:
+                try:
+                    parsed = output_schema.model_validate_json(reply)
+                    return AgentReplyAny(content=parsed.model_dump(mode="json"), prompt=prompt)
+                except ValidationError:
+                    self._log.warning(f"Agent '{agent.name}' has output_schema set but reply is not valid JSON for it; returning text")
+            return AgentReplyText(response=reply, prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
 
     async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
         """

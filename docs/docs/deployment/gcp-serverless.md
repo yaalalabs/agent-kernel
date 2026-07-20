@@ -6,6 +6,10 @@ sidebar_position: 6
 
 Deploy Agent Kernel agents as serverless containers on **GCP Cloud Run** with scale-to-zero capability. Uses the [`yaalalabs/ak-serverless/google`](https://registry.terraform.io/modules/yaalalabs/ak-serverless/google) Terraform module.
 
+:::note Supported execution modes
+Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous JSON REST **and SSE token streaming** (`execution.mode: stream`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK). Queue-based execution and WebSocket delivery are currently AWS-only; see the [Deployment Overview](./overview#execution-modes).
+:::
+
 ## Overview
 
 | Component | GCP Service |
@@ -196,12 +200,12 @@ terraform apply
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `project_id` | ✅ | — | GCP project ID |
-| `region` | ✅ | — | GCP region (e.g. `us-central1`) |
-| `product_alias` | ✅ | — | Short name for resource naming |
-| `env_alias` | ✅ | — | Environment label (e.g. `dev`, `prod`) |
-| `module_name` | ✅ | — | Module identifier |
-| `package_path` | ✅ | — | Path to Docker build context |
+| `project_id` | ✅ | - | GCP project ID |
+| `region` | ✅ | - | GCP region (e.g. `us-central1`) |
+| `product_alias` | ✅ | - | Short name for resource naming |
+| `env_alias` | ✅ | - | Environment label (e.g. `dev`, `prod`) |
+| `module_name` | ✅ | - | Module identifier |
+| `package_path` | ✅ | - | Path to Docker build context |
 | `create_redis_cluster` | ❌ | `false` | Create Memorystore Redis |
 | `create_firestore_db` | ❌ | `false` | Create Firestore database |
 | `enable_jwt_auth` | ❌ | `false` | Enable JWT auth on API Gateway |
@@ -219,9 +223,9 @@ terraform apply
 
 See working examples in the repository:
 
-- [`examples/gcp-serverless/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai) — Basic deployment with Redis
-- [`examples/gcp-serverless/openai-auth`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-auth) — With JWT authentication
-- [`examples/gcp-serverless/openai-firestore`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-firestore) — With Firestore sessions
+- [`examples/gcp-serverless/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai): Basic deployment with Redis
+- [`examples/gcp-serverless/openai-auth`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-auth): With JWT authentication
+- [`examples/gcp-serverless/openai-firestore`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/gcp-serverless/openai-firestore): With Firestore sessions
 
 ## Teardown
 

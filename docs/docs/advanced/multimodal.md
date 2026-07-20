@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Multimodal Attachments
 
-Agent Kernel supports **multimodal input processing** — users can send images and files alongside text, and the framework automatically handles description generation, storage, and context injection.
+Agent Kernel supports **multimodal input processing**: users can send images and files alongside text, and the framework automatically handles description generation, storage, and context injection.
 
 ## Overview
 
@@ -29,10 +29,10 @@ sequenceDiagram
 
 ### Key Design Decisions
 
-- **No raw binary in session history** — Images/files are stored externally; only text descriptions enter the conversation. This prevents session bloat.
-- **Pluggable storage** — Choose between in-memory, Redis, or DynamoDB depending on your deployment.
-- **Automatic description** — A vision-capable LLM generates brief descriptions of each attachment.
-- **System tool for recall** — The agent can call `analyze_attachments` to retrieve previously stored images/files.
+- **No raw binary in session history**: Images/files are stored externally; only text descriptions enter the conversation. This prevents session bloat.
+- **Pluggable storage**: Choose between in-memory, Redis, or DynamoDB depending on your deployment.
+- **Automatic description**: A vision-capable LLM generates brief descriptions of each attachment.
+- **System tool for recall**: The agent can call `analyze_attachments` to retrieve previously stored images/files.
 
 ## Enabling Multimodal Support
 
@@ -49,12 +49,12 @@ multimodal:
   enabled: true
   max_attachments: 10                 # Max attachments per session
   description_max_length: 200         # Max chars for auto-generated descriptions
-  storage_type: in_memory             # Default — no session bloat
+  storage_type: in_memory             # Default - no session bloat
 ```
 
 ## Attachment Storage
 
-Attachments are stored **outside** the session to prevent session bloat. The storage backend is independent of your session storage — you can use Redis sessions with in-memory attachment storage, or vice versa.
+Attachments are stored **outside** the session to prevent session bloat. The storage backend is independent of your session storage; you can use Redis sessions with in-memory attachment storage, or vice versa.
 
 ```mermaid
 graph TB
@@ -73,7 +73,7 @@ graph TB
 
 ### In-Memory (Default)
 
-Fast, ephemeral storage. Attachments live in a module-level dictionary — not inside the session object.
+Fast, ephemeral storage. Attachments live in a module-level dictionary, not inside the session object.
 
 ```bash
 export AK_MULTIMODAL__STORAGE_TYPE=in_memory
@@ -225,7 +225,7 @@ Multimodal attachments are supported on the following platforms:
 
 ## Related Documentation
 
-- **[Session Management](/docs/core-concepts/session)** — Session storage and caching
-- **[Execution Hooks](/docs/integrations/hooks)** — How PreHooks and PostHooks work
-- **[Configuration](/docs/core-concepts/configuration)** — Complete configuration reference
-- **[Telegram Integration](/docs/integrations/telegram)** — Telegram-specific file handling
+- **[Session Management](/docs/core-concepts/session)**: Session storage and caching
+- **[Execution Hooks](/docs/integrations/hooks)**: How PreHooks and PostHooks work
+- **[Configuration](/docs/core-concepts/configuration)**: Complete configuration reference
+- **[Telegram Integration](/docs/integrations/telegram)**: Telegram-specific file handling

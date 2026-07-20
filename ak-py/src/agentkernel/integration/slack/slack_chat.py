@@ -10,7 +10,7 @@ from slack_sdk.errors import SlackApiError
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
-from ...core.model import AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestFile, AgentRequestImage, AgentRequestText
+from ...core.model import AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestFile, AgentRequestImage, AgentRequestText
 
 
 class AgentSlackRequestHandler(RESTRequestHandler):
@@ -130,7 +130,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
             # Build requests list with text, files, and images
             requests = []
             if question:
-                requests.append(AgentRequestText(text=question))
+                requests.append(AgentRequestText(prompt=question))
 
             # Process files and images
             failed_files = []
@@ -154,7 +154,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 await say(channel=channel, thread_ts=thread_ts, text="Please provide a message or attachment.")
                 return
 
-            response_text = str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"
+            response_text = str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
 
             # This will update the initial message to remove the loading text emoji
             if response_for_first_bot_message is not None:

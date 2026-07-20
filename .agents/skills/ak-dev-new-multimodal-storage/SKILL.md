@@ -21,7 +21,7 @@ This guide walks through adding a new attachment storage backend to Agent Kernel
 | Backend | Config value | Features | Extras |
 |---|---|---|---|
 | In-memory | `in_memory` | Ephemeral `ClassVar` dict, zero setup, single-process only | None |
-| Redis | `redis` | Persistent, TTL, connection pooling, distributed | `agentkernel[multimodal,redis]` |
+| Redis | `redis` | Persistent, TTL, shared `RedisDriver` (lazy connect, retry, ping/reconnect), distributed | `agentkernel[multimodal,redis]` |
 | DynamoDB | `dynamodb` | Serverless/AWS, TTL via `expiry_time`, fully managed | `agentkernel[multimodal,aws]` |
 | Session cache | `session_cache` | Legacy — stores in session `nv_cache` (causes bloat, not recommended) | None |
 
@@ -141,7 +141,7 @@ class <Backend>AttachmentStore(AttachmentStore):
 - **Max attachments pruning**: When `save()` is called and the session exceeds `max_attachments`, delete the oldest entry. Track order via timestamps or a per-session index
 - **Index consistency on delete**: When `delete()` is called, remove the attachment ID from the per-session index in addition to deleting the data entry. Skipping this step causes the index count to drift — the backend will think more attachments exist than actually do, breaking `max_attachments` enforcement on subsequent saves
 - **TTL**: If the backend supports time-based expiry (like Redis TTL or DynamoDB `expiry_time`), use it for automatic cleanup. Read the TTL value from the backend-specific config
-- **Connection management**: Use lazy initialization and connection pooling where possible. The store may be instantiated per-request (inside `AttachmentStorageManager.__init__`)
+- **Connection management**: Reuse the shared connection drivers in `agentkernel/core/util/driver/` (`RedisDriver`, `DynamoDBDriver`, etc.) — they provide lazy connect, 3-retry back-off, and (for Redis-like backends) ping/reconnect. The store may be instantiated per-request (inside `AttachmentStorageManager.__init__`), so keep the driver construction cheap (no eager connect)
 - **Serialization**: Attachment dicts must be JSON-serializable. The `data` field contains base64-encoded binary, so all values are strings, floats, or ints
 
 ### 3. Add Backend-Specific Configuration

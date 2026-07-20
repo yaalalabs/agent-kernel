@@ -55,22 +55,26 @@ curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{
     "agent": "general",
-    "message": "Hello!",
+    "prompt": "Hello!",
     "session_id": "test-123"
   }'
 ```
+
+### Streaming locally
+
+Set `execution.mode: stream` in `config.yaml` (or `AK_EXECUTION__MODE=stream`) and the same endpoint returns a Server-Sent Events stream of token chunks, handy for testing streaming UIs locally. See [REST API: Streaming](../api/rest-api#streaming).
 
 ## Configuration
 
 ```bash
 # Log level
-export AK_LOG_LEVEL=DEBUG
+export AK_LOGGING__AK__LEVEL=DEBUG
 
 # Session storage
-export AK_SESSION_STORAGE=in_memory
+export AK_SESSION__TYPE=in_memory
 
 # Port (API mode)
-export AK_API_PORT=8000
+export AK_API__PORT=8000
 ```
 
 ## Development Workflow

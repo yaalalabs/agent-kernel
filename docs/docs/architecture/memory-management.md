@@ -257,7 +257,7 @@ class RAGHook(PreHook):
     
     async def on_run(self, session, agent, requests):
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
@@ -276,7 +276,7 @@ Question: {prompt}
 
 Use the context from the knowledge base to answer."""
         
-        return [AgentRequestText(text=enriched_prompt)]
+        return [AgentRequestText(prompt=enriched_prompt)]
     
     def name(self):
         return "RAGHook"
@@ -363,7 +363,7 @@ class AnalyticsHook(PreHook):
         # Track topics discussed
         topics = nv_cache.get("topics", default=[])
         if requests and isinstance(requests[0], AgentRequestText):
-            detected_topic = self.detect_topic(requests[0].text)
+            detected_topic = self.detect_topic(requests[0].prompt)
             if detected_topic not in topics:
                 topics.append(detected_topic)
                 nv_cache.set("topics", topics)

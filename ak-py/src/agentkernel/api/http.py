@@ -102,6 +102,15 @@ class RESTAPI:
             if handler is not None:
                 routers.append(handler.get_router())
 
+        if AKConfig.get().thread is not None:
+            from .thread import ThreadRESTRequestHandler
+
+            # Mount the thread router automatically unless the user supplied their own
+            # (e.g. one constructed with a custom Authoriser).
+            if not any(isinstance(handler, ThreadRESTRequestHandler) for handler in handlers):
+                cls._log.info("Thread support is enabled — mounting thread routes")
+                routers.append(ThreadRESTRequestHandler().get_router())
+
         if AKConfig.get().a2a.enabled:
             from .a2a.handler import A2ARESTRequestHandler
 

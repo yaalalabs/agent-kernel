@@ -10,6 +10,7 @@ locals {
       AK_EXECUTION__QUEUES__BATCH_SIZE               = tostring(var.queue_config.batch_size)
     },
     var.redis_url != null ? { AK_SESSION__REDIS__URL = var.redis_url } : {},
+    var.valkey_url != null ? { AK_SESSION__VALKEY__URL = var.valkey_url } : {},
     var.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
     } : {},

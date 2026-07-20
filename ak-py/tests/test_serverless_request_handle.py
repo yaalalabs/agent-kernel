@@ -44,7 +44,8 @@ def test_base_request_from_flat_payload_excludes_envelope_fields_from_body():
     assert request.body.session_id == "session-1"
     assert request.body.agent == "openai"
     assert "request_id" not in request.body.model_dump()
-    assert "user_id" not in request.body.model_dump()
+    # user_id is a declared body field (thread support) — the envelope value is propagated into it
+    assert request.body.user_id == "user-1"
     assert "route" not in request.body.model_dump()
 
 

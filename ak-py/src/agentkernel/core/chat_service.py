@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from .config import AKConfig
 from .model import (
+    AgentReplyAny,
     AgentReplyImage,
     AgentReplyText,
     AgentRequestAny,
@@ -18,6 +19,7 @@ from .model import (
     StreamChunk,
 )
 from .service import AgentService
+from .thread import ConversationThreadManager
 
 
 class RequestBuilder:
@@ -37,7 +39,7 @@ class RequestBuilder:
         :param req: Base run request containing prompt, images, files, and additional context
         :return: List of AgentRequest objects for processing
         """
-        requests = [AgentRequestText(text=req.prompt)]
+        requests = [AgentRequestText(prompt=req.prompt)]
         RequestBuilder._add_images(requests, req.images)
         RequestBuilder._add_files(requests, req.files)
         RequestBuilder._attach_additional_context(req, requests)
@@ -51,7 +53,7 @@ class RequestBuilder:
                     or a multipart/upload-style request defined elsewhere)
         :return: List of AgentRequest objects for processing
         """
-        requests = [AgentRequestText(text=req.prompt)]
+        requests = [AgentRequestText(prompt=req.prompt)]
 
         # If this is a BaseRunRequest, it contains FileData/ImageData objects
         # (base64 or URLs) — handle them synchronously. Otherwise, assume
@@ -120,7 +122,7 @@ class RequestBuilder:
         :param requests: List to append context requests to
         :return: None
         """
-        known_fields = {"request_id", "user_id", "prompt", "agent", "session_id", "images", "files"}
+        known_fields = {"request_id", "user_id", "group_id", "thread_name", "prompt", "agent", "session_id", "images", "files"}
         for key, value in req.model_dump().items():
             if key in known_fields:
                 continue
@@ -286,7 +288,9 @@ class ResponseBuilder:
         if error:
             response_dict = {"error": str(error)}
         else:
-            response_dict = {"result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"}
+            response_dict = {
+                "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
+            }
 
         if session_id:
             response_dict["session_id"] = session_id
@@ -334,9 +338,12 @@ class ChatService:
         handler = AgentHandler()
         try:
             self._validate(req)
+            thread_manager = self._validate_thread(req)
             requests = RequestBuilder.from_base_request_sync(req)
             handler.initialize(session_id, req.agent)
+            requests = self._thread_pre_run(thread_manager, req, requests)
             result = handler.run_sync(requests)
+            self._thread_post_run(thread_manager, req, result)
             return ResponseBuilder.build_response(200, handler.get_response_session_id(session_id), self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
@@ -360,9 +367,12 @@ class ChatService:
                 raise ValueError("No session_id is provided in the request")
             if not req.prompt:
                 raise ValueError("No prompt provided in the request")
+            thread_manager = self._validate_thread(req)
             requests = await RequestBuilder.from_base_request_async(req)
             handler.initialize(session_id, req.agent)
+            requests = self._thread_pre_run(thread_manager, req, requests)
             result = await handler.run_async(requests)
+            self._thread_post_run(thread_manager, req, result)
             return ResponseBuilder.build_response(200, handler.get_response_session_id(session_id), self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
@@ -384,21 +394,34 @@ class ChatService:
         :param sse_format: When True, yield Server-Sent Events formatted frames.
                            When False, yield raw StreamChunk JSON payloads.
         :return: Async generator yielding StreamChunk payloads as JSON or SSE-formatted strings
-        :raises ValueError: If session_id or prompt is missing, or no agent is available
+        :raises ValueError: If session_id or prompt is missing, no agent is available,
+                            or user_id is missing while thread support is enabled
         """
         session_id = req.session_id
         if not session_id:
             raise ValueError("No session_id is provided in the request")
         if not req.prompt:
             raise ValueError("No prompt provided in the request")
+        thread_manager = self._validate_thread(req)
         requests = await RequestBuilder.from_base_request_async(req)
+        requests = self._thread_pre_run(thread_manager, req, requests)
         handler = AgentHandler()
         handler.initialize(session_id, req.agent)
 
         async def _stream() -> AsyncGenerator[str, None]:
+            deltas: List[str] = []
+            error_seen = False
             try:
                 async for chunk in handler.run_stream_async(requests):
+                    if chunk.error:
+                        error_seen = True
+                    if chunk.delta:
+                        deltas.append(chunk.delta)
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
+                # A halted/errored stream (error chunk, no raise) or an empty one must
+                # not record a blank assistant message in the thread.
+                if not error_seen and deltas:
+                    self._thread_post_run(thread_manager, req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
@@ -420,21 +443,34 @@ class ChatService:
         :param sse_format: When True, yield Server-Sent Events formatted frames.
                            When False, yield raw StreamChunk JSON payloads.
         :return: Generator yielding StreamChunk payloads as JSON or SSE-formatted strings
-        :raises ValueError: If session_id or prompt is missing, or no agent is available
+        :raises ValueError: If session_id or prompt is missing, no agent is available,
+                            or user_id is missing while thread support is enabled
         """
         session_id = req.session_id
         if not session_id:
             raise ValueError("No session_id is provided in the request")
         if not req.prompt:
             raise ValueError("No prompt provided in the request")
+        thread_manager = self._validate_thread(req)
         requests = RequestBuilder.from_base_request_sync(req)
+        requests = self._thread_pre_run(thread_manager, req, requests)
         handler = AgentHandler()
         handler.initialize(session_id, req.agent)
 
         def _stream() -> Generator[str, None, None]:
+            deltas: List[str] = []
+            error_seen = False
             try:
                 for chunk in handler.run_stream_sync(requests):
+                    if chunk.error:
+                        error_seen = True
+                    if chunk.delta:
+                        deltas.append(chunk.delta)
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
+                # A halted/errored stream (error chunk, no raise) or an empty one must
+                # not record a blank assistant message in the thread.
+                if not error_seen and deltas:
+                    self._thread_post_run(thread_manager, req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
@@ -453,3 +489,67 @@ class ChatService:
             raise ValueError("No session_id is provided in the request")
         if not req.prompt:
             raise ValueError("No prompt provided in the request")
+
+    @staticmethod
+    def _validate_thread(req: BaseChatRequest) -> Optional["ConversationThreadManager"]:
+        """Return the shared ConversationThreadManager when thread support is
+        enabled, enforcing the user_id requirement. Returns None when disabled.
+
+        :param req: Chat request to validate
+        :return: The shared manager, or None when thread support is disabled
+        :raises ValueError: If thread support is enabled and user_id is missing
+        """
+        manager = ConversationThreadManager.get()
+        if manager is not None and not req.user_id:
+            raise ValueError("No user_id is provided in the request — user_id is required when thread support is enabled")
+        return manager
+
+    def _thread_pre_run(
+        self,
+        manager: Optional["ConversationThreadManager"],
+        req: BaseChatRequest,
+        requests: List[Any],
+    ) -> List[Any]:
+        """Thread-mode work done before the agent runs: store attachment bytes,
+        create/load the thread, append the user message, and return the rebuilt
+        request list in which stored attachments are replaced by in-band
+        AgentRequestAttachmentRef entries for MultimodalPreHook to resolve.
+
+        store_attachments runs first — its config-validation rejections (raised
+        as ValueError) must fire before any thread state exists, so a rejected
+        request leaves no phantom thread behind.
+
+        No-op when thread support is disabled (manager is None) — returns the
+        requests unchanged.
+
+        :param manager: The shared ConversationThreadManager, or None
+        :param req: The originating chat request
+        :param requests: The built AgentRequest list (may carry attachments)
+        :return: The (possibly rebuilt) request list to run the agent with.
+        """
+        if manager is None:
+            return requests
+        requests, attachments = manager.store_attachments(session_id=req.session_id, requests=requests)
+        manager.get_or_create_thread(
+            session_id=req.session_id,
+            user_id=req.user_id,
+            group_id=req.group_id,
+            name=req.thread_name,
+            first_prompt=req.prompt,
+        )
+        manager.append_message(req.session_id, "user", req.prompt, attachments=attachments)
+        return requests
+
+    @staticmethod
+    def _thread_post_run(manager: Optional["ConversationThreadManager"], req: BaseChatRequest, result: Any) -> None:
+        """Thread-mode work done after a successful agent run: append the
+        assistant message. No-op when thread support is disabled.
+
+        :param manager: The shared ConversationThreadManager, or None
+        :param req: The originating chat request
+        :param result: The agent's reply
+        :return: None
+        """
+        if manager is None:
+            return
+        manager.append_message(req.session_id, "assistant", str(result))

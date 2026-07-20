@@ -7,7 +7,7 @@ from walledai import WalledProtect, WalledRedact
 
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
-from ..core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequest, AgentRequestText
 from .guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
 log = logging.getLogger("ak.guardrail.walledai")
@@ -109,7 +109,7 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
                 continue
 
             has_text_request = True
-            raw_text = req.text
+            raw_text = req.prompt
 
             if not raw_text:
                 new_requests.append(req)
@@ -120,14 +120,14 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
             except Exception as e:
                 log.error(f"Safety validation error: {e}")
                 return AgentReplyText(
-                    text="I apologize, but I'm unable to process your request at this time. Please try again later.",
+                    response="I apologize, but I'm unable to process your request at this time. Please try again later.",
                     prompt=raw_text,
                 )
 
             if isinstance(safety_res, dict) and "data" in safety_res:
                 if not safety_res["data"]["safety"][0]["isSafe"]:
                     log.info("Blocked unsafe input due to safety concerns")
-                    return AgentReplyText(text="I cannot fulfill this request as it violates safety guidelines.")
+                    return AgentReplyText(response="I cannot fulfill this request as it violates safety guidelines.")
 
             if not pii_enabled:
                 new_requests.append(req)
@@ -143,7 +143,7 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
 
                 log.error(f"Redaction error: {e}")
                 return AgentReplyText(
-                    text="I apologize, but I'm unable to process your request at this time. Please try again later.",
+                    response="I apologize, but I'm unable to process your request at this time. Please try again later.",
                     prompt=raw_text,
                 )
 
@@ -156,7 +156,7 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
                     mapping_updated = True
 
                 log.debug(f"masked_text: {masked_text}")
-                new_requests.append(AgentRequestText(text=masked_text))
+                new_requests.append(AgentRequestText(prompt=masked_text))
                 continue
 
             new_requests.append(req)
@@ -195,14 +195,40 @@ class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
             log.debug("WalledAI PII unmasking is disabled for output guardrail.")
             return agent_reply
 
-        masked_output = self._extract_text_from_reply(agent_reply)
         mapping = self._get_pii_mapping(session)
 
         if not mapping:
             return agent_reply
 
-        unmasked_text = masked_output
-        for placeholder, original_value in mapping.items():
-            unmasked_text = unmasked_text.replace(placeholder, str(original_value))
+        if isinstance(agent_reply, AgentReplyAny):
+            return agent_reply.model_copy(update={"content": self._unmask(agent_reply.content, mapping)})
 
-        return AgentReplyText(text=unmasked_text, prompt=getattr(agent_reply, "prompt", ""))
+        if isinstance(agent_reply, AgentReplyImage):
+            return agent_reply.model_copy(update={"response": self._unmask(agent_reply.response, mapping)})
+
+        if isinstance(agent_reply, AgentReplyText):
+            return agent_reply.model_copy(update={"response": self._unmask(agent_reply.response, mapping)})
+
+        # Fallback for unknown reply types
+        return agent_reply
+
+    def _unmask(self, value, mapping: dict):
+        """
+        Recursively replace PII placeholders inside string values.
+
+        Only string values are rewritten, so non-string data (numbers, booleans,
+        datetimes, non-string keys) passes through untouched.
+
+        :param value: Content node to unmask (str, dict, list, or any scalar).
+        :param mapping: Placeholder-to-original-value mapping.
+        :return: Content with placeholders replaced in string values.
+        """
+        if isinstance(value, str):
+            for placeholder, original_value in mapping.items():
+                value = value.replace(placeholder, str(original_value))
+            return value
+        if isinstance(value, dict):
+            return {k: self._unmask(v, mapping) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self._unmask(v, mapping) for v in value]
+        return value

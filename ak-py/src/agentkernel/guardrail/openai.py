@@ -113,7 +113,7 @@ class OpenAIInputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, InputGuardrai
                 # Guardrail was triggered - return error response
                 log.warning(f"Input guardrail triggered: {e}")
                 return AgentReplyText(
-                    text="I apologize, but I'm unable to process this request as it may violate content safety guidelines. Please rephrase your question or try a different topic.",
+                    response="I apologize, but I'm unable to process this request as it may violate content safety guidelines. Please rephrase your question or try a different topic.",
                     prompt=input_text,
                 )
 
@@ -122,7 +122,7 @@ class OpenAIInputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, InputGuardrai
             log.error(f"openai-guardrails not available but guardrails are enabled: {e}")
             input_text = self._extract_text_from_requests(requests)
             return AgentReplyText(
-                text="I apologize, but I'm unable to process your request at this time due to a configuration issue. Please contact support if this problem persists.",
+                response="I apologize, but I'm unable to process your request at this time due to a configuration issue. Please contact support if this problem persists.",
                 prompt=input_text,
             )
         except Exception as e:
@@ -130,7 +130,7 @@ class OpenAIInputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, InputGuardrai
             log.error(f"Error during input guardrail validation: {e}")
             input_text = self._extract_text_from_requests(requests)
             return AgentReplyText(
-                text="I apologize, but I'm unable to process your request at this time. Please try again or contact support if this issue continues.",
+                response="I apologize, but I'm unable to process your request at this time. Please try again or contact support if this issue continues.",
                 prompt=input_text,
             )
 
@@ -197,9 +197,10 @@ class OpenAIOutputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, OutputGuardr
             except GuardrailTripwireTriggered as e:
                 # Guardrail was triggered - return safe response
                 log.warning(f"Output guardrail triggered: {e}")
-                if isinstance(agent_reply, AgentReplyText):
-                    agent_reply.text = "I apologize, but I'm unable to provide this response as it may not meet content safety guidelines. Please try rephrasing your question."
-                return agent_reply
+                return AgentReplyText(
+                    response="I apologize, but I'm unable to provide this response as it may not meet content safety guidelines. Please try rephrasing your question.",
+                    prompt=getattr(agent_reply, "prompt", ""),
+                )
 
         except ImportError:
             log.warning("openai-guardrails not available, skipping validation")

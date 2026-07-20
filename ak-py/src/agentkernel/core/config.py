@@ -28,6 +28,15 @@ class _RedisConfig(BaseModel):
     prefix: str = Field(default="ak:sessions:", description="Key prefix for Redis session storage")
 
 
+class _ValkeyConfig(BaseModel):
+    url: str = Field(
+        default="valkey://localhost:6379",
+        description="Valkey connection URL. Use valkeys:// for SSL",
+    )
+    ttl: int = Field(default=604800, description="Valkey saved value TTL in seconds")
+    prefix: str = Field(default="ak:sessions:", description="Key prefix for Valkey session storage")
+
+
 class _DynamoDBConfig(BaseModel):
     table_name: str = Field(
         description="DynamoDB table name for session storage. Table should have a partition key named 'session_id' and a sort key named 'key'"
@@ -68,9 +77,10 @@ class _FirestoreConfig(BaseModel):
 
 
 class _SessionStoreConfig(BaseModel):
-    type: str = Field(default="in_memory", pattern="^(in_memory|redis|dynamodb|cosmosdb|firestore)$")
+    type: str = Field(default="in_memory", pattern="^(in_memory|redis|valkey|dynamodb|cosmosdb|firestore)$")
     cache: Optional[_SessionCacheConfig] = None
     redis: Optional[_RedisConfig] = None
+    valkey: Optional[_ValkeyConfig] = None
     dynamodb: Optional[_DynamoDBConfig] = None
     cosmosdb: Optional[_CosmosDBConfig] = None
     firestore: Optional[_FirestoreConfig] = None
@@ -165,13 +175,12 @@ class _GmailConfig(BaseModel):
     label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
 
 
-class _MultimodalStorageRedisConfig(BaseModel):
-    url: str = Field(default="redis://localhost:6379", description="Redis connection URL")
+class _MultimodalStorageRedisConfig(_RedisConfig):
     ttl: int = Field(default=604800, description="Attachment TTL in seconds")
     prefix: str = Field(default="ak:attachments:", description="Key prefix for attachment keys")
 
 
-class _MultimodalStorageDynamoDBConfig(BaseModel):
+class _MultimodalStorageDynamoDBConfig(_DynamoDBConfig):
     table_name: str = Field(default="ak-attachments", description="DynamoDB table name for attachment storage")
     ttl: int = Field(default=604800, description="Attachment TTL in seconds (0 disables)")
 
@@ -202,6 +211,48 @@ class _MultimodalConfig(BaseModel):
     dynamodb: Optional[_MultimodalStorageDynamoDBConfig] = None
 
 
+class _ThreadRedisConfig(_RedisConfig):
+    ttl: int = Field(default=2592000, description="Thread TTL in seconds (0 disables)")
+    prefix: str = Field(default="ak:thread:", description="Key prefix for Redis thread storage")
+
+
+class _ThreadDynamoDBConfig(_DynamoDBConfig):
+    table_name: str = Field(
+        default="ak-agent-threads",
+        description="DynamoDB table name for thread storage. Table should have a partition key named 'session_id' (S) and a sort key named 'sk' (S)",
+    )
+    ttl: int = Field(default=0, description="DynamoDB item TTL in seconds (0 disables)")
+
+
+class _ThreadFirestoreConfig(_FirestoreConfig):
+    collection_name: str = Field(
+        default="ak-agent-threads",
+        description="Firestore collection name for thread storage. Each document ID is a session_id.",
+    )
+    ttl: int = Field(default=0, description="Thread TTL in seconds (0 disables)")
+
+
+class _ThreadCosmosDBConfig(BaseModel):
+    connection_string: str = Field(description="Cosmos DB connection string. Can be found in Azure Portal under Keys section")
+    table_name: str = Field(default="akagentthreads", description="Cosmos DB table name for thread storage")
+
+
+class _ThreadNamingConfig(BaseModel):
+    model: str = Field(default="gpt-4o-mini", description="LiteLLM model used to generate thread names")
+    max_length: int = Field(default=80, description="Maximum length of an auto-generated thread name")
+
+
+class _ThreadStoreConfig(BaseModel):
+    """Configuration for Conversation Thread Support. Presence of this block enables the feature."""
+
+    type: str = Field(default="memory", pattern="^(memory|redis|dynamodb|cosmosdb|firestore)$")
+    naming: _ThreadNamingConfig = Field(default_factory=_ThreadNamingConfig, description="Auto-naming settings for the built-in naming strategies")
+    redis: Optional[_ThreadRedisConfig] = None
+    dynamodb: Optional[_ThreadDynamoDBConfig] = None
+    firestore: Optional[_ThreadFirestoreConfig] = None
+    cosmosdb: Optional[_ThreadCosmosDBConfig] = None
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
@@ -226,6 +277,10 @@ class _ResponseStoreRedisConfig(_RedisConfig):
     prefix: str = Field(default="ak:responses:", description="Key prefix for Redis response storage")
 
 
+class _ResponseStoreValkeyConfig(_ValkeyConfig):
+    prefix: str = Field(default="ak:responses:", description="Key prefix for Valkey response storage")
+
+
 class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
     table_name: Optional[str] = Field(
         default=None,
@@ -234,10 +289,11 @@ class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
 
 
 class _ResponseStoreConfig(BaseModel):
-    type: str = Field(default=None, pattern="^(redis|dynamodb)$")
+    type: str = Field(default=None, pattern="^(redis|valkey|dynamodb)$")
     retry_count: int = Field(default=5, description="Number of retry attempts for response store reads")
     delay: float = Field(default=5, description="Delay in seconds between response store reads retry attempts")
     redis: Optional[_ResponseStoreRedisConfig] = None
+    valkey: Optional[_ResponseStoreValkeyConfig] = None
     dynamodb: Optional[_ResponseStoreDynamoDBConfig] = None
 
 
@@ -334,6 +390,10 @@ class AKConfig(YamlBaseSettingsModified):
     telegram: _TelegramConfig = Field(description="Telegram Bot related configurations", default_factory=_TelegramConfig)
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
     multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
+    thread: Optional[_ThreadStoreConfig] = Field(
+        default=None,
+        description="Conversation Thread Support configurations. Feature is enabled only when this block is present.",
+    )
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)

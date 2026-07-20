@@ -18,6 +18,7 @@ locals {
   security_group_id                     = aws_security_group.lambda.id
   security_group_name                   = "${var.product_alias}-${var.env_alias}-lambda-sg"
   redis_url                             = (var.create_redis_cluster == true || var.create_redis_response_store) ? module.redis[0].url : null
+  valkey_url                            = (var.create_valkey_cluster == true || var.create_valkey_response_store) ? module.valkey[0].url : null
   dynamodb_memory_table_arn             = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name            = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
   dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
@@ -40,6 +41,7 @@ locals {
   # Effective response store creation flags (disabled for websocket modes — endpoint_url in SQS message is used instead)
   create_dynamodb_response_store_effective = var.create_dynamodb_response_store && !local.is_websocket_mode
   create_redis_response_store_effective     = var.create_redis_response_store && !local.is_websocket_mode
+  create_valkey_response_store_effective    = var.create_valkey_response_store && !local.is_websocket_mode
 
   response_store_dynamodb_table_name = local.create_dynamodb_response_store_effective ? module.dynamodb_response_store[0].table_name : null
   response_store_dynamodb_table_arn  = local.create_dynamodb_response_store_effective ? module.dynamodb_response_store[0].table_arn : null
@@ -50,6 +52,10 @@ locals {
   response_store_redis_url = local.create_redis_response_store_effective ? local.redis_url : null
   response_handler_response_store_redis = local.create_redis_response_store_effective ? {
     url = local.response_store_redis_url
+  } : null
+  response_store_valkey_url = local.create_valkey_response_store_effective ? local.valkey_url : null
+  response_handler_response_store_valkey = local.create_valkey_response_store_effective ? {
+    url = local.response_store_valkey_url
   } : null
 
   input_queue_url                = var.queue_mode ? module.queues[0].input_queue_url : null
@@ -276,6 +282,18 @@ module "redis" {
   subnet_ids    = local.subnet_ids
 }
 
+module "valkey" {
+  source        = "yaalalabs/ak-common/aws//modules/valkey"
+  version       = "0.6.1"
+  count         = (var.create_valkey_cluster == true || local.create_valkey_response_store_effective) ? 1 : 0
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  product_alias = var.product_alias
+  vpc_cidr      = local.vpc_cidr
+  vpc_id        = local.vpc_id
+  subnet_ids    = local.subnet_ids
+}
+
 module "dynamodb_memory" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
   version = "0.6.1"
@@ -436,6 +454,7 @@ module "request_handler" {
   cloudwatch_kms_key_arn                  = local.cloudwatch_kms_key_arn
   is_production                           = var.is_production
   response_store_redis                    = local.response_handler_response_store_redis
+  response_store_valkey                   = local.response_handler_response_store_valkey
   response_store_dynamodb                 = local.response_handler_response_store_dynamodb
   package_path                            = var.request_handler.package_path
   cloudwatch_logs_retention_in_days       = var.request_handler.cloudwatch_logs_retention_in_days
@@ -463,6 +482,7 @@ module "request_handler" {
   create_dynamodb_memory_table            = var.queue_mode ? false : var.create_dynamodb_memory_table
   create_dynamodb_multimodal_memory_table = var.queue_mode ? false : var.create_dynamodb_multimodal_memory_table
   redis_url                               = var.queue_mode ? null : local.redis_url
+  valkey_url                              = var.queue_mode ? null : local.valkey_url
   dynamodb_memory_table_arn               = var.queue_mode ? null : local.dynamodb_memory_table_arn
   dynamodb_memory_table_name              = var.queue_mode ? null : local.dynamodb_memory_table_name
   dynamodb_multimodal_memory_table_arn    = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_arn
@@ -519,6 +539,7 @@ module "agent_runner" {
   dynamodb_multimodal_memory_table_arn  = local.dynamodb_multimodal_memory_table_arn
   dynamodb_multimodal_memory_table_name = local.dynamodb_multimodal_memory_table_name
   redis_url                     = local.redis_url
+  valkey_url                    = local.valkey_url
 
   queue_config = {
     input_queue_arn                    = local.input_queue_arn
@@ -578,6 +599,7 @@ module "response_handler" {
   }
 
   response_store_redis    = local.response_handler_response_store_redis
+  response_store_valkey   = local.response_handler_response_store_valkey
   response_store_dynamodb = local.response_handler_response_store_dynamodb
   websocket_connections_dynamodb = local.websocket_api_enabled ? {
     table_name = module.websocket_connections[0].table_name

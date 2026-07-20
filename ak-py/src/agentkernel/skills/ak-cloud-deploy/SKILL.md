@@ -42,7 +42,7 @@ If missing, suggest `ak-init` first.
 - WebSocket full-response (`async`, queue/scalable mode)
 - WebSocket token streaming (`stream`, queue/scalable mode) — also available on containerized deployments via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
-5. Session store: Redis, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
+5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
 7. Environment aliases: `product_alias`, `env_alias`, `module_name`.
 
@@ -93,6 +93,38 @@ session:
     port: 6379
     db: 0
 ```
+
+#### Valkey sessions (AWS)
+
+[Valkey](https://valkey.io/) is the open-source, Linux Foundation-governed fork of Redis. It is
+wire-compatible with Redis and available on AWS ElastiCache at a lower price point than the Redis
+OSS engine. Agent Kernel treats it as a first-class session and response store backend on AWS.
+
+- Dependency extras: include `valkey`
+- Typical dependency example:
+
+```toml
+dependencies = [
+  "agentkernel[openai,api,aws,valkey]>=0.6.1"
+]
+```
+
+- `config.yaml` session block:
+
+```yaml
+session:
+  type: valkey
+  valkey:
+    url: ${AK_SESSION__VALKEY__URL}  # valkeys:// for SSL
+    ttl: 604800
+    prefix: "ak:sessions:"
+```
+
+- Terraform provisions the cluster with `create_valkey_cluster = true` (serverless and
+  containerized) and injects `AK_SESSION__VALKEY__URL` — `session.type: valkey` must still be set
+  in `config.yaml` since the type itself is never injected.
+- For queue-mode response storage, set `create_valkey_response_store = true` (serverless only) and
+  `execution.response_store.type: valkey` in `config.yaml`.
 
 #### DynamoDB sessions (AWS)
 
@@ -162,7 +194,7 @@ session:
 - The Terraform module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLLECTION_NAME` automatically when Firestore is enabled.
 - A TTL policy must be set on the Firestore collection pointing to the `expiry_time` field for automatic document expiry.
 
-If the Terraform module creates the backing store (for example `create_redis_cluster = true` or `create_dynamodb_memory_table = true`), make sure output values are wired to the app environment variables used by `config.yaml`.
+If the Terraform module creates the backing store (for example `create_redis_cluster = true`, `create_valkey_cluster = true`, or `create_dynamodb_memory_table = true`), make sure output values are wired to the app environment variables used by `config.yaml`.
 
 ## AWS Serverless (Lambda + API Gateway)
 
@@ -363,11 +395,11 @@ See [examples/aws-serverless/scalable-openai](https://github.com/yaalalabs/agent
 # For rest_sync or rest_async
 execution:
   response_store:
-    type: dynamodb  # or redis — not injected, must be set here
+    type: dynamodb  # or redis / valkey — not injected, must be set here
     retry_count: 5
     delay: 5
 session:
-  type: dynamodb  # or redis — not injected, must be set here
+  type: dynamodb  # or redis / valkey — not injected, must be set here
 ```
 
 - `rest_sync`: request handler sends to queue, polls the response store until the result is available, then returns it synchronously.
@@ -378,7 +410,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.6.1"  # include 'redis' if using Redis session/response store
+  "agentkernel[openai,api,aws]>=0.6.1"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -521,7 +553,7 @@ Contrast with REST mode where routes use a leading slash and HTTP method:
 
 ```yaml
 session:
-  type: redis                   # or dynamodb — not injected, must be set here
+  type: redis                   # or valkey / dynamodb — not injected, must be set here
   redis:
     prefix: "ak:myapp:"
 ```
@@ -560,7 +592,7 @@ module "serverless_agents" {
   execution_mode = "stream"
 
   create_redis_cluster           = true
-  # create_redis_response_store and create_dynamodb_response_store must stay false/unset:
+  # create_redis_response_store, create_valkey_response_store, and create_dynamodb_response_store must stay false/unset:
   # WebSocket modes (async/stream) push responses over the connection and Terraform
   # validation fails if a response store is enabled for them.
 
@@ -592,7 +624,7 @@ This selects `ServerlessStreamAgentRunner` automatically at import time (queue m
 On an unrecoverable error, the final chunk carries `error` instead of `delta`, with `done: true`.
 
 - Queue disabled (`queue_mode = false`): the request handler Lambda streams tokens directly to the WebSocket client without SQS.
-- `create_redis_response_store` / `create_dynamodb_response_store` must be `false` for `stream` (same constraint as `async`) — Terraform validation enforces this.
+- `create_redis_response_store` / `create_valkey_response_store` / `create_dynamodb_response_store` must be `false` for `stream` (same constraint as `async`) — Terraform validation enforces this.
 - See [examples/aws-serverless/streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) for a complete working example.
 
 **Containerized / direct streaming (no Terraform WebSocket setup)**: any REST deployment (AWS containerized, Azure, GCP, or local) can enable SSE token streaming by setting `execution.mode: stream` in `config.yaml`. `POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode.
@@ -700,7 +732,7 @@ execution:
     retry_count: 30
     delay: 2
 session:
-  type: dynamodb
+  type: dynamodb  # or redis / valkey (create_redis_cluster / create_valkey_cluster)
 ```
 
 **Terraform:**
@@ -1003,11 +1035,12 @@ Each Lambda package must include a `config.yaml`. Most runtime values (`executio
 
 | Config key | Required in | Notes |
 |------------|------------|-------|
-| `execution.response_store.type` | request-handler, response-handler (queue modes) | `redis` or `dynamodb` — not injected |
+| `execution.response_store.type` | request-handler, response-handler (queue modes) | `redis`, `valkey`, or `dynamodb` — not injected |
 | `execution.response_store.retry_count` | request-handler (`rest_sync`) | how many times to poll for response |
 | `execution.response_store.delay` | request-handler (`rest_sync`) | seconds between polls |
-| `session.type` | agent-runner | `redis` or `dynamodb` — not injected |
+| `session.type` | agent-runner | `redis`, `valkey`, or `dynamodb` — not injected |
 | `session.redis.prefix` | agent-runner (Redis sessions) | key namespace prefix |
+| `session.valkey.prefix` | agent-runner (Valkey sessions) | key namespace prefix |
 
 ### Timeouts and visibility
 

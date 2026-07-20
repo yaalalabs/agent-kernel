@@ -70,6 +70,23 @@ Health check endpoint.
 }
 ```
 
+### Conversation Thread Endpoints
+
+When [conversation threads](../advanced/threads.md) are enabled (a `thread:` block is present in `config.yaml`), two read-only routes are mounted automatically:
+
+**`GET /api/v1/threads`** lists threads, filterable by `user_id`/`group_id`, cursor-paginated (`limit`, `cursor`):
+
+```json
+{
+  "threads": [{"session_id": "user-123", "name": "Trip planning", "user_id": "anne", "...": "..."}],
+  "next_cursor": null
+}
+```
+
+**`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`).
+
+With thread support enabled, `user_id` becomes **required** on every chat request. An optional `Authoriser` can protect these routes by resolving the Bearer token to a `user_id`; requests for another user's thread then return 403. Without an `Authoriser`, the routes are open.
+
 ## Error Handling
 
 **400 Bad Request:**
@@ -118,7 +135,7 @@ Currently, passing images and files only work with OpenAI SDK & Google ADK. Othe
 
 **NOTE:** Directly passing image is not recommended. It is advised to save images in Agent accessible storage and pass the URI. This can be done directly from the client side or via hooks. i.e. PreExecution Hooks can intercept the requests, detect images/files and store and modify the request to contain the URIs.
 
-To prevent large files from being passed to LLMs, there is a `max_file_size` option in the REST API configuration which limits the attached file size.
+To prevent large files from being passed to LLMs, there is a `max_file_size` option in the REST API configuration (`api.max_file_size`, default 10 MB) which limits the attached file size.
 
 
 
@@ -322,7 +339,7 @@ if __name__ == "__main__":
 
 ## Streaming
 
-Set `execution.mode: stream` in `config.yaml` (or `AK_EXECUTION__MODE=stream`) to enable token-level streaming. When this mode is active, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON — no other code changes are required.
+Set `execution.mode: stream` in `config.yaml` (or `AK_EXECUTION__MODE=stream`) to enable token-level streaming. When this mode is active, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON; no other code changes are required.
 
 **Request:** Same JSON/multipart payload as the non-streaming endpoints.
 
@@ -354,7 +371,7 @@ with httpx.stream("POST", "http://localhost:8000/api/v1/chat", json={
             print(line.removeprefix("data:").strip())
 ```
 
-**Framework support:** OpenAI Agents SDK, Google ADK, and LangGraph support token streaming. CrewAI and smolagents raise `NotImplementedError` when `execution.mode: stream` is used — use `rest_sync` for those frameworks instead.
+**Framework support:** OpenAI Agents SDK, Google ADK, and LangGraph support token streaming. CrewAI and smolagents raise `NotImplementedError` when `execution.mode: stream` is used; use `rest_sync` for those frameworks instead.
 
 For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
 

@@ -32,6 +32,12 @@ pip install "agentkernel[neo4j]"
 pip install "agentkernel[trino]"
 ```
 
+For LLM-based thread naming with Conversation Thread Support:
+
+```bash
+pip install "agentkernel[thread]"
+```
+
 **Requirements:**
 - Python 3.12+
 
@@ -330,7 +336,7 @@ Configure where agent sessions are stored (supports multi-cloud storage backends
 
 - **Field**: `session.type`
 - **Type**: string
-- **Options**: `in_memory`, `redis`, `dynamodb` (AWS), `cosmosdb` (Azure), `firestore` (GCP)
+- **Options**: `in_memory`, `redis`, `valkey` (AWS), `dynamodb` (AWS), `cosmosdb` (Azure), `firestore` (GCP)
 - **Default**: `in_memory`
 - **Environment Variable**: `AK_SESSION__TYPE`
 
@@ -355,6 +361,143 @@ Required when `session.type=redis`:
   - **Default**: `ak:sessions:`
   - **Description**: Key prefix for session storage
   - **Environment Variable**: `AK_SESSION__REDIS__PREFIX`
+
+##### Valkey Configuration
+
+Required when `session.type=valkey` (requires the `agentkernel[valkey]` extra). [Valkey](https://valkey.io/)
+is the open-source, Linux Foundation-governed fork of Redis — wire-compatible with Redis and
+available on AWS ElastiCache at a lower price point than the Redis OSS engine:
+
+- **URL**
+  - **Field**: `session.valkey.url`
+  - **Default**: `valkey://localhost:6379`
+  - **Description**: Valkey connection URL. Use `valkeys://` for SSL
+  - **Environment Variable**: `AK_SESSION__VALKEY__URL`
+
+- **TTL (Time to Live)**
+  - **Field**: `session.valkey.ttl`
+  - **Default**: `604800` (7 days)
+  - **Description**: Session TTL in seconds
+  - **Environment Variable**: `AK_SESSION__VALKEY__TTL`
+
+- **Key Prefix**
+  - **Field**: `session.valkey.prefix`
+  - **Default**: `ak:sessions:`
+  - **Description**: Key prefix for session storage
+  - **Environment Variable**: `AK_SESSION__VALKEY__PREFIX`
+
+#### Conversation Thread Support
+
+Adding a `thread` block to the configuration turns on persistent, named conversation threads keyed by
+`session_id`. Once enabled, `user_id` becomes required on every chat request, a thread is auto-created on a
+session's first request, and history becomes readable over REST (`GET /api/v1/threads` and
+`GET /api/v1/threads/{session_id}` — optionally protected by a pluggable `Authoriser`). Sending
+`thread_name` on any chat request sets or renames the thread's display name and locks it against automatic
+naming. Threads created without an explicit `thread_name` are
+named by a pluggable naming strategy — by default an LLM call derives a concise title from the first prompt
+(falling back to a prefix of the prompt when `litellm` or an API key is unavailable). Attachments in thread
+mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or
+`dynamodb` — `session_cache` is rejected). See `examples/api/thread-openai` and
+`examples/api/multimodal/thread-openai`.
+
+- **Field**: `thread.type`
+- **Type**: string
+- **Options**: `memory`, `redis`, `dynamodb` (AWS), `firestore` (GCP), `cosmosdb` (Azure)
+- **Default**: `memory`
+- **Environment Variable**: `AK_THREAD__TYPE`
+
+- **Naming Model**
+  - **Field**: `thread.naming.model`
+  - **Type**: string
+  - **Default**: `gpt-4o-mini`
+  - **Description**: LiteLLM model used to generate thread names (requires the `thread` extra — `pip install "agentkernel[thread]"` — and an API key in the environment; falls back to a truncated prompt prefix otherwise)
+  - **Environment Variable**: `AK_THREAD__NAMING__MODEL`
+
+- **Auto-name Max Length**
+  - **Field**: `thread.naming.max_length`
+  - **Type**: integer
+  - **Default**: `80`
+  - **Description**: Maximum length of an auto-generated thread name
+  - **Environment Variable**: `AK_THREAD__NAMING__MAX_LENGTH`
+
+##### Redis Thread Store
+
+Required when `thread.type=redis`:
+
+- **URL**
+  - **Field**: `thread.redis.url`
+  - **Default**: `redis://localhost:6379`
+  - **Description**: Redis connection URL. Use `rediss://` for SSL
+  - **Environment Variable**: `AK_THREAD__REDIS__URL`
+
+- **TTL (Time to Live)**
+  - **Field**: `thread.redis.ttl`
+  - **Default**: `2592000` (30 days)
+  - **Description**: Thread TTL in seconds (0 disables)
+  - **Environment Variable**: `AK_THREAD__REDIS__TTL`
+
+- **Key Prefix**
+  - **Field**: `thread.redis.prefix`
+  - **Default**: `ak:thread:`
+  - **Description**: Key prefix for Redis thread storage
+  - **Environment Variable**: `AK_THREAD__REDIS__PREFIX`
+
+##### DynamoDB Thread Store
+
+Used when `thread.type=dynamodb`:
+
+- **Table Name**
+  - **Field**: `thread.dynamodb.table_name`
+  - **Default**: `ak-agent-threads`
+  - **Description**: DynamoDB table name. The table must have a partition key named `session_id` (S) and a sort key named `sk` (S)
+  - **Environment Variable**: `AK_THREAD__DYNAMODB__TABLE_NAME`
+
+- **TTL (Time to Live)**
+  - **Field**: `thread.dynamodb.ttl`
+  - **Default**: `0` (disabled)
+  - **Description**: DynamoDB item TTL in seconds
+  - **Environment Variable**: `AK_THREAD__DYNAMODB__TTL`
+
+##### Firestore Thread Store
+
+Used when `thread.type=firestore`:
+
+- **Collection Name**
+  - **Field**: `thread.firestore.collection_name`
+  - **Default**: `ak-agent-threads`
+  - **Description**: Firestore collection name; each document ID is a `session_id`
+  - **Environment Variable**: `AK_THREAD__FIRESTORE__COLLECTION_NAME`
+
+- **Project ID**
+  - **Field**: `thread.firestore.project_id`
+  - **Default**: `null` (inferred from Application Default Credentials)
+  - **Environment Variable**: `AK_THREAD__FIRESTORE__PROJECT_ID`
+
+- **Database ID**
+  - **Field**: `thread.firestore.database_id`
+  - **Default**: `null` (the `(default)` database)
+  - **Environment Variable**: `AK_THREAD__FIRESTORE__DATABASE_ID`
+
+- **TTL (Time to Live)**
+  - **Field**: `thread.firestore.ttl`
+  - **Default**: `0` (disabled)
+  - **Description**: Thread TTL in seconds
+  - **Environment Variable**: `AK_THREAD__FIRESTORE__TTL`
+
+##### Cosmos DB Thread Store
+
+Required when `thread.type=cosmosdb`:
+
+- **Connection String**
+  - **Field**: `thread.cosmosdb.connection_string`
+  - **Description**: Cosmos DB connection string (Azure Portal → Keys). Uses the Table API; entities are partitioned by `session_id`. No TTL support
+  - **Environment Variable**: `AK_THREAD__COSMOSDB__CONNECTION_STRING`
+
+- **Table Name**
+  - **Field**: `thread.cosmosdb.table_name`
+  - **Default**: `akagentthreads`
+  - **Description**: Cosmos DB table name for thread storage
+  - **Environment Variable**: `AK_THREAD__COSMOSDB__TABLE_NAME`
 
 #### Execution Configuration
 
@@ -433,12 +576,17 @@ Configure queue-backed and serverless execution behavior.
     - **Field**: `execution.response_store.redis`
     - **Environment Variables**: `AK_EXECUTION__RESPONSE_STORE__REDIS__URL`, `AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX`, `AK_EXECUTION__RESPONSE_STORE__REDIS__TTL`
 
+  - **Valkey Backend**
+    - **Field**: `execution.response_store.valkey`
+    - **Environment Variables**: `AK_EXECUTION__RESPONSE_STORE__VALKEY__URL`, `AK_EXECUTION__RESPONSE_STORE__VALKEY__PREFIX`, `AK_EXECUTION__RESPONSE_STORE__VALKEY__TTL`
+    - **Description**: Valkey-backed response storage (requires the `agentkernel[valkey]` extra)
+
   - **DynamoDB Backend**
     - **Field**: `execution.response_store.dynamodb`
     - **Environment Variables**: `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`, `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL`
     - **Description**: DynamoDB-backed response storage with table name and TTL
 
-Use either Redis or DynamoDB for the response store backend. The runtime accepts `BaseRunRequest` payloads directly, normalizes them internally when queueing is required, and uses `request_id` plus optional `user_id` as queue message attributes.
+Use Redis, Valkey, or DynamoDB for the response store backend. The runtime accepts `BaseRunRequest` payloads directly, normalizes them internally when queueing is required, and uses `request_id` plus optional `user_id` as queue message attributes.
 
 #### API Configuration
 
@@ -938,6 +1086,12 @@ session:
     url: redis://localhost:6379
     ttl: 604800
     prefix: "ak:sessions:"
+thread: # optional — enables Conversation Thread Support (user_id becomes required on chat requests)
+  type: redis
+  redis:
+    url: redis://localhost:6379
+    ttl: 2592000
+    prefix: "ak:thread:"
 execution:
   mode: rest_sync
   queues:
@@ -954,11 +1108,15 @@ execution:
     type: redis
     retry_count: 5
     delay: 5
-    redis: # if this is given, then dynamodb response store part cannot be given
+    redis: # if this is given, then valkey/dynamodb response store parts cannot be given
       url: redis://localhost:6379
       prefix: "ak:responses:"
       ttl: 3600
-    dynamodb: # if this is given, then redis response store part cannot be given
+    valkey: # if this is given, then redis/dynamodb response store parts cannot be given (requires the `valkey` extra)
+      url: valkey://localhost:6379
+      prefix: "ak:responses:"
+      ttl: 3600
+    dynamodb: # if this is given, then redis/valkey response store parts cannot be given
       table_name: table-name
       table_arn: table-arn
       ttl: 3600
@@ -1235,3 +1393,4 @@ SPDX-License-Identifier: Apache-2.0
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+

@@ -18,6 +18,7 @@ from ..config import AKConfig, _MultimodalConfig
 from ..hooks import PreHook
 from ..model import (
     AgentRequest,
+    AgentRequestAttachmentRef,
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
@@ -135,40 +136,40 @@ class MultimodalPreHook(PreHook):
         if not session or not config or not config.enabled:
             return requests
 
-        # Describe and save all current attachments
-        descriptions = await self._process_attachments(session, requests, config)
-        if not descriptions:
+        # Nothing to do when there are no attachment-bearing requests to process.
+        if not any(isinstance(req, (AgentRequestImage, AgentRequestFile, AgentRequestAttachmentRef)) for req in requests):
             return requests
 
-        # Build description text for attachment metadata
-        desc_text = "\n\n[Attached Images/Files:]\n"
-        for att_id, desc in descriptions:
-            desc_text += f"- {att_id}: {desc}\n"
+        # Describe all current attachments (saving raw ones; resolving refs by id).
+        descriptions = await self._process_attachments(session, requests, config)
 
-        # Build filtered request list:
-        #  - Drop raw image/file requests (data is saved to storage)
-        #  - Keep all text and other request types
-        #  - Append attachment metadata to the LAST text request
+        # Build filtered request list, always stripping attachment requests:
+        #  - Raw image/file: their data is saved to storage
+        #  - AgentRequestAttachmentRef: the id is resolved and injected (or dropped if unresolved)
+        # so a dangling reference is never passed to the agent.
         filtered_requests = []
         last_text_idx = -1
-
         for req in requests:
-            # Drop images (their data is stored and described)
-            if isinstance(req, AgentRequestImage):
-                continue
-            # Drop files as well after persisting; rely on injected IDs + analyze_attachments
-            if isinstance(req, AgentRequestFile):
+            if isinstance(req, (AgentRequestImage, AgentRequestFile, AgentRequestAttachmentRef)):
                 continue
             if isinstance(req, AgentRequestText):
                 last_text_idx = len(filtered_requests)
             filtered_requests.append(req)
 
+        if not descriptions:
+            return filtered_requests
+
+        # Build description text for attachment metadata and inject it.
+        desc_text = "\n\n[Attached Images/Files:]\n"
+        for att_id, desc in descriptions:
+            desc_text += f"- {att_id}: {desc}\n"
+
         if last_text_idx >= 0:
             last_text_req = filtered_requests[last_text_idx]
-            filtered_requests[last_text_idx] = AgentRequestText(text=f"{last_text_req.text}{desc_text}")
+            filtered_requests[last_text_idx] = AgentRequestText(prompt=f"{last_text_req.prompt}{desc_text}")
         else:
-            # No text at all (image/file only) — description becomes the query
-            filtered_requests.append(AgentRequestText(text=desc_text.strip()))
+            # No text at all (attachments only) — description becomes the query
+            filtered_requests.append(AgentRequestText(prompt=desc_text.strip()))
 
         return filtered_requests
 
@@ -179,7 +180,14 @@ class MultimodalPreHook(PreHook):
         config: _MultimodalConfig,
     ) -> list[tuple[str, str]]:
         """
-        Describe and save each attachment in the current request.
+        Describe each attachment in the current request.
+
+        Two request shapes are handled:
+          - AgentRequestAttachmentRef (thread mode): the bytes were already saved
+            by ChatService and only the id travels in-band. Load the bytes from the
+            AttachmentStore by id, describe them, and reference the same id — no save.
+          - AgentRequestImage / AgentRequestFile (thread-off): raw bytes travel on
+            the request; describe and save them here exactly as before.
 
         :param session: The current session.
         :param requests: List of current agent requests.
@@ -190,6 +198,19 @@ class MultimodalPreHook(PreHook):
         manager = AttachmentStorageManager(session_id=session.id)
 
         for req in requests:
+            if isinstance(req, AgentRequestAttachmentRef):
+                # Thread mode: resolve the already-stored attachment by id.
+                stored = manager.get_attachment_data([req.attachment_id])
+                if not stored:
+                    self._log.warning(f"Attachment {req.attachment_id} not found in storage; skipping")
+                    continue
+                attachment = stored[0]
+                description = await self._describe_attachment_briefly(data=attachment.data, mime_type=attachment.mime_type)
+                if len(description) > config.description_max_length:
+                    description = description[: config.description_max_length]
+                descriptions.append((req.attachment_id, description))
+                continue
+
             data, att_type, name, mime_type = self._extract_attachment(req)
             if data is None:
                 continue
@@ -201,7 +222,7 @@ class MultimodalPreHook(PreHook):
             if len(description) > config.description_max_length:
                 description = description[: config.description_max_length]
 
-            # Save to storage
+            # Thread-off: save the raw bytes here.
             attachment_id = manager.save_attachment(
                 data=data,
                 attachment_type=att_type,
@@ -210,9 +231,8 @@ class MultimodalPreHook(PreHook):
                 description=description,
                 max_attachments=config.max_attachments,
             )
-
-            descriptions.append((attachment_id, description))
             self._log.info(f"Saved {att_type} {attachment_id}: {name}")
+            descriptions.append((attachment_id, description))
 
         return descriptions
 

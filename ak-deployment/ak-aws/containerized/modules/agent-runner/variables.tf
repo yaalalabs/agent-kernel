@@ -69,6 +69,12 @@ variable "redis_url" {
   default     = null
 }
 
+variable "valkey_url" {
+  type        = string
+  description = "Valkey URL for session storage"
+  default     = null
+}
+
 variable "create_dynamodb_memory_table" {
   type        = bool
   description = "Whether DynamoDB memory table is created"

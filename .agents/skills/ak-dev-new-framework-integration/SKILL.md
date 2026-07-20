@@ -98,7 +98,7 @@ class <Name>Runner(Runner):
                 prompt = ""
                 for req in requests:
                     if isinstance(req, AgentRequestText):
-                        prompt = req.text
+                        prompt = req.prompt
 
                 # 4. Call the framework's execution API
                 result = await self._execute(agent, fw_session, prompt)  # framework-specific
@@ -107,7 +107,7 @@ class <Name>Runner(Runner):
                 fw_session.add_to_history({"input": prompt, "output": result})
 
                 # 6. Return as AgentReply
-                return AgentReplyText(text=str(result), prompt=prompt)
+                return AgentReplyText(response=str(result), prompt=prompt)
             finally:
                 tool_context.reset()
 ```
@@ -132,7 +132,7 @@ async def stream(self, agent, session: Session, requests: list[AgentRequest]) ->
     try:
         tool_context.set()
         fw_session = self._session(session)
-        prompt = "".join(req.text for req in requests if isinstance(req, AgentRequestText))
+        prompt = "".join(req.prompt for req in requests if isinstance(req, AgentRequestText))
 
         result = await self._execute_streamed(agent, fw_session, prompt)  # framework-specific
         async for event in result:

@@ -70,6 +70,6 @@ Use agents from other AI systems:
 ```python
 result = mcp_client.call_tool(
     "custom_tool",
-    {"message": "Hello!"}
+    {"param": "Hello!"}
 )
 ```

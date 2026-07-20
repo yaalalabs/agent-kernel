@@ -24,7 +24,7 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
-from ...core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
+from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.tool import SystemToolFactory
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
@@ -337,7 +337,7 @@ class LangGraphRunner(BaseRunner):
             if isinstance(req, AgentRequestAny):
                 continue
             if isinstance(req, AgentRequestText):
-                prompt = prompt + "\n" + req.text if prompt else req.text
+                prompt = prompt + "\n" + req.prompt if prompt else req.prompt
             else:
                 return prompt, False
         return prompt, True
@@ -378,12 +378,12 @@ class LangGraphRunner(BaseRunner):
 
             if not is_valid:
                 return AgentReplyText(
-                    text="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
+                    response="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
                     prompt=prompt,
                 )
 
             if prompt.strip() == "":
-                return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+                return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
 
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
@@ -391,10 +391,13 @@ class LangGraphRunner(BaseRunner):
                 input={"messages": messages},
                 config=config,
             )
+            structured = AgentReplyAny.from_output(result.get("structured_response"), prompt)
+            if structured is not None:
+                return structured
             last_message = result["messages"][-1]
-            return AgentReplyText(text=self._extract_text_content(last_message.content), prompt=prompt)
+            return AgentReplyText(response=self._extract_text_content(last_message.content), prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()

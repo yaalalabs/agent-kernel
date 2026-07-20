@@ -91,6 +91,64 @@ Post-execution hooks run **after** an agent generates a response. They can:
 - Sentiment analysis
 - Response logging and analytics
 
+### Structured Replies in Hooks
+
+When an agent is configured for structured output (e.g., `output_type` in the OpenAI
+Agents SDK or `output_schema` in Google ADK), post-execution hooks receive the
+`AgentReplyAny` object itself, **not a stringified version**. The structured result
+is available on `reply.content` as a dict, and hooks can inspect or modify it in
+place, exactly as they do with the other reply types:
+
+```python
+from agentkernel import PostHook
+from agentkernel.core.model import AgentReplyAny
+
+class StructuredModerationHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        if isinstance(agent_reply, AgentReplyAny):
+            # Inspect and modify the structured dict content directly
+            agent_reply.content["moderated"] = True
+        return agent_reply
+
+    def name(self):
+        return "StructuredModerationHook"
+```
+
+Pre-execution hooks may likewise halt execution by returning an `AgentReplyAny`
+(for example, serving a cached structured answer without running the agent).
+`str()` on an `AgentReplyAny` returns the JSON-serialized content, so hooks that
+log or render replies as text keep working unchanged. See the per-framework
+configuration in the [framework docs](../frameworks/overview).
+
+See [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai_structured) for a complete example with a post-execution hook that modifies a structured reply.
+
+### Streaming Hooks (`on_stream_chunk`)
+
+When the application runs in streaming mode (`execution.mode: stream`), the agent reply arrives as a sequence of token deltas rather than one final reply. Post-execution hooks can intercept **each token** before it reaches the client by overriding `on_stream_chunk`:
+
+```python
+from agentkernel import PostHook
+
+class TokenRedactionHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        return agent_reply  # non-streaming path
+
+    async def on_stream_chunk(self, session, requests, agent, delta: str) -> str | None:
+        if "secret" in delta.lower():
+            return None          # drop this token entirely
+        return delta.replace("internal", "[redacted]")  # or modify it
+
+    def name(self):
+        return "TokenRedactionHook"
+```
+
+- The default implementation passes each delta through unchanged, so existing hooks keep working in streaming mode without changes.
+- Returning `None` drops the token; returning a modified string replaces it.
+- Pre-execution hooks run **before** streaming starts; if one halts, the client receives a single error chunk (`done: true`) and the agent never runs.
+- `on_run` post-hooks are **not** called for streamed runs (there is no single final reply to transform); token-level filtering via `on_stream_chunk` is the streaming counterpart.
+
+**Use Cases:** token-level redaction/PII masking, profanity filtering, stop-sequence enforcement, streaming analytics.
+
 ## Implementing Hooks
 
 ### Pre-Execution Hook
@@ -212,7 +270,7 @@ class GuardRailHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request (assuming single text request)
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests  # No text to validate
         
@@ -249,7 +307,7 @@ class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request (assuming single text request)
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests  # No text to enrich
         
@@ -264,7 +322,7 @@ class RAGHook(PreHook):
 Question: {prompt}
 
 Please answer the question using the provided context."""
-            return [AgentRequestText(text=enriched_prompt)]
+            return [AgentRequestText(prompt=enriched_prompt)]
         
         # No relevant context found - return original
         return requests
@@ -285,7 +343,7 @@ class ModerationHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         # Extract text from reply
         if isinstance(agent_reply, AgentReplyText):
-            reply_text = agent_reply.text
+            reply_text = agent_reply.response
         else:
             return agent_reply  # Can't moderate non-text replies
         
@@ -324,7 +382,7 @@ class DisclaimerHook(PostHook):
         
         # Add disclaimer to text replies
         if isinstance(agent_reply, AgentReplyText):
-            return AgentReplyText(text=agent_reply.text + disclaimer)
+            return AgentReplyText(response=agent_reply.response + disclaimer)
         
         return agent_reply
     
@@ -349,7 +407,7 @@ class AnalyticsHook(PreHook):
         # Extract text for logging (if available)
         prompt_text = None
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt_text = requests[0].text
+            prompt_text = requests[0].prompt
         
         # Log the interaction
         self.logger.log({
@@ -416,7 +474,7 @@ class RobustRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
@@ -424,7 +482,7 @@ class RobustRAGHook(PreHook):
             context = self.knowledge_base.search(prompt)
             if context:
                 enriched = self._enrich_prompt(prompt, context)
-                return [AgentRequestText(text=enriched)]
+                return [AgentRequestText(prompt=enriched)]
         except Exception as e:
             # Log error but don't crash
             self.logger.error(f"RAG lookup failed: {e}")
@@ -453,20 +511,20 @@ class OptimizedRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
         # Check cache first
         cache_key = hash(prompt)
         if cache_key in self.cache:
-            return [AgentRequestText(text=self.cache[cache_key])]
+            return [AgentRequestText(prompt=self.cache[cache_key])]
         
         # Perform lookup
         enriched = self._do_rag(prompt)
         self.cache[cache_key] = enriched
         
-        return [AgentRequestText(text=enriched)]
+        return [AgentRequestText(prompt=enriched)]
     
     def name(self):
         return "OptimizedRAGHook"
@@ -488,17 +546,17 @@ class ConfigurableGuardRailHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
         # Validate based on configuration
         if len(prompt) > self.max_length:
-            return AgentReplyText(text=f"Input too long (max {self.max_length} chars)")
+            return AgentReplyText(response=f"Input too long (max {self.max_length} chars)")
         
         for keyword in self.blocked_keywords:
             if keyword in prompt.lower():
-                return AgentReplyText(text=f"Cannot process requests about '{keyword}'")
+                return AgentReplyText(response=f"Cannot process requests about '{keyword}'")
         
         return requests
     
@@ -522,7 +580,7 @@ class AsyncRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
@@ -533,7 +591,7 @@ class AsyncRAGHook(PreHook):
         if results:
             context = "\n".join([r.text for r in results])
             enriched = f"Context:\n{context}\n\nQuestion: {prompt}"
-            return [AgentRequestText(text=enriched)]
+            return [AgentRequestText(prompt=enriched)]
         
         return requests
     
@@ -565,7 +623,7 @@ class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
@@ -573,7 +631,7 @@ class RAGHook(PreHook):
         context = self._search_knowledge_base(prompt)
         if context:
             enriched = f"Context: {context}\n\nQuestion: {prompt}"
-            return [AgentRequestText(text=enriched)]
+            return [AgentRequestText(prompt=enriched)]
         return requests
     
     def _search_knowledge_base(self, query):
@@ -589,13 +647,13 @@ class GuardRailHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
         for keyword in self.BLOCKED:
             if keyword in prompt.lower():
-                return AgentReplyText(text=f"Cannot assist with '{keyword}'")
+                return AgentReplyText(response=f"Cannot assist with '{keyword}'")
         return requests
     
     def name(self):
@@ -604,7 +662,7 @@ class GuardRailHook(PreHook):
 class DisclaimerHook(PostHook):   
     async def on_run(self, session, requests, agent, agent_reply):
         if isinstance(agent_reply, AgentReplyText):
-            return AgentReplyText(text=agent_reply.text + "\n\n*Disclaimer: AI-generated content.*")
+            return AgentReplyText(response=agent_reply.response + "\n\n*Disclaimer: AI-generated content.*")
         return agent_reply
     
     def name(self):
@@ -814,7 +872,7 @@ OpenAIModule([agent]).pre_hook(agent, [...]).post_hook(agent, [...])
 
 ```python
 # ❌ Wrong: Halts execution
-return AgentReplyText(text="Execution halted")
+return AgentReplyText(response="Execution halted")
 
 # ✅ Correct: Continues execution
 return requests  # or modified requests list
@@ -830,16 +888,16 @@ return requests  # or modified requests list
 # ❌ Wrong: Returns original
 async def on_run(self, session, agent, requests):
     if requests and isinstance(requests[0], AgentRequestText):
-        prompt = requests[0].text
+        prompt = requests[0].prompt
         enriched = f"Context: {context}\n{prompt}"
     return requests  # Returns original!
 
 # ✅ Correct: Returns modified
 async def on_run(self, session, agent, requests):
     if requests and isinstance(requests[0], AgentRequestText):
-        prompt = requests[0].text
+        prompt = requests[0].prompt
         enriched = f"Context: {context}\n{prompt}"
-        return [AgentRequestText(text=enriched)]  # Returns modified
+        return [AgentRequestText(prompt=enriched)]  # Returns modified
 ```
 
 ### Hooks Executing in Wrong Order

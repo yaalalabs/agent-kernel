@@ -19,6 +19,7 @@ class ResponseDBHandler:
         """
 
         REDIS = "REDIS"
+        VALKEY = "VALKEY"
         DYNAMODB = "DYNAMODB"
 
         @classmethod
@@ -64,6 +65,23 @@ class ResponseDBHandler:
                 ttl=redis_config.ttl,
             )
 
+        # Check for Valkey configuration
+        elif response_store_type == ResponseDBHandler.Type.VALKEY and response_store_config.valkey is not None:
+            try:
+                from .valkey import ValkeyResponseStore
+            except ImportError as e:
+                raise ImportError(
+                    "The 'valkey' package is required for execution.response_store.type: valkey. Install it with: pip install agentkernel[valkey]"
+                ) from e
+
+            valkey_config = response_store_config.valkey
+
+            self.store = ValkeyResponseStore(
+                url=valkey_config.url,
+                prefix=valkey_config.prefix,
+                ttl=valkey_config.ttl,
+            )
+
         # Check for DynamoDB configuration
         elif response_store_type == ResponseDBHandler.Type.DYNAMODB and response_store_config.dynamodb is not None:
             from .dynamodb import DynamoDBResponseStore
@@ -77,7 +95,7 @@ class ResponseDBHandler:
             )
 
         else:
-            raise ValueError("No valid response store configured. Please configure either Redis or DynamoDB in execution.response_store")
+            raise ValueError("No valid response store configured. Please configure either Redis, Valkey or DynamoDB in execution.response_store")
 
     def get_store(self) -> ResponseStore:
         """

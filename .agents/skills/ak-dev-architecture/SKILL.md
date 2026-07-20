@@ -4,9 +4,9 @@ description: >
   Agent Kernel architectural principles, core abstractions, and design patterns.
   Use this skill when you need to understand the codebase structure, how components
   interact, or before making changes to core functionality. Covers Session, Agent,
-  Runner, Module, Runtime, AgentService, AKConfig, tools, hooks, multimodal, the adapter pattern,
-  and the AWS ECS containerized deployment classes (ECSIOHandler, ECSOutputConsumer,
-  ECSAgentRunner, ECSSQSConsumer, QueueConsumer, ThreadRunner).
+  Runner, Module, Runtime, AgentService, AKConfig, tools, hooks, multimodal, conversation
+  threads, the adapter pattern, and the AWS ECS containerized deployment classes
+  (ECSIOHandler, ECSOutputConsumer, ECSAgentRunner, ECSSQSConsumer, QueueConsumer, ThreadRunner).
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -20,7 +20,7 @@ metadata:
 1. **Framework-agnostic core**: All core abstractions (`Session`, `Agent`, `Tool`, `Runner`, `Module`, `Runtime`) are framework-independent. Framework-specific logic lives exclusively in adapter modules under `ak-py/src/agentkernel/framework/`.
 2. **Adapter pattern**: Each supported agent framework (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents) implements `Agent`, `Tool`, `Runner`, and `Module` subclasses that wrap native framework objects.
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
-4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, DynamoDB, Cosmos DB, Firestore).
+4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore).
 5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, and messaging integrations are all pluggable via well-defined interfaces.
 6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them.
 
@@ -114,6 +114,7 @@ Pydantic-based configuration:
 - **Reply types**: 
   - `AgentReplyText`, 
   - `AgentReplyImage`
+  - `AgentReplyAny`: `content: dict` — returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`); `str(reply)` returns the JSON-serialized content. Non-streaming only.
   - `StreamChunk`: `delta: str | None`, `done: bool`, `error: str | None`, `session_id: str | None` — yielded by `Runtime.stream()` / `AgentService.stream_multi()` for token-level streaming
 - Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
 
@@ -148,7 +149,7 @@ Provides image and file attachment support via a pluggable storage and PreHook a
 | Backend | Class | Module | Key traits |
 |---------|-------|--------|------------|
 | In-memory | `InMemoryAttachmentStore` | `storage/in_memory.py` | `ClassVar` dict, ephemeral, zero setup |
-| Redis | `RedisAttachmentStore` | `storage/redis.py` | Persistent, TTL, connection pooling |
+| Redis | `RedisAttachmentStore` | `storage/redis.py` | Persistent, TTL, shared `RedisDriver` (lazy connect, retry, ping/reconnect) |
 | DynamoDB | `DynamoDBAttachmentStore` | `storage/dynamodb.py` | Serverless/AWS, TTL via `expiry_time` |
 | Session cache | `SessionNonVolatileCacheAttachmentStore` | `storage/session_cache.py` | Legacy, stores in `nv_cache` (not recommended) |
 
@@ -187,6 +188,49 @@ multimodal:
     ttl: 604800
 ```
 
+## Conversation Threads (`ak-py/src/agentkernel/core/thread/`)
+
+Provides persistent, named conversation threads keyed by `session_id`, gated behind a `thread` config block and independent of session persistence (`session:`). When enabled, `user_id` becomes required on every chat request, a thread is auto-created on a session's first request, and history becomes readable over REST.
+
+### Key Components
+
+- **`ConversationThreadManager`** (`manager.py`): Service façade owning thread lifecycle (create/load/append/history) and, when multimodal is enabled, saving attachment bytes into the shared `AttachmentStore` before the agent runs. A single process-wide instance (`ConversationThreadManager.get()` / class-level singleton, guarded by an `RLock`) is shared by `ChatService` and `ThreadRESTRequestHandler` — `None` when thread support is disabled
+- **`ThreadStore`** (`store/base.py`): Abstract base with backend persistence methods (create/get/append/list); pluggable per backend
+- **`ThreadStoreBuilder`** (`store/__init__.py`): Factory that constructs the configured `ThreadStore` from `AKConfig`'s `thread.type`
+- **`Thread` / `ThreadMessage` / `ThreadAttachment` / `ThreadPage` / `MessagePage`** (`model.py`): Pydantic models for thread metadata, individual messages, attachment references, and cursor-paginated listings
+- **`ThreadNamingStrategy`** (`naming.py`): Overridable strategy that names auto-created threads — default implementation makes a single LiteLLM call (`thread.naming.model`, requires the `thread` extra) to derive a concise title from the first prompt, falling back to a truncated prompt prefix when `litellm`/an API key is unavailable. Explicit `thread_name` on a chat request always wins and locks the thread against further automatic naming
+- **`Authoriser`** (`authoriser.py`): Pluggable base class (`authorise(token) -> Optional[user_id]`) that `ThreadRESTRequestHandler` calls to protect the read routes; routes are open when no `Authoriser` is configured
+- **`ThreadRESTRequestHandler`** (`api/thread.py`): Mounts `GET /api/v1/threads` (list, filterable by `user_id`/`group_id`, cursor-paginated) and `GET /api/v1/threads/{session_id}` (thread + paginated message history); raises 404 when thread support is disabled and 403 when a resolved `user_id` doesn't own the requested thread
+
+### Store Backends
+
+| Backend | Class | Module | Key traits |
+|---------|-------|--------|------------|
+| In-memory | `InMemoryThreadStore` | `store/in_memory.py` | `ClassVar` dict, ephemeral, zero setup |
+| Redis | `RedisThreadStore` | `store/redis.py` | Persistent, TTL, index-key expiry/refresh for listings |
+| DynamoDB | `DynamoDBThreadStore` | `store/dynamodb.py` | Serverless/AWS, partition key `session_id` + sort key `sk`, optional TTL |
+| Firestore | `FirestoreThreadStore` | `store/firestore.py` | Serverless/GCP, one document per `session_id` |
+| Cosmos DB | `CosmosDBThreadStore` | `store/cosmosdb.py` | Azure Table API, partitioned by `session_id`, no TTL support |
+
+### Configuration (`_ThreadConfig` in `config.py`)
+
+```yaml
+thread:
+  type: memory       # memory | redis | dynamodb | firestore | cosmosdb
+  naming:
+    model: gpt-4o-mini
+    max_length: 80
+  redis:
+    url: "redis://localhost:6379"
+    ttl: 2592000
+    prefix: "ak:thread:"
+  dynamodb:
+    table_name: "ak-agent-threads"
+    ttl: 0
+```
+
+Attachments in thread mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or `dynamodb` — `session_cache` is rejected, since threads need durable, cross-request-scoped attachment storage that a session-local cache can't provide).
+
 ## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
 
 Pluggable storage backends agents can read from and write to as tools:
@@ -194,6 +238,26 @@ Pluggable storage backends agents can read from and write to as tools:
 - **`KnowledgeBase`** (`base.py`): ABC — backends implement `connect()`, `write()`, `read()`, `backend_name`, `get_description()`; `schema()`, `add_schema()`, `format_results()`, `close()` are provided by the base
 - **`KnowledgeBuilder`** (`knowledgebuilder.py`): Wraps one or more `KnowledgeBase` instances and `build()`s plain-function tools (`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`) for binding via a framework's `ToolBuilder`
 - **Backends**: `ChromaManager` (vector, `chroma.py`), `Neo4jManager` (graph, `neo4j.py`), `StarburstManager` (read-only SQL via Trino, `starburst.py`) — each behind an optional dependency extra (`chromadb`, `neo4j`, `trino`)
+
+## Shared Database Drivers (`ak-py/src/agentkernel/core/util/driver/`)
+
+The Session, Multimodal attachment, Response Store, and Thread backends share one set of
+connection drivers: `RedisDriver`, `ValkeyDriver` (both subclassing `_RedisLikeDriver`),
+`DynamoDBDriver`, `CosmosDBDriver`, and `FirestoreDriver`. Three rules govern the package:
+
+1. **Drivers never read `AKConfig`** — all connection parameters are explicit constructor
+   arguments; config reading and validation stay in the stores and factories
+2. **Drivers own the connection lifecycle** (lazy connect, 3-retry/2s back-off, Redis/Valkey
+   ping health-check with reconnect, `socket_connect_timeout=5`, TTL plumbing) plus a generic
+   command surface; key schemas, serialization, and data layouts stay in the store classes
+3. **Drivers expose their native handle** (`client` / `table` / `table_client` / `collection`)
+   for consumers whose data operations exceed the generic surface (e.g. the DynamoDB/Cosmos/
+   Firestore thread stores)
+
+`driver/__init__.py` has no eager imports — `redis`, `valkey`, `azure`, and `gcp` extras stay
+optional; consumers import the concrete module (`from agentkernel.core.util.driver.redis import
+RedisDriver`). Connect/reconnect is serialized by a per-instance `threading.Lock`, so drivers
+are safe to share across threads (e.g. response stores under `ECSOutputConsumer`).
 
 ## Directory Structure
 
@@ -212,11 +276,13 @@ ak-py/src/agentkernel/
 │   ├── chat_service.py      # ChatService, RequestBuilder, AgentHandler, ResponseBuilder
 │   ├── logger.py            # Logging setup
 │   ├── util/                # Shared utilities
+│   │   └── driver/          # Shared DB connection drivers (Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
 │   └── session/             # Session store implementations
 │       ├── base.py           # SessionStore, SessionCache
 │       ├── serde.py          # Session (de)serialization helpers
 │       ├── in_memory.py
 │       ├── redis.py
+│       ├── valkey.py          # ValkeySessionStore (requires the `valkey` extra)
 │       ├── dynamodb.py
 │       ├── cosmosdb.py
 │       └── firestore.py
@@ -456,7 +522,7 @@ from agentkernel.deployment.common import ThreadRunner
 ```
 User Input
     → AgentService.run(prompt)
-        → AgentRequestText(text=prompt)
+        → AgentRequestText(prompt=prompt)
         → Runtime.run(agent, session, requests)
             → async with session:                    # acquire lock, set context
             → PreHooks (agent hooks, then system)    # guardrails, multimodal, RAG, etc.

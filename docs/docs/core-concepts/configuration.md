@@ -17,7 +17,7 @@ For detailed information about session and memory management configuration, see:
 Agent Kernel supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.
 
 :::note
-Test harness configuration (comparison mode, judge models) is **not** part of `config.yaml`. It lives in a separate `test-config.yaml` file that is only loaded when running tests — see the [Test Configuration](#test-configuration) section below and [Testing](/docs/testing/overview). A legacy `test:` section in `config.yaml` is ignored.
+Test harness configuration (comparison mode, judge models) is **not** part of `config.yaml`. It lives in a separate `test-config.yaml` file that is only loaded when running tests; see the [Test Configuration](#test-configuration) section below and [Testing](/docs/testing/overview). A legacy `test:` section in `config.yaml` is ignored.
 :::
 
 ### Basic Configuration File
@@ -30,9 +30,13 @@ library_version: "0.1.0"
 
 # Session management
 session:
-  type: redis  # or 'in_memory' or 'dynamodb'
+  type: redis  # 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
   redis:
     url: redis://localhost:6379
+    ttl: 604800  # 7 days in seconds
+    prefix: "ak:sessions:"
+  valkey:  # Used when type is 'valkey' (requires the agentkernel[valkey] extra)
+    url: valkey://localhost:6379  # use valkeys:// for SSL
     ttl: 604800  # 7 days in seconds
     prefix: "ak:sessions:"
   dynamodb:
@@ -44,7 +48,7 @@ api:
   host: 0.0.0.0
   port: 8000
   custom_router_prefix: /custom
-  max_file_size: 2097152  # Maximum file size in bytes (default: 2 MB) that can be sent as attachments
+  max_file_size: 10485760  # Maximum file size in bytes (default: 10 MB) that can be sent as attachments
   enabled_routes:
     agents: true
 
@@ -58,7 +62,7 @@ a2a:
 
 # Model Context Protocol
 # The MCP server is always mounted at /mcp on the main API server.
-# Full endpoint: http://{api.host}:{api.port}/mcp — use api.port to change the port.
+# Full endpoint: http://{api.host}:{api.port}/mcp - use api.port to change the port.
 mcp:
   enabled: true
   expose_agents: true
@@ -80,22 +84,57 @@ execution:
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
-      no_of_consumers: 5  # Containerized deployments only — consumer threads polling the input queue (ignored by serverless)
+      no_of_consumers: 5  # Containerized deployments only - consumer threads polling the input queue (ignored by serverless)
     output:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from output queue before being treated as permanently failed
-      no_of_consumers: 5  # Containerized deployments only — consumer threads polling the output queue (ignored by serverless)
+      no_of_consumers: 2  # Containerized deployments only - consumer threads polling the output queue (default: 2, ignored by serverless)
   response_store:
-    type: redis  # Response store type: redis or dynamodb (required for rest_sync and rest_async modes)
+    type: redis  # Response store type: redis, valkey, or dynamodb (required for rest_sync and rest_async modes)
     retry_count: 5  # Number of retry attempts for response store reads
     delay: 5  # Delay in seconds between response store reads retry attempts
     redis:
       url: "redis://localhost:6379"  # Redis connection URL for response storage
       prefix: "ak:responses:"  # Key prefix for Redis response storage
       ttl: 604800  # Redis saved value TTL in seconds
+    valkey:  # Used when type is 'valkey' (requires the agentkernel[valkey] extra)
+      url: "valkey://localhost:6379"  # Valkey connection URL for response storage
+      prefix: "ak:responses:"  # Key prefix for Valkey response storage
+      ttl: 604800  # Valkey saved value TTL in seconds
     dynamodb:
       table_name: "agent-responses"  # DynamoDB table name for response storage
       ttl: 604800  # DynamoDB item TTL in seconds (0 disables)
+
+# Multimodal attachment support (optional, see /docs/advanced/multimodal)
+multimodal:
+  enabled: true
+  storage_type: in_memory  # in_memory | redis | dynamodb | session_cache
+  max_attachments: 20
+  description_max_length: 200
+  description_model: gpt-4o  # Vision LLM for brief attachment descriptions
+  analysis_model: gpt-4o  # Vision LLM for the analyze_attachments tool
+  redis:
+    url: "redis://localhost:6379"
+    ttl: 604800
+    prefix: "ak:attachments:"
+  dynamodb:
+    table_name: "ak-attachments"
+    ttl: 604800
+
+# Conversation threads (optional - feature is enabled by the presence of this block;
+# requires user_id on every chat request. See /docs/advanced/threads)
+thread:
+  type: memory  # memory | redis | dynamodb | firestore | cosmosdb
+  naming:
+    model: gpt-4o-mini  # LLM used to auto-name threads (requires the thread extra)
+    max_length: 80
+  redis:
+    url: "redis://localhost:6379"
+    ttl: 2592000
+    prefix: "ak:thread:"
+  dynamodb:
+    table_name: "ak-agent-threads"
+    ttl: 0
 
 # Messaging platform integrations
 slack:
@@ -163,7 +202,7 @@ logging:
   system:
     level: WARNING  # System/root logger level: INFO, DEBUG, ERROR, WARNING, CRITICAL
 ```
-> Logging is auto-configured when the configuration is first loaded — i.e., at the first `Config.get()` call, which every application entry point performs during startup. Merely importing the library does not read `config.yaml` or change logging. Once configuration loads, Agent Kernel may configure the Agent Kernel logger and the system/root logger and may add or change handlers/formatters.
+> Logging is auto-configured when the configuration is first loaded, i.e., at the first `Config.get()` call, which every application entry point performs during startup. Merely importing the library does not read `config.yaml` or change logging. Once configuration loads, Agent Kernel may configure the Agent Kernel logger and the system/root logger and may add or change handlers/formatters.
 > Use `logging.ak.level` to control Agent Kernel's own logger verbosity, and `logging.system.level` only if you want Agent Kernel to affect the process-wide/root logger. If you do **not** want Agent Kernel to modify application-wide logging, avoid enabling root/system logger.
 
 ### JSON Configuration
@@ -187,6 +226,11 @@ Alternatively, use `config.json`:
       "ttl": 604800,
       "prefix": "ak:sessions:"
     },
+    "valkey": {
+      "url": "valkey://localhost:6379",
+      "ttl": 604800,
+      "prefix": "ak:sessions:"
+    },
     "dynamodb": {
       "table_name": "agent-kernel-sessions",
       "ttl": 604800
@@ -196,7 +240,7 @@ Alternatively, use `config.json`:
     "host": "0.0.0.0",
     "port": 8000,
     "custom_router_prefix": "/custom",
-    "max_file_size": 2097152,
+    "max_file_size": 10485760,
     "enabled_routes": {
       "agents": true
     }
@@ -231,7 +275,7 @@ Alternatively, use `config.json`:
       "output": {
         "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output",
         "max_receive_count": 3,
-        "no_of_consumers": 5
+        "no_of_consumers": 2
       }
     },
     "response_store": {
@@ -240,6 +284,11 @@ Alternatively, use `config.json`:
       "delay": 5,
       "redis": {
         "url": "redis://localhost:6379",
+        "prefix": "ak:responses:",
+        "ttl": 604800
+      },
+      "valkey": {
+        "url": "valkey://localhost:6379",
         "prefix": "ak:responses:",
         "ttl": 604800
       },
@@ -334,7 +383,7 @@ export AK_LIBRARY_VERSION=0.1.0
 
 ```bash
 # Session storage type
-export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'dynamodb' (default: 'in_memory')
+export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', 'firestore' (default: 'in_memory')
 
 # Redis configuration
 export AK_SESSION__REDIS__URL=redis://localhost:6379  # default: redis://localhost:6379
@@ -342,11 +391,25 @@ export AK_SESSION__REDIS__TTL=604800  # TTL in seconds (default: 604800 = 7 days
 export AK_SESSION__REDIS__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
 export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
 
+# Valkey configuration (requires the agentkernel[valkey] extra)
+export AK_SESSION__VALKEY__URL=valkey://localhost:6379  # default: valkey://localhost:6379 (use valkeys:// for SSL)
+export AK_SESSION__VALKEY__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
+export AK_SESSION__VALKEY__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
+
 # DynamoDB configuration
 export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions  # DynamoDB table name (required)
 export AK_SESSION__DYNAMODB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
 export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
 ```
+
+:::note Valkey and the Redis-only surfaces
+The session store (`session.type`) and the async response store
+(`execution.response_store.type`) both support `valkey` as a first-class backend. The multimodal
+attachment store (`multimodal.storage_type`) and the A2A task store (`a2a.task_store_type`) remain
+Redis-only for now. Because Valkey is wire-compatible with the Redis protocol, you can still use a
+Valkey server for those surfaces by pointing their existing `redis` config blocks at it with the
+`redis://` scheme. First-class `valkey` support for those surfaces is tracked as a follow-up.
+:::
 
 ### API Server
 
@@ -354,7 +417,7 @@ export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a ca
 # API server configuration
 export AK_API__HOST=0.0.0.0  # default: 0.0.0.0
 export AK_API__PORT=8000  # default: 8000
-export AK_API__MAX_FILE_SIZE=2097152  # Maximum file size in bytes (default: 2097152 = 2 MB)
+export AK_API__MAX_FILE_SIZE=10485760  # Maximum file size in bytes (default: 10485760 = 10 MB)
 
 # API route configuration
 export AK_API__ENABLED_ROUTES__AGENTS=true  # Enable agent routes (default: true)
@@ -383,7 +446,7 @@ export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Sessio
 
 ### Test Configuration {#test-configuration-env-vars}
 
-These variables configure the test harness (`AKTestConfig`), which is separate from the application configuration — see the [Test Configuration](#test-configuration) section below for the `test-config.yaml` file and full details. The variable names are unchanged from previous releases:
+These variables configure the test harness (`AKTestConfig`), which is separate from the application configuration; see the [Test Configuration](#test-configuration) section below for the `test-config.yaml` file and full details. The variable names are unchanged from previous releases:
 
 ```bash
 # Test comparison mode
@@ -508,13 +571,13 @@ export AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT=3
 export AK_EXECUTION__QUEUES__OUTPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-output
 export AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT=3
 
-# Containerized deployments only — ignored by serverless
+# Containerized deployments only - ignored by serverless
 export AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS=5   # Consumer threads polling the input queue (default: 5)
-export AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS=5  # Consumer threads polling the output queue (default: 5)
+export AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS=2  # Consumer threads polling the output queue (default: 2)
 export AK_EXECUTION__QUEUES__BATCH_SIZE=10  # Max messages per SQS receive call; set by Terraform, never in config.yaml
 
 # Response store configuration
-export AK_EXECUTION__RESPONSE_STORE__TYPE=redis  # Options: 'redis', 'dynamodb'
+export AK_EXECUTION__RESPONSE_STORE__TYPE=redis  # Options: 'redis', 'valkey', 'dynamodb'
 export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
 export AK_EXECUTION__RESPONSE_STORE__DELAY=5
 
@@ -522,6 +585,11 @@ export AK_EXECUTION__RESPONSE_STORE__DELAY=5
 export AK_EXECUTION__RESPONSE_STORE__REDIS__URL=redis://localhost:6379
 export AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX=ak:responses:
 export AK_EXECUTION__RESPONSE_STORE__REDIS__TTL=604800
+
+# Valkey response store (requires the agentkernel[valkey] extra)
+export AK_EXECUTION__RESPONSE_STORE__VALKEY__URL=valkey://localhost:6379
+export AK_EXECUTION__RESPONSE_STORE__VALKEY__PREFIX=ak:responses:
+export AK_EXECUTION__RESPONSE_STORE__VALKEY__TTL=604800
 
 # DynamoDB response store
 export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME=agent-responses
@@ -531,8 +599,8 @@ export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
 **Execution Modes**:
 - `rest_sync` - Synchronous REST: sends request to queue and immediately waits for response from response store (requires queues and response_store)
 - `rest_async` - Asynchronous REST: submits request to queue and returns immediately with request_id, then poll for response from response store (requires queues and response_store)
-- `stream` - Streaming mode (not yet implemented)
-- `async` - WebSocket mode for real-time bidirectional communication (queues optional, response_store not used)
+- `stream` - Token-level streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK)
+- `async` - WebSocket mode for real-time bidirectional communication on AWS serverless (queues optional, response_store not used)
 
 **Notes**:
 - Queues and response_store are required for `rest_sync` and `rest_async` modes
@@ -553,7 +621,7 @@ If the `logging` section is omitted from the configuration, default loggers will
 
 ## Test Configuration
 
-Test harness configuration (comparison mode and judge models) is separate from the application configuration described above. It is defined by the `AKTestConfig` class (exported from `agentkernel.test`) and loaded from its own file, `test-config.yaml`, resolved from the current working directory. It is only loaded when the testing utilities are used — importing `agentkernel` or running your application never reads it, and the application's `config.yaml` never carries test settings.
+Test harness configuration (comparison mode and judge models) is separate from the application configuration described above. It is defined by the `AKTestConfig` class (exported from `agentkernel.test`) and loaded from its own file, `test-config.yaml`, resolved from the current working directory. It is only loaded when the testing utilities are used; importing `agentkernel` or running your application never reads it, and the application's `config.yaml` never carries test settings.
 
 ### Test Configuration File
 
@@ -567,9 +635,9 @@ judge:
   embedding_model: text-embedding-3-small  # Embedding model for similarity evaluation (default: text-embedding-3-small)
 ```
 
-Note that the file is un-nested — since it contains only test configuration, there is no top-level `test:` key.
+Note that the file is un-nested: since it contains only test configuration, there is no top-level `test:` key.
 
-If `test-config.yaml` is missing, defaults apply silently (no warning is printed) — fuzzy and fallback tests need no configuration file at all.
+If `test-config.yaml` is missing, defaults apply silently (no warning is printed). Fuzzy and fallback tests need no configuration file at all.
 
 **Test Modes:**
 - `fuzzy` - Uses fuzzy string matching (RapidFuzz)
@@ -599,7 +667,7 @@ export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model
 ```
 
 :::warning Migration note
-Earlier versions read test configuration from a `test:` section in the application's `config.yaml`. That section is now ignored — move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`. The `AK_TEST__*` environment variables are unchanged, so CI pipelines that use them need no updates.
+Earlier versions read test configuration from a `test:` section in the application's `config.yaml`. That section is now ignored; move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`. The `AK_TEST__*` environment variables are unchanged, so CI pipelines that use them need no updates.
 :::
 
 For how the test harness uses these settings, see [Testing](../testing/overview.md).
@@ -614,11 +682,15 @@ library_version: "0.1.0"       # Library version (auto-detected)
 
 # Session storage configuration
 session:
-  type: "in_memory"             # Storage type: 'in_memory', 'redis', or 'dynamodb'
+  type: "in_memory"             # Storage type: 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
   redis:                        # Redis-specific settings
     url: "redis://localhost:6379"  # Redis connection URL (supports rediss:// for SSL)
     ttl: 604800                 # Session TTL in seconds (7 days)
     prefix: "ak:sessions:"      # Redis key prefix
+  valkey:                       # Valkey-specific settings (requires the agentkernel[valkey] extra)
+    url: "valkey://localhost:6379"  # Valkey connection URL (supports valkeys:// for SSL)
+    ttl: 604800                 # Session TTL in seconds (7 days)
+    prefix: "ak:sessions:"      # Valkey key prefix
   dynamodb:                     # DynamoDB-specific settings
     table_name: "agent-kernel-sessions"  # DynamoDB table name (required)
     ttl: 604800                 # Item TTL in seconds (7 days, 0 to disable)
@@ -628,7 +700,7 @@ api:
   host: "0.0.0.0"              # API server host
   port: 8000                    # API server port
   custom_router_prefix: "/custom" # API path prefix for custom routes
-  max_file_size: 2097152        # Maximum file size in bytes (default: 2 MB)
+  max_file_size: 10485760       # Maximum file size in bytes (default: 10 MB)
   enabled_routes:               # Route configuration
     agents: true                # Enable agent interaction routes
 
@@ -642,7 +714,7 @@ a2a:
 
 # Model Context Protocol
 # The MCP server is always mounted at /mcp on the main API server (not configurable).
-# Full endpoint: http://{api.host}:{api.port}/mcp — adjust api.port to move the port.
+# Full endpoint: http://{api.host}:{api.port}/mcp - adjust api.port to move the port.
 mcp:
   enabled: false                # Enable MCP functionality
   expose_agents: false          # Expose agents as MCP tools
@@ -712,14 +784,14 @@ execution:
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed
-      no_of_consumers: 5        # Containerized only — consumer threads polling the input queue (ignored by serverless)
+      no_of_consumers: 5        # Containerized only - consumer threads polling the input queue (ignored by serverless)
     output:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed
-      no_of_consumers: 5        # Containerized only — consumer threads polling the output queue (ignored by serverless)
-    # batch_size is ECS-only and Terraform-controlled via AK_EXECUTION__QUEUES__BATCH_SIZE — do not set here
+      no_of_consumers: 2        # Containerized only - consumer threads polling the output queue (default: 2, ignored by serverless)
+    # batch_size is ECS-only and Terraform-controlled via AK_EXECUTION__QUEUES__BATCH_SIZE - do not set here
   response_store:               # Response storage configuration (required for rest_sync and rest_async modes)
-    type: "redis"               # Response store type: 'redis' or 'dynamodb'
+    type: "redis"               # Response store type: 'redis', 'valkey', or 'dynamodb'
     retry_count: 5              # Number of retry attempts for response store reads
     delay: 5                    # Delay in seconds between response store reads retry attempts
     redis:
@@ -908,9 +980,10 @@ Example validation errors:
 
 ```bash
 # These will cause validation errors:
-export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory', 'redis', or 'dynamodb'
+export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
 export AK_A2A__TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
 export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse' or 'openllmetry'
+export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 'stream', or 'async'
 ```
 
 ## Best Practices
@@ -931,6 +1004,8 @@ export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse' or 'openllmetry'
 - Environment variables take precedence over file configuration
 - Support for nested configuration using underscore delimiter
 - Built-in validation ensures configuration integrity
-- Flexible session storage options (in-memory, Redis, or DynamoDB)
+- Flexible session storage options (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
+- Execution modes (`rest_sync`, `rest_async`, `stream`, `async`) and queue settings live under `execution`
+- Optional multimodal and conversation-thread features via their own config blocks
 - Optional A2A and MCP functionality with granular control
 - DynamoDB recommended for non-performance-critical deployments

@@ -19,6 +19,7 @@ from .model import (
     AgentRequestImage,
     AgentRequestText,
     AgentReply,
+    AgentReplyAny,
     AgentReplyText,
     AgentReplyImage,
     StreamChunk,

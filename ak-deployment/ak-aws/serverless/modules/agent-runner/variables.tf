@@ -94,6 +94,12 @@ variable "redis_url" {
   default     = null
 }
 
+variable "valkey_url" {
+  type        = string
+  description = "URL of the Valkey cluster"
+  default     = null
+}
+
 variable "is_production" {
   description = "Is production"
   type        = bool

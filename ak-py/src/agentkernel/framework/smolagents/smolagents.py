@@ -13,6 +13,7 @@ from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.model import (
     AgentReply,
+    AgentReplyAny,
     AgentReplyText,
     AgentRequest,
     AgentRequestAny,
@@ -139,15 +140,15 @@ class SmolagentsRunner(Runner):
                 if isinstance(req, AgentRequestAny):
                     continue
                 if isinstance(req, AgentRequestText):
-                    prompt = prompt + "\n" + req.text if prompt else req.text
+                    prompt = prompt + "\n" + req.prompt if prompt else req.prompt
                 else:
                     return AgentReplyText(
-                        text="Sorry. Smolagents runner is unable to handle content other than text at the moment",
+                        response="Sorry. Smolagents runner is unable to handle content other than text at the moment",
                         prompt=prompt,
                     )
 
             if not prompt.strip():
-                return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+                return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
 
             # Rehydrate framework memory from the AgentKernel session before execution.
             self._hydrate_memory(agent, session)
@@ -158,9 +159,13 @@ class SmolagentsRunner(Runner):
             # Persist updated framework memory back to the AgentKernel session.
             self._sync_memory(agent, session)
 
-            return AgentReplyText(text=str(reply), prompt=prompt)
+            structured = AgentReplyAny.from_output(reply, prompt)
+            if structured is not None:
+                return structured
+
+            return AgentReplyText(response=str(reply), prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()

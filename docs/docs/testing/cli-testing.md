@@ -326,13 +326,13 @@ Test complex interactions:
 
 Available CLI commands:
 
-- `!h`, `!help` — Show help message
-- `!ld`, `!load <module_name>` — Load agent module
-- `!ls`, `!list` — List available agents
-- `!n`, `!new` — Start a new session
-- `!c`, `!clear` — Clear the current session memory
-- `!s`, `!select <agent_name>` — Select an agent to run the prompt
-- `!q`, `!quit` — Exit the program
+- `!h`, `!help`: Show help message
+- `!ld`, `!load <module_name>`: Load agent module
+- `!ls`, `!list`: List available agents
+- `!n`, `!new`: Start a new session
+- `!c`, `!clear`: Clear the current session memory
+- `!s`, `!select <agent_name>`: Select an agent to run the prompt
+- `!q`, `!quit`: Exit the program
 
 ## Tips
 

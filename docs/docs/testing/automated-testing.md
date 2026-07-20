@@ -340,7 +340,7 @@ jobs:
 
 ### Test Mode Configuration
 
-Configure the default test comparison mode in `test-config.yaml`. The file is resolved from the current working directory, or from the path in the `AK_TEST_CONFIG_PATH_OVERRIDE` environment variable. It is only loaded when the test harness runs — the application's `config.yaml` no longer carries a `test:` section (a leftover one is ignored):
+Configure the default test comparison mode in `test-config.yaml`. The file is resolved from the current working directory, or from the path in the `AK_TEST_CONFIG_PATH_OVERRIDE` environment variable. It is only loaded when the test harness runs; the application's `config.yaml` no longer carries a `test:` section (a leftover one is ignored):
 
 ```yaml
 # test-config.yaml
@@ -449,7 +449,7 @@ def setup_test_env():
 
 Enable debug output for troubleshooting:
 
-Agent Kernel configures logging when the application loads its configuration (on first access, not at import). These settings apply to the application under test — set them in its environment or `config.yaml`:
+Agent Kernel configures logging when the application loads its configuration (on first access, not at import). These settings apply to the application under test; set them in its environment or `config.yaml`:
 
 **Using environment variables:**
 ```bash
