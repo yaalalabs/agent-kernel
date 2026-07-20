@@ -2,12 +2,12 @@
 name: ak-dev-write-spec
 description: >
   Write the spec documents for a planned Agent Kernel change under
-  docs/specs/<ticket>/ in three ordered stages: a concise point-form design
+  docs/specs/<issue-number>-<short-title>/ in three ordered stages: a concise point-form design
   spec (design.md) that a maintainer reviews first, then a detailed
   implementation spec (spec.md) once the design is approved, then a concise
   implementation plan (plan.md). Use this skill when asked to write or update
   a design, spec, or plan for a feature, refactor, or fix before it is
-  implemented, e.g. "write a design spec for AK-52" or "spec out the shared
+  implemented, e.g. "write a design spec for issue #492" or "spec out the shared
   driver extraction".
 license: Apache-2.0
 metadata:
@@ -17,7 +17,7 @@ metadata:
 
 # Write a Spec for a Planned Change
 
-Use this skill when asked to produce spec documents for Agent Kernel work before (or instead of) implementing it. A change is specified in **three documents, written in strict order**, all under `docs/specs/<ticket-lowercase>/`:
+Use this skill when asked to produce spec documents for Agent Kernel work before (or instead of) implementing it. A change is specified in **three documents, written in strict order**, all under `docs/specs/<issue-number>-<short-title>/`:
 
 | Stage | File | What it is | Written when |
 |---|---|---|---|
@@ -31,7 +31,7 @@ This skill is for **writing these documents**, not for implementing the change t
 
 ## Which Stage Are You In?
 
-Route from what the requester asked for and what already exists in `docs/specs/<ticket>/`:
+Route from what the requester asked for and what already exists in `docs/specs/<issue-number>-<short-title>/`:
 
 - No `design.md` yet, or the request is "write a spec/design for X" → **Stage 1**: write `design.md` and stop there.
 - `design.md` exists and the requester says it is reviewed/approved (or asks for the implementation spec) → **Stage 2**: write `spec.md`.
@@ -49,7 +49,7 @@ The spec set is the contract the implementation PR is reviewed against: `ak-dev-
 
 ## Inputs
 
-- **Ticket ID** (required): e.g. `AK-52`. Determines the output directory `docs/specs/<ticket-lowercase>/` (e.g. `docs/specs/ak-52/`). If no ticket exists, ask for one — do not invent an ID.
+- **GitHub issue** (required): the issue number plus a short title, e.g. issue `#492` "Database Drivers Refactoring". Determines the output directory `docs/specs/<issue-number>-<short-title>/` — the issue number, a hyphen, then a lowercase kebab-case slug of the change (e.g. `docs/specs/492-shared-database-drivers/`). If no issue exists, ask for one — do not invent a number.
 - **Change intent**: what the change should accomplish, at whatever level of detail the requester has. Ambiguities you cannot resolve from the code become explicit open questions in `design.md`, not silent design decisions.
 
 ---
@@ -68,7 +68,7 @@ The spec set is the contract the implementation PR is reviewed against: `ak-dev-
 Point form throughout — bullets, not paragraphs. Break points into sections and keep them hierarchical (a parent point with indented sub-points) so structure carries the meaning. Every point should be atomic enough for a reviewer to comment on it alone.
 
 ```markdown
-# AK-NN: <one-line summary of the change>
+# #<issue-number>: <one-line summary of the change>
 
 <2–3 sentence summary: what changes, where, and the one-sentence design idea.>
 
@@ -146,10 +146,10 @@ Design within the documented rules, and when the change unifies or refactors exi
 
 ### Step 4: Write the Spec
 
-Write to `docs/specs/<ticket-lowercase>/spec.md` with this structure (sections may be omitted only when genuinely empty, never to save effort):
+Write to `docs/specs/<issue-number>-<short-title>/spec.md` with this structure (sections may be omitted only when genuinely empty, never to save effort):
 
 ```markdown
-# AK-NN: <one-line summary> — Implementation Spec
+# #<issue-number>: <one-line summary> — Implementation Spec
 
 <Lead paragraph: what changes, where, and the one-sentence design idea.
 Reference design.md as the requirements source.>
@@ -219,7 +219,7 @@ Walk this checklist before calling the spec done — these are the gaps reviews 
 Written only after `design.md` and `spec.md` are complete. `plan.md` breaks the implementation into **iterations/steps** — it says *in what order* the spec gets built, not *how* (that detail already lives in `spec.md`). Keep it concise, simple, and easily understandable; do not restate spec content.
 
 ```markdown
-# AK-NN: <one-line summary> — Implementation Plan
+# #<issue-number>: <one-line summary> — Implementation Plan
 
 ## Iteration 1: <name>
 
@@ -252,7 +252,7 @@ ak-dev-sync-skills-from-branch flows before merge.>
 
 When spec documents ship as their own PR (implementation to follow separately):
 
-- Use a `docs:` commit/PR title (e.g. `docs: add design spec for AK-52 shared database drivers`) — specs are documentation; a `feat:` title makes reviewers expect code.
+- Use a `docs:` commit/PR title (e.g. `docs: add design spec for #492 shared database drivers`) — specs are documentation; a `feat:` title makes reviewers expect code.
 - In the PR template, mark **Documentation update** (or **Other: design spec**) and say explicitly that implementation follows in a separate PR.
 - Testing/checklist items that don't apply to a spec-only PR: state that they don't apply rather than leaving the template untouched.
 - `design.md` typically ships (and is reviewed) before `spec.md` and `plan.md` exist — separate PRs per stage are fine and expected.
