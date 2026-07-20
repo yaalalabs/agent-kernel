@@ -33,6 +33,20 @@ make lint-check       # ak-py only
 make lint-check-all   # ak-py + examples
 ```
 
+### Auto-format a remote branch (CI)
+
+To apply formatting on a remote branch without running the tools locally, trigger the
+**Lint and Commit** GitHub Actions workflow (`.github/workflows/lint-fix.yml`) manually from the
+Actions tab (`workflow_dispatch`). It takes two inputs:
+
+- **`lint_target`**: which Makefile target to run — `lint`, `lint-examples`, or `lint-all`
+  (default).
+- **`branch`**: the branch to format and commit the changes to.
+
+The workflow runs the selected target and pushes a `chore:` commit with any formatting changes
+back to the chosen branch. Protected branches (currently `develop`) are rejected before any
+changes are made.
+
 ### Configuration
 
 In `ak-py/pyproject.toml`:
