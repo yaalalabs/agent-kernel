@@ -12,5 +12,5 @@ if [[ ${1-} != "local" ]]; then
 else
   # For local development of agentkernel, install from local source to pick up latest fixes.
   uv sync --find-links ../../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --no-deps --no-index --find-links ../../../../ak-py/dist "agentkernel[api,smolagents,multimodal,test]" || true
+  uv pip install --force-reinstall --no-deps --no-index --find-links ../../../../ak-py/dist "agentkernel[api,smolagents,multimodal,test]" --no-cache-dir
 fi

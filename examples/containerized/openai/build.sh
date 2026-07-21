@@ -13,7 +13,7 @@ if [[ ${1-} != "local" ]]; then
 else
   # For local development of agentkernel, you can force reinstall from local dist
   uv sync --find-links ../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --no-deps --no-index --find-links ../../../ak-py/dist agentkernel[api,openai,test,azure] || true
+  uv pip install --force-reinstall --no-deps --no-index --find-links ../../../ak-py/dist agentkernel[api,openai,test,azure] --no-cache-dir
 fi
 
 create_docker_image() {
@@ -24,7 +24,7 @@ create_docker_image() {
       uv pip install -r requirements.txt --target=dist
     else
       uv pip install -r requirements.txt --target=dist  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --no-deps --no-index --target=dist --find-links ../../../ak-py/dist agentkernel[openai,api,test] || true
+      uv pip install --force-reinstall --no-deps --no-index --target=dist --find-links ../../../ak-py/dist agentkernel[openai,api,test] --no-cache-dir
     fi
     cp -r app.py tool.py dist/
     

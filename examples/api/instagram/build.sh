@@ -12,6 +12,6 @@ if [[ ${1-} != "local" ]]; then
 else
   # For local development of agentkernel, you can force reinstall from local dist
   uv sync --find-links ../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --no-deps --no-index --find-links ../../../ak-py/dist agentkernel[api,openai,instagram] || true
+  uv pip install --force-reinstall --no-deps --no-index --find-links ../../../ak-py/dist agentkernel[api,openai,instagram] --no-cache-dir
 fi
 

@@ -1,13 +1,20 @@
 # #542: Fail loudly when integration tests can't use the branch-built agentkernel wheel — Implementation Spec
 
 This spec details how the design in [`design.md`](./design.md) is built. The change is confined to
-CI/CD assets — no `ak-py` source, `AKConfig`, factory, or public-API changes — so it touches two
-surfaces only: six `actions/cache/restore@v5` steps across three workflows (Guard 1), and the
-`agentkernel` local-wheel install block in the example `deploy.sh` scripts (Guard 2). The design
-idea is unchanged: two independent guards, either of which alone prevents a wrong-build test run —
-fail the cache restore on a miss, and make `deploy.sh` exit non-zero when the `--no-index` local
-install fails. `design.md` is the requirements source; every requirement there is traced to a
-section here.
+CI/CD assets — no `ak-py` source, `AKConfig`, factory, or public-API changes — across three
+surfaces: six `actions/cache/restore@v5` steps in three workflows (Guard 1); the `agentkernel`
+local-wheel install block in the example `deploy/deploy.sh` scripts (Guard 2a); and the same
+force-reinstall line in the example `build.sh` scripts that populate the **test** virtualenv
+(Guard 2b). The design idea is unchanged: independent guards, any one of which alone prevents a
+wrong-build test run — fail the cache restore on a miss, and make every local-wheel install exit
+non-zero (never swallowed by `|| true`) when it fails. `design.md` is the requirements source;
+every requirement there is traced to a section here.
+
+> **Scope note.** The `build.sh` surface (Guard 2b) was added after the original spec: the
+> `memory` / `api` / `cli` / `containerized` integration tests run `./build.sh local` + `uv run
+> pytest` (never `deploy.sh`), and `build.sh` carried the identical `|| true` anti-pattern — so a
+> cache-missed local wheel silently left the PyPI `agentkernel` in the test venv (observed as a
+> `session.type: valkey` `ValidationError`, since PyPI `0.6.1` predates `valkey` support).
 
 All per-script facts below were re-verified mechanically against the base branch
 (`bugfix/542-cicd`) at spec-writing time and **supersede the per-script matrix in
@@ -52,7 +59,7 @@ The three `actions/cache/save@v5` steps in the `build-ak-py` / `Build ak-py` job
 **not** changed — `fail-on-cache-miss` is a restore-only input and saving must still succeed on a
 first build.
 
-### Guard 2 — `deploy.sh` fails when the local wheel can't be installed
+### Guard 2a — `deploy.sh` fails when the local wheel can't be installed
 
 #### Canonical failure contract
 
@@ -153,14 +160,76 @@ Tallies (each verified by enumeration): **22** scripts carry `|| true` on a `--n
 (#1–13, #15–23) → all removed; **15** lack `set -e` (#1–14, #24) → all gained it; **6** self-build
 (#22–27); **3** need no edit (#25–27).
 
+### Guard 2b — example `build.sh` fails when the local wheel can't be installed
+
+Each example `build.sh local` sets up the venv the tests actually run in. Its `local` branch is:
+
+```bash
+uv sync --find-links ../../../ak-py/dist --all-extras                                  # installs agentkernel 0.6.1 FROM PyPI (uv.lock pin)
+uv pip install --force-reinstall --no-deps --no-index --find-links ../../../ak-py/dist agentkernel[<EXTRAS>] || true   # the ONLY line that swaps in the branch wheel
+```
+
+`uv sync` resolves `agentkernel` from PyPI because `uv.lock` records
+`source = { registry = "https://pypi.org/simple" }` (e.g. `examples/memory/valkey/uv.lock:20`);
+the `--find-links` flag does not override that pin. The force-reinstall line is therefore the sole
+mechanism that installs the branch wheel.
+
+**Two independent defects on that one line — both must be fixed (both verified by reproduction):**
+
+1. **`|| true` swallows a hard failure.** On a cache miss (`ak-py/dist` empty/absent) the
+   `--no-index` install exits non-zero; `|| true` forces exit 0, leaving PyPI's `agentkernel` in
+   the venv. → **Remove `|| true`.**
+2. **The uv package cache serves a stale same-version wheel.** Even with `ak-py/dist` present and
+   containing the correct branch wheel, `uv pip install --force-reinstall --no-index --find-links`
+   *without* `--no-cache-dir` installs a **cached** `agentkernel 0.6.1` (the copy uv downloaded
+   from PyPI during `uv sync`) rather than the wheel in `--find-links`, because they share the
+   version string. The install reports success while shipping the wrong wheel. Verified: the same
+   force-reinstall installs the `valkey`-supporting config only with `--no-cache-dir`, and only the
+   PyPI (no-`valkey`) config without it. → **Add `--no-cache-dir`.** This is the *primary* fix for
+   the observed `valkey` failure; `|| true` removal alone does not close it.
+
+**Failure contract:**
+
+1. **`set -e` is already active.** All 64 example `build.sh` set `set -euo pipefail` at the top —
+   no additions needed (enumerated: zero `build.sh` lack it).
+2. **Remove `|| true`** and **add `--no-cache-dir`** to the force-reinstall local-wheel line.
+3. **`uv run pytest` does not undo it.** `run_simple_test` runs `uv run pytest` after
+   `build.sh local`; `uv run` re-syncs the project env but leaves the force-reinstalled wheel in
+   place because it is still `version 0.6.1` and satisfies the lock (verified end-to-end,
+   `uv 0.11.21`: after `build.sh local` the venv's `config.py` contains `valkey`, and it still does
+   after `uv run`). So no `--no-sync`, `[tool.uv.sources]`, or lockfile change is required (design
+   non-goal). *(Caveat: a stray `VIRTUAL_ENV` in the shell redirects `uv pip install` to that env
+   instead of the project `.venv`; CI does not set it, and it is not part of this change.)*
+
+**Scope.** 64 example `build.sh` each have a force-reinstall local-wheel line, and each is edited to
+end in `--no-cache-dir` with no `|| true`:
+- **`|| true` removal:** 62 lines across **61** files carried it → all removed.
+  `examples/containerized/openai/build.sh` has two force-reinstall lines (both fixed); the 3
+  `build.sh` whose line already lacked `|| true` keep that. The unrelated `rm -rf dist || true` in
+  `containerized/openai` is intentional cleanup and left as-is.
+- **`--no-cache-dir` addition:** appended to every force-reinstall line that lacked it (all 64
+  scripts / 65 lines now carry it).
+- Five force-reinstall lines use `--find-links` **without** `--no-index`
+  (`cli/openai_structured:15`, `api/openai_structured:15`, `api/thread-openai:15`,
+  `api/multimodal/thread-openai:15`, `aws-containerized/openai-dynamodb-scalable:15`). They still
+  get `|| true` removed and `--no-cache-dir` added; tightening to `--no-index` is out of scope
+  (design open question — it changes resolution behaviour).
+
 ### Consumer — `run_single_test.py` (verified unchanged)
 
-No change. `run_single_test.py` invokes `subprocess.run(['./deploy.sh', 'local'], …, check=True)`
-inside `run_command` at `:228`, `:377`, `:529`; `run_command` (`:24`–`:50`) catches
-`subprocess.CalledProcessError`, prints `❌ Failed`, and returns `False`, which fails the deploy
-step. This is the mechanism Guard 2 relies on and it is already correct — the scripts simply never
-returned non-zero. Verified present and unchanged; listed here so a reviewer confirms Guard 2 has a
-live consumer.
+No change. `run_command` (`:24`–`:50`) runs every subprocess with `check=True`, catches
+`subprocess.CalledProcessError`, prints `❌ Failed`, and returns `False`, failing the step. Two
+call paths rely on this — both already correct; the scripts simply never returned non-zero:
+
+- **Guard 2a:** `./deploy.sh local` at `:228`, `:377`, `:529` (deploy/destroy actions).
+- **Guard 2b:** `run_simple_test` (`:84`–`:110`) runs `./build.sh local` at `:97`; on success it
+  runs `uv run pytest …` at `:105` in the venv `build.sh` populated. Dispatched for the `memory`,
+  `api`, `cli`, and `containerized` types (`:621`–`:628`). Once `build.sh` stops swallowing the
+  install failure, a cache-missed wheel makes `:97` return non-zero and pytest never runs against
+  the wrong build.
+
+Verified present and unchanged; listed here so a reviewer confirms both guards have a live
+consumer.
 
 ### Config changes
 
@@ -183,24 +252,43 @@ Exhaustive; each is intended.
    the 15 scripts that gained `set -e`. Their first-pass `-r requirements.txt … --find-links` install
    (Group A) already fails on a missing dir; with `set -e` that failure now stops the script instead
    of proceeding to build a broken artifact. *Justification:* Guard 2 defense-in-depth.
-4. **`--no-cache-dir` added to every normalized `--no-index` line.** A stale uv cache can no longer
-   supply an `agentkernel` wheel when `--find-links` is empty/missing. *Justification:* consistency
-   with the reference shape and closes a residual "cache present but dir empty" corner.
+4. **`--no-cache-dir` added to every normalized `deploy.sh` `--no-index` line.** A stale uv cache
+   can no longer supply an `agentkernel` wheel when `--find-links` is empty/missing.
+   *Justification:* consistency with the reference shape and closes a residual "cache present but
+   dir empty" corner.
+5. **`build.sh local` now installs the branch wheel into the test venv instead of PyPI's.** Both
+   `|| true` (swallowed cache-miss failure) and the missing `--no-cache-dir` (uv serving a cached
+   same-version `0.6.1`) are fixed on the force-reinstall line of all 64 example `build.sh`.
+   *Justification:* Guard 2b — the `memory`/`api`/`cli`/`containerized` tests run against
+   `build.sh`'s venv, and this is the defect behind the observed `session.type: valkey`
+   `ValidationError`.
+6. **A failed local-wheel install in `build.sh` now aborts before `uv run pytest`.** With `|| true`
+   gone and `set -euo pipefail` already active, a cache-missed wheel makes `build.sh` exit
+   non-zero; `run_single_test.py` fails the test step instead of running pytest against PyPI's
+   `agentkernel`. *Justification:* Guard 2b defense-in-depth.
 
 **Non-changes** (explicitly fixed): the cache `save` steps and cache keys; each script's
 `--target`, `--find-links` path, and `agentkernel[…]` extras; the pass structure of every install
 target (two-pass stays two-pass, single-pass stays single-pass); the six self-builders' `build.sh
-local` invocations; `terraform init` / `terraform apply` lines; `run_single_test.py`; all
-`config.yaml`, `requirements.txt` generation, and Dockerfiles.
+local` invocations inside `deploy.sh`; `build.sh`'s `uv sync`/`uv venv` lines, its `uv.lock`, and
+example `pyproject.toml` (no `[tool.uv.sources]`, no `--no-sync`); the benign `rm -rf dist || true`;
+`terraform init` / `terraform apply` lines; `run_single_test.py`; all `config.yaml`,
+`requirements.txt` generation, and Dockerfiles.
 
-### Pre-existing observation (out of scope)
+### Pre-existing observations (out of scope)
 
-In `streaming-openai` and `websocket-openai`, the `local` branch of every handler target installs
-`agentkernel[...] --no-deps --no-index` **only**, with no `-r requirements.txt` pass — so those
-local artifacts appear to ship without their non-`agentkernel` dependencies, independent of #542.
-This spec does **not** change it (doing so would alter shipped contents and exceeds the issue's
-scope). Flagged for a separate issue; noted here so it is not mistaken for a regression introduced
-by this change.
+1. In `streaming-openai` and `websocket-openai`, the `local` branch of every handler target installs
+   `agentkernel[...] --no-deps --no-index` **only**, with no `-r requirements.txt` pass — so those
+   local artifacts appear to ship without their non-`agentkernel` dependencies, independent of #542.
+   This spec does **not** change it (doing so would alter shipped contents and exceeds the issue's
+   scope). Flagged for a separate issue.
+2. Once Guard 2b lets the `memory/valkey` test import the correct `agentkernel`, collection fails on
+   a **different** error: `ragas` imports `from langchain_community.chat_models.vertexai import
+   ChatVertexAI` (`.../ragas/llms/base.py:12`), which no longer exists in the resolved
+   `langchain-community` → `ModuleNotFoundError`. This is a `ragas`/`langchain-community` version
+   incompatibility in the `test` extra, unrelated to #542 and masked until now by the `agentkernel`
+   substitution. Out of scope here; needs its own dependency fix (pin/upgrade in `ak-py`'s `test`
+   extra or `ragas`). Noted so it is not mistaken for a regression from this change.
 
 ## Error handling
 
@@ -217,6 +305,10 @@ by this change.
   resolution error, not "cache missing". Acceptable — Guard 1 already names the cache miss at the
   restore step; Guard 2 is the backstop. No custom error text is added (design open-question 2 —
   provenance assertion — is deferred).
+- **`build.sh` (Guard 2b):** on a cache miss the un-swallowed `--no-index` force-reinstall exits
+  non-zero and `set -euo pipefail` aborts `build.sh` before `uv run pytest`. With `ak-py/dist`
+  present, `--no-cache-dir` guarantees the branch wheel from `--find-links` is installed rather than
+  a cached PyPI `0.6.1`.
 
 ## Testing
 
@@ -225,14 +317,20 @@ package only), so verification is static assertions plus an optional CI dry-run,
 
 **Static acceptance checks (must pass after the change):**
 
-1. No swallowed local install remains:
+1. No swallowed local install remains in **either** script family:
    ```bash
    grep -rn "no-index" examples --include=deploy.sh | grep "|| true"   # expect: no output
+   grep -rn "force-reinstall" examples --include=build.sh | grep "|| true"   # expect: no output
    ```
-2. Every script that force-reinstalls the local wheel has `set -e` active. Enumerate the 24
-   in-scope scripts (all except the three no-edit self-builders #25–27, which already have it) and
-   assert an `set -e[a-z]*` line precedes the first `uv pip install`.
-3. `fail-on-cache-miss: true` present on all six restore steps and absent from the three save steps:
+2. Every script that force-reinstalls the local wheel has `set -e` active. For `deploy.sh`,
+   enumerate the 24 in-scope scripts (all except the three no-edit self-builders #25–27, which
+   already have it) and assert an `set -e[a-z]*` line precedes the first `uv pip install`; all 64
+   `build.sh` already carry `set -euo pipefail`.
+3. Every `build.sh` force-reinstall line carries `--no-cache-dir`:
+   ```bash
+   grep -rn "force-reinstall" examples --include=build.sh | grep -v "no-cache-dir"   # expect: no output
+   ```
+4. `fail-on-cache-miss: true` present on all six restore steps and absent from the three save steps:
    ```bash
    grep -rn "fail-on-cache-miss" .github/workflows/{integration-test,integration-test-weekly,test-reusable}.yaml  # expect: 6 hits
    ```
@@ -243,7 +341,17 @@ self-builder left unchanged (e.g. `azure-serverless/openai`) — run `./deploy.s
 `ak-py/dist` (a) absent and (b) present-but-empty, using a PATH-stubbed `terraform` that records
 invocation. Assert: exit code non-zero, and the `terraform` stub was **not** invoked, for the two
 cache-dependent scripts; the self-builder still succeeds (it rebuilds the wheel). This proves Guard
-2 aborts before `terraform apply`.
+2a aborts before `terraform apply`.
+
+**Dynamic check — `build.sh` (Guard 2b), performed and passing:** with `VIRTUAL_ENV` unset (as in
+CI), rebuild `ak-py` (`cd ak-py && ./build.sh`) so `ak-py/dist` holds the current branch wheel, then
+in `examples/memory/valkey` run `rm -rf .venv && ./build.sh local` followed by `uv run pytest --co`.
+Assert the installed `.venv/.../agentkernel/core/config.py` `session.type` pattern **includes
+`valkey`** (i.e. the branch wheel, not PyPI `0.6.1`) both immediately after `build.sh` and after
+`uv run`. Verified: the `session.type: valkey` `ValidationError` no longer occurs. *(A separate,
+pre-existing failure surfaces afterward — `ragas` importing
+`langchain_community.chat_models.vertexai`, a ragas/langchain-community version incompatibility —
+which is unrelated to #542 and out of scope; see below.)*
 
 **Optional CI dry-run (manual):** delete the `ak-py-<sha>` cache entry for a commit and dispatch
 `integration-test-weekly.yaml`; confirm the deploy job fails at `Restore ak-py build` (Guard 1).
