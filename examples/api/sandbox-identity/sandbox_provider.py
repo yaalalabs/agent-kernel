@@ -20,8 +20,10 @@ import uuid
 from pathlib import Path
 
 from agentkernel.sandbox import Sandbox, SandboxProvider
-from agentkernel.sandbox.errors import SandboxGoneError
+from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxGoneError, SandboxTimeoutError
 from agentkernel.sandbox.model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
+
+_LANGUAGES = ["python", "bash"]
 
 
 class DemoIdentitySandbox(Sandbox):
@@ -33,6 +35,10 @@ class DemoIdentitySandbox(Sandbox):
         self._principal = principal_subject
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
+        # Honor the ABC contract: an undeclared language fails loud (a typo like "pyhton"
+        # must not silently run under bash).
+        if language not in _LANGUAGES:
+            raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
         argv = [sys.executable, "-c", code] if language == "python" else ["bash", "-c", code]
         return await self._run(argv, timeout)
 
@@ -47,7 +53,13 @@ class DemoIdentitySandbox(Sandbox):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            # Kill the timed-out process and reap it so it doesn't leak or hang shutdown.
+            proc.kill()
+            await proc.wait()
+            raise SandboxTimeoutError(f"execution exceeded timeout {timeout}s") from exc
         return SandboxResult(
             stdout=stdout.decode(errors="replace"),
             stderr=stderr.decode(errors="replace"),

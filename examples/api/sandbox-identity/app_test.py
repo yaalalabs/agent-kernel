@@ -48,7 +48,11 @@ async def http_client():
         yield APITestClient("http://localhost:8000")
     finally:
         proc.terminate()
-        proc.wait()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()  # bounded wait + kill fallback so a hung server can't hang the session
+            proc.wait()
 
 
 @pytest.mark.order(1)
