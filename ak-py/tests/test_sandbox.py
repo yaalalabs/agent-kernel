@@ -509,12 +509,15 @@ async def test_manager_stale_handle_self_heal(monkeypatch):
     provider = SandboxProviderFactory.get("default")
     session = InMemorySessionStore().new("ak-1")
     async with session:
-        await mgr.execute(code="print(1)")
+        first = await mgr.execute(code="print(1)")
         vanished = provider.created_ids[0]
         provider._sandboxes.pop(vanished)  # simulate the backend sandbox disappearing
-        await mgr.execute(code="print(2)")  # attach -> SandboxGoneError -> recreate
+        healed = await mgr.execute(code="print(2)")  # attach -> SandboxGoneError -> recreate
     assert len(provider.created_ids) == 2
     assert provider.created_ids[0] != provider.created_ids[1]
+    # The silent recreation is surfaced to the caller, never hidden.
+    assert first.notice is None
+    assert "recreated empty" in healed.notice
 
 
 @pytest.mark.asyncio
@@ -529,9 +532,25 @@ async def test_manager_idle_timeout_recreates_on_touch(monkeypatch):
         # backdate last_used_at so the next touch treats the session as idle-expired
         registry = session.get_non_volatile_cache().get("sandbox")
         registry["sessions"]["default:default"]["last_used_at"] = 0.0
-        await mgr.execute(code="print(2)")
+        reset = await mgr.execute(code="print(2)")
     assert len(provider.created_ids) == 2
     assert first_id in provider.destroyed_ids
+    # The idle reset is surfaced to the caller, never hidden.
+    assert "idle" in reset.notice and "discarded" in reset.notice
+
+
+@pytest.mark.asyncio
+async def test_tool_result_carries_idle_reset_notice(monkeypatch):
+    """The recreation notice reaches the agent through the tool JSON contract."""
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        clean = json.loads(await run_code("print(1)"))
+        assert "notice" not in clean
+        registry = session.get_non_volatile_cache().get("sandbox")
+        registry["sessions"]["default:default"]["last_used_at"] = 0.0
+        reset = json.loads(await run_code("print(2)"))
+    assert "idle" in reset["notice"]
 
 
 @pytest.mark.asyncio
@@ -691,6 +710,7 @@ def test_system_prompt_suffix_carries_sandbox_guidance(monkeypatch):
     assert "new_sandbox_session" in suffix and "destroy_sandbox_session" in suffix
     assert "list_sandbox_sessions" in suffix
     assert "never invent one" in suffix
+    assert '"notice"' in suffix
     assert "sandbox_session_id" in suffix
     assert "" not in suffix.splitlines()
 

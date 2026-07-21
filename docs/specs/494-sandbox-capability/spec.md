@@ -126,6 +126,7 @@ class SandboxResult(BaseModel):
     exit_code: int = 0                  # non-zero exit is a RESULT, not an exception
     output_files: list[SandboxFile] = Field(default_factory=list)
     sandbox_session_id: str = ""        # stamped by the manager/worker before returning
+    notice: str | None = None           # machinery advisory surfaced to the agent (idle reset, self-heal recreation)
     provider_data: dict[str, Any] = Field(default_factory=dict)  # provider-specific escape hatch; never required by callers
 
 class SandboxSession(BaseModel):
@@ -326,6 +327,11 @@ class SandboxManager:
   (e2b `timeout`, daytona `auto_stop_interval`); the manager opportunistically closes+destroys
   expired sessions when touched; the ECS broker worker runs a periodic sweep (see broker); and
   `atexit` closes everything the process still holds (`per_runtime` backstop).
+- **Recreation is never silent** (added 2026-07-21): both silent-reset paths — the manager's
+  idle-expiry destroy-on-touch and the worker's `SandboxGoneError` self-heal — stamp
+  `SandboxResult.notice` explaining that the workspace state was discarded. The tools pass
+  `notice` through in their JSON, the completion summary includes it, and the injected
+  guidance instructs the agent to tell the user before continuing.
 
 ### Sandbox broker (`sandbox/broker/`)
 
@@ -371,7 +377,9 @@ embedded, thread, ECS, and Lambda flavors alike. Processing one request:
    `SandboxConfigError`).
 2. Fail-closed checks: principal (see PrincipalResolver) and policy (see Policy enforcement).
 3. Attach-or-create: `sandbox_session.sandbox_id` set → `provider.attach(...)`; `SandboxGoneError`
-   → `create()` under the same `sandbox_session_id` (self-heal); unset → `create()`.
+   → `create()` under the same `sandbox_session_id` (self-heal, surfaced as a
+   `SandboxResult.notice` — see the manager's "recreation is never silent" rule); unset →
+   `create()`.
 4. Serialize per `sandbox_session_id` (worker-local `asyncio.Lock` dict).
 5. Execute the operation under `asyncio.wait_for(effective_timeout)`.
 6. Build `SandboxCompletion`; offload `result` to the object store when its serialized size

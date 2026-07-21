@@ -42,18 +42,20 @@ def _error_json(exc: Exception, sandbox_session_id: Optional[str]) -> str:
 
 def _outcome_json(outcome: Union[SandboxResult, SandboxTask]) -> str:
     """Serialize an execute outcome: a pending-task handle for a promoted ``SandboxTask``,
-    or stdout/stderr/exit_code (truncated) for a ``SandboxResult``."""
+    or stdout/stderr/exit_code (truncated) for a ``SandboxResult``. A machinery ``notice``
+    (idle reset, self-heal recreation) is passed through when present."""
     if isinstance(outcome, SandboxTask):
         return json.dumps({"task_id": outcome.task_id, "status": "pending", "sandbox_session_id": outcome.sandbox_session_id})
     limit = _max_chars()
-    return json.dumps(
-        {
-            "stdout": outcome.stdout[:limit],
-            "stderr": outcome.stderr[:limit],
-            "exit_code": outcome.exit_code,
-            "sandbox_session_id": outcome.sandbox_session_id,
-        }
-    )
+    payload = {
+        "stdout": outcome.stdout[:limit],
+        "stderr": outcome.stderr[:limit],
+        "exit_code": outcome.exit_code,
+        "sandbox_session_id": outcome.sandbox_session_id,
+    }
+    if outcome.notice:
+        payload["notice"] = outcome.notice
+    return json.dumps(payload)
 
 
 async def run_code(code: str, language: str = "python", sandbox_session_id: Optional[str] = None, profile: Optional[str] = None) -> str:
@@ -312,6 +314,8 @@ def get_sandbox_tools() -> list[SystemTool]:
         "listing before creating a new session so you never duplicate an existing environment.\n"
         'If a tool result contains an "error" field the operation FAILED: report the error to the user; '
         "never describe a failed or unattempted operation as done.\n"
+        'If a result contains a "notice" field (e.g. the sandbox was reset after an idle timeout and its '
+        "workspace was discarded), tell the user before continuing.\n"
         f"Available workload profiles (pass as profile=):\n{_profiles_text(config)}\n"
         f"stdout/stderr and file reads are truncated at {config.tool_output_max_chars} characters."
     )

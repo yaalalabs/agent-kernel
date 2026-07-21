@@ -62,6 +62,7 @@ class SandboxResult(BaseModel):
     exit_code: int = 0
     output_files: list[SandboxFile] = Field(default_factory=list)
     sandbox_session_id: str = ""  # stamped by the manager/worker before returning
+    notice: str | None = None  # machinery advisory surfaced to the agent (e.g. sandbox recreated after idle timeout)
     provider_data: dict[str, Any] = Field(default_factory=dict)  # provider-specific escape hatch; never required by callers
 
 

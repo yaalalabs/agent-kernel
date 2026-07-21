@@ -79,7 +79,7 @@ class BrokerWorkerCore:
 
         async with self._lock_for(session.sandbox_session_id):
             # 3. Attach-or-create with self-heal.
-            sandbox = await self._acquire(provider, request)
+            sandbox, recreated = await self._acquire(provider, request)
             session.sandbox_id = sandbox.id
             session.last_used_at = time.time()
             # 4 (serialize, above) + 5. Execute under the effective timeout.
@@ -87,6 +87,11 @@ class BrokerWorkerCore:
 
         # 6. Stamp the session id; in-process flavors never offload.
         result.sandbox_session_id = session.sandbox_session_id
+        if recreated and result.notice is None:
+            result.notice = (
+                f"the sandbox behind session '{session.sandbox_session_id}' no longer existed and was recreated empty; "
+                "its previous workspace state is gone"
+            )
         return result, session
 
     async def process(self, request: SandboxBrokerRequest) -> SandboxCompletion:
@@ -153,19 +158,21 @@ class BrokerWorkerCore:
 
     async def _acquire(self, provider: SandboxProvider, request: SandboxBrokerRequest):
         """Attach to the session's existing sandbox, self-healing a stale handle
-        (``SandboxGoneError`` recreates under the same session id), or create a new one."""
+        (``SandboxGoneError`` recreates under the same session id), or create a new one.
+        Returns ``(sandbox, recreated)`` — ``recreated`` marks the self-heal case so the
+        caller can surface the silent workspace reset as a result notice."""
         session = request.sandbox_session
         if session.sandbox_id:
             try:
-                return await provider.attach(session.sandbox_id, principal=request.principal, policy=request.policy)
+                return await provider.attach(session.sandbox_id, principal=request.principal, policy=request.policy), False
             except SandboxGoneError:
                 logger.info(
                     "Sandbox %s for session %s is gone; recreating (self-heal)",
                     session.sandbox_id,
                     session.sandbox_session_id,
                 )
-                return await provider.create(principal=request.principal, policy=request.policy)
-        return await provider.create(principal=request.principal, policy=request.policy)
+                return await provider.create(principal=request.principal, policy=request.policy), True
+        return await provider.create(principal=request.principal, policy=request.policy), False
 
     async def _execute(self, sandbox, request: SandboxBrokerRequest) -> SandboxResult:
         """Dispatch the request's operation to the sandbox handle under

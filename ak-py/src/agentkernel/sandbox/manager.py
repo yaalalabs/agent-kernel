@@ -211,7 +211,7 @@ class SandboxManager:
         if profile_cfg is None:
             raise SandboxConfigError(f"unknown sandbox profile '{profile_name}'; configured profiles: {sorted(self._config.profiles)}")
 
-        session, ephemeral = await self._resolve_session(profile_name, sandbox_session_id, profile_cfg)
+        session, ephemeral, notice = await self._resolve_session(profile_name, sandbox_session_id, profile_cfg)
         principal = await self._resolve_principal()
         request = SandboxBrokerRequest(
             task_id=uuid.uuid4().hex,
@@ -231,6 +231,8 @@ class SandboxManager:
                 self._write_session(request.sandbox_session)
             if isinstance(outcome, SandboxTask):
                 self._record_task(outcome)
+            if notice and isinstance(outcome, SandboxResult) and outcome.notice is None:
+                outcome.notice = notice
             return outcome
         finally:
             if ephemeral:
@@ -290,13 +292,17 @@ class SandboxManager:
 
     # -- session resolution / registry ------------------------------------- #
 
-    async def _resolve_session(self, profile_name: str, sandbox_session_id: Optional[str], profile_cfg: Any) -> tuple[SandboxSession, bool]:
-        """Resolve the target sandbox session and whether it is ephemeral.
+    async def _resolve_session(
+        self, profile_name: str, sandbox_session_id: Optional[str], profile_cfg: Any
+    ) -> tuple[SandboxSession, bool, Optional[str]]:
+        """Resolve the target sandbox session; returns ``(session, ephemeral, notice)``.
 
         ``per_call`` scope always returns a fresh ephemeral session. An explicit id must
         exist in the registry (miss raises ``SandboxSessionNotFoundError``); an omitted id
         maps to the profile's ``default:<profile>`` session, created on first use. An
-        idle-expired session is destroyed here and recreated under the same id on next use.
+        idle-expired session is destroyed here and recreated under the same id on next use;
+        that reset is reported through ``notice`` so the agent can tell the user instead of
+        silently facing an empty workspace.
         """
         now = time.time()
         scope = profile_cfg.scope
@@ -304,7 +310,7 @@ class SandboxManager:
             session = SandboxSession(
                 sandbox_session_id=uuid.uuid4().hex, profile=profile_name, provider_type=profile_cfg.type, created_at=now, last_used_at=now
             )
-            return session, True
+            return session, True, None
 
         if sandbox_session_id is not None:
             existing = self._read_session(sandbox_session_id, scope)
@@ -320,13 +326,18 @@ class SandboxManager:
 
         # Idle timeout: opportunistically close+destroy an expired sandbox on touch, then let
         # the worker recreate it under the same sandbox_session_id.
+        notice = None
         if existing.sandbox_id and (now - existing.last_used_at) > profile_cfg.idle_timeout:
             await self._destroy_backend(existing)
             existing.sandbox_id = None
             existing.status = "active"
             existing.created_at = now
+            notice = (
+                f"sandbox session '{existing.sandbox_session_id}' was idle for more than {profile_cfg.idle_timeout}s "
+                "and has been reset; its previous workspace state was discarded"
+            )
         existing.last_used_at = now
-        return existing, False
+        return existing, False, notice
 
     def _profile_scope(self, profile_name: str) -> str:
         """Return the configured scope of a profile, defaulting to ``per_session``."""

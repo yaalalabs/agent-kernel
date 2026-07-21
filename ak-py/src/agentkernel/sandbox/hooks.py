@@ -117,6 +117,8 @@ class SandboxPreHook(PreHook):
                 lines.append(f"stdout:\n{completion.result.stdout[:limit]}")
             if completion.result.stderr:
                 lines.append(f"stderr:\n{completion.result.stderr[:limit]}")
+            if completion.result.notice:
+                lines.append(f"notice: {completion.result.notice}")
         if completion.result_ref:
             lines.append(f"full result stored at: {completion.result_ref}")
         if completion.error:

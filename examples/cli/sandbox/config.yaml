@@ -1,12 +1,22 @@
 # Sandbox capability demo configuration.
 #
-# Single-backend sugar: `type` + its config block synthesize the default profile.
 # local_subprocess provides NO isolation and is for development/test use only; switch
 # `type` to `docker` (with the sandbox-docker extra installed and a running daemon)
 # for a container-isolated sandbox.
+#
+# idle_timeout is raised from the 1800s default: an interactive dev session easily
+# pauses for more than 30 minutes, and an idle-expired sandbox is reset (empty
+# workspace) on next touch. The agent is told via a result "notice" when that happens.
+#
+# Tip: with a single backend you can use the sugar form instead (top-level
+# `type: local_subprocess` + `local_subprocess: {}`), but it does not expose
+# idle_timeout, so this file uses an explicit profile.
 sandbox:
   enabled: true
-  type: local_subprocess
-  local_subprocess: {}
+  profiles:
+    default:
+      type: local_subprocess
+      idle_timeout: 21600 # 6 hours
+      local_subprocess: {}
   broker:
     flavor: thread
