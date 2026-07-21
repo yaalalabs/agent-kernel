@@ -208,11 +208,20 @@ class SandboxManager:
             outcome = await self._broker.submit(request, wait)
             if not ephemeral:
                 self._write_session(request.sandbox_session)
+            if isinstance(outcome, SandboxTask):
+                self._record_task(outcome)
             return outcome
         finally:
             if ephemeral:
                 # per_call: dispose the ephemeral sandbox regardless of success/failure.
                 await self._destroy_backend(request.sandbox_session)
+
+    def _record_task(self, task: SandboxTask) -> None:
+        """Record a promoted task in the current AK session's registry so ``task_status``
+        and completion ingestion can resolve it on a later turn."""
+        reg = self._nv_registry()
+        reg["tasks"][task.task_id] = task.model_dump()
+        self._save_nv_registry(reg)
 
     # -- principal / policy ------------------------------------------------- #
 
