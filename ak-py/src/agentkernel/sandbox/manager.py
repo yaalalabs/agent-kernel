@@ -1,0 +1,316 @@
+"""``SandboxManager`` — the agent-side façade over the sandbox capability.
+
+A process-wide singleton (mirroring ``ConversationThreadManager``) that owns:
+
+* the broker client (built from ``sandbox.broker.flavor`` via the factory),
+* the principal resolver (``sandbox.principal_resolver`` dotted path, or the default),
+* the sandbox-session registry.
+
+Session addressing is namespace-isolated: ``per_session``/``per_call`` sessions live in the
+current AK session's non-volatile cache, so one AK session can never address another's
+sandboxes; ``per_runtime`` keeps a single shared entry per profile in process memory.
+"""
+
+import logging
+import time
+import uuid
+from threading import RLock
+from typing import Any, ClassVar, Optional, Union
+
+from ..core.base import Session
+from ..core.config import AKConfig
+from .broker.base import SandboxBroker, SandboxBrokerRequest
+from .errors import SandboxConfigError, SandboxSessionNotFoundError
+from .factory import SandboxBrokerFactory, _import_dotted
+from .model import SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession, SandboxTask
+from .principal import AgentPrincipalResolver, PrincipalResolver
+
+
+class SandboxManager:
+    _instance: ClassVar[Optional["SandboxManager"]] = None
+    _lock: ClassVar[RLock] = RLock()
+    _runtime_registry: ClassVar[dict[str, SandboxSession]] = {}  # per_runtime scope: sandbox_session_id -> session
+    _log = logging.getLogger("ak.sandbox")
+
+    _REGISTRY_KEY = "sandbox"  # key under the AK session's non-volatile cache
+
+    def __init__(self, config: Any) -> None:
+        self._config = config
+        self._broker: SandboxBroker = SandboxBrokerFactory.get()
+        self._resolver: PrincipalResolver = self._build_resolver(config)
+
+    @staticmethod
+    def _build_resolver(config: Any) -> PrincipalResolver:
+        if config.principal_resolver:
+            resolver_cls = _import_dotted(config.principal_resolver)
+            if not (isinstance(resolver_cls, type) and issubclass(resolver_cls, PrincipalResolver)):
+                raise SandboxConfigError(f"principal_resolver '{config.principal_resolver}' is not a PrincipalResolver subclass")
+            return resolver_cls()
+        return AgentPrincipalResolver()
+
+    @classmethod
+    def get(cls) -> Optional["SandboxManager"]:
+        """Return the shared instance, or None when the sandbox capability is disabled.
+        Callers use the None check as the feature-enabled check."""
+        config = AKConfig.get().sandbox
+        if not config.enabled:
+            return None
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls(config)
+            return cls._instance
+
+    @classmethod
+    def _reset(cls) -> None:
+        """Drop the shared instance and the per_runtime registry. Intended for testing."""
+        with cls._lock:
+            cls._instance = None
+            cls._runtime_registry = {}
+
+    # -- public API --------------------------------------------------------- #
+
+    async def execute(
+        self,
+        *,
+        code: Optional[str] = None,
+        command: Optional[str] = None,
+        language: str = "python",
+        profile: Optional[str] = None,
+        sandbox_session_id: Optional[str] = None,
+        wait: Optional[float] = None,
+    ) -> Union[SandboxResult, SandboxTask]:
+        if code is not None:
+            operation, payload = "execute_code", {"code": code, "language": language}
+        elif command is not None:
+            operation, payload = "execute_command", {"command": command}
+        else:
+            raise ValueError("execute() requires either code or command")
+        return await self._submit_op(operation, payload, profile=profile, sandbox_session_id=sandbox_session_id, wait=wait)
+
+    async def upload(self, path: str, content: bytes, *, profile: Optional[str] = None, sandbox_session_id: Optional[str] = None) -> None:
+        await self._submit_op("upload_file", {"path": path, "content": content}, profile=profile, sandbox_session_id=sandbox_session_id)
+
+    async def download(self, path: str, *, profile: Optional[str] = None, sandbox_session_id: Optional[str] = None) -> bytes:
+        result = await self._submit_op("download_file", {"path": path}, profile=profile, sandbox_session_id=sandbox_session_id)
+        if isinstance(result, SandboxResult) and result.output_files:
+            return result.output_files[0].content
+        return b""
+
+    async def task_status(self, task_id: str) -> Optional[SandboxTask]:
+        reg = self._nv_registry()
+        data = reg["tasks"].get(task_id)
+        if data is not None:
+            task = SandboxTask(**data)
+            if task.status == "pending":
+                completion = await self._broker.result(task_id)
+                if completion is not None:
+                    task.status = completion.status
+                    task.consumed = data.get("consumed", False)
+                    reg["tasks"][task_id] = task.model_dump()
+                    self._save_nv_registry(reg)
+            return task
+        completion = await self._broker.result(task_id)
+        if completion is not None:
+            return SandboxTask(
+                task_id=task_id,
+                sandbox_session_id=completion.sandbox_session.sandbox_session_id,
+                profile=completion.sandbox_session.profile,
+                status=completion.status,
+                submitted_at=time.time(),
+            )
+        return None
+
+    async def destroy_session(self, sandbox_session_id: str) -> None:
+        session = self._find_session(sandbox_session_id)
+        if session is None:
+            return  # idempotent
+        await self._destroy_backend(session)
+        self._remove_session(session)
+
+    def list_sessions(self) -> list[SandboxSession]:
+        reg = self._nv_registry()
+        sessions = [SandboxSession(**data) for data in reg["sessions"].values()]
+        sessions.extend(self._runtime_registry.values())
+        return sessions
+
+    # -- operation submission ---------------------------------------------- #
+
+    async def _submit_op(
+        self,
+        operation: str,
+        payload: dict[str, Any],
+        *,
+        profile: Optional[str] = None,
+        sandbox_session_id: Optional[str] = None,
+        wait: Optional[float] = None,
+    ) -> Union[SandboxResult, SandboxTask]:
+        profile_name = profile or self._config.default_profile
+        profile_cfg = self._config.profiles.get(profile_name)
+        if profile_cfg is None:
+            raise SandboxConfigError(f"unknown sandbox profile '{profile_name}'; configured profiles: {sorted(self._config.profiles)}")
+
+        session, ephemeral = await self._resolve_session(profile_name, sandbox_session_id, profile_cfg)
+        principal = await self._resolve_principal()
+        request = SandboxBrokerRequest(
+            task_id=uuid.uuid4().hex,
+            operation=operation,  # type: ignore[arg-type]
+            payload=payload,
+            profile=profile_name,
+            principal=principal,
+            policy=self._policy_from(profile_cfg),
+            sandbox_session=session,
+            ak_session_id=self._current_session_id(),
+            agent=principal.subject,
+            wait_deadline=self._deadline(wait),
+        )
+        try:
+            outcome = await self._broker.submit(request, wait)
+            if not ephemeral:
+                self._write_session(request.sandbox_session)
+            return outcome
+        finally:
+            if ephemeral:
+                # per_call: dispose the ephemeral sandbox regardless of success/failure.
+                await self._destroy_backend(request.sandbox_session)
+
+    # -- principal / policy ------------------------------------------------- #
+
+    async def _resolve_principal(self) -> SandboxPrincipal:
+        return await self._resolver.resolve(Session.current(), self._current_agent())
+
+    @staticmethod
+    def _current_agent():
+        try:
+            from ..core.tool import ToolContext
+
+            ctx = ToolContext.get()
+            return getattr(ctx, "agent", None) if ctx is not None else None
+        except Exception:  # noqa: BLE001 — no tool context is a normal (programmatic) case
+            return None
+
+    @staticmethod
+    def _policy_from(profile_cfg: Any) -> SandboxPolicy:
+        p = profile_cfg.policy
+        return SandboxPolicy(
+            network_egress=p.network_egress,
+            network_allow=list(p.network_allow),
+            fs_allow_read=list(p.fs_allow_read),
+            fs_allow_write=list(p.fs_allow_write),
+            cpu=p.cpu,
+            memory_mb=p.memory_mb,
+            timeout=p.timeout,
+            strict=p.strict,
+        )
+
+    @staticmethod
+    def _deadline(wait: Optional[float]) -> Optional[float]:
+        return None if wait is None else time.time() + wait
+
+    @staticmethod
+    def _current_session_id() -> str:
+        session = Session.current()
+        return session.id if session is not None else ""
+
+    # -- session resolution / registry ------------------------------------- #
+
+    async def _resolve_session(self, profile_name: str, sandbox_session_id: Optional[str], profile_cfg: Any) -> tuple[SandboxSession, bool]:
+        now = time.time()
+        scope = profile_cfg.scope
+        if scope == "per_call":
+            session = SandboxSession(
+                sandbox_session_id=uuid.uuid4().hex, profile=profile_name, provider_type=profile_cfg.type, created_at=now, last_used_at=now
+            )
+            return session, True
+
+        if sandbox_session_id is not None:
+            existing = self._read_session(sandbox_session_id, scope)
+            if existing is None:
+                raise SandboxSessionNotFoundError(f"unknown sandbox session '{sandbox_session_id}'")
+        else:
+            default_id = f"default:{profile_name}"
+            existing = self._read_session(default_id, scope)
+            if existing is None:
+                existing = SandboxSession(
+                    sandbox_session_id=default_id, profile=profile_name, provider_type=profile_cfg.type, created_at=now, last_used_at=now
+                )
+
+        # Idle timeout: opportunistically close+destroy an expired sandbox on touch, then let
+        # the worker recreate it under the same sandbox_session_id.
+        if existing.sandbox_id and (now - existing.last_used_at) > profile_cfg.idle_timeout:
+            await self._destroy_backend(existing)
+            existing.sandbox_id = None
+            existing.status = "active"
+            existing.created_at = now
+        existing.last_used_at = now
+        return existing, False
+
+    def _profile_scope(self, profile_name: str) -> str:
+        profile_cfg = self._config.profiles.get(profile_name)
+        return profile_cfg.scope if profile_cfg is not None else "per_session"
+
+    def _read_session(self, sandbox_session_id: str, scope: str) -> Optional[SandboxSession]:
+        if scope == "per_runtime":
+            return self._runtime_registry.get(sandbox_session_id)
+        reg = self._nv_registry()
+        data = reg["sessions"].get(sandbox_session_id)
+        return SandboxSession(**data) if data is not None else None
+
+    def _write_session(self, session: SandboxSession) -> None:
+        if self._profile_scope(session.profile) == "per_runtime":
+            self._runtime_registry[session.sandbox_session_id] = session
+            return
+        reg = self._nv_registry()
+        reg["sessions"][session.sandbox_session_id] = session.model_dump()
+        self._save_nv_registry(reg)
+
+    def _remove_session(self, session: SandboxSession) -> None:
+        if self._profile_scope(session.profile) == "per_runtime":
+            self._runtime_registry.pop(session.sandbox_session_id, None)
+            return
+        reg = self._nv_registry()
+        reg["sessions"].pop(session.sandbox_session_id, None)
+        self._save_nv_registry(reg)
+
+    def _find_session(self, sandbox_session_id: str) -> Optional[SandboxSession]:
+        if sandbox_session_id in self._runtime_registry:
+            return self._runtime_registry[sandbox_session_id]
+        reg = self._nv_registry()
+        data = reg["sessions"].get(sandbox_session_id)
+        return SandboxSession(**data) if data is not None else None
+
+    def _nv_registry(self) -> dict:
+        session = Session.current()
+        if session is None:
+            # No AK session context: only per_runtime addressing is possible.
+            return {"sessions": {}, "tasks": {}}
+        reg = session.get_non_volatile_cache().get(self._REGISTRY_KEY)
+        if reg is None:
+            reg = {"sessions": {}, "tasks": {}}
+        return reg
+
+    def _save_nv_registry(self, reg: dict) -> None:
+        session = Session.current()
+        if session is not None:
+            session.get_non_volatile_cache().set(self._REGISTRY_KEY, reg)
+
+    async def _destroy_backend(self, session: SandboxSession) -> None:
+        if not session.sandbox_id:
+            session.status = "closed"
+            return
+        request = SandboxBrokerRequest(
+            task_id=uuid.uuid4().hex,
+            operation="destroy",
+            payload={},
+            profile=session.profile,
+            principal=SandboxPrincipal(mode="agent", subject="agent"),
+            policy=SandboxPolicy(),
+            sandbox_session=session,
+            ak_session_id=self._current_session_id(),
+            agent="agent",
+        )
+        try:
+            await self._broker.submit(request, None)
+        except Exception as exc:  # noqa: BLE001 — teardown is best-effort; never mask the primary flow
+            self._log.warning("Error destroying sandbox %s (session %s): %s", session.sandbox_id, session.sandbox_session_id, exc)
+        session.status = "closed"
+        session.sandbox_id = None

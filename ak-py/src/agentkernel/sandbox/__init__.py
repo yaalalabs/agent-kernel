@@ -4,15 +4,16 @@ One interface through which agents execute LLM-generated code, work in a persist
 isolated workspace, or attach to an existing runtime, with a first-class permission
 boundary and an open provider-registration mechanism.
 
-This module is the capability's public surface. As the implementation lands across
-iterations it grows to export ``SandboxBroker`` and ``SandboxManager``. The reusable
-provider contract suite lives in ``agentkernel.sandbox.testing`` and is imported
-explicitly from test code (it depends on pytest), so it is deliberately not re-exported
-here. The concrete factory, hooks, tools, providers, and brokers stay internal.
+This module is the capability's public surface. The reusable provider contract suite lives
+in ``agentkernel.sandbox.testing`` and is imported explicitly from test code (it depends on
+pytest), so it is deliberately not re-exported here. The concrete factory, hooks, tools,
+providers, and broker flavors stay internal.
 """
 
 from . import errors
 from .base import Sandbox, SandboxProvider
+from .broker.base import SandboxBroker
+from .manager import SandboxManager
 from .model import (
     IsolationTier,
     SandboxCapabilities,
@@ -29,6 +30,8 @@ __all__ = [
     "errors",
     "Sandbox",
     "SandboxProvider",
+    "SandboxBroker",
+    "SandboxManager",
     "PrincipalResolver",
     "AgentPrincipalResolver",
     "IsolationTier",
