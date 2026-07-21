@@ -5,6 +5,7 @@ import pytest
 from agentkernel.core.base import Agent, Session
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequestText
+from agentkernel.core.util.factory import AKConfigError
 from agentkernel.guardrail.guardrail import (
     BaseGuardrailUtil,
     InputGuardrail,
@@ -104,17 +105,38 @@ class TestInputGuardrailFactory:
             guardrail = InputGuardrailFactory.get()
             assert isinstance(guardrail, OpenAIInputGuardrail)
 
-    def test_get_raises_exception_for_unknown_type(self):
-        """Test that factory raises exception for unknown guardrail type."""
+    def test_get_raises_akconfigerror_for_unknown_type(self):
+        """An unknown, non-dotted type fails loud with AKConfigError."""
         with patch.object(AKConfig, "get") as mock_get:
             mock_config = Mock()
             mock_config.guardrail.input.enabled = True
             mock_config.guardrail.input.type = "unknown_type"
             mock_get.return_value = mock_config
 
-            with pytest.raises(Exception) as exc_info:
+            with pytest.raises(AKConfigError) as exc_info:
                 InputGuardrailFactory.get()
-            assert "Unknown guardrail type: unknown_type" in str(exc_info.value)
+            assert "unknown_type" in str(exc_info.value)
+
+    def test_get_resolves_byo_dotted_path(self):
+        """A dotted path to an InputGuardrail subclass resolves (bring-your-own)."""
+        with patch.object(AKConfig, "get") as mock_get:
+            mock_config = Mock()
+            mock_config.guardrail.input.enabled = True
+            mock_config.guardrail.input.type = "agentkernel.guardrail.openai.OpenAIInputGuardrail"
+            mock_get.return_value = mock_config
+
+            assert isinstance(InputGuardrailFactory.get(), OpenAIInputGuardrail)
+
+    def test_get_rejects_non_subclass_dotted_path(self):
+        """A dotted path that is not an InputGuardrail subclass is a config error."""
+        with patch.object(AKConfig, "get") as mock_get:
+            mock_config = Mock()
+            mock_config.guardrail.input.enabled = True
+            mock_config.guardrail.input.type = "builtins.str"
+            mock_get.return_value = mock_config
+
+            with pytest.raises(AKConfigError):
+                InputGuardrailFactory.get()
 
 
 class TestOutputGuardrailFactory:
@@ -142,17 +164,27 @@ class TestOutputGuardrailFactory:
             guardrail = OutputGuardrailFactory.get()
             assert isinstance(guardrail, OpenAIOutputGuardrail)
 
-    def test_get_raises_exception_for_unknown_type(self):
-        """Test that factory raises exception for unknown guardrail type."""
+    def test_get_raises_akconfigerror_for_unknown_type(self):
+        """An unknown, non-dotted type fails loud with AKConfigError."""
         with patch.object(AKConfig, "get") as mock_get:
             mock_config = Mock()
             mock_config.guardrail.output.enabled = True
             mock_config.guardrail.output.type = "invalid_type"
             mock_get.return_value = mock_config
 
-            with pytest.raises(Exception) as exc_info:
+            with pytest.raises(AKConfigError) as exc_info:
                 OutputGuardrailFactory.get()
-            assert "Unknown guardrail type: invalid_type" in str(exc_info.value)
+            assert "invalid_type" in str(exc_info.value)
+
+    def test_get_resolves_byo_dotted_path(self):
+        """A dotted path to an OutputGuardrail subclass resolves (bring-your-own)."""
+        with patch.object(AKConfig, "get") as mock_get:
+            mock_config = Mock()
+            mock_config.guardrail.output.enabled = True
+            mock_config.guardrail.output.type = "agentkernel.guardrail.openai.OpenAIOutputGuardrail"
+            mock_get.return_value = mock_config
+
+            assert isinstance(OutputGuardrailFactory.get(), OpenAIOutputGuardrail)
 
 
 class TestOpenAIInputGuardrail:

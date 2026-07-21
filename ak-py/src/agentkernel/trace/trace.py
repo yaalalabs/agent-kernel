@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from ..core import Runner
 from ..core.config import AKConfig
+from ..core.util.factory import AKConfigError, require_extra, resolve_dotted
 from .base import BaseTrace
+
+_BUILTIN_TRACERS = ["langfuse", "openllmetry"]
 
 
 class Trace(BaseTrace):
@@ -26,25 +29,28 @@ class Trace(BaseTrace):
         :return: A Trace instance with the appropriate trace implementation.
         """
         config = AKConfig.get()
-        enabled = config.trace.enabled
-        trace_type = config.trace.type
-
-        instance = None
-        if enabled:
-            if trace_type == "langfuse":
-                from .langfuse.langfuse import LangFuse
-
-                instance = LangFuse()
-            elif trace_type == "openllmetry":
-                from .openllmetry.openllmetry import OpenLLMetry
-
-                instance = OpenLLMetry()
-            else:
-                raise Exception(f"Unknown trace type: {trace_type}")
-
+        instance = cls._build(config.trace.type) if config.trace.enabled else None
         trace = cls(instance)
         trace.init()
         return trace
+
+    @staticmethod
+    def _build(trace_type: str) -> BaseTrace:
+        """Resolve the configured tracer: a built-in short name, or a dotted path to a
+        user-supplied ``BaseTrace`` subclass (bring-your-own)."""
+        if trace_type == "langfuse":
+            with require_extra("langfuse", "trace.type: langfuse"):
+                from .langfuse.langfuse import LangFuse
+
+            return LangFuse()
+        if trace_type == "openllmetry":
+            with require_extra("openllmetry", "trace.type: openllmetry"):
+                from .openllmetry.openllmetry import OpenLLMetry
+
+            return OpenLLMetry()
+        if "." not in trace_type:
+            raise AKConfigError(f"unknown trace type '{trace_type}'; expected one of {_BUILTIN_TRACERS} or a dotted path to a BaseTrace subclass")
+        return resolve_dotted(trace_type, base=BaseTrace)()
 
     def init(self):
         """

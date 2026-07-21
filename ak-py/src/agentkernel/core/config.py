@@ -255,12 +255,18 @@ class _ThreadStoreConfig(BaseModel):
 
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
-    type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
+    type: str = Field(
+        default="langfuse",
+        description="Tracing backend: a built-in short name (langfuse, openllmetry) or a dotted path to a BaseTrace subclass",
+    )
 
 
 class _GuardrailParamConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
-    type: str = Field(default="openai", pattern="^(openai|bedrock|walledai)$")
+    type: str = Field(
+        default="openai",
+        description="Guardrail backend: a built-in short name (openai, bedrock, walledai) or a dotted path to an InputGuardrail/OutputGuardrail subclass",
+    )
     pii: bool = Field(default=True, description="Enable PII redaction/unmasking (WalledAI only)")
     config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file (OpenAI only)")
     model: Optional[str] = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail (OpenAI only)")
