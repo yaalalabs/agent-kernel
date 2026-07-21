@@ -1,0 +1,8 @@
+# Fallback mode: fuzzy string match first, then LLM judge (answer_similarity) if fuzzy
+# fails. The relaxed-profile answer is exact ("42"); the guarded-profile answer is an
+# error message whose phrasing the model chooses, so judge evaluates it semantically.
+mode: fallback
+judge:
+  model: gpt-4o-mini
+  provider: openai
+  embedding_model: text-embedding-3-small

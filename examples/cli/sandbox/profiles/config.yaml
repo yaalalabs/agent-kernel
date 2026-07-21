@@ -1,0 +1,24 @@
+# Profiles demo: multiple named workload profiles.
+#
+# A profile bundles a provider + scope + policy + identity. The agent chooses a profile
+# per call (the `profile=` argument on run_code/run_command/...); the injected guidance
+# lists the available profiles so the model knows what it can pick.
+#
+# Both profiles here use local_subprocess (no external services) but differ in scope:
+#   - workspace : per_session — one sandbox per conversation; files persist across turns.
+#   - scratch   : per_call    — a fresh, throwaway sandbox for every execution.
+sandbox:
+  enabled: true
+  default_profile: workspace
+  profiles:
+    workspace:
+      type: local_subprocess
+      scope: per_session
+      idle_timeout: 21600 # 6 hours
+      local_subprocess: {}
+    scratch:
+      type: local_subprocess
+      scope: per_call
+      local_subprocess: {}
+  broker:
+    flavor: thread
