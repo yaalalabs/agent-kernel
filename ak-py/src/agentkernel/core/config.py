@@ -447,7 +447,10 @@ class _SandboxEC2SSMConfig(BaseModel):
 
 
 class _SandboxBrokerConfig(BaseModel):
-    flavor: str = Field(default="thread", description="Broker flavor: 'embedded' | 'thread' | 'sqs' | dotted path to a SandboxBroker")
+    flavor: str = Field(
+        default="thread",
+        description="Broker flavor: 'embedded' | 'thread' (in-process, available now) | a dotted path to a SandboxBroker subclass. The AWS 'sqs' flavor is planned in a later iteration.",
+    )
     wait_timeout: float = Field(default=60.0, description="Max seconds a synchronous wait blocks before promotion to a task (0 = always promote)")
     inline_payload_max_bytes: int = Field(
         default=131072, description="Results larger than this are offloaded to the object store instead of returned inline"

@@ -25,7 +25,7 @@ from pydantic import BaseModel
 
 from ..errors import SandboxBrokerError, SandboxTimeoutError
 from ..model import SandboxResult, SandboxTask
-from .base import SandboxBroker, SandboxBrokerRequest, SandboxCompletion
+from .base import BoundedCompletionStore, SandboxBroker, SandboxBrokerRequest, SandboxCompletion
 from .worker import BrokerWorkerCore
 
 logger = logging.getLogger("ak.sandbox.broker")
@@ -38,7 +38,7 @@ class ThreadBroker(SandboxBroker):
         """Create the broker; the worker thread starts lazily on first ``submit()``.
         ``config`` (the ``sandbox.broker`` block) is accepted for factory uniformity."""
         self._worker = BrokerWorkerCore()
-        self._completions: dict[str, SandboxCompletion] = {}
+        self._completions = BoundedCompletionStore()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._queue: Optional[asyncio.Queue] = None
         self._thread: Optional[threading.Thread] = None
@@ -140,16 +140,18 @@ class ThreadBroker(SandboxBroker):
             self._complete(request, "failed", error=str(exc))
             self._deliver_exception(response, exc)
         else:
-            self._completions[request.task_id] = SandboxCompletion(
-                task_id=request.task_id, status="succeeded", result=result, sandbox_session=session
+            self._completions.set(
+                request.task_id,
+                SandboxCompletion(task_id=request.task_id, status="succeeded", result=result, sandbox_session=session),
             )
             if not response.done():
                 response.set_result(result)
 
     def _complete(self, request: SandboxBrokerRequest, status: str, *, error: str) -> None:
         """Record a terminal failure completion for ``result()`` lookups."""
-        self._completions[request.task_id] = SandboxCompletion(
-            task_id=request.task_id, status=status, error=error, sandbox_session=request.sandbox_session
+        self._completions.set(
+            request.task_id,
+            SandboxCompletion(task_id=request.task_id, status=status, error=error, sandbox_session=request.sandbox_session),
         )
 
     @staticmethod
@@ -166,4 +168,4 @@ class ThreadBroker(SandboxBroker):
     async def discard(self, task_id: str) -> None:
         """Drop the retained completion once the manager has persisted it, bounding the
         broker's in-memory footprint over a long-running process. Idempotent."""
-        self._completions.pop(task_id, None)
+        self._completions.discard(task_id)

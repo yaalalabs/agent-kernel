@@ -11,7 +11,7 @@ from typing import Optional, Union
 from pydantic import BaseModel
 
 from ..model import SandboxResult, SandboxTask
-from .base import SandboxBroker, SandboxBrokerRequest, SandboxCompletion
+from .base import BoundedCompletionStore, SandboxBroker, SandboxBrokerRequest, SandboxCompletion
 from .worker import BrokerWorkerCore
 
 
@@ -20,7 +20,7 @@ class EmbeddedBroker(SandboxBroker):
         """Create the broker with its own in-process ``BrokerWorkerCore``; ``config`` (the
         ``sandbox.broker`` block) is accepted for factory uniformity but unused."""
         self._worker = BrokerWorkerCore()
-        self._completions: dict[str, SandboxCompletion] = {}
+        self._completions = BoundedCompletionStore()
 
     async def submit(self, request: SandboxBrokerRequest, wait: Optional[float] = None) -> Union[SandboxResult, SandboxTask]:
         """Run the request inline to completion and return its ``SandboxResult``.
@@ -30,7 +30,7 @@ class EmbeddedBroker(SandboxBroker):
         layer) sees the true exception type.
         """
         result, session = await self._worker.run(request)
-        self._completions[request.task_id] = SandboxCompletion(task_id=request.task_id, status="succeeded", result=result, sandbox_session=session)
+        self._completions.set(request.task_id, SandboxCompletion(task_id=request.task_id, status="succeeded", result=result, sandbox_session=session))
         return result
 
     async def result(self, task_id: str) -> Optional[SandboxCompletion]:
@@ -39,4 +39,4 @@ class EmbeddedBroker(SandboxBroker):
 
     async def discard(self, task_id: str) -> None:
         """Drop the retained completion once the manager has persisted it. Idempotent."""
-        self._completions.pop(task_id, None)
+        self._completions.discard(task_id)

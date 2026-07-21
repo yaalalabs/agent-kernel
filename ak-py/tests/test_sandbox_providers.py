@@ -351,6 +351,24 @@ async def test_docker_file_roundtrip_via_archives(docker_env):
 
 
 @pytest.mark.asyncio
+async def test_docker_file_ops_reject_path_traversal(docker_env):
+    module, _client = docker_env
+    provider = _docker_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    # `..` traversal that escapes the workdir is rejected.
+    for bad in ["../etc/passwd", "a/../../escape"]:
+        with pytest.raises(SandboxPolicyError):
+            await sandbox.upload_file(bad, b"nope")
+        with pytest.raises(SandboxPolicyError):
+            await sandbox.download_file(bad)
+    # An absolute path is neutralized to a workdir-relative one (not an escape), like
+    # local_subprocess: `/notes.txt` -> `<workdir>/notes.txt`.
+    await sandbox.upload_file("/notes.txt", b"remapped")
+    assert await sandbox.download_file("/notes.txt") == b"remapped"
+
+
+@pytest.mark.asyncio
 async def test_docker_attach_start_and_gone(docker_env):
     module, client = docker_env
     provider = _docker_provider(module)

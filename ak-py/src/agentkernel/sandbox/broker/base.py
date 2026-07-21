@@ -7,6 +7,7 @@ handle) so a remote worker needs nothing else to execute it.
 """
 
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
@@ -14,6 +15,30 @@ from pydantic import BaseModel, Field
 from ..model import SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession, SandboxTask
 
 BrokerOperation = Literal["execute_code", "execute_command", "install_packages", "upload_file", "download_file", "destroy"]
+
+
+class BoundedCompletionStore:
+    """A bounded, LRU-evicting ``task_id -> SandboxCompletion`` map for the in-process broker
+    flavors, so a long-running server does not accumulate one completion per execution for the
+    process lifetime. The cap only bounds the tail: a completion is normally dropped as soon as
+    ``SandboxManager`` consumes it (``discard``), and promoted tasks are polled within seconds —
+    far inside the cap — while synchronous results are never polled at all and just age out."""
+
+    def __init__(self, maxlen: int = 1024) -> None:
+        self._maxlen = maxlen
+        self._items: "OrderedDict[str, SandboxCompletion]" = OrderedDict()
+
+    def set(self, task_id: str, completion: "SandboxCompletion") -> None:
+        self._items[task_id] = completion
+        self._items.move_to_end(task_id)
+        while len(self._items) > self._maxlen:
+            self._items.popitem(last=False)  # evict the oldest
+
+    def get(self, task_id: str) -> Optional["SandboxCompletion"]:
+        return self._items.get(task_id)
+
+    def discard(self, task_id: str) -> None:
+        self._items.pop(task_id, None)
 
 
 class SandboxBrokerRequest(BaseModel):

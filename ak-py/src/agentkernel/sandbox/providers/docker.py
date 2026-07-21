@@ -30,6 +30,16 @@ logger = logging.getLogger("ak.sandbox.provider")
 WORKDIR = "/workspace"
 
 
+def _safe_rel(path: str) -> str:
+    """Resolve a caller path to a WORKDIR-relative POSIX path, rejecting absolute paths and
+    ``..`` traversal that would escape the workdir (mirrors the local_subprocess escape check)."""
+    rel = path.lstrip("/")
+    resolved = posixpath.normpath(posixpath.join(WORKDIR, rel))
+    if resolved != WORKDIR and not resolved.startswith(WORKDIR + "/"):
+        raise SandboxPolicyError(f"path '{path}' escapes the sandbox working directory")
+    return posixpath.relpath(resolved, WORKDIR)
+
+
 class DockerSandbox(Sandbox):
     """Handle to one running container; executions are ``exec_run`` calls inside it."""
 
@@ -81,7 +91,7 @@ class DockerSandbox(Sandbox):
 
     async def upload_file(self, path: str, content: bytes) -> None:
         """Ship the file into the container workdir as a single-member tar via ``put_archive``."""
-        rel = path.lstrip("/")
+        rel = _safe_rel(path)
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w") as tar:
             info = tarfile.TarInfo(name=rel)
@@ -91,7 +101,7 @@ class DockerSandbox(Sandbox):
 
     async def download_file(self, path: str) -> bytes:
         """Fetch the file from the container workdir via ``get_archive`` and untar it."""
-        target = posixpath.join(WORKDIR, path.lstrip("/"))
+        target = posixpath.join(WORKDIR, _safe_rel(path))
 
         def fetch() -> bytes:
             bits, _stat = self._container.get_archive(target)

@@ -1,7 +1,7 @@
 [project]
 name = "cli-sandbox-policy"
 version = "0.1.0"
-description = "Agent Kernel sandbox example: policy multiple named workload profiles (provider + scope routing) permissions, including the fail-closed strict model"
+description = "Agent Kernel sandbox example: policy and permissions, including the fail-closed strict model"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

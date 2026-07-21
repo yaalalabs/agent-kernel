@@ -19,6 +19,8 @@ import tempfile
 import uuid
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from agentkernel.sandbox import Sandbox, SandboxProvider
 from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxGoneError, SandboxTimeoutError
 from agentkernel.sandbox.model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
@@ -82,7 +84,10 @@ class DemoIdentitySandboxProvider(SandboxProvider):
         principal_user=True,  # this is what lets a user-mode profile run instead of failing closed
     )
 
-    def __init__(self, config=None) -> None:
+    def __init__(self, config: BaseModel) -> None:
+        # The factory always passes a Pydantic config (this provider's params via a permissive
+        # model). Follow the real SandboxProvider contract so the example is copy/paste-safe,
+        # even though this demo reads nothing from it.
         super().__init__(config)
         self._sandboxes: dict[str, DemoIdentitySandbox] = {}
 
