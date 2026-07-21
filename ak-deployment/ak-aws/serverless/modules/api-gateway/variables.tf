@@ -92,6 +92,12 @@ variable "create_authorizer" {
   default     = false
 }
 
+variable "enable_api_gateway_logs" {
+  type        = bool
+  description = "Whether to create the CloudWatch log group and enable access logging for the API Gateway stage"
+  default     = false
+}
+
 variable "cloudwatch_kms_key_arn" {
   type        = string
   description = "KMS key ARN for CloudWatch logs encryption"

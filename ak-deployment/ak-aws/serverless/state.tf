@@ -186,6 +186,7 @@ module "authorizer" {
 }
 
 module "shared_api_gateway_resources" {
+  count         = var.enable_api_gateway_logs ? 1 : 0
   source        = "./modules/shared-api-gateway-resources"
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -213,6 +214,7 @@ module "api_gateway" {
   authorizer_lambda_function_name       = local.create_authorizer ? module.authorizer[0].lambda_function_name : ""
   authorizer_lambda_function_invoke_arn = local.create_authorizer ? module.authorizer[0].lambda_function_invoke_arn : ""
   create_authorizer                     = local.create_authorizer
+  enable_api_gateway_logs               = var.enable_api_gateway_logs
   cloudwatch_kms_key_arn                = local.cloudwatch_kms_key_arn
 
   depends_on = [module.shared_api_gateway_resources]
@@ -235,6 +237,7 @@ module "websocket_api_gateway" {
   route_handler_lambda_role_name       = local.request_handler_enabled ? module.request_handler[0].lambda_role_name : null
   connection_handler_lambda_invoke_arn = module.ws_connection_handler[0].ws_connection_handler_lambda_function_invoke_arn
   connection_handler_lambda_name       = module.ws_connection_handler[0].ws_connection_handler_lambda_function_name
+  enable_api_gateway_logs              = var.enable_api_gateway_logs
   cloudwatch_kms_key_arn               = local.cloudwatch_kms_key_arn
 
   depends_on = [module.shared_api_gateway_resources]

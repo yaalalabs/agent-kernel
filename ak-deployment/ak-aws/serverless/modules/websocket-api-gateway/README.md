@@ -37,6 +37,7 @@ module "websocket_api_gateway" {
   connection_handler_lambda_name = module.websocket_connection_handler.lambda_function_name
   connection_handler_lambda_invoke_arn = module.websocket_connection_handler.lambda_function_invoke_arn
 
+  enable_api_gateway_logs    = true
   enable_data_trace          = false
   logging_level              = "ERROR"
   enable_detailed_metrics    = false
@@ -57,6 +58,7 @@ module "websocket_api_gateway" {
 | `route_handler_lambda_name` | Routes handler Lambda function name |
 | `connection_handler_lambda_invoke_arn` | Connection handler Lambda function invoke ARN (for $connect and $disconnect routes) |
 | `connection_handler_lambda_name` | Connection handler Lambda function name |
+| `enable_api_gateway_logs` | Enable stage access logging and route settings, and create the CloudWatch log group (default `false`) |
 | `enable_data_trace` | Enable data trace logging |
 | `logging_level` | Logging level (ERROR, INFO, OFF) |
 | `enable_detailed_metrics` | Enable detailed metrics |
@@ -86,3 +88,5 @@ module "websocket_api_gateway" {
 - Lambda permissions are configured for both Lambda functions to allow WebSocket API invocation
 - Custom routes are configured at the parent serverless module level via `ws_chat_route` and `ws_routes` variables
 - Route names must contain only alphanumeric characters, hyphens (-), and underscores (_)
+- Access logging and route settings are opt-in via `enable_api_gateway_logs` (default `false`). When `false`, `stage_access_log_settings` and `stage_default_route_settings` are passed as `null` to the upstream `terraform-aws-modules/apigateway-v2` module so no log group is created and access logging stays off. Passing `{}` would **not** disable logging — the upstream module treats a non-null object as enabled and defaults `create_log_group` to `true`.
+- The remaining logging inputs (`enable_data_trace`, `logging_level`, `enable_detailed_metrics`, `cloudwatch_logs_retention_in_days`, `cloudwatch_kms_key_arn`) only take effect when `enable_api_gateway_logs` is `true`.
