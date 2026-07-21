@@ -130,6 +130,7 @@ class SandboxResult(BaseModel):
 
 class SandboxSession(BaseModel):
     sandbox_session_id: str             # uuid4 hex, minted by SandboxManager
+    name: str | None = None             # optional human-friendly label (listings only; addressing is by id)
     profile: str                        # workload profile that created it
     provider_type: str                  # resolved backend type (e.g. "docker")
     sandbox_id: str | None = None       # provider-scoped reconnect handle; None until created
@@ -294,6 +295,7 @@ class SandboxManager:
     async def upload(self, path: str, content: bytes, *, profile=None, sandbox_session_id=None) -> None: ...
     async def download(self, path: str, *, profile=None, sandbox_session_id=None) -> bytes: ...
     async def task_status(self, task_id: str) -> SandboxTask | None: ...     # registry + broker.result()
+    def new_session(self, profile: str | None = None, name: str | None = None) -> SandboxSession: ...  # mint + register (per_session only)
     async def destroy_session(self, sandbox_session_id: str) -> None: ...
     def list_sessions(self) -> list[SandboxSession]: ...                      # current AK session's registry
 ```
@@ -313,7 +315,10 @@ class SandboxManager:
 - **Session resolution**: explicit `sandbox_session_id` → registry lookup, miss →
   `SandboxSessionNotFoundError`. Omitted → the scope's default session for the resolved profile
   (registry key `default:<profile>`), created on first use. `per_call` → fresh ephemeral entry,
-  destroyed in `finally`, result still stamped with its id.
+  destroyed in `finally`, result still stamped with its id. Explicit non-default ids come into
+  existence only through `new_session(profile, name)` (uuid4 hex, `per_session` scope only) —
+  exposed to agents as the `new_sandbox_session` tool. `name` is an optional human-friendly
+  label carried on `SandboxSession` and surfaced by `list_sessions`; addressing is always by id.
 - **Namespace isolation**: lookups only ever read the current AK session's registry (or the
   process-level `per_runtime` entry), which structurally prevents cross-AK-session addressing.
 - **Idle timeout**: every profile has `idle_timeout` (seconds). `last_used_at` is refreshed per
@@ -466,7 +471,7 @@ Flavors:
 Registered in `SystemToolFactory.get_all()` (`core/tool.py:165-179`) behind
 `AKConfig.get().sandbox.enabled`, with the lazy import + no-op-on-failure discipline of the
 multimodal block. Async functions (ToolBuilder binds both sync and async, `core/tool.py:144-151`).
-All three return JSON strings; every result includes `sandbox_session_id`; machinery errors are
+All of them return JSON strings; every result includes `sandbox_session_id`; machinery errors are
 caught and returned as `{"error": ...}` strings — tools never raise into the framework.
 
 - `run_code(code, language="python", sandbox_session_id=None, profile=None)` — delegates to
@@ -478,24 +483,41 @@ caught and returned as `{"error": ...}` strings — tools never raise into the f
   file operations (workspace mode): UTF-8 text content, delegating to
   `SandboxManager.upload`/`download`; reads capped at `tool_output_max_chars`.
 
-All five tools register unconditionally when the capability is enabled — registration is
-profile-agnostic because the profile is chosen per call; invoking a file tool against a profile
-whose provider lacks `files` returns the capability-error string like any other unsupported
-operation.
 - `check_sandbox_task(task_id)` — `SandboxManager.task_status`: registry first, then
   `broker.result()` (the response-DB lookup for suspend/resume recovery — "the user can come
   back and check").
+- `new_sandbox_session(name=None, profile=None)` — `SandboxManager.new_session`: mints and
+  registers a fresh (uuid4-hex) session and returns its id — the only way an explicit
+  `sandbox_session_id` comes into existence (added 2026-07-21: without it, an agent asked
+  for "a fresh environment" had no legitimate move and would invent ids). `name` is an
+  optional human-friendly label. Restricted to `per_session` scope (`per_call` is ephemeral
+  per execution; `per_runtime` is a single shared session by design).
+- `list_sandbox_sessions()` — `SandboxManager.list_sessions`: the sessions existing in this
+  conversation (id, name, profile, status, last_used_at). Added 2026-07-21: session ids are
+  opaque and lived only in the model's conversational memory, so "go back to the uv project"
+  had nothing to consult and agents minted duplicates instead of switching.
+- `destroy_sandbox_session(sandbox_session_id)` — `SandboxManager.destroy_session`,
+  idempotent; destroying the default session resets it (the next id-less call starts clean).
+
+All eight tools register unconditionally when the capability is enabled — registration is
+profile-agnostic because the profile is chosen per call; invoking a file tool against a profile
+whose provider lacks `files` returns the capability-error string like any other unsupported
+operation.
 
 Tool `description` strings must teach the model: results persist per `sandbox_session_id`;
-reuse the id to continue in the same environment; omit it for the default; available workload
-profiles and their declared languages/capabilities (rendered from config at registration time);
-stdout/stderr truncated at `tool_output_max_chars`.
+reuse the id to continue in the same environment; omit it for the default; **session ids are
+system-assigned, never invented — use `new_sandbox_session` (with a descriptive name) for a
+clean environment, and consult `list_sandbox_sessions` to return to an earlier one instead of
+minting a duplicate**; an `{"error": ...}` result means the operation failed and must be
+reported as such, never as success; available workload profiles and their declared
+languages/capabilities (rendered from config at registration time); stdout/stderr truncated
+at `tool_output_max_chars`.
 
 The capability is **self-describing**: that guidance is injected into every agent's system
 prompt through the existing system-tool injection chain
 (`SystemToolFactory.get_system_prompt_suffix()` → `Agent._setup_system_prompt()` →
 `override_system_prompt()`, the multimodal precedent), carried as one coherent section on the
-first tool's `description` (the other four carry empty descriptions; their LLM-facing schemas
+first tool's `description` (the other tools carry empty descriptions; their LLM-facing schemas
 come from the function docstrings at bind time). Agent authors never describe the sandbox
 tools or their session/profile semantics in their own instructions.
 
@@ -698,9 +720,10 @@ All intentional; none reachable unless `sandbox.enabled: true` except 1–3:
 2. `SystemToolFactory.get_all()` gains a config read of `AKConfig.get().sandbox` (returns no
    extra tools while disabled).
 3. `AKConfig` gains the `sandbox` section — new keys appear in generated config docs.
-4. With sandbox **enabled**: five system tools (`run_code`, `run_command`,
-   `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`) register on all agents and
-   the system-prompt suffix (`core/tool.py:181-197`) grows by their descriptions.
+4. With sandbox **enabled**: eight system tools (`run_code`, `run_command`,
+   `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`, `list_sandbox_sessions`,
+   `new_sandbox_session`, `destroy_sandbox_session`) register on all agents and the
+   system-prompt suffix (`core/tool.py:181-197`) grows by the capability's guidance section.
 5. With sandbox **enabled**: an inbound request body carrying a `sandbox_task_completion` extra
    field is intercepted by `SandboxPreHook` (consumed, deduped, or halted) instead of flowing to
    the agent as an ignored `AgentRequestAny`.
@@ -771,7 +794,7 @@ only real subprocesses are `local_subprocess` tests running `sys.executable`):
     id; `per_call` destroys in `finally`; stale handle (`SandboxGoneError` on attach) recreates
     under the same id; idle-timeout expiry closes on next touch.
   - Single-backend config sugar synthesizes `profiles["default"]`.
-  - Agent surface (system tools): `SystemToolFactory.get_all()` returns the five sandbox tools
+  - Agent surface (system tools): `SystemToolFactory.get_all()` returns the eight sandbox tools
     when enabled and none when disabled; each tool's JSON contract (result echoes
     `sandbox_session_id`; promotion returns a task handle; machinery errors surface as
     `{"error": ...}` strings, never exceptions); file tools against a non-`files` profile

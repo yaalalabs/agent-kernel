@@ -69,6 +69,7 @@ class SandboxSession(BaseModel):
     """A cross-turn handle to one sandbox, addressed by a stable ``sandbox_session_id``."""
 
     sandbox_session_id: str  # uuid4 hex, minted by SandboxManager
+    name: str | None = None  # optional human-friendly label (shown in listings; addressing is by id)
     profile: str  # workload profile that created it
     provider_type: str  # resolved backend type (e.g. "docker")
     sandbox_id: str | None = None  # provider-scoped reconnect handle; None until created

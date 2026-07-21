@@ -47,7 +47,17 @@ from agentkernel.sandbox.model import (
 )
 from agentkernel.sandbox.principal import AgentPrincipalResolver
 from agentkernel.sandbox.testing import FakeSandboxProvider, SandboxProviderContract
-from agentkernel.sandbox.tools import check_sandbox_task, get_sandbox_tools, read_sandbox_file, run_code, run_command, write_sandbox_file
+from agentkernel.sandbox.tools import (
+    check_sandbox_task,
+    destroy_sandbox_session,
+    get_sandbox_tools,
+    list_sandbox_sessions,
+    new_sandbox_session,
+    read_sandbox_file,
+    run_code,
+    run_command,
+    write_sandbox_file,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -638,7 +648,16 @@ async def test_policy_non_strict_proceeds_with_warning(monkeypatch):
 # System tools (tools.py) — iteration 4
 # --------------------------------------------------------------------------- #
 
-SANDBOX_TOOL_NAMES = ["run_code", "run_command", "write_sandbox_file", "read_sandbox_file", "check_sandbox_task"]
+SANDBOX_TOOL_NAMES = [
+    "run_code",
+    "run_command",
+    "write_sandbox_file",
+    "read_sandbox_file",
+    "check_sandbox_task",
+    "list_sandbox_sessions",
+    "new_sandbox_session",
+    "destroy_sandbox_session",
+]
 
 
 def test_tools_registered_when_enabled(monkeypatch):
@@ -669,6 +688,9 @@ def test_system_prompt_suffix_carries_sandbox_guidance(monkeypatch):
     suffix = SystemToolFactory.get_system_prompt_suffix()
     assert "[Sandbox execution]" in suffix
     assert "run_code" in suffix and "check_sandbox_task" in suffix
+    assert "new_sandbox_session" in suffix and "destroy_sandbox_session" in suffix
+    assert "list_sandbox_sessions" in suffix
+    assert "never invent one" in suffix
     assert "sandbox_session_id" in suffix
     assert "" not in suffix.splitlines()
 
@@ -758,6 +780,76 @@ async def test_tool_check_task_unknown(monkeypatch):
     async with session:
         payload = json.loads(await check_sandbox_task("no-such-task"))
     assert payload == {"task_id": "no-such-task", "status": "unknown"}
+
+
+@pytest.mark.asyncio
+async def test_tool_new_session_mints_isolated_environment(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        await run_code("print(1)")  # default session gets its own backend sandbox
+        minted = json.loads(await new_sandbox_session())
+        assert minted["profile"] == "default"
+        fresh_id = minted["sandbox_session_id"]
+        assert fresh_id != "default:default"
+        result = json.loads(await run_code("print(2)", sandbox_session_id=fresh_id))
+        assert result["sandbox_session_id"] == fresh_id
+    provider = SandboxProviderFactory.get("default")
+    assert len(provider.created_ids) == 2  # the minted session is a separate environment
+
+
+@pytest.mark.asyncio
+async def test_tool_new_session_rejects_non_per_session_scope(monkeypatch):
+    profile = _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_runtime")
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        payload = json.loads(await new_sandbox_session())
+    assert "per_runtime" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_tool_destroy_session_resets_default(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        await run_code("print(1)")
+        provider = SandboxProviderFactory.get("default")
+        first_backend = provider.created_ids[0]
+        destroyed = json.loads(await destroy_sandbox_session("default:default"))
+        assert destroyed == {"sandbox_session_id": "default:default", "destroyed": True}
+        assert first_backend in provider.destroyed_ids
+        json.loads(await destroy_sandbox_session("default:default"))  # idempotent
+        await run_code("print(2)")  # the next default call starts clean
+        assert len(provider.created_ids) == 2
+
+
+def test_manager_new_session_unknown_profile(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    mgr = SandboxManager.get()
+    with pytest.raises(SandboxConfigError):
+        mgr.new_session("no-such-profile")
+
+
+@pytest.mark.asyncio
+async def test_tool_list_sessions_shows_names_and_shrinks_on_destroy(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        await run_code("print(1)")  # default session
+        minted = json.loads(await new_sandbox_session(name="uv-project"))
+        assert minted["name"] == "uv-project"
+
+        listing = json.loads(await list_sandbox_sessions())["sessions"]
+        by_id = {s["sandbox_session_id"]: s for s in listing}
+        assert set(by_id) == {"default:default", minted["sandbox_session_id"]}
+        assert by_id[minted["sandbox_session_id"]]["name"] == "uv-project"
+        assert by_id["default:default"]["name"] is None
+        assert by_id["default:default"]["profile"] == "default"
+
+        await destroy_sandbox_session(minted["sandbox_session_id"])
+        remaining = json.loads(await list_sandbox_sessions())["sessions"]
+        assert [s["sandbox_session_id"] for s in remaining] == ["default:default"]
 
 
 # --------------------------------------------------------------------------- #

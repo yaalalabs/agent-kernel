@@ -153,6 +153,29 @@ class SandboxManager:
         self._write_session(completion.sandbox_session)
         return task
 
+    def new_session(self, profile: Optional[str] = None, name: Optional[str] = None) -> SandboxSession:
+        """Mint and register a fresh sandbox session for ``profile`` (default profile when
+        omitted) and return it — the only way an explicit ``sandbox_session_id`` comes into
+        existence. ``name`` is an optional human-friendly label surfaced by
+        ``list_sessions``; addressing stays by id. Restricted to ``per_session`` scope:
+        ``per_call`` sessions are ephemeral per execution and ``per_runtime`` is a single
+        shared session by design."""
+        profile_name = profile or self._config.default_profile
+        profile_cfg = self._config.profiles.get(profile_name)
+        if profile_cfg is None:
+            raise SandboxConfigError(f"unknown sandbox profile '{profile_name}'; configured profiles: {sorted(self._config.profiles)}")
+        if profile_cfg.scope != "per_session":
+            raise SandboxConfigError(
+                f"cannot mint a new sandbox session for profile '{profile_name}': scope '{profile_cfg.scope}' does not support "
+                "explicit sessions (per_call is ephemeral per execution; per_runtime is a single shared session)"
+            )
+        now = time.time()
+        session = SandboxSession(
+            sandbox_session_id=uuid.uuid4().hex, name=name, profile=profile_name, provider_type=profile_cfg.type, created_at=now, last_used_at=now
+        )
+        self._write_session(session)
+        return session
+
     async def destroy_session(self, sandbox_session_id: str) -> None:
         """Destroy the backend sandbox and remove the session from its registry. Idempotent."""
         session = self._find_session(sandbox_session_id)
