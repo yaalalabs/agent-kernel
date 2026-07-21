@@ -6,6 +6,11 @@ create_deployment_package() {
     pushd ../
     rm -rf dist
     mkdir -p dist/data
+    if [[ ${1-} == "local" ]]; then
+      # Re-resolve the lock against the local agentkernel dist so example-level deps
+      # and local-only extras (e.g. valkey) are captured before exporting requirements.
+      uv lock --find-links ../../../ak-py/dist
+    fi
     uv export --no-hashes > requirements.txt
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist/data
