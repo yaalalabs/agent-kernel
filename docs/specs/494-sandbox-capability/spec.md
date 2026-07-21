@@ -493,23 +493,42 @@ stdout/stderr truncated at `tool_output_max_chars`.
 
 ### Factory (`sandbox/factory.py`)
 
+The factory follows the **shared pluggable-backend pattern (#541)**. The helpers already exist in
+`core/util/factory.py` and must be reused (do not reinvent them):
+- `resolve_dotted(path, *, base, error=AKConfigError)` — import a dotted path, verify
+  `issubclass(cls, base)`, raise `error` on any failure. Sandbox passes `error=SandboxConfigError`
+  so failures stay in the `SandboxError` hierarchy.
+- `require_extra(extra, feature)` — context manager wrapping a built-in import; on `ImportError`
+  re-raises `ImportError` naming the exact `pip install "agentkernel[<extra>]"` remedy.
+
 `SandboxProviderFactory.get(profile_name) -> SandboxProvider`:
 
 1. `AKConfig.get().sandbox.enabled` false → `None` (callers treat the capability as absent).
 2. Resolve the profile (unknown → `SandboxConfigError` naming it and the configured profiles).
-3. Resolve `type`: built-in short name (`local_subprocess`, `docker`, `e2b`, `daytona`,
-   `bedrock_agentcore`, `kubernetes`, `ec2_ssm`) → lazy import of
-   `agentkernel.sandbox.providers.<type>`; `ImportError` → re-raise as
-   `ImportError("Sandbox provider '<type>' requires the '<extra>' extra: pip install
-   \"agentkernel[<extra>]\"")`. Otherwise treat as dotted path: import, verify
-   `issubclass(cls, SandboxProvider)` → else `SandboxConfigError`.
+3. Resolve `type`:
+   - **Built-in short name** (`local_subprocess`, `docker`, `e2b`, `daytona`,
+     `bedrock_agentcore`, `kubernetes`, `ec2_ssm`) → an `if/elif` branch with a **real lazy
+     import** `from .providers.<type> import <Provider>`, wrapped in `require_extra(<extra>, ...)`
+     (skip the wrap for `local_subprocess`, which is stdlib-only).
+     - **Interim state (until the provider modules land):** built-ins are resolved through a
+       `_BUILTIN_PROVIDERS` registry map (short name → dotted path) + `_BUILTIN_EXTRAS` + a local
+       `_import_dotted`, all guarded by `require_extra`. **Each provider iteration (6, 7, 9, 10)
+       converts its own entry to the `if/elif` real-import branch and removes it from the registry
+       maps; when the last built-in is converted (iteration 10), delete `_BUILTIN_PROVIDERS`,
+       `_BUILTIN_EXTRAS`, and `_import_dotted`.** Correspondingly, that provider's factory test
+       moves from monkeypatched-`importlib` resolution to a real-import assertion.
+   - **Dotted path** → `resolve_dotted(type, base=SandboxProvider, error=SandboxConfigError)`
+     (the open, zero-registry BYO hook).
 4. Construct with the profile's backend config block (missing block for a built-in →
    `SandboxConfigError`, multimodal-storage precedent; dotted-path providers get the profile's
-   `params` mapping validated by their own config model).
+   `params` mapping validated by their own `config_model`, else a permissive `_DottedParams`).
 5. Cache one instance per (profile, type) in a class-level dict; created lazily on first use.
 
-Broker-flavor resolution follows the same algorithm with the built-in map
-`{"embedded": ..., "thread": ..., "sqs": "agentkernel.deployment.aws.sandbox.sqs_broker.SQSSandboxBroker"}`.
+Broker-flavor resolution uses `resolve_dotted(dotted, base=SandboxBroker, error=SandboxConfigError)`
+over the built-in map `{"embedded": ..., "thread": ..., "sqs":
+"agentkernel.deployment.aws.sandbox.sqs_broker.SQSSandboxBroker"}`. Brokers stay on the
+`resolve_dotted`-over-map form (not `if/elif` real imports) because the `sqs` flavor must remain a
+dotted path — it lives under `deployment/aws/` and core sandbox may not import it.
 
 ### First-party providers (`sandbox/providers/`)
 

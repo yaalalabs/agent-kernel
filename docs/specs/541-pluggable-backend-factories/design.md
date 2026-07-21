@@ -94,7 +94,9 @@ All intentional:
 
 1. **Phase 1** — add `core/util/factory.py` (`AKConfigError`, `resolve_dotted`, `require_extra`); apply to **trace + guardrail**; relax their `type` patterns; tests (BYO dotted path resolves; unknown → `AKConfigError`; extra-missing message; disabled unchanged).
 2. **Phase 2** — session store, thread store, multimodal storage; drop the `Types` StrEnum + `from_str`; fail-loud replaces the silent fallbacks.
-3. **Phase 3** — converge `sandbox/factory.py` (built-ins → real imports, keep dotted BYO/cache/extra-message and the architecture-forced dotted `sqs`).
+3. **Phase 3** — converge `sandbox/factory.py`.
+   - Done 2026-07-21 (partial): the BYO provider path and the broker-flavor resolution now use the shared `resolve_dotted` (with `error=SandboxConfigError` so the sandbox error hierarchy is preserved), and built-in provider imports use the shared `require_extra`. The `_DottedParams` construction helper and the built-in **registry map** are retained.
+   - Deferred to #494: converting the built-in registry map to `if/elif` + real imports. Those imports (`from .providers.docker import DockerSandboxProvider`, …) can only become real when the provider modules are implemented (#494 iterations 6–10); each built-in branch is converted as its provider lands. Doing it before then would reference non-existent modules and be untestable.
 
 The AWS response-store handler (`deployment/aws/core/response_store/handler.py`) is a **separate follow-up**, tracked outside this issue.
 

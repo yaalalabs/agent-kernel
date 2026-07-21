@@ -13,6 +13,7 @@ from typing import Any, ClassVar, Optional
 from pydantic import BaseModel, ConfigDict
 
 from ..core.config import AKConfig
+from ..core.util.factory import require_extra, resolve_dotted
 from .base import SandboxProvider
 from .errors import SandboxConfigError
 
@@ -90,13 +91,14 @@ class SandboxProviderFactory:
     def _build(cls, profile_name: str, profile: Any) -> SandboxProvider:
         type_name = profile.type
         if type_name in _BUILTIN_PROVIDERS:
-            try:
+            # Built-ins stay a registry map until the provider modules land (#494); the import
+            # is still lazy, and a missing optional dependency gets the shared friendly message.
+            extra = _BUILTIN_EXTRAS.get(type_name)
+            if extra:
+                with require_extra(extra, f"sandbox provider '{type_name}'"):
+                    provider_cls = _import_dotted(_BUILTIN_PROVIDERS[type_name])
+            else:
                 provider_cls = _import_dotted(_BUILTIN_PROVIDERS[type_name])
-            except ImportError as exc:
-                extra = _BUILTIN_EXTRAS.get(type_name)
-                if extra:
-                    raise ImportError(f"Sandbox provider '{type_name}' requires the '{extra}' extra: pip install \"agentkernel[{extra}]\"") from exc
-                raise
             config_block = getattr(profile, type_name, None)
             if config_block is None:
                 raise SandboxConfigError(
@@ -104,13 +106,8 @@ class SandboxProviderFactory:
                 )
             return provider_cls(config_block)
 
-        # dotted path
-        try:
-            provider_cls = _import_dotted(type_name)
-        except (ImportError, AttributeError, SandboxConfigError) as exc:
-            raise SandboxConfigError(f"could not import sandbox provider '{type_name}': {exc}") from exc
-        if not (isinstance(provider_cls, type) and issubclass(provider_cls, SandboxProvider)):
-            raise SandboxConfigError(f"sandbox provider '{type_name}' is not a SandboxProvider subclass")
+        # Bring-your-own: a dotted path to a SandboxProvider subclass (keeps SandboxConfigError).
+        provider_cls = resolve_dotted(type_name, base=SandboxProvider, error=SandboxConfigError)
         # A dotted-path provider may declare `config_model` (a BaseModel subclass) to validate
         # the profile's `params`; otherwise params pass through a permissive model.
         config_model = getattr(provider_cls, "config_model", None)
@@ -136,10 +133,5 @@ class SandboxBrokerFactory:
         config = AKConfig.get().sandbox
         flavor = config.broker.flavor
         dotted = _BUILTIN_BROKERS.get(flavor, flavor)  # short name -> dotted path, else treat as dotted path
-        try:
-            broker_cls = _import_dotted(dotted)
-        except (ImportError, AttributeError, SandboxConfigError) as exc:
-            raise SandboxConfigError(f"could not import sandbox broker flavor '{flavor}': {exc}") from exc
-        if not (isinstance(broker_cls, type) and issubclass(broker_cls, SandboxBroker)):
-            raise SandboxConfigError(f"sandbox broker '{flavor}' is not a SandboxBroker subclass")
+        broker_cls = resolve_dotted(dotted, base=SandboxBroker, error=SandboxConfigError)
         return broker_cls(config.broker)

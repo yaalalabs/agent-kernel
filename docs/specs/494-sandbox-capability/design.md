@@ -256,6 +256,10 @@ Research backing: [research/](research/README.md)
 
 ### Factory and BYO registration (no vendor lock-in)
 
+- Implements the shared pluggable-backend factory pattern (#541), reusing `core/util/factory.py`:
+  built-ins via `if/elif` + real imports guarded by `require_extra`; dotted-path BYO via
+  `resolve_dotted` (with `error=SandboxConfigError`). See spec §Factory for the algorithm and the
+  interim registry map that each provider iteration retires.
 - `SandboxProviderFactory.get()`:
   - Returns `None`/inert when `sandbox.enabled` is false — no tools registered, no provider SDK
     imports.

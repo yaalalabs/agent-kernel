@@ -67,8 +67,11 @@ spec.md — steps below reference its sections.
 
 - **Goal:** first real sandboxes: `local_subprocess` (zero-dep) and `docker`; runnable example.
 - **Files:** `sandbox/providers/local_subprocess.py`, `sandbox/providers/docker.py`,
-  `examples/cli/sandbox/` (demo + README + config.yaml).
-- **Steps:** spec §First-party providers (rows + notes for these two).
+  `sandbox/factory.py`, `examples/cli/sandbox/` (demo + README + config.yaml).
+- **Steps:** spec §First-party providers (rows + notes for these two); wire both into
+  `SandboxProviderFactory._build` as `if/elif` real-import branches (`require_extra("sandbox-docker", …)`
+  for docker; no extra for stdlib `local_subprocess`) and remove their `_BUILTIN_PROVIDERS`/`_BUILTIN_EXTRAS`
+  registry entries (spec §Factory, #541).
 - **Verify:** `uv run pytest tests/test_sandbox_providers.py -k "subprocess or docker"`
   (real subprocess; mocked docker SDK); manual: `cd examples/cli/sandbox && uv run demo.py`
   with the `local_subprocess` profile.
@@ -78,12 +81,13 @@ spec.md — steps below reference its sections.
 - **Goal:** attach-to-existing-runtime working end-to-end against a real EC2 instance via SSM,
   driven from a local (thread-broker) deployment — the checkpoint for evaluating the attach
   model and the identity mapping before further iterations proceed.
-- **Files:** `sandbox/providers/ec2_ssm.py`; `examples/cli/sandbox/` extended with an
-  `ec2_ssm` profile (`attach_to` fed via `AK_SANDBOX__PROFILES__EC2__EC2_SSM__ATTACH_TO`).
+- **Files:** `sandbox/providers/ec2_ssm.py`, `sandbox/factory.py`; `examples/cli/sandbox/` extended
+  with an `ec2_ssm` profile (`attach_to` fed via `AK_SANDBOX__PROFILES__EC2__EC2_SSM__ATTACH_TO`).
 - **Steps:** spec §First-party providers (`ec2_ssm` row + notes: `send_command` +
   `get_command_invocation` polling, `python3 - <<'EOF'` heredoc wrapping, attach-only `create`,
   no-op `destroy`), §PrincipalResolver mapping (agent: default boto3 chain; user:
-  `sts:AssumeRole` + SSM `RunAs`).
+  `sts:AssumeRole` + SSM `RunAs`); wire `ec2_ssm` into the factory `if/elif` (real import,
+  `require_extra("aws", …)`) and remove its registry entry (spec §Factory).
 - **Verify:** `uv run pytest tests/test_sandbox_providers.py -k "ssm"` (mocked boto3: command
   call shapes, heredoc wrapping, AssumeRole/RunAs arguments per identity mode); manual: run the
   example against a real instance (agent runs `run_command`/`run_code` over SSM, reuses the
@@ -108,9 +112,11 @@ spec.md — steps below reference its sections.
 ## Iteration 9: Cloud SaaS providers — e2b, daytona
 
 - **Goal:** the two cloud sandbox backends, config-swappable.
-- **Files:** `sandbox/providers/e2b.py`, `sandbox/providers/daytona.py`.
+- **Files:** `sandbox/providers/e2b.py`, `sandbox/providers/daytona.py`, `sandbox/factory.py`.
 - **Steps:** spec §First-party providers (rows + notes); confirm the extras' version floors
-  against current SDK releases (flagged in spec §Consumer changes).
+  against current SDK releases (flagged in spec §Consumer changes); wire `e2b`
+  (`require_extra("e2b", …)`) and `daytona` (`require_extra("daytona", …)`) into the factory
+  `if/elif` as real imports and remove their registry entries (spec §Factory).
 - **Verify:** `uv run pytest tests/test_sandbox_providers.py -k "e2b or daytona"` (mocked
   SDKs: call shapes, native idle timeout pass-through, `to_thread` for daytona).
 
@@ -118,9 +124,12 @@ spec.md — steps below reference its sections.
 
 - **Goal:** the remaining mode-3 backend and the AWS-native backend, with both identity modes
   where declared — informed by the iteration-7 checkpoint findings.
-- **Files:** `sandbox/providers/kubernetes.py`, `sandbox/providers/bedrock_agentcore.py`.
+- **Files:** `sandbox/providers/kubernetes.py`, `sandbox/providers/bedrock_agentcore.py`, `sandbox/factory.py`.
 - **Steps:** spec §First-party providers (rows + notes), §PrincipalResolver mapping table
-  (impersonation headers, `sts:AssumeRole`).
+  (impersonation headers, `sts:AssumeRole`); wire `kubernetes` (`require_extra("kubernetes", …)`)
+  and `bedrock_agentcore` (`require_extra("aws", …)`) into the factory `if/elif` as real imports.
+  This is the **last built-in** — with the registry now empty, delete `_BUILTIN_PROVIDERS`,
+  `_BUILTIN_EXTRAS`, and the local `_import_dotted` helper from `sandbox/factory.py` (spec §Factory).
 - **Verify:** `uv run pytest tests/test_sandbox_providers.py -k "kubernetes or bedrock"`
   (mocked SDKs; principal-mapping arguments asserted per mode).
 

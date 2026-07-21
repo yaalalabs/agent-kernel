@@ -342,7 +342,8 @@ def test_factory_dotted_path_config_model_validates_params(monkeypatch):
     class _Prov(FakeSandboxProvider):
         config_model = _CfgModel
 
-    import agentkernel.sandbox.factory as fac
+    # BYO dotted-path resolution goes through the shared helper, so patch its importlib.
+    import agentkernel.core.util.factory as fac
 
     real = fac.importlib.import_module
     monkeypatch.setattr(
