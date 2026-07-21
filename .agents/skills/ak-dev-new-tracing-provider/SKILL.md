@@ -176,38 +176,59 @@ Add the new provider as a recognized option. The `BaseTrace` class (`trace/base.
 
 ### 6. Register with the Trace Factory
 
-Update `ak-py/src/agentkernel/trace/trace.py`. An unknown-but-enabled type raises an exception; when tracing is disabled, `instance` stays `None` and the factory returns `Trace(None)`, whose `init()` and framework methods no-op / return `None`:
+Update `ak-py/src/agentkernel/trace/trace.py`. The factory shares the house pluggable-backend
+shape from `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError` — the same
+pattern used by the guardrail, session/thread/multimodal store, and sandbox provider factories):
+`Trace.get()` builds an instance via `Trace._build()` only when tracing is enabled, each built-in's
+lazy import is wrapped in `require_extra` (so a missing optional dependency raises an actionable
+`ImportError` naming the pip extra), and anything that isn't a recognized short name is treated as
+a dotted path to a `BaseTrace` subclass (bring-your-own). When tracing is disabled, `instance` stays
+`None` and the factory returns `Trace(None)`, whose `init()` and framework methods no-op / return
+`None`:
 
 ```python
+_BUILTIN_TRACERS = ["langfuse", "openllmetry"]
+
 class Trace(BaseTrace):
     @classmethod
     def get(cls) -> "Trace":
         config = AKConfig.get()
-        enabled = config.trace.enabled
-        trace_type = config.trace.type
-
-        instance = None
-        if enabled:
-            if trace_type == "langfuse":
-                from .langfuse.langfuse import LangFuse
-                instance = LangFuse()
-            elif trace_type == "openllmetry":
-                from .openllmetry.openllmetry import OpenLLMetry
-                instance = OpenLLMetry()
-            elif trace_type == "<provider>":          # ADD THIS
-                from .<provider>.<provider> import <Provider>
-                instance = <Provider>()
-            else:
-                raise Exception(f"Unknown trace type: {trace_type}")
-
+        instance = cls._build(config.trace.type) if config.trace.enabled else None
         trace = cls(instance)
         trace.init()
         return trace
+
+    @staticmethod
+    def _build(trace_type: str) -> BaseTrace:
+        if trace_type == "langfuse":
+            with require_extra("langfuse", "trace.type: langfuse"):
+                from .langfuse.langfuse import LangFuse
+            return LangFuse()
+        if trace_type == "openllmetry":
+            with require_extra("openllmetry", "trace.type: openllmetry"):
+                from .openllmetry.openllmetry import OpenLLMetry
+            return OpenLLMetry()
+        if trace_type == "<provider>":                                    # ADD THIS
+            with require_extra("<provider>", "trace.type: <provider>"):
+                from .<provider>.<provider> import <Provider>
+            return <Provider>()
+        if "." not in trace_type:
+            raise AKConfigError(
+                f"unknown trace type '{trace_type}'; expected one of {_BUILTIN_TRACERS} or a dotted path to a BaseTrace subclass"
+            )
+        return resolve_dotted(trace_type, base=BaseTrace)()  # bring-your-own
 ```
+
+A dotted `type` (e.g. `myorg.tracing.CustomTrace`) resolves via `resolve_dotted` without any
+factory edit at all — only add an `if` branch here for a first-party, in-repo provider you want
+addressable by a short name.
 
 ### 7. Add Configuration
 
-The existing `_TraceConfig` in `config.py` supports `type` field. Your provider needs to respond to `type: "<provider>"`:
+The existing `_TraceConfig.type` in `config.py` is a free-form string (no regex pattern) described
+as "a built-in short name (langfuse, openllmetry) or a dotted path to a BaseTrace subclass" — do
+not add a `pattern=` constraint, since that would break the bring-your-own path. Your provider
+needs to respond to `type: "<provider>"`:
 
 ```yaml
 # config.yaml

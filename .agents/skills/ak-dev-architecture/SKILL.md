@@ -307,6 +307,7 @@ ak-py/src/agentkernel/
 │   ├── chat_service.py      # ChatService, RequestBuilder, AgentHandler, ResponseBuilder
 │   ├── logger.py            # Logging setup
 │   ├── util/                # Shared utilities
+│   │   ├── factory.py       # resolve_dotted/require_extra/AKConfigError for pluggable-backend factories
 │   │   └── driver/          # Shared DB connection drivers (Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
 │   └── session/             # Session store implementations
 │       ├── base.py           # SessionStore, SessionCache
