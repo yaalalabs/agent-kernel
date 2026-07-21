@@ -19,11 +19,10 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from pydantic import BaseModel
-
 from agentkernel.sandbox import Sandbox, SandboxProvider
 from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxGoneError, SandboxTimeoutError
 from agentkernel.sandbox.model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
+from pydantic import BaseModel
 
 _LANGUAGES = ["python", "bash"]
 
