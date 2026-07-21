@@ -1,0 +1,12 @@
+# Sandbox capability demo configuration.
+#
+# Single-backend sugar: `type` + its config block synthesize the default profile.
+# local_subprocess provides NO isolation and is for development/test use only; switch
+# `type` to `docker` (with the sandbox-docker extra installed and a running daemon)
+# for a container-isolated sandbox.
+sandbox:
+  enabled: true
+  type: local_subprocess
+  local_subprocess: {}
+  broker:
+    flavor: thread

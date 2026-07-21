@@ -655,10 +655,41 @@ def test_tools_absent_when_disabled(monkeypatch):
 def test_tool_descriptions_render_profiles_and_truncation(monkeypatch):
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(tool_output_max_chars=1234))
     guidance = get_sandbox_tools()[0].description
+    assert "[Sandbox execution]" in guidance
     assert "'default' (default)" in guidance
     assert FAKE_DOTTED in guidance
     assert "per_session" in guidance
     assert "1234" in guidance
+
+
+def test_system_prompt_suffix_carries_sandbox_guidance(monkeypatch):
+    """The capability is self-describing: the whole sandbox section lands in the system-prompt
+    suffix (rendered coherently — the empty per-tool descriptions leave no blank lines)."""
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    suffix = SystemToolFactory.get_system_prompt_suffix()
+    assert "[Sandbox execution]" in suffix
+    assert "run_code" in suffix and "check_sandbox_task" in suffix
+    assert "sandbox_session_id" in suffix
+    assert "" not in suffix.splitlines()
+
+    _install_sandbox_cfg(monkeypatch, _SandboxConfig(enabled=False))
+    assert SystemToolFactory.get_system_prompt_suffix() == ""
+
+
+def test_agent_setup_system_prompt_injects_sandbox_guidance(monkeypatch):
+    """Agent._setup_system_prompt() (called by every framework adapter at wrap time) hands
+    the sandbox guidance to override_system_prompt — agent authors never describe the tools."""
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    captured = []
+
+    class _Probe:
+        def override_system_prompt(self, prompt):
+            captured.append(prompt)
+
+    from agentkernel.core.base import Agent
+
+    Agent._setup_system_prompt(_Probe())
+    assert "[Sandbox execution]" in captured[0]
 
 
 @pytest.mark.asyncio

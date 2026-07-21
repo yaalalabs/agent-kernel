@@ -491,6 +491,14 @@ reuse the id to continue in the same environment; omit it for the default; avail
 profiles and their declared languages/capabilities (rendered from config at registration time);
 stdout/stderr truncated at `tool_output_max_chars`.
 
+The capability is **self-describing**: that guidance is injected into every agent's system
+prompt through the existing system-tool injection chain
+(`SystemToolFactory.get_system_prompt_suffix()` → `Agent._setup_system_prompt()` →
+`override_system_prompt()`, the multimodal precedent), carried as one coherent section on the
+first tool's `description` (the other four carry empty descriptions; their LLM-facing schemas
+come from the function docstrings at bind time). Agent authors never describe the sandbox
+tools or their session/profile semantics in their own instructions.
+
 ### Factory (`sandbox/factory.py`)
 
 The factory follows the **shared pluggable-backend pattern (#541)**. The helpers already exist in

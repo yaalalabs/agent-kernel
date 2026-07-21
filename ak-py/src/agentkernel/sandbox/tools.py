@@ -190,25 +190,37 @@ def _profiles_text(config: Any) -> str:
 
 
 def get_sandbox_tools() -> list[SystemTool]:
-    """Build the sandbox system tools; called by ``SystemToolFactory`` when enabled."""
+    """Build the sandbox system tools; called by ``SystemToolFactory`` when enabled.
+
+    The capability's whole system-prompt section rides on the first tool's ``description``
+    (the multimodal injection pattern: ``SystemToolFactory.get_system_prompt_suffix()`` is
+    appended to every agent's instructions via ``Agent._setup_system_prompt()``), so agents
+    learn about the sandbox automatically — agent authors never describe these tools in
+    their own instructions. The remaining tools carry empty descriptions; their LLM-facing
+    schemas come from the function docstrings when the tools are bound.
+    """
     config = AKConfig.get().sandbox
     guidance = (
-        "You can execute code and shell commands in an isolated sandbox.\n"
+        "[Sandbox execution]\n"
+        "You have access to an isolated sandbox where you can execute code you write, run shell commands, "
+        "and read/write workspace files. Prefer running real code over computing results yourself, and "
+        "report the sandbox's actual output.\n"
         "Available tools:\n"
-        "- run_code(code, language, sandbox_session_id, profile): execute code.\n"
+        "- run_code(code, language, sandbox_session_id, profile): execute code; returns stdout, stderr, exit_code.\n"
         "- run_command(command, sandbox_session_id, profile): execute a shell command.\n"
-        "- write_sandbox_file(path, content, sandbox_session_id, profile): write a text file into the sandbox.\n"
-        "- read_sandbox_file(path, sandbox_session_id, profile): read a text file from the sandbox.\n"
+        "- write_sandbox_file(path, content, sandbox_session_id, profile): write a text file into the sandbox workspace.\n"
+        "- read_sandbox_file(path, sandbox_session_id, profile): read a text file from the sandbox workspace.\n"
         "- check_sandbox_task(task_id): poll a long-running execution that returned status 'pending'.\n"
-        "Sandbox state (variables, files) persists per sandbox_session_id: reuse the sandbox_session_id from a previous\n"
-        "result to continue in the same environment, or omit it to use the default session.\n"
-        f"Available workload profiles:\n{_profiles_text(config)}\n"
+        "Every result includes a sandbox_session_id. Sandbox state (files, workspace) persists per "
+        "sandbox_session_id: reuse the id from a previous result to continue in the same environment, "
+        "or omit it for the default session.\n"
+        f"Available workload profiles (pass as profile=):\n{_profiles_text(config)}\n"
         f"stdout/stderr and file reads are truncated at {config.tool_output_max_chars} characters."
     )
     return [
         SystemTool(name="run_code", description=guidance, func=run_code),
-        SystemTool(name="run_command", description="Execute a shell command in the sandbox (see run_code guidance).", func=run_command),
-        SystemTool(name="write_sandbox_file", description="Write a UTF-8 text file into the sandbox workspace.", func=write_sandbox_file),
-        SystemTool(name="read_sandbox_file", description="Read a UTF-8 text file from the sandbox workspace.", func=read_sandbox_file),
-        SystemTool(name="check_sandbox_task", description="Check the status of a pending sandbox task by task_id.", func=check_sandbox_task),
+        SystemTool(name="run_command", description="", func=run_command),
+        SystemTool(name="write_sandbox_file", description="", func=write_sandbox_file),
+        SystemTool(name="read_sandbox_file", description="", func=read_sandbox_file),
+        SystemTool(name="check_sandbox_task", description="", func=check_sandbox_task),
     ]

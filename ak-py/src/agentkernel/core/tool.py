@@ -200,4 +200,6 @@ class SystemToolFactory:
 
         if tools is None or len(tools) == 0:
             return ""
-        return "\n".join(tool.description for tool in tools)
+        # A capability may carry its whole prompt section on one tool and leave the
+        # others' descriptions empty (the sandbox pattern) — skip the empties.
+        return "\n".join(tool.description for tool in tools if tool.description)
