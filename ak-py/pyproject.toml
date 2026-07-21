@@ -155,15 +155,8 @@ multimodal = [
 sandbox-docker = [
     "docker>=7.0.0",
 ]
-e2b = [
-    "e2b-code-interpreter>=2.0.0",
-]
-daytona = [
-    "daytona>=0.10.0",
-]
-kubernetes = [
-    "kubernetes>=30.0.0",
-]
+# The e2b, daytona, and kubernetes sandbox extras land with their providers in post-merge
+# iterations 9-10 (version floors confirmed against current SDKs at that point).
 
 [project.scripts]
 ak = "agentkernel.cli.ak:main"
