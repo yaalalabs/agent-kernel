@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Create a zip file of the Lambda function code
 create_deployment_package() {

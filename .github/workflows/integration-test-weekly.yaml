@@ -94,6 +94,7 @@ jobs:
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
+          fail-on-cache-miss: true
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -206,6 +207,7 @@ jobs:
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
+          fail-on-cache-miss: true
 
       - name: Configure AWS credentials
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'

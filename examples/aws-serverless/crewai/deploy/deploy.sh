@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Create a zip file of the Lambda function code
 create_deployment_package() {
@@ -10,7 +11,7 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data
     else
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --no-deps --no-index --target=dist/data --find-links ../../../ak-py/dist agentkernel[redis,crewai,test] || true
+      uv pip install --force-reinstall --no-deps --no-index --target=dist/data --find-links ../../../ak-py/dist agentkernel[redis,crewai,test] --no-cache-dir
     fi
     cp -r lambda.py config.yaml dist/data
     popd || exit 1
