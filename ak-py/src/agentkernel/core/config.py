@@ -77,7 +77,10 @@ class _FirestoreConfig(BaseModel):
 
 
 class _SessionStoreConfig(BaseModel):
-    type: str = Field(default="in_memory", pattern="^(in_memory|redis|valkey|dynamodb|cosmosdb|firestore)$")
+    type: str = Field(
+        default="in_memory",
+        description="Session store backend: a built-in short name (in_memory, redis, valkey, dynamodb, cosmosdb, firestore) or a dotted path to a SessionStore subclass",
+    )
     cache: Optional[_SessionCacheConfig] = None
     redis: Optional[_RedisConfig] = None
     valkey: Optional[_ValkeyConfig] = None
@@ -194,8 +197,7 @@ class _MultimodalConfig(BaseModel):
     )
     storage_type: str = Field(
         default="in_memory",
-        pattern="^(session_cache|in_memory|redis|dynamodb)$",
-        description="Storage backend for multimodal attachments. Options: session_cache, in_memory, redis, dynamodb",
+        description="Storage backend for multimodal attachments: a built-in short name (session_cache, in_memory, redis, dynamodb) or a dotted path to an AttachmentStore subclass",
     )
     max_attachments: int = Field(default=20, description="Maximum number of attachments to keep per session")
     description_max_length: int = Field(default=200, description="Maximum length of attachment description text")
@@ -245,7 +247,10 @@ class _ThreadNamingConfig(BaseModel):
 class _ThreadStoreConfig(BaseModel):
     """Configuration for Conversation Thread Support. Presence of this block enables the feature."""
 
-    type: str = Field(default="memory", pattern="^(memory|redis|dynamodb|cosmosdb|firestore)$")
+    type: str = Field(
+        default="memory",
+        description="Thread store backend: a built-in short name (memory, redis, dynamodb, cosmosdb, firestore) or a dotted path to a ThreadStore subclass",
+    )
     naming: _ThreadNamingConfig = Field(default_factory=_ThreadNamingConfig, description="Auto-naming settings for the built-in naming strategies")
     redis: Optional[_ThreadRedisConfig] = None
     dynamodb: Optional[_ThreadDynamoDBConfig] = None
