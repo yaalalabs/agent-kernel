@@ -11,6 +11,9 @@ dependencies = [
 [dependency-groups]
 dev = [
     "agentkernel[test]>=0.6.1",
+    # ragas imports langchain_community.chat_models.vertexai, removed in langchain-community
+    # 0.4.2; pinned until an agentkernel release ships the pin in its `test` extra.
+    "langchain-community==0.4.1",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

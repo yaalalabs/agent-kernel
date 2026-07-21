@@ -41,3 +41,12 @@ Things to try in the CLI:
 The sandbox keeps its working directory per session: files written in one turn are still
 there in the next, and the agent can reuse the `sandbox_session_id` it gets back from each
 tool result to continue in the same environment.
+
+To run tests:
+
+    uv run pytest -s
+
+The tests use fuzzy comparison mode (`test-config.yaml`): because the sandbox executes
+real code, every expected answer is an exact value (42, "hello sandbox", 328), so results
+are evaluated deterministically without an LLM judge. Running the agent itself still
+requires `OPENAI_API_KEY`.
