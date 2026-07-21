@@ -6,8 +6,6 @@ not installed. Neither imports any concrete provider or broker at module load â€
 imported only when a profile/flavor selects it.
 """
 
-import importlib
-import logging
 from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -17,36 +15,16 @@ from ..core.util.factory import require_extra, resolve_dotted
 from .base import SandboxProvider
 from .errors import SandboxConfigError
 
-logger = logging.getLogger("ak.sandbox")
+# Landed built-in provider short names (each an if/elif real-import branch in _build).
+# A new built-in adds its branch and its name here; anything else must be a dotted path.
+_BUILTIN_PROVIDER_NAMES = ["local_subprocess", "docker"]
 
-# short name -> dotted path of the built-in provider class (imported lazily on selection)
-_BUILTIN_PROVIDERS: dict[str, str] = {
-    "local_subprocess": "agentkernel.sandbox.providers.local_subprocess.LocalSubprocessSandboxProvider",
-    "docker": "agentkernel.sandbox.providers.docker.DockerSandboxProvider",
-    "e2b": "agentkernel.sandbox.providers.e2b.E2BSandboxProvider",
-    "daytona": "agentkernel.sandbox.providers.daytona.DaytonaSandboxProvider",
-    "bedrock_agentcore": "agentkernel.sandbox.providers.bedrock_agentcore.BedrockAgentCoreSandboxProvider",
-    "kubernetes": "agentkernel.sandbox.providers.kubernetes.KubernetesSandboxProvider",
-    "ec2_ssm": "agentkernel.sandbox.providers.ec2_ssm.EC2SSMSandboxProvider",
-}
-
-# short name -> pip extra that ships its SDK (None = stdlib only); used to build the
-# remediation message when the import fails.
-_BUILTIN_EXTRAS: dict[str, Optional[str]] = {
-    "local_subprocess": None,
-    "docker": "sandbox-docker",
-    "e2b": "e2b",
-    "daytona": "daytona",
-    "bedrock_agentcore": "aws",
-    "kubernetes": "kubernetes",
-    "ec2_ssm": "aws",
-}
-
-# short name -> dotted path of the built-in broker flavor (imported lazily on selection)
+# short name -> dotted path of the built-in broker flavor. Brokers stay on the
+# resolve_dotted-over-map form (not if/elif real imports) because flavors living outside
+# core sandbox (the AWS 'sqs' flavor under deployment/aws/) must remain dotted paths.
 _BUILTIN_BROKERS: dict[str, str] = {
     "embedded": "agentkernel.sandbox.broker.embedded.EmbeddedBroker",
     "thread": "agentkernel.sandbox.broker.thread.ThreadBroker",
-    "sqs": "agentkernel.deployment.aws.sandbox.sqs_broker.SQSSandboxBroker",
 }
 
 
@@ -54,17 +32,6 @@ class _DottedParams(BaseModel):
     """Permissive config passed to a dotted-path provider that declares no ``config_model``."""
 
     model_config = ConfigDict(extra="allow")
-
-
-def _import_dotted(path: str) -> Any:
-    """Import ``pkg.mod.Attr`` and return the attribute; raise ``SandboxConfigError`` for a
-    non-dotted path. Interim helper for the built-in registry maps (see spec, #541): it is
-    deleted when the last built-in provider converts to a real-import branch."""
-    module_path, _, attr = path.rpartition(".")
-    if not module_path:
-        raise SandboxConfigError(f"'{path}' is not a dotted path to a class")
-    module = importlib.import_module(module_path)
-    return getattr(module, attr)
 
 
 class SandboxProviderFactory:
@@ -97,25 +64,29 @@ class SandboxProviderFactory:
 
     @classmethod
     def _build(cls, profile_name: str, profile: Any) -> SandboxProvider:
-        """Construct the provider for a profile: built-in short names resolve through the
-        interim registry maps (with the friendly missing-extra message), anything else is
-        treated as a dotted path to a ``SandboxProvider`` subclass (BYO)."""
+        """Construct the provider for a profile: built-ins are ``if/elif`` real-import
+        branches (#541 house shape); anything else is treated as a dotted path to a
+        ``SandboxProvider`` subclass (BYO)."""
         type_name = profile.type
-        if type_name in _BUILTIN_PROVIDERS:
-            # Built-ins stay a registry map until the provider modules land (#494); the import
-            # is still lazy, and a missing optional dependency gets the shared friendly message.
-            extra = _BUILTIN_EXTRAS.get(type_name)
-            if extra:
-                with require_extra(extra, f"sandbox provider '{type_name}'"):
-                    provider_cls = _import_dotted(_BUILTIN_PROVIDERS[type_name])
-            else:
-                provider_cls = _import_dotted(_BUILTIN_PROVIDERS[type_name])
-            config_block = getattr(profile, type_name, None)
-            if config_block is None:
-                raise SandboxConfigError(
-                    f"sandbox profile '{profile_name}' selects built-in provider '{type_name}' but its '{type_name}' config block is missing"
-                )
-            return provider_cls(config_block)
+
+        if type_name == "local_subprocess":
+            config_block = cls._require_block(profile_name, profile, type_name)
+            from .providers.local_subprocess import LocalSubprocessSandboxProvider
+
+            return LocalSubprocessSandboxProvider(config_block)
+
+        if type_name == "docker":
+            config_block = cls._require_block(profile_name, profile, type_name)
+            with require_extra("sandbox-docker", "sandbox provider 'docker'"):
+                from .providers.docker import DockerSandboxProvider
+
+            return DockerSandboxProvider(config_block)
+
+        if "." not in type_name:
+            raise SandboxConfigError(
+                f"unknown sandbox provider type '{type_name}'; expected one of {_BUILTIN_PROVIDER_NAMES} "
+                "or a dotted path to a SandboxProvider subclass"
+            )
 
         # Bring-your-own: a dotted path to a SandboxProvider subclass (keeps SandboxConfigError).
         provider_cls = resolve_dotted(type_name, base=SandboxProvider, error=SandboxConfigError)
@@ -127,6 +98,17 @@ class SandboxProviderFactory:
         else:
             config = _DottedParams(**profile.params)
         return provider_cls(config)
+
+    @staticmethod
+    def _require_block(profile_name: str, profile: Any, type_name: str) -> Any:
+        """Return the profile's ``<type>`` config block; a missing block for a built-in is a
+        ``SandboxConfigError`` (the multimodal-storage precedent)."""
+        block = getattr(profile, type_name, None)
+        if block is None:
+            raise SandboxConfigError(
+                f"sandbox profile '{profile_name}' selects built-in provider '{type_name}' but its '{type_name}' config block is missing"
+            )
+        return block
 
     @classmethod
     def _reset(cls) -> None:

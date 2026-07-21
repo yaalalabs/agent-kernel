@@ -506,17 +506,14 @@ The factory follows the **shared pluggable-backend pattern (#541)**. The helpers
 1. `AKConfig.get().sandbox.enabled` false → `None` (callers treat the capability as absent).
 2. Resolve the profile (unknown → `SandboxConfigError` naming it and the configured profiles).
 3. Resolve `type`:
-   - **Built-in short name** (`local_subprocess`, `docker`, `e2b`, `daytona`,
-     `bedrock_agentcore`, `kubernetes`, `ec2_ssm`) → an `if/elif` branch with a **real lazy
-     import** `from .providers.<type> import <Provider>`, wrapped in `require_extra(<extra>, ...)`
-     (skip the wrap for `local_subprocess`, which is stdlib-only).
-     - **Interim state (until the provider modules land):** built-ins are resolved through a
-       `_BUILTIN_PROVIDERS` registry map (short name → dotted path) + `_BUILTIN_EXTRAS` + a local
-       `_import_dotted`, all guarded by `require_extra`. **Each provider iteration (6, 7, 9, 10)
-       converts its own entry to the `if/elif` real-import branch and removes it from the registry
-       maps; when the last built-in is converted (iteration 10), delete `_BUILTIN_PROVIDERS`,
-       `_BUILTIN_EXTRAS`, and `_import_dotted`.** Correspondingly, that provider's factory test
-       moves from monkeypatched-`importlib` resolution to a real-import assertion.
+   - **Built-in short name** → an `if/elif` branch with a **real lazy import**
+     `from .providers.<type> import <Provider>`, wrapped in `require_extra(<extra>, ...)`
+     (skip the wrap for `local_subprocess`, which is stdlib-only). Landed branches are listed
+     in `_BUILTIN_PROVIDER_NAMES`; **each provider iteration (7, 9, 10) adds its branch and
+     appends its name to that list** — there is no registry map (removed 2026-07-21; a
+     not-yet-landed short name fails as an unknown type until its iteration lands).
+   - **Unknown non-dotted name** → `SandboxConfigError` naming the value and listing
+     `_BUILTIN_PROVIDER_NAMES` (#541 shape).
    - **Dotted path** → `resolve_dotted(type, base=SandboxProvider, error=SandboxConfigError)`
      (the open, zero-registry BYO hook).
 4. Construct with the profile's backend config block (missing block for a built-in →
@@ -525,16 +522,17 @@ The factory follows the **shared pluggable-backend pattern (#541)**. The helpers
 5. Cache one instance per (profile, type) in a class-level dict; created lazily on first use.
 
 Broker-flavor resolution uses `resolve_dotted(dotted, base=SandboxBroker, error=SandboxConfigError)`
-over the built-in map `{"embedded": ..., "thread": ..., "sqs":
-"agentkernel.deployment.aws.sandbox.sqs_broker.SQSSandboxBroker"}`. Brokers stay on the
-`resolve_dotted`-over-map form (not `if/elif` real imports) because the `sqs` flavor must remain a
-dotted path — it lives under `deployment/aws/` and core sandbox may not import it.
+over the built-in map `_BUILTIN_BROKERS` (`{"embedded": ..., "thread": ...}`; iteration 8 adds
+`"sqs": "agentkernel.deployment.aws.sandbox.sqs_broker.SQSSandboxBroker"` when the flavor lands).
+Brokers stay on the `resolve_dotted`-over-map form (not `if/elif` real imports) because the `sqs`
+flavor must remain a dotted path — it lives under `deployment/aws/` and core sandbox may not
+import it.
 
 ### First-party providers (`sandbox/providers/`)
 
 | Provider | SDK / extra | isolation | Key capabilities | create / attach | policy mapping |
 |---|---|---|---|---|---|
-| `local_subprocess` | stdlib / — | `none` | shell, files, languages `[python, bash]` | temp dir per sandbox; attach=False | resources/network/fs all False (strict non-default policy fails) |
+| `local_subprocess` | stdlib / — | `none` | shell, files, attach, languages `[python, bash]` | temp dir per sandbox; attach reconnects to the workdir by path (same host) | resources/network/fs all False (strict non-default policy fails) |
 | `docker` | `docker` / `sandbox-docker` | `container` | shell, files, package_install, attach | container (`sleep infinity`) per sandbox; attach by container id | `deny`→`network_mode="none"`; `allowlist` unenforceable; cpu/mem→container limits; fs→read-only rootfs + writable workdir |
 | `e2b` | `e2b-code-interpreter` / `e2b` | `micro_vm` | stateful, shell, files, package_install, attach, policy_network | `AsyncSandbox.create` / `AsyncSandbox.connect(id)` | egress→E2B network config; timeout→native; cpu/mem unenforceable (tier-fixed) |
 | `daytona` | `daytona` / `daytona` | `container` | shell, files, package_install, attach, policy_network, policy_resources | `daytona.create` / get-by-id (sync SDK via `to_thread`) | allowlist→CIDR allowlist; cpu/mem→`Resources`; idle→`auto_stop_interval` |
@@ -549,6 +547,12 @@ Provider notes (implementation-relevant specifics):
   `execute_code` runs `sys.executable -c <code>` (or `bash -c` for shell) via
   `asyncio.create_subprocess_exec` with `cwd=<per-sandbox temp dir>`, `start_new_session=True`;
   timeout kills the process group. Files map onto the temp dir. Never the factory default.
+  Declares `attach` (implemented as a same-host reconnect to the workdir path,
+  `SandboxGoneError` when the directory is gone) — required for per-session reuse, since the
+  worker re-acquires via `attach()` whenever the session already has a `sandbox_id`. There is
+  no `attach_to` config: mode-3 attach to an external target does not apply.
+  (Implementation correction 2026-07-21: the table originally declared `attach=False`, which
+  would have broken every second operation in a session.)
 - **`docker`**: sync SDK via `to_thread`. `execute_code` = `exec_run` of the language
   interpreter; files via `put_archive`/`get_archive`; `install_packages` = `pip install` exec.
   `close()` leaves the container running (reattachable); `destroy()` = `remove(force=True)`.

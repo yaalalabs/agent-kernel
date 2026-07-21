@@ -19,9 +19,10 @@ from typing import Any, ClassVar, Optional, Union
 
 from ..core.base import Session
 from ..core.config import AKConfig
+from ..core.util.factory import resolve_dotted
 from .broker.base import SandboxBroker, SandboxBrokerRequest, SandboxCompletion
 from .errors import SandboxConfigError, SandboxSessionNotFoundError
-from .factory import SandboxBrokerFactory, _import_dotted
+from .factory import SandboxBrokerFactory
 from .model import SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession, SandboxTask
 from .principal import AgentPrincipalResolver, PrincipalResolver
 
@@ -46,10 +47,7 @@ class SandboxManager:
         """Instantiate the configured ``principal_resolver`` dotted path, or the default
         ``AgentPrincipalResolver`` when none is configured."""
         if config.principal_resolver:
-            resolver_cls = _import_dotted(config.principal_resolver)
-            if not (isinstance(resolver_cls, type) and issubclass(resolver_cls, PrincipalResolver)):
-                raise SandboxConfigError(f"principal_resolver '{config.principal_resolver}' is not a PrincipalResolver subclass")
-            return resolver_cls()
+            return resolve_dotted(config.principal_resolver, base=PrincipalResolver, error=SandboxConfigError)()
         return AgentPrincipalResolver()
 
     @classmethod

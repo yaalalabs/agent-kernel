@@ -7,6 +7,7 @@ iterations in test_sandbox_broker.py / test_sandbox_providers.py.
 """
 
 import json
+import sys
 import types
 
 import pytest
@@ -18,7 +19,9 @@ from agentkernel.core.config import (
     _SandboxBrokerConfig,
     _SandboxConfig,
     _SandboxDockerConfig,
+    _SandboxE2BConfig,
     _SandboxIdentityConfig,
+    _SandboxLocalSubprocessConfig,
     _SandboxPolicyConfig,
     _SandboxProfileConfig,
 )
@@ -370,41 +373,49 @@ def test_factory_dotted_path_config_model_validates_params(monkeypatch):
     assert provider._config.image == "custom:1"
 
 
-def _patch_provider_import(monkeypatch, module_name, result_or_exc):
-    import agentkernel.sandbox.factory as fac
-
-    real = fac.importlib.import_module
-
-    def fake(name, *a, **k):
-        if name == module_name:
-            if isinstance(result_or_exc, Exception):
-                raise result_or_exc
-            return result_or_exc
-        return real(name, *a, **k)
-
-    monkeypatch.setattr(fac.importlib, "import_module", fake)
-
-
-def test_factory_builtin_missing_extra_raises_import_error(monkeypatch):
+def test_factory_builtin_docker_missing_extra_raises_import_error(monkeypatch):
+    """docker is a real-import branch (#541); a missing SDK gets the friendly extra message."""
     cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="docker", docker=_SandboxDockerConfig())})
     _install_sandbox_cfg(monkeypatch, cfg)
-    _patch_provider_import(monkeypatch, "agentkernel.sandbox.providers.docker", ImportError("No module named 'docker'"))
+    monkeypatch.delitem(sys.modules, "agentkernel.sandbox.providers.docker", raising=False)
+    monkeypatch.setitem(sys.modules, "docker", None)  # simulate the docker SDK not being installed
     with pytest.raises(ImportError) as exc_info:
         SandboxProviderFactory.get("default")
     assert "agentkernel[sandbox-docker]" in str(exc_info.value)
 
 
-def test_factory_builtin_lazy_import_success(monkeypatch):
+def test_factory_builtin_docker_real_import(monkeypatch):
     cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="docker", docker=_SandboxDockerConfig())})
     _install_sandbox_cfg(monkeypatch, cfg)
-    _patch_provider_import(monkeypatch, "agentkernel.sandbox.providers.docker", types.SimpleNamespace(DockerSandboxProvider=FakeSandboxProvider))
-    assert isinstance(SandboxProviderFactory.get("default"), FakeSandboxProvider)
+    fake_sdk = types.SimpleNamespace(errors=types.SimpleNamespace(NotFound=type("NotFound", (Exception,), {})), from_env=lambda: None)
+    monkeypatch.delitem(sys.modules, "agentkernel.sandbox.providers.docker", raising=False)
+    monkeypatch.setitem(sys.modules, "docker", fake_sdk)
+    provider = SandboxProviderFactory.get("default")
+    assert type(provider).__name__ == "DockerSandboxProvider"
+
+
+def test_factory_builtin_local_subprocess_real_import(monkeypatch):
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="local_subprocess", local_subprocess=_SandboxLocalSubprocessConfig())})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    provider = SandboxProviderFactory.get("default")
+    from agentkernel.sandbox.providers.local_subprocess import LocalSubprocessSandboxProvider
+
+    assert isinstance(provider, LocalSubprocessSandboxProvider)
+
+
+def test_factory_unknown_short_name_raises_listing_builtins(monkeypatch):
+    """A short name with no landed if/elif branch (e.g. a provider from a future iteration)
+    is an unknown type: fail loud, naming the available built-ins (#541 shape)."""
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="e2b", e2b=_SandboxE2BConfig())})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    with pytest.raises(SandboxConfigError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "local_subprocess" in str(exc_info.value) and "docker" in str(exc_info.value)
 
 
 def test_factory_builtin_missing_config_block_raises(monkeypatch):
     cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="docker")})  # no docker block
     _install_sandbox_cfg(monkeypatch, cfg)
-    _patch_provider_import(monkeypatch, "agentkernel.sandbox.providers.docker", types.SimpleNamespace(DockerSandboxProvider=FakeSandboxProvider))
     with pytest.raises(SandboxConfigError):
         SandboxProviderFactory.get("default")
 

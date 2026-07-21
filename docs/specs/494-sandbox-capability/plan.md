@@ -87,7 +87,7 @@ spec.md — steps below reference its sections.
   `get_command_invocation` polling, `python3 - <<'EOF'` heredoc wrapping, attach-only `create`,
   no-op `destroy`), §PrincipalResolver mapping (agent: default boto3 chain; user:
   `sts:AssumeRole` + SSM `RunAs`); wire `ec2_ssm` into the factory `if/elif` (real import,
-  `require_extra("aws", …)`) and remove its registry entry (spec §Factory).
+  `require_extra("aws", …)`) and append it to `_BUILTIN_PROVIDER_NAMES` (spec §Factory).
 - **Verify:** `uv run pytest tests/test_sandbox_providers.py -k "ssm"` (mocked boto3: command
   call shapes, heredoc wrapping, AssumeRole/RunAs arguments per identity mode); manual: run the
   example against a real instance (agent runs `run_command`/`run_code` over SSM, reuses the
@@ -104,7 +104,8 @@ spec.md — steps below reference its sections.
   `ak-deployment/ak-aws/common/sandbox_broker/` (module with `mode` variable + the four
   outputs).
 - **Steps:** spec §Broker flavors (`sqs`), §Completion delivery, §Broker-side session
-  inventory, §Fail-fast timeout ceiling, §Documentation/provisioning (terraform bullet).
+  inventory, §Fail-fast timeout ceiling, §Documentation/provisioning (terraform bullet);
+  add the `sqs` entry to `_BUILTIN_BROKERS` in `sandbox/factory.py` (spec §Factory).
 - **Verify:** `uv run pytest tests/test_sandbox_broker.py` (stubbed boto3: message schema,
   DB-before-event ordering, emission rule, `on_permanent_failure` → failed completion, offload,
   ceiling rejection); `terraform validate` in the module.
@@ -116,7 +117,7 @@ spec.md — steps below reference its sections.
 - **Steps:** spec §First-party providers (rows + notes); confirm the extras' version floors
   against current SDK releases (flagged in spec §Consumer changes); wire `e2b`
   (`require_extra("e2b", …)`) and `daytona` (`require_extra("daytona", …)`) into the factory
-  `if/elif` as real imports and remove their registry entries (spec §Factory).
+  `if/elif` as real imports and append them to `_BUILTIN_PROVIDER_NAMES` (spec §Factory).
 - **Verify:** `uv run pytest tests/test_sandbox_providers.py -k "e2b or daytona"` (mocked
   SDKs: call shapes, native idle timeout pass-through, `to_thread` for daytona).
 
@@ -127,9 +128,9 @@ spec.md — steps below reference its sections.
 - **Files:** `sandbox/providers/kubernetes.py`, `sandbox/providers/bedrock_agentcore.py`, `sandbox/factory.py`.
 - **Steps:** spec §First-party providers (rows + notes), §PrincipalResolver mapping table
   (impersonation headers, `sts:AssumeRole`); wire `kubernetes` (`require_extra("kubernetes", …)`)
-  and `bedrock_agentcore` (`require_extra("aws", …)`) into the factory `if/elif` as real imports.
-  This is the **last built-in** — with the registry now empty, delete `_BUILTIN_PROVIDERS`,
-  `_BUILTIN_EXTRAS`, and the local `_import_dotted` helper from `sandbox/factory.py` (spec §Factory).
+  and `bedrock_agentcore` (`require_extra("aws", …)`) into the factory `if/elif` as real imports
+  and append them to `_BUILTIN_PROVIDER_NAMES` (spec §Factory; the interim registry maps were
+  already deleted in iteration 6).
 - **Verify:** `uv run pytest tests/test_sandbox_providers.py -k "kubernetes or bedrock"`
   (mocked SDKs; principal-mapping arguments asserted per mode).
 

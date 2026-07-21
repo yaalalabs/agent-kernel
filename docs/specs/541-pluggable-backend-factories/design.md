@@ -96,7 +96,7 @@ All intentional:
 2. **Phase 2** — session store, thread store, multimodal storage; drop the `Types` StrEnum + `from_str`; fail-loud replaces the silent fallbacks.
 3. **Phase 3** — converge `sandbox/factory.py`.
    - Done 2026-07-21 (partial): the BYO provider path and the broker-flavor resolution now use the shared `resolve_dotted` (with `error=SandboxConfigError` so the sandbox error hierarchy is preserved), and built-in provider imports use the shared `require_extra`. The `_DottedParams` construction helper and the built-in **registry map** are retained.
-   - Deferred to #494: converting the built-in registry map to `if/elif` + real imports. Those imports (`from .providers.docker import DockerSandboxProvider`, …) can only become real when the provider modules are implemented (#494 iterations 6–10); each built-in branch is converted as its provider lands. Doing it before then would reference non-existent modules and be untestable.
+   - Completed 2026-07-21 (#494 iteration 6): the registry map, `_BUILTIN_EXTRAS`, and the local `_import_dotted` were **deleted early** rather than retired per-iteration. Landed built-ins (`local_subprocess`, `docker`) are `if/elif` real-import branches listed in `_BUILTIN_PROVIDER_NAMES`; a not-yet-implemented short name now fails loud as an unknown type (naming the built-ins) until its provider iteration adds a branch. `SandboxManager`'s principal-resolver resolution also moved to the shared `resolve_dotted`. The factory is now fully on the house shape.
 
 The AWS response-store handler (`deployment/aws/core/response_store/handler.py`) is a **separate follow-up**, tracked outside this issue.
 
