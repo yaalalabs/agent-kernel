@@ -162,3 +162,8 @@ class ThreadBroker(SandboxBroker):
     async def result(self, task_id: str) -> Optional[SandboxCompletion]:
         """Return the completion held in worker memory for ``task_id``, or ``None``."""
         return self._completions.get(task_id)
+
+    async def discard(self, task_id: str) -> None:
+        """Drop the retained completion once the manager has persisted it, bounding the
+        broker's in-memory footprint over a long-running process. Idempotent."""
+        self._completions.pop(task_id, None)

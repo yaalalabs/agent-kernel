@@ -88,6 +88,7 @@ class SandboxTask(BaseModel):
     status: Literal["pending", "succeeded", "failed", "timed_out"] = "pending"
     submitted_at: float
     consumed: bool = False  # completion delivered to the agent (dedup flag)
+    notice: str | None = None  # machinery advisory surfaced to the agent (e.g. sandbox recreated on idle)
 
 
 class SandboxPrincipal(BaseModel):

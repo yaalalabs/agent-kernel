@@ -54,6 +54,13 @@ class SandboxBroker(ABC):
     async def result(self, task_id: str) -> Optional[SandboxCompletion]:
         """Return the completion for a previously submitted task, or None if not yet available."""
 
+    async def discard(self, task_id: str) -> None:
+        """Release any retained completion for ``task_id`` once the manager has consumed and
+        persisted it. Idempotent; default no-op. In-process flavors that retain completions in
+        memory override this to bound their footprint; durable flavors (e.g. ``sqs``) rely on
+        the response store's TTL and keep the no-op."""
+        return None
+
     async def close(self) -> None:
         """Release broker resources. Idempotent; default no-op."""
         return None

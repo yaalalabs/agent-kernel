@@ -45,7 +45,10 @@ def _outcome_json(outcome: Union[SandboxResult, SandboxTask]) -> str:
     or stdout/stderr/exit_code (truncated) for a ``SandboxResult``. A machinery ``notice``
     (idle reset, self-heal recreation) is passed through when present."""
     if isinstance(outcome, SandboxTask):
-        return json.dumps({"task_id": outcome.task_id, "status": "pending", "sandbox_session_id": outcome.sandbox_session_id})
+        task_payload = {"task_id": outcome.task_id, "status": "pending", "sandbox_session_id": outcome.sandbox_session_id}
+        if outcome.notice:
+            task_payload["notice"] = outcome.notice
+        return json.dumps(task_payload)
     limit = _max_chars()
     payload = {
         "stdout": outcome.stdout[:limit],

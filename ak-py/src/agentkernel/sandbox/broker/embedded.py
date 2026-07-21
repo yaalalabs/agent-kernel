@@ -36,3 +36,7 @@ class EmbeddedBroker(SandboxBroker):
     async def result(self, task_id: str) -> Optional[SandboxCompletion]:
         """Return the completion recorded for ``task_id`` in this process, or ``None``."""
         return self._completions.get(task_id)
+
+    async def discard(self, task_id: str) -> None:
+        """Drop the retained completion once the manager has persisted it. Idempotent."""
+        self._completions.pop(task_id, None)

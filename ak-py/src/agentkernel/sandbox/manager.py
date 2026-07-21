@@ -123,6 +123,13 @@ class SandboxManager:
                     task.consumed = data.get("consumed", False)
                     reg["tasks"][task_id] = task.model_dump()
                     self._save_nv_registry(reg)
+                    # Persist the completed run's updated session handle (its newly created
+                    # sandbox_id) via the scope-aware writer, so the next operation on the
+                    # session attaches to the promoted run's sandbox instead of creating a
+                    # fresh, orphaning one.
+                    self._write_session(completion.sandbox_session)
+                    # The completion is now durable in the registry; release the broker's copy.
+                    await self._broker.discard(task_id)
             return task
         completion = await self._broker.result(task_id)
         if completion is not None:
@@ -205,8 +212,13 @@ class SandboxManager:
     ) -> Union[SandboxResult, SandboxTask]:
         """Resolve profile, session, principal, and policy into a ``SandboxBrokerRequest``
         and submit it. Persists the (updated) session handle on success; ``per_call``
-        sessions are ephemeral and their backend is torn down in ``finally``."""
-        profile_name = profile or self._config.default_profile
+        sessions are ephemeral and their backend is torn down in ``finally``.
+
+        When an explicit ``sandbox_session_id`` is given, the profile is taken from the
+        session's own record (the profile it was minted under), not the caller's ``profile``
+        argument — a session is bound to its provider, so a mismatched or omitted caller
+        profile must never reroute it to a different backend."""
+        profile_name = self._resolve_profile_name(profile, sandbox_session_id)
         profile_cfg = self._config.profiles.get(profile_name)
         if profile_cfg is None:
             raise SandboxConfigError(f"unknown sandbox profile '{profile_name}'; configured profiles: {sorted(self._config.profiles)}")
@@ -222,22 +234,41 @@ class SandboxManager:
             policy=self._policy_from(profile_cfg),
             sandbox_session=session,
             ak_session_id=self._current_session_id(),
-            agent=principal.subject,
+            agent=self._current_agent_name(),
             wait_deadline=self._deadline(wait),
         )
         try:
             outcome = await self._broker.submit(request, wait)
             if not ephemeral:
                 self._write_session(request.sandbox_session)
+            if notice and outcome.notice is None:
+                # Carry the idle-reset advisory on whichever outcome type came back — a
+                # promotion (SandboxTask) must not silently drop it ("recreation is never
+                # silent").
+                outcome.notice = notice
             if isinstance(outcome, SandboxTask):
                 self._record_task(outcome)
-            if notice and isinstance(outcome, SandboxResult) and outcome.notice is None:
-                outcome.notice = notice
             return outcome
         finally:
             if ephemeral:
                 # per_call: dispose the ephemeral sandbox regardless of success/failure.
                 await self._destroy_backend(request.sandbox_session)
+
+    def _resolve_profile_name(self, profile: Optional[str], sandbox_session_id: Optional[str]) -> str:
+        """Pick the profile for this operation. An explicit ``sandbox_session_id`` binds the
+        profile to the one the session was minted under (found across both registries); a
+        caller ``profile`` that contradicts it is a config error, and omitting it is fine. No
+        explicit id → the caller's ``profile`` or the default."""
+        if sandbox_session_id is not None:
+            existing = self._find_session(sandbox_session_id)
+            if existing is not None:
+                if profile is not None and profile != existing.profile:
+                    raise SandboxConfigError(
+                        f"sandbox session '{sandbox_session_id}' belongs to profile '{existing.profile}', "
+                        f"but profile '{profile}' was requested; omit profile to reuse a session"
+                    )
+                return existing.profile
+        return profile or self._config.default_profile
 
     def _record_task(self, task: SandboxTask) -> None:
         """Record a promoted task in the current AK session's registry so ``task_status``
@@ -263,6 +294,14 @@ class SandboxManager:
             return getattr(ctx, "agent", None) if ctx is not None else None
         except Exception:  # noqa: BLE001 — no tool context is a normal (programmatic) case
             return None
+
+    @classmethod
+    def _current_agent_name(cls) -> str:
+        """The agent name for completion routing — always the agent, never the principal
+        subject (which under user identity is the end-user id). ``"agent"`` when no agent
+        context is available."""
+        agent = cls._current_agent()
+        return agent.name if agent is not None else "agent"
 
     @staticmethod
     def _policy_from(profile_cfg: Any) -> SandboxPolicy:

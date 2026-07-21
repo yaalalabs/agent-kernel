@@ -123,14 +123,20 @@ class SandboxBrokerFactory:
     def get(cls):
         """Build the broker for the configured ``sandbox.broker.flavor``.
 
-        Built-in short names map to their dotted paths; any other value is treated as a
-        dotted path to a ``SandboxBroker`` subclass (BYO). The broker is constructed with
-        the ``sandbox.broker`` config block.
+        Built-in short names map to their dotted paths; a dotted path is treated as a
+        ``SandboxBroker`` subclass (BYO); an unknown non-dotted flavor fails loud, naming the
+        value and the built-ins (#541 error shape — matching the provider path). The broker is
+        constructed with the ``sandbox.broker`` config block.
         """
         from .broker.base import SandboxBroker  # local import: avoid eager broker import at module load
 
         config = AKConfig.get().sandbox
         flavor = config.broker.flavor
+        if flavor not in _BUILTIN_BROKERS and "." not in flavor:
+            raise SandboxConfigError(
+                f"unknown sandbox broker flavor '{flavor}'; expected one of {sorted(_BUILTIN_BROKERS)} "
+                "or a dotted path to a SandboxBroker subclass"
+            )
         dotted = _BUILTIN_BROKERS.get(flavor, flavor)  # short name -> dotted path, else treat as dotted path
         broker_cls = resolve_dotted(dotted, base=SandboxBroker, error=SandboxConfigError)
         return broker_cls(config.broker)
