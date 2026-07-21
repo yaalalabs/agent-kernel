@@ -7,7 +7,8 @@
 # identity. It is backed by a bring-your-own demo provider (sandbox_provider.py) that
 # declares principal_user support and exposes the acting identity to executed code — so the
 # whole request -> auth -> resolver -> provider path runs end to end with no cloud services.
-# Swap type to kubernetes / bedrock_agentcore / ec2_ssm to run under real cloud identities.
+# Swap type to a planned cloud provider (kubernetes / bedrock_agentcore / ec2_ssm) to run
+# under real cloud identities once those providers land.
 sandbox:
   enabled: true
   default_profile: secure

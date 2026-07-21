@@ -29,8 +29,8 @@ resolver, and config.
 
 ## Why a demo provider
 
-Real user-identity providers need cloud infrastructure (`kubernetes` impersonation,
-`bedrock_agentcore` / `ec2_ssm` via `sts:AssumeRole`). To keep this runnable, the example
+Real user-identity providers need cloud infrastructure (the planned `kubernetes` provider via
+impersonation, `bedrock_agentcore` / `ec2_ssm` via `sts:AssumeRole`). To keep this runnable, the example
 wires a bring-your-own provider (a dotted path in `config.yaml`) that declares
 `principal_user` support and runs code locally with the caller's identity in
 `SANDBOX_PRINCIPAL`. The same request → auth → resolver → provider path runs unchanged; only

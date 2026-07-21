@@ -22,8 +22,11 @@ spec.md — steps below reference its sections.
 - **Goal:** `agentkernel.sandbox` imports cleanly; the `sandbox:` config section parses with
   defaults, env overrides, and the single-backend sugar; capability stays inert when disabled.
 - **Files:** `sandbox/__init__.py`, `sandbox/model.py`, `sandbox/errors.py`;
-  `core/config.py` (new `_Sandbox*` classes + root field); `ak-py/pyproject.toml` (extras
-  declared up front: `sandbox-docker`, `e2b`, `daytona`, `kubernetes`).
+  `core/config.py` (new `_Sandbox*` classes + root field); `ak-py/pyproject.toml` (the
+  `sandbox-docker` extra). (Amended 2026-07-21 during PR #364 review: the `e2b`, `daytona`,
+  and `kubernetes` extras were originally declared here too but are deferred to land with
+  their providers in iterations 9–10, so an installable extra never precedes a usable
+  provider.)
 - **Steps:** spec §Data types, §Error handling (hierarchy only), §Config changes.
 - **Verify:** `cd ak-py && uv run pytest tests/test_sandbox.py -k "model or config"` (new
   tests: defaults, sugar synthesis, env override, `enabled=False` inertness) + full existing
@@ -112,8 +115,9 @@ post-merge iterations.
     `ak-dev-new-guardrail-provider`: provider file → capabilities declaration → factory
     `if/elif` real-import branch + `_BUILTIN_PROVIDER_NAMES` → config block → extra → contract
     tests → example → docs checklist).
-  - Skill inventories: `docs/docs/agent-skills.md` and `docs/specs/agent-skills.md` (+1 dev
-    skill, table row, directory-tree entry).
+  - Skill inventory: `docs/docs/agent-skills.md` (+1 dev skill → count `fifteen`, table row).
+    (There is no `docs/specs/agent-skills.md`; the only historical inventory,
+    `docs/specs/246-agent-skills/design.md`, is a point-in-time design doc and is left as-is.)
   - `.agents/skills/ak-dev-architecture/SKILL.md`: add the sandbox capability to the directory
     structure and pluggable-capability lists; `ak-dev-testing-conventions` test-file table
     gains the three sandbox test files.
@@ -171,19 +175,39 @@ post-merge iterations.
 ## Iteration 9 (post-merge): Cloud SaaS providers — e2b, daytona
 
 - **Goal:** the two cloud sandbox backends, config-swappable.
-- **Files:** `sandbox/providers/e2b.py`, `sandbox/providers/daytona.py`, `sandbox/factory.py`.
-- **Steps:** spec §First-party providers (rows + notes); confirm the extras' version floors
-  against current SDK releases (flagged in spec §Consumer changes); wire `e2b`
-  (`require_extra("e2b", …)`) and `daytona` (`require_extra("daytona", …)`) into the factory
+- **Files:** `sandbox/providers/e2b.py`, `sandbox/providers/daytona.py`, `sandbox/factory.py`,
+  `ak-py/pyproject.toml` (declare the `e2b` and `daytona` extras — deferred from iteration 1).
+- **Steps:** spec §First-party providers (rows + notes); declare the `e2b`/`daytona` extras with
+  version floors confirmed against current SDK releases (flagged in spec §Consumer changes); wire
+  `e2b` (`require_extra("e2b", …)`) and `daytona` (`require_extra("daytona", …)`) into the factory
   `if/elif` as real imports and append them to `_BUILTIN_PROVIDER_NAMES` (spec §Factory).
 - **Verify:** `uv run pytest tests/test_sandbox_providers.py -k "e2b or daytona"` (mocked
   SDKs: call shapes, native idle timeout pass-through, `to_thread` for daytona).
+
+## Iteration 8.5 (post-merge): process-exit cleanup backstop (`atexit`)
+
+Deferred from the pre-merge scope during PR #364 review (2026-07-21): spec §Idle timeout and
+design.md require an `atexit`/signal backstop that closes/destroys sandboxes the process still
+holds on exit (chiefly the `per_runtime` scope, and any leaked `per_session` handles), so a
+container-backed provider doesn't leave orphaned containers. Not implemented in iterations 1–6.
+
+- **Goal:** `SandboxManager` registers a process-exit hook that best-effort destroys tracked
+  `per_runtime` sandboxes (and closes live handles), guarded so it is a no-op when the capability
+  is disabled and safe under teardown ordering.
+- **Files:** `sandbox/manager.py`.
+- **Steps:** spec §Idle timeout (the `atexit` backstop clause); wire it when the first process-
+  lifetime backend (`docker`) makes orphaning observable — hence sequenced with the AWS/cloud
+  work rather than pre-merge, where only `local_subprocess` (temp dirs, OS-reclaimed) shipped.
+- **Verify:** a `per_runtime` docker sandbox is destroyed on interpreter exit (mocked provider
+  asserting `destroy` called via the registered hook).
 
 ## Iteration 10 (post-merge): Remaining attach-mode / AWS-native providers — kubernetes, bedrock_agentcore
 
 - **Goal:** the remaining mode-3 backend and the AWS-native backend, with both identity modes
   where declared — informed by the iteration-7 checkpoint findings.
-- **Files:** `sandbox/providers/kubernetes.py`, `sandbox/providers/bedrock_agentcore.py`, `sandbox/factory.py`.
+- **Files:** `sandbox/providers/kubernetes.py`, `sandbox/providers/bedrock_agentcore.py`,
+  `sandbox/factory.py`, `ak-py/pyproject.toml` (declare the `kubernetes` extra — deferred from
+  iteration 1; `bedrock_agentcore` rides the existing `aws` extra).
 - **Steps:** spec §First-party providers (rows + notes), §PrincipalResolver mapping table
   (impersonation headers, `sts:AssumeRole`); wire `kubernetes` (`require_extra("kubernetes", …)`)
   and `bedrock_agentcore` (`require_extra("aws", …)`) into the factory `if/elif` as real imports

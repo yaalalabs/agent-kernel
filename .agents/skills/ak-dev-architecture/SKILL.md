@@ -246,9 +246,10 @@ an isolated, permission-bounded environment. Enabled via a `sandbox` block in `c
 inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` skill.
 
 - **`SandboxProvider` / `Sandbox`** (`base.py`): the public ABCs a backend implements. `Sandbox`
-  requires only `execute_code` (`language="python"`); `execute_command`/`upload_file`/
-  `download_file`/`install_packages` are optional and raise `SandboxCapabilityError` unless the
-  provider declares them. `SandboxProvider` implements `create`/`attach`/`destroy` and declares a
+  has two abstract methods, `execute_code` (`language="python"`) and `close`;
+  `execute_command`/`upload_file`/`download_file`/`install_packages` are optional and raise
+  `SandboxCapabilityError` unless the provider declares them. `SandboxProvider` implements
+  `create`/`destroy` (and `attach` when `capabilities.attach` is declared) and declares a
   `capabilities` class attribute.
 - **`SandboxCapabilities`** (`model.py`): the honest per-provider declaration (isolation tier,
   shell, languages, files, package_install, stateful, attach, principal_user, policy_*). The

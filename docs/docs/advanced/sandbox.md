@@ -62,8 +62,10 @@ hooks run, and no provider dependencies are imported.
 
 ## Agent tools
 
-When enabled, every in-scope agent gains eight tools. All return JSON strings and always echo a
-`sandbox_session_id`; machinery failures come back as `{"error": ...}` rather than raising.
+When enabled, every in-scope agent gains eight tools. All return JSON strings; the execution and
+file tools echo a `sandbox_session_id` (the session tools return session lists/ids and
+`check_sandbox_task` its status). Machinery failures come back as `{"error": ...}` rather than
+raising.
 
 | Tool | Purpose |
 |---|---|
@@ -193,12 +195,14 @@ sandbox:
   principal_resolver: myapp.identity.SessionUserPrincipalResolver
   profiles:
     secure:
-      type: kubernetes
+      type: myapp.providers.MyIdentityProvider   # a provider that declares principal_user=True
       identity:
         mode: user
-      kubernetes:
-        namespace: agents
 ```
+
+The shipped `local_subprocess` and `docker` providers declare `principal_user=False`, so
+`identity.mode: user` needs a bring-your-own provider (dotted path) or a planned cloud provider
+(kubernetes via impersonation, bedrock_agentcore / ec2_ssm via `sts:AssumeRole`).
 
 The resolver runs agent-side (it has the session in context); the resolved principal travels
 in the broker request and is enforced provider-side where the credentials live. **Fail-closed
@@ -263,10 +267,10 @@ profiles:
       endpoint: https://sandboxes.internal
 ```
 
-Subclass `SandboxProvider` (and `Sandbox`), declare `capabilities`, and implement `create`,
-`attach`, `destroy`, and the operations your capabilities advertise. The reusable
-`SandboxProviderContract` test suite (in `agentkernel.sandbox.testing`) asserts the ABC
-semantics your provider must honor.
+Subclass `SandboxProvider` (and `Sandbox`), declare `capabilities`, and implement `create` and
+`destroy` (plus `attach` when you declare `capabilities.attach`, and the operations your
+capabilities advertise). The reusable `SandboxProviderContract` test suite (in
+`agentkernel.sandbox.testing`) asserts the ABC semantics your provider must honor.
 
 ## Broker flavors
 
@@ -278,9 +282,10 @@ The **broker** decouples the agent from execution. It is chosen with `sandbox.br
 | `embedded` | Inline in the caller's event loop (always synchronous). | Simple/co-located execution and tests. |
 
 `wait_timeout` (default `60` s) bounds how long a synchronous call waits before the execution is
-**promoted** to a background task: `run_code`/`run_command` then return `{"status": "pending",
-"task_id": ...}`, and the agent polls with `check_sandbox_task`. `wait_timeout: 0` always
-promotes.
+**promoted** to a background task (thread flavor): `run_code`/`run_command` then return
+`{"status": "pending", "task_id": ...}`, and the agent polls with `check_sandbox_task`.
+`wait_timeout: 0` always promotes. The `embedded` flavor is always synchronous and never
+promotes, so `wait_timeout` does not apply to it.
 
 The AWS `sqs` broker (a remote worker plane with queue-based delivery for serverless/queue-mode
 deployments) is planned in a later iteration.

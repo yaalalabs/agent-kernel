@@ -54,9 +54,15 @@ flowchart TD
 - An unknown, non-dotted `type` raises `AKConfigError` naming the value and listing the built-ins.
 - **OFF/disabled behavior stays per-surface** and is unchanged (see Non-goals).
 
-### BYO construction contracts (per surface, documented on each base ABC)
+### BYO construction contracts (per surface)
 
-Construction is intentionally *not* uniform — each surface passes what it needs; a plugin author targets the base's documented `__init__`:
+Construction is intentionally *not* uniform — each surface passes what it needs; a plugin author targets the base's `__init__`:
+
+> **Implementation note (2026-07-21).** In the shipped PR these contracts live in the factory
+> docstrings and the config field descriptions, not as docstrings on each base ABC — the ABCs
+> (`SessionStore`, `ThreadStore`, `AttachmentStore`, `BaseTrace`, the guardrail bases) were left
+> untouched. Adding a short "Bring-your-own" note to each ABC is a low-risk follow-up; recorded
+> here so the doc and code agree.
 
 - **Trace** — `cls()` then `.init()`; subclass `BaseTrace`. OFF → `Trace(None)`.
 - **Guardrail (input/output)** — `cls()`; subclass `InputGuardrail` / `OutputGuardrail`. OFF → the base pass-through instance.
@@ -83,7 +89,7 @@ Single-instance surfaces (trace/guardrail) construct no-arg; a BYO plugin reads 
 
 All intentional:
 
-1. **Fail loud on unknown `type`.** `SessionStoreBuilder`, `ThreadStoreBuilder`, and the AWS response-store handler stop silently falling back to in-memory and raise `AKConfigError`. (Behaviour change; the only one with migration impact.)
+1. **Fail loud on unknown `type`.** `SessionStoreBuilder` and `ThreadStoreBuilder` stop silently falling back to in-memory and raise `AKConfigError`. (Behaviour change; the only one with migration impact.) The AWS response-store handler is **excluded** — it is a separate follow-up tracked outside this issue (see Rollout + the resolved open question) and still falls back on `develop`; do not read this bullet as covering it.
 2. Guardrail and trace raise `AKConfigError` instead of bare `Exception` on unknown `type` (typed, catchable).
 3. **New:** every surface accepts a dotted-path `type` → BYO backend (additive).
 4. Friendly `pip install "agentkernel[<extra>]"` message is now uniform across all built-ins behind an extra (previously valkey-only).

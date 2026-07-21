@@ -243,7 +243,9 @@ Research backing: [research/](research/README.md)
 
 - New `sandbox:` section on `AKConfig`, registered with the other capability sections on the root
   model (`core/config.py:378-405`); env-overridable via `AK_SANDBOX__...`.
-- Keys: `enabled` (default `false` — capability fully inert when off), `default_profile`,
+- Keys: `enabled` (default `false` — capability fully inert when off), `agents` (optional list
+  restricting tools + prompt injection to named agents; omitted = all — added per spec.md
+  2026-07-21), `default_profile`, `tool_output_max_chars`,
   `profiles` (the workload-profile routing table: name → backend `type`, `scope`, `policy`
   (network/filesystem/resources/timeout/strict), `identity`, backend sub-config),
   `principal_resolver` (dotted path), `broker` (flavor, wait policy, inline payload threshold,
@@ -277,9 +279,13 @@ Research backing: [research/](research/README.md)
 
 ### Agent exposure
 
-- System tools auto-registered on all agents when enabled, via `SystemToolFactory.get_all()`
-  (`core/tool.py:165-179`), mirroring multimodal's `AnalyzeAttachmentsTool`: run code, and file
-  operations where the provider's capabilities allow.
+- System tools auto-registered on agents when enabled, via `SystemToolFactory.get_all()`,
+  mirroring multimodal's `AnalyzeAttachmentsTool`: run code/commands, file operations where the
+  provider's capabilities allow, task polling, and session lifecycle. (Amended per spec.md
+  2026-07-21: **eight** tools — the three session-lifecycle tools `list_sandbox_sessions` /
+  `new_sandbox_session` / `destroy_sandbox_session` were added alongside the original five; and
+  an optional `sandbox.agents` list restricts registration + prompt injection to named agents,
+  omitted = all agents.)
 - Tool contract carries the sandbox session: every sandbox tool takes an optional
   `sandbox_session_id` and every tool result includes the ID it ran under, so the agent can
   continue in the same environment on later turns or work in several environments side by side.

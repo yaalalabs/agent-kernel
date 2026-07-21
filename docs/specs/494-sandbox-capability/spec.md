@@ -70,8 +70,10 @@ Governing rules:
    when selected (same lazy-import discipline as `guardrail/guardrail.py:25-68`).
 2. **Providers never read `AKConfig`.** Each provider is constructed with its own Pydantic
    config sub-model by the factory (the multimodal-storage rule,
-   `core/multimodal/storage/storage_manager.py:33-84`). Only `factory.py`, `manager.py`,
-   `hooks.py`, and `tools.py` call `AKConfig.get()`.
+   `core/multimodal/storage/storage_manager.py:33-84`). `AKConfig.get()` is read only by
+   `factory.py`, `manager.py`, `hooks.py`, `tools.py`, and `broker/worker.py` — the worker reads
+   the profile's `identity.mode` to enforce user identity fail-closed, where the routing table
+   lives (providers themselves never read `AKConfig`).
 3. All I/O-performing methods are `async`. Providers wrapping synchronous SDKs (`docker`,
    `daytona`, `kubernetes`, `boto3`) run SDK calls via `asyncio.to_thread` — never blocking the
    event loop.
@@ -85,9 +87,11 @@ Governing rules:
    touching provider APIs": inside a tool, `SandboxManager.get()` + the current `ToolContext`
    session), and the data types (`SandboxCapabilities`, `IsolationTier`, `SandboxResult`,
    `SandboxFile`, `SandboxSession`, `SandboxTask`, `SandboxPrincipal`, `SandboxPolicy`), the
-   `errors` module, and `testing` (`SandboxProviderContract`). `SandboxProviderFactory`, hooks,
-   tools, and all concrete providers/brokers stay internal (guardrail/multimodal export
-   precedent).
+   `errors` module. `SandboxProviderContract`/`FakeSandboxProvider` are public but live in and
+   are imported explicitly from `agentkernel.sandbox.testing` — deliberately **not** re-exported
+   from `agentkernel.sandbox` so `import agentkernel.sandbox` stays free of a pytest dependency.
+   `SandboxProviderFactory`, hooks, tools, and all concrete providers/brokers stay internal
+   (guardrail/multimodal export precedent).
 
 ### Data types (`sandbox/model.py`)
 
@@ -521,9 +525,10 @@ reuse the id to continue in the same environment; omit it for the default; **ses
 system-assigned, never invented — use `new_sandbox_session` (with a descriptive name) for a
 clean environment, and consult `list_sandbox_sessions` to return to an earlier one instead of
 minting a duplicate**; an `{"error": ...}` result means the operation failed and must be
-reported as such, never as success; available workload profiles and their declared
-languages/capabilities (rendered from config at registration time); stdout/stderr truncated
-at `tool_output_max_chars`.
+reported as such, never as success; available workload profiles with their provider type and
+scope (config-derived at registration time — provider capabilities/languages are **not**
+rendered, since that would import providers at registration and break the lazy-import
+discipline); stdout/stderr truncated at `tool_output_max_chars`.
 
 The capability is **self-describing**: that guidance is injected into every agent's system
 prompt through the existing system-tool injection chain
@@ -617,28 +622,36 @@ Provider notes (implementation-relevant specifics):
 
 - **`core/config.py`** — adds the classes in Config changes below and one root field. Nothing
   existing changes.
-- **`core/tool.py`** — `SystemToolFactory.get_all()` (`core/tool.py:165-179`) gains a sandbox
-  block after the multimodal block:
+- **`core/tool.py`** — `SystemToolFactory.get_all(agent_name)` gains a sandbox block after the
+  multimodal block, both gated by the per-capability `agents` filter (`_agent_allowed`):
   ```python
-  sandbox_config = AKConfig.get().sandbox
-  if sandbox_config and sandbox_config.enabled:
+  sandbox_config = getattr(AKConfig.get(), "sandbox", None)
+  if sandbox_config and sandbox_config.enabled and SystemToolFactory._agent_allowed(sandbox_config, agent_name):
       from ..sandbox.tools import get_sandbox_tools
 
-      tools.extend(get_sandbox_tools())   # run_code, run_command, file tools, check_sandbox_task
+      tools.extend(get_sandbox_tools())   # eight tools: execution, files, task poll, session lifecycle
   ```
+- **`core/base.py`** — `Agent._setup_system_prompt()`/`_attach_system_tools()` pass `self.name`
+  to the factory, so the `sandbox.agents` (and `multimodal.agents`) restriction is enforced at
+  agent wrap time (added with the 2026-07-21 `agents`-scoping amendment).
 - **`core/runtime.py`** — line 12 region gains
   `from ..sandbox.hooks import SandboxPreHookFactory` (mirroring the guardrail import) and the
   `_get_system_pre_hooks` list (`core/runtime.py:49`) appends `SandboxPreHookFactory.get()`.
-- **`ak-py/pyproject.toml`** — new extras: `sandbox-docker = ["docker>=7.0.0"]`,
-  `e2b = ["e2b-code-interpreter>=2.0.0"]`, `daytona = ["daytona>=0.10.0"]`,
-  `kubernetes = ["kubernetes>=30.0.0"]` (version floors to be confirmed at implementation
-  time against each SDK's current release). `bedrock_agentcore`, `ec2_ssm`, and the `sqs`
-  broker flavor ride the existing `aws` extra (`boto3`).
-- **`deployment/aws`** — new `sandbox/` subpackage (no changes to existing modules);
+- **`test/test.py`** — the built-in `Test` framework now keeps the launched CLI's **stderr on a
+  separate pipe** (drained in the background) instead of merging it into stdout, so AK log output
+  no longer pollutes captured agent responses under fuzzy/judge comparison. Behavioral change to
+  a public consumer; documented under Behavioural changes.
+- **`ak-py/pyproject.toml`** — the `sandbox-docker = ["docker>=7.0.0"]` extra ships now. The
+  `e2b`/`daytona`/`kubernetes` extras land with their providers in iterations 9–10 (deferred
+  during PR #364 review so an installable extra never precedes a usable provider).
+  `bedrock_agentcore`, `ec2_ssm`, and the `sqs` broker flavor ride the existing `aws` extra
+  (`boto3`).
+- **`deployment/aws`** — new `sandbox/` subpackage (iteration 8; no changes to existing modules);
   `agentkernel.deployment.aws.__init__` additionally exports `SandboxBrokerRunner`.
 - **Verified unchanged**: `core/model.py` (no new request type — the deviation note above),
-  `core/chat_service.py`, `core/base.py`, `ECSAgentRunner`/`ServerlessAgentRunner`, guardrail
-  and multimodal packages, session serde.
+  `core/chat_service.py`, `ECSAgentRunner`/`ServerlessAgentRunner`, guardrail and multimodal
+  packages, session serde. (`core/base.py` and `test/test.py` moved out of this list above — both
+  changed.)
 
 ### Config changes
 
@@ -733,12 +746,18 @@ All intentional; none reachable unless `sandbox.enabled: true` except 1–3:
 2. `SystemToolFactory.get_all()` gains a config read of `AKConfig.get().sandbox` (returns no
    extra tools while disabled).
 3. `AKConfig` gains the `sandbox` section — new keys appear in generated config docs.
-4. With sandbox **enabled**: eight system tools (`run_code`, `run_command`,
+   `_MultimodalConfig` and `_SandboxConfig` also gain an optional `agents` list (omitted =
+   all agents), so `SystemToolFactory` now takes an `agent_name` and filters per capability.
+4. **`Test` framework (`test/test.py`)**: the launched CLI's stderr is kept on a separate pipe
+   (background-drained) rather than merged into stdout, so log output no longer contaminates
+   captured responses. A consumer whose assertion relied on a logged (stderr) message now sees
+   only stdout — surface such messages on stdout or assert the observable outcome.
+5. With sandbox **enabled**: eight system tools (`run_code`, `run_command`,
    `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`, `list_sandbox_sessions`,
    `new_sandbox_session`, `destroy_sandbox_session`) register on all agents — or only those
    named in `sandbox.agents` when set — and those agents' system prompts grow by the
    capability's guidance section.
-5. With sandbox **enabled**: an inbound request body carrying a `sandbox_task_completion` extra
+6. With sandbox **enabled**: an inbound request body carrying a `sandbox_task_completion` extra
    field is intercepted by `SandboxPreHook` (consumed, deduped, or halted) instead of flowing to
    the agent as an ignored `AgentRequestAny`.
 
@@ -773,16 +792,24 @@ Surfacing rules:
 - **Program failure is data**: non-zero exit → `SandboxResult`, not an exception (§Data types).
 - **Fail-closed paths raise before any execution**: policy (`SandboxPolicyError`) and identity
   (`SandboxCapabilityError`/`SandboxPolicyError`) checks run in `BrokerWorkerCore` step 2.
-- **Missing optional dependency**: factory raises `ImportError` naming the exact
-  `pip install "agentkernel[<extra>]"` remedy; the `SystemToolFactory` block catches it and logs
-  once rather than breaking agent registration.
+- **Provisioning failures** (`SandboxProvisionError`): providers wrap `create`/`attach`
+  infrastructure failures in this type where they can (`SandboxGoneError` for a gone attach
+  target). Known deviation (iterations 1–6): the shipped `local_subprocess`/`docker` providers
+  do not yet wrap raw SDK/OS errors (a dead Docker daemon, a `mkdtemp` failure) — these surface
+  as the underlying exception, caught by the tool layer into `{"error": ...}`. Typed-caller
+  distinction via `SandboxProvisionError` is a provider-hardening follow-up.
+- **Missing optional dependency**: the factory's `require_extra` raises `ImportError` naming the
+  exact `pip install "agentkernel[<extra>]"` remedy. Provider SDK imports are deferred to first
+  execution (registration imports nothing optional — `get_sandbox_tools` only builds the tool
+  list), so this surfaces as the tool-level `{"error": ...}` on first use, not at registration.
 - **Broker terminal guarantee**: worker exceptions become `failed` completions; the SQS worker's
   permanent-failure path (`on_permanent_failure`, after `max_receive_count` receives) writes a
   `failed` completion to the response DB and emits the completion event — the DLQ never
   swallows a task silently. `on_permanent_failure` catches its own exceptions
   (the `ECSSQSConsumer` contract).
 - Resources are released in `finally` blocks throughout (`per_call` teardown, broker worker
-  handle cleanup, `atexit` hook); no bare `except: pass` anywhere in the package.
+  handle cleanup); no bare `except: pass` anywhere in the package. (The process-exit `atexit`
+  backstop for `per_runtime` is deferred to a post-merge iteration — see plan.md.)
 
 ## Testing
 

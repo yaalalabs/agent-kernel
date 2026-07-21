@@ -32,10 +32,12 @@ Planned in later iterations: `e2b`, `daytona`, `kubernetes`, `bedrock_agentcore`
 The sandbox capability (`ak-py/src/agentkernel/sandbox/`) is config-driven and pluggable:
 
 - **`SandboxProvider`** (`base.py`) — one long-lived instance per configured profile backend.
-  Implements `create()`, `attach()`, `destroy()`, and declares a `capabilities` class attribute.
-- **`Sandbox`** (`base.py`) — a handle to one live sandbox. Implements `execute_code()` (the only
-  mandatory operation, `language="python"`), and optionally `execute_command()`, `upload_file()`,
-  `download_file()`, `install_packages()`, and `close()`.
+  Implements `create()`/`destroy()` (abstract), `attach()` when `capabilities.attach` is declared
+  (the base default raises `SandboxCapabilityError`), and declares a `capabilities` class attribute.
+- **`Sandbox`** (`base.py`) — a handle to one live sandbox. Implements the two abstract methods
+  `execute_code()` (`language="python"`) and `close()`, and optionally `execute_command()`,
+  `upload_file()`, `download_file()`, `install_packages()` (each raises `SandboxCapabilityError`
+  in the base until overridden).
 - **`SandboxCapabilities`** (`model.py`) — the honest declaration of what the provider supports
   (isolation tier, shell, languages, files, package_install, stateful, attach, principal_user,
   policy_network/filesystem/resources). The manager/worker consult it before routing an operation;
@@ -116,7 +118,7 @@ class <Provider>SandboxProvider(SandboxProvider):
 
     def __init__(self, config) -> None:
         super().__init__(config)             # config is the provider's Pydantic config block
-        # Create SDK clients lazily (first use), not here — keep import/构造 cheap.
+        # Create SDK clients lazily (first use), not here — keep import/constructor cheap.
 
     async def create(self, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
         # Provision a new sandbox. Map `policy` onto the backend's real controls here; if a

@@ -28,5 +28,5 @@ services.
 
 > **Warning:** `local_subprocess` provides **no isolation** — the agent's code runs directly
 > on your machine. It is for development and testing only. Production deployments should use
-> an isolating provider (`docker`, `e2b`, `daytona`, `kubernetes`, …); the `policy/` example
+> an isolating provider (`docker` today; `e2b`, `daytona`, `kubernetes` planned); the `policy/` example
 > explains how policy enforcement depends on the provider.

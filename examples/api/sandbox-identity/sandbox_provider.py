@@ -66,6 +66,7 @@ class DemoIdentitySandboxProvider(SandboxProvider):
         shell=True,
         languages=["python", "bash"],
         files=False,
+        attach=True,  # per_session reuse re-acquires via attach(); must be declared (capability honesty)
         principal_user=True,  # this is what lets a user-mode profile run instead of failing closed
     )
 
