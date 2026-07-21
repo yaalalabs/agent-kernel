@@ -21,7 +21,7 @@ metadata:
 2. **Adapter pattern**: Each supported agent framework (OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents) implements `Agent`, `Tool`, `Runner`, and `Module` subclasses that wrap native framework objects.
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
 4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore).
-5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, and messaging integrations are all pluggable via well-defined interfaces.
+5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
 6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them.
 
 ## Core Abstractions
@@ -239,6 +239,36 @@ Pluggable storage backends agents can read from and write to as tools:
 - **`KnowledgeBuilder`** (`knowledgebuilder.py`): Wraps one or more `KnowledgeBase` instances and `build()`s plain-function tools (`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`) for binding via a framework's `ToolBuilder`
 - **Backends**: `ChromaManager` (vector, `chroma.py`), `Neo4jManager` (graph, `neo4j.py`), `StarburstManager` (read-only SQL via Trino, `starburst.py`) — each behind an optional dependency extra (`chromadb`, `neo4j`, `trino`)
 
+## Sandbox (`ak-py/src/agentkernel/sandbox/`)
+
+Config-driven, pluggable code execution: agents run code, shell commands, and file operations in
+an isolated, permission-bounded environment. Enabled via a `sandbox` block in `config.yaml`;
+inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` skill.
+
+- **`SandboxProvider` / `Sandbox`** (`base.py`): the public ABCs a backend implements. `Sandbox`
+  requires only `execute_code` (`language="python"`); `execute_command`/`upload_file`/
+  `download_file`/`install_packages` are optional and raise `SandboxCapabilityError` unless the
+  provider declares them. `SandboxProvider` implements `create`/`attach`/`destroy` and declares a
+  `capabilities` class attribute.
+- **`SandboxCapabilities`** (`model.py`): the honest per-provider declaration (isolation tier,
+  shell, languages, files, package_install, stateful, attach, principal_user, policy_*). The
+  manager/worker consult it before routing; the worker enforces principal and policy **fail-closed**
+  against it (unenforceable + `strict` → `SandboxPolicyError`).
+- **`SandboxManager`** (`manager.py`): process-wide singleton (like `ConversationThreadManager`).
+  Resolves the workload **profile** → provider, owns sandbox **sessions** (nv_cache registry,
+  namespace-isolated per AK session; `per_call`/`per_session`/`per_runtime` scopes), and records
+  promoted tasks. `SandboxManager.get()` returns `None` when disabled.
+- **`SandboxProviderFactory` / `SandboxBrokerFactory`** (`factory.py`): the #541 house pattern —
+  built-in short names are `if/elif` real-import branches listed in `_BUILTIN_PROVIDER_NAMES`; a
+  dotted-path `type` resolves via `resolve_dotted` (bring-your-own). Providers: `local_subprocess`
+  (no isolation), `docker` (container). Broker flavors: `thread` (default, dedicated loop thread),
+  `embedded` (inline/synchronous); `BrokerWorkerCore` is the shared engine.
+- **Agent surface**: `tools.py` provides eight system tools (attached via `SystemToolFactory` when
+  enabled, optionally scoped to `sandbox.agents`); `hooks.py`'s `SandboxPreHook` ingests
+  task-completion events (the third system pre-hook). `principal.py` maps session/agent to a
+  `SandboxPrincipal` (`principal_resolver` config for user identity). `testing.py` ships
+  `FakeSandboxProvider` and the reusable `SandboxProviderContract`.
+
 ## Shared Database Drivers (`ak-py/src/agentkernel/core/util/driver/`)
 
 The Session, Multimodal attachment, Response Store, and Thread backends share one set of
@@ -338,6 +368,18 @@ ak-py/src/agentkernel/
 │   ├── trace.py             # Trace factory
 │   ├── langfuse/            # Langfuse adapter
 │   └── openllmetry/         # OpenLLMetry adapter
+├── sandbox/                 # Sandbox capability (execute code/commands in an isolated env)
+│   ├── base.py              # Sandbox, SandboxProvider ABCs
+│   ├── model.py             # SandboxCapabilities, SandboxResult, SandboxSession, policy/principal
+│   ├── errors.py            # SandboxError hierarchy
+│   ├── manager.py           # SandboxManager (profile routing, sessions, fail-closed enforcement)
+│   ├── factory.py           # SandboxProviderFactory + SandboxBrokerFactory
+│   ├── principal.py         # PrincipalResolver, AgentPrincipalResolver
+│   ├── tools.py             # The eight agent-facing system tools
+│   ├── hooks.py             # SandboxPreHook (task-completion ingestion)
+│   ├── testing.py           # FakeSandboxProvider + SandboxProviderContract (BYO test suite)
+│   ├── providers/           # local_subprocess, docker (+ planned: e2b, daytona, kubernetes, ...)
+│   └── broker/              # embedded, thread flavors + BrokerWorkerCore (+ planned: sqs)
 ├── cli/                     # CLI interface
 │   └── cli.py               # Interactive CLI
 ├── auth/                    # Authentication

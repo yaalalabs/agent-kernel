@@ -112,6 +112,17 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 - **Observability** — LangFuse and OpenLLMetry tracing with a single config line.
 - **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.
 
+### 📦 Sandboxed Code Execution
+
+Let agents run code and shell commands in an isolated, permission-bounded environment — the platform handles it, your agent code stays clean.
+
+- **Enable it in config** — agents automatically gain code/command/file tools and the usage guidance is injected into their prompt.
+- **Pluggable providers** — `local_subprocess` (dev) and `docker` (container-isolated) today, with `e2b`, `daytona`, `kubernetes`, and cloud-native backends planned; bring your own via a dotted path.
+- **Workload profiles** — per-call, per-session, or shared lifetimes; each with its own permission policy (network egress, filesystem, CPU/memory, timeout) enforced fail-closed.
+- **Per-user identity** — run sandboxed code under the invoking user's identity, not one shared agent identity, via a pluggable principal resolver.
+
+[Learn more →](https://kernel.yaala.ai/docs/next/advanced/sandbox)
+
 ### 🧠 Memory, Sessions & Knowledge Bases
 
 | Layer | Backends |

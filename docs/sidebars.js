@@ -129,6 +129,7 @@ const sidebars = {
         'advanced/multi-agent',
         'advanced/multimodal',
         'advanced/threads',
+        'advanced/sandbox',
         'advanced/knowledge-bases',
         'advanced/queue-mode-guide',
         {

@@ -3,7 +3,8 @@ name: ak-add-capabilities
 description: >
   Add capabilities to an existing Agent Kernel project. This skill guides you through
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
-  A2A server, pre/post hooks, multimodal support, and conversation thread support. Session
+  A2A server, pre/post hooks, multimodal support, conversation thread support, and the sandbox
+  capability (isolated code execution). Session
   persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, DynamoDB (AWS), Firestore (GCP), and
   Cosmos DB (Azure) backends. Generates configuration and code changes needed.
@@ -39,6 +40,7 @@ Which capability would you like to add?
 7. **Hooks** — Custom pre/post processing (RAG, logging, prompt modification)
 8. **Multimodal** — Image and file attachment support
 9. **Conversation Threads** — Persistent, named conversation history keyed by `session_id`
+10. **Sandbox** — Isolated code/command execution with pluggable providers, workload profiles, policy, and per-user identity
 
 ### Step 3: Generate Changes
 
@@ -778,6 +780,77 @@ curl -X POST http://localhost:8000/api/v1/chat \
 ```
 
 See `examples/api/thread-openai` and `examples/api/multimodal/thread-openai`.
+
+---
+
+#### Sandbox
+
+**What it does:** Lets agents execute code and shell commands in an isolated, permission-bounded
+environment. When enabled, agents automatically gain sandbox tools (`run_code`, `run_command`,
+`write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`, `list_sandbox_sessions`,
+`new_sandbox_session`, `destroy_sandbox_session`) and the usage guidance is injected into their
+system prompt — the agent's own instructions need not mention the sandbox.
+
+**Ask:** Which provider — `local_subprocess` (no isolation; dev/test only) or `docker`
+(container isolation; needs the `sandbox-docker` extra and a Docker daemon)? Should it apply to
+all agents or only some (the `agents` list)?
+
+**1. Install the extra (docker only):**
+
+```bash
+pip install "agentkernel[sandbox-docker]"
+```
+
+**2. Add a `sandbox` block to `config.yaml`.**
+
+Minimal (single-backend sugar synthesizes a `default` profile):
+
+```yaml
+sandbox:
+  enabled: true
+  type: local_subprocess       # or: docker
+  local_subprocess: {}         # or a docker: { image: python:3.12-slim } block
+  broker:
+    flavor: thread             # thread (CLI/REST default) | embedded
+```
+
+With explicit profiles, policy, and scoping:
+
+```yaml
+sandbox:
+  enabled: true
+  agents: [coder]              # optional: only these agents get the sandbox (omit = all)
+  default_profile: workspace
+  tool_output_max_chars: 8000
+  profiles:
+    workspace:
+      type: docker
+      scope: per_session       # per_call | per_session | per_runtime
+      idle_timeout: 1800
+      policy:
+        network_egress: deny   # allow | deny | allowlist
+        cpu: 1.0
+        memory_mb: 512
+        timeout: 30.0
+        strict: true           # fail closed when the provider can't enforce a dimension
+      docker:
+        image: python:3.12-slim
+  broker:
+    flavor: thread
+```
+
+**3. No agent code changes needed** — the tools and prompt guidance attach automatically. Keep
+the agent's instructions about *what* to do; the sandbox usage is injected.
+
+:::caution
+`local_subprocess` runs code directly on the host with **no isolation** — dev/test only. Use
+`docker` (or another isolating provider) in production.
+:::
+
+For per-user identity (running sandboxed code under the invoking user's identity), set
+`principal_resolver` to a dotted path and a profile's `identity.mode: user`; see the
+[Sandbox guide](https://kernel.yaala.ai/docs/next/advanced/sandbox) and the
+`examples/api/sandbox-identity` example.
 
 ---
 

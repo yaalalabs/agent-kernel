@@ -11,6 +11,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
+- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`), workload profiles, policy enforcement, and per-user identity
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
@@ -36,6 +37,12 @@ For LLM-based thread naming with Conversation Thread Support:
 
 ```bash
 pip install "agentkernel[thread]"
+```
+
+For the Docker sandbox provider (the `local_subprocess` provider needs no extra):
+
+```bash
+pip install "agentkernel[sandbox-docker]"
 ```
 
 **Requirements:**
@@ -925,6 +932,71 @@ guardrail:
     type: walledai
     pii: true
 ```
+
+#### Sandbox Configuration
+
+Enable the sandbox capability to let agents execute code and shell commands in an isolated,
+permission-bounded environment. When enabled, agents automatically gain sandbox tools
+(`run_code`, `run_command`, `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`,
+`list_sandbox_sessions`, `new_sandbox_session`, `destroy_sandbox_session`) and the usage
+guidance is injected into their system prompt.
+
+Minimal single-backend form (a `default` profile is synthesized from `type` + its config block):
+
+```yaml
+sandbox:
+  enabled: true
+  type: local_subprocess        # provider short name, or a dotted path to a SandboxProvider subclass
+  local_subprocess: {}
+  broker:
+    flavor: thread              # thread (local default) | embedded
+```
+
+Full form with explicit workload profiles (provider + lifetime + policy + identity):
+
+```yaml
+sandbox:
+  enabled: true
+  agents: [coder]               # optional: attach tools/prompt only to these agents; omit = all
+  default_profile: workspace
+  principal_resolver: null      # optional dotted path to a PrincipalResolver; null = agent identity
+  tool_output_max_chars: 8000
+  broker:
+    flavor: thread
+    wait_timeout: 60.0          # seconds before a sync wait promotes to a background task (0 = always)
+  profiles:
+    workspace:
+      type: docker              # container-isolated; needs the sandbox-docker extra + a Docker daemon
+      scope: per_session        # per_call | per_session | per_runtime
+      idle_timeout: 1800        # seconds of inactivity before the sandbox is reset on next touch
+      identity:
+        mode: agent             # agent | user
+      policy:
+        network_egress: deny    # allow | deny | allowlist
+        cpu: 1.0
+        memory_mb: 512
+        timeout: 30.0           # per-execution wall-clock seconds (always enforced)
+        strict: true            # fail closed when the provider can't enforce a policy dimension
+      docker:
+        image: python:3.12-slim
+```
+
+Key fields:
+
+- **`enabled`** (`AK_SANDBOX__ENABLED`, default `false`) — master switch; inert when off.
+- **`agents`** — agent names the tools/prompt attach to; omit for all agents.
+- **`type`** (per profile) — `local_subprocess` (no isolation; dev/test), `docker`
+  (container isolation; `sandbox-docker` extra), or a dotted path to your own `SandboxProvider`.
+- **`scope`** — `per_call` (fresh per execution), `per_session` (persists across turns),
+  `per_runtime` (one shared sandbox per profile).
+- **`policy`** — network egress, filesystem paths, cpu/memory, timeout; enforced per provider,
+  fail-closed under `strict`.
+- **`identity.mode`** + **`principal_resolver`** — run code under the agent's or the invoking
+  user's identity.
+- **`broker.flavor`** — `thread` (default, for CLI/REST) or `embedded` (inline/synchronous).
+
+See the [Sandbox guide](https://kernel.yaala.ai/docs/next/advanced/sandbox) for the full
+reference and the `examples/cli/sandbox` and `examples/api/sandbox-identity` examples.
 
 #### Messaging Platform Integrations
 

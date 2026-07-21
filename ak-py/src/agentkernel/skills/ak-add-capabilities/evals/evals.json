@@ -1,6 +1,6 @@
 {
   "skill": "ak-add-capabilities",
-  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, hooks, multimodal, conversation threads) skill",
+  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, hooks, multimodal, conversation threads, sandbox) skill",
   "version": "0.6.1",
   "evals": [
     {
@@ -51,7 +51,8 @@
         "enabled: true",
         "LANGFUSE_PUBLIC_KEY",
         "LANGFUSE_SECRET_KEY",
-        "agentkernel[", "langfuse"
+        "agentkernel[",
+        "langfuse"
       ],
       "must_not_contain": [
         "type: openllmetry"
@@ -65,7 +66,8 @@
         "trace:",
         "type: openllmetry",
         "enabled: true",
-        "agentkernel[", "openllmetry"
+        "agentkernel[",
+        "openllmetry"
       ]
     },
     {
@@ -78,7 +80,8 @@
         "redis:",
         "prefix:",
         "url:",
-        "agentkernel[", "redis"
+        "agentkernel[",
+        "redis"
       ]
     },
     {
@@ -90,7 +93,8 @@
         "type: dynamodb",
         "table_name:",
         "region:",
-        "agentkernel[", "aws"
+        "agentkernel[",
+        "aws"
       ]
     },
     {
@@ -102,7 +106,8 @@
         "type: cosmosdb",
         "endpoint:",
         "AZURE_COSMOS_KEY",
-        "agentkernel[", "azure"
+        "agentkernel[",
+        "azure"
       ]
     },
     {
@@ -142,7 +147,8 @@
         "mcp:",
         "enabled: true",
         "expose_agents:",
-        "agentkernel[", "mcp"
+        "agentkernel[",
+        "mcp"
       ]
     },
     {
@@ -153,7 +159,8 @@
         "a2a:",
         "enabled: true",
         "agents:",
-        "agentkernel[", "a2a",
+        "agentkernel[",
+        "a2a",
         ".well-known/agent.json"
       ]
     },
@@ -162,7 +169,8 @@
       "name": "Add pre-hook",
       "input": "Add a RAG pre-hook to my agent",
       "expected_outputs": [
-        "class ", "PreHook",
+        "class ",
+        "PreHook",
         "async def on_run(",
         "session: Session",
         "requests: list[AgentRequest]",
@@ -174,7 +182,8 @@
       "name": "Add post-hook",
       "input": "Add a disclaimer post-hook to my agent",
       "expected_outputs": [
-        "class ", "PostHook",
+        "class ",
+        "PostHook",
         "async def on_run(",
         "agent_reply: AgentReply",
         "module.post_hook("
@@ -273,6 +282,32 @@
       ],
       "must_not_contain": [
         "type: redis"
+      ]
+    },
+    {
+      "id": "cap-sandbox-local",
+      "name": "Add local_subprocess sandbox",
+      "input": "Add a sandbox to my project so the agent can run Python code locally",
+      "expected_outputs": [
+        "sandbox:",
+        "enabled: true",
+        "type: local_subprocess",
+        "flavor:"
+      ],
+      "must_not_contain": [
+        "sandbox-docker"
+      ]
+    },
+    {
+      "id": "cap-sandbox-docker",
+      "name": "Add docker sandbox",
+      "input": "Add a container-isolated sandbox using docker to my project",
+      "expected_outputs": [
+        "sandbox:",
+        "enabled: true",
+        "type: docker",
+        "agentkernel[sandbox-docker]",
+        "image:"
       ]
     }
   ]

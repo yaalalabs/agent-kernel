@@ -22,6 +22,7 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
 - **`whatsapp/`** - WhatsApp integration example
 - **`instagram/`** - Instagram integration example
 - **`telegram/`** - Telegram integration example
+- **`sandbox-identity/`** - Sandbox capability running code under the authenticated end user's identity, end-to-end over REST (custom pre-hook, principal resolver, and bring-your-own provider). See the [Sandbox](../advanced/sandbox.md) guide.
 
 ### 📁 CLI Examples (`/examples/cli`)
 
@@ -32,6 +33,10 @@ Command-line interface examples for local development and testing:
 - **`crewai/`** - CrewAI framework integration examples
 - **`guardrail/`** - Content safety and compliance validation examples
   - `openai/` - OpenAI Guardrails integration with LangGraph agents
+- **`sandbox/`** - Sandbox capability (execute code/commands in an isolated, permission-bounded environment). See the [Sandbox](../advanced/sandbox.md) guide.
+  - `basic/` - Enable the sandbox, run code, persist a workspace across turns, manage named sessions
+  - `profiles/` - Multiple named workload profiles (provider + scope routing)
+  - `policy/` - Policy/permissions and the fail-closed `strict` model
 - **`langgraph/`** - LangGraph framework integration examples
 - **`multi/`** - Multi-agent examples combining different frameworks
 - **`openai/`** - OpenAI Agent SDK integration examples
