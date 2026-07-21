@@ -1,5 +1,6 @@
 """Tests for the trace factory's backend resolution (trace/trace.py)."""
 
+import sys
 import types
 from unittest.mock import Mock, patch
 
@@ -75,3 +76,22 @@ def test_trace_byo_non_subclass_rejected():
     with patch.object(AKConfig, "get", return_value=_config(True, "builtins.str")):
         with pytest.raises(AKConfigError):
             Trace.get()
+
+
+def test_trace_langfuse_missing_extra_raises_friendly_import_error(monkeypatch):
+    """The langfuse built-in routes its import through require_extra: a missing SDK yields the
+    friendly `agentkernel[langfuse]` message, not a bare ImportError."""
+    monkeypatch.setitem(sys.modules, "langfuse", None)  # simulate the SDK not installed
+    with patch.object(AKConfig, "get", return_value=_config(True, "langfuse")):
+        with pytest.raises(ImportError) as exc_info:
+            Trace.get()
+    assert "agentkernel[langfuse]" in str(exc_info.value)
+
+
+def test_trace_openllmetry_missing_extra_raises_friendly_import_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "traceloop", None)
+    monkeypatch.setitem(sys.modules, "traceloop.sdk", None)
+    with patch.object(AKConfig, "get", return_value=_config(True, "openllmetry")):
+        with pytest.raises(ImportError) as exc_info:
+            Trace.get()
+    assert "agentkernel[openllmetry]" in str(exc_info.value)

@@ -13,9 +13,10 @@ import types
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from agentkernel.core.base import Session
+from agentkernel.core.base import Agent, Runner, Session
 from agentkernel.core.config import (
     AKConfig,
+    _GuardrailConfig,
     _SandboxBrokerConfig,
     _SandboxConfig,
     _SandboxDockerConfig,
@@ -46,7 +47,7 @@ from agentkernel.sandbox.model import (
     SandboxTask,
 )
 from agentkernel.sandbox.principal import AgentPrincipalResolver
-from agentkernel.sandbox.testing import FakeSandboxProvider, SandboxProviderContract
+from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider, SandboxProviderContract
 from agentkernel.sandbox.tools import (
     check_sandbox_task,
     destroy_sandbox_session,
@@ -65,21 +66,65 @@ def reset_config_singleton():
     AKConfig._reset()
     SandboxManager._reset()
     SandboxProviderFactory._reset()
+    Runtime._system_pre_hooks = None  # rebuilt from each test's mocked config
+    Runtime._system_post_hooks = None
     yield
     AKConfig._reset()
     SandboxManager._reset()
     SandboxProviderFactory._reset()
+    Runtime._system_pre_hooks = None
+    Runtime._system_post_hooks = None
 
 
 FAKE_DOTTED = "agentkernel.sandbox.testing.FakeSandboxProvider"
 
 
+class _SandboxRunner(Runner):
+    """Runner whose turn runs code in the sandbox — used to exercise the real Runtime.run path."""
+
+    async def run(self, agent, session, requests):
+        code = requests[0].prompt if requests and isinstance(requests[0], AgentRequestText) else "print(1)"
+        result = await SandboxManager.get().execute(code=code)
+        return AgentReplyText(response=result.stdout)
+
+    async def stream(self, agent, session, requests):
+        raise NotImplementedError()
+        yield
+
+
+class _SandboxAgent(Agent):
+    def __init__(self, name="coder"):
+        super().__init__(name, _SandboxRunner("SandboxRunner"))
+        self._name = name
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def runner(self):
+        return self._runner
+
+    def get_a2a_card(self):
+        return None
+
+    def get_description(self):
+        return "sandbox test agent"
+
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
+
+
 def _install_sandbox_cfg(monkeypatch, sandbox_cfg):
-    """Point AKConfig.get() at a stub carrying only the sandbox section."""
+    """Point AKConfig.get() at a stub carrying the sections the runtime hook chain reads."""
 
     class _Cfg:
         sandbox = sandbox_cfg
         multimodal = None  # read by SystemToolFactory.get_all() alongside the sandbox block
+        guardrail = _GuardrailConfig()  # read by the input/output guardrail system hooks (disabled)
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
@@ -457,20 +502,20 @@ async def test_manager_execute_code_and_command(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_manager_session_round_trip_and_reuse(monkeypatch):
+    """Drive two real Runtime.run turns (each clears the volatile cache in finally and stores
+    the session): the sandbox session must persist via nv_cache and be reused, not recreated."""
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
-    mgr = SandboxManager.get()
     store = InMemorySessionStore()
-    session = store.new("ak-1")
-    async with session:
-        r1 = await mgr.execute(code="print(1)")
-    # round-trip the session (and its nv_cache registry) through the store
-    store.store(session)
-    loaded = store.load("ak-1")
-    async with loaded:
-        r2 = await mgr.execute(code="print(2)")
+    runtime = Runtime(store)
+    agent = _SandboxAgent()
+
+    r1 = await runtime.run(agent, store.new("ak-1"), [AgentRequestText(prompt="print(1)")])
+    # Reload the session from the store between turns (exercises the nv_cache round-trip).
+    r2 = await runtime.run(agent, store.load("ak-1"), [AgentRequestText(prompt="print(2)")])
+
     provider = SandboxProviderFactory.get("default")
-    assert len(provider.created_ids) == 1  # reused, not recreated
-    assert r1.sandbox_session_id == r2.sandbox_session_id == "default:default"
+    assert len(provider.created_ids) == 1  # reused across turns, not recreated
+    assert r1.response == "print(1)" and r2.response == "print(2)"
 
 
 @pytest.mark.asyncio
@@ -515,6 +560,8 @@ async def test_manager_stale_handle_self_heal(monkeypatch):
         healed = await mgr.execute(code="print(2)")  # attach -> SandboxGoneError -> recreate
     assert len(provider.created_ids) == 2
     assert provider.created_ids[0] != provider.created_ids[1]
+    # Recreated under the SAME sandbox_session_id (self-heal, not a new session).
+    assert healed.sandbox_session_id == first.sandbox_session_id
     # The silent recreation is surfaced to the caller, never hidden.
     assert first.notice is None
     assert "recreated empty" in healed.notice
@@ -565,6 +612,48 @@ async def test_manager_per_call_scope_creates_and_destroys(monkeypatch):
         await mgr.execute(code="print(2)")
     assert len(provider.created_ids) == 2  # fresh per call
     assert len(provider.destroyed_ids) == 2  # each torn down
+
+
+@pytest.mark.asyncio
+async def test_manager_per_call_destroys_in_finally_on_failure(monkeypatch):
+    """per_call teardown is in `finally`: an execution that raises still disposes the ephemeral
+    sandbox (and the exception propagates)."""
+    profile = _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_call")
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
+    mgr = SandboxManager.get()
+    provider = SandboxProviderFactory.get("default")
+
+    async def boom(self, code, language="python", timeout=None):
+        raise RuntimeError("execution blew up")
+
+    monkeypatch.setattr("agentkernel.sandbox.testing.FakeSandbox.execute_code", boom)
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        with pytest.raises(RuntimeError):
+            await mgr.execute(code="print(1)")
+    assert len(provider.created_ids) == 1
+    assert provider.created_ids[0] in provider.destroyed_ids  # torn down despite the failure
+
+
+@pytest.mark.asyncio
+async def test_manager_explicit_session_uses_its_own_profile(monkeypatch):
+    """Blocker regression: an explicit sandbox_session_id resolves under the profile it was
+    minted with, not the caller's/default — never rerouting to another provider."""
+    default_profile = _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_session")
+    other_profile = _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_session")
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": default_profile, "gpu": other_profile}))
+    mgr = SandboxManager.get()
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        minted = mgr.new_session(profile="gpu")
+        # profile omitted → must still resolve under 'gpu', not default_profile
+        result = await mgr.execute(code="print(1)", sandbox_session_id=minted.sandbox_session_id)
+        assert result.sandbox_session_id == minted.sandbox_session_id
+        stored = mgr.list_sessions()
+        assert next(s for s in stored if s.sandbox_session_id == minted.sandbox_session_id).profile == "gpu"
+        # a contradicting explicit profile is rejected, not silently rerouted
+        with pytest.raises(SandboxConfigError):
+            await mgr.execute(code="print(2)", sandbox_session_id=minted.sandbox_session_id, profile="default")
 
 
 @pytest.mark.asyncio
@@ -653,14 +742,19 @@ async def test_fail_closed_policy_strict(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_policy_non_strict_proceeds_with_warning(monkeypatch):
+async def test_policy_non_strict_proceeds_with_warning(monkeypatch, caplog):
     profile = _SandboxProfileConfig(type=FAKE_DOTTED, policy=_SandboxPolicyConfig(network_egress="deny", strict=False))
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
     mgr = SandboxManager.get()
     session = InMemorySessionStore().new("ak-1")
-    async with session:
-        result = await mgr.execute(code="print(1)")
-    assert result.exit_code == 0
+    with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
+        async with session:
+            r1 = await mgr.execute(code="print(1)")
+            r2 = await mgr.execute(code="print(2)")
+    assert r1.exit_code == 0 and r2.exit_code == 0
+    # Proceeds with exactly one policy-mismatch warning across the two calls (process-lifetime memo).
+    mismatch_warnings = [r for r in caplog.records if "cannot enforce policy dimensions" in r.message]
+    assert len(mismatch_warnings) == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -811,6 +905,25 @@ async def test_tool_output_truncated_at_configured_max(monkeypatch):
         read_payload = json.loads(await read_sandbox_file("big.txt"))
     assert code_payload["stdout"] == "01234"
     assert read_payload["content"] == "01234"
+
+
+@pytest.mark.asyncio
+async def test_file_tools_against_non_files_provider_return_capability_error(monkeypatch):
+    """A file tool against a profile whose provider lacks `files` returns the capability-error
+    string, like any other unsupported operation."""
+    no_files = FakeSandboxProvider.capabilities.model_copy(update={"files": False})
+    monkeypatch.setattr(FakeSandboxProvider, "capabilities", no_files)
+    # A no-files provider's sandbox doesn't override the file ops, so the base ABC raises
+    # SandboxCapabilityError — restore that behavior on the fake (which normally overrides them).
+    monkeypatch.setattr(FakeSandbox, "upload_file", Sandbox.upload_file)
+    monkeypatch.setattr(FakeSandbox, "download_file", Sandbox.download_file)
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        write_payload = json.loads(await write_sandbox_file("f.txt", "hi"))
+        read_payload = json.loads(await read_sandbox_file("f.txt"))
+    assert "files" in write_payload["error"]
+    assert "files" in read_payload["error"]
 
 
 @pytest.mark.asyncio

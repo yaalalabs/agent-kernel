@@ -25,5 +25,8 @@ async def test_first_question(test_client):
     await test_client.send("What is the prehistoric single continent of which all current continents broke off from?")
     await test_client.expect(["Pangea"])
 
+    # Selecting a non-existent agent is a no-op — the failure is logged (stderr), not printed,
+    # so the previously selected 'geography' agent stays active and still answers.
     await test_client.send("!select triage")
-    await test_client.expect(["No agent found with name 'triage'"])
+    await test_client.send("Which ocean is the largest on Earth?")
+    await test_client.expect(["Pacific"])

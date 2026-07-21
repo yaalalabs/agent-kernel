@@ -20,14 +20,27 @@ from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.sandbox.broker.base import SandboxCompletion
 from agentkernel.sandbox.broker.thread import ThreadBroker
-from agentkernel.sandbox.errors import SandboxPolicyError
-from agentkernel.sandbox.factory import SandboxProviderFactory
+from agentkernel.sandbox.errors import SandboxConfigError, SandboxPolicyError
+from agentkernel.sandbox.factory import SandboxBrokerFactory, SandboxProviderFactory
 from agentkernel.sandbox.manager import SandboxManager
 from agentkernel.sandbox.model import SandboxResult, SandboxSession, SandboxTask
 from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider
-from agentkernel.sandbox.tools import check_sandbox_task
+from agentkernel.sandbox.tools import check_sandbox_task, run_code
 
 FAKE_DOTTED = "agentkernel.sandbox.testing.FakeSandboxProvider"
+
+
+def _stop_leaked_broker():
+    """Synchronously stop the current manager's thread broker so its daemon thread + private
+    event loop don't leak across tests (only ThreadBroker.close() joins the thread, and it's
+    async — here we drive the same shutdown from a sync fixture teardown)."""
+    mgr = SandboxManager._instance
+    broker = getattr(mgr, "_broker", None) if mgr is not None else None
+    thread = getattr(broker, "_thread", None)
+    if thread is not None and thread.is_alive():
+        broker._closed = True
+        broker._loop.call_soon_threadsafe(broker._queue.put_nowait, None)
+        thread.join(5.0)
 
 
 @pytest.fixture(autouse=True)
@@ -38,6 +51,7 @@ def reset_singletons():
     Runtime._system_pre_hooks = None
     Runtime._system_post_hooks = None
     yield
+    _stop_leaked_broker()  # close the thread broker before dropping the manager instance
     AKConfig._reset()
     SandboxManager._reset()
     SandboxProviderFactory._reset()
@@ -205,11 +219,18 @@ async def test_promoted_failure_becomes_failed_completion(monkeypatch):
         outcome = await mgr.execute(code="slow", wait=0.05)
         assert isinstance(outcome, SandboxTask)
         release.set()
+        # Inspect the broker's completion before task_status consumes it, then confirm the
+        # promotion resolved to a terminal 'failed' task in the registry.
+        completion = None
+        for _ in range(250):
+            completion = await mgr._broker.result(outcome.task_id)
+            if completion is not None:
+                break
+            await asyncio.sleep(0.02)
+        assert completion is not None and completion.status == "failed"
+        assert "backend blew up" in completion.error
         task = await _wait_for_status(mgr, outcome.task_id, "failed")
         assert task.consumed is False
-        completion = await mgr._broker.result(outcome.task_id)
-    assert completion.status == "failed"
-    assert "backend blew up" in completion.error
 
 
 @pytest.mark.asyncio
@@ -306,3 +327,35 @@ async def test_runtime_ingests_completion_then_dedupes(monkeypatch):
 
     unknown = await runtime.run(agent, session, [AgentRequestAny(name="sandbox_task_completion", content=_completion("t-404").model_dump())])
     assert "Duplicate or unknown" in unknown.response
+
+
+# --------------------------------------------------------------------------- #
+# Promoted-task tool JSON + broker flavor resolution
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.asyncio
+async def test_run_code_tool_returns_pending_task_json(monkeypatch):
+    """The run_code tool's promoted-task branch: a wait-expiry promotion returns the
+    {task_id, status: pending, sandbox_session_id} JSON contract."""
+    _install_cfg(monkeypatch, _sandbox_cfg(flavor="thread"))
+    release, blocked = _release_gate()
+    monkeypatch.setattr(FakeSandbox, "execute_code", blocked)
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", AKConfig.get)  # keep stub
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        # wait_timeout=0 → always promote
+        cfg = AKConfig.get().sandbox
+        cfg.broker.wait_timeout = 0
+        payload = json.loads(await run_code("slow"))
+        assert payload["status"] == "pending"
+        assert payload["task_id"] and payload["sandbox_session_id"] == "default:default"
+        release.set()
+
+
+def test_broker_factory_unknown_flavor_raises_listing_builtins(monkeypatch):
+    """An unknown non-dotted broker flavor fails loud with the #541 error shape."""
+    _install_cfg(monkeypatch, _sandbox_cfg(flavor="sqs"))  # not landed until iteration 8
+    with pytest.raises(SandboxConfigError) as exc_info:
+        SandboxBrokerFactory.get()
+    assert "embedded" in str(exc_info.value) and "thread" in str(exc_info.value)

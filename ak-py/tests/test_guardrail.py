@@ -117,6 +117,24 @@ class TestInputGuardrailFactory:
                 InputGuardrailFactory.get()
             assert "unknown_type" in str(exc_info.value)
 
+    def test_walledai_missing_extra_raises_friendly_import_error(self, monkeypatch):
+        """The walledai built-in imports its SDK at module load through require_extra: a missing
+        SDK yields the friendly `agentkernel[walledai]` message (the wiring routes the shared
+        helper to the right extra name)."""
+        import sys
+
+        monkeypatch.delitem(sys.modules, "agentkernel.guardrail.walledai", raising=False)
+        monkeypatch.setitem(sys.modules, "walledai", None)  # simulate the SDK not installed
+        with patch.object(AKConfig, "get") as mock_get:
+            mock_config = Mock()
+            mock_config.guardrail.input.enabled = True
+            mock_config.guardrail.input.type = "walledai"
+            mock_get.return_value = mock_config
+
+            with pytest.raises(ImportError) as exc_info:
+                InputGuardrailFactory.get()
+            assert "agentkernel[walledai]" in str(exc_info.value)
+
     def test_get_resolves_byo_dotted_path(self):
         """A dotted path to an InputGuardrail subclass resolves (bring-your-own)."""
         with patch.object(AKConfig, "get") as mock_get:
