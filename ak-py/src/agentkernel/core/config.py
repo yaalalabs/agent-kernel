@@ -195,6 +195,10 @@ class _MultimodalConfig(BaseModel):
         default=False,
         description="Enable multimodal memory for images and files.",
     )
+    agents: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names the multimodal tools and system-prompt guidance attach to; omitted = all agents",
+    )
     storage_type: str = Field(
         default="in_memory",
         description="Storage backend for multimodal attachments: a built-in short name (session_cache, in_memory, redis, dynamodb) or a dotted path to an AttachmentStore subclass",
@@ -491,6 +495,10 @@ class _SandboxProfileConfig(BaseModel):
 class _SandboxConfig(BaseModel):
     enabled: bool = Field(
         default=False, description="Enable the sandbox capability; when False it is inert (no tools, no hook behavior, no provider imports)"
+    )
+    agents: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names the sandbox tools and system-prompt guidance attach to; omitted = all agents",
     )
     default_profile: str = Field(default="default", description="Profile name used when a caller does not specify one")
     principal_resolver: Optional[str] = Field(

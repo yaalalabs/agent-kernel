@@ -725,6 +725,8 @@ def test_agent_setup_system_prompt_injects_sandbox_guidance(monkeypatch):
     captured = []
 
     class _Probe:
+        name = "coder"
+
         def override_system_prompt(self, prompt):
             captured.append(prompt)
 
@@ -732,6 +734,40 @@ def test_agent_setup_system_prompt_injects_sandbox_guidance(monkeypatch):
 
     Agent._setup_system_prompt(_Probe())
     assert "[Sandbox execution]" in captured[0]
+
+
+def test_agents_list_restricts_tools_and_prompt(monkeypatch):
+    """sandbox.agents limits tool attachment and prompt injection to the named agents;
+    anonymous callers (no agent context) are not filtered."""
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(agents=["coder"]))
+    assert [t.name for t in SystemToolFactory.get_all("coder")] == SANDBOX_TOOL_NAMES
+    assert SystemToolFactory.get_all("triage") == []
+    assert [t.name for t in SystemToolFactory.get_all()] == SANDBOX_TOOL_NAMES  # anonymous: unfiltered
+
+    assert "[Sandbox execution]" in SystemToolFactory.get_system_prompt_suffix("coder")
+    assert SystemToolFactory.get_system_prompt_suffix("triage") == ""
+
+
+def test_agents_list_absent_keeps_all_agents(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    assert [t.name for t in SystemToolFactory.get_all("anyone")] == SANDBOX_TOOL_NAMES
+
+
+def test_agents_list_filters_multimodal_independently(monkeypatch):
+    """Each capability carries its own agents list; sandbox and multimodal filter independently."""
+
+    class _MM:
+        enabled = True
+        agents = ["vision"]
+
+    class _Cfg:
+        sandbox = _sandbox_cfg(agents=["coder"])
+        multimodal = _MM
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+    assert [t.name for t in SystemToolFactory.get_all("vision")] == ["analyze_attachments"]
+    assert [t.name for t in SystemToolFactory.get_all("coder")] == SANDBOX_TOOL_NAMES
+    assert SystemToolFactory.get_all("other") == []
 
 
 @pytest.mark.asyncio

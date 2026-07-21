@@ -507,10 +507,14 @@ caught and returned as `{"error": ...}` strings — tools never raise into the f
 - `destroy_sandbox_session(sandbox_session_id)` — `SandboxManager.destroy_session`,
   idempotent; destroying the default session resets it (the next id-less call starts clean).
 
-All eight tools register unconditionally when the capability is enabled — registration is
-profile-agnostic because the profile is chosen per call; invoking a file tool against a profile
-whose provider lacks `files` returns the capability-error string like any other unsupported
-operation.
+All eight tools register when the capability is enabled — registration is profile-agnostic
+because the profile is chosen per call; invoking a file tool against a profile whose provider
+lacks `files` returns the capability-error string like any other unsupported operation.
+An optional `sandbox.agents` list (added 2026-07-21; `_MultimodalConfig` gained the same field)
+restricts tool attachment and prompt injection to the named agents — enforced at agent wrap
+time via `SystemToolFactory.get_all(agent_name)` / `get_system_prompt_suffix(agent_name)`;
+omitted = all agents (current behavior). Anonymous callers with no agent context (the
+LangGraph `ToolBuilder.bind` convenience injection) are not filtered.
 
 Tool `description` strings must teach the model: results persist per `sandbox_session_id`;
 reuse the id to continue in the same environment; omit it for the default; **session ids are
@@ -688,6 +692,7 @@ class _SandboxProfileConfig(BaseModel):
 
 class _SandboxConfig(BaseModel):
     enabled: bool = Field(default=False)
+    agents: Optional[list[str]] = None                   # restrict tools + prompt to these agents; None = all
     default_profile: str = Field(default="default")
     principal_resolver: Optional[str] = None            # dotted path
     tool_output_max_chars: int = Field(default=8000)
@@ -730,8 +735,9 @@ All intentional; none reachable unless `sandbox.enabled: true` except 1–3:
 3. `AKConfig` gains the `sandbox` section — new keys appear in generated config docs.
 4. With sandbox **enabled**: eight system tools (`run_code`, `run_command`,
    `write_sandbox_file`, `read_sandbox_file`, `check_sandbox_task`, `list_sandbox_sessions`,
-   `new_sandbox_session`, `destroy_sandbox_session`) register on all agents and the
-   system-prompt suffix (`core/tool.py:181-197`) grows by the capability's guidance section.
+   `new_sandbox_session`, `destroy_sandbox_session`) register on all agents — or only those
+   named in `sandbox.agents` when set — and those agents' system prompts grow by the
+   capability's guidance section.
 5. With sandbox **enabled**: an inbound request body carrying a `sandbox_task_completion` extra
    field is intercepted by `SandboxPreHook` (consumed, deduped, or halted) instead of flowing to
    the agent as an ignored `AgentRequestAny`.

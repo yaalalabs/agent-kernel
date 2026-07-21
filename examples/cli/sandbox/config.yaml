@@ -13,6 +13,7 @@
 # idle_timeout, so this file uses an explicit profile.
 sandbox:
   enabled: true
+  # agents: [coder]   # optional: attach the sandbox tools/prompt only to these agents (omitted = all)
   profiles:
     default:
       type: local_subprocess

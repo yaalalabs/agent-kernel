@@ -512,7 +512,9 @@ class LangGraphToolBuilder(ToolBuilder):
         :return: List of LangChain StructuredTool instances.
         :raises TypeError: If any item in funcs is not callable.
         """
-        # Inject system tools (e.g., analyze_attachments)
+        # Inject system tools (e.g., analyze_attachments). This binding happens outside any
+        # agent context, so per-capability `agents` restrictions cannot apply here; they are
+        # enforced at agent wrap time (Agent._attach_system_tools / _setup_system_prompt).
         all_funcs = list(funcs)
         for sys_tool in SystemToolFactory.get_all():
             if sys_tool.func not in all_funcs:
