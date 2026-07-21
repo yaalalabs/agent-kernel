@@ -35,4 +35,5 @@ class AgentPrincipalResolver(PrincipalResolver):
     """
 
     async def resolve(self, session: Session, agent: Optional[Agent]) -> SandboxPrincipal:
+        """Return an agent-mode principal named after the current agent (or ``"agent"``)."""
         return SandboxPrincipal(mode="agent", subject=agent.name if agent is not None else "agent")

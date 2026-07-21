@@ -37,12 +37,15 @@ class FakeSandbox(Sandbox):
     """In-memory sandbox handle backing ``FakeSandboxProvider``."""
 
     def __init__(self, sandbox_id: str, languages: list[str]) -> None:
+        """Create the in-memory handle with the languages it accepts."""
         self.id = sandbox_id
         self._languages = languages
         self._files: dict[str, bytes] = {}
         self.closed = False
 
     async def execute_code(self, code: str, language: str = "python", timeout: float | None = None) -> SandboxResult:
+        """Echo ``code`` to stdout with exit 0; ``FAIL_MARKER`` in the code simulates a
+        non-zero exit (returned as data); an undeclared language raises."""
         if language not in self._languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
         if FAIL_MARKER in code:
@@ -50,14 +53,17 @@ class FakeSandbox(Sandbox):
         return SandboxResult(stdout=code, exit_code=0)
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
+        """Echo ``command`` to stdout with exit 0; ``FAIL_MARKER`` simulates a non-zero exit."""
         if FAIL_MARKER in command:
             return SandboxResult(stderr="simulated non-zero exit", exit_code=1)
         return SandboxResult(stdout=command, exit_code=0)
 
     async def upload_file(self, path: str, content: bytes) -> None:
+        """Store the file in the in-memory workspace."""
         self._files[path] = content
 
     async def download_file(self, path: str) -> bytes:
+        """Return the stored file bytes; unknown paths raise ``FileNotFoundError``."""
         if path not in self._files:
             raise FileNotFoundError(path)
         return self._files[path]
@@ -66,6 +72,7 @@ class FakeSandbox(Sandbox):
     # so the base ABC raises SandboxCapabilityError — capability honesty in action.
 
     async def close(self) -> None:
+        """Mark the handle closed. Idempotent; in-memory state survives for re-attach."""
         self.closed = True  # idempotent
 
 
@@ -91,12 +98,14 @@ class FakeSandboxProvider(SandboxProvider):
     )
 
     def __init__(self, config: Optional[BaseModel] = None) -> None:
+        """Create the provider; ``config`` is optional because the fake reads no configuration."""
         super().__init__(config if config is not None else _EmptyConfig())
         self._sandboxes: dict[str, FakeSandbox] = {}
         self.created_ids: list[str] = []
         self.destroyed_ids: list[str] = []
 
     async def create(self, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
+        """Mint a new in-memory sandbox and record its id in ``created_ids``."""
         sandbox_id = uuid.uuid4().hex
         sandbox = FakeSandbox(sandbox_id, list(self.capabilities.languages))
         self._sandboxes[sandbox_id] = sandbox
@@ -104,6 +113,8 @@ class FakeSandboxProvider(SandboxProvider):
         return sandbox
 
     async def attach(self, sandbox_id: str, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
+        """Reconnect to a live sandbox; a vanished id raises ``SandboxGoneError`` (the
+        self-heal signal the manager/worker tests rely on)."""
         sandbox = self._sandboxes.get(sandbox_id)
         if sandbox is None:
             raise SandboxGoneError(f"sandbox {sandbox_id} no longer exists")
@@ -111,6 +122,7 @@ class FakeSandboxProvider(SandboxProvider):
         return sandbox
 
     async def destroy(self, sandbox_id: str) -> None:
+        """Drop the sandbox and record the id in ``destroyed_ids``. Idempotent; unknown ids are a no-op."""
         self._sandboxes.pop(sandbox_id, None)  # idempotent; unknown ids are a no-op
         self.destroyed_ids.append(sandbox_id)
 
@@ -138,10 +150,12 @@ class SandboxProviderContract:
 
     @pytest.fixture
     def provider(self) -> SandboxProvider:
+        """The provider under contract; every subclass must override this fixture."""
         raise NotImplementedError("subclasses must override the `provider` fixture")
 
     @pytest.fixture
     def principal_policy(self) -> tuple[SandboxPrincipal, SandboxPolicy]:
+        """Default agent-mode principal and permissive policy used by the contract tests."""
         return SandboxPrincipal(subject="contract-agent"), SandboxPolicy()
 
     @pytest.mark.asyncio

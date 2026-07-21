@@ -10,6 +10,7 @@ from typing import Optional
 from singleton_type import Singleton
 
 from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
+from ..sandbox.hooks import SandboxPreHookFactory
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
 from .model import (
@@ -46,7 +47,7 @@ class Runtime:
         if Runtime._system_pre_hooks is None:
             with Runtime._lock:
                 if Runtime._system_pre_hooks is None:
-                    Runtime._system_pre_hooks = [InputGuardrailFactory.get(), MultimodalPreHookFactory.get()]
+                    Runtime._system_pre_hooks = [InputGuardrailFactory.get(), MultimodalPreHookFactory.get(), SandboxPreHookFactory.get()]
         return Runtime._system_pre_hooks
 
     @classmethod

@@ -36,11 +36,14 @@ class BrokerWorkerCore:
     """Processes one request against the resolved provider, serialized per sandbox session."""
 
     def __init__(self, *, inline_payload_max_bytes: Optional[int] = None) -> None:
+        """Create an engine instance. ``inline_payload_max_bytes`` is the offload threshold
+        for flavors that support it (``None`` for in-process flavors, which never offload)."""
         self._inline_max = inline_payload_max_bytes
         self._locks: dict[str, asyncio.Lock] = {}  # per sandbox_session_id
         self._policy_warned: set[tuple[str, str]] = set()  # process-lifetime memo per (provider, profile)
 
     def _lock_for(self, sandbox_session_id: str) -> asyncio.Lock:
+        """Return (creating on first use) the lock serializing operations per sandbox session."""
         lock = self._locks.get(sandbox_session_id)
         if lock is None:
             lock = asyncio.Lock()
@@ -48,6 +51,13 @@ class BrokerWorkerCore:
         return lock
 
     async def run(self, request: SandboxBrokerRequest) -> tuple[SandboxResult, SandboxSession]:
+        """Execute one request and return ``(result, updated session)``.
+
+        Raises the real ``SandboxError`` on any machinery/policy failure, so synchronous
+        (in-process) flavors surface the true exception type to the caller. Steps follow
+        the spec: resolve provider, fail-closed checks, attach-or-create with self-heal,
+        serialize per session, execute under the effective timeout.
+        """
         # 1. Resolve profile -> provider.
         provider = SandboxProviderFactory.get(request.profile)
         if provider is None:
@@ -94,6 +104,9 @@ class BrokerWorkerCore:
     # -- internals ---------------------------------------------------------- #
 
     def _check_principal(self, provider: SandboxProvider, request: SandboxBrokerRequest) -> None:
+        """Fail closed on user identity: a ``user``-mode profile requires both a provider
+        that declares ``principal_user`` and a resolver that actually produced a user
+        principal; otherwise raise before any provider call."""
         profile_cfg = AKConfig.get().sandbox.profiles.get(request.profile)
         desired_mode = profile_cfg.identity.mode if profile_cfg is not None else "agent"
         if desired_mode != "user":
@@ -107,6 +120,10 @@ class BrokerWorkerCore:
             )
 
     def _enforce_policy(self, provider: SandboxProvider, request: SandboxBrokerRequest) -> None:
+        """Check every non-default policy dimension against the provider's declared
+        ``policy_*`` capabilities: unenforceable under ``strict`` raises
+        ``SandboxPolicyError`` listing all of them; non-strict proceeds with one WARNING
+        per (provider, profile) for the process lifetime."""
         caps = provider.capabilities
         policy = request.policy
         unenforceable: list[str] = []
@@ -135,6 +152,8 @@ class BrokerWorkerCore:
             )
 
     async def _acquire(self, provider: SandboxProvider, request: SandboxBrokerRequest):
+        """Attach to the session's existing sandbox, self-healing a stale handle
+        (``SandboxGoneError`` recreates under the same session id), or create a new one."""
         session = request.sandbox_session
         if session.sandbox_id:
             try:
@@ -149,11 +168,14 @@ class BrokerWorkerCore:
         return await provider.create(principal=request.principal, policy=request.policy)
 
     async def _execute(self, sandbox, request: SandboxBrokerRequest) -> SandboxResult:
+        """Dispatch the request's operation to the sandbox handle under
+        ``asyncio.wait_for(policy.timeout)``; expiry raises ``SandboxTimeoutError``."""
         op = request.operation
         payload = request.payload
         timeout = request.policy.timeout
 
         async def call() -> SandboxResult:
+            """Map the operation name to the corresponding sandbox method call."""
             if op == "execute_code":
                 return await sandbox.execute_code(payload["code"], payload.get("language", "python"), timeout=timeout)
             if op == "execute_command":

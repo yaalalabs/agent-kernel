@@ -37,15 +37,35 @@ class Sandbox(ABC):
         """
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
+        """Run a shell command and return a ``SandboxResult``.
+
+        Optional: override only when the provider declares ``capabilities.shell``; the
+        default raises ``SandboxCapabilityError``.
+        """
         raise SandboxCapabilityError(self.__class__.__name__, "shell")
 
     async def upload_file(self, path: str, content: bytes) -> None:
+        """Write ``content`` to ``path`` inside the sandbox workspace.
+
+        Optional: override only when the provider declares ``capabilities.files``; the
+        default raises ``SandboxCapabilityError``.
+        """
         raise SandboxCapabilityError(self.__class__.__name__, "files")
 
     async def download_file(self, path: str) -> bytes:
+        """Read and return the bytes at ``path`` inside the sandbox workspace.
+
+        Optional: override only when the provider declares ``capabilities.files``; the
+        default raises ``SandboxCapabilityError``.
+        """
         raise SandboxCapabilityError(self.__class__.__name__, "files")
 
     async def install_packages(self, packages: list[str]) -> SandboxResult:
+        """Install packages into the sandbox and return the installer's ``SandboxResult``.
+
+        Optional: override only when the provider declares ``capabilities.package_install``;
+        the default raises ``SandboxCapabilityError``.
+        """
         raise SandboxCapabilityError(self.__class__.__name__, "package_install")
 
     @abstractmethod
@@ -68,8 +88,10 @@ class SandboxProvider(ABC):
     capabilities: ClassVar[SandboxCapabilities]
 
     def __init__(self, config: BaseModel) -> None:
-        # Provider-specific Pydantic config sub-model, injected by the factory.
-        # Providers never read AKConfig directly.
+        """Store the provider-specific Pydantic config sub-model, injected by the factory.
+
+        Providers never read ``AKConfig`` directly.
+        """
         self._config = config
 
     @abstractmethod

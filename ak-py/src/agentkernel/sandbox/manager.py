@@ -19,7 +19,7 @@ from typing import Any, ClassVar, Optional, Union
 
 from ..core.base import Session
 from ..core.config import AKConfig
-from .broker.base import SandboxBroker, SandboxBrokerRequest
+from .broker.base import SandboxBroker, SandboxBrokerRequest, SandboxCompletion
 from .errors import SandboxConfigError, SandboxSessionNotFoundError
 from .factory import SandboxBrokerFactory, _import_dotted
 from .model import SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession, SandboxTask
@@ -35,12 +35,16 @@ class SandboxManager:
     _REGISTRY_KEY = "sandbox"  # key under the AK session's non-volatile cache
 
     def __init__(self, config: Any) -> None:
+        """Build the manager from the ``sandbox`` config section: the broker client (via the
+        factory) and the principal resolver. Use :meth:`get`, not this constructor."""
         self._config = config
         self._broker: SandboxBroker = SandboxBrokerFactory.get()
         self._resolver: PrincipalResolver = self._build_resolver(config)
 
     @staticmethod
     def _build_resolver(config: Any) -> PrincipalResolver:
+        """Instantiate the configured ``principal_resolver`` dotted path, or the default
+        ``AgentPrincipalResolver`` when none is configured."""
         if config.principal_resolver:
             resolver_cls = _import_dotted(config.principal_resolver)
             if not (isinstance(resolver_cls, type) and issubclass(resolver_cls, PrincipalResolver)):
@@ -79,6 +83,12 @@ class SandboxManager:
         sandbox_session_id: Optional[str] = None,
         wait: Optional[float] = None,
     ) -> Union[SandboxResult, SandboxTask]:
+        """Execute ``code`` (in ``language``) or a shell ``command`` in a sandbox.
+
+        Exactly one of ``code``/``command`` must be given. Returns a ``SandboxResult`` when
+        the execution completes within ``wait`` seconds, or a ``SandboxTask`` handle when it
+        is promoted to run asynchronously (``wait=None`` means the broker decides per flavor).
+        """
         if code is not None:
             operation, payload = "execute_code", {"code": code, "language": language}
         elif command is not None:
@@ -88,15 +98,22 @@ class SandboxManager:
         return await self._submit_op(operation, payload, profile=profile, sandbox_session_id=sandbox_session_id, wait=wait)
 
     async def upload(self, path: str, content: bytes, *, profile: Optional[str] = None, sandbox_session_id: Optional[str] = None) -> None:
+        """Write ``content`` to ``path`` inside the resolved sandbox session's workspace."""
         await self._submit_op("upload_file", {"path": path, "content": content}, profile=profile, sandbox_session_id=sandbox_session_id)
 
     async def download(self, path: str, *, profile: Optional[str] = None, sandbox_session_id: Optional[str] = None) -> bytes:
+        """Read and return the bytes at ``path`` from the resolved sandbox session's workspace."""
         result = await self._submit_op("download_file", {"path": path}, profile=profile, sandbox_session_id=sandbox_session_id)
         if isinstance(result, SandboxResult) and result.output_files:
             return result.output_files[0].content
         return b""
 
     async def task_status(self, task_id: str) -> Optional[SandboxTask]:
+        """Return the current state of a promoted task, or ``None`` when unknown.
+
+        Registry first; a still-pending entry (or a task missing from this session's
+        registry, e.g. after suspend/resume) falls through to ``broker.result()``.
+        """
         reg = self._nv_registry()
         data = reg["tasks"].get(task_id)
         if data is not None:
@@ -120,7 +137,26 @@ class SandboxManager:
             )
         return None
 
+    def ingest_completion(self, completion: SandboxCompletion) -> Optional[SandboxTask]:
+        """Consume a task-completion event (called by ``SandboxPreHook`` under the session lock).
+
+        Returns the updated task after marking it consumed and terminal and refreshing the
+        sandbox-session handle, or ``None`` when the task is unknown or already consumed —
+        the at-least-once dedup signal the hook turns into a halting no-op reply."""
+        reg = self._nv_registry()
+        data = reg["tasks"].get(completion.task_id)
+        if data is None or data.get("consumed"):
+            return None
+        task = SandboxTask(**data)
+        task.status = completion.status
+        task.consumed = True
+        reg["tasks"][completion.task_id] = task.model_dump()
+        self._save_nv_registry(reg)
+        self._write_session(completion.sandbox_session)
+        return task
+
     async def destroy_session(self, sandbox_session_id: str) -> None:
+        """Destroy the backend sandbox and remove the session from its registry. Idempotent."""
         session = self._find_session(sandbox_session_id)
         if session is None:
             return  # idempotent
@@ -128,6 +164,8 @@ class SandboxManager:
         self._remove_session(session)
 
     def list_sessions(self) -> list[SandboxSession]:
+        """Return the sandbox sessions addressable right now: the current AK session's
+        registry plus the process-wide ``per_runtime`` entries."""
         reg = self._nv_registry()
         sessions = [SandboxSession(**data) for data in reg["sessions"].values()]
         sessions.extend(self._runtime_registry.values())
@@ -144,6 +182,9 @@ class SandboxManager:
         sandbox_session_id: Optional[str] = None,
         wait: Optional[float] = None,
     ) -> Union[SandboxResult, SandboxTask]:
+        """Resolve profile, session, principal, and policy into a ``SandboxBrokerRequest``
+        and submit it. Persists the (updated) session handle on success; ``per_call``
+        sessions are ephemeral and their backend is torn down in ``finally``."""
         profile_name = profile or self._config.default_profile
         profile_cfg = self._config.profiles.get(profile_name)
         if profile_cfg is None:
@@ -176,10 +217,13 @@ class SandboxManager:
     # -- principal / policy ------------------------------------------------- #
 
     async def _resolve_principal(self) -> SandboxPrincipal:
+        """Resolve the execution identity from the current session and agent."""
         return await self._resolver.resolve(Session.current(), self._current_agent())
 
     @staticmethod
     def _current_agent():
+        """Return the agent from the active ``ToolContext``, or ``None`` when the operation
+        is driven programmatically (no tool context)."""
         try:
             from ..core.tool import ToolContext
 
@@ -190,6 +234,7 @@ class SandboxManager:
 
     @staticmethod
     def _policy_from(profile_cfg: Any) -> SandboxPolicy:
+        """Convert a profile's policy config block into the ``SandboxPolicy`` wire model."""
         p = profile_cfg.policy
         return SandboxPolicy(
             network_egress=p.network_egress,
@@ -204,16 +249,25 @@ class SandboxManager:
 
     @staticmethod
     def _deadline(wait: Optional[float]) -> Optional[float]:
+        """Turn a relative ``wait`` in seconds into an absolute epoch deadline (``None`` passes through)."""
         return None if wait is None else time.time() + wait
 
     @staticmethod
     def _current_session_id() -> str:
+        """Return the current AK session id, or ``""`` outside any session context."""
         session = Session.current()
         return session.id if session is not None else ""
 
     # -- session resolution / registry ------------------------------------- #
 
     async def _resolve_session(self, profile_name: str, sandbox_session_id: Optional[str], profile_cfg: Any) -> tuple[SandboxSession, bool]:
+        """Resolve the target sandbox session and whether it is ephemeral.
+
+        ``per_call`` scope always returns a fresh ephemeral session. An explicit id must
+        exist in the registry (miss raises ``SandboxSessionNotFoundError``); an omitted id
+        maps to the profile's ``default:<profile>`` session, created on first use. An
+        idle-expired session is destroyed here and recreated under the same id on next use.
+        """
         now = time.time()
         scope = profile_cfg.scope
         if scope == "per_call":
@@ -245,10 +299,12 @@ class SandboxManager:
         return existing, False
 
     def _profile_scope(self, profile_name: str) -> str:
+        """Return the configured scope of a profile, defaulting to ``per_session``."""
         profile_cfg = self._config.profiles.get(profile_name)
         return profile_cfg.scope if profile_cfg is not None else "per_session"
 
     def _read_session(self, sandbox_session_id: str, scope: str) -> Optional[SandboxSession]:
+        """Look up a session in the registry the given scope addresses, or ``None``."""
         if scope == "per_runtime":
             return self._runtime_registry.get(sandbox_session_id)
         reg = self._nv_registry()
@@ -256,6 +312,7 @@ class SandboxManager:
         return SandboxSession(**data) if data is not None else None
 
     def _write_session(self, session: SandboxSession) -> None:
+        """Persist a session handle into its scope's registry (nv_cache or process memory)."""
         if self._profile_scope(session.profile) == "per_runtime":
             self._runtime_registry[session.sandbox_session_id] = session
             return
@@ -264,6 +321,7 @@ class SandboxManager:
         self._save_nv_registry(reg)
 
     def _remove_session(self, session: SandboxSession) -> None:
+        """Delete a session handle from its scope's registry."""
         if self._profile_scope(session.profile) == "per_runtime":
             self._runtime_registry.pop(session.sandbox_session_id, None)
             return
@@ -272,6 +330,7 @@ class SandboxManager:
         self._save_nv_registry(reg)
 
     def _find_session(self, sandbox_session_id: str) -> Optional[SandboxSession]:
+        """Look up a session id across both registries (per_runtime first), or ``None``."""
         if sandbox_session_id in self._runtime_registry:
             return self._runtime_registry[sandbox_session_id]
         reg = self._nv_registry()
@@ -279,6 +338,8 @@ class SandboxManager:
         return SandboxSession(**data) if data is not None else None
 
     def _nv_registry(self) -> dict:
+        """Load the current AK session's sandbox registry (``{"sessions": ..., "tasks": ...}``)
+        from its non-volatile cache; an empty registry outside any session context."""
         session = Session.current()
         if session is None:
             # No AK session context: only per_runtime addressing is possible.
@@ -289,11 +350,17 @@ class SandboxManager:
         return reg
 
     def _save_nv_registry(self, reg: dict) -> None:
+        """Write the sandbox registry back to the current AK session's non-volatile cache."""
         session = Session.current()
         if session is not None:
             session.get_non_volatile_cache().set(self._REGISTRY_KEY, reg)
 
     async def _destroy_backend(self, session: SandboxSession) -> None:
+        """Best-effort destroy of a session's backend sandbox via the broker.
+
+        Failures are logged, never raised (teardown must not mask the primary flow); the
+        handle is always marked closed and its ``sandbox_id`` cleared.
+        """
         if not session.sandbox_id:
             session.status = "closed"
             return

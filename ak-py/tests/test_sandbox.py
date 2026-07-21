@@ -1,10 +1,12 @@
 """Tests for the sandbox capability core: data types, error hierarchy, config, the provider
-ABC/contract, and the manager + factory + embedded broker end-to-end.
+ABC/contract, the manager + factory + embedded broker end-to-end, and the agent surface
+(system tools + task-completion pre-hook).
 
 Broker-flavor mechanics (thread/sqs) and the concrete providers are covered by later
 iterations in test_sandbox_broker.py / test_sandbox_providers.py.
 """
 
+import json
 import types
 
 import pytest
@@ -20,11 +22,16 @@ from agentkernel.core.config import (
     _SandboxPolicyConfig,
     _SandboxProfileConfig,
 )
+from agentkernel.core.model import AgentReplyText, AgentRequestAny, AgentRequestText
+from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
+from agentkernel.core.tool import SystemToolFactory
 from agentkernel.sandbox import errors
 from agentkernel.sandbox.base import Sandbox
+from agentkernel.sandbox.broker.base import SandboxCompletion
 from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxConfigError, SandboxPolicyError, SandboxSessionNotFoundError
 from agentkernel.sandbox.factory import SandboxProviderFactory
+from agentkernel.sandbox.hooks import NoOpSandboxPreHook, SandboxPreHook, SandboxPreHookFactory
 from agentkernel.sandbox.manager import SandboxManager
 from agentkernel.sandbox.model import (
     IsolationTier,
@@ -32,9 +39,12 @@ from agentkernel.sandbox.model import (
     SandboxPolicy,
     SandboxPrincipal,
     SandboxResult,
+    SandboxSession,
+    SandboxTask,
 )
 from agentkernel.sandbox.principal import AgentPrincipalResolver
 from agentkernel.sandbox.testing import FakeSandboxProvider, SandboxProviderContract
+from agentkernel.sandbox.tools import check_sandbox_task, get_sandbox_tools, read_sandbox_file, run_code, run_command, write_sandbox_file
 
 
 @pytest.fixture(autouse=True)
@@ -56,6 +66,7 @@ def _install_sandbox_cfg(monkeypatch, sandbox_cfg):
 
     class _Cfg:
         sandbox = sandbox_cfg
+        multimodal = None  # read by SystemToolFactory.get_all() alongside the sandbox block
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
 
@@ -610,3 +621,256 @@ async def test_policy_non_strict_proceeds_with_warning(monkeypatch):
     async with session:
         result = await mgr.execute(code="print(1)")
     assert result.exit_code == 0
+
+
+# --------------------------------------------------------------------------- #
+# System tools (tools.py) — iteration 4
+# --------------------------------------------------------------------------- #
+
+SANDBOX_TOOL_NAMES = ["run_code", "run_command", "write_sandbox_file", "read_sandbox_file", "check_sandbox_task"]
+
+
+def test_tools_registered_when_enabled(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    names = [tool.name for tool in SystemToolFactory.get_all()]
+    assert names == SANDBOX_TOOL_NAMES
+
+
+def test_tools_absent_when_disabled(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _SandboxConfig(enabled=False))
+    assert SystemToolFactory.get_all() == []
+
+
+def test_tool_descriptions_render_profiles_and_truncation(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(tool_output_max_chars=1234))
+    guidance = get_sandbox_tools()[0].description
+    assert "'default' (default)" in guidance
+    assert FAKE_DOTTED in guidance
+    assert "per_session" in guidance
+    assert "1234" in guidance
+
+
+@pytest.mark.asyncio
+async def test_tool_run_code_json_contract(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        payload = json.loads(await run_code("print('hi')"))
+    assert payload == {"stdout": "print('hi')", "stderr": "", "exit_code": 0, "sandbox_session_id": "default:default"}
+
+
+@pytest.mark.asyncio
+async def test_tool_run_command_json_contract(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        payload = json.loads(await run_command("echo hi"))
+    assert payload["stdout"] == "echo hi"
+    assert payload["exit_code"] == 0
+    assert payload["sandbox_session_id"] == "default:default"
+
+
+@pytest.mark.asyncio
+async def test_tool_file_roundtrip(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        written = json.loads(await write_sandbox_file("notes.txt", "hello sandbox"))
+        read = json.loads(await read_sandbox_file("notes.txt"))
+    assert written == {"path": "notes.txt", "written": True, "sandbox_session_id": "default:default"}
+    assert read == {"path": "notes.txt", "content": "hello sandbox", "sandbox_session_id": "default:default"}
+
+
+@pytest.mark.asyncio
+async def test_tool_output_truncated_at_configured_max(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(tool_output_max_chars=5))
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        code_payload = json.loads(await run_code("0123456789"))  # fake echoes code to stdout
+        await write_sandbox_file("big.txt", "0123456789")
+        read_payload = json.loads(await read_sandbox_file("big.txt"))
+    assert code_payload["stdout"] == "01234"
+    assert read_payload["content"] == "01234"
+
+
+@pytest.mark.asyncio
+async def test_tool_machinery_error_returned_as_json(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        payload = json.loads(await run_code("print(1)", profile="no-such-profile"))
+    assert "no-such-profile" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_tool_disabled_returns_error_json(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _SandboxConfig(enabled=False))
+    payload = json.loads(await run_code("print(1)"))
+    assert payload == {"error": "sandbox capability is disabled"}
+
+
+@pytest.mark.asyncio
+async def test_tool_check_task_unknown(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        payload = json.loads(await check_sandbox_task("no-such-task"))
+    assert payload == {"task_id": "no-such-task", "status": "unknown"}
+
+
+# --------------------------------------------------------------------------- #
+# Task-completion ingestion (hooks.py) — iteration 4
+# --------------------------------------------------------------------------- #
+
+
+def _completion(task_id, sandbox_session_id="default:default", status="succeeded", stdout="task output", **kwargs):
+    return SandboxCompletion(
+        task_id=task_id,
+        status=status,
+        result=SandboxResult(stdout=stdout, exit_code=0, sandbox_session_id=sandbox_session_id),
+        sandbox_session=SandboxSession(
+            sandbox_session_id=sandbox_session_id, profile="default", provider_type=FAKE_DOTTED, sandbox_id="sb-1", created_at=1.0, last_used_at=2.0
+        ),
+        **kwargs,
+    )
+
+
+def _seed_task(session, task_id, consumed=False):
+    task = SandboxTask(task_id=task_id, sandbox_session_id="default:default", profile="default", submitted_at=0.0, consumed=consumed)
+    session.get_non_volatile_cache().set("sandbox", {"sessions": {}, "tasks": {task_id: task.model_dump()}})
+
+
+def test_hook_factory_gates_on_enabled(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    assert isinstance(SandboxPreHookFactory.get(), SandboxPreHook)
+    _install_sandbox_cfg(monkeypatch, _SandboxConfig(enabled=False))
+    assert isinstance(SandboxPreHookFactory.get(), NoOpSandboxPreHook)
+
+
+@pytest.mark.asyncio
+async def test_hook_passthrough_without_completion(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    requests = [AgentRequestText(prompt="hello")]
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        assert await SandboxPreHook().on_run(session, None, requests) is requests
+
+
+@pytest.mark.asyncio
+async def test_hook_unknown_task_halts(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    requests = [AgentRequestAny(name="sandbox_task_completion", content=_completion("no-such-task").model_dump())]
+    async with session:
+        reply = await SandboxPreHook().on_run(session, None, requests)
+    assert isinstance(reply, AgentReplyText)
+    assert "Duplicate or unknown" in reply.response
+
+
+@pytest.mark.asyncio
+async def test_hook_consumed_duplicate_halts(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    requests = [AgentRequestAny(name="sandbox_task_completion", content=_completion("t-1").model_dump())]
+    async with session:
+        _seed_task(session, "t-1", consumed=True)
+        reply = await SandboxPreHook().on_run(session, None, requests)
+    assert isinstance(reply, AgentReplyText)
+    assert "Duplicate or unknown" in reply.response
+
+
+@pytest.mark.asyncio
+async def test_hook_malformed_completion_halts(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    requests = [AgentRequestAny(name="sandbox_task_completion", content={"not": "a completion"})]
+    async with session:
+        reply = await SandboxPreHook().on_run(session, None, requests)
+    assert isinstance(reply, AgentReplyText)
+
+
+@pytest.mark.asyncio
+async def test_hook_ingests_completion_and_injects_summary(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    completion = _completion("t-1")
+    requests = [
+        AgentRequestText(prompt="original prompt"),
+        AgentRequestAny(name="sandbox_task_completion", content=completion.model_dump()),
+    ]
+    async with session:
+        _seed_task(session, "t-1")
+        result = await SandboxPreHook().on_run(session, None, requests)
+        registry = session.get_non_volatile_cache().get("sandbox")
+    # The completion request is stripped; the summary lands in the last text request.
+    assert len(result) == 1 and isinstance(result[0], AgentRequestText)
+    assert result[0].prompt.startswith("original prompt")
+    assert "succeeded" in result[0].prompt
+    assert "task output" in result[0].prompt
+    assert "default:default" in result[0].prompt
+    # The task is marked consumed and terminal; the session handle is refreshed.
+    assert registry["tasks"]["t-1"]["consumed"] is True
+    assert registry["tasks"]["t-1"]["status"] == "succeeded"
+    assert registry["sessions"]["default:default"]["sandbox_id"] == "sb-1"
+
+
+@pytest.mark.asyncio
+async def test_hook_second_delivery_is_deduped(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    completion = _completion("t-1")
+    async with session:
+        _seed_task(session, "t-1")
+        first = await SandboxPreHook().on_run(session, None, [AgentRequestAny(name="sandbox_task_completion", content=completion.model_dump())])
+        second = await SandboxPreHook().on_run(session, None, [AgentRequestAny(name="sandbox_task_completion", content=completion.model_dump())])
+    assert isinstance(first, list)  # first delivery proceeds into the agent turn
+    assert isinstance(second, AgentReplyText)  # re-delivery halts as a no-op
+
+
+@pytest.mark.asyncio
+async def test_hook_completion_without_text_appends_text(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        _seed_task(session, "t-1")
+        result = await SandboxPreHook().on_run(
+            session, None, [AgentRequestAny(name="sandbox_task_completion", content=_completion("t-1").model_dump())]
+        )
+    assert len(result) == 1 and isinstance(result[0], AgentRequestText)
+    assert "task output" in result[0].prompt
+
+
+@pytest.mark.asyncio
+async def test_hook_summary_truncates_output(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(tool_output_max_chars=5))
+    session = InMemorySessionStore().new("ak-1")
+    async with session:
+        _seed_task(session, "t-1")
+        result = await SandboxPreHook().on_run(
+            session, None, [AgentRequestAny(name="sandbox_task_completion", content=_completion("t-1", stdout="0123456789").model_dump())]
+        )
+    assert "01234" in result[0].prompt
+    assert "0123456789" not in result[0].prompt
+
+
+@pytest.mark.asyncio
+async def test_hook_result_ref_reported_when_offloaded(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
+    session = InMemorySessionStore().new("ak-1")
+    completion = _completion("t-1", stdout="", result_ref={"bucket": "b", "key": "sandbox/t-1/result"})
+    async with session:
+        _seed_task(session, "t-1")
+        result = await SandboxPreHook().on_run(session, None, [AgentRequestAny(name="sandbox_task_completion", content=completion.model_dump())])
+    assert "sandbox/t-1/result" in result[0].prompt
+
+
+def test_runtime_system_pre_hooks_include_sandbox(monkeypatch):
+    """The third system pre-hook slot is wired: disabled config yields the no-op sandbox hook."""
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    Runtime._system_pre_hooks = None
+    try:
+        hooks = Runtime._get_system_pre_hooks()
+        assert len(hooks) == 3
+        assert isinstance(hooks[2], NoOpSandboxPreHook)
+    finally:
+        Runtime._system_pre_hooks = None

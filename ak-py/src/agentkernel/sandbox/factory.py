@@ -57,6 +57,9 @@ class _DottedParams(BaseModel):
 
 
 def _import_dotted(path: str) -> Any:
+    """Import ``pkg.mod.Attr`` and return the attribute; raise ``SandboxConfigError`` for a
+    non-dotted path. Interim helper for the built-in registry maps (see spec, #541): it is
+    deleted when the last built-in provider converts to a real-import branch."""
     module_path, _, attr = path.rpartition(".")
     if not module_path:
         raise SandboxConfigError(f"'{path}' is not a dotted path to a class")
@@ -71,6 +74,11 @@ class SandboxProviderFactory:
 
     @classmethod
     def get(cls, profile_name: Optional[str] = None) -> Optional[SandboxProvider]:
+        """Return the provider for ``profile_name`` (default profile when omitted).
+
+        Returns ``None`` when the capability is disabled; raises ``SandboxConfigError`` for
+        an unknown profile. Instances are cached per (profile, type) and built lazily.
+        """
         config = AKConfig.get().sandbox
         if not config.enabled:
             return None  # capability absent — callers treat None as "no sandbox"
@@ -89,6 +97,9 @@ class SandboxProviderFactory:
 
     @classmethod
     def _build(cls, profile_name: str, profile: Any) -> SandboxProvider:
+        """Construct the provider for a profile: built-in short names resolve through the
+        interim registry maps (with the friendly missing-extra message), anything else is
+        treated as a dotted path to a ``SandboxProvider`` subclass (BYO)."""
         type_name = profile.type
         if type_name in _BUILTIN_PROVIDERS:
             # Built-ins stay a registry map until the provider modules land (#494); the import
@@ -128,6 +139,12 @@ class SandboxBrokerFactory:
 
     @classmethod
     def get(cls):
+        """Build the broker for the configured ``sandbox.broker.flavor``.
+
+        Built-in short names map to their dotted paths; any other value is treated as a
+        dotted path to a ``SandboxBroker`` subclass (BYO). The broker is constructed with
+        the ``sandbox.broker`` config block.
+        """
         from .broker.base import SandboxBroker  # local import: avoid eager broker import at module load
 
         config = AKConfig.get().sandbox

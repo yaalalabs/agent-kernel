@@ -176,6 +176,12 @@ class SystemToolFactory:
 
             tools.append(AnalyzeAttachmentsTool())
 
+        sandbox_config = getattr(AKConfig.get(), "sandbox", None)
+        if sandbox_config and sandbox_config.enabled:
+            from ..sandbox.tools import get_sandbox_tools
+
+            tools.extend(get_sandbox_tools())
+
         return tools
 
     @staticmethod

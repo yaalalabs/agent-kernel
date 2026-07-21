@@ -25,6 +25,7 @@ class SandboxCapabilityError(SandboxError):
     """
 
     def __init__(self, *args: str) -> None:
+        """Accept ``(subject, capability)`` or ``(capability,)`` and build the message."""
         self.subject: Optional[str] = None
         self.capability: str = ""
         if len(args) == 2:
