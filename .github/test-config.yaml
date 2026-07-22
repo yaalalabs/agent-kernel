@@ -28,15 +28,19 @@ e2e:
       path: examples/cli/guardrail/bedrock
     # - type: cli
     #   path: examples/cli/guardrail/walledai
+
+    # Sandbox examples
     - type: cli
-      path: examples/cli/sandbox/basic
+      path: examples/sandbox/basic
     - type: cli
-      path: examples/cli/sandbox/profiles
+      path: examples/sandbox/profiles
     - type: cli
-      path: examples/cli/sandbox/policy
+      path: examples/sandbox/policy
     - type: cli
-      path: examples/cli/sandbox/docker
-    
+      path: examples/sandbox/docker
+    - type: api
+      path: examples/sandbox/identity
+
     # API examples
     - type: api
       path: examples/api/openai
@@ -58,8 +62,6 @@ e2e:
       path: examples/api/multimodal/langgraph
     - type: api
       path: examples/api/hooks
-    - type: api
-      path: examples/api/sandbox-identity
     - type: api
       path: examples/api/slack
       requires_slack: true

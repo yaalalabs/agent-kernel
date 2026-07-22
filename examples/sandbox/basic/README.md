@@ -1,7 +1,7 @@
 # Sandbox — Basic
 
 The starting-point sandbox example. See [../README.md](../README.md) for the full set
-(`basic`, `profiles`, `policy`; the identity example is `examples/api/sandbox-identity`).
+(`basic`, `profiles`, `policy`, `docker`, `identity`).
 
 This package demonstrates the Agent Kernel sandbox capability: an OpenAI Agents SDK agent
 that writes code and executes it in a sandbox. When `sandbox.enabled` is true, Agent

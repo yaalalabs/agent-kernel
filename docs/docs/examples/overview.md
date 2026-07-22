@@ -22,7 +22,6 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
 - **`whatsapp/`** - WhatsApp integration example
 - **`instagram/`** - Instagram integration example
 - **`telegram/`** - Telegram integration example
-- **`sandbox-identity/`** - Sandbox capability running code under the authenticated end user's identity, end-to-end over REST (custom pre-hook, principal resolver, and bring-your-own provider). See the [Sandbox](../advanced/sandbox.md) guide.
 
 ### 📁 CLI Examples (`/examples/cli`)
 
@@ -33,15 +32,20 @@ Command-line interface examples for local development and testing:
 - **`crewai/`** - CrewAI framework integration examples
 - **`guardrail/`** - Content safety and compliance validation examples
   - `openai/` - OpenAI Guardrails integration with LangGraph agents
-- **`sandbox/`** - Sandbox capability (execute code/commands in an isolated, permission-bounded environment). See the [Sandbox](../advanced/sandbox.md) guide.
-  - `basic/` - Enable the sandbox, run code, persist a workspace across turns, manage named sessions
-  - `profiles/` - Multiple named workload profiles (provider + scope routing: a docker-backed workspace and a local throwaway sandbox)
-  - `policy/` - Policy/permissions on the docker provider: an enforced envelope (network deny, resource limits) and the fail-closed `strict` model for what docker cannot enforce (egress allowlist)
-  - `docker/` - The docker provider: container-isolated execution, package installs, and enforced network policy (requires a Docker daemon)
 - **`langgraph/`** - LangGraph framework integration examples
 - **`multi/`** - Multi-agent examples combining different frameworks
 - **`openai/`** - OpenAI Agent SDK integration examples
 - **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, and `multi/`
+
+### 📁 Sandbox Examples (`/examples/sandbox`)
+
+Sandbox capability examples (execute code/commands in an isolated, permission-bounded environment). See the [Sandbox](../advanced/sandbox.md) guide:
+
+- **`basic/`** - Enable the sandbox, run code, persist a workspace across turns, manage named sessions
+- **`profiles/`** - Multiple named workload profiles (provider + scope routing: a docker-backed workspace and a local throwaway sandbox)
+- **`policy/`** - Policy/permissions on the docker provider: an enforced envelope (network deny, resource limits) and the fail-closed `strict` model for what docker cannot enforce (egress allowlist)
+- **`docker/`** - The docker provider: container-isolated execution, package installs, and enforced network policy (requires a Docker daemon)
+- **`identity/`** - Sandbox code running under the authenticated end user's identity, end-to-end over REST (custom pre-hook, principal resolver, and bring-your-own provider)
 
 ### 📁 Containerized Examples (`/examples/containerized`)
 

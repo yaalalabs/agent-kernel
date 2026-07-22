@@ -19,7 +19,7 @@ resolution-markers = [
 [[package]]
 name = "agentkernel"
 version = "0.6.1"
-source = { registry = "../../../../ak-py/dist" }
+source = { registry = "../../../ak-py/dist" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },

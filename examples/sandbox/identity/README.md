@@ -1,5 +1,7 @@
 # Sandbox — Principal & Identity (REST API, end-to-end)
 
+See [../README.md](../README.md) for the full set of sandbox examples.
+
 Running sandboxed code under the **end user's** identity instead of one shared agent
 identity — the practical multi-tenant pattern. A single deployed agent serves many users;
 each user's code should run within *their* permissions, be audited as *them*, and never see

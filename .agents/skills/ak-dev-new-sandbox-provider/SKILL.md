@@ -204,9 +204,9 @@ asserting the real-import branch resolves and the missing-extra path raises the 
 
 ### 8. Add an Example
 
-Add a profile to an `examples/cli/sandbox/` example (or a new subfolder) showing the provider in
+Add a profile to an `examples/sandbox/` example (or a new subfolder) showing the provider in
 a `config.yaml`, and note any required services (daemon, API key, cloud creds) in the README.
-`examples/cli/sandbox/docker/` is the reference: a full subfolder for an isolating provider,
+`examples/sandbox/docker/` is the reference: a full subfolder for an isolating provider,
 including a profile that demonstrates enforced policy and sentinel-based deterministic tests.
 
 ### 9. Add Documentation
@@ -225,5 +225,5 @@ including a profile that demonstrates enforced policy and sentinel-based determi
 - [ ] Optional dependency extra in `pyproject.toml` (if the SDK isn't stdlib/boto3)
 - [ ] `SandboxProviderContract` subclass + provider-specific tests in `tests/test_sandbox_providers.py`
 - [ ] Factory resolution test in `tests/test_sandbox.py`
-- [ ] Example profile in `examples/cli/sandbox/`
+- [ ] Example profile in `examples/sandbox/`
 - [ ] Documentation: provider table row in `docs/docs/advanced/sandbox.md` + extra in `ak-py/README.md`

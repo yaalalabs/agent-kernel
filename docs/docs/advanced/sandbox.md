@@ -214,7 +214,7 @@ rule:** a `user`-mode profile requires both a provider that supports user identi
 resolver that actually returned a user-mode principal — otherwise the execution is rejected. A
 user-scoped request can never silently fall back to the agent identity.
 
-See the [end-to-end identity example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/sandbox-identity)
+See the [end-to-end identity example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/identity)
 for a REST app that authenticates each request and runs code under the caller's identity.
 
 ## Providers
@@ -347,8 +347,8 @@ e.g. `AK_SANDBOX__ENABLED=true`, `AK_SANDBOX__BROKER__FLAVOR=embedded`,
 
 ## Examples
 
-- [`cli/sandbox/basic`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/sandbox/basic) — enable the sandbox, run code, persist a workspace, manage named sessions.
-- [`cli/sandbox/profiles`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/sandbox/profiles) — multiple profiles with different scopes; the agent routes per call.
-- [`cli/sandbox/policy`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/sandbox/policy) — policy/permissions on the docker provider: an enforced envelope plus the fail-closed `strict` model for what docker cannot enforce.
-- [`cli/sandbox/docker`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/sandbox/docker) — the `docker` provider: container-isolated execution with policy actually enforced (`network_egress: deny` → no network).
-- [`api/sandbox-identity`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/sandbox-identity) — a REST app running sandboxed code under the authenticated end user's identity, end-to-end.
+- [`sandbox/basic`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/basic) — enable the sandbox, run code, persist a workspace, manage named sessions.
+- [`sandbox/profiles`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/profiles) — multiple profiles with different scopes; the agent routes per call.
+- [`sandbox/policy`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/policy) — policy/permissions on the docker provider: an enforced envelope plus the fail-closed `strict` model for what docker cannot enforce.
+- [`sandbox/docker`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/docker) — the `docker` provider: container-isolated execution with policy actually enforced (`network_egress: deny` → no network).
+- [`sandbox/identity`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/identity) — a REST app running sandboxed code under the authenticated end user's identity, end-to-end.
