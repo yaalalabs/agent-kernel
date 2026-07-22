@@ -66,9 +66,9 @@ weekly:
     - type: aws-serverless
       path: examples/aws-serverless/scalable-openai
       deploy_dir: deploy
-    - type: aws-serverless
-      path: examples/aws-serverless/openai-auth
-      deploy_dir: deploy
+    # - type: aws-serverless
+    #   path: examples/aws-serverless/openai-auth
+    #   deploy_dir: deploy
     
     #  Memory options
     # - type: aws-serverless
