@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 # Create a zip file of the app code
 create_deployment_package() {
@@ -11,7 +10,7 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist/data
     else
       uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --no-deps --no-index --target=dist/data --find-links ../../../ak-py/dist agentkernel[api,crewai,redis,auth] --no-cache-dir
+      uv pip install --force-reinstall --no-deps --no-index --target=dist/data --find-links ../../../ak-py/dist agentkernel[api,crewai,redis,auth] || true
     fi
     cp -r app.py config.yaml dist/data
     popd || exit 1
