@@ -206,6 +206,8 @@ asserting the real-import branch resolves and the missing-extra path raises the 
 
 Add a profile to an `examples/cli/sandbox/` example (or a new subfolder) showing the provider in
 a `config.yaml`, and note any required services (daemon, API key, cloud creds) in the README.
+`examples/cli/sandbox/docker/` is the reference: a full subfolder for an isolating provider,
+including a profile that demonstrates enforced policy and sentinel-based deterministic tests.
 
 ### 9. Add Documentation
 
