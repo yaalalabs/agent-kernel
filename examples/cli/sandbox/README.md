@@ -18,13 +18,14 @@ between examples.
 | [basic/](basic/) | The starting point: enable the sandbox, run code, persist a workspace across turns, manage named sessions. |
 | [profiles/](profiles/) | Multiple named workload **profiles** with different providers and scopes; the agent routes each call to a profile. |
 | [policy/](policy/) | **Policy / permissions**: network egress, resource limits, and the fail-closed `strict` model (unenforceable policy is rejected, not silently ignored). |
+| [docker/](docker/) | The **docker provider**: container-isolated execution, image configuration, package installs, and policy that is actually enforced (`network_egress: deny` → no network). Requires a Docker daemon. |
 
 **Principal & identity** is a multi-tenant, request-authenticated scenario, so it lives with
 the API examples: [../../api/sandbox-identity/](../../api/sandbox-identity/) runs sandboxed
 code under the authenticated end user's identity end-to-end over REST.
 
-These CLI examples default to the `local_subprocess` provider so they run with no extra
-services.
+The `basic`, `profiles`, and `policy` examples default to the `local_subprocess` provider
+so they run with no extra services; `docker` needs a running Docker daemon.
 
 > **Warning:** `local_subprocess` provides **no isolation** — the agent's code runs directly
 > on your machine. It is for development and testing only. Production deployments should use
