@@ -1,11 +1,17 @@
 # Issue #542 — CI/CD Findings
 
-> **Correction (see `../spec.md` for the authoritative per-script matrix).** Two rows of the
-> per-script matrix below were later found inaccurate on re-verification: `gcp-containerized/openai`
-> **does** carry `|| true` on its `--no-index` line (shown as "–" below), and
-> `aws-serverless/scalable-openai` is **not** uniformly first-pass-`--find-links` — its request- and
-> response-handler targets are single-pass `--no-deps --no-index` (Group-B-shaped), only its
-> agent-runner target is two-pass. The mechanically-verified table in `spec.md` supersedes this one.
+> **Historical investigation — the implemented fix took a different path.** These findings drove the
+> original plan to normalize the local-wheel install across every example `deploy.sh`/`build.sh`.
+> That broad per-script rewrite was **abandoned and reverted** during implementation; the shipped fix
+> is centralized in `.github/scripts/run_single_test.py` (force-reinstall the branch wheel into the
+> test client venv, then `uv run --no-sync pytest`), plus `fail-on-cache-miss` on the restore steps,
+> the `valkey` example dependency fixes, and the opt-in `enable_api_gateway_logs` Terraform toggle.
+> See [`../design.md`](../design.md) and [`../spec.md`](../spec.md) for the authoritative,
+> as-built description. The per-script matrix below is retained only as background.
+>
+> Note also: two rows of the matrix were found inaccurate on re-verification —
+> `gcp-containerized/openai` **does** carry `|| true` on its `--no-index` line (shown as "–" below),
+> and `aws-serverless/scalable-openai` is **not** uniformly first-pass-`--find-links`.
 
 
 **Title:** CI integration tests silently deploy PyPI `agentkernel` instead of branch build on cache miss

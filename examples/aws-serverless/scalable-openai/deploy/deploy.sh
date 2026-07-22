@@ -36,7 +36,7 @@ create_request_handler_deployment_package() {
 	if [[ ${1-} != "local" ]]; then
 		uv pip install -r requirements.txt --target=dist_request_handler
 	else
-		uv pip install --force-reinstall --no-deps --no-index --target=dist_request_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
+		uv pip install --force-reinstall --target=dist_request_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
 	fi
 	cp -r lambda_request_handler.py config.yaml dist_request_handler/
 	cd dist_request_handler && zip -r ../dist_request_handler.zip .
@@ -70,7 +70,7 @@ create_response_handler_deployment_package() {
 	if [[ ${1-} != "local" ]]; then
 		uv pip install -r requirements.txt --target=dist_response_handler
 	else
-		uv pip install --force-reinstall --no-deps --no-index --target=dist_response_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
+		uv pip install --force-reinstall --target=dist_response_handler --find-links ../../../ak-py/dist agentkernel[aws,redis] || true
 	fi
 	cp -r lambda_response_handler.py config.yaml dist_response_handler/
 	cd dist_response_handler && zip -r ../dist_response_handler.zip .
