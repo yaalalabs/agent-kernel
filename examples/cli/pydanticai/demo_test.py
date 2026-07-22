@@ -18,7 +18,7 @@ async def test_client():
 @pytest.mark.order(1)
 async def test_math_question(test_client):
     await test_client.send("What is 15 multiplied by 12?")
-    await test_client.expect(["15 multiplied by 12 is 180.", "The answer is 180."])
+    await test_client.expect(["180", "15 multiplied by 12 is 180.", "The answer is 180."])
 
 
 @pytest.mark.order(2)

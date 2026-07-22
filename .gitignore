@@ -11,5 +11,3 @@ pytest-report.xml
 *.pip-cache
 .kiro
 .claude/settings.local.json
-*/*graphify-out/*
-*/.graphify*
