@@ -14,6 +14,10 @@ push_to_ecr() {
 	local dockerfile="$2"
 	local ecr_uri="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${image_name}:latest"
 
+	# ECR does not auto-create repositories on push, so ensure it exists first.
+	aws ecr describe-repositories --region "$AWS_REGION" --repository-names "$image_name" >/dev/null 2>&1 ||
+		aws ecr create-repository --region "$AWS_REGION" --repository-name "$image_name" >/dev/null
+
 	aws ecr get-login-password --region "$AWS_REGION" |
 		docker login --username AWS --password-stdin \
 			"${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
