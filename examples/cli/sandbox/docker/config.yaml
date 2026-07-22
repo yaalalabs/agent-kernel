@@ -8,8 +8,8 @@
 #   - default : a per-session container workspace; files persist across turns, and the
 #               container survives idle CLI pauses for up to idle_timeout.
 #   - offline : the same, but with `network_egress: deny` — docker ENFORCES this
-#               (network_mode: none), unlike local_subprocess where the identical
-#               policy can only fail closed (see ../policy).
+#               (network_mode: none). See ../policy for the full policy envelope and
+#               the fail-closed `strict` model.
 sandbox:
   enabled: true
   profiles:

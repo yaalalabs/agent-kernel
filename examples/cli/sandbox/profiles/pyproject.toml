@@ -5,7 +5,7 @@ description = "Agent Kernel sandbox example: multiple named workload profiles (p
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,openai]>=0.6.1",
+    "agentkernel[cli,openai,sandbox-docker]>=0.6.1",
 ]
 
 [dependency-groups]

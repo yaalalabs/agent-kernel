@@ -19,20 +19,32 @@ Every provider declares which policy dimensions it can actually enforce. When a 
 a non-default dimension the provider **cannot** enforce, the `strict` flag decides what happens:
 
 - `strict: true` (default) → the execution is **rejected** with a policy error. Security is
-  never silently downgraded: if you asked for `network_egress: deny` and the provider can't
-  guarantee it, you get an error, not a false sense of safety.
-- `strict: false` → the execution proceeds, with a one-time warning naming the unenforced
-  dimensions.
+  never silently downgraded: if you asked for a restriction the provider can't guarantee,
+  you get an error, not a false sense of safety.
+- `strict: false` → the execution proceeds, with a warning naming the unenforced dimensions.
 
-This example uses `local_subprocess`, which provides no isolation and therefore enforces
-none of network/filesystem/resource policy — making the fail-closed behavior easy to see:
+This example is docker-backed, which shows **both sides** of that model:
 
-- The **`guarded`** profile (default, `strict: true`) sets `network_egress: deny` + cpu/memory
-  limits. Any execution against it fails closed with a policy error.
-- The **`relaxed`** profile sets the same intent with `strict: false`, so executions proceed
-  and only `timeout` (always enforceable) actually applies.
+- The **`guarded`** profile (default) sets `network_egress: deny` plus cpu/memory limits.
+  docker maps every dimension to a real control (`deny` → `network_mode: none`,
+  `cpu`/`memory_mb` → container limits), so executions **run with the policy enforced**:
+  code works normally, but network access genuinely fails inside the container.
+- The **`restricted`** profile sets a network egress **allowlist**, the one network mode
+  docker cannot enforce. With `strict: true`, every execution against it **fails closed**
+  with a policy error.
+- The **`relaxed`** profile sets the same allowlist with `strict: false`, so executions
+  proceed with a warning and egress is effectively unrestricted. The explicit opt-out.
 
-Install and run:
+(On a provider that enforces nothing, like `local_subprocess`, the same `guarded` profile
+would fail closed too: the `strict` model is uniform, only each provider's enforceable set
+changes.)
+
+## Prerequisites
+
+A running Docker daemon; `build.sh` installs the `sandbox-docker` extra. The first sandbox
+creation pulls `python:3.12-slim` if it is not already present.
+
+## Run
 
     ./build.sh                 # or ./build.sh local
     export OPENAI_API_KEY=sk-...
@@ -40,21 +52,20 @@ Install and run:
 
 Things to try:
 
-    Run: print("hello")                              # guarded profile -> policy error (fail closed)
-    Run the same thing using the relaxed profile.    # proceeds (with a warning), prints hello
+    Run: print("hello")                                       # guarded -> runs, policy enforced
+    Fetch https://example.com and print the status code.      # guarded -> fails: egress denied
+    Run print("hello") using the restricted profile.          # rejected: allowlist unenforceable (fail closed)
+    Run print("hello") using the relaxed profile.             # proceeds, with a warning
 
-## Real enforcement
-
-To see the same policy actually enforced instead of rejected, switch to an isolating
-provider. With the `sandbox-docker` extra and a running Docker daemon, a docker-backed
-profile maps the policy to real controls (`network_egress: deny` → `network_mode: none`,
-`cpu`/`memory_mb` → container limits, filesystem restrictions → read-only rootfs + writable
-workdir). See the commented docker profile at the bottom of `config.yaml`.
+For the docker provider itself (images, package installs, reattach behavior), see
+[../docker/](../docker/).
 
 ## Tests
 
     uv run pytest -s
 
-The tests drive the agent (fallback comparison mode in `test-config.yaml`): one asserts the
-relaxed profile computes `42`, the other that the guarded profile fails closed and the agent
-reports it. Running them requires `OPENAI_API_KEY`.
+The tests require a running Docker daemon and `OPENAI_API_KEY`. They use fuzzy comparison
+mode (`test-config.yaml`) with sentinel replies, so every expected answer is exact: the
+guarded profile computes `42` but reports `OFFLINE` for a network fetch (deny enforced),
+the restricted profile reports `BLOCKED` (fail closed), and the relaxed profile computes
+`42` (strict opt-out proceeds).

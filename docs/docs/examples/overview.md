@@ -35,8 +35,9 @@ Command-line interface examples for local development and testing:
   - `openai/` - OpenAI Guardrails integration with LangGraph agents
 - **`sandbox/`** - Sandbox capability (execute code/commands in an isolated, permission-bounded environment). See the [Sandbox](../advanced/sandbox.md) guide.
   - `basic/` - Enable the sandbox, run code, persist a workspace across turns, manage named sessions
-  - `profiles/` - Multiple named workload profiles (provider + scope routing)
-  - `policy/` - Policy/permissions and the fail-closed `strict` model
+  - `profiles/` - Multiple named workload profiles (provider + scope routing: a docker-backed workspace and a local throwaway sandbox)
+  - `policy/` - Policy/permissions on the docker provider: an enforced envelope (network deny, resource limits) and the fail-closed `strict` model for what docker cannot enforce (egress allowlist)
+  - `docker/` - The docker provider: container-isolated execution, package installs, and enforced network policy (requires a Docker daemon)
 - **`langgraph/`** - LangGraph framework integration examples
 - **`multi/`** - Multi-agent examples combining different frameworks
 - **`openai/`** - OpenAI Agent SDK integration examples

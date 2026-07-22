@@ -349,6 +349,6 @@ e.g. `AK_SANDBOX__ENABLED=true`, `AK_SANDBOX__BROKER__FLAVOR=embedded`,
 
 - [`cli/sandbox/basic`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/sandbox/basic) — enable the sandbox, run code, persist a workspace, manage named sessions.
 - [`cli/sandbox/profiles`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/sandbox/profiles) — multiple profiles with different scopes; the agent routes per call.
-- [`cli/sandbox/policy`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/sandbox/policy) — policy/permissions and the fail-closed `strict` model.
+- [`cli/sandbox/policy`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/sandbox/policy) — policy/permissions on the docker provider: an enforced envelope plus the fail-closed `strict` model for what docker cannot enforce.
 - [`cli/sandbox/docker`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/sandbox/docker) — the `docker` provider: container-isolated execution with policy actually enforced (`network_egress: deny` → no network).
 - [`api/sandbox-identity`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/sandbox-identity) — a REST app running sandboxed code under the authenticated end user's identity, end-to-end.

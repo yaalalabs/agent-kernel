@@ -14,9 +14,9 @@ reattached later; destroying the session force-removes it. An idle-expired sandb
 (`idle_timeout`, 6 hours here) is removed and transparently recreated on next use with an
 empty workspace, and the agent is told via a result "notice" when that happens.
 
-Because the provider is container-isolated, policy is **actually enforced** instead of
-failing closed (contrast with [../policy/](../policy/), where `local_subprocess` can only
-reject what it cannot enforce):
+Because the provider is container-isolated, policy is **actually enforced**, not merely
+declared ([../policy/](../policy/) explores the policy envelope and the fail-closed
+`strict` model in depth):
 
 | Policy | Docker mapping |
 |---|---|

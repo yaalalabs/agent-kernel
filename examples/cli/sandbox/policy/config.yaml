@@ -1,59 +1,59 @@
-# Policy / permissions demo: the execution envelope and the fail-closed `strict` model.
+# Policy / permissions demo on the docker provider: the execution envelope, real
+# enforcement, and the fail-closed `strict` model.
 #
 # A profile's `policy` block declares the permission/resource envelope an execution must run
 # within: network egress, filesystem paths, cpu/memory limits, and a per-execution timeout.
 #
-# Enforcement depends on the provider. Each provider declares which policy dimensions it can
-# actually enforce (its `policy_network` / `policy_filesystem` / `policy_resources`
-# capabilities). When a profile sets a non-default policy dimension the provider CANNOT
-# enforce:
+# Enforcement depends on the provider. docker maps most dimensions to real container
+# controls (deny egress -> network_mode: none, cpu/memory -> container limits), but it
+# CANNOT enforce a network egress *allowlist*. When a profile sets a dimension the provider
+# cannot enforce:
 #   - strict: true  (default) -> the execution is REJECTED (fail closed) — no silent downgrade.
-#   - strict: false           -> it proceeds, with a one-time warning.
+#   - strict: false           -> it proceeds, with a warning.
 #
-# local_subprocess enforces none of these dimensions (it provides no isolation), so it is the
-# clearest way to see the fail-closed behavior. Swap in an isolating provider (see the docker
-# block at the bottom) to see the same policy actually enforced.
+# Requires the sandbox-docker extra (installed by build.sh) and a running Docker daemon;
+# the first sandbox creation pulls python:3.12-slim if it is not already present.
 sandbox:
   enabled: true
   default_profile: guarded
   profiles:
-    # A locked-down policy the local_subprocess provider cannot honor -> executions fail closed.
+    # Fully enforceable policy -> executions RUN, inside the envelope.
     guarded:
-      type: local_subprocess
+      type: docker
       scope: per_session
       policy:
-        network_egress: deny # no outbound network
-        cpu: 1.0 # 1 core
-        memory_mb: 512
-        timeout: 30.0 # seconds per execution
-        strict: true # reject anything the provider can't enforce
-      local_subprocess: {}
+        network_egress: deny # -> container network_mode: none (fetches genuinely fail)
+        cpu: 1.0 # -> container cpu limit
+        memory_mb: 512 # -> container memory limit
+        timeout: 30.0 # seconds per execution; always enforced framework-side
+        strict: true
+      docker:
+        image: python:3.12-slim
 
-    # Same intent, but strict: false -> the provider proceeds and only warns about the
-    # dimensions it cannot enforce. Only `timeout` (always enforceable framework-side) applies.
-    relaxed:
-      type: local_subprocess
+    # An egress allowlist is the one network mode docker cannot enforce -> with
+    # strict: true every execution against this profile is REJECTED (fail closed).
+    restricted:
+      type: docker
       scope: per_session
       policy:
-        network_egress: deny
+        network_egress: allowlist
+        network_allow: [pypi.org]
+        timeout: 30.0
+        strict: true
+      docker:
+        image: python:3.12-slim
+
+    # Same allowlist intent with strict: false -> executions proceed with a warning,
+    # and egress is effectively UNRESTRICTED. The explicit opt-out of fail-closed.
+    relaxed:
+      type: docker
+      scope: per_session
+      policy:
+        network_egress: allowlist
+        network_allow: [pypi.org]
         timeout: 30.0
         strict: false
-      local_subprocess: {}
+      docker:
+        image: python:3.12-slim
   broker:
     flavor: thread
-
-# To see the SAME policy actually enforced, install the `sandbox-docker` extra, run a Docker
-# daemon, and use a docker-backed profile instead. docker maps the policy to real controls:
-#
-#   profiles:
-#     guarded:
-#       type: docker
-#       scope: per_session
-#       policy:
-#         network_egress: deny   # -> container network_mode: none
-#         cpu: 1.0               # -> --cpus 1.0
-#         memory_mb: 512         # -> --memory 512m
-#         timeout: 30.0
-#         strict: true
-#       docker:
-#         image: python:3.12-slim
