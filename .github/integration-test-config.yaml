@@ -70,13 +70,13 @@ weekly:
       path: examples/aws-serverless/openai-auth
       deploy_dir: deploy
     
-     # Memory options
+    #  Memory options
     # - type: aws-serverless
     #   path: examples/memory/redis
-    - type: aws-serverless
-      path: examples/memory/valkey
-    - type: aws-serverless
-      path: examples/memory/dynamodb
+    # - type: aws-serverless
+    #   path: examples/memory/valkey
+    # - type: aws-serverless
+    #   path: examples/memory/dynamodb
     # - type: azure-serverless
     #   path: examples/memory/cosmos
     #   deploy_dir: deploy
