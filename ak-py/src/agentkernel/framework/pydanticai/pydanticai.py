@@ -35,13 +35,8 @@ class PydanticAISession:
     """
     PydanticAISession stores the running message history for Pydantic AI-based agents.
 
-    Pydantic AI has no session protocol of its own; conversation state is a plain
-    ``list[ModelMessage]`` passed as ``message_history=`` and read back via
-    ``result.all_messages()``. This class holds that history in its jsonable form
-    (``to_jsonable_python(messages)``) rather than the raw message objects, so a pickled
-    session survives Pydantic AI's fast release cadence — the supported interchange format is
-    JSON via ``ModelMessagesTypeAdapter``, not raw pickling of its message classes. The Runner,
-    not this class, does the jsonable<->object conversion.
+    History is kept in jsonable form rather than as raw ``ModelMessage`` objects, so a
+    pickled session survives Pydantic AI releases.
     """
 
     def __init__(self):
@@ -172,9 +167,8 @@ class PydanticAIRunner(BaseRunner):
         """
         Streams the Pydantic AI agent response token by token.
 
-        Note: a Pydantic AI streaming run stops at the first ``output_type`` match, so combining a
-        structured ``output_type`` with AK's streaming mode truncates differently than the
-        non-streaming ``run()`` path. AK's plain-text streaming contract is unaffected.
+        Note: a streaming run stops at the first ``output_type`` match, so structured outputs
+        may truncate differently than the non-streaming ``run()`` path.
 
         :param agent: The Pydantic AI agent to run.
         :param session: The session to use for the agent.
@@ -230,27 +224,21 @@ class PydanticAIAgent(BaseAgent):
 
     def get_description(self) -> str:
         """
-        Returns the description of the agent.
-
-        Unlike the OpenAI adapter (where ``instructions`` is effectively mandatory), Pydantic AI's
-        ``description`` is an optional constructor parameter that is commonly left unset — a wrapped
-        agent constructed without ``description=`` reports an empty string here (and an empty A2A
-        card summary). Pydantic AI's ``instructions`` is a write-only decorator method with no
-        public getter, so it cannot serve as the description source.
+        Returns the description of the agent, falling back to its static instructions when the
+        agent was constructed without ``description=``.
         """
-        return self.agent.description or ""
+        if self.agent.description:
+            return self.agent.description
+        # Pydantic AI has no public getter for instructions; read the private ``_instructions``
+        # list and keep the static string parts (callable contributors can't be evaluated here).
+        instructions = getattr(self.agent, "_instructions", None) or []
+        return " ".join(i for i in instructions if isinstance(i, str))
 
     def override_system_prompt(self, prompt: str) -> None:
         """
-        Appends additional instructions to the Pydantic AI agent's system prompt.
-        Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
-
-        Pydantic AI's instructions have no public read path, so the OpenAI adapter's
-        "read current string, check membership, concatenate" pattern has no equivalent. The only
-        supported way to add instruction content is the public ``agent.instructions(func)``
-        decorator API, which registers ``func`` as one more contributor to the system prompt.
-        No de-duplication guard is possible (nothing to read back against); this is safe because
-        ``_setup_system_prompt()`` runs exactly once per Agent.__init__().
+        Appends additional instructions to the Pydantic AI agent's system prompt via the
+        ``agent.instructions(func)`` decorator API. Pydantic AI instructions have no public read
+        path, so no de-duplication is possible; safe because this runs once per Agent init.
         """
         if prompt:
             self._agent.instructions(lambda: prompt)
@@ -366,11 +354,8 @@ class PydanticAIModule(Module):
 
 class PydanticAIToolBuilder(ToolBuilder):
     """
-    Tool builder for Pydantic AI.
-
-    Wraps generic tool functions into Pydantic AI ``Tool`` objects. No ``deps_type``/``RunContext``
-    dependency injection is used — every AK tool reaches execution context via ``ToolContext.get()``
-    so one tool function stays portable across every adapter.
+    Tool builder for Pydantic AI. Wraps generic tool functions into Pydantic AI ``Tool``
+    objects; AK tools reach execution context via ``ToolContext.get()``, not ``RunContext``.
     """
 
     @classmethod

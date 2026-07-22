@@ -265,3 +265,19 @@ class TestPydanticAIMultimodalWiring:
         # attach_tool() registered the multimodal analyze-attachments system tool on the toolset.
         function_toolset = next(ts for ts in native.toolsets if isinstance(ts, FunctionToolset))
         assert any("analyze" in name for name in function_toolset.tools)
+
+
+class TestPydanticAIAgentDescription:
+    """get_description() returns description= when set, else falls back to string instructions."""
+
+    def test_description_returned_when_set(self):
+        native = Agent(model=TestModel(), name="d", description="a described agent", instructions="ignored")
+        assert PydanticAIAgent("d", PydanticAIRunner(), native).get_description() == "a described agent"
+
+    def test_falls_back_to_instructions_when_description_unset(self):
+        native = Agent(model=TestModel(), name="i", instructions="you do math")
+        assert PydanticAIAgent("i", PydanticAIRunner(), native).get_description() == "you do math"
+
+    def test_empty_when_neither_set(self):
+        native = Agent(model=TestModel(), name="n")
+        assert PydanticAIAgent("n", PydanticAIRunner(), native).get_description() == ""
