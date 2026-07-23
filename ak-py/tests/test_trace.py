@@ -95,3 +95,13 @@ def test_trace_openllmetry_missing_extra_raises_friendly_import_error(monkeypatc
         with pytest.raises(ImportError) as exc_info:
             Trace.get()
     assert "agentkernel[openllmetry]" in str(exc_info.value)
+
+
+def test_trace_logfire_missing_extra_raises_friendly_import_error(monkeypatch):
+    monkeypatch.setitem(sys.modules, "logfire", None)  # simulate the SDK not installed
+    for name in [n for n in list(sys.modules) if n.startswith("agentkernel.trace.logfire")]:
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    with patch.object(AKConfig, "get", return_value=_config(True, "logfire")):
+        with pytest.raises(ImportError) as exc_info:
+            Trace.get()
+    assert "agentkernel[logfire]" in str(exc_info.value)

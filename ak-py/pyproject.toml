@@ -31,6 +31,9 @@ langfuse = [
 openllmetry = [
     "traceloop-sdk>=0.61.0",
 ]
+logfire = [
+    "logfire>=3.0",
+]
 crewai = [
     "crewai>=1.15.0",
     "openinference-instrumentation-crewai>=0.1.16",
