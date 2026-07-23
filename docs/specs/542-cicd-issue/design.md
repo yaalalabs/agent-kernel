@@ -9,11 +9,12 @@ in [`research/issue_findings.md`](./research/issue_findings.md).
 > **Approach note (as implemented).** The original design proposed normalizing the local-wheel
 > install line across all 27 example `deploy/deploy.sh` and all 64 example `build.sh` scripts.
 > During implementation that broad, per-script rewrite was **abandoned and reverted** (the example
-> `build.sh`/`deploy.sh` were restored to `develop`) in favour of a smaller, centralized fix that
-> the same integration harness applies to every test: the wheel is force-reinstalled into the test
-> client's venv from one place — `run_single_test.py` — and `uv run` is prevented from reverting it.
-> This document describes the change **as built and tested**. Where it differs from the earlier
-> plan, the earlier plan is superseded.
+> `build.sh`/`deploy.sh` were restored to `develop`, **except `examples/aws-serverless/scalable-openai`**,
+> which is intentionally kept modified — see the exception in [`spec.md`](./spec.md)) in favour of a
+> smaller, centralized fix that the same integration harness applies to every test: the wheel is
+> force-reinstalled into the test client's venv from one place — `run_single_test.py` — and `uv run`
+> is prevented from reverting it. This document describes the change **as built and tested**. Where
+> it differs from the earlier plan, the earlier plan is superseded.
 
 ## Motivation
 
@@ -144,10 +145,15 @@ account without that role) can deploy cleanly:
   and only makes its failure modes loud.
 - The broad, per-script normalization of all example `deploy.sh`/`build.sh` (removing `|| true`,
   adding `set -e`/`--no-cache-dir` everywhere). This was explored, reverted, and replaced by the
-  centralized `run_single_test.py` fix; it can be tracked as separate hygiene work.
-- Changing the published `agentkernel` version, the `>=0.6.1` pins, or the extras any example
-  installs (the added `valkey`/`langchain-community` entries are example-local dependency fixes,
-  not `agentkernel` changes).
+  centralized `run_single_test.py` fix; it can be tracked as separate hygiene work. The one example
+  that *is* touched — `examples/aws-serverless/scalable-openai` (deploy.sh normalization, per-Lambda
+  extras split, ECR guard, retry bumps) — is called out as an intentional exception in `spec.md`.
+- Extending Guard 2 (local-wheel reinstall + `--no-sync`) to the GCP/Azure test paths in
+  `run_single_test.py`; AWS is the reported and exercised surface, the rest is follow-up hygiene.
+- Changing the published `agentkernel` version, the `>=0.6.1` pins, or the extras the `agentkernel`
+  package itself declares (the added `valkey`/`langchain-community` entries are example-local
+  dependency fixes, and the scalable-openai per-Lambda optional-dependency split reorganizes that
+  example's own extras — neither is an `agentkernel` change).
 - Enabling API Gateway access logging by default, or provisioning `aws_api_gateway_account`
   outside the opt-in path.
 

@@ -117,4 +117,3 @@ variable "cloudwatch_kms_key_arn" {
   description = "KMS key ARN for CloudWatch logs encryption"
   default     = null
 }
-

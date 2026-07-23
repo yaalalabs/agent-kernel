@@ -84,8 +84,21 @@ in `test_aws_deployment` close this:
    )
    ```
 
-`run_command` runs every subprocess with `check=True`, so a failed `build.sh local` returns non-zero
-and fails the step — the client never proceeds to `pytest` against a wrong or missing wheel.
+`run_command` runs every subprocess with `check=True`, so if `build.sh local` itself exits non-zero
+the step fails and the client never proceeds to `pytest`. Note the real guarantee against a
+*missing* wheel is **Guard 1** (`fail-on-cache-miss`), which fails the job upstream: the example
+`build.sh local` scripts are the `develop` versions, whose force-reinstall line ends in `|| true`, so
+a wheel that fails to *install* (as opposed to being absent) still exits 0 and `check=True` cannot
+see it. `--no-sync` then keeps the branch wheel (when present) from being swapped back to PyPI.
+
+### Scope — AWS only
+
+Guard 2 is deliberately confined to `test_aws_deployment`. The GCP (`test_gcp_deployment`) and Azure
+(`test_azure_deployment`) paths in `run_single_test.py` are **not** changed: they still run
+`uv run pytest` without a `build.sh local` reinstall or `--no-sync`, so their test-client venvs carry
+the same PyPI-substitution exposure described here. AWS is the surface #542 reported and the only one
+exercised by the enabled integration entries; extending the same two edits to GCP/Azure is tracked
+as separate follow-up hygiene, not shipped here.
 
 ### Canonical `deploy.sh` template (docs)
 
@@ -107,9 +120,33 @@ same-version `0.6.1`; dropping `|| true` lets a failed install propagate a non-z
 
 The earlier plan's per-script edits to all 27 example `deploy/deploy.sh` and all 64 example
 `build.sh` were reverted to `develop` (commit "revert: restore examples build.sh/deploy.sh to
-develop"). The per-script change matrix from the earlier spec no longer applies. The centralized
-harness fix above covers the surface the integration tests actually exercise without touching what
-each Lambda artifact ships.
+develop"), **with one deliberate exception: `examples/aws-serverless/scalable-openai`** (see below).
+The per-script change matrix from the earlier spec no longer applies. The centralized harness fix
+above covers the surface the integration tests actually exercise without touching what each Lambda
+artifact ships.
+
+### Exception — `examples/aws-serverless/scalable-openai` (intentional)
+
+Unlike the other examples, `scalable-openai` is modified in this PR. These edits are needed to make
+its AWS serverless deploy pass end-to-end under the branch wheel and are intentional:
+
+- **`deploy/deploy.sh`**:
+  - Its three local-wheel force-reinstall lines are normalized to match the canonical `deploy.sh`
+    template in the docs — `|| true` and `--no-deps --no-index` are dropped and `--no-cache-dir` is
+    added — so a failed install fails the deploy and a stale uv cache cannot ship PyPI's `0.6.1` in
+    the Lambda artifact. This is the same swallowed-install root cause the PR targets, closed here
+    for this one example's deployment packager (not just the test client).
+  - Packaging now runs `uv export --extra <name>` per Lambda and an ECR-repository existence guard
+    (`describe-repositories || create-repository`) is added before `docker push`, since ECR does not
+    auto-create repositories.
+- **`pyproject.toml` + `uv.lock`** — dependencies are split into per-Lambda optional-dependency
+  sets: `dependencies = []` with `request_handler`/`response_handler` = `agentkernel[aws,redis]` and
+  `agent_runner` = `agentkernel[aws,openai,redis]`. The request/response handlers only enqueue and
+  dequeue work, so they drop the heavy OpenAI Agents SDK; only the runner needs it. The non-`local`
+  path installs each package via `uv export --extra <name>`; the `local` path still force-reinstalls
+  the branch wheel with the per-Lambda extras hardcoded on the install line.
+- **`config.yaml`** — `retry_count` `5 → 6` and `delay` `5 → 10` on the response store, to give the
+  async response path more slack under load during the integration run.
 
 ## Dependency fixes — `examples/memory/valkey`
 
@@ -214,9 +251,11 @@ Each is intended.
 2. **The AWS test client imports the branch `agentkernel`.** `run_single_test.py` force-reinstalls
    the local wheel into the client venv (`build.sh local`) and runs `pytest` under
    `uv run --no-sync`, so the client no longer silently tests against PyPI's `0.6.1` (Guard 2).
-3. **A failed local-wheel install fails the step** instead of being swallowed: `build.sh local`
-   under `check=True`, and `--no-cache-dir` (replacing `|| true`) on the documented `deploy.sh`
-   template (Guard 2).
+3. **A failed local-wheel install fails the step** instead of being swallowed: `--no-cache-dir`
+   (replacing `|| true`) on the documented `deploy.sh` template and on
+   `scalable-openai/deploy.sh` (Guard 2 / the scalable-openai exception). For the reverted example
+   `build.sh local` scripts the swallow remains (they keep `|| true`), so a *missing* wheel is
+   caught by Guard 1 rather than by `check=True`.
 4. **`examples/memory/valkey` collects and runs**: `valkey` is installed directly and the
    ragas/`langchain-community` import resolves (Dependency fixes).
 5. **API Gateway access logging is off by default.** With `enable_api_gateway_logs` unset, no
@@ -224,9 +263,11 @@ Each is intended.
    succeed in accounts without that singleton role. Setting it `true` restores logging (Guard 3).
 
 **Non-changes** (explicit): the cache `save` steps and cache keys; the example `build.sh`/`deploy.sh`
-scripts (reverted to `develop`); `run_single_test.py`'s non-AWS test paths; `ak-py` source and
-version; `agentkernel` pins/extras; default behaviour of existing deployments beyond logging now
-being opt-in.
+scripts (reverted to `develop`) **except `examples/aws-serverless/scalable-openai`, which is
+intentionally modified — see the exception above**; `run_single_test.py`'s non-AWS (GCP/Azure) test
+paths; `ak-py` source and version; the `agentkernel` published version and `>=0.6.1` pins (the
+scalable-openai `pyproject.toml` reorganizes its own extras but does not change any `agentkernel`
+pin); default behaviour of existing deployments beyond logging now being opt-in.
 
 ## Testing
 
