@@ -6,9 +6,8 @@ from agentkernel.core import AgentReplyText, PostHook, PreHook, Session
 from agentkernel.langgraph import LangGraphModule
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, Field
-
 from langgraph.graph import END, StateGraph, add_messages
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("ak.example.langgraph_context")
 
