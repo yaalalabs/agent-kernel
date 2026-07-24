@@ -233,6 +233,23 @@ except Exception as e:
 - **Framework Dependencies**: All required frameworks must be installed and properly configured
 - **Resource Overhead**: Running multiple frameworks increases memory and processing requirements
 
+## Per-run context/state across frameworks
+
+The reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state)
+session key gives you one uniform way to carry a context/state dict across turns, but **how much of
+it round-trips is not the same in every framework** (see the
+[fidelity table](../core-concepts/runner.md#per-run-framework-context)):
+
+- **OpenAI** and **Google ADK** round-trip **new keys** a tool adds during a run.
+- **Smolagents** and **prebuilt LangGraph** agents round-trip only keys that were **pre-seeded**
+  (smolagents) or **declared as state channels** (LangGraph); other keys are silently dropped.
+- **CrewAI** does not support it at all — a set context is ignored with a warning.
+
+To write context **portably across all frameworks in a multi-framework app**, **pre-seed every key
+you intend to write** into `framework_context` before the run, and don't rely on brand-new keys
+surviving. Where a framework can't round-trip a value, a tool can always fall back to reading and
+writing the dict directly via `ToolContext.get().session`.
+
 ## Example Projects
 
 Check out the complete working example:

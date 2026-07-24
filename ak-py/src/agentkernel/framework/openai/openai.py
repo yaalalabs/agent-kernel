@@ -180,7 +180,14 @@ class OpenAIRunner(BaseRunner):
                 return AgentReplyText(response="Sorry. No valid content found in the requests")
 
             input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
-            reply = (await Runner.run(agent.agent, input_data, session=session_to_use)).final_output
+            # Load the per-run framework context (deep copy) and inject it so tools can read/write
+            # it via RunContextWrapper.context. context=None (absent key) matches prior behaviour.
+            incoming = self._load_framework_context(session)
+            reply = (await Runner.run(agent.agent, input_data, session=session_to_use, context=incoming)).final_output
+
+            # OpenAI tools mutate the injected object in place, so the produced state is the same
+            # object. Write back only after a successful native call, before returning.
+            self._store_framework_context(session, incoming, incoming)
 
             structured = AgentReplyAny.from_output(reply, prompt)
             if structured is not None:
@@ -211,12 +218,18 @@ class OpenAIRunner(BaseRunner):
                 return
 
             input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
-            result = Runner.run_streamed(agent.agent, input_data, session=session_to_use)
+            incoming = self._load_framework_context(session)
+            result = Runner.run_streamed(agent.agent, input_data, session=session_to_use, context=incoming)
 
             async for event in result.stream_events():
                 if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
                     if event.data.delta:
                         yield event.data.delta
+
+            # Write back only when the stream drains normally. A client disconnect (GeneratorExit
+            # at a yield) or a framework error unwinds before this line, leaving the stored context
+            # intact. Kept out of `finally` so partial state is never persisted.
+            self._store_framework_context(session, incoming, incoming)
         finally:
             if context is not None:
                 context.reset()

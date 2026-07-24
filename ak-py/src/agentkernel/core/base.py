@@ -1,14 +1,32 @@
 import asyncio
 import contextvars
+import copy
 import logging
+import pickle
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Iterator, Mapping
 from enum import Enum
 from typing import Any, ClassVar, Self, cast
 
 from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
+
+
+def _not_picklable(value: Any) -> bool:
+    """
+    Returns True when the given value cannot be pickled.
+
+    Used by Runner._ensure_framework_context_picklable to name the offending
+    framework_context entry in a descriptive error.
+    :param value: The value to test for picklability.
+    :return: True if the value cannot be pickled, otherwise False.
+    """
+    try:
+        pickle.dumps(value)
+        return False
+    except Exception:
+        return True
 
 
 class Session:
@@ -39,6 +57,7 @@ class Session:
 
         VOLATILE_CACHE = "v_cache"
         NON_VOLATILE_CACHE = "nv_cache"
+        FRAMEWORK_CONTEXT = "framework_context"
 
     current_session: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("current_session", default=None)
 
@@ -219,6 +238,78 @@ class Runner(ABC):
         Returns the name of the runner.
         """
         return self._name
+
+    def _load_framework_context(self, session: Session) -> dict | None:
+        """
+        Returns a DEEP COPY of the stored framework_context, or None if the key is absent.
+
+        The reserved ``framework_context`` session key carries a per-run, framework-agnostic
+        context/state dict across turns. A deep copy isolates the stored object from in-run
+        mutation (crash-isolation): the stored key is left untouched until a successful
+        write-back replaces it wholesale, so a mid-run crash cannot leave it half-mutated.
+
+        :param session: The session to read the reserved framework_context key from.
+        :return: A deep copy of the stored dict (including an empty ``{}``), or None when the
+                 key is absent — absent means "no injection / framework default".
+        """
+        if session is None:
+            return None
+        stored = session.get(Session.Keys.FRAMEWORK_CONTEXT.value)
+        if stored is None:
+            return None
+        return copy.deepcopy(stored)
+
+    def _store_framework_context(self, session: Session, incoming: dict | None, produced: Mapping[str, Any] | None) -> None:
+        """
+        Shallow-merges ``produced`` over ``incoming`` and writes the result back to the reserved key.
+
+        ``incoming`` is the deep copy returned by :meth:`_load_framework_context` this turn.
+        Top-level keys the framework touched (``produced``) win over the caller-seeded ones
+        (last-write-wins); caller keys the framework never touched are preserved; nested
+        structures are replaced wholesale (no recursive merge). No-op when the key was absent
+        this turn (``incoming`` is None) — the previously stored context is left intact.
+
+        Runners call this only after a successful native invocation, so a crashed/partial run
+        never overwrites the last-known-good context.
+
+        :param session: The session to write the merged framework_context back to.
+        :param incoming: The deep copy loaded this turn, or None when the key was absent.
+        :param produced: The framework's post-run state delta, or None.
+        """
+        if session is None or incoming is None:
+            return
+        merged = dict(incoming)
+        if produced:
+            merged.update(produced)
+        self._ensure_framework_context_picklable(session, merged)
+        session.set(Session.Keys.FRAMEWORK_CONTEXT.value, merged)
+
+    @staticmethod
+    def _ensure_framework_context_picklable(session: Session, ctx: Mapping[str, Any]) -> None:
+        """
+        Fails fast with an actionable message if the merged context cannot be pickled.
+
+        Sessions are serialized with pickle, so a non-picklable framework_context value would
+        otherwise abort the whole session store() with an opaque error. This diagnostic check
+        runs on the merge result before it is written back, naming the session and the offending
+        key/type so the failure is actionable during development.
+
+        :param session: The session whose id is named in the error.
+        :param ctx: The merged framework_context to validate.
+        :raises TypeError: If any value in ctx is not pickle-serializable.
+        """
+        try:
+            pickle.dumps(ctx)
+        except Exception as exc:
+            offender = next(
+                (f"{k!r} ({type(v).__name__})" for k, v in ctx.items() if _not_picklable(v)),
+                "<unknown key>",
+            )
+            raise TypeError(
+                f"Session '{session.id}' framework_context is not picklable; "
+                f"offending entry: {offender}. framework_context values must be "
+                f"pickle-serializable so the session can be persisted."
+            ) from exc
 
     @abstractmethod
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:

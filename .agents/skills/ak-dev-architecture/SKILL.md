@@ -34,6 +34,7 @@ Tracks state across related interactions. Key properties:
 - **Framework-specific data**: Stored via `get(key)` / `set(key, value)` — each framework stores its own state under a unique key (e.g., `"openai"`, `"langgraph"`)
 - **Volatile cache** (`v_cache`): Cleared after every `Runtime.run()` invocation — use for transient per-request data
 - **Non-volatile cache** (`nv_cache`): Persisted across requests within the session — use for data that should survive multiple interactions
+- **Reserved keys** (`Session.Keys` enum): `VOLATILE_CACHE`/`NON_VOLATILE_CACHE` back the two caches; `FRAMEWORK_CONTEXT` (`"framework_context"`) holds a per-run, framework-agnostic caller context/state **dict** (must be picklable) that runners inject into the native framework call and write back on success. Unlike the caches it is **not** pre-initialized — an unset key reads back as `None` (absent ⇒ no injection, no behaviour change). Callers seed/read it via `session.set/get(Session.Keys.FRAMEWORK_CONTEXT.value, ...)`
 - **Async context manager**: `async with session:` acquires a lock and sets the session as the current context via `contextvars`
 - **`Session.current()`**: Class method to retrieve the active session from any code running within the session context
 
@@ -55,6 +56,7 @@ Encapsulates framework-specific execution logic:
 - **`stream(agent, session, requests) -> AsyncGenerator[str, None]`**: Abstract async generator that yields token deltas for streaming execution (`execution.mode: stream`). Frameworks without native token streaming (CrewAI, smolagents) implement it by raising `NotImplementedError`
 - Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`)
 - Runners handle: creating `ToolContext`, converting request models to framework-native formats, invoking the framework's execution API, converting responses back to `AgentReply`
+- **Per-run framework context**: the base `Runner` provides `_load_framework_context(session)` (returns a **deep copy** of the reserved `framework_context` key, or `None` when absent) and `_store_framework_context(session, incoming, produced)` (shallow-merges `produced` over `incoming` — framework-touched top-level keys win, untouched caller keys preserved — with a fail-fast picklability check). Each adapter's `run`/`stream` calls load before the native call, injects `incoming` via its native mechanism, and calls store **only after a successful native call** (inside the `try`, before the `except`; after the `async for` loop for streams, never in `finally`) so a crash/disconnect leaves the stored context intact. Round-trip fidelity is per-framework (OpenAI full; ADK all-but-internal-keys; smolagents pre-seeded keys only; LangGraph declared channels only; CrewAI unsupported — warns and skips)
 
 ### Module (`ak-py/src/agentkernel/core/module.py`)
 

@@ -195,6 +195,34 @@ async def run(self, agent, session, requests):
     return result
 ```
 
+### Per-run framework context {#per-run-framework-context}
+
+In addition to their own internal state, all runners honour one reserved session key,
+`Session.Keys.FRAMEWORK_CONTEXT` (`"framework_context"`), which carries a **framework-agnostic,
+per-run context/state dict** across turns (see
+[Session → Framework context / per-run state](./session.md#framework-context--per-run-state) for how
+to seed and read it). When the key is set, a runner:
+
+1. **Loads** a deep copy of the stored context before invoking the framework.
+2. **Injects** it into the native framework call (mapped to each framework's own context/state
+   mechanism).
+3. **Writes back** the produced state — shallow-merged over the loaded copy (framework-touched
+   top-level keys win, untouched caller keys are preserved) — but only after the native call
+   **succeeds**, so a crashed or disconnected run leaves the previously stored context intact.
+
+**How faithfully a caller dict round-trips is not uniform across frameworks:**
+
+| Framework | Fidelity | Injected as | Written back |
+|-----------|----------|-------------|--------------|
+| OpenAI | **Full round-trip** | `Runner.run(..., context=ctx)` — tools mutate it in place | the same object, in full |
+| Google ADK | **Round-trips (filtered)** | merged into the ADK session `state` | the accumulated ADK state, with AK-internal keys stripped — **tool-added keys survive** |
+| Smolagents | **Round-trips (filtered)** | `agent.run(..., additional_args=ctx)` | `agent.state` **restricted to pre-seeded keys** — brand-new keys are dropped |
+| LangGraph | **Declared channels only** | spread into the graph input alongside `messages` | only keys the graph's state schema declares as channels (prebuilt agents drop unknown keys) |
+| CrewAI | **Unsupported** | not injected | none — a set context is **ignored with a one-time warning** |
+
+Because of this divergence, tool authors who want a context write to be portable across every
+framework should **pre-seed every key they intend to write** before the run.
+
 ## Best Practices
 
 ### Async Execution
@@ -227,6 +255,7 @@ except Exception as e:
 - Each framework has its own Runner implementation
 - OpenAI Agents SDK, LangGraph, and Google ADK support token streaming; CrewAI and Smolagents do not
 - Runners convert typed requests/replies and manage framework session state
+- Runners inject the reserved `framework_context` into the native call and write the produced state back on success (fidelity varies per framework)
 - Always use async/await, and prefer `Runtime.run()`/`AgentService` over calling runners directly
 
 ## Next Steps

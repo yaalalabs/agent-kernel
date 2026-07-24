@@ -153,11 +153,26 @@ class SmolagentsRunner(Runner):
             # Rehydrate framework memory from the AgentKernel session before execution.
             self._hydrate_memory(agent, session)
 
+            # Load the per-run framework context and inject it as smolagents additional_args, but
+            # only when a context is present — this keeps the no-context call byte-for-byte as before.
+            incoming = self._load_framework_context(session)
+            run_kwargs: dict[str, Any] = {"reset": False}
+            if incoming is not None:
+                run_kwargs["additional_args"] = incoming
+
             # Preserve conversational continuity across requests without blocking the async event loop.
-            reply = await asyncio.to_thread(agent.agent.run, prompt, reset=False)
+            reply = await asyncio.to_thread(agent.agent.run, prompt, **run_kwargs)
 
             # Persist updated framework memory back to the AgentKernel session.
             self._sync_memory(agent, session)
+
+            # Write back the context restricted to the keys the caller seeded — agent.state also
+            # holds framework-internal entries with no clean prefix to filter on, so a brand-new
+            # key a tool adds is not round-tripped (documented smolagents divergence).
+            produced: dict[str, Any] | None = None
+            if incoming is not None and hasattr(agent.agent, "state") and isinstance(agent.agent.state, dict):
+                produced = {k: agent.agent.state[k] for k in incoming if k in agent.agent.state}
+            self._store_framework_context(session, incoming, produced)
 
             structured = AgentReplyAny.from_output(reply, prompt)
             if structured is not None:

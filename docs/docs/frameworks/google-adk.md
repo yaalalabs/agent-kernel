@@ -113,6 +113,10 @@ If the model's reply does not validate against the schema, the runner logs a war
 Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.
 :::
 
+## Per-run context/state
+
+Google ADK **round-trips all caller keys** of the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key **except AK-internal ones**. It is merged into the ADK session `state` on input; on write-back the accumulated state is read back with the internal `ak_tool_context` key stripped. Because the whole (stripped) state is returned, keys a tool **adds** during the run survive to the next turn. ADK's native state is in-memory only, so this write-back is what gives the context cross-turn durability.
+
 ## Features
 
 - ✅ Gemini models

@@ -624,7 +624,9 @@ class TestGoogleADKRunnerToolContext:
         mock_runner = MagicMock()
         mock_runner.run_async = mock_run_async
 
-        with patch.object(GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock())):
+        with patch.object(
+            GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock(), MagicMock())
+        ):
             chunks = []
             async for delta in runner.stream(mock_agent, session, requests):
                 chunks.append(delta)
@@ -651,7 +653,9 @@ class TestGoogleADKRunnerToolContext:
         mock_runner = MagicMock()
         mock_runner.run_async = mock_run_async
 
-        with patch.object(GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock())):
+        with patch.object(
+            GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock(), MagicMock())
+        ):
             chunks = []
             async for delta in runner.stream(mock_agent, session, requests):
                 chunks.append(delta)

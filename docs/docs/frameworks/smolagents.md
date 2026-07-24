@@ -117,6 +117,10 @@ Pydantic results are converted via `model_dump()`, and `str(reply)` returns the 
 Structured output applies to non-streaming execution only. (SmolAgents does not support streaming in Agent Kernel.)
 :::
 
+## Per-run context/state
+
+Smolagents **round-trips a filtered subset** of the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key. It is injected as `agent.run(..., additional_args=...)`; on write-back the runner reads `agent.state` but keeps **only the keys you pre-seeded** (framework-internal entries have no clean prefix to filter on). Consequence: a tool that mutates a **pre-seeded** key round-trips, but a tool that adds a **brand-new** key has it silently dropped — pre-seed every key you intend to write.
+
 ## Features
 
 - ✅ ToolCalling and CodeAgent support

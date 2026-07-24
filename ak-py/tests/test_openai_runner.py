@@ -12,10 +12,174 @@ from agentkernel.core.model import (
 )
 from agentkernel.framework.openai.openai import OpenAIRunner
 
+FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
+
 
 class CalendarEvent(BaseModel):
     name: str
     date: str
+
+
+def _delta_event(text: str):
+    """Build a stream event the OpenAI runner recognizes as a text delta."""
+    from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
+
+    event = MagicMock()
+    event.type = "raw_response_event"
+    event.data = ResponseTextDeltaEvent(
+        content_index=0,
+        delta=text,
+        item_id="item",
+        logprobs=[],
+        output_index=0,
+        sequence_number=0,
+        type="response.output_text.delta",
+    )
+    return event
+
+
+class TestOpenAIRunnerFrameworkContext:
+    """framework_context injection and write-back for OpenAIRunner."""
+
+    @pytest.mark.asyncio
+    async def test_context_injected_into_runner_run(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+        requests = [AgentRequestText(prompt="hi")]
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            result = MagicMock()
+            result.final_output = "done"
+            MockRunner.run = AsyncMock(return_value=result)
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+
+            await runner.run(mock_agent, session, requests)
+
+            _, kwargs = MockRunner.run.call_args
+            assert kwargs["context"] == {"user_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_in_place_mutation_written_back(self):
+        """A tool mutating RunContextWrapper.context in place round-trips to the session key."""
+        runner = OpenAIRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+        requests = [AgentRequestText(prompt="hi")]
+
+        async def fake_run(agent, input_data, session=None, context=None):
+            if context is not None:
+                context["touched"] = True
+            result = MagicMock()
+            result.final_output = "done"
+            return result
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = fake_run
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+
+            await runner.run(mock_agent, session, requests)
+
+            assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "42", "touched": True}
+
+    @pytest.mark.asyncio
+    async def test_error_leaves_stored_context_intact(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+        requests = [AgentRequestText(prompt="hi")]
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(side_effect=Exception("boom"))
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+
+            reply = await runner.run(mock_agent, session, requests)
+
+            assert reply.response.startswith("Error")
+            assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_absent_key_passes_context_none(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            result = MagicMock()
+            result.final_output = "done"
+            MockRunner.run = AsyncMock(return_value=result)
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+
+            await runner.run(mock_agent, session, requests)
+
+            _, kwargs = MockRunner.run.call_args
+            assert kwargs["context"] is None
+            # Absent key is never written back.
+            assert session.get(FRAMEWORK_CONTEXT) is None
+
+    @pytest.mark.asyncio
+    async def test_stream_normal_drain_writes_back(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seed": 1})
+        requests = [AgentRequestText(prompt="hi")]
+
+        def fake_run_streamed(agent, input_data, session=None, context=None):
+            result = MagicMock()
+
+            async def stream_events():
+                if context is not None:
+                    context["touched"] = True
+                for event in ():
+                    yield event
+
+            result.stream_events = stream_events
+            return result
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+
+            _ = [delta async for delta in runner.stream(mock_agent, session, requests)]
+
+            assert session.get(FRAMEWORK_CONTEXT) == {"seed": 1, "touched": True}
+
+    @pytest.mark.asyncio
+    async def test_stream_disconnect_leaves_context_intact(self):
+        """A client disconnect (GeneratorExit at a yield) skips write-back."""
+        runner = OpenAIRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seed": 1})
+        requests = [AgentRequestText(prompt="hi")]
+
+        def fake_run_streamed(agent, input_data, session=None, context=None):
+            result = MagicMock()
+
+            async def stream_events():
+                if context is not None:
+                    context["touched"] = True  # tool mutated the injected copy
+                yield _delta_event("hi")
+
+            result.stream_events = stream_events
+            return result
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+
+            agen = runner.stream(mock_agent, session, requests)
+            first = await agen.__anext__()
+            assert first == "hi"
+            await agen.aclose()  # simulate client disconnect at the yield
+
+            # Write-back is after the loop → skipped; last-known-good context preserved.
+            assert session.get(FRAMEWORK_CONTEXT) == {"seed": 1}
 
 
 class TestOpenAIRunnerErrorHandling:

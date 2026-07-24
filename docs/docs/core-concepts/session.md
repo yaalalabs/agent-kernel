@@ -384,6 +384,52 @@ openai_session = session.get("openai_assistant_session")
 - Multiple agents can share the same session
 - Session data is automatically persisted to the configured backend
 
+### Framework context / per-run state
+
+Beyond the framework-internal keys above, the session exposes **one reserved key** that lets your
+application carry a **framework-agnostic context/state object** across turns of a conversation:
+`Session.Keys.FRAMEWORK_CONTEXT` (its `.value` is the string `"framework_context"`). When set, the
+active framework's runner injects this object into the underlying framework call, and writes the
+(possibly mutated) object back to the same key after a **successful** run — so tools can read and
+update shared state that survives to the next turn.
+
+```python
+from agentkernel.core import Session
+
+# Seed a context on turn 1 (any picklable dict). Reference the enum member, not the raw string.
+session.set(Session.Keys.FRAMEWORK_CONTEXT.value, {"user_id": "42", "cart": []})
+
+# Read it back later (e.g. after a run, or on the next turn)
+ctx = session.get(Session.Keys.FRAMEWORK_CONTEXT.value)
+```
+
+Inside a tool, reach the same object through the tool context:
+
+```python
+from agentkernel.core import Session, ToolContext
+
+def add_to_cart(item: str) -> str:
+    """Add an item to the caller's cart carried in framework_context."""
+    session = ToolContext.get().session
+    ctx = session.get(Session.Keys.FRAMEWORK_CONTEXT.value) or {}
+    ctx.setdefault("cart", []).append(item)
+    return f"Added {item}"
+```
+
+**Rules and constraints:**
+- **Optional and non-breaking.** If the key is never set (reads back as `None`), nothing is injected
+  and behaviour is unchanged. A caller-set empty dict `{}` is treated as "present but empty" — it is
+  injected and round-tripped, so tools can populate it.
+- **Must be a picklable `dict`.** Sessions are persisted with `pickle`; a non-picklable value raises a
+  descriptive `TypeError` naming the offending key/type rather than an opaque store-level failure.
+- **Write-back is atomic per turn.** The updated context is stored only after the run completes
+  successfully. On a framework error — or a client disconnect mid-stream — the previously stored
+  context is left intact (partial state is discarded, not saved).
+- **Round-trip fidelity differs per framework.** See the fidelity table in the
+  [Runner](./runner.md#per-run-framework-context) documentation — notably, CrewAI does not support it
+  (it warns and ignores a set context), and smolagents / prebuilt LangGraph agents round-trip only
+  a subset of keys.
+
 ### Multi-Agent Sessions
 
 Sessions can track multiple agents within the same conversation:

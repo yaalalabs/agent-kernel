@@ -375,6 +375,13 @@ class CrewAIRunner(Runner):
                 verbose=False,
                 memory=memory,
             )
+            # CrewAI's kickoff(inputs=...) are .format() template-interpolation variables, not a
+            # context/state object, so there is no safe per-run caller-state slot. Warn once when a
+            # non-empty framework_context is set (a caller-set {} is falsy and does not warn) and
+            # leave the stored key untouched — no injection, no write-back. Tools that need the dict
+            # can still reach it via ToolContext.get().session.
+            if session is not None and session.get(Session.Keys.FRAMEWORK_CONTEXT.value):
+                self._log.warning("framework_context is set but CrewAI does not support per-run caller context/state; ignoring it.")
             reply = await crew.kickoff_async(inputs={})
             if isinstance(getattr(reply, "pydantic", None), BaseModel):
                 agent_reply: AgentReply = AgentReplyAny(content=reply.pydantic.model_dump(mode="json"), prompt=prompt)

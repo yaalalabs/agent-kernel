@@ -387,10 +387,26 @@ class LangGraphRunner(BaseRunner):
 
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
+            # Spread the per-run framework context's top-level keys into the input state so they map
+            # onto the graph's state channels. `messages` is written last, so a caller key can never
+            # replace it. Unknown keys are silently dropped by prebuilt agents (no error).
+            incoming = self._load_framework_context(session)
+            input_state: dict[str, Any] = {}
+            if incoming:
+                input_state.update(incoming)
+            input_state["messages"] = messages
+
             result = await agent.agent.ainvoke(
-                input={"messages": messages},
+                input=input_state,
                 config=config,
             )
+
+            # Only keys the graph's state schema declares as channels come back on `result`; the
+            # rest are dropped. Written back after a successful invoke, before returning.
+            if incoming is not None:
+                produced = {k: result[k] for k in incoming if k in result}
+                self._store_framework_context(session, incoming, produced)
+
             structured = AgentReplyAny.from_output(result.get("structured_response"), prompt)
             if structured is not None:
                 return structured
@@ -423,8 +439,14 @@ class LangGraphRunner(BaseRunner):
 
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
+            incoming = self._load_framework_context(session)
+            input_state: dict[str, Any] = {}
+            if incoming:
+                input_state.update(incoming)
+            input_state["messages"] = messages
+
             async for event in agent.agent.astream_events(
-                input={"messages": messages},
+                input=input_state,
                 config=config,
                 version="v2",
             ):
@@ -436,6 +458,14 @@ class LangGraphRunner(BaseRunner):
                         for item in content:
                             if isinstance(item, dict) and item.get("text"):
                                 yield item["text"]
+
+            # astream_events yields events, not a final state dict, so read the produced state back
+            # explicitly once the stream drains normally. Inside the try, after the loop — a
+            # disconnect (GeneratorExit) or a mid-stream error unwinds before this line.
+            if incoming is not None:
+                state = await agent.agent.aget_state(config)
+                produced = {k: state.values[k] for k in incoming if k in state.values}
+                self._store_framework_context(session, incoming, produced)
         finally:
             if context is not None:
                 context.reset()
