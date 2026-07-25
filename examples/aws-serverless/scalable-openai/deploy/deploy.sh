@@ -4,7 +4,17 @@ set -eo pipefail # exit if any command in this script fails
 S3_BUCKET=lambda-s3-packages-329597159169-ap-southeast-2-an
 
 upload_to_s3() {
-	aws s3 cp "$1" "s3://$2/"
+	# $1 = local file, $2 = bucket, $3 = object key
+	aws s3api put-object --bucket "$2" --key "$3" --body "$1" --query VersionId --output text
+}
+
+has_version() { [[ -n "$1" && "$1" != "null" && "$1" != "None" ]]; }
+
+pkg_var() {
+	# $1 = object key, $2 = version id
+	local v="bucket=\"$S3_BUCKET\",key=\"$1\""
+	has_version "$2" && v="$v,version_id=\"$2\""
+	echo "{$v}"
 }
 
 push_to_ecr() {
@@ -82,15 +92,19 @@ create_agent_runner_deployment_package $1
 create_response_handler_deployment_package $1
 
 pushd ../ || exit 1
-# Upload deployment packages to S3
-upload_to_s3 dist_request_handler.zip $S3_BUCKET
-upload_to_s3 dist_response_handler.zip $S3_BUCKET
+REQUEST_HANDLER_VERSION_ID=$(upload_to_s3 dist_request_handler.zip "$S3_BUCKET" dist_request_handler.zip)
+RESPONSE_HANDLER_VERSION_ID=$(upload_to_s3 dist_response_handler.zip "$S3_BUCKET" dist_response_handler.zip)
+
+if ! has_version "$REQUEST_HANDLER_VERSION_ID" || ! has_version "$RESPONSE_HANDLER_VERSION_ID"; then
+	echo "WARNING: bucket '$S3_BUCKET' is not versioned — code changes will NOT redeploy the Lambdas. Enable S3 versioning. See issue #548." >&2
+fi
 
 # Push to ECR
 cd dist_agent_runner || exit 1
 push_to_ecr "agent-runner-ext" Dockerfile
 popd || exit 1
 
-
 terraform init
-terraform apply
+terraform apply \
+	-var "request_handler_lambda_package_s3=$(pkg_var dist_request_handler.zip "$REQUEST_HANDLER_VERSION_ID")" \
+	-var "response_handler_lambda_package_s3=$(pkg_var dist_response_handler.zip "$RESPONSE_HANDLER_VERSION_ID")"

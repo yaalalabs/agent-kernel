@@ -333,7 +333,7 @@ variable "request_handler" {
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables             = optional(map(string), {})
     event_source_mapping              = optional(any, [])
-    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
+    lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
   })
   default = {}
@@ -369,7 +369,7 @@ variable "agent_runner" {
     layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables             = optional(map(string), {})
-    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
+    lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
   })
   default = {}
@@ -405,7 +405,7 @@ variable "response_handler" {
     layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables             = optional(map(string), {})
-    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
+    lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
   })
   default = {}

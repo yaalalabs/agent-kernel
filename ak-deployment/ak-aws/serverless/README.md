@@ -260,8 +260,9 @@ module "scalable_agents" {
     handler_path         = "lambda_request_handler.handler"
     package_type         = "S3Zip"
     lambda_package_s3 = {
-      bucket = "my-lambda-packages-bucket"
-      key    = "dist_request_handler.zip"
+      bucket     = "my-lambda-packages-bucket"
+      key        = "dist_request_handler.zip"
+      version_id = "<object-version-id>" 
     }
     memory_size = 256
     timeout     = 45
@@ -288,8 +289,9 @@ module "scalable_agents" {
     function_name        = "rsh-func"
     handler_path         = "lambda_response_handler.handler"
     lambda_package_s3 = {
-      bucket = "my-lambda-packages-bucket"
-      key    = "dist_response_handler.zip"
+      bucket     = "my-lambda-packages-bucket"
+      key        = "dist_response_handler.zip"
+      version_id = "<object-version-id>" # from your versioned bucket → redeploys update the Lambda (#548)
     }
     package_type = "S3Zip"
     memory_size  = 256
@@ -504,7 +506,7 @@ module "serverless_api_auth" {
 | `module_name` | Request handler module name | `string` | `"request-handler"` | no |
 | `package_path` | Request handler deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Request handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
-| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key }`). Used when `package_type = "S3Zip"`. Mutually exclusive with `package_path` | `object` | `null` | no |
+| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function |
 | `ecr_image_uri` | Pre-built ECR image URI. Used when `package_type = "Image"`. Mutually exclusive with `package_path` | `string` | `null` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
@@ -575,7 +577,7 @@ This configuration creates WebSocket routes accessible via:
 | `module_name` | Response handler module name | `string` | `"response-handler"` | no |
 | `package_path` | Response handler deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Response handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
-| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key }`). Used when `package_type = "S3Zip"`. Mutually exclusive with `package_path` | `object` | `null` | no |
+| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function |
 | `ecr_image_uri` | Pre-built ECR image URI. Used when `package_type = "Image"`. Mutually exclusive with `package_path` | `string` | `null` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
@@ -593,7 +595,7 @@ This configuration creates WebSocket routes accessible via:
 | `module_name` | Agent runner module name | `string` | `"agent-runner"` | no |
 | `package_path` | Agent runner deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Agent runner deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
-| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key }`). Used when `package_type = "S3Zip"`. Mutually exclusive with `package_path` | `object` | `null` | no |
+| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function  |
 | `ecr_image_uri` | Pre-built ECR image URI. Used when `package_type = "Image"`. Mutually exclusive with `package_path` | `string` | `null` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
@@ -696,7 +698,7 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 
 **Multiple Deployment Methods**:
 - **LocalZip**: Deploy from local ZIP file (< 50 MB)
-- **S3Zip**: Deploy from S3 bucket with optional code signing
+- **S3Zip**: Deploy from S3 bucket with optional code signing (use a versioned bucket + `version_id` so code updates redeploy )
 - **Image**: Deploy from ECR container image (up to 10 GB)
 
 **Automatic Runtime Selection**:

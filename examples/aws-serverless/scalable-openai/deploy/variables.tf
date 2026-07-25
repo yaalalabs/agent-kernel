@@ -43,8 +43,9 @@ variable "private_subnet_ids" {
 variable "request_handler_lambda_package_s3" {
   description = "External Lambda artifact for request handler"
   type = object({
-    bucket = string
-    key    = string
+    bucket     = string
+    key        = string
+    version_id = optional(string)
   })
   default = null
 }
@@ -52,8 +53,9 @@ variable "request_handler_lambda_package_s3" {
 variable "response_handler_lambda_package_s3" {
   description = "External Lambda artifact for response handler"
   type = object({
-    bucket = string
-    key    = string
+    bucket     = string
+    key        = string
+    version_id = optional(string)
   })
   default = null
 }
