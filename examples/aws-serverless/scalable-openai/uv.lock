@@ -229,8 +229,16 @@ wheels = [
 name = "aws-serverless-scalable-openai"
 version = "0.1.0"
 source = { virtual = "." }
-dependencies = [
+
+[package.optional-dependencies]
+agent-runner = [
     { name = "agentkernel", extra = ["aws", "openai", "redis"] },
+]
+request-handler = [
+    { name = "agentkernel", extra = ["aws", "redis"] },
+]
+response-handler = [
+    { name = "agentkernel", extra = ["aws", "redis"] },
 ]
 
 [package.dev-dependencies]
@@ -242,7 +250,12 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["aws", "openai", "redis"], specifier = ">=0.6.1" }]
+requires-dist = [
+    { name = "agentkernel", extras = ["aws", "openai", "redis"], marker = "extra == 'agent-runner'", specifier = ">=0.6.1" },
+    { name = "agentkernel", extras = ["aws", "redis"], marker = "extra == 'request-handler'", specifier = ">=0.6.1" },
+    { name = "agentkernel", extras = ["aws", "redis"], marker = "extra == 'response-handler'", specifier = ">=0.6.1" },
+]
+provides-extras = ["request-handler", "response-handler", "agent-runner"]
 
 [package.metadata.requires-dev]
 dev = [
