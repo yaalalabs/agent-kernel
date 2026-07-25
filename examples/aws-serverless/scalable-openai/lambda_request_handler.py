@@ -12,7 +12,7 @@ def custom_app_handler(event, context):
 @Lambda.register("/app_info", method="POST")
 def custom_app_info_handler(event, context):
     payload = json.loads(event.get("body") or "{}")
-    return {"receivedEventPayload": dict(event), "request": payload, "response": "Hello! from AK 'app_info'"}
+    return {"receivedEventPayload": dict(event), "request": payload, "response": "Hello this is test! from AK 'app_info'"}
 
 
 handler = Lambda.handler
