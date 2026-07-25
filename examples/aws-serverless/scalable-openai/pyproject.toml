@@ -4,20 +4,8 @@ version = "0.1.0"
 description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on AWS Lambda with scalable queue processing"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
-
-[project.optional-dependencies]
-# Per-Lambda dependency sets. The request/response handlers only enqueue and
-# dequeue work, so they omit the (heavy) OpenAI Agents SDK; only the agent
-# runner needs it. deploy.sh installs each package with `uv export --extra <name>`.
-request_handler = [
-    "agentkernel[aws,redis]>=0.6.1",
-]
-response_handler = [
-    "agentkernel[aws,redis]>=0.6.1",
-]
-agent_runner = [
-    "agentkernel[aws,openai,redis]>=0.6.1",
+dependencies = [
+    "agentkernel[aws,openai,redis]>=0.6.1"
 ]
 
 [dependency-groups]
