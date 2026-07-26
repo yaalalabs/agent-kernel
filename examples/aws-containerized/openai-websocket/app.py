@@ -55,7 +55,10 @@ class CustomAuthValidator(AuthValidator):
 @AWSWebsocketAPI.register("status")  # Terraform: ws_routes = [{ route = "status" }]
 async def status(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
     return {"status": "OK", "user_id": ctx.user_id}
-
+    
+@AWSWebsocketAPI.register("custom-route-2")  # Terraform: ws_routes = [{ route = "status" }]
+async def custom_route_2(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
+    return {"status": "OK", "context": ctx.model_dump_json()}
 
 def main():
     AWSWebsocketAPI.set_auth_handler(auth_validator=CustomAuthValidator()).run()
