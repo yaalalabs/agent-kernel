@@ -30,8 +30,12 @@ async def chat(ws_url: str, prompt: str) -> None:
         )
         print(json.loads(await ws.recv()))
 
-        # Custom route demo (Terraform: ws_routes = [{ route = "status" }]).
+        # Custom route demo — no body (Terraform: ws_routes = [{ route = "status" }]).
         await ws.send(json.dumps({"route": "status", "body": {}}))
+        print(json.loads(await ws.recv()))
+
+        # Custom route demo — reads the frame's body ('prompt' plus any extra keys).
+        await ws.send(json.dumps({"route": "echo", "body": {"prompt": prompt, "locale": "en-US"}}))
         print(json.loads(await ws.recv()))
 
 

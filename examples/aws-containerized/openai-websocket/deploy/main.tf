@@ -26,9 +26,10 @@ module "containerized_agents" {
   execution_mode = "async" # "async" (full reply) | "stream" (token-by-token)
   ws_chat_route  = "chat"
 
-  # Custom route beyond chat — registered via @AWSWebsocketAPI.register("status") in app.py.
+  # Custom routes beyond chat — registered via @AWSWebsocketAPI.register(...) in app.py.
   ws_routes = [
-    { route = "status" }
+    { route = "status" },
+    { route = "echo" }
   ]
 
   tags = {

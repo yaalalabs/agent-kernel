@@ -55,10 +55,27 @@ class CustomAuthValidator(AuthValidator):
 @AWSWebsocketAPI.register("status")  # Terraform: ws_routes = [{ route = "status" }]
 async def status(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
     return {"status": "OK", "user_id": ctx.user_id}
-    
-@AWSWebsocketAPI.register("custom-route-2")  # Terraform: ws_routes = [{ route = "status" }]
-async def custom_route_2(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
-    return {"status": "OK", "context": ctx.model_dump_json()}
+
+
+@AWSWebsocketAPI.register("echo")  # Terraform: ws_routes = [{ route = "echo" }]
+async def echo(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
+    """Custom route that reads the inbound frame's body instead of ignoring it.
+
+    ``ctx.request.body`` is a ``BaseRunRequest`` (``None`` when the frame carries no body): ``prompt``
+    is required, and any other JSON keys in the frame's body are kept in ``body.model_extra``.
+    """
+    body = ctx.request.body
+    if body is None:
+        raise ECSWebSocketRequestHandler.WSRouteError(400, "body is required")
+
+    return {
+        "status": "OK",
+        "user_id": ctx.user_id,
+        "request_id": ctx.request.request_id,
+        "echo": body.prompt.upper(),
+        "extras": body.model_extra or {},
+    }
+
 
 def main():
     AWSWebsocketAPI.set_auth_handler(auth_validator=CustomAuthValidator()).run()

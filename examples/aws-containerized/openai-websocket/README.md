@@ -18,10 +18,10 @@ scalability of queue mode for lower latency and a single container to operate. S
 ## Deployed Resources
 
 - ECS Fargate service running the containerized application (the framework-managed
-  `ECSWebSocketRequestHandler`, carrying the built-in `chat` route plus the custom `status` route
-  registered in `app.py`)
-- WebSocket API Gateway (`$connect` / `$disconnect` / `chat` / `status` / `$default` routes),
-  proxied to the ECS service via VPC Link + ALB
+  `ECSWebSocketRequestHandler`, carrying the built-in `chat` route plus the custom `status` and
+  `echo` routes registered in `app.py`)
+- WebSocket API Gateway (`$connect` / `$disconnect` / `chat` / `status` / `echo` / `$default`
+  routes), proxied to the ECS service via VPC Link + ALB
 - DynamoDB table mapping `user_id` <-> `connection_id` (managed by the Terraform module)
 - DynamoDB table for agent memory (session store)
 
@@ -66,10 +66,10 @@ Receive:
 
 ## Custom Routes
 
-Beyond the built-in `chat` route, `app.py` registers a custom `status` route with the
-`@AWSWebsocketAPI.register("status")` decorator — route name only (the method is always POST and
-the path is always `/ws/status`). The decorated function receives the resolved `WSRouteContext`
-and returns a `dict`, which the framework broadcasts to the client:
+Beyond the built-in `chat` route, `app.py` registers two custom routes with the
+`@AWSWebsocketAPI.register(...)` decorator — route name only (the method is always POST and the
+path is always `/ws/<route>`). The decorated function receives the resolved `WSRouteContext` and
+returns a `dict`, which the framework broadcasts to the client:
 
 ```python
 from agentkernel.aws import AWSWebsocketAPI, ECSWebSocketRequestHandler
@@ -79,8 +79,8 @@ async def status(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
     return {"status": "OK", "user_id": ctx.user_id}
 ```
 
-The route is also declared in Terraform via `ws_routes` (`deploy/main.tf`), which must agree with
-the route name registered in code — Python cannot create the API Gateway integration, so both
+The routes are also declared in Terraform via `ws_routes` (`deploy/main.tf`), which must agree with
+the route names registered in code — Python cannot create the API Gateway integration, so both
 sides declare the route (exactly like the configurable `chat` route).
 
 Send:
@@ -101,6 +101,57 @@ Receive (pushed back over the connection as a `SYSTEM_RESPONSE`):
   "user_id": "user-1"
 }
 ```
+
+### Reading the request body
+
+`status` ignores the frame's payload. The second custom route, `echo`, reads it — `ctx.request.body`
+is the parsed `BaseRunRequest` (`None` when the frame carries no body), where `prompt` is required
+and every other key sent in `body` is preserved in `body.model_extra`:
+
+```python
+@AWSWebsocketAPI.register("echo")
+async def echo(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
+    body = ctx.request.body
+    if body is None:
+        raise ECSWebSocketRequestHandler.WSRouteError(400, "body is required")
+
+    return {
+        "status": "OK",
+        "user_id": ctx.user_id,
+        "request_id": ctx.request.request_id,
+        "echo": body.prompt.upper(),
+        "extras": body.model_extra or {},
+    }
+```
+
+Send:
+
+```json
+{
+  "route": "echo",
+  "body": {
+    "prompt": "hello there",
+    "locale": "en-US"
+  }
+}
+```
+
+Receive:
+
+```json
+{
+  "type": "SYSTEM_RESPONSE",
+  "status": "OK",
+  "user_id": "user-1",
+  "request_id": "<server-generated when omitted>",
+  "echo": "HELLO THERE",
+  "extras": { "locale": "en-US" }
+}
+```
+
+Because the body is validated as a `BaseRunRequest`, a frame that sends a non-empty `body` without
+`prompt` fails validation before the route runs. For a route whose payload doesn't fit that shape,
+send it under a key the model keeps as an extra (e.g. `{"prompt": "", "payload": {...}}`).
 
 The framework resolves the authenticated user and push endpoint (`WSRouteContext`), broadcasts the
 returned `dict`, builds the HTTP response envelope, and handles errors — a registered route only
