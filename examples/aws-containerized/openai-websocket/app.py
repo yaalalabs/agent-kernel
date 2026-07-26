@@ -61,17 +61,17 @@ async def status(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
 async def echo(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
     """Custom route that reads the inbound frame's body instead of ignoring it.
 
-    ``ctx.request.body`` is a ``BaseRunRequest`` (``None`` when the frame carries no body): ``prompt``
+    ``ctx.message.body`` is a ``BaseRunRequest`` (``None`` when the frame carries no body): ``prompt``
     is required, and any other JSON keys in the frame's body are kept in ``body.model_extra``.
     """
-    body = ctx.request.body
+    body = ctx.message.body
     if body is None:
         raise ECSWebSocketRequestHandler.WSRouteError(400, "body is required")
 
     return {
         "status": "OK",
         "user_id": ctx.user_id,
-        "request_id": ctx.request.request_id,
+        "request_id": ctx.message.request_id,
         "echo": body.prompt.upper(),
         "extras": body.model_extra or {},
     }

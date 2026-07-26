@@ -49,7 +49,7 @@ def _make_handler(custom_routes=None):
 
 def _ctx(handler):
     return handler.WSRouteContext(
-        request=SimpleNamespace(body=None, request_id="r1"),
+        message=SimpleNamespace(body=None, request_id="r1"),
         user_id="u1",
         connection_id="c1",
         endpoint_url="https://abc.execute-api.us-east-1.amazonaws.com/prod",

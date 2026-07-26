@@ -104,21 +104,21 @@ Receive (pushed back over the connection as a `SYSTEM_RESPONSE`):
 
 ### Reading the request body
 
-`status` ignores the frame's payload. The second custom route, `echo`, reads it — `ctx.request.body`
+`status` ignores the frame's payload. The second custom route, `echo`, reads it — `ctx.message.body`
 is the parsed `BaseRunRequest` (`None` when the frame carries no body), where `prompt` is required
 and every other key sent in `body` is preserved in `body.model_extra`:
 
 ```python
 @AWSWebsocketAPI.register("echo")
 async def echo(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
-    body = ctx.request.body
+    body = ctx.message.body
     if body is None:
         raise ECSWebSocketRequestHandler.WSRouteError(400, "body is required")
 
     return {
         "status": "OK",
         "user_id": ctx.user_id,
-        "request_id": ctx.request.request_id,
+        "request_id": ctx.message.request_id,
         "echo": body.prompt.upper(),
         "extras": body.model_extra or {},
     }

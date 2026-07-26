@@ -181,13 +181,13 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
     class WSRouteContext:
         """Everything a WebSocket route endpoint needs, resolved from one inbound frame.
 
-        :param request: Parsed inbound frame (route, request_id, body).
+        :param message: Parsed inbound frame (route, request_id, body).
         :param user_id: Authenticated user id resolved from the connection.
         :param connection_id: API Gateway WebSocket connection id.
         :param endpoint_url: Management API endpoint used to push replies to the client.
         """
 
-        request: BaseRequest
+        message: BaseRequest
         user_id: str
         connection_id: str
         endpoint_url: str
@@ -292,7 +292,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
         raw_body = await request.body()
         payload = json.loads(raw_body) if raw_body else {}
-        ws_request = BaseRequest.from_payload(payload)
+        ws_message = BaseRequest.from_payload(payload)
 
         user_id = self.get_websocket_handler().get_user_id(connection_id)
         if not user_id:
@@ -303,7 +303,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
             raise self.WSRouteError(500, "Unable to resolve WebSocket endpoint URL")
 
         return self.WSRouteContext(
-            request=ws_request,
+            message=ws_message,
             user_id=user_id,
             connection_id=connection_id,
             endpoint_url=endpoint_url,
@@ -357,16 +357,16 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         try:
             ctx = await self.build_route_context(request)
 
-            if ctx.request.body is None:
+            if ctx.message.body is None:
                 return self._response(400, "body is required", success=False)
 
-            session_id = ctx.request.body.session_id
+            session_id = ctx.message.body.session_id
             if not session_id:
                 return self._response(400, "session_id is required", success=False)
 
             if self._is_queue_mode():
-                return self._enqueue_chat(ctx.request.body, ctx.user_id, ctx.request.request_id, session_id, ctx.endpoint_url)
-            return await self._process_chat_direct(ctx.request.body, ctx.user_id, ctx.endpoint_url)
+                return self._enqueue_chat(ctx.message.body, ctx.user_id, ctx.message.request_id, session_id, ctx.endpoint_url)
+            return await self._process_chat_direct(ctx.message.body, ctx.user_id, ctx.endpoint_url)
         except self.WSRouteError as e:
             return self.handle_route_error(e)
         except Exception as e:
