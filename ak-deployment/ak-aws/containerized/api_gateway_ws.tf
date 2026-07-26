@@ -1,5 +1,3 @@
-# WebSocket API Gateway (async / stream) — proxies frames to the REST service via VPC Link V1 + NLB.
-
 locals {
   ws_stage_name = "agents"
 
@@ -41,25 +39,18 @@ resource "aws_api_gateway_vpc_link" "ws" {
 resource "aws_apigatewayv2_integration" "ws" {
   for_each = local.ws_routes_all
 
-  api_id               = aws_apigatewayv2_api.ws_api[0].id
-  integration_type     = "HTTP_PROXY"
-  integration_method   = "POST"
-  integration_uri      = module.rest_service.nlb_listener_arn
+  api_id             = aws_apigatewayv2_api.ws_api[0].id
+  integration_type   = "HTTP_PROXY"
+  integration_method = "POST"
+  integration_uri      = "http://${module.rest_service.nlb_dns_name}${local.ws_route_backend_paths[each.value]}"
   connection_type      = "VPC_LINK"
   connection_id        = aws_api_gateway_vpc_link.ws[0].id
   passthrough_behavior = "WHEN_NO_MATCH"
-
-  # Rewrite path per route and pass connection $context (id/domain/stage) so the app can push replies back.
-  request_parameters = merge(
-    {
-      "overwrite:header.x-ws-connection-id" = "$context.connectionId"
-      "overwrite:header.x-ws-domain-name"   = "$context.domainName"
-      "overwrite:header.x-ws-stage"         = "$context.stage"
-    },
-    {
-      "overwrite:path" = local.ws_route_backend_paths[each.value]
-    }
-  )
+  request_parameters = {
+    "integration.request.header.x-ws-connection-id" = "context.connectionId"
+    "integration.request.header.x-ws-domain-name"   = "context.domainName"
+    "integration.request.header.x-ws-stage"         = "context.stage"
+  }
 }
 
 resource "aws_apigatewayv2_route" "ws" {
