@@ -294,10 +294,16 @@ class GoogleADKRunner(BaseRunner):
 
                 # Write back only after the event stream drains normally. A disconnect
                 # (GeneratorExit at a yield) or a mid-stream error unwinds before this line, so the
-                # stored context is left intact — never moved into a finally.
+                # stored context is left intact — never moved into a finally. A failed state read
+                # or write-back is logged rather than raised, so the response already streamed to
+                # the client does not turn into a transport error that also skips Runtime.stream's
+                # session store().
                 if incoming is not None:
-                    produced = await adk_session.get_state()
-                    self._store_framework_context(session, incoming, produced)
+                    try:
+                        produced = await adk_session.get_state()
+                        self._store_framework_context(session, incoming, produced)
+                    except Exception as e:
+                        self._log_framework_context_stream_failure(session, e)
 
 
 class GoogleADKAgent(AKBaseAgent):

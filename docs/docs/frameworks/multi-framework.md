@@ -247,8 +247,13 @@ it round-trips is not the same in every framework** (see the
 
 To write context **portably across all frameworks in a multi-framework app**, **pre-seed every key
 you intend to write** into `framework_context` before the run, and don't rely on brand-new keys
-surviving. Where a framework can't round-trip a value, a tool can always fall back to reading and
-writing the dict directly via `ToolContext.get().session`.
+surviving. Tools should write through their framework's native context/state mechanism — not by
+mutating the dict read from `ToolContext.get().session`, which the runner's write-back overwrites on
+every framework except CrewAI (see the
+[warning in Session](../core-concepts/session.md#framework-context--per-run-state)). Where a
+framework can't round-trip a value, write it from application code or from a post-hook that runs
+after the runner; on CrewAI, where the runner never writes back, a direct session write from a tool
+is the only option.
 
 ## Example Projects
 

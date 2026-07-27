@@ -147,3 +147,5 @@ LangGraph round-trips the reserved [`framework_context`](../core-concepts/sessio
 ## Example
 
 See [examples/cli/langgraph](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph) for complete examples.
+
+For per-run context/state carried across turns, see [examples/cli/langgraph_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph_context) (a custom graph declaring a `cart` state channel, showing the declared-channel round-trip that a prebuilt `create_react_agent` cannot do).

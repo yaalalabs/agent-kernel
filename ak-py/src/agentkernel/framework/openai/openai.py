@@ -228,8 +228,12 @@ class OpenAIRunner(BaseRunner):
 
             # Write back only when the stream drains normally. A client disconnect (GeneratorExit
             # at a yield) or a framework error unwinds before this line, leaving the stored context
-            # intact. Kept out of `finally` so partial state is never persisted.
-            self._store_framework_context(session, incoming, incoming)
+            # intact. Kept out of `finally` so partial state is never persisted. A write-back error
+            # is logged rather than raised — see Runner._log_framework_context_stream_failure.
+            try:
+                self._store_framework_context(session, incoming, incoming)
+            except Exception as e:
+                self._log_framework_context_stream_failure(session, e)
         finally:
             if context is not None:
                 context.reset()

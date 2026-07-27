@@ -26,19 +26,22 @@ Provide the load / merge / write-back logic once so each adapter only supplies t
 ```python
 class Runner(ABC):
     ...
-    def _load_framework_context(self, session: Session) -> dict | None:
+    def _load_framework_context(self, session: Session | None) -> dict | None:
         """Return a DEEP COPY of the stored framework_context, or None if the key is absent.
         A deep copy isolates the stored object from in-run mutation (crash-isolation):
-        the stored key is untouched until a successful write-back replaces it wholesale."""
-        if session is None:
+        the stored key is untouched until a successful write-back replaces it wholesale.
+        Raises TypeError if the stored value is not a dict."""
+        if session is None:            # runners may be invoked without a session
             return None
         stored = session.get(Session.Keys.FRAMEWORK_CONTEXT.value)
         if stored is None:
             return None            # absent  → caller injects nothing / framework default
+        if not isinstance(stored, dict):
+            raise TypeError(...)   # fail fast, naming the session id and the actual type
         return copy.deepcopy(stored)  # present (incl. {}) → injected and round-tripped
 
     def _store_framework_context(
-        self, session: Session, incoming: dict | None, produced: Mapping[str, Any] | None
+        self, session: Session | None, incoming: dict | None, produced: Mapping[str, Any] | None
     ) -> None:
         """Shallow-merge `produced` over `incoming` and write the result back to the key.
         `incoming` is the deep copy returned by _load_framework_context this turn.
@@ -78,6 +81,8 @@ Governing rules (numbered so review can check each):
 2. **Merge is shallow, produced-over-incoming.** Top-level keys the framework touched win; untouched caller keys survive; nested structures are replaced wholesale (no recursive merge). This lives in the base helper because the merge *rule* is uniform across frameworks — only the *`produced` extraction* differs per adapter (see §3).
 3. **Absent vs present-empty.** `incoming is None` (key absent) ⇒ never write. `incoming == {}` (caller-set empty) ⇒ present ⇒ write back the merge (a no-op-shaped `{}` or whatever tools produced). This is why the key must not be pre-initialized (rule 1 of §1).
 4. **Picklability is a diagnostic, not preventive, check.** It runs on the merge result *before* `session.set(...)` so it fires ahead of the `store()`-level pickle error. On OpenAI the offending value already exists in the injected copy the tool mutated; the check cannot un-create it, but it converts an opaque store crash into a named error and leaves the previously stored context intact.
+5. **Type is validated on load, not on write-back.** The reserved key is documented as a `dict`; `_load_framework_context` raises a `TypeError` naming the session id and the actual type when the stored value is anything else, so the misuse is reported at its source instead of failing later inside an adapter's injection code or `dict(incoming)`.
+6. **Write-back failures never escape a stream.** `_log_framework_context_stream_failure(session, error)` logs at ERROR (session id + traceback) and returns; stream paths call it from an `except Exception` around their write-back so the already-delivered response is not turned into a transport error that would also skip `Runtime.stream`'s `store()`. See Error handling.
 
 > **Clarification vs design.md** (behaviour unchanged, surfaced per the write-spec process): `design.md` sketches `_store_framework_context(session, ctx)` and describes it as "merge `ctx` over the loaded context". Because the base `Runner` is stateless across a run, the loaded context can't be recovered inside the helper — so the signature takes **both** operands explicitly: `incoming` (the deep copy from `_load`) and `produced` (the framework's post-run delta). The merge semantics are exactly as `design.md` specifies. `_not_picklable(v)` is a tiny module-level helper doing a per-value `pickle.dumps` in a `try/except` to name the offender.
 
@@ -90,13 +95,13 @@ Each runner: (a) calls `_load_framework_context(session)` before the native call
 | OpenAI | `Runner.run(..., context=incoming)` / `Runner.run_streamed(..., context=incoming)` | `produced = incoming` (tools mutate it in place; merge is identity) |
 | Smolagents | `agent.run(prompt, additional_args=incoming, reset=False)` — only when `incoming is not None` | `agent.state`, **filtered to `incoming`'s keys**: `{k: agent.state[k] for k in incoming if k in agent.state}` |
 | Google ADK | seed state delta: `{"ak_tool_context": ctx.id, **(incoming or {})}` | ADK session `state` read back, **`ak_tool_context` (and any AK-internal key) stripped** — **not** restricted to `incoming`'s keys, so tool-added keys round-trip (see note) |
-| LangGraph | spread top-level keys into input: `input={"messages": messages, **(incoming or {})}` | `{k: result[k] for k in incoming if k in result}` (only keys the graph's state schema declared as channels come back) |
+| LangGraph | spread top-level keys into input: `input={**(incoming or {}), "messages": messages}` (`messages` last, never replaceable) | `{k: result[k] for k in incoming if k in result}` (only keys the graph's state schema declared as channels come back) |
 | CrewAI | **not injected**; `kickoff_async(inputs={})` unchanged | none — write-back skipped entirely (warn once when a non-empty context is set) |
 
 #### 3.1 OpenAI (`framework/openai/openai.py`)
 
 - `run()` (`openai.py:166`): after `_get_run_input(...)`, load `incoming = self._load_framework_context(session)`; pass `context=incoming` to `Runner.run(agent.agent, input_data, session=session_to_use, context=incoming)` (`:183`). After the call succeeds and before returning, `self._store_framework_context(session, incoming, incoming)`. The existing `try/except Exception/finally: context.reset()` shape (`:175-195`) is kept; the load sits at the top of the `try`, the store just before `return` inside the `try`.
-- `stream()` (`openai.py:197`): load before `Runner.run_streamed(..., context=incoming)` (`:214`); place `_store_framework_context(session, incoming, incoming)` **after the `async for` loop, still inside the `try`** (`:216-219`) so `GeneratorExit` (client disconnect) or an exception unwinds before it. Do **not** move it into the `finally`.
+- `stream()` (`openai.py:197`): load before `Runner.run_streamed(..., context=incoming)` (`:214`); place `_store_framework_context(session, incoming, incoming)` **after the `async for` loop, still inside the `try`** (`:216-219`) so `GeneratorExit` (client disconnect) or an exception unwinds before it. Do **not** move it into the `finally`. Wrap the write-back in `try/except Exception → _log_framework_context_stream_failure(...)` (see Error handling); `GeneratorExit` is a `BaseException`, so disconnect semantics are unaffected.
 - Injecting `context=None` when the key is absent is a no-op and matches today's implicit behaviour (no `context=` passed today).
 
 #### 3.2 Smolagents (`framework/smolagents/smolagents.py`)
@@ -147,7 +152,7 @@ ADK's native state lives in an `InMemorySessionService` (`adk.py:53`) and is **n
       return state
   ```
 - `run()` (`adk.py:198`): load `incoming` at the top of the `try` (`:206`); pass it into `_setup_session_context(...)`. After the `with ctx:` block (`:213-214`) and before returning, when `incoming` is not `None` read `produced = await adk_session.get_state()` — the full accumulated state with AK-internal keys already stripped by `get_state()`, **not** filtered to `incoming`'s keys — and `self._store_framework_context(session, incoming, produced)`. Because `produced` is the whole (stripped) state, keys a tool **added** during the run round-trip (they appear in `produced` and win the shallow merge), matching `design.md:60,62`; this is the deliberate divergence from smolagents (§3.2), where the read-back is restricted to seeded keys. ADK's `run()` has a `try/except` (`:206,224`) but **no `finally`** — the write-back goes at the end of the `try`, before the `except`.
-- `stream()` (`adk.py:227`): load before `_setup_session_context`; after the `async for` loop inside the `with ctx:` block completes normally, read state and write back — inside the guarded region, so a disconnect/exception skips it.
+- `stream()` (`adk.py:227`): load before `_setup_session_context`; after the `async for` loop inside the `with ctx:` block completes normally, read state and write back — inside the guarded region, so a disconnect/exception skips it; the read + write-back pair is wrapped in `try/except Exception → _log_framework_context_stream_failure(...)` (see Error handling).
 
 #### 3.4 LangGraph (`framework/langgraph/langgraph.py`)
 
@@ -155,13 +160,14 @@ ADK's native state lives in an `InMemorySessionService` (`adk.py:53`) and is **n
 
 - `run()` (`langgraph.py:366`): load `incoming` after `_prepare_session_and_messages(...)` (`:388`). Spread its top-level keys into the input at `:390-393`:
   ```python
-  input_state = {"messages": messages}
+  input_state = {}
   if incoming:
-      input_state.update(incoming)       # top-level channels, never replacing `messages`
+      input_state.update(incoming)       # top-level channels
+  input_state["messages"] = messages     # written last, so a caller key can never replace it
   result = await agent.agent.ainvoke(input=input_state, config=config)
   ```
   After success, `produced = {k: result[k] for k in incoming if k in result}` (when `incoming` not `None`), then `_store_framework_context(session, incoming, produced)` — inside the existing `try` before the `except` (`:399`); the `finally: context.reset()` (`:401-403`) is unchanged.
-- `stream()` (`langgraph.py:405`): spread `incoming` into the `astream_events` input the same way (`:426-430`). `astream_events` yields events, not a final state dict, so read state back with `state = await agent.agent.aget_state(config)` **after** the `async for` loop, inside the `try`; `produced = {k: state.values[k] for k in incoming if k in state.values}`, then write back. Skipped on disconnect/exception by placement.
+- `stream()` (`langgraph.py:405`): spread `incoming` into the `astream_events` input the same way (`:426-430`). `astream_events` yields events, not a final state dict, so read state back with `state = await agent.agent.aget_state(config)` **after** the `async for` loop, inside the `try`; `produced = {k: state.values[k] for k in incoming if k in state.values}`, then write back. Skipped on disconnect/exception by placement; the `aget_state` read and the write-back are wrapped in `try/except Exception → _log_framework_context_stream_failure(...)` (see Error handling).
 
 #### 3.5 CrewAI (`framework/crewai/crewai.py`) — unsupported, warn and skip
 
@@ -179,14 +185,28 @@ CrewAI's `kickoff(inputs=...)` are `.format()` template-interpolation variables,
 - `kickoff_async(inputs={})` stays as-is. No `_load_/_store_framework_context` calls — the stored key is left untouched (a set `{}` is preserved; a non-empty dict is preserved unchanged). Tools that need the dict still reach it via `ToolContext.get().session`.
 - `stream()` raises `NotImplementedError` (`:403-409`) — no streaming path.
 
+#### 3.6 Langfuse-traced LangGraph (`trace/langfuse/langgraph.py`) — stop bypassing the base runner
+
+Traced runners subclass their framework runner, so they inherit the plumbing above **only if they delegate to `super()`**. Four of the five do. `LangFuseLangGraph.run` (`trace/langfuse/langgraph.py:26` on `develop`) is the exception: it re-implements request processing, config building, `agent.agent.ainvoke(...)` and reply construction inside its span, so `framework_context` would be silently ignored whenever Langfuse tracing is enabled — a silent no-op, not an error.
+
+Rather than duplicating the load/inject/write-back into the traced copy (which would have to be repeated for every future change to the runner), collapse the copy onto a single seam:
+
+- Add `LangFuseLangGraph._prepare_session_and_messages(...)`, which calls `super()._prepare_session_and_messages(...)` and sets `config["callbacks"] = [self._callback_handler]`. This is the only LangGraph-specific thing the traced runner needs, and both `run()` and `stream()` route through it.
+- Reduce `LangFuseLangGraph.run` to: open `propagate_attributes(session_id=..., tags=["agentkernel"])` and the `start_as_current_observation(...)` span, `result = await super().run(agent, session, requests)`, `span.update(input=result.prompt, output=str(result))`, return `result`.
+- Do **not** override `stream()`; the inherited base `stream()` now picks up the callback handler through the same seam.
+
+The other traced runners (`trace/langfuse/{openai,adk,crewai,smolagents}.py`, `trace/openllmetry/*.py`) already delegate to `super().run(...)`/`super().stream(...)` and need no change.
+
 ### Consumer changes
 
-- **`core/base.py`**: add `FRAMEWORK_CONTEXT` enum member; add `_load_framework_context`, `_store_framework_context`, `_ensure_framework_context_picklable` to `Runner`; add `import copy`, `import pickle`, and `_not_picklable` helper. `Session`, `Agent`, `Runtime` classes unchanged.
+- **`core/base.py`**: add `FRAMEWORK_CONTEXT` enum member; add `_load_framework_context`, `_store_framework_context`, `_ensure_framework_context_picklable`, `_log_framework_context_stream_failure` to `Runner`; add `import copy`, `import pickle`, a module logger (`ak.core.runner`), and the `_not_picklable` helper. `Session`, `Agent`, `Runtime` classes unchanged.
 - **`framework/openai/openai.py`**: `OpenAIRunner.run` / `.stream` inject `context=` and write back. `OpenAIAgent`/`OpenAIModule`/`OpenAIToolBuilder` unchanged.
 - **`framework/smolagents/smolagents.py`**: `SmolagentsRunner.run` injects `additional_args=` (conditionally) and writes back filtered `agent.state`. Everything else unchanged.
 - **`framework/adk/adk.py`**: `GoogleADKRunner._setup_session_context` gains an `injected` param and returns `adk_session`; `GoogleADKSession` gains `get_state()`; `run`/`stream` load, seed, and write back. `get_response` signature unchanged.
 - **`framework/langgraph/langgraph.py`**: `LangGraphRunner.run`/`.stream` spread `incoming` into the input state and write back declared channels. `_prepare_session_and_messages` unchanged.
 - **`framework/crewai/crewai.py`**: `CrewAIRunner.run` adds a one-shot warning; no injection, no write-back.
+- **`trace/langfuse/langgraph.py`**: `LangFuseLangGraph` gains a `_prepare_session_and_messages` override (wires the Langfuse callback handler into the base config) and its `run` shrinks to a span wrapper around `super().run(...)`; the re-implemented `ainvoke` body, its request/prompt handling, its `try/except`, and the now-unused imports (`HumanMessage`, `AgentReplyAny`, `AgentReplyText`, `AgentRequestAny`, `AgentRequestText`, `user_facing_error_message`, `LangGraphSessionConfigModel`, `LangGraphSessionConfigurable`) are removed. No `stream()` override is added.
+- **No changes** to the other traced runners (`trace/langfuse/{openai,adk,crewai,smolagents}.py`, `trace/openllmetry/*.py`) — they already delegate to `super()`.
 - **No changes** to `core/runtime.py`, `core/hooks.py`, `core/session/*`, guardrails, multimodal, sandbox, deployment, or API layers — the key rides the existing `store()`/reload path.
 
 ### Config changes
@@ -204,6 +224,12 @@ Each is intentional and justified:
 5. **CrewAI logs a single warning when a non-empty `framework_context` is set.** Previously nothing was logged. Justified: makes the unsupported-status explicit at runtime rather than silently dropping.
 6. **A new durable session key `framework_context` is persisted and reloaded** for every framework once a caller sets it. Justified: cross-turn carry is the feature; absent key ⇒ nothing persisted ⇒ no change for existing sessions.
 7. **Write-back is atomic per turn.** On framework error or mid-stream disconnect (`GeneratorExit`) the previously stored context is left intact (write-back is skipped by placement inside the `try`, after the native call/loop, before `except`, never in `finally`).
+8. **Langfuse-traced LangGraph runs now go through the base runner** (§3.6). Beyond gaining `framework_context` support, delegating to `super().run()` changes traced-run behaviour in ways the re-implemented copy did not have. Each is a fix, not a regression, but they are behaviour changes:
+   - **`ToolContext` is now set** for the duration of a traced run. The old copy never called `ToolContext(...).set()`, so AK tools that resolve the current context (`ToolContext.get()`) did not work under Langfuse tracing.
+   - **The agent's system prompt is now injected** (once per session, via `_prepare_session_and_messages`). The old copy sent only a `HumanMessage`, so a traced agent silently ran without its system prompt.
+   - **Reply text now goes through `_extract_text_content(...)`**, so list-shaped (content-block) message content renders as text instead of being stringified as a list.
+   - **Errors are now handled by the base runner's `except Exception`**, which returns the same `user_facing_error_message` reply — but the span is then updated with that error reply, whereas previously an exception escaped before `span.update(...)` and left the span without input/output.
+   - **Streamed traced runs now emit Langfuse traces.** The old class overrode only `run()`, so the inherited `stream()` ran without the callback handler; wiring it through `_prepare_session_and_messages` means `stream()` picks it up too. `stream()` is still not wrapped in `propagate_attributes`/`start_as_current_observation`, so streamed runs get callback-level traces without the enclosing "Agent Kernel LangGraph" span — out of scope here, worth a follow-up.
 
 **Non-changes** (fixed by this spec):
 - No change to how each framework stores its own internal state (the framework-name keys, LangGraph's `CheckPointer`).
@@ -216,7 +242,9 @@ Each is intentional and justified:
 
 - **Framework raises during the native call.** Each runner's existing `except Exception` returns a user-facing error reply (`openai.py:191`, `langgraph.py:399`, `crewai.py:397`, `smolagents.py:167`, `adk.py:224`). Because write-back sits before the `except`, it is skipped — the previously stored context is untouched. `store()` still runs (`runtime.py:218`) and persists the rest of the session.
 - **Client disconnects mid-stream** (`GeneratorExit` at a `yield`) or **framework raises mid-stream.** Write-back is after the `async for` loop but inside the `try`, so it never runs — last-known-good context is kept, partial state is discarded.
-- **Non-picklable context.** `_ensure_framework_context_picklable` raises a `TypeError` naming the session id and the offending key/type before `session.set(...)`. Raised inside the runner's `try`, it is caught by `except Exception` and surfaced through `user_facing_error_message` (unknown category ⇒ `"Error: <message>"`, `error_util.py:69-71`), so the actionable text reaches the caller/logs instead of an opaque `store()` pickle crash aborting the whole session store. The stored context is left intact.
+- **Stored value is not a `dict`.** `_load_framework_context` raises a `TypeError` naming the session id and the actual type before any injection happens, rather than letting a list/str flow into the adapter's injection code (or into `_store_framework_context`'s `dict(incoming)`) and fail opaquely later. In `run()` the runner's `except Exception` turns it into a user-facing error reply; in `stream()` it is raised before the first token is produced, so it propagates to the caller as an immediate failure — deliberate fail-fast for caller misuse.
+- **Non-picklable context — `run()`.** `_ensure_framework_context_picklable` raises a `TypeError` naming the session id and the offending key/type before `session.set(...)`. Raised inside the runner's `try`, it is caught by `except Exception` and surfaced through `user_facing_error_message` (unknown category ⇒ `"Error: <message>"`, `error_util.py:69-71`), so the actionable text reaches the caller/logs instead of an opaque `store()` pickle crash aborting the whole session store. The stored context is left intact and `store()` (`runtime.py:218`) still persists the rest of the session.
+- **Non-picklable context (or a failed state read) — `stream()`.** The stream paths have no `except Exception` of their own (`openai.py:213` and `langgraph.py:430` use `try/finally`; ADK's `stream()` has no `try` at all), and neither does `Runtime.stream` (`runtime.py:236-259`). An exception at stream write-back would therefore escape the generator, surface via `chat_service.py`'s catch-all as a raw `str(e)` error chunk *after* the full response was already streamed, and skip `Runtime.stream`'s `self.sessions().store(session)` — losing the whole turn's session state, not just the context. To keep the two paths degrading the same way, each stream write-back (including the `aget_state`/`get_state` read that produces it) is wrapped in `try/except Exception`, which calls `Runner._log_framework_context_stream_failure(session, e)`: the failure is logged at ERROR with the session id and traceback, the stored context is left intact, and the session still persists. `GeneratorExit` is a `BaseException` and is not caught, so disconnect semantics are unchanged.
 - **`session is None`** (runner invoked without a session, e.g. some unit paths): `_load_framework_context` returns `None`, `_store_framework_context` no-ops — no injection, no write-back, no error.
 - **Absent optional attributes** (`agent.state` on an older smolagents; ADK `get_session` returning no `state`): guarded with `hasattr`/`isinstance`/`getattr(..., {})`; degrade to "no round-trip", never raise.
 
@@ -242,9 +270,11 @@ Base-`Runner` plumbing, framework-agnostic (uses `DummyRunner`-style subclass):
 - **`ak-py/tests/test_langgraph_runner.py`**: `_mock_agent` (`:16`) — add `agent.agent.aget_state` for the stream case. Add cases: `ainvoke` receives `input` containing the spread caller keys plus `messages`; keys present in `result` round-trip, absent ones are dropped; `messages` is never overwritten.
 - **`ak-py/tests/test_crewai_runner.py`**: add a case asserting that setting a non-empty `framework_context` logs exactly one warning (via `caplog` on `ak.crewai.runner`) and that `kickoff_async` is still called with `inputs={}`; and that a caller-set `{}` logs nothing and is preserved.
 
+- **`ak-py/tests/test_trace_langfuse_langgraph.py`** (new): regression coverage for §3.6 — with a mocked Langfuse client, a seeded context is injected into the traced `ainvoke` input and written back through `LangFuseLangGraph.run`; an absent key skips write-back; a framework error leaves the stored context intact. These are what catch a future traced runner re-implementing the native call and silently bypassing the feature.
+
 ### Streaming coverage
 
-Add streaming write-back cases for OpenAI and LangGraph (and ADK) in the respective runner test files (or `test_framework_context.py`): normal drain writes back; a `GeneratorExit` raised at the consumer (simulating disconnect) leaves the stored context intact.
+Add streaming write-back cases for OpenAI, LangGraph **and ADK** in the respective runner test files (or `test_framework_context.py`): normal drain writes back; a `GeneratorExit` raised at the consumer (simulating disconnect) leaves the stored context intact and the state read (`aget_state`/`get_state`) is never called. ADK matters most here — its `stream()` has no `try` at all, so skip-on-disconnect rests purely on statement placement. Also cover the guarded-failure path (§ Error handling): a write-back error at the end of a stream is logged and swallowed, the stream still drains, and the stored context is unchanged.
 
 ## Documentation updates
 

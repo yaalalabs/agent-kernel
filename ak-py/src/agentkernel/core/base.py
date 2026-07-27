@@ -12,6 +12,8 @@ from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
 
+_logger = logging.getLogger("ak.core.runner")
+
 
 def _not_picklable(value: Any) -> bool:
     """
@@ -239,7 +241,7 @@ class Runner(ABC):
         """
         return self._name
 
-    def _load_framework_context(self, session: Session) -> dict | None:
+    def _load_framework_context(self, session: Session | None) -> dict | None:
         """
         Returns a DEEP COPY of the stored framework_context, or None if the key is absent.
 
@@ -248,18 +250,26 @@ class Runner(ABC):
         mutation (crash-isolation): the stored key is left untouched until a successful
         write-back replaces it wholesale, so a mid-run crash cannot leave it half-mutated.
 
-        :param session: The session to read the reserved framework_context key from.
+        :param session: The session to read the reserved framework_context key from, or None
+                        (some runner unit paths invoke a runner without a session).
         :return: A deep copy of the stored dict (including an empty ``{}``), or None when the
                  key is absent — absent means "no injection / framework default".
+        :raises TypeError: If the stored value is not a dict.
         """
         if session is None:
             return None
         stored = session.get(Session.Keys.FRAMEWORK_CONTEXT.value)
         if stored is None:
             return None
+        if not isinstance(stored, dict):
+            raise TypeError(
+                f"Session '{session.id}' framework_context must be a dict, got "
+                f"{type(stored).__name__}. The reserved framework_context key carries a "
+                f"per-run context/state dict; wrap the value in a dict before setting it."
+            )
         return copy.deepcopy(stored)
 
-    def _store_framework_context(self, session: Session, incoming: dict | None, produced: Mapping[str, Any] | None) -> None:
+    def _store_framework_context(self, session: Session | None, incoming: dict | None, produced: Mapping[str, Any] | None) -> None:
         """
         Shallow-merges ``produced`` over ``incoming`` and writes the result back to the reserved key.
 
@@ -272,7 +282,8 @@ class Runner(ABC):
         Runners call this only after a successful native invocation, so a crashed/partial run
         never overwrites the last-known-good context.
 
-        :param session: The session to write the merged framework_context back to.
+        :param session: The session to write the merged framework_context back to, or None
+                        (some runner unit paths invoke a runner without a session).
         :param incoming: The deep copy loaded this turn, or None when the key was absent.
         :param produced: The framework's post-run state delta, or None.
         """
@@ -310,6 +321,28 @@ class Runner(ABC):
                 f"offending entry: {offender}. framework_context values must be "
                 f"pickle-serializable so the session can be persisted."
             ) from exc
+
+    def _log_framework_context_stream_failure(self, session: Session | None, error: Exception) -> None:
+        """
+        Logs a streamed-run framework_context write-back failure instead of raising it.
+
+        In ``run()`` a write-back error (non-picklable context, a failed framework state read)
+        is caught by the runner's own ``except Exception`` and surfaced as an error reply, and
+        ``Runtime.run`` still persists the session. ``stream()`` has no such ``except``, so the
+        same error would escape the generator, reach the transport as a raw error chunk, and skip
+        ``Runtime.stream``'s ``store()`` — losing the whole turn's session state, not just the
+        context. Stream write-back therefore logs and skips: the previously stored context is left
+        intact and the rest of the session still persists, matching the ``run()`` degradation.
+
+        :param session: The session whose write-back failed, named in the log message.
+        :param error: The exception raised while producing or storing the context.
+        """
+        session_id = session.id if session is not None else "<none>"
+        _logger.error(
+            f"Session '{session_id}': framework_context write-back was skipped at the end of a "
+            f"streamed run; the previously stored context is left intact. Error: {error}",
+            exc_info=error,
+        )
 
     @abstractmethod
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:

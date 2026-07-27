@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -29,6 +30,31 @@ def _ctx_mock():
     ctx.__enter__ = MagicMock(return_value=ctx)
     ctx.__exit__ = MagicMock(return_value=False)
     return ctx
+
+
+def _partial_event(text: str):
+    """An ADK SSE event the runner treats as a streamable text delta."""
+    event = MagicMock()
+    part = MagicMock()
+    part.text = text
+    event.content = MagicMock(parts=[part])
+    event.partial = True
+    return event
+
+
+def _stream_setup(events, state):
+    """Patch _setup_session_context so stream() drains `events` and reads `state` back."""
+    adk_session = MagicMock()
+    adk_session.get_state = AsyncMock(return_value=state)
+
+    async def run_async(**kwargs):
+        for event in events:
+            yield event
+
+    adk_runner = MagicMock()
+    adk_runner.run_async = run_async
+    setup = AsyncMock(return_value=("user", adk_runner, _ctx_mock(), adk_session))
+    return patch.object(GoogleADKRunner, "_setup_session_context", setup), adk_session
 
 
 def _run_with_response(runner, agent, session, requests, response_text, adk_session=None):
@@ -101,6 +127,76 @@ class TestGoogleADKRunnerFrameworkContext:
 
         assert reply.response.startswith("Error")
         assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 1}
+
+    @pytest.mark.asyncio
+    async def test_stream_normal_drain_writes_back(self):
+        """A drained stream writes back the stripped ADK state, including tool-added keys."""
+        runner = GoogleADKRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
+        requests = [AgentRequestText(prompt="hi")]
+        agent = _mock_agent(output_schema=None)
+
+        setup_patch, adk_session = _stream_setup([_partial_event("tok")], {"seeded": 9, "added": "new"})
+        with setup_patch:
+            deltas = [delta async for delta in runner.stream(agent, session, requests)]
+
+        assert deltas == ["tok"]
+        adk_session.get_state.assert_awaited_once()
+        assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 9, "added": "new"}
+
+    @pytest.mark.asyncio
+    async def test_stream_disconnect_leaves_context_intact(self):
+        """A client disconnect (GeneratorExit at a yield) skips the state read and write-back."""
+        runner = GoogleADKRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
+        requests = [AgentRequestText(prompt="hi")]
+        agent = _mock_agent(output_schema=None)
+
+        setup_patch, adk_session = _stream_setup([_partial_event("tok")], {"seeded": 9})
+        with setup_patch:
+            agen = runner.stream(agent, session, requests)
+            first = await agen.__anext__()
+            assert first == "tok"
+            await agen.aclose()  # simulate client disconnect at the yield
+
+        adk_session.get_state.assert_not_called()
+        assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 1}
+
+    @pytest.mark.asyncio
+    async def test_stream_absent_key_skips_write_back(self):
+        runner = GoogleADKRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+        agent = _mock_agent(output_schema=None)
+
+        setup_patch, adk_session = _stream_setup([_partial_event("tok")], {"leak": 1})
+        with setup_patch:
+            deltas = [delta async for delta in runner.stream(agent, session, requests)]
+
+        assert deltas == ["tok"]
+        adk_session.get_state.assert_not_called()
+        assert session.get(FRAMEWORK_CONTEXT) is None
+
+    @pytest.mark.asyncio
+    async def test_stream_write_back_failure_is_logged_not_raised(self, caplog):
+        """A failed state read must not escape the generator after the response was streamed."""
+        runner = GoogleADKRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
+        requests = [AgentRequestText(prompt="hi")]
+        agent = _mock_agent(output_schema=None)
+
+        setup_patch, adk_session = _stream_setup([_partial_event("tok")], {})
+        adk_session.get_state = AsyncMock(side_effect=RuntimeError("state read failed"))
+
+        with setup_patch, caplog.at_level(logging.ERROR, logger="ak.core.runner"):
+            deltas = [delta async for delta in runner.stream(agent, session, requests)]
+
+        assert deltas == ["tok"]
+        assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 1}
+        assert any("framework_context write-back was skipped" in r.message for r in caplog.records)
 
 
 class TestGoogleADKRunnerStructuredOutput:

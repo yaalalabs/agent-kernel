@@ -1,3 +1,4 @@
+import logging
 import socket
 
 import pytest
@@ -48,6 +49,21 @@ class TestFrameworkContextLoad:
         session = Session("s")
         session.set(FRAMEWORK_CONTEXT, {})
         assert runner._load_framework_context(session) == {}
+
+    @pytest.mark.parametrize("stored", [["a", "b"], "ctx", 42])
+    def test_non_dict_stored_value_raises_named_typeerror(self, stored):
+        """A non-dict is rejected at load, before it can reach adapter injection code."""
+        runner = DummyRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, stored)
+
+        with pytest.raises(TypeError) as exc:
+            runner._load_framework_context(session)
+
+        message = str(exc.value)
+        assert "framework_context must be a dict" in message
+        assert type(stored).__name__ in message
+        assert session.id in message
 
     def test_load_returns_deep_copy(self):
         """Mutating the loaded object must not touch the stored object (crash-isolation)."""
@@ -125,6 +141,21 @@ class TestFrameworkContextPicklability:
         assert "framework_context is not picklable" in message
         assert "'bad'" in message
         assert session.id in message
+
+    def test_stream_failure_is_logged_not_raised(self, caplog):
+        """Stream write-back failures are logged so the turn's session store still runs."""
+        runner = DummyRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"ok": 1})
+
+        with caplog.at_level(logging.ERROR, logger="ak.core.runner"):
+            try:
+                runner._store_framework_context(session, {"ok": 1}, {"bad": lambda: 1})
+            except Exception as e:
+                runner._log_framework_context_stream_failure(session, e)
+
+        assert session.get(FRAMEWORK_CONTEXT) == {"ok": 1}
+        assert any("framework_context write-back was skipped" in r.message and session.id in r.message for r in caplog.records)
 
     def test_non_picklable_leaves_previous_value_intact(self):
         """The picklability check runs before session.set, so a failure preserves the prior value."""

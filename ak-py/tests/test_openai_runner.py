@@ -1,3 +1,4 @@
+import logging
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -180,6 +181,36 @@ class TestOpenAIRunnerFrameworkContext:
 
             # Write-back is after the loop → skipped; last-known-good context preserved.
             assert session.get(FRAMEWORK_CONTEXT) == {"seed": 1}
+
+    @pytest.mark.asyncio
+    async def test_stream_write_back_failure_is_logged_not_raised(self, caplog):
+        """A non-picklable context must not turn an already-streamed response into a transport error."""
+        runner = OpenAIRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seed": 1})
+        requests = [AgentRequestText(prompt="hi")]
+
+        def fake_run_streamed(agent, input_data, session=None, context=None):
+            result = MagicMock()
+
+            async def stream_events():
+                context["bad"] = lambda: 1  # tool stored a non-picklable value
+                yield _delta_event("hi")
+
+            result.stream_events = stream_events
+            return result
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+
+            with caplog.at_level(logging.ERROR, logger="ak.core.runner"):
+                deltas = [delta async for delta in runner.stream(mock_agent, session, requests)]
+
+            assert deltas == ["hi"]
+            assert session.get(FRAMEWORK_CONTEXT) == {"seed": 1}
+            assert any("framework_context write-back was skipped" in r.message for r in caplog.records)
 
 
 class TestOpenAIRunnerErrorHandling:

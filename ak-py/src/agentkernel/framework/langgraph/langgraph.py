@@ -461,11 +461,17 @@ class LangGraphRunner(BaseRunner):
 
             # astream_events yields events, not a final state dict, so read the produced state back
             # explicitly once the stream drains normally. Inside the try, after the loop — a
-            # disconnect (GeneratorExit) or a mid-stream error unwinds before this line.
+            # disconnect (GeneratorExit) or a mid-stream error unwinds before this line. A failed
+            # state read or write-back is logged rather than raised, so the response already
+            # streamed to the client does not turn into a transport error that also skips
+            # Runtime.stream's session store().
             if incoming is not None:
-                state = await agent.agent.aget_state(config)
-                produced = {k: state.values[k] for k in incoming if k in state.values}
-                self._store_framework_context(session, incoming, produced)
+                try:
+                    state = await agent.agent.aget_state(config)
+                    produced = {k: state.values[k] for k in incoming if k in state.values}
+                    self._store_framework_context(session, incoming, produced)
+                except Exception as e:
+                    self._log_framework_context_stream_failure(session, e)
         finally:
             if context is not None:
                 context.reset()
