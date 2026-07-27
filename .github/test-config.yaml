@@ -79,6 +79,8 @@ e2e:
       path: examples/api/mcp/multi
     - type: api
       path: examples/api/pydanticai
+    - type: api
+      path: examples/api/pydanticai-streaming
     
     # Memory examples
     - type: memory
