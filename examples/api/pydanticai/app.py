@@ -97,10 +97,18 @@ class RAGPreHook(PreHook):
         if bank_agent is None:
             return requests
 
-        # Otherwise, add the bank agent to the prompt
-        modified_prompt = prompt + ". My bank agent was " + bank_agent + "."
-
-        return [AgentRequestText(prompt=modified_prompt)]
+        # Otherwise, add the bank agent to the prompt without dropping non-text requests (e.g. multimodal attachments)
+        modified_requests: list[AgentRequest] = []
+        modified_any = False
+        for r in requests:
+            if isinstance(r, AgentRequestText):
+                modified_requests.append(AgentRequestText(prompt=r.prompt + f". My bank agent was {bank_agent}."))
+                modified_any = True
+            else:
+                modified_requests.append(r)
+        if not modified_any:
+            modified_requests.append(AgentRequestText(prompt=f"My bank agent was {bank_agent}."))
+        return modified_requests
 
     def name(self) -> str:
         return "bank_agent_prehook"
