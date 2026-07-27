@@ -46,5 +46,8 @@ final `done` frame:
 > Note: streaming stops at the first `output_type` match, so this mode is intended for plain-text
 > replies; structured-output agents should use the default (non-stream) execution mode.
 
-> Note: this example has no `*_test.py` — the e2e test harness drives the JSON request/response
-> API and has no SSE support. Verify manually with the `curl -N` command above.
+> Note: the shared `agentkernel.test` client drives the JSON request/response API and has no SSE
+> support, so `app_test.py` consumes the `text/event-stream` body directly with httpx — it asserts
+> the frame contract (a run of `delta` frames followed by a single terminal `done` frame). Run it
+> with `uv run pytest -s` (requires `OPENAI_API_KEY`), or verify manually with the `curl -N` command
+> above.
