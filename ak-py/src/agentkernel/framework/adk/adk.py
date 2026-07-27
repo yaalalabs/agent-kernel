@@ -13,7 +13,7 @@ from google.adk.agents import BaseAgent
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.events import Event, EventActions
 from google.adk.runners import Runner
-from google.adk.sessions import BaseSessionService, InMemorySessionService
+from google.adk.sessions import BaseSessionService, InMemorySessionService, State
 from google.adk.tools import FunctionTool, ToolContext
 from google.genai import types
 from pydantic import ValidationError
@@ -78,20 +78,33 @@ class GoogleADKSession:
 
     async def get_state(self) -> dict:
         """
-        Returns the current ADK session state with AK-internal keys stripped.
+        Returns the current session-scoped ADK state with non-caller keys stripped.
 
         ADK's native state lives in an InMemorySessionService and is not part of the pickled AK
         session, so the runner reads it back here to give the framework_context cross-turn
-        durability. The AK-internal ``ak_tool_context`` key (seeded fresh every turn) is removed so
-        the caller's context never accumulates a stale internal id.
-        :return: The accumulated ADK session state, or an empty dict when no session exists.
+        durability. Two groups of keys are removed because they are not caller state:
+
+        - ``ak_tool_context`` — AK-internal, seeded fresh every turn, so the caller's context never
+          accumulates a stale internal id.
+        - ``app:`` / ``user:`` / ``temp:`` prefixed keys — the first two are app- and user-scoped
+          values that ``InMemorySessionService`` merges into the returned session on read
+          (``_merge_state``), the third is invocation-scoped. None belong in a per-session caller
+          context that gets pickled into the AK session.
+
+        Note that the returned state is accumulate-only: ADK keeps every key written to this session
+        for its lifetime, so a key the caller drops from framework_context reappears here on the next
+        turn, and values an agent writes itself (e.g. ``LlmAgent(output_key=...)``) are
+        indistinguishable from tool writes and round-trip too.
+        :return: The accumulated session-scoped ADK state, or an empty dict when no session exists.
         """
         if self._session is None:
             return {}
-        refreshed = await self._session_service.get_session(app_name="AgentKernel", user_id="AgentKernel", session_id=self._session.id)
+        refreshed = await self._session_service.get_session(
+            app_name=self._session.app_name, user_id=self._session.user_id, session_id=self._session.id
+        )
         state = dict(getattr(refreshed, "state", {}) or {})
         state.pop("ak_tool_context", None)
-        return state
+        return {k: v for k, v in state.items() if not k.startswith((State.APP_PREFIX, State.USER_PREFIX, State.TEMP_PREFIX))}
 
 
 class GoogleADKRunner(BaseRunner):
@@ -181,9 +194,11 @@ class GoogleADKRunner(BaseRunner):
 
         ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
         await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
-        state = {"ak_tool_context": ctx.id}
-        if injected:
-            state.update(injected)
+        # The AK-internal key is assigned LAST so a caller key named `ak_tool_context` can never
+        # replace the id tools resolve their context by (AKToolContext.fetch would raise KeyError for
+        # every tool call in the run). Same "internal key wins" ordering as LangGraph's `messages`.
+        state = dict(injected or {})
+        state["ak_tool_context"] = ctx.id
         await adk_session.update_session_state(ctx.id, agent.name, state)
 
         runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)

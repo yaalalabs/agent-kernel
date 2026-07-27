@@ -187,6 +187,16 @@ before the `except`** — and for `stream()`, **after the `async for` loop but s
 `try`**, never in `finally`. A framework error or a client disconnect (`GeneratorExit`) then unwinds
 before it, leaving the previously stored context intact rather than persisting partial state.
 
+**Seed AK-internal keys last.** If you inject the caller's dict by merging it into a native state
+dict that also carries AK-internal entries, assign the internal ones **after** the caller's keys so a
+caller key can never displace them (`ak_tool_context` in ADK, `messages` in LangGraph). The failures
+this prevents are silent and confusing — a broken tool-context lookup, or a replaced message list.
+
+**Watch for injection side effects.** A framework's "context" slot is not always private: smolagents'
+`additional_args` is merged into the agent state *and* appended to the task prompt, so the caller's
+dict reaches the model. If your framework does something similar, document it on the framework's page
+so callers know not to put secrets in `framework_context`.
+
 **Declare your round-trip fidelity honestly** in the framework's docs and the fidelity table in
 `docs/docs/core-concepts/runner.md` — how much of a caller dict actually survives depends on the
 framework (full round-trip, filtered to seeded keys, declared-channels-only, or unsupported). If the

@@ -215,10 +215,10 @@ to seed and read it). When the key is set, a runner:
 | Framework | Fidelity | Injected as | Written back |
 |-----------|----------|-------------|--------------|
 | OpenAI | **Full round-trip** | `Runner.run(..., context=ctx)` — tools mutate it in place | the same object, in full |
-| Google ADK | **Round-trips (filtered)** | merged into the ADK session `state` | the accumulated ADK state, with AK-internal keys stripped — **tool-added keys survive** |
-| Smolagents | **Round-trips (filtered)** | `agent.run(..., additional_args=ctx)` | `agent.state` **restricted to pre-seeded keys** — brand-new keys are dropped |
-| LangGraph | **Declared channels only** | spread into the graph input alongside `messages` | only keys the graph's state schema declares as channels (prebuilt agents drop unknown keys) |
-| CrewAI | **Unsupported** | not injected | none — a set context is **ignored with a one-time warning** |
+| Google ADK | **Round-trips (filtered), accumulate-only** | merged into the ADK session `state` (AK-internal keys always win, so they cannot be displaced by a caller key) | the accumulated session state, minus AK-internal and `app:`/`user:`/`temp:`-prefixed keys — **tool-added keys survive**, and so does anything else written to the state ([caveats](../frameworks/google-adk.md#per-run-contextstate)) |
+| Smolagents | **Round-trips (filtered)** | `agent.run(..., additional_args=ctx)` — which smolagents **also appends to the task prompt** ([caveat](../frameworks/smolagents.md#per-run-contextstate)) | `agent.state` **restricted to pre-seeded keys** — brand-new keys are dropped |
+| LangGraph | **Declared channels only** | spread into the graph input alongside `messages` (written last, so a caller key cannot replace it) | only keys the graph's state schema declares as channels (prebuilt agents drop unknown keys) |
+| CrewAI | **Unsupported** | not injected | none — a set context is **ignored**, with one warning logged per runner |
 
 Because of this divergence, tool authors who want a context write to be portable across every
 framework should **pre-seed every key they intend to write** before the run.

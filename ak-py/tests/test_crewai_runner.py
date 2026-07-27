@@ -237,6 +237,27 @@ class TestCrewAIRunnerFrameworkContext:
         assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "42"}
 
     @pytest.mark.asyncio
+    async def test_warning_is_not_repeated_on_later_runs(self, caplog):
+        """The condition holds on every turn of a seeded session — warn once per runner, not per turn."""
+        runner = CrewAIRunner()
+        session = Session("test-session")
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+        mock_agent = _mock_agent()
+
+        with (
+            patch("agentkernel.framework.crewai.crewai.Crew", _mock_crew("ok")),
+            patch("agentkernel.framework.crewai.crewai.Task"),
+            patch.object(runner, "_memory", return_value=None),
+            caplog.at_level(logging.WARNING, logger="ak.crewai.runner"),
+        ):
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="again")])
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="and again")])
+
+        warnings = [record for record in caplog.records if "framework_context" in record.getMessage()]
+        assert len(warnings) == 1
+
+    @pytest.mark.asyncio
     async def test_empty_context_logs_nothing_and_is_preserved(self, caplog):
         runner = CrewAIRunner()
         session = Session("test-session")

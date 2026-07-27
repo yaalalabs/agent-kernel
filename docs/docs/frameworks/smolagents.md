@@ -121,6 +121,10 @@ Structured output applies to non-streaming execution only. (SmolAgents does not 
 
 Smolagents **round-trips a filtered subset** of the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key. It is injected as `agent.run(..., additional_args=...)`; on write-back the runner reads `agent.state` but keeps **only the keys you pre-seeded** (framework-internal entries have no clean prefix to filter on). Consequence: a tool that mutates a **pre-seeded** key round-trips, but a tool that adds a **brand-new** key has it silently dropped — pre-seed every key you intend to write.
 
+:::warning The context is also sent to the model
+`additional_args` is not a private state slot. Smolagents merges it into `agent.state` **and** appends it to the task text, so the whole context dict is stringified into the prompt on every turn — that is how the model learns which variables it can reference. Two implications: the prompt (and its token cost) grows with your context, and **anything you put in `framework_context` is shown to the model**. Keep credentials, tokens and PII out of it on smolagents; use a non-round-tripped session key for those instead.
+:::
+
 ## Features
 
 - ✅ ToolCalling and CodeAgent support

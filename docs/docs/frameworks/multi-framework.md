@@ -240,9 +240,13 @@ session key gives you one uniform way to carry a context/state dict across turns
 it round-trips is not the same in every framework** (see the
 [fidelity table](../core-concepts/runner.md#per-run-framework-context)):
 
-- **OpenAI** and **Google ADK** round-trip **new keys** a tool adds during a run.
+- **OpenAI** and **Google ADK** round-trip **new keys** a tool adds during a run. On ADK the state is
+  additionally **accumulate-only** (a key you delete comes back) and picks up anything else the
+  agent writes to its state — see [Google ADK](./google-adk.md#per-run-contextstate).
 - **Smolagents** and **prebuilt LangGraph** agents round-trip only keys that were **pre-seeded**
-  (smolagents) or **declared as state channels** (LangGraph); other keys are silently dropped.
+  (smolagents) or **declared as state channels** (LangGraph); other keys are silently dropped. On
+  smolagents the context is also **appended to the model prompt** — see
+  [Smolagents](./smolagents.md#per-run-contextstate).
 - **CrewAI** does not support it at all — a set context is ignored with a warning.
 
 To write context **portably across all frameworks in a multi-framework app**, **pre-seed every key

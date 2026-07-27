@@ -93,8 +93,8 @@ Each runner: (a) calls `_load_framework_context(session)` before the native call
 | Framework | `incoming` injection | `produced` extraction (write-back source) |
 |---|---|---|
 | OpenAI | `Runner.run(..., context=incoming)` / `Runner.run_streamed(..., context=incoming)` | `produced = incoming` (tools mutate it in place; merge is identity) |
-| Smolagents | `agent.run(prompt, additional_args=incoming, reset=False)` — only when `incoming is not None` | `agent.state`, **filtered to `incoming`'s keys**: `{k: agent.state[k] for k in incoming if k in agent.state}` |
-| Google ADK | seed state delta: `{"ak_tool_context": ctx.id, **(incoming or {})}` | ADK session `state` read back, **`ak_tool_context` (and any AK-internal key) stripped** — **not** restricted to `incoming`'s keys, so tool-added keys round-trip (see note) |
+| Smolagents | `agent.run(prompt, additional_args=incoming, reset=False)` — only when `incoming is not None`; note smolagents also appends `str(incoming)` to the task prompt (see §3.2) | `agent.state`, **filtered to `incoming`'s keys**: `{k: agent.state[k] for k in incoming if k in agent.state}` |
+| Google ADK | seed state delta: `{**(incoming or {}), "ak_tool_context": ctx.id}` (internal key last, never replaceable) | ADK session `state` read back, **`ak_tool_context` and `app:`/`user:`/`temp:`-prefixed keys stripped** — **not** restricted to `incoming`'s keys, so tool-added keys round-trip (see note) |
 | LangGraph | spread top-level keys into input: `input={**(incoming or {}), "messages": messages}` (`messages` last, never replaceable) | `{k: result[k] for k in incoming if k in result}` (only keys the graph's state schema declared as channels come back) |
 | CrewAI | **not injected**; `kickoff_async(inputs={})` unchanged | none — write-back skipped entirely (warn once when a non-empty context is set) |
 
@@ -123,34 +123,39 @@ Each runner: (a) calls `_load_framework_context(session)` before the native call
   This is inside the `try` before `return`, so the existing `except`/`finally: context.reset()` (`:167-171`) is unchanged.
 - Consequence (already stated in `design.md`): a tool that adds a **brand-new** key is silently dropped on smolagents because the filter is `incoming`'s keys only; a tool that mutates a **pre-seeded** key round-trips. `stream()` raises `NotImplementedError` (`:173-179`) — no streaming write-back.
 - `agent.state` / `additional_args` are the smolagents `MultiStepAgent.run` surface; guarded by `hasattr`/`isinstance` so a version without `state` degrades to "no round-trip" rather than raising.
+- **`additional_args` is not a private state slot.** `MultiStepAgent.run` does `self.state.update(additional_args)` **and** appends `str(additional_args)` to `self.task` ("You have been provided with these additional arguments…"), which is how the model learns the variable names. Two consequences, both documented in `smolagents.md` rather than worked around — there is no other caller-state slot in smolagents, so avoiding the prompt append would mean dropping injection entirely: the prompt and its token cost grow with the context, and **everything in `framework_context` is shown to the model**, so credentials/PII belong in a different (non-round-tripped) session key on this framework.
 
 #### 3.3 Google ADK (`framework/adk/adk.py`)
 
 ADK's native state lives in an `InMemorySessionService` (`adk.py:53`) and is **not** part of the pickled AK session, so write-back is what gives cross-turn durability.
 
-- `_setup_session_context()` (`adk.py:146`) currently seeds `{"ak_tool_context": ctx.id}` (`:162`). Change it to accept the injected context and seed it alongside:
+- `_setup_session_context()` (`adk.py:146`) currently seeds `{"ak_tool_context": ctx.id}` (`:162`). Change it to accept the injected context and seed it alongside — with the **AK-internal key assigned last**, the same "internal key wins" ordering LangGraph uses for `messages` (§3.4). If the caller's dict could overwrite `ak_tool_context`, `AKToolContext.fetch(...)` (`core/tool.py:139-141`) would raise `KeyError` for every tool call in the run, and `get_state()` strips the key before write-back so the clobbered value would never even surface:
   ```python
   async def _setup_session_context(self, agent, session, requests, injected: dict | None):
       ...
-      state = {"ak_tool_context": ctx.id}
-      if injected:
-          state.update(injected)
+      state = dict(injected or {})
+      state["ak_tool_context"] = ctx.id   # last — never replaceable by a caller key
       await adk_session.update_session_state(ctx.id, agent.name, state)
       return user_id, runner, ctx, adk_session
   ```
   Return `adk_session` too, so the caller can read state back without re-fetching.
-- Add a read-back helper on `GoogleADKSession` that returns the current state with AK-internal keys stripped:
+- Add a read-back helper on `GoogleADKSession` that returns the **session-scoped** state with non-caller keys stripped. The lookup is keyed off the created session's own identifiers rather than repeating the `"AgentKernel"` literals — if those ever diverge, `get_session` returns `None` and the write-back would silently degrade to a no-op instead of failing:
   ```python
   async def get_state(self) -> dict:
       if self._session is None:
           return {}
       refreshed = await self._session_service.get_session(
-          app_name="AgentKernel", user_id="AgentKernel", session_id=self._session.id
+          app_name=self._session.app_name, user_id=self._session.user_id, session_id=self._session.id
       )
       state = dict(getattr(refreshed, "state", {}) or {})
-      state.pop("ak_tool_context", None)   # strip AK-internal key(s) — fresh id every turn
-      return state
+      state.pop("ak_tool_context", None)   # AK-internal — fresh id every turn
+      # app:/user: are app- and user-scoped values InMemorySessionService merges in on read
+      # (_merge_state); temp: is invocation-scoped. None are per-session caller state.
+      return {k: v for k, v in state.items()
+              if not k.startswith((State.APP_PREFIX, State.USER_PREFIX, State.TEMP_PREFIX))}
   ```
+  `State` comes from the existing `google.adk.sessions` import, so the prefixes are not hardcoded.
+- **Known and accepted** (documented in `google-adk.md`, not coded around): the returned state is *accumulate-only* — ADK keeps every key written to the session for its lifetime, so a key the caller deletes from `framework_context` reappears on the next write-back (clear by overwriting, not deleting) — and state an agent writes itself, most commonly `LlmAgent(output_key=...)`, is indistinguishable from a tool write and round-trips too. Filtering `output_key` out would only work for the root agent's, leaving sub-agents' behind, which is a less predictable rule than "the whole session-scoped state comes back".
 - `run()` (`adk.py:198`): load `incoming` at the top of the `try` (`:206`); pass it into `_setup_session_context(...)`. After the `with ctx:` block (`:213-214`) and before returning, when `incoming` is not `None` read `produced = await adk_session.get_state()` — the full accumulated state with AK-internal keys already stripped by `get_state()`, **not** filtered to `incoming`'s keys — and `self._store_framework_context(session, incoming, produced)`. Because `produced` is the whole (stripped) state, keys a tool **added** during the run round-trip (they appear in `produced` and win the shallow merge), matching `design.md:60,62`; this is the deliberate divergence from smolagents (§3.2), where the read-back is restricted to seeded keys. ADK's `run()` has a `try/except` (`:206,224`) but **no `finally`** — the write-back goes at the end of the `try`, before the `except`.
 - `stream()` (`adk.py:227`): load before `_setup_session_context`; after the `async for` loop inside the `with ctx:` block completes normally, read state and write back — inside the guarded region, so a disconnect/exception skips it; the read + write-back pair is wrapped in `try/except Exception → _log_framework_context_stream_failure(...)` (see Error handling).
 
@@ -173,13 +178,14 @@ ADK's native state lives in an `InMemorySessionService` (`adk.py:53`) and is **n
 
 CrewAI's `kickoff(inputs=...)` are `.format()` template-interpolation variables, not a state object; a non-empty `inputs` would turn interpolation on and raise `KeyError` on literal braces in the `_describe(...)` task description (`crewai.py:294-305`). There is no safe caller-state slot.
 
-- In `run()` (`crewai.py:324`), after building the prompt and before `kickoff_async` (`:378`), check the key **once per run** and warn, without loading/injecting:
+- In `run()` (`crewai.py:324`), after building the prompt and before `kickoff_async` (`:378`), check the key and warn, without loading/injecting. The warning is gated on a `self._context_warned` flag set in `__init__`, so it fires **once per runner instance** (effectively once per process — a runner is per-module and long-lived) rather than once per turn: the condition holds on every turn of a session that seeded a context, and repeating an unactionable warning on each of them is just log noise. A flag also cannot grow unbounded the way a set of session ids would:
   ```python
-  if session is not None and session.get(Session.Keys.FRAMEWORK_CONTEXT.value):
+  if not self._context_warned and session is not None and session.get(Session.Keys.FRAMEWORK_CONTEXT.value):
       self._log.warning(
           "framework_context is set but CrewAI does not support per-run caller "
           "context/state; ignoring it."
       )
+      self._context_warned = True
   ```
   `session.get(...)` truthiness means a caller-set `{}` (falsy) does **not** warn; only a non-empty dict does.
 - `kickoff_async(inputs={})` stays as-is. No `_load_/_store_framework_context` calls — the stored key is left untouched (a set `{}` is preserved; a non-empty dict is preserved unchanged). Tools that need the dict still reach it via `ToolContext.get().session`.
@@ -202,7 +208,7 @@ The other traced runners (`trace/langfuse/{openai,adk,crewai,smolagents}.py`, `t
 - **`core/base.py`**: add `FRAMEWORK_CONTEXT` enum member; add `_load_framework_context`, `_store_framework_context`, `_ensure_framework_context_picklable`, `_log_framework_context_stream_failure` to `Runner`; add `import copy`, `import pickle`, a module logger (`ak.core.runner`), and the `_not_picklable` helper. `Session`, `Agent`, `Runtime` classes unchanged.
 - **`framework/openai/openai.py`**: `OpenAIRunner.run` / `.stream` inject `context=` and write back. `OpenAIAgent`/`OpenAIModule`/`OpenAIToolBuilder` unchanged.
 - **`framework/smolagents/smolagents.py`**: `SmolagentsRunner.run` injects `additional_args=` (conditionally) and writes back filtered `agent.state`. Everything else unchanged.
-- **`framework/adk/adk.py`**: `GoogleADKRunner._setup_session_context` gains an `injected` param and returns `adk_session`; `GoogleADKSession` gains `get_state()`; `run`/`stream` load, seed, and write back. `get_response` signature unchanged.
+- **`framework/adk/adk.py`**: `GoogleADKRunner._setup_session_context` gains an `injected` param (seeded *under* the AK-internal key) and returns `adk_session`; `GoogleADKSession` gains `get_state()`; `run`/`stream` load, seed, and write back. `State` is added to the existing `google.adk.sessions` import for the scope prefixes. `get_response` signature unchanged.
 - **`framework/langgraph/langgraph.py`**: `LangGraphRunner.run`/`.stream` spread `incoming` into the input state and write back declared channels. `_prepare_session_and_messages` unchanged.
 - **`framework/crewai/crewai.py`**: `CrewAIRunner.run` adds a one-shot warning; no injection, no write-back.
 - **`trace/langfuse/langgraph.py`**: `LangFuseLangGraph` gains a `_prepare_session_and_messages` override (wires the Langfuse callback handler into the base config) and its `run` shrinks to a span wrapper around `super().run(...)`; the re-implemented `ainvoke` body, its request/prompt handling, its `try/except`, and the now-unused imports (`HumanMessage`, `AgentReplyAny`, `AgentReplyText`, `AgentRequestAny`, `AgentRequestText`, `user_facing_error_message`, `LangGraphSessionConfigModel`, `LangGraphSessionConfigurable`) are removed. No `stream()` override is added.
@@ -219,9 +225,9 @@ Each is intentional and justified:
 
 1. **OpenAI now passes `context=` to `Runner.run`/`run_streamed`.** Previously no context object was passed (`openai.py:183`). When the key is absent, `context=None` is passed — functionally identical to today. Justified: this is the feature.
 2. **Smolagents passes `additional_args=` only when the key is present.** When absent, the call is byte-for-byte today's `asyncio.to_thread(agent.agent.run, prompt, reset=False)`. Justified: preserves the no-context path exactly and its existing test.
-3. **ADK seeds caller keys into the state delta alongside `ak_tool_context`, and now reads state back after the run.** Previously only `ak_tool_context` was seeded and state was never read back. `ak_tool_context` is stripped on read-back. Justified: ADK's native state isn't pickled, so write-back is the only durability path.
+3. **ADK seeds caller keys into the state delta under `ak_tool_context`, and now reads state back after the run.** Previously only `ak_tool_context` was seeded and state was never read back. On read-back, `ak_tool_context` and ADK's `app:`/`user:`/`temp:`-prefixed keys are stripped; everything else in the session-scoped state comes back, so tool-added keys (and agent-written state such as `output_key` results) round-trip and the state is accumulate-only. Justified: ADK's native state isn't pickled, so write-back is the only durability path.
 4. **LangGraph spreads caller keys into the `ainvoke`/`astream_events` input.** Previously `input={"messages": messages}` only. Keys sit at the top level (state channels), never replacing `messages`. Unknown keys are dropped by prebuilt agents (no error). Justified: uniform cross-framework API; real round-trip for custom graphs.
-5. **CrewAI logs a single warning when a non-empty `framework_context` is set.** Previously nothing was logged. Justified: makes the unsupported-status explicit at runtime rather than silently dropping.
+5. **CrewAI logs one warning per runner instance when a non-empty `framework_context` is set.** Previously nothing was logged. Justified: makes the unsupported-status explicit at runtime rather than silently dropping, without repeating an unactionable warning on every turn of a seeded session.
 6. **A new durable session key `framework_context` is persisted and reloaded** for every framework once a caller sets it. Justified: cross-turn carry is the feature; absent key ⇒ nothing persisted ⇒ no change for existing sessions.
 7. **Write-back is atomic per turn.** On framework error or mid-stream disconnect (`GeneratorExit`) the previously stored context is left intact (write-back is skipped by placement inside the `try`, after the native call/loop, before `except`, never in `finally`).
 8. **Langfuse-traced LangGraph runs now go through the base runner** (§3.6). Beyond gaining `framework_context` support, delegating to `super().run()` changes traced-run behaviour in ways the re-implemented copy did not have. Each is a fix, not a regression, but they are behaviour changes:
@@ -266,9 +272,9 @@ Base-`Runner` plumbing, framework-agnostic (uses `DummyRunner`-style subclass):
 
 - **`ak-py/tests/test_openai_runner.py`**: add cases asserting (a) `MockRunner.run` is called with `context=<the loaded dict>` when the session has `framework_context`; (b) a tool-style in-place mutation of the injected context is written back to the session key after `run()`; (c) on `MockRunner.run` raising, the pre-existing `framework_context` is unchanged. Existing error/structured-output cases unchanged (they pass `context=None`).
 - **`ak-py/tests/test_smolagents_runner.py`**: the existing assertion `mock_to_thread.assert_called_once_with(mock_agent.agent.run, "Hello smolagents", reset=False)` (`:62`) is the **no-context** path — keep it, and set no `framework_context`. Add a **with-context** case: seed the key, give `mock_agent.agent.state` a dict, assert `to_thread` is called with `additional_args=<incoming>` and that only seeded keys are written back (a brand-new state key is dropped).
-- **`ak-py/tests/test_adk_runner.py`**: `_run_with_response` mocks `_setup_session_context` to a 3-tuple (`:25`) — update to the new 4-tuple `("user", runner_mock, ctx_mock, adk_session_mock)` and give `adk_session_mock.get_state` an `AsyncMock`. Add cases: seeded context is passed into `_setup_session_context`; the `get_state` result minus `ak_tool_context` is written back in full — a seeded key mutated by a tool round-trips **and** a brand-new key a tool added round-trips (asserting the ADK-vs-smolagents divergence); error path leaves the key intact.
+- **`ak-py/tests/test_adk_runner.py`**: `_run_with_response` mocks `_setup_session_context` to a 3-tuple (`:25`) — update to the new 4-tuple `("user", runner_mock, ctx_mock, adk_session_mock)` and give `adk_session_mock.get_state` an `AsyncMock`. Add cases: seeded context is passed into `_setup_session_context`; the `get_state` result minus `ak_tool_context` is written back in full — a seeded key mutated by a tool round-trips **and** a brand-new key a tool added round-trips (asserting the ADK-vs-smolagents divergence); error path leaves the key intact. Also cover the seeding and read-back rules directly: a caller key named `ak_tool_context` does **not** displace the real id in the state delta passed to `update_session_state`, and `GoogleADKSession.get_state()` strips `ak_tool_context` plus `app:`/`user:`/`temp:`-prefixed keys while keeping plain state, looks the session up by the created session's own `app_name`/`user_id`, and returns `{}` when there is no session.
 - **`ak-py/tests/test_langgraph_runner.py`**: `_mock_agent` (`:16`) — add `agent.agent.aget_state` for the stream case. Add cases: `ainvoke` receives `input` containing the spread caller keys plus `messages`; keys present in `result` round-trip, absent ones are dropped; `messages` is never overwritten.
-- **`ak-py/tests/test_crewai_runner.py`**: add a case asserting that setting a non-empty `framework_context` logs exactly one warning (via `caplog` on `ak.crewai.runner`) and that `kickoff_async` is still called with `inputs={}`; and that a caller-set `{}` logs nothing and is preserved.
+- **`ak-py/tests/test_crewai_runner.py`**: add a case asserting that setting a non-empty `framework_context` logs exactly one warning (via `caplog` on `ak.crewai.runner`) and that `kickoff_async` is still called with `inputs={}`; that three consecutive runs on the same runner still log only that one warning; and that a caller-set `{}` logs nothing and is preserved.
 
 - **`ak-py/tests/test_trace_langfuse_langgraph.py`** (new): regression coverage for §3.6 — with a mocked Langfuse client, a seeded context is injected into the traced `ainvoke` input and written back through `LangFuseLangGraph.run`; an absent key skips write-back; a framework error leaves the stored context intact. These are what catch a future traced runner re-implementing the native call and silently bypassing the feature.
 

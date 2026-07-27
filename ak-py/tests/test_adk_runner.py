@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from agentkernel.core import Session
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
-from agentkernel.framework.adk.adk import GoogleADKRunner
+from agentkernel.framework.adk.adk import GoogleADKRunner, GoogleADKSession
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
@@ -64,6 +64,66 @@ def _run_with_response(runner, agent, session, requests, response_text, adk_sess
     setup = AsyncMock(return_value=("user", MagicMock(), _ctx_mock(), adk_session))
     get_response = AsyncMock(return_value=response_text)
     return patch.object(runner, "_setup_session_context", setup), patch.object(GoogleADKRunner, "get_response", get_response)
+
+
+class TestGoogleADKSessionState:
+    """GoogleADKSession.get_state returns only session-scoped caller state."""
+
+    @pytest.mark.asyncio
+    async def test_internal_and_scope_prefixed_keys_are_stripped(self):
+        """app:/user:/temp: keys are not caller state and must never enter framework_context."""
+        adk_session = GoogleADKSession()
+        adk_session._session = MagicMock(id="s", app_name="AgentKernel", user_id="AgentKernel")
+        refreshed = MagicMock()
+        refreshed.state = {
+            "cart": ["milk"],  # caller / tool state — kept
+            "ak_tool_context": "ctx-id",  # AK-internal — stripped
+            "app:theme": "dark",  # merged in by InMemorySessionService._merge_state — stripped
+            "user:tier": "gold",  # merged in by InMemorySessionService._merge_state — stripped
+            "temp:scratch": 1,  # invocation-scoped — stripped
+        }
+        adk_session._session_service = MagicMock()
+        adk_session._session_service.get_session = AsyncMock(return_value=refreshed)
+
+        assert await adk_session.get_state() == {"cart": ["milk"]}
+
+    @pytest.mark.asyncio
+    async def test_lookup_uses_the_created_sessions_identifiers(self):
+        """The read-back must not depend on hardcoded app/user names that could drift."""
+        adk_session = GoogleADKSession()
+        adk_session._session = MagicMock(id="sid", app_name="OtherApp", user_id="other-user")
+        adk_session._session_service = MagicMock()
+        adk_session._session_service.get_session = AsyncMock(return_value=MagicMock(state={}))
+
+        await adk_session.get_state()
+
+        adk_session._session_service.get_session.assert_awaited_once_with(app_name="OtherApp", user_id="other-user", session_id="sid")
+
+    @pytest.mark.asyncio
+    async def test_no_session_returns_empty_state(self):
+        assert await GoogleADKSession().get_state() == {}
+
+
+class TestGoogleADKRunnerStateSeeding:
+    """The caller's context is seeded into ADK state without displacing AK-internal keys."""
+
+    @pytest.mark.asyncio
+    async def test_caller_key_cannot_override_ak_tool_context(self):
+        """A context key named ak_tool_context would break AKToolContext.fetch for every tool."""
+        runner = GoogleADKRunner()
+        session = Session("s")
+        agent = _mock_agent(output_schema=None)
+
+        adk_session = MagicMock()
+        adk_session.create_session = AsyncMock()
+        adk_session.update_session_state = AsyncMock()
+
+        with patch.object(GoogleADKRunner, "_session", return_value=adk_session), patch("agentkernel.framework.adk.adk.Runner"):
+            _, _, ctx, _ = await runner._setup_session_context(agent, session, [], {"ak_tool_context": "hijacked", "cart": []})
+
+        _, _, state = adk_session.update_session_state.await_args.args
+        assert state["ak_tool_context"] == ctx.id
+        assert state["cart"] == []
 
 
 class TestGoogleADKRunnerFrameworkContext:
