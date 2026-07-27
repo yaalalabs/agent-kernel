@@ -17,8 +17,7 @@ async def test_client():
 
 @pytest.mark.order(1)
 async def test_first_item_appears_in_cart_line(test_client):
-    # The AppendCartPostHook appends a deterministic "Current cart:" line built from the session's
-    # framework_context, so we can assert on it directly rather than fuzzy-matching the LLM's text.
+    # The post-hook appends a deterministic "Current cart:" line, so assert on it rather than the LLM's text.
     response = await test_client.send("Add milk to my cart.")
     assert "Current cart:" in response
     assert "milk" in response.lower()
@@ -32,9 +31,7 @@ async def test_second_item_added_to_cart_line(test_client):
 
 @pytest.mark.order(3)
 async def test_tool_added_key_round_trips(test_client):
-    # `delivery_note` was never seeded into framework_context — the tool adds it mid-run. ADK reads
-    # the whole (stripped) state back, so brand-new keys survive; on smolagents this would be
-    # dropped. The note line only appears if the key made it into the session key.
+    # `delivery_note` was never seeded; the note line appears only if the key a tool added mid-run survived.
     response = await test_client.send("Leave the order at the front door.")
     assert "Delivery note:" in response
     assert "door" in response.lower()
@@ -42,8 +39,7 @@ async def test_tool_added_key_round_trips(test_client):
 
 @pytest.mark.order(4)
 async def test_context_persists_across_turns(test_client):
-    # A fresh run, yet the post-hook still reports both items and the note — proving the per-run
-    # framework_context round-tripped through the session rather than resetting each run.
+    # A fresh run still reports both items and the note, so the context round-tripped through the session.
     response = await test_client.send("What's in my cart right now?")
     assert "Current cart:" in response
     assert "milk" in response.lower() and "eggs" in response.lower()

@@ -17,10 +17,7 @@ _log = logging.getLogger("ak.core.runner")
 
 def _not_picklable(value: Any) -> bool:
     """
-    Returns True when the given value cannot be pickled.
-
-    Used by Runner._ensure_framework_context_picklable to name the offending
-    framework_context entry in a descriptive error.
+    Checks whether the given value can be pickled.
     :param value: The value to test for picklability.
     :return: True if the value cannot be pickled, otherwise False.
     """
@@ -243,17 +240,11 @@ class Runner(ABC):
 
     def _load_framework_context(self, session: Session | None) -> dict | None:
         """
-        Returns a DEEP COPY of the stored framework_context, or None if the key is absent.
-
-        The reserved ``framework_context`` session key carries a per-run, framework-agnostic
-        context/state dict across turns. A deep copy isolates the stored object from in-run
-        mutation (crash-isolation): the stored key is left untouched until a successful
-        write-back replaces it wholesale, so a mid-run crash cannot leave it half-mutated.
-
-        :param session: The session to read the reserved framework_context key from, or None
-                        (some runner unit paths invoke a runner without a session).
-        :return: A deep copy of the stored dict (including an empty ``{}``), or None when the
-                 key is absent — absent means "no injection / framework default".
+        Returns a deep copy of the per-run framework context stored in the session, or None if the key is absent.
+        The copy isolates the stored value from in-run mutation, so a failed run leaves the previously stored
+        context intact.
+        :param session: The session to read the reserved framework_context key from, or None.
+        :return: A deep copy of the stored dict, or None when the key is absent.
         :raises TypeError: If the stored value is not a dict.
         """
         if session is None:
@@ -271,19 +262,10 @@ class Runner(ABC):
 
     def _store_framework_context(self, session: Session | None, incoming: dict | None, produced: Mapping[str, Any] | None) -> None:
         """
-        Shallow-merges ``produced`` over ``incoming`` and writes the result back to the reserved key.
-
-        ``incoming`` is the deep copy returned by :meth:`_load_framework_context` this turn.
-        Top-level keys the framework touched (``produced``) win over the caller-seeded ones
-        (last-write-wins); caller keys the framework never touched are preserved; nested
-        structures are replaced wholesale (no recursive merge). No-op when the key was absent
-        this turn (``incoming`` is None) — the previously stored context is left intact.
-
-        Runners call this only after a successful native invocation, so a crashed/partial run
-        never overwrites the last-known-good context.
-
-        :param session: The session to write the merged framework_context back to, or None
-                        (some runner unit paths invoke a runner without a session).
+        Shallow-merges the framework's post-run state over the context loaded this turn and writes the result
+        back to the reserved framework_context key. Keys the framework touched win; untouched caller keys are
+        preserved. No-op when the key was absent this turn.
+        :param session: The session to write the merged framework_context back to, or None.
         :param incoming: The deep copy loaded this turn, or None when the key was absent.
         :param produced: The framework's post-run state delta, or None.
         """
@@ -298,13 +280,8 @@ class Runner(ABC):
     @staticmethod
     def _ensure_framework_context_picklable(session: Session, ctx: Mapping[str, Any]) -> None:
         """
-        Fails fast with an actionable message if the merged context cannot be pickled.
-
-        Sessions are serialized with pickle, so a non-picklable framework_context value would
-        otherwise abort the whole session store() with an opaque error. This diagnostic check
-        runs on the merge result before it is written back, naming the session and the offending
-        key/type so the failure is actionable during development.
-
+        Fails fast if the merged context cannot be pickled. Sessions are persisted with pickle, so a
+        non-picklable value would otherwise abort the whole session store() with an opaque error.
         :param session: The session whose id is named in the error.
         :param ctx: The merged framework_context to validate.
         :raises TypeError: If any value in ctx is not pickle-serializable.
@@ -325,16 +302,9 @@ class Runner(ABC):
     @staticmethod
     def _log_framework_context_stream_failure(session: Session | None, error: Exception) -> None:
         """
-        Logs a streamed-run framework_context write-back failure instead of raising it.
-
-        In ``run()`` a write-back error (non-picklable context, a failed framework state read)
-        is caught by the runner's own ``except Exception`` and surfaced as an error reply, and
-        ``Runtime.run`` still persists the session. ``stream()`` has no such ``except``, so the
-        same error would escape the generator, reach the transport as a raw error chunk, and skip
-        ``Runtime.stream``'s ``store()`` — losing the whole turn's session state, not just the
-        context. Stream write-back therefore logs and skips: the previously stored context is left
-        intact and the rest of the session still persists, matching the ``run()`` degradation.
-
+        Logs a streamed-run framework_context write-back failure instead of raising it. Raising from a stream
+        would escape the generator as a transport error and skip Runtime.stream's session store(), losing the
+        whole turn's state rather than just the context.
         :param session: The session whose write-back failed, named in the log message.
         :param error: The exception raised while producing or storing the context.
         """
@@ -476,3 +446,18 @@ class Agent(ABC):
 
         for tool in SystemToolFactory.get_all(self.name):
             self.attach_tool(tool.func)
+
+    @staticmethod
+    def _append_tools(agent: Any, wrapped: list[Any]) -> None:
+        """
+        Appends already-wrapped tools to a framework-native agent's list-based `tools` attribute,
+        creating the list when it is absent and skipping tools that are already attached. Shared by
+        the framework agents whose native tool collection is a plain list.
+        :param agent: The framework-native agent holding the `tools` attribute.
+        :param wrapped: The wrapped tools to attach.
+        """
+        for w in wrapped:
+            if not hasattr(agent, "tools") or agent.tools is None:
+                agent.tools = []
+            if w not in agent.tools:
+                agent.tools.append(w)

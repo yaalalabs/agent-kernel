@@ -9,26 +9,10 @@ from google.adk.tools import ToolContext
 
 logger = logging.getLogger("ak.example.adk_context")
 
-# The single reserved session key that carries a per-run, framework-agnostic context/state dict
-# across turns. Reference the enum member rather than hardcoding the "framework_context" string.
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
-# Prefixes the AppendCartPostHook adds to every reply so the stored context is always visible.
 CART_PREFIX = "Current cart:"
 NOTE_PREFIX = "Delivery note:"
-
-
-# --- Tools that read and write the per-run framework context --------------------------------------
-#
-# Agent Kernel merges `framework_context` into the ADK session state before the run and reads the
-# accumulated state back afterwards, so a tool reads and writes it through ADK's own
-# `tool_context.state`. ADK's state is in-memory only; the write-back into the session key is what
-# makes it survive beyond this process.
-#
-# These tools are passed to the ADK agent DIRECTLY rather than through `GoogleADKToolBuilder.bind`.
-# The builder consumes `tool_context` to set up Agent Kernel's own ToolContext and does not forward
-# it, so a bound tool cannot reach ADK state. Rule of thumb: bind tools that need
-# `ToolContext.get()` (session, runtime, agent); pass tools that need ADK state directly.
 
 
 def add_to_cart(item: str, tool_context: ToolContext) -> str:
@@ -39,8 +23,7 @@ def add_to_cart(item: str, tool_context: ToolContext) -> str:
     """
     cart = list(tool_context.state.get("cart") or [])
     cart.append(item)
-    # Assign back instead of mutating in place — ADK records a state delta on assignment, and only
-    # what lands in the state is read back and written to the session.
+    # Assign back instead of mutating in place: ADK records a state delta on assignment.
     tool_context.state["cart"] = cart
     logger.debug("cart is now %s", cart)
     return f"Added '{item}'. The cart now has {len(cart)} item(s)."
@@ -60,22 +43,14 @@ def set_delivery_note(note: str, tool_context: ToolContext) -> str:
     Args:
         note: The delivery instruction to remember for this order.
     """
-    # `delivery_note` was never seeded into framework_context — it is a brand-new key this tool adds
-    # mid-run. On ADK the whole (stripped) state is read back, so it round-trips; on smolagents the
-    # same write would be dropped, because there the read-back is restricted to pre-seeded keys.
+    # `delivery_note` was never seeded into framework_context; ADK reads the whole state back, so it round-trips.
     tool_context.state["delivery_note"] = note
     logger.debug("delivery note is now %s", note)
     return f"Noted: {note}"
 
 
 class SeedCartContextPreHook(PreHook):
-    """Seed an empty framework_context on the first turn so the tools have state to populate.
-
-    An absent key means "no context / no injection" (existing apps are unaffected); a caller-set
-    dict — even an empty one — is injected and round-tripped. Seeding ``{"cart": []}`` once, before
-    the first run, is the recommended way to opt a session into carrying per-run state. On later
-    turns the key is already present (persisted across turns) and is left untouched.
-    """
+    """Seed an empty framework_context on the first turn so the tools have state to populate."""
 
     async def on_run(self, session, agent, requests):
         if session is not None and session.get(FRAMEWORK_CONTEXT) is None:
@@ -87,13 +62,7 @@ class SeedCartContextPreHook(PreHook):
 
 
 class AppendCartPostHook(PostHook):
-    """Append the stored context to every reply.
-
-    This hook reads ``session.get(framework_context)`` — the Agent Kernel session, not ADK's state —
-    and post-hooks run after the runner has already written the produced state back. So whatever it
-    prints is proof that the ADK state round-tripped into the durable session key rather than merely
-    living in ADK's in-memory session service.
-    """
+    """Append the stored framework_context to every reply, showing that the ADK state round-tripped."""
 
     async def on_run(self, session, requests, agent, agent_reply):
         if session is None or not isinstance(agent_reply, AgentReplyText):

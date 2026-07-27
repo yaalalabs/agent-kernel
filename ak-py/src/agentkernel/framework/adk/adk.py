@@ -78,23 +78,9 @@ class GoogleADKSession:
 
     async def get_state(self) -> dict:
         """
-        Returns the current session-scoped ADK state with non-caller keys stripped.
-
-        ADK's native state lives in an InMemorySessionService and is not part of the pickled AK
-        session, so the runner reads it back here to give the framework_context cross-turn
-        durability. Two groups of keys are removed because they are not caller state:
-
-        - ``ak_tool_context`` — AK-internal, seeded fresh every turn, so the caller's context never
-          accumulates a stale internal id.
-        - ``app:`` / ``user:`` / ``temp:`` prefixed keys — the first two are app- and user-scoped
-          values that ``InMemorySessionService`` merges into the returned session on read
-          (``_merge_state``), the third is invocation-scoped. None belong in a per-session caller
-          context that gets pickled into the AK session.
-
-        Note that the returned state is accumulate-only: ADK keeps every key written to this session
-        for its lifetime, so a key the caller drops from framework_context reappears here on the next
-        turn, and values an agent writes itself (e.g. ``LlmAgent(output_key=...)``) are
-        indistinguishable from tool writes and round-trip too.
+        Returns the current session-scoped ADK state with non-caller keys stripped: the AK-internal
+        ``ak_tool_context`` id, plus the ``app:`` / ``user:`` / ``temp:`` prefixed keys that are app-, user- or
+        invocation-scoped rather than session state.
         :return: The accumulated session-scoped ADK state, or an empty dict when no session exists.
         """
         if self._session is None:
@@ -161,7 +147,7 @@ class GoogleADKRunner(BaseRunner):
                     parts.append(types.Part(file_data=types.FileData(file_uri=base64_data)))
                     continue
 
-                if base64_data.startswith(("data:")):
+                if base64_data.startswith("data:"):
                     mime_type = base64_data.split(";")[0][5:]
                 else:
                     if not req.mime_type:
@@ -194,9 +180,8 @@ class GoogleADKRunner(BaseRunner):
 
         ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
         await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
-        # The AK-internal key is assigned LAST so a caller key named `ak_tool_context` can never
-        # replace the id tools resolve their context by (AKToolContext.fetch would raise KeyError for
-        # every tool call in the run). Same "internal key wins" ordering as LangGraph's `messages`.
+        # The AK-internal key is assigned last so a caller key of the same name cannot replace the id tools
+        # resolve their context by.
         state = dict(injected or {})
         state["ak_tool_context"] = ctx.id
         await adk_session.update_session_state(ctx.id, agent.name, state)
@@ -218,9 +203,9 @@ class GoogleADKRunner(BaseRunner):
         response_text = ""
 
         if hasattr(runner, "run_async"):
-            # Drain the stream instead of breaking on the first final response. Stopping early makes
-            # ADK cancel its still-running root agent task ("Root node <name> was cancelled."), and the
-            # last final response is the right one when sub-agents are involved. Matches `stream()`.
+            # Drain the stream instead of breaking on the first final response. Stopping early makes ADK cancel
+            # its still-running root agent task, and the last final response is the right one when sub-agents
+            # are involved.
             async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=new_message):
                 if event.is_final_response() and event.content and event.content.parts:
                     text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
@@ -241,6 +226,7 @@ class GoogleADKRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
+        prompt = ""
         try:
             prompt, parts = self._process_requests(requests)
 
@@ -252,10 +238,8 @@ class GoogleADKRunner(BaseRunner):
             with ctx:
                 reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
 
-            # Read ADK's accumulated state back (ak_tool_context already stripped by get_state) and
-            # write it back in FULL — keys a tool ADDED during the run round-trip here (the deliberate
-            # divergence from smolagents). Inside the try, after the run, so a framework error skips
-            # write-back and leaves the previously stored context intact.
+            # Read ADK's accumulated state back and write it back in full, so keys a tool added during the run
+            # also round-trip. After the run, so a framework error leaves the stored context intact.
             if incoming is not None:
                 produced = await adk_session.get_state()
                 self._store_framework_context(session, incoming, produced)
@@ -305,12 +289,8 @@ class GoogleADKRunner(BaseRunner):
                     if chunk:
                         yield chunk
 
-                # Write back only after the event stream drains normally. A disconnect
-                # (GeneratorExit at a yield) or a mid-stream error unwinds before this line, so the
-                # stored context is left intact — never moved into a finally. A failed state read
-                # or write-back is logged rather than raised, so the response already streamed to
-                # the client does not turn into a transport error that also skips Runtime.stream's
-                # session store().
+                # Write back only after the event stream drains normally, so a disconnect or a mid-stream error
+                # leaves the stored context intact. Deliberately not in a finally.
                 if incoming is not None:
                     try:
                         produced = await adk_session.get_state()
@@ -364,12 +344,7 @@ class GoogleADKAgent(AKBaseAgent):
         :param tool: Raw Python callable or already-wrapped ADK FunctionTool.
         """
         # Delegate to the tool builder to handle binding
-        wrapped = GoogleADKToolBuilder.bind([tool])
-        for w in wrapped:
-            if not hasattr(self._agent, "tools") or self._agent.tools is None:
-                self._agent.tools = []
-            if w not in self._agent.tools:
-                self._agent.tools.append(w)
+        self._append_tools(self._agent, GoogleADKToolBuilder.bind([tool]))
 
     def get_a2a_card(self):
         """

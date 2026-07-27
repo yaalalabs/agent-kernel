@@ -1,10 +1,8 @@
 import asyncio
 import logging
-import readline  # Enables line editing and history features for input() in the CLI
 import threading
 
 from ..core import AgentService
-from ..core.config import AKConfig
 
 ak_cli_logger = logging.getLogger("ak.cli")
 
@@ -51,11 +49,9 @@ class CLI:
     @staticmethod
     async def _ainput(prompt: str) -> str:
         """
-        Read a line of input without blocking the event loop.
-        A blocking `input()` on the loop thread freezes every background task between turns — most
-        visibly LiteLLM's logging worker, which times out its queued callbacks after 20s. The reader
-        runs on a daemon thread so Ctrl+C exits promptly instead of waiting on a thread parked in
-        `input()`, which is what the default executor would do during `asyncio.run()` shutdown.
+        Reads a line of input without blocking the event loop, so background tasks keep running between turns.
+        The reader runs on a daemon thread so Ctrl+C exits promptly instead of waiting on a thread parked in
+        `input()`.
         :param prompt: The prompt to display to the user.
         :return: The line entered by the user.
         """

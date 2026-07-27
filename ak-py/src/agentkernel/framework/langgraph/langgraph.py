@@ -387,9 +387,8 @@ class LangGraphRunner(BaseRunner):
 
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
-            # Spread the per-run framework context's top-level keys into the input state so they map
-            # onto the graph's state channels. `messages` is written last, so a caller key can never
-            # replace it. Unknown keys are silently dropped by prebuilt agents (no error).
+            # Spread the per-run framework context's top-level keys into the input state so they map onto the
+            # graph's state channels. `messages` is written last so a caller key cannot replace it.
             incoming = self._load_framework_context(session)
             input_state: dict[str, Any] = {}
             if incoming:
@@ -401,8 +400,7 @@ class LangGraphRunner(BaseRunner):
                 config=config,
             )
 
-            # Only keys the graph's state schema declares as channels come back on `result`; the
-            # rest are dropped. Written back after a successful invoke, before returning.
+            # Only keys the graph's state schema declares as channels come back on `result`; the rest are dropped.
             if incoming is not None:
                 produced = {k: result[k] for k in incoming if k in result}
                 self._store_framework_context(session, incoming, produced)
@@ -459,12 +457,9 @@ class LangGraphRunner(BaseRunner):
                             if isinstance(item, dict) and item.get("text"):
                                 yield item["text"]
 
-            # astream_events yields events, not a final state dict, so read the produced state back
-            # explicitly once the stream drains normally. Inside the try, after the loop — a
-            # disconnect (GeneratorExit) or a mid-stream error unwinds before this line. A failed
-            # state read or write-back is logged rather than raised, so the response already
-            # streamed to the client does not turn into a transport error that also skips
-            # Runtime.stream's session store().
+            # astream_events yields events, not a final state dict, so read the produced state back explicitly
+            # once the stream drains normally. A disconnect or a mid-stream error unwinds before this line,
+            # leaving the stored context intact.
             if incoming is not None:
                 try:
                     state = await agent.agent.aget_state(config)

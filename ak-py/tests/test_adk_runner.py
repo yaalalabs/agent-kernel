@@ -138,16 +138,14 @@ class TestGoogleADKRunnerFrameworkContext:
         agent = _mock_agent(output_schema=None)
 
         adk_session = MagicMock()
-        # get_state returns the accumulated state with ak_tool_context already stripped.
         adk_session.get_state = AsyncMock(return_value={"seeded": 9, "added": "new"})
         setup = AsyncMock(return_value=("user", MagicMock(), _ctx_mock(), adk_session))
 
         with patch.object(runner, "_setup_session_context", setup), patch.object(GoogleADKRunner, "get_response", AsyncMock(return_value="hello")):
             reply = await runner.run(agent, session, requests)
 
-        # The loaded context is injected into _setup_session_context.
         assert setup.await_args.args[3] == {"seeded": 1}
-        # Full stripped state is written back: a mutated seeded key AND a brand-new key both survive.
+        # The full state is written back, so a mutated seeded key and a brand-new key both survive.
         assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 9, "added": "new"}
         assert reply.response == "hello"
 

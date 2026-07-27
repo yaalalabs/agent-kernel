@@ -179,7 +179,7 @@ class TestOpenAIRunnerFrameworkContext:
             assert first == "hi"
             await agen.aclose()  # simulate client disconnect at the yield
 
-            # Write-back is after the loop → skipped; last-known-good context preserved.
+            # Write-back is after the loop, so it is skipped and the last-known-good context is preserved.
             assert session.get(FRAMEWORK_CONTEXT) == {"seed": 1}
 
     @pytest.mark.asyncio

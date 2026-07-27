@@ -377,13 +377,9 @@ class CrewAIRunner(Runner):
                 verbose=False,
                 memory=memory,
             )
-            # CrewAI's kickoff(inputs=...) are .format() template-interpolation variables, not a
-            # context/state object, so there is no safe per-run caller-state slot. Warn when a
-            # non-empty framework_context is set (a caller-set {} is falsy and does not warn) and
-            # leave the stored key untouched — no injection, no write-back. Tools that need the dict
-            # can still reach it via ToolContext.get().session. The warning fires once per runner
-            # rather than once per turn: the condition holds for every turn of a session that seeded
-            # a context, and repeating an unactionable warning on each of them is just log noise.
+            # CrewAI's kickoff(inputs=...) are template-interpolation variables, not a context/state object, so
+            # there is no per-run caller-state slot. The stored key is left untouched and warned about once per
+            # runner, since the condition holds for every turn of the session.
             if not self._context_warned and session is not None and session.get(Session.Keys.FRAMEWORK_CONTEXT.value):
                 self._log.warning("framework_context is set but CrewAI does not support per-run caller context/state; ignoring it.")
                 self._context_warned = True
@@ -522,12 +518,7 @@ class CrewAIAgent(BaseAgent):
         :param tool: Raw Python callable or already-wrapped CrewAI tool.
         """
         # Delegate to the tool builder to handle binding
-        wrapped = CrewAIToolBuilder.bind([tool])
-        for w in wrapped:
-            if not hasattr(self.agent, "tools") or self.agent.tools is None:
-                self.agent.tools = []
-            if w not in self.agent.tools:
-                self.agent.tools.append(w)
+        self._append_tools(self.agent, CrewAIToolBuilder.bind([tool]))
 
     def override_system_prompt(self, prompt: str) -> None:
         """

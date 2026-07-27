@@ -231,9 +231,8 @@ class TestCrewAIRunnerFrameworkContext:
 
         warnings = [record for record in caplog.records if "framework_context" in record.getMessage()]
         assert len(warnings) == 1
-        # kickoff_async is still called with the unchanged empty inputs.
         crew_cls.return_value.kickoff_async.assert_awaited_once_with(inputs={})
-        # The stored key is left untouched (no injection, no write-back).
+        # The stored key is left untouched: no injection, no write-back.
         assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "42"}
 
     @pytest.mark.asyncio

@@ -17,8 +17,7 @@ async def test_client():
 
 @pytest.mark.order(1)
 async def test_first_item_appears_in_cart_line(test_client):
-    # The AppendCartPostHook appends a deterministic "Current cart:" line to every reply, so we can
-    # assert on it directly rather than fuzzy-matching the LLM's free-form text.
+    # The post-hook appends a deterministic "Current cart:" line, so assert on it rather than the LLM's text.
     response = await test_client.send("Add milk to my cart.")
     assert "Current cart:" in response
     assert "milk" in response.lower()
@@ -32,8 +31,7 @@ async def test_second_item_added_to_cart_line(test_client):
 
 @pytest.mark.order(3)
 async def test_cart_persists_across_turns(test_client):
-    # This turn is a fresh run, yet the post-hook still reports both earlier items — proving the
-    # per-run framework_context round-tripped across turns rather than resetting each run.
+    # A fresh run still reports both earlier items, so the context round-tripped across turns.
     response = await test_client.send("What's in my cart right now?")
     assert "Current cart:" in response
     assert "milk" in response.lower() and "eggs" in response.lower()

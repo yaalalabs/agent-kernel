@@ -73,7 +73,7 @@ class TestLangGraphRunnerFrameworkContext:
         assert input_state["ephemeral"] == "x"
         assert "messages" in input_state
 
-        # 'user_id' round-trips from result; 'ephemeral' keeps its seeded value (untouched key preserved).
+        # 'user_id' round-trips from result; 'ephemeral' keeps its seeded value.
         assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "99", "ephemeral": "x"}
 
     @pytest.mark.asyncio

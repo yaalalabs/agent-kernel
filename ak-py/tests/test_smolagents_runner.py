@@ -41,7 +41,7 @@ class TestSmolagentsRunnerFrameworkContext:
 
             mock_to_thread.assert_called_once_with(mock_agent.agent.run, "hi", reset=False, additional_args={"seeded": 1})
 
-        # Only the seeded key round-trips; the brand-new internal key is dropped (smolagents divergence).
+        # Only the seeded key round-trips; the brand-new internal key is dropped.
         assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 5}
 
     @pytest.mark.asyncio

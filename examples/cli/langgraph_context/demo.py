@@ -11,26 +11,16 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("ak.example.langgraph_context")
 
-# The single reserved session key that carries a per-run, framework-agnostic context/state dict
-# across turns. Reference the enum member rather than hardcoding the "framework_context" string.
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
-# Prefix the AppendCartPostHook adds to every reply so the current cart is always visible.
 CART_PREFIX = "Current cart:"
 
 model = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
 
 
-# --- The graph state: a cart channel is what makes the round-trip work -----------------------------
-#
-# Agent Kernel spreads the `framework_context` dict's top-level keys into the graph's input state, and
-# reads back ONLY the keys the graph's state schema declares as channels. `cart` is declared here, so
-# it round-trips; a key the schema does NOT declare would be silently dropped by LangGraph on the way
-# out. (A prebuilt `create_react_agent` uses a fixed `AgentState` — messages/remaining_steps/
-# structured_response — so seeding `cart` there would inject but never come back. See the README.)
-
-
 class ShoppingState(TypedDict):
+    """Graph state. `cart` is a declared channel, which is what lets it round-trip via framework_context."""
+
     messages: Annotated[Sequence[BaseMessage], add_messages]
     cart: list[str]
 
@@ -54,12 +44,7 @@ structured_model = model.with_structured_output(CartUpdate)
 
 
 def shopping_node(state: ShoppingState) -> dict:
-    """Read the cart carried in the graph state, apply the user's request, and write it back.
-
-    The cart arrives in ``state["cart"]`` because Agent Kernel injected the session's
-    ``framework_context`` into the graph input. Returning an updated ``cart`` puts the new value on
-    the declared channel, which Agent Kernel then reads back and persists to the session.
-    """
+    """Read the cart carried in the graph state, apply the user's request, and write it back."""
     cart = list(state.get("cart") or [])
     decision: CartUpdate = structured_model.invoke([SYSTEM_MESSAGE] + list(state["messages"]))
     cart.extend(decision.items_to_add)
@@ -75,17 +60,8 @@ def _build_shopping_graph() -> "StateGraph":
     return graph.compile(name="shopping")
 
 
-# --- Hooks: seed the context on turn 1, and surface it on every reply ------------------------------
-
-
 class SeedCartContextPreHook(PreHook):
-    """Seed an empty framework_context on the first turn so the graph has a cart channel to fill.
-
-    An absent key means "no context / no injection" (existing apps are unaffected); a caller-set
-    dict — even an empty one — is injected and round-tripped. Seeding ``{"cart": []}`` once, before
-    the first run, is the recommended way to opt a session into carrying per-run state. On later
-    turns the key is already present (persisted across turns) and is left untouched.
-    """
+    """Seed an empty framework_context on the first turn so the graph has a cart channel to fill."""
 
     async def on_run(self, session, agent, requests):
         if session is not None and session.get(FRAMEWORK_CONTEXT) is None:
@@ -97,13 +73,7 @@ class SeedCartContextPreHook(PreHook):
 
 
 class AppendCartPostHook(PostHook):
-    """Append the current cart to every reply.
-
-    Post-hooks run after the runner has already written the produced state back to the session, so
-    ``session.get(framework_context)`` here reflects this turn's changes. This makes the cart visible
-    on every reply and shows that the same per-run state is reachable from a hook (via the session)
-    as from inside the graph (via the state channel).
-    """
+    """Append the current cart to every reply, read from the session rather than the graph state."""
 
     async def on_run(self, session, requests, agent, agent_reply):
         if session is None or not isinstance(agent_reply, AgentReplyText):

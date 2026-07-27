@@ -180,13 +180,11 @@ class OpenAIRunner(BaseRunner):
                 return AgentReplyText(response="Sorry. No valid content found in the requests")
 
             input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
-            # Load the per-run framework context (deep copy) and inject it so tools can read/write
-            # it via RunContextWrapper.context. context=None (absent key) matches prior behaviour.
+            # Inject the per-run framework context so tools can read and write it via RunContextWrapper.context.
             incoming = self._load_framework_context(session)
             reply = (await Runner.run(agent.agent, input_data, session=session_to_use, context=incoming)).final_output
 
-            # OpenAI tools mutate the injected object in place, so the produced state is the same
-            # object. Write back only after a successful native call, before returning.
+            # OpenAI tools mutate the injected object in place, so the produced state is the same object.
             self._store_framework_context(session, incoming, incoming)
 
             structured = AgentReplyAny.from_output(reply, prompt)
@@ -226,10 +224,8 @@ class OpenAIRunner(BaseRunner):
                     if event.data.delta:
                         yield event.data.delta
 
-            # Write back only when the stream drains normally. A client disconnect (GeneratorExit
-            # at a yield) or a framework error unwinds before this line, leaving the stored context
-            # intact. Kept out of `finally` so partial state is never persisted. A write-back error
-            # is logged rather than raised — see Runner._log_framework_context_stream_failure.
+            # Write back only when the stream drains normally, so a disconnect or a framework error leaves the
+            # stored context intact. Deliberately not in a finally.
             try:
                 self._store_framework_context(session, incoming, incoming)
             except Exception as e:
@@ -285,12 +281,7 @@ class OpenAIAgent(BaseAgent):
         :param tool: Raw Python callable or already-wrapped OpenAI function_tool.
         """
         # Delegate to the tool builder to handle binding
-        wrapped = OpenAIToolBuilder.bind([tool])
-        for w in wrapped:
-            if not hasattr(self._agent, "tools") or self._agent.tools is None:
-                self._agent.tools = []
-            if w not in self._agent.tools:
-                self._agent.tools.append(w)
+        self._append_tools(self._agent, OpenAIToolBuilder.bind([tool]))
 
     def get_a2a_card(self):
         """

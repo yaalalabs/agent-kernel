@@ -56,15 +56,13 @@ class TestLangFuseLangGraphFrameworkContext:
         with patch("agentkernel.trace.langfuse.langgraph.propagate_attributes", _noop_cm):
             await runner.run(agent, session, requests)
 
-        # The caller keys were spread into the native ainvoke input — the feature is NOT bypassed.
         _, kwargs = agent.agent.ainvoke.call_args
         input_state = kwargs["input"]
         assert input_state["user_id"] == "42"
         assert input_state["ephemeral"] == "x"
         assert "messages" in input_state
-        # The Langfuse callback handler is still wired into the config (tracing preserved).
         assert kwargs["config"]["callbacks"] == [runner._callback_handler]
-        # 'user_id' round-trips from result; 'ephemeral' keeps its seeded value (untouched key kept).
+        # 'user_id' round-trips from result; 'ephemeral' keeps its seeded value.
         assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "99", "ephemeral": "x"}
 
     @pytest.mark.asyncio
