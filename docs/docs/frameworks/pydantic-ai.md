@@ -52,9 +52,12 @@ if __name__ == "__main__":
   and `PydanticAIModule` raises a `ValueError`. Always pass `name=`.
 - **`description=` should be set.** Unlike the OpenAI adapter (where `instructions` is effectively
   mandatory and doubles as the description), Pydantic AI's `description` is an optional, separate
-  field — and it is what Agent Kernel reports as the agent's description and A2A card summary.
-  Pydantic AI's `instructions` has no public read path, so it cannot be used as a fallback. Omitting
-  `description=` yields an empty description, not an error.
+  field — and it is what Agent Kernel reports as the agent's description and A2A card summary. When
+  `description=` is unset, Agent Kernel falls back to the agent's static `instructions=` on a
+  best-effort basis (Pydantic AI has no public getter for instructions, so this reads a private
+  attribute and degrades to an empty string if that attribute changes in a future release). Setting
+  `description=` explicitly is the reliable path; an agent with neither yields an empty description,
+  not an error.
 :::
 
 ## Multi-Agent System

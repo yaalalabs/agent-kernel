@@ -232,20 +232,35 @@ is unchanged.
 **`get_description()` — corrected mechanism.**
 ```python
 def get_description(self) -> str:
-    return self.agent.description or ""
+    if self.agent.description:
+        return self.agent.description
+    # Best-effort fallback: no public getter for instructions exists, so read the private
+    # ``_instructions`` list and keep the static string parts (callable contributors are skipped).
+    instructions = getattr(self.agent, "_instructions", None) or []
+    return " ".join(i for i in instructions if isinstance(i, str))
 ```
-`agent.instructions` is **not** a readable attribute on Pydantic AI's `Agent` — it's an overloaded
-decorator method (`type(Agent('test').instructions) is method`, confirmed at runtime) used to
-*register* a dynamic instructions function, with no public getter for the configured value at all
-(it's normalized into a private `agent._instructions: list[str | SystemPromptFunc]`). Pydantic AI's
-`Agent` does have a **separate**, purpose-built `description: str | None` constructor parameter
-that *is* a plain readable/writable property (`agent/__init__.py:880-894`; confirmed
-`Agent('test', description="does X").description == "does X"`, defaults to `None`). Use that field
-instead of `instructions`.
+Pydantic AI's `Agent` has a **separate**, purpose-built `description: str | None` constructor
+parameter that *is* a plain readable/writable property (`agent/__init__.py:880-894`; confirmed
+`Agent('test', description="does X").description == "does X"`, defaults to `None`) — that is the
+primary source. When it is unset we fall back to the agent's static instructions, because unlike
+the OpenAI adapter (where `instructions` doubles as the description) Pydantic AI keeps the two
+fields apart, so a description-less agent otherwise reports an empty summary.
+
+`agent.instructions` is **not** a readable attribute — it's an overloaded decorator method
+(`type(Agent('test').instructions) is method`, confirmed at runtime) used to *register* a dynamic
+instructions function, with no public getter (the configured value is normalized into a private
+`agent._instructions: list[str | SystemPromptFunc]`, confirmed at runtime for 2.13.0). The fallback
+therefore reads that private list defensively (`getattr(..., None)`) and joins only its `str`
+parts.
+- **Best-effort, deliberately not load-bearing.** Because `_instructions` is a private attribute of
+  a fast-moving library, the fallback is wrapped so that if the attribute ever disappears or changes
+  shape, `get_description()` degrades to `""` rather than raising — matching this design's own
+  version-skew guidance. Setting `description=` explicitly avoids the fallback entirely and is the
+  recommended path.
 - Consequence to document prominently (docs page, example): unlike OpenAI agents, where
   `instructions` is effectively mandatory so `get_description()` reliably returns real content,
-  Pydantic AI's `description` is optional and easy to leave unset — a wrapped agent that doesn't
-  pass `description=` explicitly reports an empty string here and an empty A2A card summary.
+  Pydantic AI's `description` is optional and easy to leave unset — an agent that passes neither
+  `description=` nor `instructions=` reports an empty string here and an empty A2A card summary.
 
 **`override_system_prompt()` — corrected mechanism.**
 ```python
@@ -263,23 +278,26 @@ guard is possible (no read path to check "already present" against) — acceptab
 under the existing convention, so no code path invokes `override_system_prompt()` twice on one
 instance.
 
-**`attach_tool()` — mechanism unconfirmed, flagged rather than guessed.**
+**`attach_tool()` — confirmed mechanism.**
 ```python
 def attach_tool(self, tool: Any) -> None:
     wrapped = PydanticAIToolBuilder.bind([tool])
+    function_toolset = next((ts for ts in self._agent.toolsets if isinstance(ts, FunctionToolset)), None)
+    if function_toolset is None:
+        return
     for w in wrapped:
-        ...  # exact post-construction registration call — see below
+        if w.name not in function_toolset.tools:
+            function_toolset.add_tool(w)
 ```
-This research pass verified **construction-time** tool registration (`Agent(tools=[...])`) in
-depth, but did not exercise adding a tool to an **already-built** `Agent` (needed here, since
 `attach_tool()` runs during `PydanticAIAgent.__init__`, after the user's own `Agent(...)` call has
-already completed, for the multimodal `AnalyzeAttachmentsTool`). The likely mechanism is a method on
-the agent's `FunctionToolset` (accessible via `agent.toolsets`, see `get_a2a_card()` below) —
-confirm the exact call (e.g. an `add_function`/`add_tool` method, or direct `.tools` dict mutation)
-against the installed `pydantic-ai==2.13.0` source before merging; do not ship a guess. If no clean
-post-construction path exists, the fallback is constructing the `FunctionToolset`'s tool dict
-mutation directly (`ts.tools[name] = wrapped_tool`), matching the confirmed fact that
-`FunctionToolset.tools` is a plain public `dict[str, Tool[Any]]` (`toolsets/function.py:50`).
+already completed, to register the multimodal `AnalyzeAttachmentsTool` on an **already-built**
+`Agent`. The verified post-construction path (confirmed against `pydantic-ai==2.13.0`) is
+`FunctionToolset.add_tool(tool)`: reach the agent's own `FunctionToolset` via the public
+`agent.toolsets` property (AK never uses the `toolsets=` constructor parameter, so exactly one
+`FunctionToolset` is present), then call `add_tool()`. The `w.name not in function_toolset.tools`
+guard is safe because `FunctionToolset.tools` is a plain public `dict[str, Tool[Any]]`
+(`toolsets/function.py:50`), and skips re-registering a tool of the same name (matching the
+CI-tested behaviour in `test_pydanticai_runner.py`'s multimodal-wiring test).
 
 **`get_a2a_card()` — confirmed safe enumeration.**
 ```python
@@ -506,10 +524,11 @@ because of a real Pydantic AI API difference discovered during this spec's resea
 stylistic choice:
 
 1. **`get_description()`** reads `agent.description` (a dedicated, publicly-readable property), not
-   `agent.instructions` (write-only decorator method) — see `PydanticAIAgent` wrapper above.
-   Consequence: unlike the OpenAI adapter, where `instructions` is effectively mandatory,
-   `description` is optional and commonly unset — wrapped agents without explicit `description=`
-   report an empty string. Document prominently in the docs page and example.
+   `agent.instructions` (write-only decorator method), with a guarded best-effort fallback to the
+   private `_instructions` string parts when `description` is unset — see `PydanticAIAgent` wrapper
+   above. Consequence: unlike the OpenAI adapter, where `instructions` is effectively mandatory,
+   `description` is optional and commonly unset — wrapped agents that set neither `description=` nor
+   `instructions=` report an empty string. Document prominently in the docs page and example.
 2. **`override_system_prompt()`** appends via the public `agent.instructions(func)` decorator
    registration, not string `+=` — Pydantic AI's instructions have no public read path at all, so
    the "read, check, concatenate" pattern (`openai.py:255-262`) has no equivalent.
@@ -522,9 +541,9 @@ stylistic choice:
    every sibling OpenLLMetry runner calls no per-framework instrumentor, relying entirely on
    Traceloop's bundled auto-instrumentors. Pydantic AI is the only one of the six frameworks where
    that bundle's coverage is unconfirmed, so this adapter doesn't assume it.
-6. **`attach_tool()`'s exact call is unconfirmed** (flagged above, not guessed) — the only item in
-   this list that is a genuine research gap rather than a verified, deliberate difference; resolve
-   during implementation before merging.
+6. **`attach_tool()` registers on the agent's `FunctionToolset` via `add_tool()`** — the
+   post-construction path verified against `pydantic-ai==2.13.0` (see `PydanticAIAgent` wrapper
+   above), reaching the toolset through the public `agent.toolsets` property.
 
 **Non-changes**, for reviewer confidence:
 - All five existing adapters (`framework/{openai,crewai,langgraph,adk,smolagents}/`), their tests,
@@ -573,6 +592,12 @@ verbatim would silently test nothing.
 - Structured-output cases (parity with `TestOpenAIRunnerStructuredOutput`): `BaseModel`-typed
   `.output` → `AgentReplyAny` with `.content` matching `model_dump()`; `dict`-typed `.output` →
   `AgentReplyAny`.
+- Streaming cases (no sibling analog — every adapter except OpenAI stubs `stream()`): drive the real
+  `TestModel` streaming path through a wrapped `PydanticAIAgent` and assert `stream()` yields
+  non-empty `str` deltas that reassemble into the model output and that the streamed run persists
+  message history into the framework session (so a follow-up turn resumes); plus a no-valid-content
+  case that yields nothing and leaves the session untouched. The e2e harness can't drive SSE, so
+  this generator-level unit test is the coverage for the adapter's headline differentiator.
 - New case, no analog in any sibling adapter test (per design.md "Tests"): `PydanticAISession`
   round-trips through `BinarySerde` (`core/session/serde.py`) — build a non-trivial jsonable
   message-history list via `to_jsonable_python()` on real `ModelRequest`/`ModelResponse` instances,
@@ -584,8 +609,8 @@ verbatim would silently test nothing.
   `override_system_prompt()` is invoked with the system-tool prompt suffix (assert by spying on
   `agent.instructions`, since it has no public read-back to check the registered text against
   directly — see `PydanticAIAgent` wrapper above), and `attach_tool()` registers
-  `AnalyzeAttachmentsTool` (assert against whichever post-construction mechanism is confirmed once
-  the `attach_tool()` gap above is resolved). This guards against exactly the failure mode design.md
+  `AnalyzeAttachmentsTool` (assert it appears in the agent's `FunctionToolset.tools` — the confirmed
+  `add_tool()` registration path above). This guards against exactly the failure mode design.md
   names: if either wiring point silently breaks, multimodal support disappears without raising, so
   this test must fail loudly instead of passing vacuously.
 

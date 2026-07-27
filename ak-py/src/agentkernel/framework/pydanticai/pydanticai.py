@@ -229,10 +229,11 @@ class PydanticAIAgent(BaseAgent):
         """
         if self.agent.description:
             return self.agent.description
-        # Pydantic AI has no public getter for instructions; read the private ``_instructions``
-        # list and keep the static string parts (callable contributors can't be evaluated here).
-        instructions = getattr(self.agent, "_instructions", None) or []
-        return " ".join(i for i in instructions if isinstance(i, str))
+        try:
+            instructions = getattr(self.agent, "_instructions", None) or []
+            return " ".join(i for i in instructions if isinstance(i, str))
+        except Exception:
+            return ""
 
     def override_system_prompt(self, prompt: str) -> None:
         """

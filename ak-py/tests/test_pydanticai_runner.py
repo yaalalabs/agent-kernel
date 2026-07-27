@@ -183,6 +183,50 @@ class TestPydanticAIRunnerStructuredOutput:
         assert reply.content == {"name": "Launch", "date": "2026-07-08"}
 
 
+class TestPydanticAIRunnerStreaming:
+    """
+    Cover PydanticAIRunner.stream() — the adapter's headline differentiator (every sibling except
+    OpenAI stubs stream() with NotImplementedError), and previously the only capability shipped with
+    no automated test. The e2e harness can't drive SSE, but a generator-level unit test can: it
+    asserts deltas are yielded and that session history is persisted from the streamed result,
+    mirroring the run() tests. Uses the real TestModel streaming path rather than mocks.
+    """
+
+    @pytest.mark.asyncio
+    async def test_stream_yields_deltas_and_persists_history(self):
+        runner = PydanticAIRunner()
+        session = Session("stream-session")
+        native = Agent(model=TestModel(custom_output_text="hello world from stream"), name="s")
+        agent = PydanticAIAgent("s", runner, native)
+
+        deltas = [delta async for delta in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        # Real token deltas were produced and reassemble into the model output.
+        assert deltas
+        assert all(isinstance(d, str) and d for d in deltas)
+        assert "".join(deltas) == "hello world from stream"
+
+        # The streamed run persisted its message history into the framework session (jsonable form),
+        # so a follow-up turn resumes the conversation just like the run() path.
+        fw_session = session.get(FRAMEWORK)
+        assert isinstance(fw_session, PydanticAISession)
+        assert fw_session.messages
+        assert ModelMessagesTypeAdapter.validate_python(fw_session.messages)
+
+    @pytest.mark.asyncio
+    async def test_stream_no_valid_content_yields_nothing(self):
+        """A request list with no usable content short-circuits before invoking the agent."""
+        runner = PydanticAIRunner()
+        session = Session("stream-session")
+        native = Agent(model=TestModel(custom_output_text="unused"), name="s")
+        agent = PydanticAIAgent("s", runner, native)
+
+        deltas = [delta async for delta in runner.stream(agent, session, [])]
+
+        assert deltas == []
+        assert session.get(FRAMEWORK) is None
+
+
 class TestPydanticAISessionSerialization:
     """
     Serialization round-trip that has no analog in the sibling adapters: their session state is
