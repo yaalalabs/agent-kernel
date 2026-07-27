@@ -506,7 +506,7 @@ module "serverless_api_auth" {
 | `module_name` | Request handler module name | `string` | `"request-handler"` | no |
 | `package_path` | Request handler deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Request handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
-| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function |
+| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function | `object({ bucket = string, key = string, version_id = optional(string) })` | `null` | no |
 | `ecr_image_uri` | Pre-built ECR image URI. Used when `package_type = "Image"`. Mutually exclusive with `package_path` | `string` | `null` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
