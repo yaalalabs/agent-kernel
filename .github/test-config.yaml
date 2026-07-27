@@ -21,6 +21,8 @@ e2e:
     - type: cli
       path: examples/cli/multi
     - type: cli
+      path: examples/cli/logfire
+    - type: cli
       path: examples/cli/knowledgebase/openai/chromadb
     - type: cli
       path: examples/cli/guardrail/openai

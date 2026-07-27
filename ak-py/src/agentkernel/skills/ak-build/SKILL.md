@@ -438,7 +438,7 @@ curl -X POST http://localhost:8000/run \
 Now that you've added new tools and agents to your project, here are natural next steps:
 
 - **Add more tools & agents** → Use this `ak-build` skill again (it's meant to be used repeatedly)
-- **Add guardrails, tracing, or sessions** → Use the `ak-add-capabilities` skill to add input/output guardrails (OpenAI, Bedrock, Walled AI), observability tracing (Langfuse, OpenLLMetry), session persistence (Redis, DynamoDB, Cosmos DB), MCP server, A2A protocol, custom hooks, or multimodal support
+- **Add guardrails, tracing, or sessions** → Use the `ak-add-capabilities` skill to add input/output guardrails (OpenAI, Bedrock, Walled AI), observability tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB), MCP server, A2A protocol, custom hooks, or multimodal support
 - **Connect a messaging platform** → Use the `ak-add-integration` skill to add Slack, WhatsApp, Messenger, Instagram, Telegram, or Gmail
 - **Deploy to cloud** → Use the `ak-cloud-deploy` skill to deploy to AWS Lambda, AWS ECS/Fargate, Azure Functions, or Azure Container Apps with Terraform
 - **Set up testing** → Use the `ak-test` skill to configure test modes (fuzzy, judge, fallback), write agent tests, and debug common issues

@@ -449,7 +449,7 @@ Without `LOGFIRE_TOKEN`, Logfire runs locally and does **not** ship traces (Agen
 
 ### Framework Coverage
 
-Logfire configures the global OpenTelemetry tracer provider, and each agent run is wrapped in a Logfire span carrying the `session_id`. Deep (LLM/tool-level) instrumentation depends on the framework:
+Logfire configures the global OpenTelemetry tracer provider, and each non-streaming agent run (`execution.mode: invoke`) is wrapped in a Logfire span carrying the `session_id`. Streaming runs (`execution.mode: stream`) are not wrapped in a session span — matching the Langfuse and OpenLLMetry runners — though deep instrumentation still emits LLM/tool spans where it is active. Deep (LLM/tool-level) instrumentation depends on the framework:
 
 | Framework | Depth under Logfire |
 |-----------|---------------------|

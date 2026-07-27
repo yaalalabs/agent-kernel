@@ -2,8 +2,8 @@
 name: ak-dev-new-tracing-provider
 description: >
   Step-by-step guide for adding a new observability/tracing provider to Agent Kernel.
-  Use this skill when you need to integrate a new tracing backend (beyond Langfuse
-  and OpenLLMetry/Traceloop). Covers implementing the BaseTrace interface, creating
+  Use this skill when you need to integrate a new tracing backend (beyond Langfuse,
+  OpenLLMetry/Traceloop, and Pydantic Logfire). Covers implementing the BaseTrace interface, creating
   framework-specific traced runners, configuration, and testing.
 license: Apache-2.0
 metadata:
@@ -187,7 +187,7 @@ a dotted path to a `BaseTrace` subclass (bring-your-own). When tracing is disabl
 `None`:
 
 ```python
-_BUILTIN_TRACERS = ["langfuse", "openllmetry"]
+_BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire"]
 
 class Trace(BaseTrace):
     @classmethod
@@ -208,6 +208,10 @@ class Trace(BaseTrace):
             with require_extra("openllmetry", "trace.type: openllmetry"):
                 from .openllmetry.openllmetry import OpenLLMetry
             return OpenLLMetry()
+        if trace_type == "logfire":
+            with require_extra("logfire", "trace.type: logfire"):
+                from .logfire.logfire import Logfire
+            return Logfire()
         if trace_type == "<provider>":                                    # ADD THIS
             with require_extra("<provider>", "trace.type: <provider>"):
                 from .<provider>.<provider> import <Provider>
@@ -226,7 +230,7 @@ addressable by a short name.
 ### 7. Add Configuration
 
 The existing `_TraceConfig.type` in `config.py` is a free-form string (no regex pattern) described
-as "a built-in short name (langfuse, openllmetry) or a dotted path to a BaseTrace subclass" — do
+as "a built-in short name (langfuse, openllmetry, logfire) or a dotted path to a BaseTrace subclass" — do
 not add a `pattern=` constraint, since that would break the bring-your-own path. Your provider
 needs to respond to `type: "<provider>"`:
 

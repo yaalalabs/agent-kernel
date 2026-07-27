@@ -56,9 +56,13 @@ and testable.
 - **Files / surfaces:**
   - `docs/docs/advanced/traceability.md` — add a Logfire section (install, config, `LOGFIRE_TOKEN`,
     what gets traced, coverage table, troubleshooting) and list Logfire under "Supported Platforms".
-  - `.claude/skills/ak-dev-new-tracing-provider/` and `.agents/skills/` copy — the "Adding a New
-    Tracing Provider" guide lists `_BUILTIN_TRACERS = ["langfuse", "openllmetry"]`; update to include
-    `logfire` so the example matches the shipped list. Verify no other skill hardcodes the tracer list.
+  - `.agents/skills/ak-dev-new-tracing-provider/SKILL.md` (the only in-repo copy) — the "Adding a New
+    Tracing Provider" guide listed `_BUILTIN_TRACERS = ["langfuse", "openllmetry"]`; updated to include
+    `logfire` (factory branch + config description) so the example matches the shipped list. Verified no
+    other skill hardcodes the tracer list.
+  - Bundled user skills (`ak-add-capabilities`, `ak-init`, `ak-build`) and the other doc surfaces that
+    listed only two providers (root `README.md`, `ak-py/README.md`, `configuration.md`, `overview.md`,
+    `agent-skills.md`) — updated to include Logfire.
   - Confirm the `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` flows before merge.
 - **Verify:** docs build; grep `_BUILTIN_TRACERS`/`openllmetry` across `docs/` and skills to confirm no
   stale two-provider lists remain (excluding versioned_docs snapshots, which are frozen).

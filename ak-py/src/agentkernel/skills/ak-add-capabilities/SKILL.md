@@ -32,7 +32,7 @@ Check for an existing Agent Kernel project with `pyproject.toml` and agent defin
 Which capability would you like to add?
 
 1. **Guardrails** — Content safety filters for input and/or output
-2. **Tracing** — Observability and monitoring (Langfuse or OpenLLMetry)
+2. **Tracing** — Observability and monitoring (Langfuse, OpenLLMetry, or Pydantic Logfire)
 3. **Session Persistence** — Durable conversation state (Redis, DynamoDB, Cosmos DB, Firestore)
 4. **Knowledge Base** — Durable cross-session knowledge tools (ChromaDB, Neo4j, Starburst, or custom backend)
 5. **MCP Server** — Expose agents as Model Context Protocol tools
@@ -165,7 +165,7 @@ export WALLED_API_KEY="your-walledai-api-key"
 
 #### Tracing (Observability)
 
-**Ask:** Which tracing backend — Langfuse or OpenLLMetry (Traceloop)?
+**Ask:** Which tracing backend — Langfuse, OpenLLMetry (Traceloop), or Pydantic Logfire?
 
 **For Langfuse:**
 
@@ -209,6 +209,29 @@ trace:
 ```
 
 3. Set environment variables per the Traceloop documentation.
+
+**For Pydantic Logfire:**
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,logfire]>=0.6.1",
+]
+```
+
+2. Update `config.yaml`:
+```yaml
+trace:
+  enabled: true
+  type: logfire
+```
+
+3. Set the write token (optional — without it, Logfire runs locally and does not ship traces):
+```bash
+export LOGFIRE_TOKEN="your-write-token"
+```
+
+4. No code changes needed — tracing is automatically applied to all agent executions.
 
 ---
 

@@ -136,6 +136,10 @@ flowchart TD
 
 ## Non-goals
 
+- Wrapping streaming runs (`execution.mode: stream`) in the session span. The traced runners override
+  `run()` only, so under stream mode `Runtime.stream()` calls the inherited `stream()` and there is no
+  "Agent Kernel <Framework>" span or `session_id` attribute (deep instrumentation still emits LLM/tool
+  spans where active). This matches the Langfuse and OpenLLMetry runners — no code change is expected.
 - Deep LangGraph and Smolagents instrumentation under Logfire (span-level only for now).
 - Changing the disabled path, the BYO dotted-path path, or the `BaseTrace` interface.
 - Changing the default `trace.type` (stays `langfuse`).

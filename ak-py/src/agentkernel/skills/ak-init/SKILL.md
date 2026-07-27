@@ -118,7 +118,7 @@ target-version = ["py312"]
 - Smolagents framework extra: `smolagents`
 - With messaging: add `slack`, `whatsapp`, etc.
 - With session store: add `redis`, `aws` (for DynamoDB), `azure` (for Cosmos DB)
-- With tracing: add `langfuse` or `openllmetry`
+- With tracing: add `langfuse`, `openllmetry`, or `logfire`
 
 #### Agent definition file
 
@@ -306,7 +306,7 @@ session:
 # Tracing (optional)
 # trace:
 #   enabled: true
-#   type: langfuse     # langfuse | openllmetry
+#   type: langfuse     # langfuse | openllmetry | logfire
 
 # Testing
 test:
