@@ -134,3 +134,5 @@ Two consequences of reading the state back wholesale:
 ## Example
 
 See [examples/cli/adk](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/adk) for complete examples.
+
+For per-run context/state carried across turns, see [examples/cli/adk_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/adk_context) (a cart kept in `framework_context`, written through `tool_context.state`, with a tool-added key demonstrating ADK's full read-back).

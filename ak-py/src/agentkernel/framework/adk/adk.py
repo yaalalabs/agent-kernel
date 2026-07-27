@@ -218,15 +218,13 @@ class GoogleADKRunner(BaseRunner):
         response_text = ""
 
         if hasattr(runner, "run_async"):
-            events = runner.run_async(user_id=user_id, session_id=session_id, new_message=new_message)
-            try:
-                async for event in events:
-                    if event.is_final_response() and event.content and event.content.parts:
-                        text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
-                        response_text = " ".join(text_parts) if text_parts else ""
-                        break
-            finally:
-                await events.aclose()
+            # Drain the stream instead of breaking on the first final response. Stopping early makes
+            # ADK cancel its still-running root agent task ("Root node <name> was cancelled."), and the
+            # last final response is the right one when sub-agents are involved. Matches `stream()`.
+            async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=new_message):
+                if event.is_final_response() and event.content and event.content.parts:
+                    text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
+                    response_text = " ".join(text_parts) if text_parts else ""
         else:
             for event in runner.run(user_id=user_id, session_id=session_id, new_message=new_message):
                 if event.is_final_response() and event.content and event.content.parts:
@@ -356,9 +354,8 @@ class GoogleADKAgent(AKBaseAgent):
         Appends the given prompt text to the ADK agent's description.
         Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
         """
-        if hasattr(self._agent, "description") and self._agent.description:
-            if prompt not in self._agent.description:
-                self._agent.description += "\n" + prompt
+        if hasattr(self._agent, "description") and self._agent.description and prompt not in self._agent.description:
+            self._agent.description += "\n" + prompt
 
     def attach_tool(self, tool: Any) -> None:
         """
