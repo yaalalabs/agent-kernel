@@ -12,7 +12,7 @@ from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
 
-_logger = logging.getLogger("ak.core.runner")
+_log = logging.getLogger("ak.core.runner")
 
 
 def _not_picklable(value: Any) -> bool:
@@ -322,7 +322,8 @@ class Runner(ABC):
                 f"pickle-serializable so the session can be persisted."
             ) from exc
 
-    def _log_framework_context_stream_failure(self, session: Session | None, error: Exception) -> None:
+    @staticmethod
+    def _log_framework_context_stream_failure(session: Session | None, error: Exception) -> None:
         """
         Logs a streamed-run framework_context write-back failure instead of raising it.
 
@@ -338,7 +339,7 @@ class Runner(ABC):
         :param error: The exception raised while producing or storing the context.
         """
         session_id = session.id if session is not None else "<none>"
-        _logger.error(
+        _log.error(
             f"Session '{session_id}': framework_context write-back was skipped at the end of a "
             f"streamed run; the previously stored context is left intact. Error: {error}",
             exc_info=error,

@@ -7,6 +7,30 @@ from agentkernel.core.config import AKConfig
 from agentkernel.core.logger import AKLogger
 
 
+@pytest.fixture(autouse=True)
+def restore_logging_state():
+    """
+    Snapshots and restores process-wide logging state around every test in this module.
+
+    AKLogger mutates the root and "ak" loggers in place — level, handlers, propagate — and
+    attach_stream_handler installs a StreamHandler writing to real stderr. Without this restore
+    that handler outlives the test and every later test in the session prints its expected logs
+    (including deliberately triggered error paths) to stderr, which reads as a CI failure.
+    """
+    loggers = [logging.getLogger(), logging.getLogger("ak")]
+    snapshot = [(logger, logger.level, logger.handlers.copy(), logger.propagate) for logger in loggers]
+    initialized = AKLogger._initialized
+    try:
+        yield
+    finally:
+        for logger, level, handlers, propagate in snapshot:
+            logger.setLevel(level)
+            logger.handlers.clear()
+            logger.handlers.extend(handlers)
+            logger.propagate = propagate
+        AKLogger._initialized = initialized
+
+
 class TestResolveLevel:
     """Test AKLogger.resolve_level() method."""
 
@@ -150,39 +174,25 @@ class TestSetAKLogLevel:
     def test_set_ak_log_level_sets_logger_level(self):
         """Test that set_ak_log_level sets the ak logger level."""
         logger = logging.getLogger("ak")
-        original_level = logger.level
 
         AKLogger.set_ak_log_level("ERROR")
         assert logger.level == logging.ERROR
 
-        # Restore
-        logger.setLevel(original_level)
-
     def test_set_ak_log_level_sets_propagate_false(self):
         """Test that set_ak_log_level sets propagate to False."""
         logger = logging.getLogger("ak")
-        original_propagate = logger.propagate
 
         AKLogger.set_ak_log_level("INFO")
         assert logger.propagate is False
 
-        # Restore
-        logger.propagate = original_propagate
-
     def test_set_ak_log_level_attaches_handler(self):
         """Test that set_ak_log_level attaches a stream handler."""
         logger = logging.getLogger("ak")
-        original_handlers = logger.handlers.copy()
 
         logger.handlers.clear()
         AKLogger.set_ak_log_level("DEBUG")
         assert len(logger.handlers) == 1
         assert isinstance(logger.handlers[0], logging.StreamHandler)
-
-        # Restore
-        logger.handlers.clear()
-        for handler in original_handlers:
-            logger.addHandler(handler)
 
     def test_set_ak_log_level_sets_handler_level(self):
         """Test that set_ak_log_level sets handler level."""
@@ -192,8 +202,6 @@ class TestSetAKLogLevel:
         AKLogger.set_ak_log_level("WARNING")
         assert logger.handlers[0].level == logging.WARNING
 
-        logger.handlers.clear()
-
 
 class TestSetSystemLogLevel:
     """Test AKLogger.set_system_log_level() method."""
@@ -201,39 +209,25 @@ class TestSetSystemLogLevel:
     def test_set_system_log_level_sets_logger_level(self):
         """Test that set_system_log_level sets the root logger level."""
         logger = logging.getLogger()
-        original_level = logger.level
 
         AKLogger.set_system_log_level("ERROR")
         assert logger.level == logging.ERROR
 
-        # Restore
-        logger.setLevel(original_level)
-
     def test_set_system_log_level_sets_propagate_false(self):
         """Test that set_system_log_level sets propagate to False."""
         logger = logging.getLogger()
-        original_propagate = logger.propagate
 
         AKLogger.set_system_log_level("INFO")
         assert logger.propagate is False
 
-        # Restore
-        logger.propagate = original_propagate
-
     def test_set_system_log_level_attaches_handler(self):
         """Test that set_system_log_level attaches a stream handler."""
         logger = logging.getLogger()
-        original_handlers = logger.handlers.copy()
 
         logger.handlers.clear()
         AKLogger.set_system_log_level("DEBUG")
         assert len(logger.handlers) == 1
         assert isinstance(logger.handlers[0], logging.StreamHandler)
-
-        # Restore
-        logger.handlers.clear()
-        for handler in original_handlers:
-            logger.addHandler(handler)
 
     def test_set_system_log_level_sets_handler_level(self):
         """Test that set_system_log_level sets handler level."""
@@ -243,18 +237,12 @@ class TestSetSystemLogLevel:
         AKLogger.set_system_log_level("WARNING")
         assert logger.handlers[0].level == logging.WARNING
 
-        logger.handlers.clear()
-
 
 class TestConfigureFromConfig:
     """Test AKLogger.configure_from_config() method."""
 
     def setup_method(self):
-        """Reset initialization state before each test."""
-        AKLogger._initialized = False
-
-    def teardown_method(self):
-        """Reset initialization state after each test."""
+        """Reset initialization state before each test (restore_logging_state handles teardown)."""
         AKLogger._initialized = False
 
     @patch.object(AKConfig, "get")
@@ -285,15 +273,10 @@ class TestConfigureFromConfig:
         mock_config_get.return_value = mock_config
 
         logger = logging.getLogger("ak")
-        original_level = logger.level
         logger.handlers.clear()
 
         AKLogger.configure_from_config()
         assert logger.level == logging.ERROR
-
-        # Restore
-        logger.setLevel(original_level)
-        logger.handlers.clear()
 
     @patch.object(AKConfig, "get")
     def test_configure_from_config_honors_system_level(self, mock_config_get):
@@ -304,15 +287,10 @@ class TestConfigureFromConfig:
         mock_config_get.return_value = mock_config
 
         logger = logging.getLogger()
-        original_level = logger.level
         logger.handlers.clear()
 
         AKLogger.configure_from_config()
         assert logger.level == logging.DEBUG
-
-        # Restore
-        logger.setLevel(original_level)
-        logger.handlers.clear()
 
     @patch.object(AKConfig, "get")
     def test_configure_from_config_both_levels(self, mock_config_get):
@@ -325,20 +303,12 @@ class TestConfigureFromConfig:
         ak_logger = logging.getLogger("ak")
         root_logger = logging.getLogger()
 
-        ak_original = ak_logger.level
-        root_original = root_logger.level
         ak_logger.handlers.clear()
         root_logger.handlers.clear()
 
         AKLogger.configure_from_config()
         assert ak_logger.level == logging.WARNING
         assert root_logger.level == logging.ERROR
-
-        # Restore
-        ak_logger.setLevel(ak_original)
-        root_logger.setLevel(root_original)
-        ak_logger.handlers.clear()
-        root_logger.handlers.clear()
 
     @patch.object(AKConfig, "get")
     def test_configure_from_config_none_levels(self, mock_config_get):
@@ -390,7 +360,6 @@ class TestGlobalLoggingSideEffects:
 
         root_original_level = root_logger.level
         root_original_handlers = root_logger.handlers.copy()
-        ak_original_level = ak_logger.level
         ak_logger.handlers.clear()
 
         # Configure AK logger
@@ -400,16 +369,11 @@ class TestGlobalLoggingSideEffects:
         assert root_logger.level == root_original_level
         assert len(root_logger.handlers) == len(root_original_handlers)
 
-        # Restore
-        ak_logger.setLevel(ak_original_level)
-        ak_logger.handlers.clear()
-
     def test_root_logger_does_not_clobber_ak_logger(self):
         """Test that configuring root logger doesn't affect AK logger."""
         root_logger = logging.getLogger()
         ak_logger = logging.getLogger("ak")
 
-        root_original_level = root_logger.level
         root_logger.handlers.clear()
         ak_original_level = ak_logger.level
         ak_original_handlers = ak_logger.handlers.copy()
@@ -420,10 +384,6 @@ class TestGlobalLoggingSideEffects:
         # AK logger should be unchanged
         assert ak_logger.level == ak_original_level
         assert len(ak_logger.handlers) == len(ak_original_handlers)
-
-        # Restore
-        root_logger.setLevel(root_original_level)
-        root_logger.handlers.clear()
 
     def test_multiple_configure_calls_safe(self):
         """Test that multiple configure calls are safe after reset."""
@@ -446,5 +406,3 @@ class TestGlobalLoggingSideEffects:
 
             # Should have called config.get() twice
             assert mock_config_get.call_count == 2
-
-        AKLogger._initialized = False
