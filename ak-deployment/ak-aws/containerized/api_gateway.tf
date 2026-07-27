@@ -50,6 +50,7 @@ resource "aws_cloudwatch_log_group" "http_api" {
   count             = var.enable_api_gateway_logs ? 1 : 0
   name              = "/aws/apigateway/${var.product_alias}-${var.env_alias}-http-api"
   retention_in_days = 90
+  tags              = var.tags
 }
 
 resource "aws_apigatewayv2_stage" "stage" {
@@ -70,14 +71,15 @@ resource "aws_apigatewayv2_stage" "stage" {
     content {
       destination_arn = aws_cloudwatch_log_group.http_api[0].arn
       format = jsonencode({
-        requestId      = "$context.requestId",
-        sourceIp       = "$context.identity.sourceIp",
-        requestTime    = "$context.requestTime",
-        protocol       = "$context.protocol",
-        httpMethod     = "$context.httpMethod",
-        routeKey       = "$context.routeKey",
-        status         = "$context.status",
-        responseLength = "$context.responseLength"
+        requestId               = "$context.requestId",
+        sourceIp                = "$context.identity.sourceIp",
+        requestTime             = "$context.requestTime",
+        protocol                = "$context.protocol",
+        httpMethod              = "$context.httpMethod",
+        routeKey                = "$context.routeKey",
+        status                  = "$context.status",
+        responseLength          = "$context.responseLength",
+        integrationErrorMessage = "$context.integrationErrorMessage"
       })
     }
   }
