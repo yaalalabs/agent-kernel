@@ -27,6 +27,16 @@ queue-mode entrypoint.
   no way to pass a configured `Authoriser` — exactly the interim state the #348 design said to close
   (`docs/specs/348-conversation-thread-support/design.md:81`).
 
+## Scope
+
+- This change covers thread-store provisioning + env wiring across **all three clouds — AWS, GCP,
+  and Azure** — plus the Authoriser work on AWS serverless and ECS. Issue #527 originally scoped
+  GCP/Azure provisioning as a follow-up ticket; that scope was **intentionally expanded during design
+  review** to land all three together (they share one env-var contract and mirror the existing
+  session-store wiring). Issue #527 is being updated to match this expanded scope.
+- Authoriser/route-authorization plumbing remains AWS-only (see Non-goals); the GCP/Azure work here
+  is store provisioning + env wiring only.
+
 ## Architecture overview
 
 ```mermaid
@@ -34,7 +44,7 @@ flowchart TB
     Client([Client])
 
     subgraph sls["AWS serverless (Lambda)"]
-        APIGW["API Gateway<br/>gateway_endpoints:<br/>api/v1/threads<br/>api/v1/threads/{session_id}"]
+        APIGW["API Gateway<br/>gateway_endpoints:<br/>threads<br/>threads/{session_id}"]
         AuthL["APIGatewayAuthorizer Lambda<br/>(user-supplied AuthValidator)"]
         AppL["RESTLambdaRouter<br/>thread routes (new)<br/>user id from authorizer context"]
         APIGW -.->|"authorize"| AuthL
@@ -74,12 +84,14 @@ flowchart TB
 
 ### Core — Valkey thread store
 
-- Add `valkey` to `_ThreadStoreConfig.type`'s pattern (`ak-py/src/agentkernel/core/config.py:248`)
-  plus a `_ThreadValkeyConfig` sub-config (URL + ttl + prefix, mirroring `_ThreadRedisConfig`,
-  `config.py:214-216`).
-- Add a `ValkeyThreadStore` and its `ThreadStoreBuilder` mapping with the lazy-import +
-  `agentkernel[valkey]` extra guard, mirroring how `SessionStoreBuilder` builds `ValkeySessionStore`
-  (`ak-py/src/agentkernel/core/builder.py:140-146`). Valkey is Redis-protocol-compatible; the store
+- Add `valkey` to the built-in backend set: the `_ThreadStoreConfig.type` field description
+  (a description-only field post-#541, no regex pattern —
+  `ak-py/src/agentkernel/core/config.py:254-257`) and `_BUILTIN_THREAD_STORES`
+  (`core/thread/store/base.py:13`), plus a `_ThreadValkeyConfig` sub-config (URL + ttl + prefix,
+  mirroring `_ThreadRedisConfig`, `config.py:220-223`).
+- Add a `ValkeyThreadStore` and its `require_extra`-guarded `ThreadStoreBuilder` branch with the
+  `agentkernel[valkey]` extra hint, mirroring how `SessionStoreBuilder` builds `ValkeySessionStore`
+  (`ak-py/src/agentkernel/core/builder.py:108-112`). Valkey is Redis-protocol-compatible; the store
   should reuse the Redis thread store's logic with a valkey client, as the session stores do.
 - Backend selection for thread is **always** via `thread.type` / `AK_THREAD__TYPE` — Redis/Valkey
   thread storage is chosen by setting `AK_THREAD__TYPE=redis|valkey` (plus the URL), not by any new
@@ -88,9 +100,9 @@ flowchart TB
 ### Env-var contract (all clouds)
 
 - `AKConfig.thread` is `Optional[...] = None` with no `default_factory`
-  (`ak-py/src/agentkernel/core/config.py:393-396`), so the presence of any `AK_THREAD__*` env var
-  turns the feature on — but `thread.type` then defaults to `"memory"` (`config.py:248`) and
-  `ThreadStoreBuilder.build()` reads it directly (`ak-py/src/agentkernel/core/thread/store/base.py:171`).
+  (`ak-py/src/agentkernel/core/config.py:580`), so the presence of any `AK_THREAD__*` env var
+  turns the feature on — but `thread.type` then defaults to `"memory"` (`config.py:254-257`) and
+  `ThreadStoreBuilder.build()` reads it directly (`ak-py/src/agentkernel/core/thread/store/base.py:149-153`).
 - Therefore every Terraform wiring below must inject `AK_THREAD__TYPE=<backend>` **together with** the
   backend's connection vars. Unlike session — where the committed `config.yaml` declares the type
   (e.g. `session: {type: dynamodb}` in `examples/memory/dynamodb/config.yaml`) and Terraform injects
@@ -138,12 +150,13 @@ flowchart TB
   `event["requestContext"]["authorizer"]` (principal/claims injected by the gateway authorizer) and
   apply the same scoping as `ThreadRESTRequestHandler._resolve_user` — list scoped to that user,
   403 on ownership mismatch for the detail route.
-- Exposure is via the existing `gateway_endpoints` variable: the deployer adds
-  `api/v1/threads` and `api/v1/threads/{session_id}` to `gateway_endpoints` (the api-gateway module
-  already supports the segment depth, and API Gateway treats a literal `{session_id}` `path_part` as
-  a path parameter — `ak-deployment/ak-aws/serverless/modules/api-gateway/main.tf:1-34`). No
-  auto-append logic or new gating flag in `state.tf`; the deployed example and docs show the exact
-  endpoint entries.
+- Exposure is via the existing `gateway_endpoints` variable. `gateway_endpoints` paths are
+  **relative** to `/{api_base_path}/{api_version}` (the module prepends `api`/`v1`), so the deployer
+  adds `threads` and `threads/{session_id}` — **not** `api/v1/threads` (which would deploy
+  `/api/v1/api/v1/threads`). `threads/{session_id}` is 2 segments, within the module's 3-segment
+  limit (`ak-deployment/ak-aws/serverless/modules/api-gateway/main.tf:1-16`), and API Gateway treats
+  the literal `{session_id}` `path_part` as a path parameter. No auto-append logic or new gating flag
+  in `state.tf`; the deployed example and docs show the exact endpoint entries.
 - Routes registered via `gateway_endpoints` are protected by the deployment's configured `authorizer`
   variable (`serverless/variables.tf`), the same as any other endpoint.
 
@@ -169,6 +182,21 @@ flowchart TB
 - Non-queue-mode ECS (direct `RESTAPI.run(handlers=[...])`, e.g.
   `examples/aws-containerized/openai-dynamodb/app.py`) needs no change — the caller already controls
   the handlers list, same as `examples/api/thread-openai/app.py`.
+
+### AWS containerized (ECS) — route exposure
+
+- Thread routes are exposed the same way as serverless: through the containerized HTTP API's
+  `gateway_endpoints` variable (`ak-deployment/ak-aws/containerized/variables.tf:51-70`). By default
+  only the chat endpoints exist (`containerized/state.tf`), so the deployer adds the thread entries.
+- The containerized entry shape is `{path, method, overwrite_path}` (`overwrite_path` is **required**,
+  unlike the serverless `{path, method}` shape). Paths are relative to `/{api_base_path}/{api_version}`;
+  the HTTP API imposes no segment-depth limit, so `{session_id}` works as an HTTP API path variable.
+  The detail route's `overwrite_path` must reference that variable so the id is forwarded to the ALB
+  backend:
+  - `{ path = "threads",              method = "GET", overwrite_path = "/api/v1/threads" }`
+  - `{ path = "threads/{session_id}", method = "GET", overwrite_path = "/api/v1/threads/${request.path.session_id}" }`
+- These entries are protected by the deployment's configured `authorizer`, and the mounted
+  `ThreadRESTRequestHandler` applies the same principal scoping as serverless.
 
 ### GCP Terraform — Firestore thread wiring
 

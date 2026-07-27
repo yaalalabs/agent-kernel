@@ -45,30 +45,30 @@ Governing rules:
    explicit `url`/`prefix`/`ttl` to `ValkeyDriver`, same as the Redis store and every other driver
    consumer (per `ak-dev-architecture` shared-driver rule 1).
 3. **`valkey` stays an optional extra.** The concrete module `import`s `ValkeyDriver`, which imports
-   `valkey` at module top (`core/util/driver/valkey.py:3`); the builder guards that import with
-   `try/except ImportError` and the install hint (see below).
+   `valkey` at module top (`core/util/driver/valkey.py:3`); the builder guards that import with the
+   `require_extra("valkey", ...)` context manager that raises the hinted `ImportError` (see below).
 
-Builder wiring in `ThreadStoreBuilder` (`core/thread/store/base.py:128-192`):
+Builder wiring in `ThreadStoreBuilder` (`core/thread/store/base.py:139-186`). Post-#541 the builder
+is a lowercase-key `if` chain with a `require_extra(...)` guard around each built-in import, a
+`_BUILTIN_THREAD_STORES` list (`base.py:13`) named in the unknown-type `AKConfigError`, and a
+`resolve_dotted` bring-your-own branch — there is no `Types` StrEnum:
 
-- Add `VALKEY = "VALKEY"` to the `Types` StrEnum (`base.py:136-146`), between `REDIS` and `DYNAMODB`.
-- Add a `VALKEY` branch to `build()` (`base.py:173-192`) mirroring `SessionStoreBuilder`'s guarded
-  Valkey path (`core/builder.py:138-146`):
+- Add `"valkey"` to `_BUILTIN_THREAD_STORES` (`base.py:13`), between `"redis"` and `"dynamodb"`.
+- Add a `valkey` branch to `build()` mirroring `SessionStoreBuilder`'s guarded Valkey path
+  (`core/builder.py:108-112`); `require_extra` raises `ImportError` with the pip-extra hint
+  (`core/util/factory.py:50-64`):
 
   ```python
-  elif store_type == ThreadStoreBuilder.Types.VALKEY:
-      try:
+  if key == "valkey":
+      with require_extra("valkey", "thread.type: valkey"):
           from .valkey import ValkeyThreadStore
-      except ImportError as e:
-          raise ImportError(
-              "The 'valkey' package is required for thread.type: valkey. "
-              "Install it with: pip install agentkernel[valkey]"
-          ) from e
+
       return ValkeyThreadStore()
   ```
 
 Config in `core/config.py`:
 
-- Add `_ThreadValkeyConfig(_ValkeyConfig)` next to `_ThreadRedisConfig` (`config.py:214-216`),
+- Add `_ThreadValkeyConfig(_ValkeyConfig)` next to `_ThreadRedisConfig` (`config.py:220-223`),
   overriding `ttl` default to `2592000` (30 days, matching the Redis thread default) and `prefix`
   default to `"ak:thread:"`:
 
@@ -77,13 +77,11 @@ Config in `core/config.py`:
       ttl: int = Field(default=2592000, description="Thread TTL in seconds (0 disables)")
       prefix: str = Field(default="ak:thread:", description="Key prefix for Valkey thread storage")
   ```
-- Add `valkey: Optional[_ThreadValkeyConfig] = None` to `_ThreadStoreConfig` (`config.py:245-253`)
-  and extend its `type` pattern to `^(memory|redis|valkey|dynamodb|cosmosdb|firestore)$`
-  (`config.py:248`) — this only **adds** the `valkey` backend option, aligning the thread store's
-  backend set with `_SessionStoreConfig.type` (`config.py:80`). Note the two configs keep their
-  existing default-token naming: `_ThreadStoreConfig.type` uses `memory` while
-  `_SessionStoreConfig.type` uses `in_memory`; this change does **not** rename `memory` to
-  `in_memory`.
+- Add `valkey: Optional[_ThreadValkeyConfig] = None` to `_ThreadStoreConfig` (`config.py:251-262`).
+  Post-#541 `_ThreadStoreConfig.type` is a **description-only** field (no regex `pattern`,
+  `config.py:254-257`); adding a backend means adding `"valkey"` to the built-in short-name list in
+  the `type` field's `description` (and to `_BUILTIN_THREAD_STORES`), not editing a pattern. This
+  aligns the thread store's built-in set with `SessionStoreBuilder`, which already has `valkey`.
 
 ### Serverless (Lambda): thread REST routes
 
@@ -97,13 +95,26 @@ New `ThreadEndpointsHandler` in
 `ak-py/src/agentkernel/deployment/aws/serverless/core/router/thread_endpoints.py`, mirroring
 `DefaultEndpointsHandler` (`rest_lambda.py:14-74`):
 
+The resource templates must honour the deployer-configurable base path/version, not hardcode
+`api`/`v1` — both `event["resource"]` and the deployed routes are
+`/{api_base_path}/{api_version}/threads[...]`, and those segments default to `api`/`v1` but are
+overridable (`serverless/variables.tf:179-207`). The Lambda already receives `API_BASE_PATH` /
+`API_VERSION` env vars (`modules/request-handler/main.tf`), and `_get_base_paths_from_env`
+(`core/router/common.py:47-60`) reads them; build the templates from that (falling back to
+`api`/`v1`), otherwise thread routes on a custom-base-path/version stack fail the resource match and
+hit the no-route `ValueError` (a 500):
+
 ```python
 class ThreadEndpointsHandler:
     """Native Lambda handlers for the thread read routes, keyed by API Gateway
     resource template so the {session_id} path parameter needs no path parsing."""
 
-    LIST_RESOURCE = "/api/v1/threads"
-    DETAIL_RESOURCE = "/api/v1/threads/{session_id}"
+    def __init__(self):
+        # honour deployer-configurable base path / version; default to api / v1
+        base, version = self._get_base_paths_from_env()
+        prefix = f"/{base or 'api'}/{version or 'v1'}"
+        self.LIST_RESOURCE = f"{prefix}/threads"
+        self.DETAIL_RESOURCE = f"{prefix}/threads/{{session_id}}"
 
     def get_routes(self) -> Dict[str, Dict[str, Callable]]:
         return {
@@ -201,10 +212,12 @@ Mirror the session-memory table wiring end to end.
 - **Module variables**: add `create_dynamodb_thread_table`, `dynamodb_thread_table_arn`,
   `dynamodb_thread_table_name` to `modules/request-handler/variables.tf` and
   `modules/agent-runner/variables.tf`, matching the memory-table variable shape.
-- **Route exposure**: no auto-append logic in `state.tf`. The deployer lists `api/v1/threads` and
-  `api/v1/threads/{session_id}` in the `gateway_endpoints` variable — the api-gateway module already
-  supports the segment depth and treats a literal `{session_id}` `path_part` as a path parameter
-  (`modules/api-gateway/main.tf`). Endpoints in `gateway_endpoints` are covered by the deployment's
+- **Route exposure**: no auto-append logic in `state.tf`. `gateway_endpoints` paths are **relative**
+  to `/{api_base_path}/{api_version}`, so the deployer lists `threads` and `threads/{session_id}` (the
+  serverless entry shape is `{path, method}`) — **not** `api/v1/threads`, which the module would
+  deploy as `/api/v1/api/v1/threads`. `threads/{session_id}` is 2 segments, within the module's
+  3-segment limit (`modules/api-gateway/main.tf:1-16`); the literal `{session_id}` `path_part` is
+  treated as a path parameter. Endpoints in `gateway_endpoints` are covered by the deployment's
   `authorizer` variable. The example (below) ships the exact entries.
 
 ### Containerized (ECS) Terraform: DynamoDB thread table
@@ -254,6 +267,23 @@ def run(cls, authoriser: Optional[Authoriser] = None) -> None:
   who don't need an authoriser; a caller supplying one wraps it: `runner = lambda:
   ECSIOHandler.run(authoriser=MyAuthoriser())`.
 
+### Containerized (ECS): thread route exposure
+
+Mounting the handler (above) only registers the routes inside the service — the containerized HTTP
+API must also expose them, the same mechanism as serverless but a different entry shape. Routes come
+from `gateway_endpoints` (`containerized/variables.tf:51-70`); by default only the chat endpoints
+exist (`containerized/state.tf`), so the deployer adds the thread entries.
+
+- The containerized entry shape is `{path, method, overwrite_path}` — `overwrite_path` is **required**
+  (validated non-empty), unlike the serverless `{path, method}` shape. Paths are relative to
+  `/{api_base_path}/{api_version}`. The HTTP API (v2) imposes no segment-depth limit, and
+  `{session_id}` is a valid HTTP API path variable; the detail route's `overwrite_path` must
+  reference it so the id reaches the ALB backend (a static `overwrite_path` would drop it):
+  - `{ path = "threads",              method = "GET", overwrite_path = "/api/v1/threads" }`
+  - `{ path = "threads/{session_id}", method = "GET", overwrite_path = "/api/v1/threads/${request.path.session_id}" }`
+- As with serverless, `gateway_endpoints` entries are covered by the deployment's `authorizer`
+  variable.
+
 ### GCP Terraform: Firestore thread wiring
 
 Thread reuses the Firestore **database** provisioned by `create_firestore_database`
@@ -286,21 +316,33 @@ provisions exactly one `azurerm_cosmosdb_table` (`common/modules/cosmos/main.tf:
 `var.table_name`, coupled to the account it also creates.
 
 - Add an **optional second table** in the same account rather than re-instantiating the module (which
-  would duplicate the account, private endpoint, DNS zone, and NSG). Two acceptable shapes; pick one
-  in implementation and keep it consistent:
+  would duplicate the account, private endpoint, DNS zone, and NSG). Two acceptable shapes — the pick
+  is an implementation-time decision (see plan.md Iteration 6), but the trade-off differs:
   1. Extend the cosmos module with an optional `thread_table_name` input that adds a second
      `azurerm_cosmosdb_table` (`count` on the name being set) in the existing account, exposed via a
-     new output; or
-  2. A small sibling resource/module that creates only an `azurerm_cosmosdb_table` in the existing
-     `module.cosmos` account.
+     new output. **Note:** the module is a *pinned external registry module*
+     (`source = "yaalalabs/ak-common/azurerm//modules/cosmos", version = "0.6.1"`,
+     `ak-azure/serverless/state.tf:70-72`) — this is a **cross-repo change** that only takes effect
+     after an `ak-common` module release **and** a version bump here (so plan.md Iteration 6 must
+     include that release/bump step); or
+  2. A small sibling `azurerm_cosmosdb_table` declared **in this repo**, attached to the existing
+     `module.cosmos` account (there is precedent for raw `azurerm_*` resources beside modules in
+     `ak-azure/serverless/linux_function.tf`). This ships without an `ak-common` release; because the
+     module does not output the account **name**, the resource obtains it in-repo (derive from the
+     existing `module.cosmos[0].cosmosdb_account_id` output, or reconstruct/`data`-look-up the
+     account name), gated `count = var.create_cosmosdb_cluster ? 1 : 0` with `depends_on =
+     [module.cosmos]`.
 - Gate on a new bool `create_cosmosdb_thread_table` (default `false`), valid only with
   `create_cosmosdb_cluster = true`.
 - Env vars, appended to the existing cosmosdb env block when the flag is true
   (`serverless/linux_function.tf:132-133`, `containerized/container_app.tf:106-108`):
-  `AK_THREAD__TYPE=cosmosdb`, `AK_THREAD__COSMOSDB__TABLE_NAME` (default `akagentthreads`,
-  `config.py:237`), `AK_THREAD__COSMOSDB__CONNECTION_STRING` — the connection string sourced the same
-  way session does (direct local on serverless `linux_function.tf:133`; Key Vault secret reference on
-  containerized `container_app.tf:108,120`).
+  `AK_THREAD__TYPE=cosmosdb`, `AK_THREAD__COSMOSDB__TABLE_NAME`, `AK_THREAD__COSMOSDB__CONNECTION_STRING`.
+  The table name must be sourced from the **provisioned** table's name (the module prefixes table
+  names as `"${product_alias}-${env_alias}-${module_name}-${table_name}"`, `common/modules/cosmos/main.tf:64`),
+  **not** the raw Python default `akagentthreads` (`config.py:237`), or the app would look up a table
+  that does not exist. The connection string is sourced the same way session does (direct local on
+  serverless `linux_function.tf:133`; Key Vault secret reference on containerized
+  `container_app.tf:108,120`).
 
 ### Docs and example
 
@@ -308,11 +350,19 @@ provisions exactly one `azurerm_cosmosdb_table` (`common/modules/cosmos/main.tf:
   (`build.sh`, `config.yaml`, `lambda.py`, `lambda_auth.py`, `lambda_test.py`, `pyproject.toml`,
   `deploy/`, `test-config.yaml`, `README.md`):
   - `config.yaml` declares a `thread:` block (type omitted → Terraform injects `AK_THREAD__TYPE`).
-  - `deploy/` sets `create_dynamodb_thread_table = true` and lists `api/v1/threads` +
-    `api/v1/threads/{session_id}` in `gateway_endpoints`, with the `authorizer` wired to the auth
-    Lambda (per `openai-auth`).
+  - `deploy/` sets `create_dynamodb_thread_table = true` and lists the relative entries `threads` +
+    `threads/{session_id}` in `gateway_endpoints` (serverless `{path, method}` shape), with the
+    `authorizer` wired to the auth Lambda (per `openai-auth`).
+  - **`lambda_auth.py` must set a real per-user `subject`.** `ValidationResult.subject` defaults to
+    `"user"` (`auth/handler.py:13-17`) and `openai-auth`'s validator never sets it (`lambda_auth.py:14-16`);
+    cloned as-is, every authorized caller resolves to principal `"user"`, so list scoping is trivially
+    satisfied and a 403 ownership mismatch can never occur. The example validator must map the token to
+    a real per-user `subject` (e.g. the JWT `email`), and the chat requests' `user_id` must match that
+    subject — otherwise the list route returns nothing for the caller.
   - `lambda_test.py` exercises: chat (creates a thread) → `GET /api/v1/threads` (list) → `GET
-    /api/v1/threads/{session_id}` (history) → an unauthorized call asserts 401/403.
+    /api/v1/threads/{session_id}` (history) → **a `thread_name` rename step** (via the chat request,
+    per issue #527's "exercises chat + thread read + rename" acceptance) → an unauthorized call asserts
+    401/403.
   - Register under `weekly.tests` in `.github/integration-test-config.yaml:56-71` as
     `{type: aws-serverless, path: examples/aws-serverless/thread-openai, deploy_dir: deploy}`.
 - Docs: document the `AK_THREAD__TYPE` + backend-vars pairing prominently (deployment guide), since
@@ -320,16 +370,16 @@ provisions exactly one `azurerm_cosmosdb_table` (`common/modules/cosmos/main.tf:
 
 ### Config changes
 
-- `_ThreadStoreConfig.type` pattern: `^(memory|redis|dynamodb|cosmosdb|firestore)$` →
-  `^(memory|redis|valkey|dynamodb|cosmosdb|firestore)$` (`config.py:248`). Additive — every existing
-  value still validates.
+- `_ThreadStoreConfig.type` is a description-only field post-#541 (no regex `pattern`,
+  `config.py:254-257`); add `"valkey"` to the built-in short-name list in its `description` and to
+  `_BUILTIN_THREAD_STORES` (`base.py:13`). Additive — every existing value still resolves.
 - New `_ThreadValkeyConfig` and `_ThreadStoreConfig.valkey: Optional[...] = None`. Additive; absent in
   existing configs (`None`).
 - **`AK_THREAD__TYPE` is mandatory in Terraform env injection.** `AKConfig.thread` is
-  `Optional[_ThreadStoreConfig] = Field(default=None, ...)` (`config.py:393`) with no
+  `Optional[_ThreadStoreConfig] = Field(default=None, ...)` (`config.py:580`) with no
   `default_factory`, so any `AK_THREAD__*` env var materialises the block, but unset fields fall to
-  their model defaults — `type` to `"memory"` (`config.py:248`), which `ThreadStoreBuilder.build()`
-  reads directly (`base.py:167-171`). Unlike session (where the committed `config.yaml` declares the
+  their model defaults — `type` to `"memory"` (`config.py:254-257`), which `ThreadStoreBuilder.build()`
+  reads directly (`base.py:149-153`). Unlike session (where the committed `config.yaml` declares the
   type and Terraform injects only the connection detail), thread is deployment-toggled with no
   committed `thread:` type to fall back on. Injecting only a table name would silently run threads
   in-memory (lost on every cold start / restart). Hence every cloud's Terraform sets `AK_THREAD__TYPE`
@@ -342,8 +392,9 @@ provisions exactly one `azurerm_cosmosdb_table` (`common/modules/cosmos/main.tf:
 1. **`_ThreadStoreConfig.type` accepts `valkey`.** Intentional — enables the Valkey backend. Existing
    values unaffected.
 2. **`thread.type: valkey` without the `valkey` extra raises `ImportError`** with the install hint,
-   at `build()` time. Intentional — mirrors `SessionStoreBuilder`'s Valkey path
-   (`core/builder.py:141-144`); fail-fast beats an opaque `ModuleNotFoundError`.
+   at `build()` time via `require_extra` (`core/util/factory.py:50-64`). Intentional — mirrors
+   `SessionStoreBuilder`'s Valkey path (`core/builder.py:108-112`); fail-fast beats an opaque
+   `ModuleNotFoundError`.
 3. **`thread.type: valkey` with no `thread.valkey` block raises `ValueError`.** Intentional — mirrors
    `RedisThreadStore`'s missing-config guard (`redis.py:33-34`) and `ValkeySessionStore`'s
    (`valkey.py:24-25`).
@@ -419,9 +470,11 @@ Changed test files:
   `ConversationThreadManager.reset()` if any new thread-enabling test shares the module.
 - **`tests/test_config.py`** — add an assertion that `thread.type: "valkey"` validates and that
   `_ThreadValkeyConfig` carries the `2592000` ttl / `ak:thread:` prefix defaults.
-- **`tests/test_thread_store.py`** — extend the builder-dispatch coverage with the `VALKEY` branch
+- **`tests/test_store_builders.py`** — extend the builder-dispatch coverage with the `valkey` branch
   (that `ThreadStoreBuilder.build()` returns a `ValkeyThreadStore` when the extra is present, and
-  raises the hinted `ImportError` when the import is forced to fail).
+  `require_extra` raises the hinted `ImportError` when the import is forced to fail). Post-#541 this
+  is the only test file exercising `ThreadStoreBuilder` dispatch; store-behaviour tests stay in
+  `tests/test_thread_store_valkey.py`.
 
 Terraform changes are validated by the `examples/aws-serverless/thread-openai` weekly integration test
 (deploy → chat → list → history → unauthorized), not by pytest.

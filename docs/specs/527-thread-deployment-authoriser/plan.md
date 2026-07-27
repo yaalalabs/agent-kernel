@@ -14,14 +14,16 @@ pytest — they are exercised end to end by the weekly integration example.
 
 - **Goal:** `thread.type: valkey` builds a working `ValkeyThreadStore`; the `valkey` extra stays
   optional.
-- **Files:** `ak-py/src/agentkernel/core/config.py` (add `_ThreadValkeyConfig`, `valkey` field, extend
-  `type` pattern); `ak-py/src/agentkernel/core/thread/store/valkey.py` (new); refactor the shared
-  Redis/Valkey body per spec §"Core: Valkey thread store" rule 1; `ak-py/src/agentkernel/core/thread/store/base.py` (`Types.VALKEY` + guarded `build()` branch);
-  tests `tests/test_thread_store_valkey.py` (new), plus `tests/test_thread_store.py` and
-  `tests/test_config.py` (valkey assertions).
+- **Files:** `ak-py/src/agentkernel/core/config.py` (add `_ThreadValkeyConfig`, `valkey` field, add
+  `valkey` to the `type` field description); `ak-py/src/agentkernel/core/thread/store/valkey.py`
+  (new); refactor the shared Redis/Valkey body per spec §"Core: Valkey thread store" rule 1;
+  `ak-py/src/agentkernel/core/thread/store/base.py` (`"valkey"` in `_BUILTIN_THREAD_STORES` +
+  `require_extra`-guarded `build()` branch); tests `tests/test_thread_store_valkey.py` (new, store
+  behaviour) and `tests/test_store_builders.py` (valkey builder-dispatch), plus `tests/test_config.py`
+  (valkey assertions).
 - **Steps:** 1) config changes; 2) factor `_RedisLikeThreadStore` base and derive both stores;
-  3) builder enum + branch with `ImportError` hint; 4) tests.
-- **Verify:** `cd ak-py && uv run pytest tests/test_thread_store_valkey.py tests/test_thread_store.py tests/test_config.py`.
+  3) `_BUILTIN_THREAD_STORES` entry + `require_extra`-guarded branch; 4) tests.
+- **Verify:** `cd ak-py && uv run pytest tests/test_thread_store_valkey.py tests/test_store_builders.py tests/test_config.py`.
 
 ## Iteration 2: ECS Authoriser mounting
 
@@ -62,13 +64,16 @@ pytest — they are exercised end to end by the weekly integration example.
 - **Verify:** `terraform init && terraform validate` in the module; full plan runs in Iteration 7's
   example.
 
-## Iteration 5: AWS containerized Terraform — DynamoDB thread table
+## Iteration 5: AWS containerized Terraform — DynamoDB thread table + route exposure
 
-- **Goal:** Same table/env/IAM on the ECS stack (rest-service + agent-runner task roles).
+- **Goal:** Same table/env/IAM on the ECS stack (rest-service + agent-runner task roles), and thread
+  routes exposed through the containerized HTTP API `gateway_endpoints`.
 - **Files:** `ak-deployment/ak-aws/containerized/variables.tf`, `state.tf`;
   `modules/rest-service/{main,variables}.tf`; `modules/agent-runner/{main,variables}.tf` (spec
-  §"Containerized (ECS) Terraform: DynamoDB thread table").
-- **Steps:** mirror Iteration 4 against the ECS modules.
+  §"Containerized (ECS) Terraform: DynamoDB thread table" and §"Containerized (ECS): thread route
+  exposure").
+- **Steps:** mirror Iteration 4 against the ECS modules; document the `{path, method, overwrite_path}`
+  thread entries (detail route forwards `${request.path.session_id}`).
 - **Verify:** `terraform validate` in the module.
 
 ## Iteration 6: GCP Firestore + Azure Cosmos Terraform
@@ -79,7 +84,9 @@ pytest — they are exercised end to end by the weekly integration example.
   `AK_THREAD__FIRESTORE__*` env — spec §"GCP Terraform"); Azure `ak-azure/serverless` +
   `ak-azure/containerized` (`create_cosmosdb_thread_table`, second `azurerm_cosmosdb_table` in the
   existing `module.cosmos` account, `AK_THREAD__COSMOSDB__*` env — spec §"Azure Terraform"; resolve
-  the module-vs-sibling-resource choice noted there before starting).
+  the module-vs-sibling-resource choice noted there before starting — **if the module-extend shape is
+  chosen, this iteration must also include an `ak-common` cosmos module release + `version` bump**,
+  since that module is pinned external).
 - **Steps:** 1) GCP flag + env block; 2) Azure flag + thread table resource/output + env block.
 - **Verify:** `terraform validate` for each of the four dirs.
 
@@ -90,8 +97,9 @@ pytest — they are exercised end to end by the weekly integration example.
 - **Files:** `examples/aws-serverless/thread-openai/**` (structured like `openai-auth`);
   `.github/integration-test-config.yaml` (new `weekly.tests` entry).
 - **Steps:** 1) app + auth Lambda + `config.yaml` (`thread:` block, type omitted); 2) `deploy/` with
-  `create_dynamodb_thread_table = true` and the two thread paths in `gateway_endpoints` behind the
-  authorizer; 3) `lambda_test.py` flow; 4) register in the matrix (spec §"Docs and example").
+  `create_dynamodb_thread_table = true` and the relative entries `threads` + `threads/{session_id}`
+  in `gateway_endpoints` behind the authorizer; 3) `lambda_test.py` flow (incl. rename); 4) register
+  in the matrix (spec §"Docs and example").
 - **Verify:** `./build.sh` + the example's `lambda_test.py`; weekly integration workflow.
 
 ## Iteration 8: Tests and lint gate
@@ -99,8 +107,9 @@ pytest — they are exercised end to end by the weekly integration example.
 - **Goal:** Whole suite green and formatted.
 - **Steps:** recap of test surface added/changed in Iterations 1–3 —
   `tests/test_thread_store_valkey.py`, `tests/test_ecs_io_handler.py`,
-  `tests/test_lambda_thread_routes.py` (new); `tests/test_thread_store.py`, `tests/test_config.py`,
-  `tests/test_lambda_router.py` (changed patch targets/guards). Run the full suite and linters.
+  `tests/test_lambda_thread_routes.py` (new); `tests/test_store_builders.py` (valkey dispatch),
+  `tests/test_config.py`, `tests/test_lambda_router.py` (changed patch targets/guards). Run the full
+  suite and linters.
 - **Verify:** `cd ak-py && uv run pytest` and `make lint-check-all`.
 
 ## Iteration 9: Sync docs and skills
