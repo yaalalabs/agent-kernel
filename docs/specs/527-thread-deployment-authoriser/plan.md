@@ -1,5 +1,9 @@
 # #527: Thread store deployment support and Authoriser support for serverless and ECS — Implementation Plan
 
+> **Staged-spec note:** `design.md` for this change has already been reviewed and approved. `spec.md`
+> and `plan.md` were written afterward from that approved design, so all three stages land together in
+> this PR intentionally — the design stage is not still open for review here.
+
 Ordering of the [`spec.md`](./spec.md) build. Each iteration leaves the branch working and testable.
 New unit tests land **with** the code they cover (repo convention: features ship with tests, and each
 iteration stays verifiable); the dedicated Tests iteration is the full-suite + lint gate and the

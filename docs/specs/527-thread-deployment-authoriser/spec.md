@@ -16,7 +16,8 @@ New store `ValkeyThreadStore` in `ak-py/src/agentkernel/core/thread/store/valkey
 twin of `RedisThreadStore` (`core/thread/store/redis.py:25-199`) differing only in which driver and
 config block it reads — exactly how `ValkeySessionStore` (`core/session/valkey.py:10-96`) twins
 `RedisSessionStore`. Redis and Valkey share one command surface via `_RedisLikeDriver`
-(`core/util/driver/valkey.py:8-18`), so the store body (key schema, `SET NX` create, `RPUSH` append,
+(`core/util/driver/redis_like.py:16-298`; `ValkeyDriver` in `core/util/driver/valkey.py:8` simply
+subclasses it), so the store body (key schema, `SET NX` create, `RPUSH` append,
 `LRANGE`/`LLEN` paging, user/group index sets, TTL refresh) is identical.
 
 ```python
@@ -78,7 +79,11 @@ Config in `core/config.py`:
   ```
 - Add `valkey: Optional[_ThreadValkeyConfig] = None` to `_ThreadStoreConfig` (`config.py:245-253`)
   and extend its `type` pattern to `^(memory|redis|valkey|dynamodb|cosmosdb|firestore)$`
-  (`config.py:248`) — matching `_SessionStoreConfig.type` (`config.py:80`).
+  (`config.py:248`) — this only **adds** the `valkey` backend option, aligning the thread store's
+  backend set with `_SessionStoreConfig.type` (`config.py:80`). Note the two configs keep their
+  existing default-token naming: `_ThreadStoreConfig.type` uses `memory` while
+  `_SessionStoreConfig.type` uses `in_memory`; this change does **not** rename `memory` to
+  `in_memory`.
 
 ### Serverless (Lambda): thread REST routes
 
