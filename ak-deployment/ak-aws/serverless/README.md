@@ -698,7 +698,7 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 
 **Multiple Deployment Methods**:
 - **LocalZip**: Deploy from local ZIP file (< 50 MB)
-- **S3Zip**: Deploy from S3 bucket with optional code signing (use a versioned bucket + `version_id` so code updates redeploy )
+- **S3Zip**: Deploy from S3 bucket with optional code signing (use a versioned bucket + `version_id` so code updates redeploy)
 - **Image**: Deploy from ECR container image (up to 10 GB)
 
 **Automatic Runtime Selection**:
