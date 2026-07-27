@@ -4,11 +4,11 @@ import inspect
 import json
 import logging
 import re
-from dataclasses import dataclass
-from typing import Callable, ClassVar, Optional
+from typing import Any, Callable, ClassVar, Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from ......api.handler import RESTRequestHandler
 from ......api.http import RESTAPI
@@ -177,17 +177,22 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
     ``@AWSWebsocketAPI.register`` and must also be declared in Terraform ``ws_routes``.
     """
 
-    @dataclass
-    class WSRouteContext:
-        """Everything a WebSocket route endpoint needs, resolved from one inbound frame.
+    class WSRouteContext(BaseModel):
+        """Everything a WebSocket route resolves from one inbound frame; used internally by the framework.
 
-        :param message: Parsed inbound frame (route, request_id, body).
+        Custom routes never receive this object directly (see ``_wrap_custom_route``) — they get
+        ``model_dump(exclude={"connection_id", "endpoint_url"})`` of it instead, i.e. a plain
+        ``{"message": ..., "user_id": ...}`` dict.
+
+        :param message: The chat route gets the parsed ``BaseRequest`` (route, request_id, body); custom
+            routes get the frame's raw JSON body as a ``dict`` (no schema imposed, so callers can use
+            whatever body shape they want).
         :param user_id: Authenticated user id resolved from the connection.
-        :param connection_id: API Gateway WebSocket connection id.
-        :param endpoint_url: Management API endpoint used to push replies to the client.
+        :param connection_id: API Gateway WebSocket connection id; internal-only (needed for ``broadcast``).
+        :param endpoint_url: Management API endpoint used to push replies to the client; internal-only.
         """
 
-        message: BaseRequest
+        message: Any
         user_id: str
         connection_id: str
         endpoint_url: str
@@ -238,16 +243,20 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
     def _wrap_custom_route(self, func: Callable) -> Callable:
         """Wrap a user route function into a FastAPI endpoint.
 
-        Resolves the ``WSRouteContext``, invokes ``func(ctx)`` (awaiting if awaitable), broadcasts a ``dict``
-        return as ``SYSTEM_RESPONSE`` (``None`` broadcasts nothing), and returns the 200 envelope; a
-        ``WSRouteError`` maps to its status, any other exception logs, broadcasts an error, and returns 500.
+        Resolves the ``WSRouteContext`` and invokes ``func(msg)`` (awaiting if awaitable) with
+        ``msg = ctx.model_dump(exclude={"connection_id", "endpoint_url"})`` — a plain
+        ``{"message": ..., "user_id": ...}`` dict; the function never sees the connection id or push
+        endpoint. A ``dict`` return is broadcast as ``SYSTEM_RESPONSE`` (``None`` broadcasts nothing),
+        and the 200 envelope is returned; a ``WSRouteError`` maps to its status, any other exception
+        logs, broadcasts an error, and returns 500.
         """
 
         async def _endpoint(request: Request) -> JSONResponse:
-            ctx: Optional[ECSWebSocketRequestHandler.WSRouteContext] = None
+            ctx: ECSWebSocketRequestHandler.WSRouteContext | None = None
             try:
                 ctx = await self.build_route_context(request)
-                result = func(ctx)
+                msg = ctx.model_dump(exclude={"connection_id", "endpoint_url"})
+                result = func(msg)
                 if inspect.isawaitable(result):
                     result = await result
                 if result is not None:
@@ -279,10 +288,12 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         except Exception as e:
             self._log.warning(f"Failed to broadcast error to client: {e}")
 
-    async def build_route_context(self, request: Request) -> "ECSWebSocketRequestHandler.WSRouteContext":
+    async def build_route_context(self, request: Request, *, is_chat_request: bool = False) -> "ECSWebSocketRequestHandler.WSRouteContext":
         """Parse the inbound frame and resolve the connection's user and push endpoint.
 
         :param request: The proxied WebSocket frame (FastAPI Request).
+        :param is_chat_request: True for the chat route: ``message`` is parsed into a ``BaseRequest``. False
+            (custom routes) leaves ``message`` as the frame's raw JSON body (``dict``), unparsed.
         :return: A fully-resolved WSRouteContext.
         :raises WSRouteError: If the connection id, user, or push endpoint cannot be resolved.
         """
@@ -292,7 +303,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
         raw_body = await request.body()
         payload = json.loads(raw_body) if raw_body else {}
-        ws_message = BaseRequest.from_payload(payload)
+        message = BaseRequest.from_payload(payload) if is_chat_request else payload
 
         user_id = self.get_websocket_handler().get_user_id(connection_id)
         if not user_id:
@@ -303,7 +314,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
             raise self.WSRouteError(500, "Unable to resolve WebSocket endpoint URL")
 
         return self.WSRouteContext(
-            message=ws_message,
+            message=message,
             user_id=user_id,
             connection_id=connection_id,
             endpoint_url=endpoint_url,
@@ -355,7 +366,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
     async def _handle_chat(self, request: Request) -> JSONResponse:
         """Handle a chat frame: enqueue it (queue mode) or run the agent inline (direct mode)."""
         try:
-            ctx = await self.build_route_context(request)
+            ctx = await self.build_route_context(request, is_chat_request=True)
 
             if ctx.message.body is None:
                 return self._response(400, "body is required", success=False)
@@ -388,9 +399,12 @@ class AWSWebsocketAPI(RESTAPI):
     def register(cls, route: str) -> Callable[[Callable], Callable]:
         """Decorator that registers a custom WebSocket route (bare route name only).
 
-        The function (sync or async) receives the resolved ``WSRouteContext``; a ``dict`` return is broadcast to
-        the client, ``None`` broadcasts nothing. The name is validated at decoration time (see ``_validate_route_name``);
-        re-registering the same route keeps the first. The route must also be declared in Terraform ``ws_routes``.
+        The function (sync or async) receives a ``dict`` with ``message`` (the frame's raw JSON body,
+        unparsed — no ``BaseRequest``/schema imposed, so any custom request shape works) and ``user_id``
+        (the authenticated user id). It does not receive the connection id or push endpoint. A ``dict``
+        return is broadcast to the client, ``None`` broadcasts nothing. The name is validated at
+        decoration time (see ``_validate_route_name``); re-registering the same route keeps the first.
+        The route must also be declared in Terraform ``ws_routes``.
 
         :param route: Bare route name (e.g. ``"status"``), mapped to ``POST /ws/<route>``.
         :return: The decorator; returns the wrapped function unchanged.

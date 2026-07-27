@@ -68,15 +68,16 @@ Receive:
 
 Beyond the built-in `chat` route, `app.py` registers two custom routes with the
 `@AWSWebsocketAPI.register(...)` decorator — route name only (the method is always POST and the
-path is always `/ws/<route>`). The decorated function receives the resolved `WSRouteContext` and
-returns a `dict`, which the framework broadcasts to the client:
+path is always `/ws/<route>`). The decorated function receives a plain `dict` — `{"message": ...,
+"user_id": ...}` — not the connection id or push endpoint, and returns a `dict`, which the framework
+broadcasts to the client:
 
 ```python
 from agentkernel.aws import AWSWebsocketAPI, ECSWebSocketRequestHandler
 
 @AWSWebsocketAPI.register("status")
-async def status(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
-    return {"status": "OK", "user_id": ctx.user_id}
+async def status(ctx: dict) -> dict:
+    return {"status": "OK", "user_id": ctx["user_id"]}
 ```
 
 The routes are also declared in Terraform via `ws_routes` (`deploy/main.tf`), which must agree with
@@ -104,23 +105,25 @@ Receive (pushed back over the connection as a `SYSTEM_RESPONSE`):
 
 ### Reading the request body
 
-`status` ignores the frame's payload. The second custom route, `echo`, reads it — `ctx.message.body`
-is the parsed `BaseRunRequest` (`None` when the frame carries no body), where `prompt` is required
-and every other key sent in `body` is preserved in `body.model_extra`:
+`status` ignores the frame's payload. The second custom route, `echo`, reads it — `ctx["message"]`
+is the frame's raw JSON body, exactly as the client sent it: no `BaseRequest`/`BaseRunRequest` schema
+is imposed on custom routes, so `echo` reads `body["prompt"]` directly and keeps every other key as-is:
 
 ```python
 @AWSWebsocketAPI.register("echo")
-async def echo(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
-    body = ctx.message.body
-    if body is None:
-        raise ECSWebSocketRequestHandler.WSRouteError(400, "body is required")
+async def echo(ctx: dict) -> dict:
+    message = ctx["message"]
+    body = message.get("body") or {}
+    prompt = body.get("prompt")
+    if not prompt:
+        raise ECSWebSocketRequestHandler.WSRouteError(400, "body.prompt is required")
 
     return {
         "status": "OK",
-        "user_id": ctx.user_id,
-        "request_id": ctx.message.request_id,
-        "echo": body.prompt.upper(),
-        "extras": body.model_extra or {},
+        "user_id": ctx["user_id"],
+        "request_id": message.get("request_id"),
+        "echo": prompt.upper(),
+        "extras": {k: v for k, v in body.items() if k != "prompt"},
     }
 ```
 
@@ -143,17 +146,17 @@ Receive:
   "type": "SYSTEM_RESPONSE",
   "status": "OK",
   "user_id": "user-1",
-  "request_id": "<server-generated when omitted>",
+  "request_id": null,
   "echo": "HELLO THERE",
   "extras": { "locale": "en-US" }
 }
 ```
 
-Because the body is validated as a `BaseRunRequest`, a frame that sends a non-empty `body` without
-`prompt` fails validation before the route runs. For a route whose payload doesn't fit that shape,
-send it under a key the model keeps as an extra (e.g. `{"prompt": "", "payload": {...}}`).
+Custom routes impose no schema on the frame's body — unlike `chat`, it is never validated as a
+`BaseRunRequest`. `echo` checks `prompt` itself and raises `WSRouteError` when it's missing; a route
+whose payload doesn't fit a `prompt`/`body` shape at all can read `ctx["message"]` however it likes.
 
-The framework resolves the authenticated user and push endpoint (`WSRouteContext`), broadcasts the
+The framework resolves the authenticated user (`WSRouteContext`, kept internal), broadcasts the
 returned `dict`, builds the HTTP response envelope, and handles errors — a registered route only
 implements its own logic. Return `None` to broadcast nothing. Raise `WSRouteError` for a specific
 HTTP status; any other exception is logged, an error is broadcast to the client, and a 500 is

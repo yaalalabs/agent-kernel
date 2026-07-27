@@ -2,7 +2,7 @@ from typing import Optional
 
 import jwt
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
-from agentkernel.aws import AWSWebsocketAPI, ECSWebSocketRequestHandler
+from agentkernel.aws import AWSWebsocketAPI
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 
@@ -53,28 +53,13 @@ class CustomAuthValidator(AuthValidator):
             return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
 
 @AWSWebsocketAPI.register("status")  # Terraform: ws_routes = [{ route = "status" }]
-async def status(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
-    return {"status": "OK", "user_id": ctx.user_id}
+async def status(ctx: dict) -> dict:
+    return {"status": "OK", "user_id": ctx["user_id"]}
 
 
 @AWSWebsocketAPI.register("echo")  # Terraform: ws_routes = [{ route = "echo" }]
-async def echo(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
-    """Custom route that reads the inbound frame's body instead of ignoring it.
-
-    ``ctx.message.body`` is a ``BaseRunRequest`` (``None`` when the frame carries no body): ``prompt``
-    is required, and any other JSON keys in the frame's body are kept in ``body.model_extra``.
-    """
-    body = ctx.message.body
-    if body is None:
-        raise ECSWebSocketRequestHandler.WSRouteError(400, "body is required")
-
-    return {
-        "status": "OK",
-        "user_id": ctx.user_id,
-        "request_id": ctx.message.request_id,
-        "echo": body.prompt.upper(),
-        "extras": body.model_extra or {},
-    }
+async def echo(ctx: dict) -> dict:
+    return ctx
 
 
 def main():

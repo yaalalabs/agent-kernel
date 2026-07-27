@@ -79,15 +79,16 @@ reply) using the `websockets` library.
 
 Beyond the built-in `chat` route, `app_rest_service.py` registers a custom `status` route with the
 `@AWSWebsocketAPI.register("status")` decorator — route name only (the method is always POST and
-the path is always `/ws/status`). The decorated function receives the resolved `WSRouteContext`
-and returns a `dict`, which the framework broadcasts to the client:
+the path is always `/ws/status`). The decorated function receives a plain `dict` — `{"message": ...,
+"user_id": ...}` — not the connection id or push endpoint, and returns a `dict`, which the framework
+broadcasts to the client:
 
 ```python
 from agentkernel.aws import AWSWebsocketAPI, ECSWebSocketRequestHandler
 
 @AWSWebsocketAPI.register("status")
-async def status(ctx: ECSWebSocketRequestHandler.WSRouteContext) -> dict:
-    return {"status": "OK", "user_id": ctx.user_id}
+async def status(ctx: dict) -> dict:
+    return {"status": "OK", "user_id": ctx["user_id"]}
 ```
 
 The route is also declared in Terraform via `ws_routes` (`deploy/main.tf`), which must agree with
@@ -116,7 +117,7 @@ Receive (pushed back over the connection as a `SYSTEM_RESPONSE`, no queue round 
 }
 ```
 
-The framework resolves the authenticated user and push endpoint (`WSRouteContext`), broadcasts the
+The framework resolves the authenticated user (`WSRouteContext`, kept internal), broadcasts the
 returned `dict`, builds the HTTP response envelope, and handles errors — a registered route only
 implements its own logic. Return `None` to broadcast nothing. Raise `WSRouteError` for a specific
 HTTP status; any other exception is logged, an error is broadcast to the client, and a 500 is

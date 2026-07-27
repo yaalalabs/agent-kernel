@@ -1,11 +1,12 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from agentkernel.api.http import RESTAPI
 from agentkernel.auth.handler import AuthValidator, ValidationResult
+from agentkernel.core.model import BaseRequest
 from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
     AWSWebsocketAPI,
     ECSWebSocketRequestHandler,
@@ -49,7 +50,7 @@ def _make_handler(custom_routes=None):
 
 def _ctx(handler):
     return handler.WSRouteContext(
-        message=SimpleNamespace(body=None, request_id="r1"),
+        message={"request_id": "r1", "foo": "bar"},
         user_id="u1",
         connection_id="c1",
         endpoint_url="https://abc.execute-api.us-east-1.amazonaws.com/prod",
@@ -128,6 +129,48 @@ def test_register_duplicate_warns_and_keeps_first(caplog):
 
 
 # --------------------------------------------------------------------------------------------------
+# build_route_context: is_chat controls how `message` is parsed
+# --------------------------------------------------------------------------------------------------
+
+
+def _fake_request(body: dict):
+    request = MagicMock()
+    request.headers = {ECSWebSocketRequestHandler.CONNECTION_ID_HEADER: "c1"}
+    request.body = AsyncMock(return_value=json.dumps(body).encode())
+    return request
+
+
+@pytest.mark.asyncio
+async def test_build_route_context_chat_parses_base_request():
+    handler = _make_handler()
+    ws_mock = MagicMock()
+    ws_mock.get_user_id.return_value = "u1"
+    handler.get_websocket_handler = lambda: ws_mock
+
+    request = _fake_request({"route": "chat", "request_id": "r1", "body": {"session_id": "s1", "prompt": "hi"}})
+    ctx = await handler.build_route_context(request, is_chat=True)
+
+    assert isinstance(ctx.message, BaseRequest)
+    assert ctx.message.request_id == "r1"
+    assert ctx.message.body.session_id == "s1"
+
+
+@pytest.mark.asyncio
+async def test_build_route_context_custom_route_keeps_raw_dict():
+    handler = _make_handler()
+    ws_mock = MagicMock()
+    ws_mock.get_user_id.return_value = "u1"
+    handler.get_websocket_handler = lambda: ws_mock
+
+    raw_body = {"foo": "bar", "nested": {"baz": 1}}
+    request = _fake_request(raw_body)
+    ctx = await handler.build_route_context(request)
+
+    assert ctx.message == raw_body
+    assert not isinstance(ctx.message, BaseRequest)
+
+
+# --------------------------------------------------------------------------------------------------
 # _wrap_custom_route behavior
 # --------------------------------------------------------------------------------------------------
 
@@ -137,7 +180,7 @@ async def test_wrap_dict_return_broadcasts_and_200():
     handler = _make_handler()
 
     def func(ctx):
-        return {"status": "OK", "user_id": ctx.user_id}
+        return {"status": "OK", "user_id": ctx["user_id"]}
 
     response, broadcast = await _invoke(handler, func)
 
@@ -147,6 +190,22 @@ async def test_wrap_dict_return_broadcasts_and_200():
     assert kwargs["message"] == {"status": "OK", "user_id": "u1"}
     assert kwargs["user_id"] == "u1"
     assert kwargs["message_type"] == AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE
+
+
+@pytest.mark.asyncio
+async def test_wrap_func_receives_message_and_user_id_only():
+    handler = _make_handler()
+    received = {}
+
+    def func(ctx):
+        received.update(ctx)
+        return None
+
+    await _invoke(handler, func)
+
+    assert received == {"message": {"request_id": "r1", "foo": "bar"}, "user_id": "u1"}
+    assert "connection_id" not in received
+    assert "endpoint_url" not in received
 
 
 @pytest.mark.asyncio
