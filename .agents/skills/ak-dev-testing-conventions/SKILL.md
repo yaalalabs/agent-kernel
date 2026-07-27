@@ -54,9 +54,11 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_tool_langgraph.py` | LangGraph ToolBuilder |
 | `test_tool_adk.py` | Google ADK ToolBuilder |
 | `test_tool_smolagents.py` | Smolagents ToolBuilder |
+| `test_tool_pydanticai.py` | Pydantic AI ToolBuilder |
 | `test_openai_runner.py` | OpenAIRunner execution, error handling |
 | `test_crewai_runner.py` | CrewAIRunner execution (mocked Crew kickoff) |
 | `test_smolagents_runner.py` | SmolagentsRunner execution, multimodal requests, error handling |
+| `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
 | `test_chat_service_streaming.py` | ChatService SSE/stream chunk formatting |

@@ -264,7 +264,7 @@ Each Lambda can use one of three `package_type` values:
 | `package_type` | Artifact source                    | Required field(s)                                    | What Terraform does                                                                                                                                                                                       |
 | -------------- | ---------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `LocalZip`     | Local ZIP file or source directory | `package_path`                                       | Uses the Lambda module's local packaging support. No shared source bucket is managed by this module.                                                                                                      |
-| `S3Zip`        | ZIP artifact stored in S3          | **Either** `package_path` **or** `lambda_package_s3` | If `package_path` is provided, this module creates/uses a shared source bucket, uploads the ZIP, and deploys from S3. If `lambda_package_s3` is provided, Terraform uses the existing S3 object directly. |
+| `S3Zip`        | ZIP artifact stored in S3          | **Either** `package_path` **or** `lambda_package_s3` | If `package_path` is provided, this module creates/uses a shared source bucket, uploads the ZIP, and deploys from S3. If `lambda_package_s3` (`{ bucket, key, version_id? }`) is provided, Terraform uses the existing S3 object directly; set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function. |
 | `Image`        | Container image in ECR             | **Either** `ecr_image_uri` **or** `package_path`     | If `ecr_image_uri` is provided, Terraform uses the existing image. If `package_path` is provided, Terraform builds and pushes an image to ECR and deploys it.                                             |
 
 
@@ -354,8 +354,9 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
     handler_path     = "lambda_request_handler.handler"
     package_type     = "S3Zip"
     lambda_package_s3 = {
-      bucket = "my-lambda-packages-bucket"
-      key    = "dist_request_handler.zip"
+      bucket     = "my-lambda-packages-bucket"
+      key        = "dist_request_handler.zip"
+      version_id = "<object-version-id>" # from your versioned bucket → redeploys work (#548)
     }
     timeout     = 45
     memory_size = 256
@@ -379,8 +380,9 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
     handler_path     = "lambda_response_handler.handler"
     package_type     = "S3Zip"
     lambda_package_s3 = {
-      bucket = "my-lambda-packages-bucket"
-      key    = "dist_response_handler.zip"
+      bucket     = "my-lambda-packages-bucket"
+      key        = "dist_response_handler.zip"
+      version_id = "<object-version-id>" # from your versioned bucket → redeploys work (#548)
     }
     timeout     = 45
     memory_size = 256
@@ -388,6 +390,8 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
 ```
 
 See [examples/aws-serverless/scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) for a complete working example of this pattern.
+
+Terraform only replaces a Lambda's code when `s3_bucket`, `s3_key`, `s3_object_version`, or `source_code_hash` changes. If you re-upload to the **same** S3 key in an **unversioned** bucket, none of those change and the function keeps running the old code. To make `S3Zip` redeploys reliable when pointing at your own artifact (`lambda_package_s3`): enable versioning on the bucket holding the ZIPs, then pass the uploaded object's version through `lambda_package_s3.version_id`.
 
 **Queue mode `config.yaml`** (bundled into every Lambda package — `execution.mode`, queue URLs, table names, and `max_receive_count` are all injected automatically by Terraform as environment variables; only set values that are NOT injected):
 

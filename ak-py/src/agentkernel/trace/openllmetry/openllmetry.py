@@ -139,3 +139,11 @@ class OpenLLMetry(BaseTrace):
         from .smolagents import OpenLLMetrySmolagentsRunner
 
         return OpenLLMetrySmolagentsRunner()
+
+    def pydanticai(self) -> Runner:
+        """
+        Returns the OpenLLMetry Pydantic AI runner instance.
+        """
+        from .pydanticai import OpenLLMetryPydanticAIRunner
+
+        return OpenLLMetryPydanticAIRunner()

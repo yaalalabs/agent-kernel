@@ -665,7 +665,7 @@ For production deployments, it is recommended to build and publish Lambda artifa
 | Field               | Applicable package types     | Description                                                                                                                                  |
 | ------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `package_path`      | `LocalZip`, `S3Zip`, `Image` | Path to a local ZIP file, source directory, or Docker build context. Terraform builds/uploads the artifact as needed.                        |
-| `lambda_package_s3` | `S3Zip`                      | Existing ZIP artifact in S3: `{ bucket, key }`. Terraform deploys directly from the specified object.                                        |
+| `lambda_package_s3` | `S3Zip`                      | Existing ZIP artifact in S3: `{ bucket, key, version_id? }`. Terraform deploys directly from the specified object. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys  |
 | `ecr_image_uri`     | `Image`                      | Existing container image URI (for example, `account.dkr.ecr.region.amazonaws.com/repo:tag`). Terraform deploys the specified image directly. |
 
 
@@ -687,8 +687,9 @@ request_handler = {
   handler_path     = "lambda_request_handler.handler"
   package_type     = "S3Zip"
   lambda_package_s3 = {
-    bucket = "my-lambda-packages-bucket"
-    key    = "dist_request_handler.zip"
+    bucket     = "my-lambda-packages-bucket"
+    key        = "dist_request_handler.zip"
+    version_id = "<object-version-id>" # from your versioned bucket → redeploys work (#548)
   }
   timeout     = 45
   memory_size = 256
@@ -712,8 +713,9 @@ response_handler = {
   handler_path     = "lambda_response_handler.handler"
   package_type     = "S3Zip"
   lambda_package_s3 = {
-    bucket = "my-lambda-packages-bucket"
-    key    = "dist_response_handler.zip"
+    bucket     = "my-lambda-packages-bucket"
+    key        = "dist_response_handler.zip"
+    version_id = "<object-version-id>" # from your versioned bucket → redeploys work (#548)
   }
   timeout     = 45
   memory_size = 256
@@ -721,6 +723,15 @@ response_handler = {
 ```
 
 This pattern is recommended for production: build and upload artifacts in CI/CD, then run `terraform apply` without any local build step. See [examples/aws-serverless/scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) for a complete working example.
+
+### Updating S3Zip code on redeploy
+
+Terraform only replaces a Lambda's code when one of `s3_bucket`, `s3_key`, `s3_object_version`, or `source_code_hash` changes. If you upload new code to the **same** S3 key in an **unversioned** bucket, none of those change and the function keeps running the old code.
+
+To make `S3Zip` redeploys reliable when you point the module at your own artifact (`lambda_package_s3`):
+
+1. Enable versioning on the bucket that holds the ZIPs.
+2. Pass the uploaded object's version through `lambda_package_s3.version_id`.
 
 ### API Endpoints
 

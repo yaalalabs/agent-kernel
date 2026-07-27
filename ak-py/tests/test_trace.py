@@ -36,6 +36,9 @@ class _FakeTrace(BaseTrace):
     def smolagents(self):
         return None
 
+    def pydanticai(self):
+        return None
+
 
 def _config(enabled, type_=None):
     cfg = Mock()

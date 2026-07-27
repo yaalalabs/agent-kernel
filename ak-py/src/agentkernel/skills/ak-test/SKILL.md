@@ -250,6 +250,8 @@ pip install "agentkernel[openai]"     # For OpenAI Agents SDK
 pip install "agentkernel[crewai]"     # For CrewAI
 pip install "agentkernel[langgraph]"  # For LangGraph
 pip install "agentkernel[adk]"        # For Google ADK
+pip install "agentkernel[smolagents]" # For Smolagents
+pip install "agentkernel[pydanticai]" # For Pydantic AI (add a provider, e.g. pydantic-ai-slim[openai])
 ```
 
 Or in `pyproject.toml`:

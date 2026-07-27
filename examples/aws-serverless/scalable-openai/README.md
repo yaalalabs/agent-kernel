@@ -39,6 +39,8 @@ Each Lambda uses an external artifact for deployment — no local Docker build o
 
 The `deploy.sh` script handles building and uploading all three artifacts before running `terraform apply`.
 
+> **Bucket versioning is required for redeploys.** The request/response handlers use the external "bring-your-own bucket" option (`lambda_package_s3`). Terraform only redeploys a Lambda when its `s3_object_version` (or bucket/key) changes, and the key here is stable — so the bucket **must have S3 versioning enabled**. `deploy.sh` uploads each ZIP, captures the new object version, and passes it to Terraform (`-var`) automatically, so changed code redeploys the Lambda. On an unversioned bucket there is no version and the old code keeps running. (Deploying without `deploy.sh`? Set `version_id` in `terraform.tfvars` yourself.) See [issue #548](https://github.com/yaalalabs/agent-kernel/issues/548).
+
 ## Execution Mode
 
 This example defaults to `rest_sync` execution mode with queue mode enabled (`queue_mode = true`).
@@ -58,7 +60,7 @@ Both modes keep the scalable multi-Lambda architecture (`request_handler`, `agen
 - Docker installed (for building the agent runner container image)
 - UV package manager installed
 - The openai example must be deployed first to create the shared Redis cluster and VPC resources
-- An S3 bucket for Lambda deployment packages (update `S3_BUCKET` in `deploy/deploy.sh`)
+- A **versioned** S3 bucket for Lambda deployment packages (update `S3_BUCKET` in `deploy/deploy.sh`) — versioning is required so code changes redeploy the Lambdas (see below)
 - An ECR repository for the agent runner image
 
 ## Deployment Steps
@@ -73,17 +75,22 @@ Both modes keep the scalable multi-Lambda architecture (`request_handler`, `agen
     S3_BUCKET=<your-s3-bucket-name>
     ```
 
-3. Update `deploy/terraform.tfvars` with your S3 bucket and ECR repository details:
+3. Update `deploy/terraform.tfvars` with your (versioned) S3 bucket and ECR repository details:
     ```hcl
     request_handler_lambda_package_s3 = {
-      bucket = "<your-s3-bucket>"
+      bucket = "<your-versioned-s3-bucket>"
       key    = "dist_request_handler.zip"
     }
     response_handler_lambda_package_s3 = {
-      bucket = "<your-s3-bucket>"
+      bucket = "<your-versioned-s3-bucket>"
       key    = "dist_response_handler.zip"
     }
     agent_runner_ecr_image_uri = "<account-id>.dkr.ecr.<region>.amazonaws.com/<repo-name>:latest"
+    ```
+
+    The bucket **must have versioning enabled**. `deploy.sh` captures each uploaded object's version and passes it to Terraform as `version_id`, so you don't set it by hand. If you run `terraform apply` yourself (without `deploy.sh`), add `version_id` to each block — get it with:
+    ```bash
+    aws s3api head-object --bucket <your-bucket> --key dist_request_handler.zip --query VersionId --output text
     ```
 
 4. Run the deployment script from the `deploy/` directory:
@@ -94,8 +101,8 @@ Both modes keep the scalable multi-Lambda architecture (`request_handler`, `agen
     The script will:
     - Build and zip the request handler and response handler
     - Build the agent runner container image and push it to ECR
-    - Upload ZIP packages to S3
-    - Run `terraform apply`
+    - Upload the ZIPs to S3 and capture each object's version
+    - Run `terraform apply`, passing the captured `version_id`s so changed code redeploys the Lambdas
 
 ## Testing the Deployment
 
