@@ -70,3 +70,11 @@ class Logfire(BaseTrace):
         from .smolagents import LogfireSmolagentsRunner
 
         return LogfireSmolagentsRunner()
+
+    def pydanticai(self) -> Runner:
+        """
+        Returns the Logfire Pydantic AI runner instance.
+        """
+        from .pydanticai import LogfirePydanticAIRunner
+
+        return LogfirePydanticAIRunner()
