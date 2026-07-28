@@ -854,6 +854,17 @@ def test_tool_descriptions_render_profiles_and_truncation(monkeypatch):
     assert "1234" in guidance
 
 
+def test_tool_guidance_flags_attached_and_no_persistent_shell(monkeypatch):
+    """An ec2_ssm attached profile is annotated in the injected guidance so the agent knows
+    the environment is a pre-existing system with no persistent shell across commands."""
+    profile = _SandboxProfileConfig(type="ec2_ssm", environment="attached", ec2_ssm=_SandboxEC2SSMConfig(attach_to="i-1"))
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"ec2": profile}, default_profile="ec2"))
+    guidance = get_sandbox_tools()[0].description
+    assert "environment attached" in guidance
+    assert "NO persistent shell" in guidance
+    assert "cd /app && ./run.sh" in guidance
+
+
 def test_system_prompt_suffix_carries_sandbox_guidance(monkeypatch):
     """The capability is self-describing: the whole sandbox section lands in the system-prompt
     suffix (rendered coherently — the empty per-tool descriptions leave no blank lines)."""

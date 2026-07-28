@@ -15,6 +15,13 @@ chain; user mode calls ``sts:AssumeRole`` on ``credentials["role_arn"]`` and, wh
 Isolation is ``none``: commands run directly on the shared instance with whatever
 permissions the SSM agent grants. All policy flags are declared False; only the
 framework-side execution timeout applies.
+
+No persistent shell: every ``send_command`` runs as its own independent process on the
+instance, so in-shell state (working directory, exported env vars, ``sudo su``) does not
+carry across separate commands — a ``cd`` in one command is gone by the next. This is
+inherent to SSM Run Command, hence ``stateful=False``; state-dependent steps must be chained
+in a single command (``cd /app && ./run.sh``). The injected agent guidance says so for
+``ec2_ssm`` profiles.
 """
 
 import asyncio
@@ -119,7 +126,7 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
         languages=["python"],
         files=False,
         package_install=False,
-        stateful=False,
+        stateful=False,  # SSM runs each command as its own process — no persistent shell/cwd/env
         attach=True,
         provisions=False,  # attach-only: never creates the environment
         attaches_external=True,  # binds to an instance the framework does not own

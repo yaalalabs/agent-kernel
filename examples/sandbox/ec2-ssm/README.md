@@ -42,10 +42,28 @@ Things to try in the CLI:
 
     Run a command in the sandbox to show the instance's hostname and OS.
     Compute the 30th Fibonacci number by running Python code.
-    Create /tmp/ak-demo/notes.txt containing "hello", then show it in the next turn.  # same instance across turns
+    Create /tmp/ak-demo/notes.txt containing "hello", then show it in the next turn.  # on-disk state persists
 
-Because the workspace IS the instance, state persists across turns (and across sandbox
-sessions — every session binds to the same host).
+Because the workspace IS the instance, **on-disk state** (files you write) persists across
+turns and across sandbox sessions — every session binds to the same host.
+
+### No persistent shell (important)
+
+SSM Run Command executes each command as its own independent process. There is **no shell
+that survives between commands**, so in-shell state does not carry over:
+
+    cd /home/ubuntu        # this command's process exits...
+    pwd                    # ...so this one starts fresh — NOT /home/ubuntu
+    sudo su - ubuntu       # spawns a subshell that exits when the command returns
+
+To run state-dependent steps, chain them in a single command so they share one process:
+
+    cd /home/ubuntu && sudo -u ubuntu ls -la
+
+This is inherent to SSM (not a session bug): the sandbox session and instance binding are
+retained correctly across turns; only the ephemeral shell process is not. The provider
+declares `stateful=False` to say so, and the injected agent guidance tells the agent to
+chain dependent steps.
 
 ## Testing
 
