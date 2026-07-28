@@ -303,6 +303,8 @@ async def http_client():
 - **`integration-test-weekly.yaml`**: Weekly integration tests against deployed environments (cron currently commented out; manual dispatch, with option to keep cloud resources on failure)
 - **`code-quality.yml`**: Runs linting checks (see `code-quality` skill)
 
+Both integration workflows restore the branch-built `agentkernel` wheel from the `ak-py-${{ github.sha }}` cache with `fail-on-cache-miss: true` — the job fails loudly instead of silently falling back to the published PyPI wheel if the build/cache step didn't run first. `.github/scripts/run_single_test.py`'s `test_aws_deployment()` then runs `./build.sh local` in the example directory (force-reinstalling the local wheel with `--no-cache-dir` before packaging/deploying) and invokes the test client with `uv run --no-sync pytest ...` so `uv` doesn't re-sync the venv from `uv.lock` and revert the local wheel back to the PyPI version. When adding a new example to `integration-test-config.yaml`, make sure its `build.sh`/`deploy.sh` `local` branch force-reinstalls `agentkernel` from `../../../ak-py/dist` with `--no-cache-dir`, matching this pattern — otherwise the test can silently exercise a stale published version instead of the branch's code.
+
 ## Best Practices
 
 1. **Use ordered tests** (`@pytest.mark.order(n)`) when testing conversational flows where follow-up questions depend on prior context

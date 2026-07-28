@@ -57,6 +57,12 @@ variable "enable_api_gateway" {
   }
 }
 
+variable "enable_api_gateway_logs" {
+  type        = bool
+  description = "When true, creates the API Gateway CloudWatch account role/log groups and enables access logging for the REST and WebSocket API Gateways. Off by default."
+  default     = false
+}
+
 variable "execution_mode" {
   type        = string
   description = "Execution mode for the deployment. Allowed values: rest_sync, async, stream (always allowed), rest_async (only when queue_mode is true). Use 'stream' for WebSocket streaming where each chunk is sent individually via SQS."

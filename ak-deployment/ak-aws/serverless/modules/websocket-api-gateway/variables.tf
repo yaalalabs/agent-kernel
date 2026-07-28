@@ -82,6 +82,12 @@ variable "connection_handler_lambda_name" {
   description = "Name of the connection handler Lambda function"
 }
 
+variable "enable_api_gateway_logs" {
+  type        = bool
+  description = "Whether to enable access logging and route settings (and create the CloudWatch log group) for the WebSocket API stage"
+  default     = false
+}
+
 variable "enable_data_trace" {
   type        = bool
   description = "Enable data trace logging for WebSocket API"
