@@ -54,6 +54,7 @@ const sidebars = {
         'frameworks/langgraph',
         'frameworks/google-adk',
         'frameworks/smolagents',
+        'frameworks/pydantic-ai',
         'frameworks/multi-framework',
       ],
     },

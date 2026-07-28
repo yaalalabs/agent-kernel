@@ -5,12 +5,18 @@ description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,valkey]>=0.6.1"
+    "agentkernel[openai,valkey]>=0.6.1",
+    # The published agentkernel 0.6.1 does not declare a `valkey` extra (added after release),
+    # so `agentkernel[valkey]` resolves to nothing from PyPI. Require valkey directly so it is
+    # always installed into the Lambda deployment package.
+    "valkey>=6.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "agentkernel[test]>=0.6.1",
+    # ragas imports langchain_community.chat_models.vertexai, removed in langchain-community 0.4.2
+    "langchain-community==0.4.1",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

@@ -27,6 +27,7 @@ Use this skill to add new tools, agents, or handoffs to an existing Agent Kernel
    - `from agentkernel.crewai import CrewAIModule` → **CrewAI**
    - `from agentkernel.adk import GoogleADKModule` → **Google ADK**
    - `from agentkernel.smolagents import SmolagentsModule` → **Smolagents**
+   - `from agentkernel.pydanticai import PydanticAIModule` → **Pydantic AI**
 
 2. **Existing agents** — List every agent already defined (names, roles, instructions).
 
@@ -143,6 +144,14 @@ agent = ToolCallingAgent(
 )
 ```
 
+**Pydantic AI:**
+```python
+from agentkernel.pydanticai import PydanticAIToolBuilder
+
+tools = PydanticAIToolBuilder.bind([lookup_order, existing_tool_1])
+agent = Agent(model="openai:gpt-4o-mini", name="support", description="...", instructions="...", tools=tools)
+```
+
 > **Gotcha:** Always add the new tool to the **existing** `bind()` call for that agent. Don't create a second `bind()`.
 
 ---
@@ -230,6 +239,22 @@ support_agent = ToolCallingAgent(
 )
 ```
 
+**Pydantic AI:**
+```python
+from pydantic_ai import Agent
+from agentkernel.pydanticai import PydanticAIToolBuilder
+
+support_agent = Agent(
+    model="openai:gpt-4o-mini",   # provider-agnostic — swap for "anthropic:...", "google-gla:...", etc.
+    name="support",               # Always pass name= explicitly!
+    description="Specialist for customer support and order inquiries",
+    instructions="You help customers with order lookups, returns, and general support questions.",
+    tools=PydanticAIToolBuilder.bind([lookup_order]),
+)
+```
+
+> **Gotcha (Pydantic AI):** Always pass `name=` (AK registers by name eagerly; Pydantic AI otherwise infers it lazily at first run) **and** `description=` (Pydantic AI's description is optional but is what AK reports as the agent description / A2A summary). The provider key for the model string (e.g. `OPENAI_API_KEY`) must be set at import time — Pydantic AI resolves the provider at construction.
+
 #### 4b. Register with the Module
 
 Add the new agent to the **existing** Module constructor call. Do not create a second Module.
@@ -242,7 +267,7 @@ OpenAIModule([triage_agent, math_agent, general_agent])
 OpenAIModule([triage_agent, math_agent, general_agent, support_agent])
 ```
 
-This applies to all frameworks — `LangGraphModule`, `CrewAIModule`, `GoogleADKModule`, `SmolagentsModule` work the same way.
+This applies to all frameworks — `LangGraphModule`, `CrewAIModule`, `GoogleADKModule`, `SmolagentsModule`, `PydanticAIModule` work the same way.
 
 #### 4c. Structured Output (Optional)
 

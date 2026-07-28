@@ -35,3 +35,9 @@ variable "s3_kms_key_id" {
 variable "is_production" {
   type = bool
 }
+
+variable "enable_versioning" {
+  type        = bool
+  description = "Enable S3 bucket versioning. Enabled by default so Lambda S3Zip package updates (same key, new content) produce a new object version and are redeployed. Production always enables versioning regardless of this value. See https://github.com/yaalalabs/agent-kernel/issues/548"
+  default     = true
+}

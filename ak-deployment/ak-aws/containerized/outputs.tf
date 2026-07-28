@@ -14,6 +14,16 @@ output "api_gateway_stage" {
   value = aws_apigatewayv2_stage.stage.name
 }
 
+output "api_gateway_cloudwatch_log_group_arn" {
+  description = "ARN of the CloudWatch log group for API Gateway (null when access logging is disabled)"
+  value       = var.enable_api_gateway_logs ? aws_cloudwatch_log_group.http_api[0].arn : null
+}
+
+output "api_gateway_cloudwatch_log_group_name" {
+  description = "Name of the CloudWatch log group for API Gateway (null when access logging is disabled)"
+  value       = var.enable_api_gateway_logs ? aws_cloudwatch_log_group.http_api[0].name : null
+}
+
 output "agent_invoke_url" {
   value = "${try(aws_apigatewayv2_stage.stage.invoke_url, format("%s/%s", aws_apigatewayv2_api.http_api.api_endpoint, aws_apigatewayv2_stage.stage.name))}/api/${var.api_version}/${var.agent_endpoint}"
 }

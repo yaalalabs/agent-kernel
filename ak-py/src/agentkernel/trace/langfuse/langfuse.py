@@ -66,3 +66,11 @@ class LangFuse(BaseTrace):
         from .smolagents import LangFuseSmolagentsRunner
 
         return LangFuseSmolagentsRunner(self._client)
+
+    def pydanticai(self) -> Runner:
+        """
+        Returns the Langfuse Pydantic AI runner instance.
+        """
+        from .pydanticai import LangFusePydanticAIRunner
+
+        return LangFusePydanticAIRunner(self._client)

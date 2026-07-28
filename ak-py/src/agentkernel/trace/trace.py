@@ -98,3 +98,11 @@ class Trace(BaseTrace):
         if self._instance is not None:
             return self._instance.smolagents()
         return None
+
+    def pydanticai(self) -> Runner | None:
+        """
+        Returns the Pydantic AI trace runner instance.
+        """
+        if self._instance is not None:
+            return self._instance.pydanticai()
+        return None

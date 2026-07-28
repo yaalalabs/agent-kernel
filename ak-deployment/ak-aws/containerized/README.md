@@ -266,6 +266,30 @@ scaling_config = {
 
 `queue_config.batch_size` is injected into both the REST service and Agent Runner ECS tasks as `AK_EXECUTION__QUEUES__BATCH_SIZE`. It only applies to ECS containerized deployments (never serverless/Lambda, which controls batch size via the Event Source Mapping) and is intentionally controlled only via Terraform — it must never be set in `config.yaml`.
 
+### API Gateway Access Logging
+
+| Variable | Description | Type | Default | Required |
+|---|---|---|---|---|
+| `enable_api_gateway_logs` | Create the CloudWatch log group and enable access logging on the HTTP API stage | `bool` | `false` | no |
+
+```hcl
+enable_api_gateway_logs = true
+```
+
+- Off by default, matching the AWS serverless deployment. When `false`, no `/aws/apigateway/{product_alias}-{env_alias}-http-api` log group is created and the stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
+- When `true`, the log group is created with 90-day retention (tagged with `var.tags`) and requests are logged as JSON (request ID, source IP, request time, protocol, HTTP method, route key, status, response length, integration error message).
+- Unlike the serverless REST API, this is an HTTP API (`aws_apigatewayv2_*`), so access logging does **not** require the account-level `aws_api_gateway_account` CloudWatch role. Enabling it here does not contend with other deployments in the same account/region.
+- **Upgrade note:** deployments created before this toggle existed always had logging on. Applying with the new default (`false`) removes the stage's access log settings and destroys the log group. Set `enable_api_gateway_logs = true` to keep the existing behaviour.
+- **Upgrade note (keeping logging on):** the log group is now gated by `count`, so its state address changed from `aws_cloudwatch_log_group.http_api` to `aws_cloudwatch_log_group.http_api[0]`. Before the first apply with `enable_api_gateway_logs = true`, move it:
+
+  ```bash
+  terraform state mv \
+    'module.<module_name>.aws_cloudwatch_log_group.http_api' \
+    'module.<module_name>.aws_cloudwatch_log_group.http_api[0]'
+  ```
+
+  Skipping this makes Terraform destroy and recreate the log group, discarding any retained logs.
+
 ## Deployment Modes
 
 ### Non-Queue Mode (Default)
@@ -452,6 +476,9 @@ output "input_queue_url"            # Input queue URL (queue mode)
 output "output_queue_url"           # Output queue URL (queue mode)
 output "vpc_id"                     # VPC ID
 output "private_subnet_ids"         # Private subnet IDs
+
+output "api_gateway_cloudwatch_log_group_arn"   # API Gateway log group ARN (null when logging disabled)
+output "api_gateway_cloudwatch_log_group_name"  # API Gateway log group name (null when logging disabled)
 ```
 
 ## Requirements

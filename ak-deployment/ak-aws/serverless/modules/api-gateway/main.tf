@@ -144,13 +144,13 @@ resource "aws_api_gateway_deployment" "deployment" {
   ]
 }
 
-# CloudWatch Log Group for API Gateway
+# CloudWatch Log Group for API Gateway (only when access logging is enabled)
 resource "aws_cloudwatch_log_group" "api_gateway" {
+  count             = var.enable_api_gateway_logs ? 1 : 0
   name              = "/aws/api-gateway/${var.product_alias}-${var.env_alias}-rest-api"
   retention_in_days = 90
   kms_key_id        = var.cloudwatch_kms_key_arn
 }
-
 
 # API Gateway Stage
 resource "aws_api_gateway_stage" "stage" {
@@ -164,23 +164,25 @@ resource "aws_api_gateway_stage" "stage" {
     agent_endpoint = var.agent_endpoint
   }
 
-  access_log_settings {
-    destination_arn = aws_cloudwatch_log_group.api_gateway.arn
-    format = jsonencode({
-      requestId               = "$context.requestId"
-      sourceIp                = "$context.identity.sourceIp"
-      requestTime             = "$context.requestTime"
-      protocol                = "$context.protocol"
-      httpMethod              = "$context.httpMethod"
-      resourcePath            = "$context.resourcePath"
-      routeKey                = "$context.routeKey"
-      status                  = "$context.status"
-      responseLength          = "$context.responseLength"
-      integrationErrorMessage = "$context.integrationErrorMessage"
-    })
+  dynamic "access_log_settings" {
+    for_each = var.enable_api_gateway_logs ? [1] : []
+    content {
+      destination_arn = aws_cloudwatch_log_group.api_gateway[0].arn
+      format = jsonencode({
+        requestId               = "$context.requestId"
+        sourceIp                = "$context.identity.sourceIp"
+        requestTime             = "$context.requestTime"
+        protocol                = "$context.protocol"
+        httpMethod              = "$context.httpMethod"
+        resourcePath            = "$context.resourcePath"
+        routeKey                = "$context.routeKey"
+        status                  = "$context.status"
+        responseLength          = "$context.responseLength"
+        integrationErrorMessage = "$context.integrationErrorMessage"
+      })
+    }
   }
-
-  }
+}
 
 # Gateway Response for Unauthorized
 resource "aws_api_gateway_gateway_response" "unauthorized" {

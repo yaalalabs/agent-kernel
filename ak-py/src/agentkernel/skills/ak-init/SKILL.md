@@ -29,6 +29,7 @@ Ask the user the following questions (adapt based on context):
    - **LangGraph** (complex workflow graphs with state management)
    - **Google ADK** (Google's Agent Development Kit)
    - **Smolagents** (lightweight agent framework with managed-agent routing)
+   - **Pydantic AI** (provider-agnostic — native OpenAI/Anthropic/Google/Bedrock/… support with `FallbackModel` failover)
 
 2. **Agent purpose**: What should your agent(s) do? (e.g., "customer support bot", "code review assistant", "data analysis agent")
 
@@ -116,6 +117,7 @@ target-version = ["py312"]
 - CLI mode: `agentkernel[cli,<framework>]`
 - API mode: `agentkernel[<framework>,api]`
 - Smolagents framework extra: `smolagents`
+- Pydantic AI framework extra: `pydanticai` (installs the provider-agnostic `pydantic-ai-slim` core only — also add a provider, e.g. `pydantic-ai-slim[openai]`)
 - With messaging: add `slack`, `whatsapp`, etc.
 - With session store: add `redis`, `aws` (for DynamoDB), `azure` (for Cosmos DB)
 - With tracing: add `langfuse` or `openllmetry`
@@ -268,6 +270,29 @@ model = LiteLLMModel(model_id="openai/gpt-4o")
 )
 
 SmolagentsModule([<agent_name>])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+**For Pydantic AI framework**:
+
+```python
+from agentkernel.cli import CLI  # or RESTAPI, Lambda
+from agentkernel.pydanticai import PydanticAIModule, PydanticAIToolBuilder
+from pydantic_ai import Agent
+
+# Provider-agnostic: swap the model string for "anthropic:...", "google-gla:...", etc.
+# (install the matching provider extra, e.g. pydantic-ai-slim[anthropic]).
+<agent_name> = Agent(
+    model="openai:gpt-4o-mini",
+    name="<name>",                # required — AK registers agents by name eagerly
+    description="<short description>",  # set it — AK reports this as the agent description / A2A summary
+    instructions="<instructions>",
+    tools=PydanticAIToolBuilder.bind([]),
+)
+
+PydanticAIModule([<agent_name>])
 
 if __name__ == "__main__":
     CLI.main()
