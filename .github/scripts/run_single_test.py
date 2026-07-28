@@ -486,40 +486,68 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         env=test_env
     )
 
-def _resolve_lambda_sg_id(deploy_path: Path, region: str) -> str | None:
-    """Look up the Lambda security group id by its module-convention name."""
+def _resolve_lambda_sg_ids(deploy_path: Path, region: str) -> list[str]:
+    """Look up the example's Lambda security group ids by module-convention name."""
     product_alias = _read_tfvar(deploy_path, 'product_alias')
     env_alias = _read_tfvar(deploy_path, 'env_alias')
     if not (product_alias and env_alias):
-        return None
-    sg_name = f"{product_alias}-{env_alias}-lambda-sg"
+        return []
+    sg_names = [
+        f"{product_alias}-{env_alias}-lambda-sg",
+        f"{product_alias}-{env_alias}-authorizer-lambda-sg",
+    ]
     try:
         result = subprocess.run(
             ['aws', 'ec2', 'describe-security-groups', '--region', region,
-             '--filters', f'Name=group-name,Values={sg_name}',
-             '--query', 'SecurityGroups[0].GroupId', '--output', 'text'],
+             '--filters', f'Name=group-name,Values={",".join(sg_names)}',
+             '--query', 'SecurityGroups[].GroupId', '--output', 'text'],
             check=True, capture_output=True, text=True,
         )
     except (subprocess.CalledProcessError, FileNotFoundError):
-        return None
-    sg_id = result.stdout.strip()
-    return sg_id if sg_id and sg_id != 'None' else None
+        return []
+    return [sg for sg in result.stdout.split() if sg and sg != 'None']
 
 
-def _start_lambda_eni_sweeper(sg_id: str, region: str, stop_event: threading.Event) -> threading.Thread:
-    """Background loop that deletes detached Lambda ENIs on the given SG."""
+def _delete_lambda_functions_on_sgs(sg_ids: list[str], region: str) -> None:
+    """Delete Lambda functions attached to sg_ids up front so AWS starts
+    releasing their Hyperplane ENIs immediately."""
+    wanted = set(sg_ids)
+    try:
+        res = subprocess.run(
+            ['aws', 'lambda', 'list-functions', '--region', region,
+             '--query', 'Functions[].{Name:FunctionName,SGs:VpcConfig.SecurityGroupIds}',
+             '--output', 'json'],
+            check=False, capture_output=True, text=True,
+        )
+        functions = json.loads(res.stdout or '[]')
+    except Exception as e:  # never let cleanup crash the run
+        print(f"   Could not list Lambda functions (ignored): {e}")
+        return
+    for fn in functions:
+        if wanted.intersection(fn.get('SGs') or []):
+            name = fn['Name']
+            print(f"   Pre-deleting Lambda function {name} to start ENI release")
+            subprocess.run(
+                ['aws', 'lambda', 'delete-function', '--region', region,
+                 '--function-name', name],
+                check=False, capture_output=True, text=True,
+            )
+
+
+def _start_lambda_eni_sweeper(sg_ids: list[str], region: str, stop_event: threading.Event) -> threading.Thread:
+    """Background loop that deletes detached Lambda ENIs on the given SGs."""
     def loop():
         while not stop_event.is_set():
             try:
                 res = subprocess.run(
                     ['aws', 'ec2', 'describe-network-interfaces', '--region', region,
-                     '--filters', f'Name=group-id,Values={sg_id}',
+                     '--filters', f'Name=group-id,Values={",".join(sg_ids)}',
                      'Name=status,Values=available',
                      '--query', 'NetworkInterfaces[].NetworkInterfaceId', '--output', 'text'],
                     check=False, capture_output=True, text=True,
                 )
                 for eni in res.stdout.split():
-                    print(f"   Deleting detached Lambda ENI {eni} to free SG {sg_id}")
+                    print(f"   Deleting detached Lambda ENI {eni} to free SGs {sg_ids}")
                     subprocess.run(
                         ['aws', 'ec2', 'delete-network-interface', '--region', region,
                          '--network-interface-id', eni],
@@ -579,11 +607,12 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = N
     sweeper = None
     stop_event = threading.Event()
     if region:
-        sg_id = _resolve_lambda_sg_id(deploy_path, region)
-        if sg_id:
-            print(f"Starting Lambda ENI sweeper for security group {sg_id} "
+        sg_ids = _resolve_lambda_sg_ids(deploy_path, region)
+        if sg_ids:
+            print(f"Starting Lambda ENI sweeper for security groups {sg_ids} "
                   f"(region {region}) to speed up destroy...")
-            sweeper = _start_lambda_eni_sweeper(sg_id, region, stop_event)
+            _delete_lambda_functions_on_sgs(sg_ids, region)
+            sweeper = _start_lambda_eni_sweeper(sg_ids, region, stop_event)
 
     try:
         return run_command(
