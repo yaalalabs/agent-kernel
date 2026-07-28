@@ -27,7 +27,9 @@ class CustomAuthValidator(AuthValidator):
             return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
 
 
-# Custom WebSocket route ("status"), registered with the @AWSWebsocketAPI.register decorator —
+@AWSWebsocketAPI.register("echo")  # Terraform: ws_routes = [{ route = "echo" }]
+async def echo(ctx: dict) -> dict:
+    return ctx
 
 def main():
     ECSIOHandler.run(auth_validator=CustomAuthValidator())
