@@ -2,8 +2,8 @@
 name: ak-dev-new-tracing-provider
 description: >
   Step-by-step guide for adding a new observability/tracing provider to Agent Kernel.
-  Use this skill when you need to integrate a new tracing backend (beyond Langfuse
-  and OpenLLMetry/Traceloop). Covers implementing the BaseTrace interface, creating
+  Use this skill when you need to integrate a new tracing backend (beyond Langfuse,
+  OpenLLMetry/Traceloop, and Pydantic Logfire). Covers implementing the BaseTrace interface, creating
   framework-specific traced runners, configuration, and testing.
 license: Apache-2.0
 metadata:
@@ -36,7 +36,8 @@ ak-py/src/agentkernel/trace/<provider>/
 ├── langgraph.py         # Traced LangGraph runner
 ├── crewai.py            # Traced CrewAI runner
 ├── adk.py               # Traced Google ADK runner
-└── smolagents.py        # Traced Smolagents runner
+├── smolagents.py        # Traced Smolagents runner
+└── pydanticai.py        # Traced Pydantic AI runner
 ```
 
 ### 2. Implement the Main Trace Class
@@ -161,7 +162,7 @@ class <Provider>LangGraphRunner(LangGraphRunner):
             return await super().run(agent, session, requests)
 ```
 
-Follow the same pattern for CrewAI, Google ADK, and Smolagents runners (see `trace/langfuse/smolagents.py` and `trace/openllmetry/smolagents.py` for reference).
+Follow the same pattern for CrewAI, Google ADK, Smolagents, and Pydantic AI runners (see `trace/langfuse/smolagents.py` and `trace/openllmetry/smolagents.py` for reference).
 
 ### 4. Update the `__init__.py`
 
@@ -172,7 +173,7 @@ from .<provider> import <Provider>
 
 ### 5. Update the BaseTrace Interface
 
-Add the new provider as a recognized option. The `BaseTrace` class (`trace/base.py`) already defines the interface — your implementation just needs to conform to it. No changes to `base.py` are needed unless you're adding a new framework. Note that `init()` and all five framework methods (`openai`, `langgraph`, `crewai`, `adk`, `smolagents`) are declared `@abstractmethod` on `BaseTrace`, so every new provider must implement all six — otherwise the class cannot be instantiated.
+Add the new provider as a recognized option. The `BaseTrace` class (`trace/base.py`) already defines the interface — your implementation just needs to conform to it. No changes to `base.py` are needed unless you're adding a new framework. Note that `init()` and all six framework methods (`openai`, `langgraph`, `crewai`, `adk`, `smolagents`, `pydanticai`) are declared `@abstractmethod` on `BaseTrace`, so every new provider must implement all seven — otherwise the class cannot be instantiated.
 
 ### 6. Register with the Trace Factory
 
@@ -187,7 +188,7 @@ a dotted path to a `BaseTrace` subclass (bring-your-own). When tracing is disabl
 `None`:
 
 ```python
-_BUILTIN_TRACERS = ["langfuse", "openllmetry"]
+_BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire"]
 
 class Trace(BaseTrace):
     @classmethod
@@ -208,6 +209,10 @@ class Trace(BaseTrace):
             with require_extra("openllmetry", "trace.type: openllmetry"):
                 from .openllmetry.openllmetry import OpenLLMetry
             return OpenLLMetry()
+        if trace_type == "logfire":
+            with require_extra("logfire", "trace.type: logfire"):
+                from .logfire.logfire import Logfire
+            return Logfire()
         if trace_type == "<provider>":                                    # ADD THIS
             with require_extra("<provider>", "trace.type: <provider>"):
                 from .<provider>.<provider> import <Provider>
@@ -226,7 +231,7 @@ addressable by a short name.
 ### 7. Add Configuration
 
 The existing `_TraceConfig.type` in `config.py` is a free-form string (no regex pattern) described
-as "a built-in short name (langfuse, openllmetry) or a dotted path to a BaseTrace subclass" — do
+as "a built-in short name (langfuse, openllmetry, logfire) or a dotted path to a BaseTrace subclass" — do
 not add a `pattern=` constraint, since that would break the bring-your-own path. Your provider
 needs to respond to `type: "<provider>"`:
 
@@ -286,7 +291,7 @@ This means tracing is **transparent** — users don't change their agent code, t
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/trace/<provider>/` directory with `__init__.py` and main class
-- [ ] Traced runners for each framework (OpenAI, LangGraph, CrewAI, ADK, Smolagents)
+- [ ] Traced runners for each framework (OpenAI, LangGraph, CrewAI, ADK, Smolagents, Pydantic AI)
 - [ ] Registration in `trace/trace.py` factory
 - [ ] Configuration via `type: "<provider>"` in `config.yaml`
 - [ ] Optional dependencies in `pyproject.toml`

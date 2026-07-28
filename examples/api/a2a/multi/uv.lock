@@ -32,7 +32,7 @@ http-server = [
 
 [[package]]
 name = "agentkernel"
-version = "0.6.1"
+version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -41,9 +41,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/67/0d/044bee9dbc421521752cd3cc2a11b57dc302f20c4ee53b035d06bbbc398b/agentkernel-0.6.1.tar.gz", hash = "sha256:6d7f4605576ea7282e39e0e98b9f849ff0c6d3ad41b861709263256e95f07f97", size = 209316, upload-time = "2026-07-08T14:06:45.327Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a4/4d/de669ab63a38c1237f9116d7cee43487a090ede57b398298988d03ba97c2/agentkernel-0.7.0.tar.gz", hash = "sha256:8b50eb3b0bd625b0c2019d66874fe0c43a0c4cbc747ded798f85668bb257d3df", size = 298327, upload-time = "2026-07-28T06:44:49.335Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5c/53/fff602f484bc2ff688f72ee48d9a1c25d612153ae65747614ddf27ca9a77/agentkernel-0.6.1-py3-none-any.whl", hash = "sha256:10e5ab14b18036e716d33c89268658c3c987a9e0c6ac89c14d34497eb9b02da6", size = 293394, upload-time = "2026-07-08T14:06:43.511Z" },
+    { url = "https://files.pythonhosted.org/packages/76/c1/6dee86b227094f5adde17e611988e4a4305f0daf83b868de2a469ef7a152/agentkernel-0.7.0-py3-none-any.whl", hash = "sha256:f6cf96ec5c52bac516a1eb6c3f32516a1ce61a6fda0be8759d3ab39b75611f4f", size = 419333, upload-time = "2026-07-28T06:44:47.72Z" },
 ]
 
 [package.optional-dependencies]
@@ -62,6 +62,7 @@ openai = [
 ]
 test = [
     { name = "datasets" },
+    { name = "langchain-community" },
     { name = "litellm" },
     { name = "pandas" },
     { name = "pytest" },
@@ -265,11 +266,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["cli", "crewai", "openai", "a2a"], specifier = ">=0.6.1" }]
+requires-dist = [{ name = "agentkernel", extras = ["cli", "crewai", "openai", "a2a"], specifier = ">=0.7.0" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.6.1" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.7.0" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },

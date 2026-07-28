@@ -5,7 +5,7 @@ from ..core.config import AKConfig
 from ..core.util.factory import AKConfigError, require_extra, resolve_dotted
 from .base import BaseTrace
 
-_BUILTIN_TRACERS = ["langfuse", "openllmetry"]
+_BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire"]
 
 
 class Trace(BaseTrace):
@@ -48,6 +48,11 @@ class Trace(BaseTrace):
                 from .openllmetry.openllmetry import OpenLLMetry
 
             return OpenLLMetry()
+        if trace_type == "logfire":
+            with require_extra("logfire", "trace.type: logfire"):
+                from .logfire.logfire import Logfire
+
+            return Logfire()
         if "." not in trace_type:
             raise AKConfigError(f"unknown trace type '{trace_type}'; expected one of {_BUILTIN_TRACERS} or a dotted path to a BaseTrace subclass")
         return resolve_dotted(trace_type, base=BaseTrace)()
@@ -97,4 +102,12 @@ class Trace(BaseTrace):
         """
         if self._instance is not None:
             return self._instance.smolagents()
+        return None
+
+    def pydanticai(self) -> Runner | None:
+        """
+        Returns the Pydantic AI trace runner instance.
+        """
+        if self._instance is not None:
+            return self._instance.pydanticai()
         return None

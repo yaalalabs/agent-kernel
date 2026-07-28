@@ -96,7 +96,7 @@ Deploy your agent to AWS, Azure, or GCP. Generates complete Terraform configurat
 
 ### ak-add-capabilities
 
-Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, custom hooks, multimodal support, and conversation thread support (in-memory, Redis, DynamoDB, Firestore, Cosmos DB).
+Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, custom hooks, multimodal support, and conversation thread support (in-memory, Redis, DynamoDB, Firestore, Cosmos DB).
 
 **Example prompts:**
 - *"Add OpenAI guardrails to my agent"*
@@ -124,7 +124,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail): handler class, webhook routes, message parsing, config |
 | `ak-dev-new-knowledgebase-integration` | How to add a new knowledge base backend (beyond ChromaDB, Neo4j, Starburst): implement `KnowledgeBase`, wire dependencies, add tests/docs/examples |
 | `ak-dev-new-guardrail-provider` | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI): input/output guardrails, factory registration, configuration |
-| `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry): `BaseTrace` interface, traced runners, factory wiring |
+| `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry, Logfire): `BaseTrace` interface, traced runners, factory wiring |
 | `ak-dev-new-multimodal-storage` | How to add a new multimodal attachment storage backend (beyond in-memory, Redis, DynamoDB): storage interface, config wiring, tests, and docs |
 | `ak-dev-new-sandbox-provider` | How to add a new sandbox code-execution backend (beyond `local_subprocess`, `docker`): implement the `Sandbox`/`SandboxProvider` ABCs, declare capabilities honestly, factory registration, config block, contract tests |
 | `ak-dev-sync-skills-from-branch` | How to inspect branch commits plus uncommitted changes, then add/update/remove developer and user skills so the skill trees stay aligned with the implemented capability set |

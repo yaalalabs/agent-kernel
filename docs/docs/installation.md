@@ -59,6 +59,15 @@ pip install agentkernel[adk]
 pip install agentkernel[smolagents]
 ```
 
+### Pydantic AI
+
+```bash
+pip install agentkernel[pydanticai]
+```
+
+`agentkernel[pydanticai]` installs the provider-agnostic `pydantic-ai-slim` core only. Also install
+the provider you intend to use, e.g. `pip install "pydantic-ai-slim[openai]"`.
+
 ### Multiple Frameworks
 
 You can install support for multiple frameworks at once:
@@ -137,7 +146,7 @@ pip install agentkernel[cli]
 Install everything (all frameworks and cloud providers):
 
 ```bash
-pip install agentkernel[openai,crewai,langgraph,adk,smolagents,api,aws,azure,gcp,cli]
+pip install agentkernel[openai,crewai,langgraph,adk,smolagents,pydanticai,api,aws,azure,gcp,cli]
 ```
 
 ## Using UV Package Manager

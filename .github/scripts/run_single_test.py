@@ -571,9 +571,25 @@ def test_aws_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     if not wait_for_endpoint(agent_invoke_url):
         return False
 
-    # Test
+    # Install the LOCAL agentkernel wheel into the test client's venv before
+    # running pytest. Without this, `uv run pytest` resolves agentkernel from
+    # PyPI via uv.lock, so the client imports a published wheel that may not
+    # match the local code under test (e.g. a config.yaml session type like
+    # valkey that only exists locally fails validation at import). build.sh
+    # local force-reinstalls from ../../../ak-py/dist (see deploy.sh local),
+    # mirroring how the deployment package itself is built.
+    if not run_command(
+        ['./build.sh', 'local'],
+        cwd=path,
+        description=f"Building {path} with local agentkernel",
+        env=CREWAI_DISABLE_TRACE_ENV
+    ):
+        return False
+
+    # Test. Use --no-sync so uv does not re-sync the venv from uv.lock, which
+    # would revert the local wheel installed above back to the PyPI version.
     return run_command(
-        ['uv', 'run', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
+        ['uv', 'run', '--no-sync', 'pytest', '-s', '--junitxml=pytest-report.xml', '--ignore-glob=dist*', '--ignore-glob=.terraform'],
         cwd=path,
         description=f"Testing {path}",
         env=test_env

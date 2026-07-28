@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "agentkernel"
-version = "0.6.1"
+version = "0.7.0"
 description = "Agent Kernel - Unified AI Agents Runtime"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -31,6 +31,9 @@ langfuse = [
 openllmetry = [
     "traceloop-sdk>=0.61.0",
 ]
+logfire = [
+    "logfire>=3.0",
+]
 crewai = [
     "crewai>=1.15.0",
     "openinference-instrumentation-crewai>=0.1.16",
@@ -44,6 +47,10 @@ langgraph = [
 ]
 smolagents = [
     "smolagents>=1.0.0",
+]
+pydanticai = [
+    "pydantic-ai-slim~=2.13.0",
+    "openinference-instrumentation-pydantic-ai>=0.1.17",
 ]
 cli = [
     

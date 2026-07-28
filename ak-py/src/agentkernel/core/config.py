@@ -266,7 +266,7 @@ class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(
         default="langfuse",
-        description="Tracing backend: a built-in short name (langfuse, openllmetry) or a dotted path to a BaseTrace subclass",
+        description="Tracing backend: a built-in short name (langfuse, openllmetry, logfire) or a dotted path to a BaseTrace subclass",
     )
 
 

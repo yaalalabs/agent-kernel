@@ -514,7 +514,7 @@ export AK_TELEGRAM__API_VERSION=bot  # Bot API version prefix (default: bot)
 ```bash
 # Enable tracing functionality
 export AK_TRACE__ENABLED=true  # default: false
-export AK_TRACE__TYPE=langfuse  # Options: 'langfuse', 'openllmetry' (default: 'langfuse')
+export AK_TRACE__TYPE=langfuse  # Options: 'langfuse', 'openllmetry', 'logfire' (default: 'langfuse')
 
 # Langfuse-specific configuration (required when using Langfuse)
 export LANGFUSE_PUBLIC_KEY=pk-lf-...  # Your Langfuse public key
@@ -760,7 +760,7 @@ telegram:
 # Trace / Observability
 trace:
   enabled: false                # Enable tracing
-  type: "langfuse"              # Trace provider: 'langfuse' or 'openllmetry'
+  type: "langfuse"              # Trace provider: 'langfuse', 'openllmetry', or 'logfire'
 
 # Guardrails configuration
 guardrail:
@@ -967,6 +967,23 @@ Install the openllmetry extra:
 pip install agentkernel[openllmetry]
 ```
 
+**Pydantic Logfire:**
+
+```bash
+# Enable Logfire tracing
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=logfire
+
+# Logfire credentials (optional — without a token, Logfire runs locally and does not ship traces)
+export LOGFIRE_TOKEN=your-write-token
+```
+
+Install the logfire extra:
+
+```bash
+pip install agentkernel[logfire]
+```
+
 ## Validation and Error Handling
 
 Agent Kernel validates all configuration values at startup:
@@ -982,7 +999,7 @@ Example validation errors:
 # These will cause validation errors:
 export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
 export AK_A2A__TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
-export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse' or 'openllmetry'
+export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse', 'openllmetry', or 'logfire'
 export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 'stream', or 'async'
 ```
 

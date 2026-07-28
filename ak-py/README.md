@@ -8,7 +8,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 ## Features
 
 - **Unified API**: Common abstractions (Agent, Runner, Session, Module, Runtime) across frameworks
-- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, and Smolagents
+- **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, and Pydantic AI
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`), workload profiles, policy enforcement, and per-user identity
@@ -689,7 +689,7 @@ Configure tracing and observability for monitoring agent execution.
 
 - **Type**
   - **Field**: `trace.type`
-  - **Options**: `langfuse`, `openllmetry`
+  - **Options**: `langfuse`, `openllmetry`, `logfire`
   - **Default**: `langfuse`
   - **Description**: Type of tracing provider to use
   - **Environment Variable**: `AK_TRACE__TYPE`
@@ -739,6 +739,29 @@ Enable tracing in your configuration:
 trace:
   enabled: true
   type: openllmetry
+```
+
+**Pydantic Logfire Setup:**
+
+To use Logfire for tracing, install the logfire extra:
+
+```bash
+pip install agentkernel[logfire]
+```
+
+Configure the Logfire write token via an environment variable (optional — without a token, Logfire
+runs locally and does not ship traces):
+
+```bash
+export LOGFIRE_TOKEN=your-write-token
+```
+
+Enable tracing in your configuration:
+
+```yaml
+trace:
+  enabled: true
+  type: logfire
 ```
 
 #### Test Configuration
@@ -1098,13 +1121,15 @@ export AK_API__PORT=8000
 export AK_A2A__ENABLED=true
 export AK_MCP__ENABLED=false
 export AK_TRACE__ENABLED=true
-export AK_TRACE__TYPE=langfuse  # or openllmetry
+export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
 # For Langfuse:
 # export LANGFUSE_PUBLIC_KEY=pk-lf-...
 # export LANGFUSE_SECRET_KEY=sk-lf-...
 # export LANGFUSE_HOST=https://cloud.langfuse.com
 # For OpenLLMetry:
 # export TRACELOOP_API_KEY=your-api-key
+# For Logfire:
+# export LOGFIRE_TOKEN=your-write-token
 # Test harness (loaded from the separate test-config.yaml — see Test Configuration)
 export AK_TEST__MODE=fallback  # Options: fuzzy, judge, fallback
 export AK_TEST__JUDGE__MODEL=gpt-4o-mini
@@ -1150,13 +1175,15 @@ AK_API__PORT=8080
 AK_A2A__ENABLED=true
 AK_A2A__URL=http://localhost:8080/a2a
 AK_TRACE__ENABLED=true
-AK_TRACE__TYPE=langfuse  # or openllmetry
+AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
 # Langfuse credentials (if using langfuse):
 # LANGFUSE_PUBLIC_KEY=pk-lf-...
 # LANGFUSE_SECRET_KEY=sk-lf-...
 # LANGFUSE_HOST=https://cloud.langfuse.com
 # OpenLLMetry credentials (if using openllmetry):
 # TRACELOOP_API_KEY=your-api-key
+# Logfire credentials (if using logfire):
+# LOGFIRE_TOKEN=your-write-token
 ```
 
 #### config.yaml
@@ -1410,6 +1437,7 @@ Sessions maintain state across agent interactions. Framework adapters manage the
 - `"langgraph"` — LangGraph session data
 - `"openai"` — OpenAI Agents SDK session data
 - `"adk"` — Google ADK session data
+- `"pydanticai"` — Pydantic AI session data (message history)
 
 Access the session in your runner:
 

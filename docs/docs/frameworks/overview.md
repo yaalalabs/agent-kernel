@@ -15,6 +15,7 @@ graph LR
     A --> D[LangGraph]
     A --> E[Google ADK]
     A --> F[Smolagents]
+    A --> G[Pydantic AI]
     A -.->|coming soon| LK[LiveKit Agents]
     
     style A fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
@@ -30,19 +31,21 @@ graph LR
 | **LangGraph** | Complex workflows | High | Yes |
 | **Google ADK** | Google ecosystem | Low | Yes |
 | **Smolagents** | Lightweight tool-driven agents | Medium | Yes |
+| **Pydantic AI** | Multi-provider apps, provider failover, typed structured output | Low | Yes |
 | **LiveKit Agents** *(coming soon)* | Real-time voice/video agents | Medium | Yes |
 
 ## Capability Matrix
 
 Not every Agent Kernel capability is available on every framework:
 
-| Capability | OpenAI Agents | CrewAI | LangGraph | Google ADK | Smolagents |
-|------------|:---:|:---:|:---:|:---:|:---:|
-| Token streaming (`execution.mode: stream`) | ✅ | ❌ | ✅ | ✅ | ❌ |
-| Structured output (`AgentReplyAny`) | ✅ `output_type` | ✅ module-level `output_pydantic`/`output_json` | ✅ `response_format` | ✅ `output_schema` | ✅ dict/Pydantic `final_answer` |
-| Portable tools (`ToolBuilder`) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Multimodal attachments | ✅ | ✅* | ✅* | ✅ | ✅* |
-| Hooks / guardrails / sessions / deployments | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Capability | OpenAI Agents | CrewAI | LangGraph | Google ADK | Smolagents | Pydantic AI |
+|------------|:---:|:---:|:---:|:---:|:---:|:---:|
+| Token streaming (`execution.mode: stream`) | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ |
+| Structured output (`AgentReplyAny`) | ✅ `output_type` | ✅ module-level `output_pydantic`/`output_json` | ✅ `response_format` | ✅ `output_schema` | ✅ dict/Pydantic `final_answer` | ✅ `output_type` |
+| Portable tools (`ToolBuilder`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Multimodal attachments | ✅ | ✅* | ✅* | ✅ | ✅* | ✅* |
+| Hooks / guardrails / sessions / deployments | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Native multi-provider models | ⚠️ OpenAI-first | via LiteLLM | via LangChain | via LiteLLM | via LiteLLM | ✅ many providers + `FallbackModel` |
 
 \* Multimodal preprocessing (the attachment pre-hook and `analyze_attachments` tool) is framework-agnostic; direct image/file input via the REST API is currently documented for OpenAI Agents SDK and Google ADK. CrewAI and Smolagents raise `NotImplementedError` for streaming; use the default synchronous mode (or `rest_sync` on AWS) with those frameworks.
 
@@ -87,6 +90,14 @@ Not every Agent Kernel capability is available on every framework:
 - Great for fast experimentation and mixed-agent setups
 
 [Learn more →](./smolagents)
+
+### Pydantic AI
+- Native multi-provider models (OpenAI, Anthropic, Google, Bedrock, Groq, Mistral, …)
+- `FallbackModel` for automatic provider failover
+- Typed, self-correcting structured output via `output_type`
+- Delegation-via-tool for multi-agent routing (no `handoffs=` primitive)
+
+[Learn more →](./pydantic-ai)
 
 ### LiveKit Agents *(coming soon)*
 - Real-time audio and video agent framework

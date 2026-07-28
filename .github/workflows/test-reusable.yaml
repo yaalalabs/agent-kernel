@@ -143,6 +143,7 @@ jobs:
         with:
           path: ak-py/dist
           key: ak-py-${{ inputs.checkout_ref }}
+          fail-on-cache-miss: true
 
       - name: Test ak-py
         working-directory: ak-py
@@ -180,6 +181,7 @@ jobs:
         with:
           path: ak-py/dist
           key: ak-py-${{ inputs.checkout_ref }}
+          fail-on-cache-miss: true
 
       - name: Run test - ${{ matrix.path }}
         env:

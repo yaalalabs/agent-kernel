@@ -45,3 +45,10 @@ class BaseTrace(ABC):
         Initialize Smolagents instrumentation
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def pydanticai(self) -> Runner:
+        """
+        Initialize Pydantic AI instrumentation
+        """
+        raise NotImplementedError

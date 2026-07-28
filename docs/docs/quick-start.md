@@ -280,6 +280,56 @@ python my_agent.py
 ```
 
 </TabItem>
+<TabItem value="pydanticai" label="Pydantic AI">
+
+## Pydantic AI Quick Start
+
+### 1. Install
+
+```bash
+pip install agentkernel[pydanticai]
+```
+
+`agentkernel[pydanticai]` installs the provider-agnostic `pydantic-ai-slim` core only. Install the
+provider you intend to use, e.g. `pip install "pydantic-ai-slim[openai]"`.
+
+### 2. Create Your Agent
+
+Create a file called `my_agent.py`:
+
+```python
+from pydantic_ai import Agent
+from agentkernel.cli import CLI
+from agentkernel.pydanticai import PydanticAIModule
+
+# Define your agent
+assistant = Agent(
+    model="openai:gpt-4o-mini",
+    name="assistant",              # required — AK registers agents by name eagerly
+    description="A helpful AI assistant.",
+    instructions="You are a helpful AI assistant. Provide concise and accurate answers.",
+)
+
+# Register with Agent Kernel
+PydanticAIModule([assistant])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+### 3. Set API Key
+
+```bash
+export OPENAI_API_KEY=your-api-key-here
+```
+
+### 4. Run Your Agent
+
+```bash
+python my_agent.py
+```
+
+</TabItem>
 </Tabs>
 
 ## Testing Your Agent
