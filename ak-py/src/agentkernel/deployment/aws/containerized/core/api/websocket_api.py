@@ -6,7 +6,7 @@ import logging
 import re
 from typing import Any, Callable, ClassVar, Optional
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -393,18 +393,6 @@ class AWSWebsocketAPI(RESTAPI):
     """
     _ws_auth_validator: Optional[AuthValidator] = None
     _ws_custom_routes: ClassVar[dict[str, Callable]] = {}
-
-    @classmethod
-    def _create_app(cls, routers, lifespan=None) -> FastAPI:
-        """Build the shared app, then add a 404 handler so unmatched WS routes return a JSON envelope
-        instead of Starlette's default {"detail": "Not Found"}."""
-        app = super()._create_app(routers=routers, lifespan=lifespan)
-
-        @app.exception_handler(404)
-        async def not_found_handler(request: Request, exc: HTTPException) -> JSONResponse:
-            return JSONResponse(status_code=404, content={"status": "FAILED", "message": "Route not found"})
-
-        return app
 
     @classmethod
     def register(cls, route: str) -> Callable[[Callable], Callable]:
