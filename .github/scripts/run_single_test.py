@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -485,6 +486,54 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         env=test_env
     )
 
+def _resolve_lambda_sg_id(deploy_path: Path, region: str) -> str | None:
+    """Look up the Lambda security group id by its module-convention name."""
+    product_alias = _read_tfvar(deploy_path, 'product_alias')
+    env_alias = _read_tfvar(deploy_path, 'env_alias')
+    if not (product_alias and env_alias):
+        return None
+    sg_name = f"{product_alias}-{env_alias}-lambda-sg"
+    try:
+        result = subprocess.run(
+            ['aws', 'ec2', 'describe-security-groups', '--region', region,
+             '--filters', f'Name=group-name,Values={sg_name}',
+             '--query', 'SecurityGroups[0].GroupId', '--output', 'text'],
+            check=True, capture_output=True, text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    sg_id = result.stdout.strip()
+    return sg_id if sg_id and sg_id != 'None' else None
+
+
+def _start_lambda_eni_sweeper(sg_id: str, region: str, stop_event: threading.Event) -> threading.Thread:
+    """Background loop that deletes detached Lambda ENIs on the given SG."""
+    def loop():
+        while not stop_event.is_set():
+            try:
+                res = subprocess.run(
+                    ['aws', 'ec2', 'describe-network-interfaces', '--region', region,
+                     '--filters', f'Name=group-id,Values={sg_id}',
+                     'Name=status,Values=available',
+                     '--query', 'NetworkInterfaces[].NetworkInterfaceId', '--output', 'text'],
+                    check=False, capture_output=True, text=True,
+                )
+                for eni in res.stdout.split():
+                    print(f"   Deleting detached Lambda ENI {eni} to free SG {sg_id}")
+                    subprocess.run(
+                        ['aws', 'ec2', 'delete-network-interface', '--region', region,
+                         '--network-interface-id', eni],
+                        check=False, capture_output=True, text=True,
+                    )
+            except Exception as e:  # never let the sweeper thread crash the run
+                print(f"   Lambda ENI sweep iteration error (ignored): {e}")
+            stop_event.wait(15)
+
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+    return thread
+
+
 def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:
     """Destroy AWS resources."""
     deploy_path = Path(path) / deploy_dir
@@ -525,14 +574,28 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = N
         env=tf_env
     ):
         return False
-    
-    # Destroy (already has -auto-approve flag)
-    return run_command(
-        ['terraform', 'destroy', '-auto-approve'],
-        cwd=str(deploy_path),
-        description=f"Destroying {path}",
-        env=tf_env
-    )
+
+    region = _read_tfvar(deploy_path, 'region') or os.environ.get('AWS_REGION')
+    sweeper = None
+    stop_event = threading.Event()
+    if region:
+        sg_id = _resolve_lambda_sg_id(deploy_path, region)
+        if sg_id:
+            print(f"Starting Lambda ENI sweeper for security group {sg_id} "
+                  f"(region {region}) to speed up destroy...")
+            sweeper = _start_lambda_eni_sweeper(sg_id, region, stop_event)
+
+    try:
+        return run_command(
+            ['terraform', 'destroy', '-auto-approve'],
+            cwd=str(deploy_path),
+            description=f"Destroying {path}",
+            env=tf_env
+        )
+    finally:
+        stop_event.set()
+        if sweeper:
+            sweeper.join(timeout=20)
 
 
 def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:
