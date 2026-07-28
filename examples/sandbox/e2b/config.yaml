@@ -1,0 +1,37 @@
+# E2B provider demo: managed Firecracker micro-VM sandboxes on the E2B cloud.
+#
+# Each sandbox is a micro-VM (stronger isolation than a container) created on E2B;
+# executions run in a persistent Jupyter kernel, so Python variables survive across
+# run_code calls (stateful=True — unique among the providers). Requires the `e2b` extra
+# and an E2B_API_KEY (get one at https://e2b.dev). No local daemon.
+#
+# Three profiles:
+#   - default : a per-session micro-VM workspace; files AND in-kernel variables persist
+#               across turns, and E2B's native idle timeout reclaims the sandbox.
+#   - offline : `network_egress: deny` — E2B ENFORCES this (allow_internet_access=false),
+#               so outbound requests genuinely fail.
+#   - pinned  : an allowlist — E2B ENFORCES it as network allow_out rules (only the listed
+#               hosts are reachable).
+sandbox:
+  enabled: true
+  profiles:
+    default:
+      type: e2b
+      idle_timeout: 3600 # 1 hour -> passed as the E2B sandbox timeout (native auto-kill)
+      e2b:
+        {}
+        # template: base       # E2B template to launch; omitted = base
+        # api_key_env: E2B_API_KEY
+    offline:
+      type: e2b
+      policy:
+        network_egress: deny # -> allow_internet_access=false (actually enforced)
+      e2b: {}
+    pinned:
+      type: e2b
+      policy:
+        network_egress: allowlist
+        network_allow: [pypi.org, files.pythonhosted.org] # -> E2B network allow_out rules (enforced)
+      e2b: {}
+  broker:
+    flavor: thread
