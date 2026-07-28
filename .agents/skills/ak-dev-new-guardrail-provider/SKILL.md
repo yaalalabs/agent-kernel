@@ -163,39 +163,62 @@ class <Provider>OutputGuardrail(BaseGuardrailUtil, Base<Provider>Guardrail, Outp
 
 ### 5. Register with the Factory
 
-Update `ak-py/src/agentkernel/guardrail/guardrail.py` to add the new provider to both factories. The factory reads `AKConfig.get().guardrail.input.enabled` directly (no null-guarding), raises an exception for unknown-but-enabled types, and returns the no-op `InputGuardrail()`/`OutputGuardrail()` only when guardrails are disabled:
+Both factories in `ak-py/src/agentkernel/guardrail/guardrail.py` share the house pluggable-backend
+shape from `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError` — the same
+pattern used by the trace, session/thread/multimodal store, and sandbox provider factories): a
+short-circuit for disabled, `if`-per-built-in with the SDK import wrapped in `require_extra` (so a
+missing optional dependency raises an actionable `ImportError` naming the pip extra), then a
+dotted-path "bring your own" fallback for anything else:
 
 ```python
-# In InputGuardrailFactory.get():
+_BUILTIN_GUARDRAILS = ["openai", "bedrock", "walledai"]
+
 class InputGuardrailFactory:
     @staticmethod
     def get() -> PreHook:
-        if AKConfig.get().guardrail.input.enabled:
-            if AKConfig.get().guardrail.input.type == "openai":
+        config = AKConfig.get().guardrail.input
+        if not config.enabled:
+            return InputGuardrail()  # OFF: pass-through hook
+        gtype = config.type
+        if gtype == "openai":
+            with require_extra("openai", "guardrail.input.type: openai"):
                 from .openai import OpenAIInputGuardrail
-                return OpenAIInputGuardrail()
-            elif AKConfig.get().guardrail.input.type == "bedrock":
+            return OpenAIInputGuardrail()
+        if gtype == "bedrock":
+            with require_extra("aws", "guardrail.input.type: bedrock"):
                 from .bedrock import BedrockInputGuardrail
-                return BedrockInputGuardrail()
-            elif AKConfig.get().guardrail.input.type == "walledai":
+            return BedrockInputGuardrail()
+        if gtype == "walledai":
+            with require_extra("walledai", "guardrail.input.type: walledai"):
                 from .walledai import WalledAIInputGuardrail
-                return WalledAIInputGuardrail()
-            elif AKConfig.get().guardrail.input.type == "<provider>":          # ADD THIS
+            return WalledAIInputGuardrail()
+        if gtype == "<provider>":                                         # ADD THIS
+            with require_extra("<provider>", "guardrail.input.type: <provider>"):
                 from .<provider> import <Provider>InputGuardrail
-                return <Provider>InputGuardrail()
-            else:
-                raise Exception(f"Unknown guardrail type: {AKConfig.get().guardrail.input.type}")
-        else:
-            return InputGuardrail()  # no-op only when disabled
+            return <Provider>InputGuardrail()
+        if "." not in gtype:
+            raise AKConfigError(
+                f"unknown guardrail type '{gtype}'; expected one of {_BUILTIN_GUARDRAILS} or a dotted path to an InputGuardrail subclass"
+            )
+        return resolve_dotted(gtype, base=InputGuardrail)()  # bring-your-own
 
 # Same pattern for OutputGuardrailFactory.get()
 ```
+
+A dotted `type` (e.g. `myorg.guardrails.CustomInputGuardrail`) resolves via `resolve_dotted`
+without any factory edit at all — only add an `if` branch here for a first-party, in-repo
+provider you want addressable by a short name.
 
 ### 6. Add Configuration
 
 Update the guardrail config in `ak-py/src/agentkernel/core/config.py`:
 
-The existing `_GuardrailParamConfig` already supports a `type` field with pattern `^(openai|bedrock|walledai)$`. Its only fields are `enabled`, `type`, `pii`, `config_path`, `model`, `id`, and `version` — there is no `api_key` field. Secrets come from environment variables (e.g., Walled AI reads `WALLED_API_KEY`). To add your provider, update the pattern regex; if your provider needs new config fields, you must add them to `_GuardrailParamConfig` in `core/config.py`:
+The existing `_GuardrailParamConfig.type` is a free-form string (no regex pattern) described as
+"a built-in short name (openai, bedrock, walledai) or a dotted path to an InputGuardrail/OutputGuardrail
+subclass" — do not add a `pattern=` constraint back, since that would break the bring-your-own path.
+Its only fields are `enabled`, `type`, `pii`, `config_path`, `model`, `id`, and `version` — there is
+no `api_key` field. Secrets come from environment variables (e.g., Walled AI reads `WALLED_API_KEY`).
+If your provider needs new config fields, add them to `_GuardrailParamConfig` in `core/config.py`:
 
 ```yaml
 # config.yaml

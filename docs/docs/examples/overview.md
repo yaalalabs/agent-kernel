@@ -37,6 +37,16 @@ Command-line interface examples for local development and testing:
 - **`openai/`** - OpenAI Agent SDK integration examples
 - **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, and `multi/`
 
+### 📁 Sandbox Examples (`/examples/sandbox`)
+
+Sandbox capability examples (execute code/commands in an isolated, permission-bounded environment). See the [Sandbox](../advanced/sandbox.md) guide:
+
+- **`basic/`** - Enable the sandbox, run code, persist a workspace across turns, manage named sessions
+- **`profiles/`** - Multiple named workload profiles (provider + scope routing: a docker-backed workspace and a local throwaway sandbox)
+- **`policy/`** - Policy/permissions on the docker provider: an enforced envelope (network deny, resource limits) and the fail-closed `strict` model for what docker cannot enforce (egress allowlist)
+- **`docker/`** - The docker provider: container-isolated execution, package installs, and enforced network policy (requires a Docker daemon)
+- **`identity/`** - Sandbox code running under the authenticated end user's identity, end-to-end over REST (custom pre-hook, principal resolver, and bring-your-own provider)
+
 ### 📁 Containerized Examples (`/examples/containerized`)
 
 Docker-based deployment examples:

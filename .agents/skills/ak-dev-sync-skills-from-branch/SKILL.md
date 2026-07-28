@@ -175,7 +175,6 @@ Potential user-skill files:
 Required inventory/docs files when the skill set changes:
 
 - `docs/docs/agent-skills.md`
-- `docs/specs/agent-skills.md`
 
 Also update other contributor docs if they explicitly enumerate developer skills.
 

@@ -1,8 +1,8 @@
 import importlib.metadata
 from threading import RLock
-from typing import ClassVar, List, Optional
+from typing import Any, ClassVar, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .model import ExecutionMode
 from .util.config_yaml_util import YamlBaseSettingsModified
@@ -77,7 +77,10 @@ class _FirestoreConfig(BaseModel):
 
 
 class _SessionStoreConfig(BaseModel):
-    type: str = Field(default="in_memory", pattern="^(in_memory|redis|valkey|dynamodb|cosmosdb|firestore)$")
+    type: str = Field(
+        default="in_memory",
+        description="Session store backend: a built-in short name (in_memory, redis, valkey, dynamodb, cosmosdb, firestore) or a dotted path to a SessionStore subclass",
+    )
     cache: Optional[_SessionCacheConfig] = None
     redis: Optional[_RedisConfig] = None
     valkey: Optional[_ValkeyConfig] = None
@@ -192,10 +195,13 @@ class _MultimodalConfig(BaseModel):
         default=False,
         description="Enable multimodal memory for images and files.",
     )
+    agents: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names the multimodal tools and system-prompt guidance attach to; omitted = all agents",
+    )
     storage_type: str = Field(
         default="in_memory",
-        pattern="^(session_cache|in_memory|redis|dynamodb)$",
-        description="Storage backend for multimodal attachments. Options: session_cache, in_memory, redis, dynamodb",
+        description="Storage backend for multimodal attachments: a built-in short name (session_cache, in_memory, redis, dynamodb) or a dotted path to an AttachmentStore subclass",
     )
     max_attachments: int = Field(default=20, description="Maximum number of attachments to keep per session")
     description_max_length: int = Field(default=200, description="Maximum length of attachment description text")
@@ -245,7 +251,10 @@ class _ThreadNamingConfig(BaseModel):
 class _ThreadStoreConfig(BaseModel):
     """Configuration for Conversation Thread Support. Presence of this block enables the feature."""
 
-    type: str = Field(default="memory", pattern="^(memory|redis|dynamodb|cosmosdb|firestore)$")
+    type: str = Field(
+        default="memory",
+        description="Thread store backend: a built-in short name (memory, redis, dynamodb, cosmosdb, firestore) or a dotted path to a ThreadStore subclass",
+    )
     naming: _ThreadNamingConfig = Field(default_factory=_ThreadNamingConfig, description="Auto-naming settings for the built-in naming strategies")
     redis: Optional[_ThreadRedisConfig] = None
     dynamodb: Optional[_ThreadDynamoDBConfig] = None
@@ -255,12 +264,18 @@ class _ThreadStoreConfig(BaseModel):
 
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
-    type: str = Field(default="langfuse", pattern="^(langfuse|openllmetry)$")
+    type: str = Field(
+        default="langfuse",
+        description="Tracing backend: a built-in short name (langfuse, openllmetry, logfire) or a dotted path to a BaseTrace subclass",
+    )
 
 
 class _GuardrailParamConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable Guardrail")
-    type: str = Field(default="openai", pattern="^(openai|bedrock|walledai)$")
+    type: str = Field(
+        default="openai",
+        description="Guardrail backend: a built-in short name (openai, bedrock, walledai) or a dotted path to an InputGuardrail/OutputGuardrail subclass",
+    )
     pii: bool = Field(default=True, description="Enable PII redaction/unmasking (WalledAI only)")
     config_path: Optional[str] = Field(default=None, description="Path to guardrail configuration file (OpenAI only)")
     model: Optional[str] = Field(default="gpt-4o-mini", description="LLM model name to use for guardrail (OpenAI only)")
@@ -371,6 +386,178 @@ class _ExecutionConfig(BaseModel):
     )
 
 
+class _SandboxIdentityConfig(BaseModel):
+    mode: str = Field(
+        default="agent",
+        pattern="^(agent|user)$",
+        description="Execution identity: 'agent' runs under the agent's own credentials, 'user' under the invoking user's resolved identity",
+    )
+
+
+class _SandboxPolicyConfig(BaseModel):
+    network_egress: str = Field(
+        default="allow",
+        pattern="^(allow|deny|allowlist)$",
+        description="Network egress policy: 'allow' all, 'deny' all, or 'allowlist' to restrict to network_allow",
+    )
+    network_allow: list[str] = Field(default_factory=list, description="Domains and/or CIDRs permitted when network_egress is 'allowlist'")
+    fs_allow_read: list[str] = Field(default_factory=list, description="Filesystem paths the sandbox may read; empty uses the provider default")
+    fs_allow_write: list[str] = Field(default_factory=list, description="Filesystem paths the sandbox may write; empty uses the provider default")
+    cpu: Optional[float] = Field(default=None, description="CPU core limit for the sandbox; None leaves it to the provider default")
+    memory_mb: Optional[int] = Field(default=None, description="Memory limit in megabytes; None leaves it to the provider default")
+    timeout: float = Field(default=120.0, description="Per-execution wall-clock timeout in seconds")
+    strict: bool = Field(default=True, description="Fail closed when a policy dimension cannot be enforced by the selected provider")
+
+
+class _SandboxLocalSubprocessConfig(BaseModel):
+    workdir: Optional[str] = Field(default=None, description="Base directory for per-sandbox working directories; None uses the system temp location")
+
+
+class _SandboxDockerConfig(BaseModel):
+    image: str = Field(default="python:3.12-slim", description="Container image used to create sandboxes")
+    runtime: str = Field(default="docker", description="Container runtime to invoke (e.g. docker, nvidia)")
+    attach_to: Optional[str] = Field(default=None, description="Existing container id to attach to instead of creating one (mode 3)")
+
+
+class _SandboxE2BConfig(BaseModel):
+    api_key_env: str = Field(default="E2B_API_KEY", description="Name of the environment variable holding the E2B API key")
+    template: str = Field(default="base", description="E2B sandbox template to launch")
+
+
+class _SandboxDaytonaConfig(BaseModel):
+    api_key_env: str = Field(default="DAYTONA_API_KEY", description="Name of the environment variable holding the Daytona API key")
+    target: Optional[str] = Field(default=None, description="Daytona target/region; None uses the SDK default")
+
+
+class _SandboxBedrockAgentCoreConfig(BaseModel):
+    region: Optional[str] = Field(default=None, description="AWS region for the Bedrock AgentCore code interpreter; None uses the boto3 default")
+    network_mode: str = Field(default="sandbox", description="AgentCore session network mode (e.g. 'sandbox', 'public')")
+
+
+class _SandboxKubernetesConfig(BaseModel):
+    namespace: str = Field(default="default", description="Kubernetes namespace for sandbox pods")
+    image: str = Field(default="python:3.12-slim", description="Container image used for launched sandbox pods")
+    attach_to: Optional[str] = Field(default=None, description="Existing '<namespace>/<pod>' to exec into instead of launching a pod (mode 3)")
+    kubeconfig: Optional[str] = Field(default=None, description="Path to a kubeconfig file; None uses in-cluster or default configuration")
+
+
+class _SandboxEC2SSMConfig(BaseModel):
+    region: Optional[str] = Field(default=None, description="AWS region for SSM; None uses the boto3 default")
+    attach_to: Optional[str] = Field(default=None, description="EC2 instance id to run commands against via SSM (attach-only)")
+
+
+class _SandboxBrokerConfig(BaseModel):
+    flavor: str = Field(
+        default="thread",
+        description="Broker flavor: 'embedded' | 'thread' (in-process, available now) | a dotted path to a SandboxBroker subclass. The AWS 'sqs' flavor is planned in a later iteration.",
+    )
+    wait_timeout: float = Field(default=60.0, description="Max seconds a synchronous wait blocks before promotion to a task (0 = always promote)")
+    inline_payload_max_bytes: int = Field(
+        default=131072, description="Results larger than this are offloaded to the object store instead of returned inline"
+    )
+    response_ttl: int = Field(default=86400, description="TTL in seconds for stored task completions")
+    sweep_interval: int = Field(default=300, description="Interval in seconds between broker-side idle-session sweeps")
+    request_queue_url: Optional[str] = Field(default=None, description="SQS request queue URL for the 'sqs' flavor (terraform output)")
+    object_store_bucket: Optional[str] = Field(
+        default=None, description="Object store bucket for offloaded payloads for the 'sqs' flavor (terraform output)"
+    )
+    worker_timeout_ceiling: Optional[float] = Field(
+        default=None,
+        description="Max effective execution timeout (s) the provisioned worker supports; terraform output — 840 in serverless mode, null in server_based. None = no ceiling.",
+    )
+    response_store: Optional[_ResponseStoreConfig] = Field(
+        default=None,
+        description="Response storage configuration for the 'sqs' flavor; reuses the execution response store model",
+    )
+
+
+class _SandboxProfileConfig(BaseModel):
+    type: str = Field(description="Provider short name (e.g. 'docker', 'e2b') or a dotted path to a SandboxProvider subclass")
+    scope: str = Field(
+        default="per_session",
+        pattern="^(per_call|per_session|per_runtime)$",
+        description="Sandbox lifetime: 'per_call' (new per execution), 'per_session' (per AK session), or 'per_runtime' (shared)",
+    )
+    idle_timeout: int = Field(default=1800, description="Seconds of inactivity before a sandbox session is closed on next touch")
+    identity: _SandboxIdentityConfig = Field(default_factory=_SandboxIdentityConfig, description="Execution identity configuration")
+    policy: _SandboxPolicyConfig = Field(
+        default_factory=_SandboxPolicyConfig, description="Execution policy (network, filesystem, resources, timeout)"
+    )
+    params: dict[str, Any] = Field(default_factory=dict, description="Arbitrary parameters passed to a dotted-path provider")
+    local_subprocess: Optional[_SandboxLocalSubprocessConfig] = Field(default=None, description="Configuration for the 'local_subprocess' provider")
+    docker: Optional[_SandboxDockerConfig] = Field(default=None, description="Configuration for the 'docker' provider")
+    e2b: Optional[_SandboxE2BConfig] = Field(default=None, description="Configuration for the 'e2b' provider")
+    daytona: Optional[_SandboxDaytonaConfig] = Field(default=None, description="Configuration for the 'daytona' provider")
+    bedrock_agentcore: Optional[_SandboxBedrockAgentCoreConfig] = Field(
+        default=None, description="Configuration for the 'bedrock_agentcore' provider"
+    )
+    kubernetes: Optional[_SandboxKubernetesConfig] = Field(default=None, description="Configuration for the 'kubernetes' provider")
+    ec2_ssm: Optional[_SandboxEC2SSMConfig] = Field(default=None, description="Configuration for the 'ec2_ssm' provider")
+
+
+class _SandboxConfig(BaseModel):
+    enabled: bool = Field(
+        default=False, description="Enable the sandbox capability; when False it is inert (no tools, no hook behavior, no provider imports)"
+    )
+    agents: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names the sandbox tools and system-prompt guidance attach to; omitted = all agents",
+    )
+    default_profile: str = Field(default="default", description="Profile name used when a caller does not specify one")
+    principal_resolver: Optional[str] = Field(
+        default=None, description="Dotted path to a PrincipalResolver mapping the session/agent to a SandboxPrincipal"
+    )
+    tool_output_max_chars: int = Field(default=8000, description="Maximum characters of tool output returned to the agent before truncation")
+    broker: _SandboxBrokerConfig = Field(default_factory=_SandboxBrokerConfig, description="Sandbox broker configuration")
+    profiles: dict[str, _SandboxProfileConfig] = Field(
+        default_factory=dict, description="Named workload profiles, each selecting a provider and its policy/identity"
+    )
+    # Single-backend sugar: when profiles is empty and type is set, a model_validator
+    # synthesizes profiles[default_profile] from the top-level fields below.
+    type: Optional[str] = Field(
+        default=None, description="Single-backend sugar: provider short name or dotted path used to synthesize the default profile"
+    )
+    scope: Optional[str] = Field(
+        default=None,
+        pattern="^(per_call|per_session|per_runtime)$",
+        description="Single-backend sugar: scope for the synthesized default profile",
+    )
+    local_subprocess: Optional[_SandboxLocalSubprocessConfig] = Field(
+        default=None, description="Single-backend sugar: 'local_subprocess' provider configuration"
+    )
+    docker: Optional[_SandboxDockerConfig] = Field(default=None, description="Single-backend sugar: 'docker' provider configuration")
+    e2b: Optional[_SandboxE2BConfig] = Field(default=None, description="Single-backend sugar: 'e2b' provider configuration")
+    daytona: Optional[_SandboxDaytonaConfig] = Field(default=None, description="Single-backend sugar: 'daytona' provider configuration")
+    bedrock_agentcore: Optional[_SandboxBedrockAgentCoreConfig] = Field(
+        default=None, description="Single-backend sugar: 'bedrock_agentcore' provider configuration"
+    )
+    kubernetes: Optional[_SandboxKubernetesConfig] = Field(default=None, description="Single-backend sugar: 'kubernetes' provider configuration")
+    ec2_ssm: Optional[_SandboxEC2SSMConfig] = Field(default=None, description="Single-backend sugar: 'ec2_ssm' provider configuration")
+
+    @model_validator(mode="after")
+    def _synthesize_default_profile(self) -> "_SandboxConfig":
+        """Build profiles[default_profile] from the single-backend sugar fields.
+
+        Only runs when no profiles are declared and a top-level type is set, so an
+        explicit profiles map always takes precedence.
+        """
+        if not self.profiles and self.type is not None:
+            profile_kwargs: dict[str, Any] = {
+                "type": self.type,
+                "local_subprocess": self.local_subprocess,
+                "docker": self.docker,
+                "e2b": self.e2b,
+                "daytona": self.daytona,
+                "bedrock_agentcore": self.bedrock_agentcore,
+                "kubernetes": self.kubernetes,
+                "ec2_ssm": self.ec2_ssm,
+            }
+            if self.scope is not None:
+                profile_kwargs["scope"] = self.scope
+            self.profiles = {self.default_profile: _SandboxProfileConfig(**profile_kwargs)}
+        return self
+
+
 class AKConfig(YamlBaseSettingsModified):
     session: _SessionStoreConfig = Field(
         description="Agent session / memory related configurations",
@@ -397,6 +584,7 @@ class AKConfig(YamlBaseSettingsModified):
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
+    sandbox: _SandboxConfig = Field(description="Sandbox capability configurations", default_factory=_SandboxConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")

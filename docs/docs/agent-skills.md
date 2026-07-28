@@ -96,7 +96,7 @@ Deploy your agent to AWS, Azure, or GCP. Generates complete Terraform configurat
 
 ### ak-add-capabilities
 
-Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, custom hooks, multimodal support, and conversation thread support (in-memory, Redis, DynamoDB, Firestore, Cosmos DB).
+Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, custom hooks, multimodal support, and conversation thread support (in-memory, Redis, DynamoDB, Firestore, Cosmos DB).
 
 **Example prompts:**
 - *"Add OpenAI guardrails to my agent"*
@@ -113,7 +113,7 @@ Set up testing and debug common issues. Covers test modes (fuzzy, judge, fallbac
 
 ## Developer Skills: Accelerating Contributions with AI
 
-Agent Kernel doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains fourteen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
+Agent Kernel doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains fifteen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards, eliminating the onboarding curve for new contributors.
 
@@ -124,12 +124,13 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail): handler class, webhook routes, message parsing, config |
 | `ak-dev-new-knowledgebase-integration` | How to add a new knowledge base backend (beyond ChromaDB, Neo4j, Starburst): implement `KnowledgeBase`, wire dependencies, add tests/docs/examples |
 | `ak-dev-new-guardrail-provider` | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI): input/output guardrails, factory registration, configuration |
-| `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry): `BaseTrace` interface, traced runners, factory wiring |
+| `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry, Logfire): `BaseTrace` interface, traced runners, factory wiring |
 | `ak-dev-new-multimodal-storage` | How to add a new multimodal attachment storage backend (beyond in-memory, Redis, DynamoDB): storage interface, config wiring, tests, and docs |
+| `ak-dev-new-sandbox-provider` | How to add a new sandbox code-execution backend (beyond `local_subprocess`, `docker`): implement the `Sandbox`/`SandboxProvider` ABCs, declare capabilities honestly, factory registration, config block, contract tests |
 | `ak-dev-sync-skills-from-branch` | How to inspect branch commits plus uncommitted changes, then add/update/remove developer and user skills so the skill trees stay aligned with the implemented capability set |
 | `ak-dev-sync-docs-from-branch` | How to inspect branch commits plus uncommitted changes, then update root docs, package docs, website docs, deployment READMEs, and example READMEs so documentation matches the implemented behavior |
 | `ak-dev-sync-skills-and-docs-from-commit` | How to process a specific commit hash (typically merged to develop), update dev/user skills and documentation based on that commit delta, and support automation PR flows with loop prevention |
-| `ak-dev-write-spec` | How to spec a planned change under `docs/specs/<ticket>/` in three ordered stages: a concise point-form design spec (`design.md`) reviewed first, then a detailed implementation spec (`spec.md`), then a concise iteration-by-iteration plan (`plan.md`) the PR review checks the code against |
+| `ak-dev-write-spec` | How to spec a planned change under `docs/specs/<issue-number>-<short-title>/` in three ordered stages: a concise point-form design spec (`design.md`) reviewed first, then a detailed implementation spec (`spec.md`), then a concise iteration-by-iteration plan (`plan.md`) the PR review checks the code against — plus an optional `research/` subfolder preserving the supporting investigation the design cites |
 | `ak-dev-review-pr` | Given a PR number or URL, fetch it with the GitHub CLI, review the delta against the architecture/code-quality/testing skills, dedupe findings, and post a single batched review with inline comments |
 | `ak-dev-testing-conventions` | Pytest patterns, async testing, mocking external services, CI/CD test workflows |
 | `ak-dev-code-quality` | Formatting with `black`/`isort`, commit conventions, PR checklist, review workflow |
@@ -141,6 +142,7 @@ A first-time contributor doesn't need to spend hours reading source code to unde
 - *"Add support for a new agent framework called X"* → The assistant reads `ak-dev-new-framework-integration` and generates the complete adapter module with correct subclasses, exports, and tests.
 - *"Add a new tracing provider for Datadog"* → The assistant reads `ak-dev-new-tracing-provider` and implements the `BaseTrace` interface, creates traced runners, and wires the factory.
 - *"Add Microsoft Teams integration"* → The assistant reads `ak-dev-new-messaging-integration` and scaffolds the handler, webhook routes, config, and example.
+- *"Add a new sandbox provider for X"* → The assistant reads `ak-dev-new-sandbox-provider` and implements the `Sandbox`/`SandboxProvider` ABCs, declares capabilities honestly, and wires the factory, config, and contract tests.
 
 The skills carry the same architectural knowledge the core team has: patterns, conventions, where things go, how components interact. Contributors ship features faster because their coding assistant already understands the codebase.
 

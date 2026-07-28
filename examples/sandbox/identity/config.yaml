@@ -1,0 +1,23 @@
+# Sandbox identity demo (REST API).
+#
+# principal_resolver wires the app's resolver (identity.py): it turns the identity the
+# IdentitySeedPreHook recorded on the session into the SandboxPrincipal an execution runs as.
+#
+# The 'secure' profile uses identity.mode: user, so executions run under the caller's
+# identity. It is backed by a bring-your-own demo provider (sandbox_provider.py) that
+# declares principal_user support and exposes the acting identity to executed code — so the
+# whole request -> auth -> resolver -> provider path runs end to end with no cloud services.
+# Swap type to a planned cloud provider (kubernetes / bedrock_agentcore / ec2_ssm) to run
+# under real cloud identities once those providers land.
+sandbox:
+  enabled: true
+  default_profile: secure
+  principal_resolver: identity.SessionUserPrincipalResolver
+  profiles:
+    secure:
+      type: sandbox_provider.DemoIdentitySandboxProvider
+      scope: per_session
+      identity:
+        mode: user
+  broker:
+    flavor: thread

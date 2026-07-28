@@ -62,7 +62,7 @@ Never run `gh pr checkout` — it would switch the developer's branch.
 
 Read the full content of every changed source file at the PR head, not just the diff hunks. A diff hunk without surrounding context is the main source of false-positive review comments.
 
-While listing the changed files, check whether the PR includes spec documents — any added or modified `design.md`, `spec.md`, or `plan.md` under `docs/specs/<ticket>/` (case-insensitive; also match a bare `spec.md` elsewhere from before the staged layout). If any exists, Step 3 is mandatory and runs before any code is reviewed.
+While listing the changed files, check whether the PR includes spec documents — any added or modified `design.md`, `spec.md`, or `plan.md` under `docs/specs/<issue-number>-<short-title>/` (case-insensitive; also match a bare `spec.md` elsewhere from before the staged layout). If any exists, Step 3 is mandatory and runs before any code is reviewed.
 
 ## Step 2: Load the Standards to Review Against
 
@@ -91,7 +91,7 @@ These skills are the source of truth for what "complete" means in each area. Whe
 
 ## Step 3: Review the Spec Documents First (When the PR Contains Any)
 
-A change is specified in up to three staged documents under `docs/specs/<ticket>/` (per `ak-dev-write-spec`): `design.md` — concise point-form requirements, reviewed and approved first; `spec.md` — detailed implementation spec that follows the approved design; `plan.md` — concise iteration breakdown of the implementation. A PR may contain any subset: a `design.md`-only PR is a design review cycle, a later PR adds `spec.md` and/or `plan.md`, and an implementation PR may carry all three alongside the code.
+A change is specified in up to three staged documents under `docs/specs/<issue-number>-<short-title>/` (per `ak-dev-write-spec`): `design.md` — concise point-form requirements, reviewed and approved first; `spec.md` — detailed implementation spec that follows the approved design; `plan.md` — concise iteration breakdown of the implementation. A PR may contain any subset: a `design.md`-only PR is a design review cycle, a later PR adds `spec.md` and/or `plan.md`, and an implementation PR may carry all three alongside the code.
 
 If the PR adds or modifies any of these documents, review them **before** reading any implementation code, so the spec set is judged on its own merits rather than rationalized from the code. Load `ak-dev-write-spec` — its per-document structure, staged-process rules, and completeness checklists are the rubric.
 
@@ -159,7 +159,7 @@ Evaluate the delta on each dimension. For each finding, record: file, line (in t
 
 ### 6. Spec conformance (when the PR contains implementation code covered by spec documents)
 
-Walk the requirements checklist extracted in Step 3 — from the spec documents in this PR, or already on the base branch under `docs/specs/<ticket>/` for the ticket this PR implements. Skip this dimension for spec-only PRs.
+Walk the requirements checklist extracted in Step 3 — from the spec documents in this PR, or already on the base branch under `docs/specs/<issue-number>-<short-title>/` for the issue this PR implements. Skip this dimension for spec-only PRs.
 
 - Every requirement in `design.md`/`spec.md` is implemented in this PR, or its deferral is explicitly stated in the PR description or covered by a later `plan.md` iteration — silent omissions are findings.
 - The implementation matches the spec's stated behavior, naming, config keys, and interfaces — deviations are findings even when the deviation looks reasonable, phrased as `[question]` if the code might be right and the spec stale.
@@ -244,4 +244,4 @@ After posting, report back to the requester:
 - Reading the implementation before the spec documents when the PR contains any — the code biases how the spec is judged, and spec gaps get rationalized as intended behavior.
 - Reviewing code against the spec but forgetting to review the spec documents themselves.
 - Judging a document at the wrong stage's altitude — demanding implementation detail from a point-form `design.md`, or flagging a `plan.md` as "too thin" when its detail correctly lives in `spec.md`.
-- Missing spec documents already on the base branch — an implementation PR for a ticket with an existing `docs/specs/<ticket>/` must still be checked against those documents even though they aren't in the diff.
+- Missing spec documents already on the base branch — an implementation PR for an issue with an existing `docs/specs/<issue-number>-<short-title>/` must still be checked against those documents even though they aren't in the diff.

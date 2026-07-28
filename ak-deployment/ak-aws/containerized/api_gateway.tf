@@ -47,10 +47,12 @@ resource "aws_apigatewayv2_route" "gateway_routes" {
   target    = "integrations/${aws_apigatewayv2_integration.alb_proxy[each.key].id}"
 }
 
+# CloudWatch Log Group for API Gateway (only when access logging is enabled)
 resource "aws_cloudwatch_log_group" "http_api" {
-  count             = local.is_websocket_mode ? 0 : 1
+  count             = var.enable_api_gateway_logs && !local.is_websocket_mode ? 1 : 0
   name              = "/aws/apigateway/${var.product_alias}-${var.env_alias}-http-api"
   retention_in_days = 90
+  tags              = var.tags
 }
 
 resource "aws_apigatewayv2_stage" "stage" {
@@ -67,17 +69,21 @@ resource "aws_apigatewayv2_stage" "stage" {
     }
   }
 
-  access_log_settings {
-    destination_arn = aws_cloudwatch_log_group.http_api[0].arn
-    format = jsonencode({
-      requestId      = "$context.requestId",
-      sourceIp       = "$context.identity.sourceIp",
-      requestTime    = "$context.requestTime",
-      protocol       = "$context.protocol",
-      httpMethod     = "$context.httpMethod",
-      routeKey       = "$context.routeKey",
-      status         = "$context.status",
-      responseLength = "$context.responseLength"
-    })
+  dynamic "access_log_settings" {
+    for_each = var.enable_api_gateway_logs ? [1] : []
+    content {
+      destination_arn = aws_cloudwatch_log_group.http_api[0].arn
+      format = jsonencode({
+        requestId               = "$context.requestId",
+        sourceIp                = "$context.identity.sourceIp",
+        requestTime             = "$context.requestTime",
+        protocol                = "$context.protocol",
+        httpMethod              = "$context.httpMethod",
+        routeKey                = "$context.routeKey",
+        status                  = "$context.status",
+        responseLength          = "$context.responseLength",
+        integrationErrorMessage = "$context.integrationErrorMessage"
+      })
+    }
   }
 }

@@ -1,7 +1,7 @@
 {
   "skill": "ak-init",
   "description": "Evaluations for the ak-init (project scaffolding) skill",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "evals": [
     {
       "id": "init-openai-cli",
@@ -112,6 +112,23 @@
       ]
     },
     {
+      "id": "init-pydanticai-cli",
+      "name": "Scaffold Pydantic AI CLI project",
+      "input": "Create a new Agent Kernel project using Pydantic AI with CLI mode",
+      "expected_outputs": [
+        "from agentkernel.pydanticai import PydanticAIModule",
+        "from agentkernel.pydanticai import PydanticAIToolBuilder",
+        "from pydantic_ai import Agent",
+        "name=",
+        "description=",
+        "PydanticAIModule(["
+      ],
+      "must_not_contain": [
+        "OpenAIModule",
+        "SmolagentsModule"
+      ]
+    },
+    {
       "id": "init-openai-lambda",
       "name": "Scaffold OpenAI AWS Lambda project",
       "input": "Create a new Agent Kernel project using OpenAI with AWS Lambda deployment",
@@ -150,7 +167,7 @@
         "[project]",
         "requires-python",
         "agentkernel[",
-        ">=0.6.1"
+        ">=0.7.0"
       ]
     }
   ]

@@ -195,7 +195,6 @@ Do not leave stale docs pages in place once code path or example has been remove
 If developer skill inventory changes, update:
 
 - `docs/docs/agent-skills.md`
-- `docs/specs/agent-skills.md`
 
 Ensure skill counts, tables, and file inventories match `.agents/skills/` exactly.
 

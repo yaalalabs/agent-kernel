@@ -202,7 +202,6 @@ jobs:
 
           4. **Inventory/catalog sync** — if `.agents/skills/` changes, update:
              - `docs/docs/agent-skills.md`
-             - `docs/specs/agent-skills.md`
              Skill counts and tables must match the actual directory tree exactly.
 
           ## Authoring Rules

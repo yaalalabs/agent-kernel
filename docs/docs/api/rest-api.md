@@ -371,7 +371,7 @@ with httpx.stream("POST", "http://localhost:8000/api/v1/chat", json={
             print(line.removeprefix("data:").strip())
 ```
 
-**Framework support:** OpenAI Agents SDK, Google ADK, and LangGraph support token streaming. CrewAI and smolagents raise `NotImplementedError` when `execution.mode: stream` is used; use `rest_sync` for those frameworks instead.
+**Framework support:** OpenAI Agents SDK, Google ADK, LangGraph, and Pydantic AI support token streaming. CrewAI and smolagents raise `NotImplementedError` when `execution.mode: stream` is used; use `rest_sync` for those frameworks instead.
 
 For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
 

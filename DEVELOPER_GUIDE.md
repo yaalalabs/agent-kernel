@@ -91,6 +91,19 @@ make lint-all
 
 to automatically fix formatting issues.
 
+### Lint and Commit Workflow (CI)
+
+For applying formatting on a remote branch without running the tools locally, use the
+**Lint and Commit** GitHub Actions workflow (`.github/workflows/lint-fix.yml`). Trigger it
+manually from the Actions tab (`workflow_dispatch`) with two inputs:
+
+- **`lint_target`**: which Makefile target to run — `lint`, `lint-examples`, or `lint-all`
+  (default).
+- **`branch`**: the branch to format and commit the changes to.
+
+The workflow runs the selected target and pushes a `chore:` commit with any formatting
+changes back to the chosen branch. Protected branches (currently `develop`) are rejected —
+the workflow fails before making any changes.
 
 ## Contributing
 

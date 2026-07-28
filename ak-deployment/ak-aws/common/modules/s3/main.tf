@@ -34,7 +34,7 @@ resource "aws_s3_bucket_versioning" "source-storage-versioning" {
 
   bucket = aws_s3_bucket.source-storage.id
   versioning_configuration {
-    status = var.is_production ? "Enabled" : "Disabled"
+    status = (var.is_production || var.enable_versioning) ? "Enabled" : "Disabled"
   }
 }
 

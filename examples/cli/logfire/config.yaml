@@ -1,0 +1,8 @@
+# Enable Pydantic Logfire tracing for this demo.
+#
+# Tracing is transparent: demo.py is the same OpenAI agent as examples/cli/openai —
+# only this config turns tracing on. Set LOGFIRE_TOKEN to ship traces to Logfire;
+# without a token it runs locally (send_to_logfire="if-token-present").
+trace:
+  enabled: true
+  type: logfire

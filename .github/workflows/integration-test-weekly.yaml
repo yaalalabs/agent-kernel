@@ -5,9 +5,9 @@ permissions:
   id-token: write  # Required for OIDC authentication with AWS
 
 on:
-  # Weekly build - runs every Sunday at 3 AM UTC
-  # schedule:
-    # - cron: '0 3 * * 0'  # Every Sunday at 3 AM UTC
+  # Weekly build - runs Sundays at 5:30 PM UTC
+  schedule:
+    - cron: '30 17 * * 0'  # Sunday 5:30 PM UTC
   
   # Allow manual triggering
   workflow_dispatch:
@@ -94,6 +94,7 @@ jobs:
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
+          fail-on-cache-miss: true
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -206,6 +207,7 @@ jobs:
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
+          fail-on-cache-miss: true
 
       - name: Configure AWS credentials
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'

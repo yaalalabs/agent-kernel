@@ -3,7 +3,7 @@ name: ak-dev-new-framework-integration
 description: >
   Step-by-step guide for adding a new agent framework adapter to Agent Kernel.
   Use this skill when you need to integrate a new agent framework (beyond OpenAI,
-    CrewAI, LangGraph, Google ADK, Smolagents). Covers creating the adapter module, implementing
+    CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI). Covers creating the adapter module, implementing
   Agent/Runner/Module subclasses, adding optional dependencies, exports, and tests.
 license: Apache-2.0
 metadata:
@@ -308,7 +308,7 @@ Create tests in `ak-py/tests/`:
 # ak-py/tests/test_tool_<name>.py
 ```
 
-Follow the existing test patterns (e.g. `test_openai_runner.py`, `test_smolagents_runner.py`, `test_tool_adk.py`) — use `DummyRunner`, `DummyAgent` for unit tests, `monkeypatch` for config overrides, `@pytest.mark.asyncio` for async tests.
+Follow the existing test patterns (e.g. `test_openai_runner.py`, `test_smolagents_runner.py`, `test_pydanticai_runner.py`, `test_tool_adk.py`) — use `DummyRunner`, `DummyAgent` for unit tests, `monkeypatch` for config overrides, `@pytest.mark.asyncio` for async tests.
 
 ### 13. Add Examples
 

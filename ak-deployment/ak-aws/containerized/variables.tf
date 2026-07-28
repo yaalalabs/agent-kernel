@@ -213,6 +213,12 @@ variable "throttling_burst_limit" {
   default     = null
 }
 
+variable "enable_api_gateway_logs" {
+  type        = bool
+  description = "When true, creates the API Gateway CloudWatch log group and enables access logging on the HTTP API stage. Off by default."
+  default     = false
+}
+
 variable "enable_mcp_server" {
   type        = bool
   description = "Enable MCP server and expose MCP API endpoint"

@@ -1,0 +1,59 @@
+# Policy / permissions demo on the docker provider: the execution envelope, real
+# enforcement, and the fail-closed `strict` model.
+#
+# A profile's `policy` block declares the permission/resource envelope an execution must run
+# within: network egress, filesystem paths, cpu/memory limits, and a per-execution timeout.
+#
+# Enforcement depends on the provider. docker maps most dimensions to real container
+# controls (deny egress -> network_mode: none, cpu/memory -> container limits), but it
+# CANNOT enforce a network egress *allowlist*. When a profile sets a dimension the provider
+# cannot enforce:
+#   - strict: true  (default) -> the execution is REJECTED (fail closed) — no silent downgrade.
+#   - strict: false           -> it proceeds, with a warning.
+#
+# Requires the sandbox-docker extra (installed by build.sh) and a running Docker daemon;
+# the first sandbox creation pulls python:3.12-slim if it is not already present.
+sandbox:
+  enabled: true
+  default_profile: guarded
+  profiles:
+    # Fully enforceable policy -> executions RUN, inside the envelope.
+    guarded:
+      type: docker
+      scope: per_session
+      policy:
+        network_egress: deny # -> container network_mode: none (fetches genuinely fail)
+        cpu: 1.0 # -> container cpu limit
+        memory_mb: 512 # -> container memory limit
+        timeout: 30.0 # seconds per execution; always enforced framework-side
+        strict: true
+      docker:
+        image: python:3.12-slim
+
+    # An egress allowlist is the one network mode docker cannot enforce -> with
+    # strict: true every execution against this profile is REJECTED (fail closed).
+    restricted:
+      type: docker
+      scope: per_session
+      policy:
+        network_egress: allowlist
+        network_allow: [pypi.org]
+        timeout: 30.0
+        strict: true
+      docker:
+        image: python:3.12-slim
+
+    # Same allowlist intent with strict: false -> executions proceed with a warning,
+    # and egress is effectively UNRESTRICTED. The explicit opt-out of fail-closed.
+    relaxed:
+      type: docker
+      scope: per_session
+      policy:
+        network_egress: allowlist
+        network_allow: [pypi.org]
+        timeout: 30.0
+        strict: false
+      docker:
+        image: python:3.12-slim
+  broker:
+    flavor: thread

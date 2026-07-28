@@ -4,11 +4,13 @@ Abstract storage interface and builder for Conversation Thread Support.
 
 import logging
 from abc import ABC, abstractmethod
-from enum import StrEnum
-from typing import List, Optional, Self, Tuple
+from typing import List, Optional, Tuple
 
 from ...config import AKConfig
+from ...util.factory import AKConfigError, require_extra, resolve_dotted
 from ..model import Thread, ThreadMessage
+
+_BUILTIN_THREAD_STORES = ["memory", "redis", "dynamodb", "cosmosdb", "firestore"]
 
 
 def paginate(items: list, limit: int, offset: int) -> tuple[list, Optional[int]]:
@@ -133,60 +135,50 @@ class ThreadStoreBuilder:
 
     _log = logging.getLogger("ak.thread.builder")
 
-    class Types(StrEnum):
-        """
-        Enumeration of supported thread store types.
-        """
-
-        MEMORY = "MEMORY"
-        REDIS = "REDIS"
-        DYNAMODB = "DYNAMODB"
-        COSMOSDB = "COSMOSDB"
-        FIRESTORE = "FIRESTORE"
-
-        @classmethod
-        def from_str(cls, type_str: str) -> Self:
-            """
-            Create a Types enum member from a string, falling back to MEMORY.
-            :param type_str: The string representation of the thread store type.
-            :return: The corresponding Types enum member.
-            """
-            try:
-                return cls[type_str.upper()]
-            except KeyError:
-                ThreadStoreBuilder._log.warning(f"Invalid thread store type '{type_str}', falling back to MEMORY")
-                return ThreadStoreBuilder.Types.MEMORY
-
     @staticmethod
     def build() -> ThreadStore:
         """
-        Build and return a ThreadStore instance based on the configured thread store type.
-        :return: A ThreadStore implementation instance.
+        Build and return a ThreadStore instance based on the configured ``thread.type``.
+
+        ``type`` is a built-in short name (memory, redis, dynamodb, cosmosdb, firestore) or a
+        dotted path to a user-supplied ``ThreadStore`` subclass (bring-your-own). An unknown,
+        non-dotted value raises ``AKConfigError``.
+
         :raises ValueError: If thread support is not configured.
         """
         thread_config = AKConfig.get().thread
         if thread_config is None:
             raise ValueError("Thread support is not configured — add a 'thread' block to config.yaml")
 
-        store_type = ThreadStoreBuilder.Types.from_str(thread_config.type)
-        ThreadStoreBuilder._log.info(f"Building {store_type} thread store")
-        if store_type == ThreadStoreBuilder.Types.REDIS:
-            from .redis import RedisThreadStore
-
-            return RedisThreadStore()
-        elif store_type == ThreadStoreBuilder.Types.DYNAMODB:
-            from .dynamodb import DynamoDBThreadStore
-
-            return DynamoDBThreadStore()
-        elif store_type == ThreadStoreBuilder.Types.COSMOSDB:
-            from .cosmosdb import CosmosDBThreadStore
-
-            return CosmosDBThreadStore()
-        elif store_type == ThreadStoreBuilder.Types.FIRESTORE:
-            from .firestore import FirestoreThreadStore
-
-            return FirestoreThreadStore()
-        else:
+        store_type = thread_config.type
+        ThreadStoreBuilder._log.info(f"Building '{store_type}' thread store")
+        key = store_type.lower()
+        if key == "memory":
             from .in_memory import InMemoryThreadStore
 
             return InMemoryThreadStore()
+        if key == "redis":
+            with require_extra("redis", "thread.type: redis"):
+                from .redis import RedisThreadStore
+
+            return RedisThreadStore()
+        if key == "dynamodb":
+            with require_extra("aws", "thread.type: dynamodb"):
+                from .dynamodb import DynamoDBThreadStore
+
+            return DynamoDBThreadStore()
+        if key == "cosmosdb":
+            with require_extra("azure", "thread.type: cosmosdb"):
+                from .cosmosdb import CosmosDBThreadStore
+
+            return CosmosDBThreadStore()
+        if key == "firestore":
+            with require_extra("gcp", "thread.type: firestore"):
+                from .firestore import FirestoreThreadStore
+
+            return FirestoreThreadStore()
+        if "." not in store_type:
+            raise AKConfigError(
+                f"unknown thread store type '{store_type}'; expected one of {_BUILTIN_THREAD_STORES} or a dotted path to a ThreadStore subclass"
+            )
+        return resolve_dotted(store_type, base=ThreadStore)()
