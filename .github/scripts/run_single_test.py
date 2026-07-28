@@ -6,6 +6,7 @@ Used by parallel GitHub Actions jobs for both integration tests and e2e tests.
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -129,6 +130,57 @@ def run_containerized_test(path: str) -> bool:
     """Run containerized example test."""
     return run_simple_test(path)
 
+def _read_tfvar(deploy_path: Path, key: str) -> str | None:
+    """Read a scalar value from a deploy dir's terraform.tfvars (best-effort)."""
+    tfvars = deploy_path / 'terraform.tfvars'
+    if not tfvars.exists():
+        return None
+    pattern = re.compile(rf'^\s*{re.escape(key)}\s*=\s*"?([^"\n]+?)"?\s*$')
+    for line in tfvars.read_text().splitlines():
+        match = pattern.match(line)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def sweep_gcp_error_connectors(deploy_path: Path) -> None:
+    region = _read_tfvar(deploy_path, 'region')
+    product_alias = _read_tfvar(deploy_path, 'product_alias')
+    env_alias = _read_tfvar(deploy_path, 'env_alias')
+    if not (region and product_alias and env_alias):
+        print("Skipping GCP connector sweep - could not resolve "
+              "region/product_alias/env_alias from terraform.tfvars")
+        return
+
+    network = f"{product_alias}-{env_alias}-vpc"
+    print(f"\n🧹 Sweeping ERROR-state VPC connectors on network '{network}' (region {region})...")
+    try:
+        result = subprocess.run(
+            ['gcloud', 'compute', 'networks', 'vpc-access', 'connectors', 'list',
+             f'--region={region}',
+             f'--filter=state=ERROR AND network~{network}$',
+             '--format=value(name)'],
+            check=True, capture_output=True, text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"Could not list VPC connectors (skipping sweep): {e}")
+        return
+
+    connectors = [line.strip().split('/')[-1] for line in result.stdout.splitlines() if line.strip()]
+    if not connectors:
+        print(" No ERROR-state connectors to clean up.")
+        return
+
+    for name in connectors:
+        print(f"   Deleting ERROR connector: {name}")
+        subprocess.run(
+            ['gcloud', 'compute', 'networks', 'vpc-access', 'connectors', 'delete', name,
+             f'--region={region}', '--quiet'],
+            check=False,
+        )
+    print(" Connector sweep complete.")
+
+
 def destroy_gcp_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:
     """Destroy GCP resources."""
     deploy_path = Path(path) / deploy_dir
@@ -170,7 +222,9 @@ def destroy_gcp_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = N
         env=tf_env
     ):
         return False
-    
+
+    sweep_gcp_error_connectors(deploy_path)
+
     # Destroy (already has -auto-approve flag)
     return run_command(
         ['terraform', 'destroy', '-auto-approve'],
