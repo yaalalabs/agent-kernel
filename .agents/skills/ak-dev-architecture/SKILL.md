@@ -380,7 +380,7 @@ ak-py/src/agentkernel/
 │   ├── tools.py             # The eight agent-facing system tools
 │   ├── hooks.py             # SandboxPreHook (task-completion ingestion)
 │   ├── testing.py           # FakeSandboxProvider + SandboxProviderContract (BYO test suite)
-│   ├── providers/           # local_subprocess, docker (+ planned: e2b, daytona, kubernetes, ...)
+│   ├── providers/           # local_subprocess, docker, e2b, daytona, ec2_ssm (+ planned: kubernetes, ...)
 │   └── broker/              # embedded, thread flavors + BrokerWorkerCore (+ planned: sqs)
 ├── cli/                     # CLI interface
 │   └── cli.py               # Interactive CLI

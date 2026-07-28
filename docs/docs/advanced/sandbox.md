@@ -237,9 +237,12 @@ Providers available today:
 |---|---|---|---|
 | `local_subprocess` | — (stdlib) | `none` | Runs on the host. Dev/test only. Shell + files + `python`/`bash`. |
 | `docker` | `sandbox-docker` | `container` | Container per sandbox (`sleep infinity`); files via archives; `pip install`. Maps `deny`→`network_mode: none`, cpu/memory→limits, fs→read-only rootfs + writable workdir. Requires a Docker daemon. |
+| `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls); shell, files, `pip install`. Maps `deny`→no internet access, `allowlist`→`allow_out` network rules; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
+| `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, `pip install`. Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
+| `ec2_ssm` | `aws` | `none` | **Attach-only** (mode 3): executes on an existing EC2 instance via SSM Run Command — `create` binds to `attach_to`, never provisions; `destroy` is a no-op. Shell + `python` (heredoc); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). |
 
-Additional providers (`e2b`, `daytona`, `kubernetes`, `bedrock_agentcore`, `ec2_ssm`) and the
-AWS `sqs` broker for queue-based deployments are planned in later iterations.
+Additional providers (`kubernetes`, `bedrock_agentcore`) and the AWS `sqs` broker for
+queue-based deployments are planned in later iterations.
 
 ### `docker` setup
 
@@ -256,6 +259,65 @@ sandbox:
   broker:
     flavor: thread
 ```
+
+### `e2b` setup
+
+```bash
+pip install "agentkernel[e2b]"
+export E2B_API_KEY=e2b_...
+```
+
+```yaml
+sandbox:
+  enabled: true
+  type: e2b
+  e2b:
+    template: base              # E2B sandbox template
+    # api_key_env: E2B_API_KEY  # env variable holding the API key
+  broker:
+    flavor: thread
+```
+
+### `daytona` setup
+
+```bash
+pip install "agentkernel[daytona]"
+export DAYTONA_API_KEY=dtn_...
+```
+
+```yaml
+sandbox:
+  enabled: true
+  type: daytona
+  daytona:
+    # target: us                    # Daytona target/region; omitted = SDK default
+    # api_key_env: DAYTONA_API_KEY  # env variable holding the API key
+  broker:
+    flavor: thread
+```
+
+### `ec2_ssm` setup
+
+```bash
+pip install "agentkernel[aws]"
+```
+
+```yaml
+sandbox:
+  enabled: true
+  type: ec2_ssm
+  ec2_ssm:
+    attach_to: i-0123456789abcdef0  # existing instance id (or via AK_SANDBOX__... env override)
+    # region: us-east-1             # omitted = boto3 default
+  broker:
+    flavor: thread
+```
+
+The instance must run the SSM agent, and the caller needs `ssm:SendCommand`,
+`ssm:GetCommandInvocation`, `ssm:DescribeInstanceInformation`, and `ssm:CancelCommand`.
+Isolation is `none`: commands run directly on the instance, so attach only to hosts you
+own. In user-identity mode the provider assumes the principal's `role_arn` and, when
+`run_as` is set, executes commands as that OS user.
 
 ### Bring your own provider
 
@@ -352,3 +414,4 @@ e.g. `AK_SANDBOX__ENABLED=true`, `AK_SANDBOX__BROKER__FLAVOR=embedded`,
 - [`sandbox/policy`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/policy) — policy/permissions on the docker provider: an enforced envelope plus the fail-closed `strict` model for what docker cannot enforce.
 - [`sandbox/docker`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/docker) — the `docker` provider: container-isolated execution with policy actually enforced (`network_egress: deny` → no network).
 - [`sandbox/identity`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/identity) — a REST app running sandboxed code under the authenticated end user's identity, end-to-end.
+- [`sandbox/ec2-ssm`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/ec2-ssm) — the `ec2_ssm` provider attaching to an existing EC2 instance over SSM (manual; needs a real instance).

@@ -24,8 +24,17 @@ This guide walks through adding a new sandbox provider to Agent Kernel. Use the 
 |---|---|---|---|
 | Local subprocess | `local_subprocess` | `none` (no isolation; dev/test) | — (stdlib) |
 | Docker | `docker` | `container` | `agentkernel[sandbox-docker]` |
+| E2B | `e2b` | `micro_vm` | `agentkernel[e2b]` |
+| Daytona | `daytona` | `container` | `agentkernel[daytona]` |
+| EC2 via SSM | `ec2_ssm` | `none` (attach-only to an existing instance) | `agentkernel[aws]` |
 
-Planned in later iterations: `e2b`, `daytona`, `kubernetes`, `bedrock_agentcore`, `ec2_ssm`.
+Planned in later iterations: `kubernetes`, `bedrock_agentcore`.
+
+Reference implementations by pattern: `docker.py` (sync SDK via `to_thread`), `e2b.py`
+(native async SDK + native idle timeout passthrough), `daytona.py` (sync SDK + native
+auto-stop + resource mapping), `ec2_ssm.py` (attach-only mode-3 provider with user-identity
+mapping: `sts:AssumeRole` + `run_as`). Providers with a native auto-stop take the profile's
+`idle_timeout` as a second constructor argument, passed by their factory branch.
 
 ## Architecture Overview
 

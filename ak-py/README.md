@@ -39,10 +39,14 @@ For LLM-based thread naming with Conversation Thread Support:
 pip install "agentkernel[thread]"
 ```
 
-For the Docker sandbox provider (the `local_subprocess` provider needs no extra):
+For the sandbox providers (the `local_subprocess` provider needs no extra; `ec2_ssm` rides
+the `aws` extra):
 
 ```bash
-pip install "agentkernel[sandbox-docker]"
+pip install "agentkernel[sandbox-docker]"   # docker provider
+pip install "agentkernel[e2b]"              # e2b cloud provider
+pip install "agentkernel[daytona]"          # daytona cloud provider
+pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
 ```
 
 **Requirements:**
@@ -986,7 +990,9 @@ Key fields:
 - **`enabled`** (`AK_SANDBOX__ENABLED`, default `false`) — master switch; inert when off.
 - **`agents`** — agent names the tools/prompt attach to; omit for all agents.
 - **`type`** (per profile) — `local_subprocess` (no isolation; dev/test), `docker`
-  (container isolation; `sandbox-docker` extra), or a dotted path to your own `SandboxProvider`.
+  (container isolation; `sandbox-docker` extra), `e2b` (managed micro-VMs; `e2b` extra),
+  `daytona` (cloud containers; `daytona` extra), `ec2_ssm` (attach to an existing EC2
+  instance via SSM; `aws` extra), or a dotted path to your own `SandboxProvider`.
 - **`scope`** — `per_call` (fresh per execution), `per_session` (persists across turns),
   `per_runtime` (one shared sandbox per profile).
 - **`policy`** — network egress, filesystem paths, cpu/memory, timeout; enforced per provider,

@@ -17,7 +17,7 @@ from .errors import SandboxConfigError
 
 # Landed built-in provider short names (each an if/elif real-import branch in _build).
 # A new built-in adds its branch and its name here; anything else must be a dotted path.
-_BUILTIN_PROVIDER_NAMES = ["local_subprocess", "docker"]
+_BUILTIN_PROVIDER_NAMES = ["local_subprocess", "docker", "ec2_ssm", "e2b", "daytona"]
 
 # short name -> dotted path of the built-in broker flavor. Brokers stay on the
 # resolve_dotted-over-map form (not if/elif real imports) because flavors living outside
@@ -81,6 +81,30 @@ class SandboxProviderFactory:
                 from .providers.docker import DockerSandboxProvider
 
             return DockerSandboxProvider(config_block)
+
+        if type_name == "ec2_ssm":
+            config_block = cls._require_block(profile_name, profile, type_name)
+            with require_extra("aws", "sandbox provider 'ec2_ssm'"):
+                from .providers.ec2_ssm import EC2SSMSandboxProvider
+
+            return EC2SSMSandboxProvider(config_block)
+
+        if type_name == "e2b":
+            config_block = cls._require_block(profile_name, profile, type_name)
+            with require_extra("e2b", "sandbox provider 'e2b'"):
+                from .providers.e2b import E2BSandboxProvider
+
+            # Native auto-stop: the profile's idle_timeout is passed through so E2B kills
+            # the sandbox itself when idle (spec §Idle timeout).
+            return E2BSandboxProvider(config_block, idle_timeout=profile.idle_timeout)
+
+        if type_name == "daytona":
+            config_block = cls._require_block(profile_name, profile, type_name)
+            with require_extra("daytona", "sandbox provider 'daytona'"):
+                from .providers.daytona import DaytonaSandboxProvider
+
+            # Native auto-stop: idle_timeout maps onto Daytona's auto_stop_interval.
+            return DaytonaSandboxProvider(config_block, idle_timeout=profile.idle_timeout)
 
         if "." not in type_name:
             raise SandboxConfigError(

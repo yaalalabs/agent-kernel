@@ -19,9 +19,12 @@ from agentkernel.core.config import (
     _GuardrailConfig,
     _SandboxBrokerConfig,
     _SandboxConfig,
+    _SandboxDaytonaConfig,
     _SandboxDockerConfig,
     _SandboxE2BConfig,
+    _SandboxEC2SSMConfig,
     _SandboxIdentityConfig,
+    _SandboxKubernetesConfig,
     _SandboxLocalSubprocessConfig,
     _SandboxPolicyConfig,
     _SandboxProfileConfig,
@@ -461,11 +464,52 @@ def test_factory_builtin_local_subprocess_real_import(monkeypatch):
 def test_factory_unknown_short_name_raises_listing_builtins(monkeypatch):
     """A short name with no landed if/elif branch (e.g. a provider from a future iteration)
     is an unknown type: fail loud, naming the available built-ins (#541 shape)."""
-    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="e2b", e2b=_SandboxE2BConfig())})
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="kubernetes", kubernetes=_SandboxKubernetesConfig())})
     _install_sandbox_cfg(monkeypatch, cfg)
     with pytest.raises(SandboxConfigError) as exc_info:
         SandboxProviderFactory.get("default")
     assert "local_subprocess" in str(exc_info.value) and "docker" in str(exc_info.value)
+
+
+def test_factory_builtin_ec2_ssm_real_import(monkeypatch):
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="ec2_ssm", ec2_ssm=_SandboxEC2SSMConfig(attach_to="i-1"))})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    provider = SandboxProviderFactory.get("default")
+    assert type(provider).__name__ == "EC2SSMSandboxProvider"
+
+
+def test_factory_builtin_ec2_ssm_missing_extra_raises_import_error(monkeypatch):
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="ec2_ssm", ec2_ssm=_SandboxEC2SSMConfig())})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    monkeypatch.delitem(sys.modules, "agentkernel.sandbox.providers.ec2_ssm", raising=False)
+    monkeypatch.setitem(sys.modules, "boto3", None)  # simulate boto3 not being installed
+    with pytest.raises(ImportError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "agentkernel[aws]" in str(exc_info.value)
+
+
+def test_factory_builtin_e2b_missing_extra_raises_import_error(monkeypatch):
+    """The e2b SDK is not a dev dependency, so the real-import branch naturally exercises
+    the missing-extra path here; the provider itself is covered against a fake SDK in
+    test_sandbox_providers.py."""
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="e2b", e2b=_SandboxE2BConfig())})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    monkeypatch.delitem(sys.modules, "agentkernel.sandbox.providers.e2b", raising=False)
+    monkeypatch.setitem(sys.modules, "e2b_code_interpreter", None)
+    monkeypatch.setitem(sys.modules, "e2b", None)
+    with pytest.raises(ImportError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "agentkernel[e2b]" in str(exc_info.value)
+
+
+def test_factory_builtin_daytona_missing_extra_raises_import_error(monkeypatch):
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="daytona", daytona=_SandboxDaytonaConfig())})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    monkeypatch.delitem(sys.modules, "agentkernel.sandbox.providers.daytona", raising=False)
+    monkeypatch.setitem(sys.modules, "daytona", None)
+    with pytest.raises(ImportError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "agentkernel[daytona]" in str(exc_info.value)
 
 
 def test_factory_builtin_missing_config_block_raises(monkeypatch):
