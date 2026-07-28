@@ -72,9 +72,6 @@ request was queued — the actual agent reply arrives later as a separate push:
 }
 ```
 
-`client.py` is a small runnable demo of this exchange (it waits on `ws.recv()` for the async
-reply) using the `websockets` library.
-
 ## Custom Routes
 
 Beyond the built-in `chat` route, `app_rest_service.py` registers a custom `status` route with the
@@ -131,8 +128,8 @@ picks up the registered `status` route automatically, so no custom handler injec
 ## Auth
 
 `app_rest_service.py` defines the same demo `CustomAuthValidator` as `openai-websocket`: it
-decodes an **unsigned** JWT and accepts it when `email == "test@test.com"` and a `userId` claim
-is present.
+decodes an **unsigned** JWT and accepts it when `userId` is one of `user-1`/`user-2` and the
+matching `email` is `test1@test.com`/`test2@test.com`.
 
 **Warning:** signature verification is disabled for demo purposes only. Use real JWT verification
 (or your own `AuthValidator`) in production.
@@ -182,10 +179,9 @@ details on tuning `backlog_target` and cooldowns.
     This builds **two** separate Docker images — `dist-rest-service/` (`app_rest_service.py`) and
     `dist-agent-runner/` (`app_agent_runner.py`) — then runs `terraform apply`.
 
-4. Note the `websocket_api_endpoint_url` and `websocket_api_stage_name` outputs, then try it:
-    ```bash
-    uv run python ../client.py "wss://<websocket_api_endpoint_url>/<websocket_api_stage_name>" "What is 12 * 7?"
-    ```
+4. Note the `websocket_api_endpoint_url` and `websocket_api_stage_name` outputs, then connect to
+   `wss://<websocket_api_endpoint_url>/<websocket_api_stage_name>?token=<jwt>` with a WebSocket
+   client of your choice and send frames per the wire protocol above.
 
 ### Module source (temporary)
 

@@ -18,11 +18,11 @@ class CustomAuthValidator(AuthValidator):
             payload = jwt.decode(token, options={"verify_signature": False})
             user_id = payload.get("userId", "")
             email = payload.get("email", "")
-            if user_id and email == "test@test.com":
+            if user_id in ["user-1", "user-2"] and email in ["test1@test.com", "test2@test.com"]:
                 # 'userId' is required in claims — the WebSocket connection is keyed by it so
                 # the output-queue consumer can push replies back to the right client.
                 return ValidationResult(is_valid=True, claims={"userId": user_id})
-            return ValidationResult(is_valid=False, error_msg="Invalid token")
+            return ValidationResult(is_valid=False, error_msg="Invalid user ID or email in token")
         except Exception as e:
             return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
 

@@ -62,8 +62,6 @@ Receive:
 }
 ```
 
-`client.py` is a small runnable demo of this exchange using the `websockets` library.
-
 ## Custom Routes
 
 Beyond the built-in `chat` route, `app.py` registers two custom routes with the
@@ -165,8 +163,9 @@ returned. See `ECSWebSocketRequestHandler`'s class docstring for the full contra
 ## Auth
 
 `app.py` defines a demo `CustomAuthValidator` that decodes an **unsigned** JWT and accepts it when
-`email == "test@test.com"` and a `userId` claim is present. `userId` is required — it's how the
-container maps a connection to a user so replies can be routed back to the right client.
+`userId` is one of `user-1`/`user-2` and the matching `email` is `test1@test.com`/`test2@test.com`.
+`userId` is required — it's how the container maps a connection to a user so replies can be routed
+back to the right client.
 
 **Warning:** signature verification is disabled for demo purposes only. Use real JWT verification
 (or your own `AuthValidator`) in production.
@@ -208,10 +207,9 @@ Use `async` here until containerized stream support lands.
     `terraform apply`. The module builds the Docker image from `../dist` and pushes it to a
     Terraform-managed ECR repository automatically — no manual ECR setup or push is needed.
 
-4. Note the `websocket_api_endpoint_url` and `websocket_api_stage_name` outputs, then try it:
-    ```bash
-    uv run python ../client.py "wss://<websocket_api_endpoint_url>/<websocket_api_stage_name>" "What is 12 * 7?"
-    ```
+4. Note the `websocket_api_endpoint_url` and `websocket_api_stage_name` outputs, then connect to
+   `wss://<websocket_api_endpoint_url>/<websocket_api_stage_name>?token=<jwt>` with a WebSocket
+   client of your choice and send frames per the wire protocol above.
 
 ### Module source (temporary)
 
