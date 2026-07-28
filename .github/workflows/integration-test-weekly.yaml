@@ -186,6 +186,7 @@ jobs:
     environment: ci-tests
     strategy:
       fail-fast: false
+      max-parallel: 4
       matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
     defaults:
       run:
@@ -252,7 +253,8 @@ jobs:
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         run: python3 scripts/deploy/inject_dependencies.py
 
-      - name: Deploy, Test, and Destroy - ${{ matrix.path }}
+      - name: Deploy - ${{ matrix.path }}
+        id: deploy
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -263,133 +265,53 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         run: |
-          set +e
-          DEPLOY_EXIT=0
-          TEST_EXIT=0
-          DESTROY_EXIT=0
-          DESTROY_SKIPPED=false
-          KEEP_ON_FAILURE="${{ inputs.keep_resources_on_failure }}"
-
-          if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
-            # Deploy
-            python .github/scripts/run_single_test.py \
-              --type ${{ matrix.type }} \
-              --path ${{ matrix.path }} \
-              --deploy-dir ${{ matrix.deploy_dir }} \
-              --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
-              --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
-              --action deploy
-            DEPLOY_EXIT=$?
-
-            # Test - only if deploy succeeded
-            if [ $DEPLOY_EXIT -eq 0 ]; then
-              python .github/scripts/run_single_test.py \
-                --type ${{ matrix.type }} \
-                --path ${{ matrix.path }} \
-                --deploy-dir ${{ matrix.deploy_dir }} \
-                --action test
-              TEST_EXIT=$?
-            else
-              echo "::warning::Skipping test for ${{ matrix.path }} because deploy failed"
-            fi
-
-            # Destroy - always run, unless asked to keep resources after a failure for debugging
-            if [ "$KEEP_ON_FAILURE" == "true" ] && { [ $DEPLOY_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; }; then
-              DESTROY_SKIPPED=true
-            else
-              python .github/scripts/run_single_test.py \
-                --type ${{ matrix.type }} \
-                --path ${{ matrix.path }} \
-                --deploy-dir ${{ matrix.deploy_dir }} \
-                --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
-                --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
-                --action destroy
-              DESTROY_EXIT=$?
-            fi
-
-          elif [[ "${{ matrix.type }}" == "azure-serverless" || "${{ matrix.type }}" == "azure-containerized" ]]; then
-            # Deploy
-            python .github/scripts/run_single_test.py \
-              --type ${{ matrix.type }} \
-              --path ${{ matrix.path }} \
-              --deploy-dir ${{ matrix.deploy_dir }} \
-              --action deploy
-            DEPLOY_EXIT=$?
-
-            # Test - only if deploy succeeded
-            if [ $DEPLOY_EXIT -eq 0 ]; then
-              python .github/scripts/run_single_test.py \
-                --type ${{ matrix.type }} \
-                --path ${{ matrix.path }} \
-                --deploy-dir ${{ matrix.deploy_dir }} \
-                --action test
-              TEST_EXIT=$?
-            else
-              echo "::warning::Skipping test for ${{ matrix.path }} because deploy failed"
-            fi
-
-            # Destroy - always run, unless asked to keep resources after a failure for debugging
-            if [ "$KEEP_ON_FAILURE" == "true" ] && { [ $DEPLOY_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; }; then
-              DESTROY_SKIPPED=true
-            else
-              python .github/scripts/run_single_test.py \
-                --type ${{ matrix.type }} \
-                --path ${{ matrix.path }} \
-                --deploy-dir ${{ matrix.deploy_dir }} \
-                --action destroy
-              DESTROY_EXIT=$?
-            fi
-
-          elif [[ "${{ matrix.type }}" == "gcp-serverless" || "${{ matrix.type }}" == "gcp-containerized" ]]; then
-            # Deploy
-            python .github/scripts/run_single_test.py \
-              --type ${{ matrix.type }} \
-              --path ${{ matrix.path }} \
-              --deploy-dir ${{ matrix.deploy_dir }} \
-              --action deploy
-            DEPLOY_EXIT=$?
-
-            # Test - only if deploy succeeded
-            if [ $DEPLOY_EXIT -eq 0 ]; then
-              python .github/scripts/run_single_test.py \
-                --type ${{ matrix.type }} \
-                --path ${{ matrix.path }} \
-                --deploy-dir ${{ matrix.deploy_dir }} \
-                --action test
-              TEST_EXIT=$?
-            else
-              echo "::warning::Skipping test for ${{ matrix.path }} because deploy failed"
-            fi
-
-            # Destroy - always run, unless asked to keep resources after a failure for debugging
-            if [ "$KEEP_ON_FAILURE" == "true" ] && { [ $DEPLOY_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; }; then
-              DESTROY_SKIPPED=true
-            else
-              python .github/scripts/run_single_test.py \
-                --type ${{ matrix.type }} \
-                --path ${{ matrix.path }} \
-                --deploy-dir ${{ matrix.deploy_dir }} \
-                --action destroy
-              DESTROY_EXIT=$?
-            fi
+          ARGS=(--type ${{ matrix.type }} --path ${{ matrix.path }} --deploy-dir ${{ matrix.deploy_dir }} --action deploy)
+          # AWS deploys need the base VPC/subnets injected as terraform vars.
+          if [[ "${{ matrix.type }}" == aws-* ]]; then
+            ARGS+=(--vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}')
           fi
-          set -e
+          python .github/scripts/run_single_test.py "${ARGS[@]}"
 
-          if [ $DEPLOY_EXIT -ne 0 ]; then
-            echo "::error::Deploy failed for ${{ matrix.path }} (exit code $DEPLOY_EXIT)"
-          fi
-          if [ $TEST_EXIT -ne 0 ]; then
-            echo "::error::Test failed for ${{ matrix.path }} (exit code $TEST_EXIT)"
-          fi
-          if [ "$DESTROY_SKIPPED" == "true" ]; then
-            echo "::warning::Destroy skipped for ${{ matrix.path }} - keep_resources_on_failure is enabled. Remember to destroy these resources manually when done debugging."
-          elif [ $DESTROY_EXIT -ne 0 ]; then
-            echo "::error::Destroy failed for ${{ matrix.path }} (exit code $DESTROY_EXIT)"
-          fi
+      - name: Test - ${{ matrix.path }}
+        id: test
+        # Only run if deploy succeeded; skipped (not failed) otherwise.
+        if: steps.deploy.outcome == 'success'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: "true"
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          python .github/scripts/run_single_test.py \
+            --type ${{ matrix.type }} \
+            --path ${{ matrix.path }} \
+            --deploy-dir ${{ matrix.deploy_dir }} \
+            --action test
 
-          if [ $DEPLOY_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ] || [ $DESTROY_EXIT -ne 0 ]; then
-            exit 1
+      - name: Destroy - ${{ matrix.path }}
+        id: destroy
+        if: >-
+          !cancelled() &&
+          !(inputs.keep_resources_on_failure && (steps.deploy.outcome == 'failure' || steps.test.outcome == 'failure'))
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: "true"
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          ARGS=(--type ${{ matrix.type }} --path ${{ matrix.path }} --deploy-dir ${{ matrix.deploy_dir }} --action destroy)
+          if [[ "${{ matrix.type }}" == aws-* ]]; then
+            ARGS+=(--vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}')
           fi
+          python .github/scripts/run_single_test.py "${ARGS[@]}"
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v6
