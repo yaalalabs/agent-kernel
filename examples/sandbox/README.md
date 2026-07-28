@@ -1,7 +1,8 @@
 # Agent Kernel Sandbox Capability Examples
 
 Each subfolder is a self-contained project demonstrating one aspect of the sandbox
-capability. The first four are CLI projects; build and run any of them the same way:
+capability. All but `identity/` (which runs over REST, see its own README) are CLI
+projects; build and run any of them the same way:
 
     cd <example>
     ./build.sh                 # or: ./build.sh local  (installs agentkernel from ../../../ak-py/dist)

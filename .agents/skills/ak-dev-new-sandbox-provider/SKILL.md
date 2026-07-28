@@ -3,9 +3,9 @@ name: ak-dev-new-sandbox-provider
 description: >
   Step-by-step guide for adding a new sandbox provider to Agent Kernel.
   Use this skill when you need to integrate a new code-execution backend for the sandbox
-  capability (beyond local_subprocess and docker). Covers implementing the Sandbox /
-  SandboxProvider ABCs, declaring capabilities honestly, factory registration, configuration,
-  the contract test suite, and examples.
+  capability (beyond local_subprocess, docker, e2b, daytona, and ec2_ssm). Covers implementing
+  the Sandbox / SandboxProvider ABCs, declaring capabilities honestly, factory registration,
+  configuration, the contract test suite, and examples.
 license: Apache-2.0
 metadata:
   author: yaalalabs

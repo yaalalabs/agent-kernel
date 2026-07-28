@@ -117,7 +117,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 Let agents run code and shell commands in an isolated, permission-bounded environment — the platform handles it, your agent code stays clean.
 
 - **Enable it in config** — agents automatically gain code/command/file tools and the usage guidance is injected into their prompt.
-- **Pluggable providers** — `local_subprocess` (dev) and `docker` (container-isolated) today, with `e2b`, `daytona`, `kubernetes`, and cloud-native backends planned; bring your own via a dotted path.
+- **Pluggable providers** — `local_subprocess` (dev), `docker` (container-isolated), `e2b` (managed micro-VMs), `daytona` (cloud containers), and `ec2_ssm` (attach to an existing EC2 instance) today, with `kubernetes` and other cloud-native backends planned; bring your own via a dotted path.
 - **Workload profiles** — per-call, per-session, or shared lifetimes; each with its own permission policy (network egress, filesystem, CPU/memory, timeout) enforced fail-closed.
 - **Per-user identity** — run sandboxed code under the invoking user's identity, not one shared agent identity, via a pluggable principal resolver.
 
