@@ -1,4 +1,5 @@
 resource "aws_apigatewayv2_api" "http_api" {
+  count         = local.is_websocket_mode ? 0 : 1
   name          = "${var.product_alias}-${var.env_alias}-http-api-${var.region}"
   protocol_type = "HTTP"
   description   = "[${var.env_alias}] ${var.product_display_name} HTTP API"
@@ -18,6 +19,7 @@ resource "aws_apigatewayv2_api" "http_api" {
 }
 
 resource "aws_apigatewayv2_vpc_link" "ecs_alb" {
+  count              = local.is_websocket_mode ? 0 : 1
   name               = "${var.product_alias}-${var.env_alias}-httpapi-vpclink"
   security_group_ids = [module.rest_service.alb_security_group_id]
   subnet_ids         = local.subnet_ids
@@ -25,13 +27,13 @@ resource "aws_apigatewayv2_vpc_link" "ecs_alb" {
 }
 
 resource "aws_apigatewayv2_integration" "alb_proxy" {
-  for_each             = local.gateway_endpoints_map
-  api_id               = aws_apigatewayv2_api.http_api.id
+  for_each             = local.is_websocket_mode ? {} : local.gateway_endpoints_map
+  api_id               = aws_apigatewayv2_api.http_api[0].id
   integration_type     = "HTTP_PROXY"
   integration_method   = "ANY"
   integration_uri      = module.rest_service.alb_listener_arn
   connection_type      = "VPC_LINK"
-  connection_id        = aws_apigatewayv2_vpc_link.ecs_alb.id
+  connection_id        = aws_apigatewayv2_vpc_link.ecs_alb[0].id
   passthrough_behavior = "WHEN_NO_MATCH"
   request_parameters = try(each.value["overwrite_path"], null) != null ? {
     "overwrite:path" = each.value["overwrite_path"]
@@ -39,19 +41,21 @@ resource "aws_apigatewayv2_integration" "alb_proxy" {
 }
 
 resource "aws_apigatewayv2_route" "gateway_routes" {
-  for_each  = local.gateway_endpoints_map
-  api_id    = aws_apigatewayv2_api.http_api.id
+  for_each  = local.is_websocket_mode ? {} : local.gateway_endpoints_map
+  api_id    = aws_apigatewayv2_api.http_api[0].id
   route_key = each.key
   target    = "integrations/${aws_apigatewayv2_integration.alb_proxy[each.key].id}"
 }
 
 resource "aws_cloudwatch_log_group" "http_api" {
+  count             = local.is_websocket_mode ? 0 : 1
   name              = "/aws/apigateway/${var.product_alias}-${var.env_alias}-http-api"
   retention_in_days = 90
 }
 
 resource "aws_apigatewayv2_stage" "stage" {
-  api_id      = aws_apigatewayv2_api.http_api.id
+  count       = local.is_websocket_mode ? 0 : 1
+  api_id      = aws_apigatewayv2_api.http_api[0].id
   name        = "agents"
   auto_deploy = true
 
@@ -64,7 +68,7 @@ resource "aws_apigatewayv2_stage" "stage" {
   }
 
   access_log_settings {
-    destination_arn = aws_cloudwatch_log_group.http_api.arn
+    destination_arn = aws_cloudwatch_log_group.http_api[0].arn
     format = jsonencode({
       requestId      = "$context.requestId",
       sourceIp       = "$context.identity.sourceIp",

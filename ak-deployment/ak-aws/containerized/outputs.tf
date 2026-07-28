@@ -7,15 +7,18 @@ output "cluster_arn" {
 }
 
 output "api_gateway_id" {
-  value = aws_apigatewayv2_api.http_api.id
+  description = "HTTP API Gateway ID (REST/queue modes only; null in WebSocket modes)"
+  value       = try(aws_apigatewayv2_api.http_api[0].id, null)
 }
 
 output "api_gateway_stage" {
-  value = aws_apigatewayv2_stage.stage.name
+  description = "HTTP API Gateway stage name (REST/queue modes only; null in WebSocket modes)"
+  value       = try(aws_apigatewayv2_stage.stage[0].name, null)
 }
 
 output "agent_invoke_url" {
-  value = "${try(aws_apigatewayv2_stage.stage.invoke_url, format("%s/%s", aws_apigatewayv2_api.http_api.api_endpoint, aws_apigatewayv2_stage.stage.name))}/api/${var.api_version}/${var.agent_endpoint}"
+  description = "HTTP agent invoke URL (REST/queue modes only; null in WebSocket modes)"
+  value       = local.is_websocket_mode ? null : "${try(aws_apigatewayv2_stage.stage[0].invoke_url, format("%s/%s", aws_apigatewayv2_api.http_api[0].api_endpoint, aws_apigatewayv2_stage.stage[0].name))}/api/${var.api_version}/${var.agent_endpoint}"
 }
 
 output "vpc_id" {
