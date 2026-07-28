@@ -81,6 +81,14 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
     def _response(self, status_code: int, msg: str, success: bool, user_id: Optional[str] = None) -> JSONResponse:
         return JSONResponse(status_code=status_code, content=self._body(msg, success, user_id))
 
+    def build_success_http_response(self, msg: str, user_id: Optional[str] = None, status_code: int = 200) -> JSONResponse:
+        """Build the standard success response used by WebSocket routes."""
+        return self._response(status_code, msg, success=True, user_id=user_id)
+
+    def build_error_http_response(self, status_code: int, msg: str, user_id: Optional[str] = None) -> JSONResponse:
+        """Build the standard error response used by WebSocket routes."""
+        return self._response(status_code, msg, success=False, user_id=user_id)
+
 
 class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
     """Framework-managed WebSocket protocol routes ($connect/$disconnect/$default); owns the ``AuthValidator`` used at $connect.
@@ -118,25 +126,25 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
         try:
             connection_id = self._connection_id(request)
             if not connection_id:
-                return self._response(500, "Missing connection id", success=False)
+                return self.build_error_http_response(500, "Missing connection id")
 
             token = request.query_params.get("token")
             if not token:
-                return self._response(401, "Authentication token is required", success=False)
+                return self.build_error_http_response(401, "Authentication token is required")
 
             result = self._auth_validator.validate(token)
             if not result.is_valid:
-                return self._response(401, result.error_msg or "Authentication failed", success=False)
+                return self.build_error_http_response(401, result.error_msg or "Authentication failed")
 
             user_id = (result.claims or {}).get("userId")
             if not user_id:
-                return self._response(401, "'userId' claim is required in token", success=False)
+                return self.build_error_http_response(401, "'userId' claim is required in token")
 
             self.get_websocket_handler().on_connect(connection_id=connection_id, user_id=user_id)
-            return self._response(200, "WebSocket connection established", success=True, user_id=user_id)
+            return self.build_success_http_response("WebSocket connection established", user_id=user_id)
         except Exception as e:
             self._log.exception(f"WebSocket $connect failed: {e}")
-            return self._response(500, "Failed to establish WebSocket connection", success=False)
+            return self.build_error_http_response(500, "Failed to establish WebSocket connection")
 
     async def _handle_disconnect(self, request: Request) -> JSONResponse:
         """Remove the connection ($disconnect)."""
@@ -144,10 +152,10 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
             connection_id = self._connection_id(request)
             if connection_id:
                 self.get_websocket_handler().on_disconnect(connection_id=connection_id)
-            return self._response(200, "WebSocket connection closed", success=True)
+            return self.build_success_http_response("WebSocket connection closed")
         except Exception as e:
             self._log.exception(f"WebSocket $disconnect failed: {e}")
-            return self._response(500, "Failed to close WebSocket connection", success=False)
+            return self.build_error_http_response(500, "Failed to close WebSocket connection")
 
     async def _handle_default(self, request: Request) -> JSONResponse:
         """Handle unknown routes ($default) by notifying the client over WebSocket."""
@@ -165,7 +173,7 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
                     )
         except Exception as e:
             self._log.warning(f"Failed to notify client on $default: {e}")
-        return self._response(200, "Default route handled", success=True)
+        return self.build_success_http_response("Default route handled")
 
 
 class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
@@ -260,33 +268,30 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
                 if inspect.isawaitable(result):
                     result = await result
                 if result is not None:
-                    self.broadcast(ctx, result)
-                return self.build_success_response("Message processed successfully", user_id=ctx.user_id)
+                    self.get_websocket_handler().broadcast(
+                        endpoint_url=ctx.endpoint_url,
+                        message=result,
+                        user_id=ctx.user_id,
+                        message_type=AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE,
+                    )
+                return self.build_success_http_response("Message processed successfully", user_id=ctx.user_id)
             except self.WSRouteError as e:
-                return self.handle_route_error(e)
+                return self.build_error_http_response(e.status_code, e.message)
             except Exception as e:
                 self._log.exception(f"WebSocket custom route failed: {e}")
                 if ctx is not None:
-                    self._broadcast_error(ctx, "Route handler encountered an error")
-                return self._response(500, "Route processing failed", success=False)
+                    try:
+                        self.get_websocket_handler().broadcast(
+                            endpoint_url=ctx.endpoint_url,
+                            message={"status": "FAILED", "message": "Route handler encountered an error"},
+                            user_id=ctx.user_id,
+                            message_type=AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE,
+                        )
+                    except Exception as broadcast_error:
+                        self._log.warning(f"Failed to broadcast error to client: {broadcast_error}")
+                return self.build_error_http_response(500, "Route processing failed")
 
         return _endpoint
-
-    def broadcast(self, ctx: "ECSWebSocketRequestHandler.WSRouteContext", message: dict) -> None:
-        """Push a message to the connected client (from ``ctx``), always wrapped as a ``SYSTEM_RESPONSE`` envelope."""
-        self.get_websocket_handler().broadcast(
-            endpoint_url=ctx.endpoint_url,
-            message=message,
-            user_id=ctx.user_id,
-            message_type=AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE,
-        )
-
-    def _broadcast_error(self, ctx: "ECSWebSocketRequestHandler.WSRouteContext", error_message: str) -> None:
-        """Broadcast an error to the client (mirrors serverless ``_broadcast_error``); best-effort."""
-        try:
-            self.broadcast(ctx, {"status": "FAILED", "message": error_message})
-        except Exception as e:
-            self._log.warning(f"Failed to broadcast error to client: {e}")
 
     async def build_route_context(self, request: Request, *, is_chat_request: bool = False) -> "ECSWebSocketRequestHandler.WSRouteContext":
         """Parse the inbound frame and resolve the connection's user and push endpoint.
@@ -320,14 +325,6 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
             endpoint_url=endpoint_url,
         )
 
-    def handle_route_error(self, error: "ECSWebSocketRequestHandler.WSRouteError") -> JSONResponse:
-        """Render a WSRouteError (raised by build_route_context) as the standard error response."""
-        return self._response(error.status_code, error.message, success=False)
-
-    def build_success_response(self, msg: str, user_id: Optional[str] = None) -> JSONResponse:
-        """Build the standard 200 success response used by WebSocket routes."""
-        return self._response(200, msg, success=True, user_id=user_id)
-
     def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: Optional[str], session_id: str, endpoint_url: str) -> JSONResponse:
         """Queue mode: send to the input queue; ECSOutputConsumer pushes the reply."""
         self._log.info(f"Enqueuing WS chat request: request_id={request_id}, session_id={session_id}, user_id={user_id}")
@@ -360,7 +357,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
             user_id=user_id,
             message_type=AWSWebSocketHandler.MessageType.CHAT_RESPONSE,
         )
-        return self._response(status_code, "Request processed successfully", success=True, user_id=user_id)
+        return self.build_success_http_response("Request processed successfully", user_id=user_id, status_code=status_code)
 
     async def _handle_chat(self, request: Request) -> JSONResponse:
         """Handle a chat frame: enqueue it (queue mode) or run the agent inline (direct mode)."""
@@ -368,20 +365,20 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
             ctx = await self.build_route_context(request, is_chat_request=True)
 
             if ctx.message.body is None:
-                return self._response(400, "body is required", success=False)
+                return self.build_error_http_response(400, "body is required")
 
             session_id = ctx.message.body.session_id
             if not session_id:
-                return self._response(400, "session_id is required", success=False)
+                return self.build_error_http_response(400, "session_id is required")
 
             if self._is_queue_mode():
                 return self._enqueue_chat(ctx.message.body, ctx.user_id, ctx.message.request_id, session_id, ctx.endpoint_url)
             return await self._process_chat_direct(ctx.message.body, ctx.user_id, ctx.endpoint_url)
         except self.WSRouteError as e:
-            return self.handle_route_error(e)
+            return self.build_error_http_response(e.status_code, e.message)
         except Exception as e:
             self._log.exception(f"WebSocket chat request failed: {e}")
-            return self._response(500, "Request processing failed", success=False)
+            return self.build_error_http_response(500, "Request processing failed")
 
 
 class AWSWebsocketAPI(RESTAPI):
