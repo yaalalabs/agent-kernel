@@ -334,8 +334,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
         SQSHandler.send_message_to_input_queue(
             message_body=body.model_dump(),
-            message_group_id=session_id,
-            message_deduplication_id=request_id,
+            attributes={"message_group_id": session_id, "message_deduplication_id": request_id},
             request_id=request_id,
             user_id=user_id,
             custom_message_attributes=[
