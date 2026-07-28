@@ -334,11 +334,20 @@ sandbox:
   enabled: true
   type: daytona
   daytona:
+    image: python:3.12-slim         # container image for the sandbox...
+    # snapshot: my-warm-snapshot    # ...OR a named Daytona snapshot (mutually exclusive)
+    env_vars:                       # environment variables set inside the sandbox
+      APP_ENV: demo
     # target: us                    # Daytona target/region; omitted = SDK default
     # api_key_env: DAYTONA_API_KEY  # env variable holding the API key
   broker:
     flavor: thread
 ```
+
+A sandbox launches from one base — an `image` or a `snapshot`, never both (neither = Daytona's
+default snapshot). Resource limits (`policy.cpu` / `policy.memory_mb`) only attach to an
+**image-based** sandbox, so a resource policy forces the image path (using your `image`, or
+`python:3.12-slim` if unset); pinning both a `snapshot` and resource limits is rejected.
 
 ### `ec2_ssm` setup
 
@@ -463,5 +472,6 @@ e.g. `AK_SANDBOX__ENABLED=true`, `AK_SANDBOX__BROKER__FLAVOR=embedded`,
 - [`sandbox/profiles`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/profiles) — multiple profiles with different scopes; the agent routes per call.
 - [`sandbox/policy`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/policy) — policy/permissions on the docker provider: an enforced envelope plus the fail-closed `strict` model for what docker cannot enforce.
 - [`sandbox/docker`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/docker) — the `docker` provider: container-isolated execution with policy actually enforced (`network_egress: deny` → no network).
+- [`sandbox/daytona`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/daytona) — the `daytona` provider: cloud container sandboxes with enforced network and resource policy (needs a Daytona API key).
 - [`sandbox/identity`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/identity) — a REST app running sandboxed code under the authenticated end user's identity, end-to-end.
 - [`sandbox/ec2-ssm`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/ec2-ssm) — the `ec2_ssm` provider attaching to an existing EC2 instance over SSM (manual; needs a real instance).

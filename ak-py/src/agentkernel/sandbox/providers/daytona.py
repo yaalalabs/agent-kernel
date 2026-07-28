@@ -4,13 +4,15 @@ The SDK is synchronous, so every call runs in ``asyncio.to_thread``. Executions 
 ``process.code_run`` / ``process.exec``; files travel via ``fs.upload_file`` /
 ``fs.download_file``; ``install_packages`` is a ``pip install`` exec.
 
-The profile's ``idle_timeout`` maps onto Daytona's native ``auto_stop_interval``
-(minutes, rounded up — spec §Idle timeout). Policy mapping: ``deny`` egress →
-``network_block_all``; ``allowlist`` → ``network_allow_list`` (comma-separated CIDRs);
-cpu/memory → ``Resources`` on an image-based sandbox (Daytona only accepts explicit
-resources with an image, so the profile's ``daytona.image`` — default
-``python:3.12-slim`` — is used whenever the policy sets resource limits; snapshot-based
-sandboxes have their resources fixed by the snapshot).
+The sandbox base is configurable: ``daytona.image`` launches from a container image,
+``daytona.snapshot`` from a named Daytona snapshot (mutually exclusive; neither = Daytona's
+default snapshot), and ``daytona.env_vars`` sets environment variables inside it. The
+profile's ``idle_timeout`` maps onto Daytona's native ``auto_stop_interval`` (minutes,
+rounded up — spec §Idle timeout). Policy mapping: ``deny`` egress → ``network_block_all``;
+``allowlist`` → ``network_allow_list`` (comma-separated CIDRs); cpu/memory → ``Resources``.
+Daytona only attaches ``Resources`` to an **image-based** sandbox, so a resource policy
+forces the image path (using ``daytona.image`` or the default ``python:3.12-slim``); a
+resource policy against a configured ``snapshot`` is rejected as a conflict.
 
 The API key is read from the environment variable named by ``api_key_env``.
 """
@@ -134,21 +136,42 @@ class DaytonaSandboxProvider(SandboxProvider):
         return DaytonaSandbox(sandbox)
 
     def _create_params(self, policy: SandboxPolicy) -> Any:
-        """Map the ``SandboxPolicy`` onto Daytona create params (snapshot-based by default;
-        image-based when the policy sets resource limits)."""
+        """Map the config's base (``image`` / ``snapshot``) and the ``SandboxPolicy`` onto
+        Daytona create params.
+
+        A sandbox launches from either an image or a snapshot, never both (enforced by config
+        validation). Resource limits (cpu/memory) are only attachable to an **image-based**
+        sandbox, so: an explicit ``image`` or a resource policy takes the image path (falling
+        back to the default image when only resources force it); an explicit ``snapshot`` (or
+        neither, using Daytona's default snapshot) takes the snapshot path. A resource policy
+        against a configured ``snapshot`` is a genuine conflict and is rejected."""
         kwargs: dict = {"language": "python"}
+        if self._config.env_vars:
+            kwargs["env_vars"] = dict(self._config.env_vars)
         if self._idle_timeout is not None:
             kwargs["auto_stop_interval"] = max(1, math.ceil(self._idle_timeout / 60))
         if policy.network_egress == "deny":
             kwargs["network_block_all"] = True
         elif policy.network_egress == "allowlist":
             kwargs["network_allow_list"] = ",".join(policy.network_allow)
-        if policy.cpu is not None or policy.memory_mb is not None:
-            resources = Resources(
-                cpu=max(1, math.ceil(policy.cpu)) if policy.cpu is not None else None,
-                memory=max(1, math.ceil(policy.memory_mb / 1024)) if policy.memory_mb is not None else None,
+
+        has_resources = policy.cpu is not None or policy.memory_mb is not None
+        if has_resources and self._config.snapshot:
+            raise SandboxConfigError(
+                "daytona: cpu/memory limits require an image-based sandbox, but this profile pins a 'snapshot'; "
+                "use 'image' instead of 'snapshot', or drop the cpu/memory policy"
             )
-            return CreateSandboxFromImageParams(image=_DEFAULT_IMAGE, resources=resources, **kwargs)
+
+        if self._config.image or has_resources:
+            if has_resources:
+                kwargs["resources"] = Resources(
+                    cpu=max(1, math.ceil(policy.cpu)) if policy.cpu is not None else None,
+                    memory=max(1, math.ceil(policy.memory_mb / 1024)) if policy.memory_mb is not None else None,
+                )
+            return CreateSandboxFromImageParams(image=self._config.image or _DEFAULT_IMAGE, **kwargs)
+
+        if self._config.snapshot:
+            kwargs["snapshot"] = self._config.snapshot
         return CreateSandboxFromSnapshotParams(**kwargs)
 
     async def attach(self, sandbox_id: str, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:

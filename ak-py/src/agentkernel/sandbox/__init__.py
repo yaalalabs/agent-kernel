@@ -11,7 +11,7 @@ providers, and broker flavors stay internal.
 """
 
 from . import errors
-from .base import AttachedEnvironmentProvider, AttachedEnvironment, Sandbox, SandboxProvider
+from .base import AttachedEnvironment, AttachedEnvironmentProvider, Sandbox, SandboxProvider
 from .broker.base import ExecutionBroker
 from .manager import ExecutionManager
 from .model import (

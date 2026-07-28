@@ -31,7 +31,7 @@ from typing import Any, Optional
 
 import boto3
 
-from ..base import AttachedEnvironmentProvider, AttachedEnvironment, Sandbox
+from ..base import AttachedEnvironment, AttachedEnvironmentProvider, Sandbox
 from ..errors import SandboxCapabilityError, SandboxGoneError, SandboxTimeoutError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
 

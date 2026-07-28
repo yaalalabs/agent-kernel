@@ -427,6 +427,22 @@ class _SandboxE2BConfig(BaseModel):
 class _SandboxDaytonaConfig(BaseModel):
     api_key_env: str = Field(default="DAYTONA_API_KEY", description="Name of the environment variable holding the Daytona API key")
     target: Optional[str] = Field(default=None, description="Daytona target/region; None uses the SDK default")
+    image: Optional[str] = Field(
+        default=None,
+        description="Container image for the sandbox (e.g. 'python:3.12-slim' or a registry image). Mutually exclusive with 'snapshot'; when neither is set Daytona uses its default snapshot.",
+    )
+    snapshot: Optional[str] = Field(
+        default=None,
+        description="Named Daytona snapshot to launch from. Mutually exclusive with 'image'; when neither is set Daytona uses its default snapshot.",
+    )
+    env_vars: dict[str, str] = Field(default_factory=dict, description="Environment variables set inside the sandbox")
+
+    @model_validator(mode="after")
+    def _image_snapshot_exclusive(self) -> "_SandboxDaytonaConfig":
+        """A sandbox launches from exactly one base — reject configuring both."""
+        if self.image and self.snapshot:
+            raise ValueError("daytona config sets both 'image' and 'snapshot'; they are mutually exclusive — pick one")
+        return self
 
 
 class _SandboxBedrockAgentCoreConfig(BaseModel):

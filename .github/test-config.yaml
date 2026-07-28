@@ -38,6 +38,9 @@ e2e:
       path: examples/sandbox/policy
     - type: cli
       path: examples/sandbox/docker
+    # daytona needs a DAYTONA_API_KEY secret wired into the reusable workflow; enable once set.
+    # - type: cli
+    #   path: examples/sandbox/daytona
     - type: api
       path: examples/sandbox/identity
 

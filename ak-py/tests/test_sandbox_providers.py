@@ -1068,6 +1068,78 @@ async def test_daytona_resource_policy_uses_image_params(daytona_env):
 
 
 @pytest.mark.asyncio
+async def test_daytona_config_image_takes_image_path(daytona_env):
+    from agentkernel.core.config import _SandboxDaytonaConfig
+
+    module, client_cls = daytona_env
+    provider = _daytona_provider(module, _SandboxDaytonaConfig(image="ghcr.io/acme/py:1"))
+    principal, policy = _principal_policy()
+    await provider.create(principal=principal, policy=policy)  # no resource policy
+    params = client_cls.create_calls[0]
+    assert type(params).__name__ == "FakeImageParams"  # explicit image forces the image path
+    assert params.kwargs["image"] == "ghcr.io/acme/py:1"
+    assert "resources" not in params.kwargs  # none requested
+
+
+@pytest.mark.asyncio
+async def test_daytona_config_image_used_when_resources_present(daytona_env):
+    from agentkernel.core.config import _SandboxDaytonaConfig
+
+    module, client_cls = daytona_env
+    provider = _daytona_provider(module, _SandboxDaytonaConfig(image="ghcr.io/acme/py:1"))
+    principal = SandboxPrincipal(subject="a")
+    await provider.create(principal=principal, policy=SandboxPolicy(cpu=1))
+    params = client_cls.create_calls[0]
+    assert params.kwargs["image"] == "ghcr.io/acme/py:1"  # config image, not the default
+    assert params.kwargs["resources"].cpu == 1
+
+
+@pytest.mark.asyncio
+async def test_daytona_config_snapshot_takes_snapshot_path(daytona_env):
+    from agentkernel.core.config import _SandboxDaytonaConfig
+
+    module, client_cls = daytona_env
+    provider = _daytona_provider(module, _SandboxDaytonaConfig(snapshot="warm-1"))
+    principal, policy = _principal_policy()
+    await provider.create(principal=principal, policy=policy)
+    params = client_cls.create_calls[0]
+    assert type(params).__name__ == "FakeSnapshotParams"
+    assert params.kwargs["snapshot"] == "warm-1"
+
+
+@pytest.mark.asyncio
+async def test_daytona_config_env_vars_passed_through(daytona_env):
+    from agentkernel.core.config import _SandboxDaytonaConfig
+
+    module, client_cls = daytona_env
+    provider = _daytona_provider(module, _SandboxDaytonaConfig(env_vars={"FOO": "bar"}))
+    principal, policy = _principal_policy()
+    await provider.create(principal=principal, policy=policy)
+    assert client_cls.create_calls[0].kwargs["env_vars"] == {"FOO": "bar"}
+
+
+@pytest.mark.asyncio
+async def test_daytona_resources_against_snapshot_is_rejected(daytona_env):
+    from agentkernel.core.config import _SandboxDaytonaConfig
+    from agentkernel.sandbox.errors import SandboxConfigError
+
+    module, _client_cls = daytona_env
+    provider = _daytona_provider(module, _SandboxDaytonaConfig(snapshot="warm-1"))
+    principal = SandboxPrincipal(subject="a")
+    with pytest.raises(SandboxConfigError):  # resources need an image, not a snapshot
+        await provider.create(principal=principal, policy=SandboxPolicy(memory_mb=512))
+
+
+def test_daytona_config_image_snapshot_mutually_exclusive():
+    from pydantic import ValidationError
+
+    from agentkernel.core.config import _SandboxDaytonaConfig
+
+    with pytest.raises(ValidationError):
+        _SandboxDaytonaConfig(image="python:3.12-slim", snapshot="warm-1")
+
+
+@pytest.mark.asyncio
 async def test_daytona_missing_api_key_fails_loud(daytona_env, monkeypatch):
     from agentkernel.sandbox.errors import SandboxConfigError
 
