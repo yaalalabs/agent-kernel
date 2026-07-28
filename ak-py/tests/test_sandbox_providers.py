@@ -583,9 +583,49 @@ async def test_ssm_execute_code_wraps_python_heredoc(ssm_env):
 
 
 @pytest.mark.asyncio
-async def test_ssm_user_mode_assumes_role_and_runs_as(ssm_env):
+async def test_ssm_execute_code_heredoc_avoids_delimiter_collision(ssm_env):
+    """Code that contains the default delimiter as a line must not terminate the heredoc
+    early — the provider picks a collision-free delimiter instead."""
     module, fake = ssm_env
     provider = _ssm_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+
+    code = f"print('a')\n{module._HEREDOC_DELIMITER}\nprint('b')"  # delimiter appears mid-code
+    await sandbox.execute_code(code)
+    command = fake.ssm.send_calls[0]["Parameters"]["commands"][0]
+    used = command.split("<<'", 1)[1].split("'", 1)[0]
+    assert used != module._HEREDOC_DELIMITER  # bumped to avoid the embedded line
+    assert command == f"python3 - <<'{used}'\n{code}\n{used}"
+    assert used not in code.splitlines()  # the chosen delimiter is genuinely collision-free
+
+
+def test_ssm_role_session_name_sanitizes_and_clamps():
+    from agentkernel.sandbox.providers.ec2_ssm import _role_session_name
+
+    # allowed characters pass through
+    assert _role_session_name("alice") == "ak-sandbox-alice"
+    # characters outside [\w+=,.@-] (e.g. ':' '/' in an ARN-like subject) are replaced
+    name = _role_session_name("arn:aws:iam::1:user/alice")
+    assert ":" not in name and "/" not in name
+    assert __import__("re").fullmatch(r"[\w+=,.@-]{2,64}", name)
+    # long subjects clamp to 64 chars
+    assert len(_role_session_name("x" * 200)) == 64
+
+
+@pytest.mark.asyncio
+async def test_ssm_user_mode_assumes_role_and_runs_as(ssm_env, monkeypatch):
+    module, fake = ssm_env
+    provider = _ssm_provider(module)
+    # The assumed-role client is built via botocore's auto-refreshing provider; patch that
+    # seam to record (region, role_arn, subject) and hand back the fake SSM client.
+    assume_calls = []
+
+    def fake_assumed_role_client(region, role_arn, subject):
+        assume_calls.append((region, role_arn, subject))
+        return fake.ssm
+
+    monkeypatch.setattr(module.EC2SSMSandboxProvider, "_assumed_role_client", staticmethod(fake_assumed_role_client))
     principal = SandboxPrincipal(
         mode="user",
         subject="alice",
@@ -593,16 +633,38 @@ async def test_ssm_user_mode_assumes_role_and_runs_as(ssm_env):
     )
     sandbox = await provider.attach("i-abc123", principal=principal, policy=SandboxPolicy())
 
-    assert fake.sts.assume_calls[0]["RoleArn"] == "arn:aws:iam::1:role/dev"
-    assert fake.sts.assume_calls[0]["RoleSessionName"].startswith("ak-sandbox-alice")
-    ssm_calls = [kwargs for service, kwargs in fake.client_calls if service == "ssm"]
-    assert ssm_calls[-1]["aws_access_key_id"] == "AKIA-TEST"  # client built from the assumed role
-    assert ssm_calls[-1]["aws_session_token"] == "token"
+    assert assume_calls == [("us-east-1", "arn:aws:iam::1:role/dev", "alice")]  # role assumed once
 
     await sandbox.execute_command("whoami")
     command = fake.ssm.send_calls[0]["Parameters"]["commands"][0]
     assert command.startswith("sudo -n -u alice sh -c ")  # RunAs realized as a sudo prefix
     assert "whoami" in command
+
+
+@pytest.mark.asyncio
+async def test_ssm_user_mode_caches_assumed_client_per_subject_role(ssm_env, monkeypatch):
+    """A per_session user profile re-attaches on every execution; the assumed-role client is
+    cached per (subject, role_arn), so the role is assumed once, not once per execution."""
+    module, fake = ssm_env
+    provider = _ssm_provider(module)
+    assume_calls = []
+
+    def fake_assumed_role_client(region, role_arn, subject):
+        assume_calls.append((region, role_arn, subject))
+        return fake.ssm
+
+    monkeypatch.setattr(module.EC2SSMSandboxProvider, "_assumed_role_client", staticmethod(fake_assumed_role_client))
+    principal = SandboxPrincipal(mode="user", subject="alice", credentials={"role_arn": "arn:aws:iam::1:role/dev"})
+
+    # Two acquisitions (as the worker does across executions) -> one assume_role.
+    await provider.attach("i-abc123", principal=principal, policy=SandboxPolicy())
+    await provider.attach("i-abc123", principal=principal, policy=SandboxPolicy())
+    assert len(assume_calls) == 1
+
+    # A different subject is a distinct identity -> its own assumption.
+    other = SandboxPrincipal(mode="user", subject="bob", credentials={"role_arn": "arn:aws:iam::1:role/dev"})
+    await provider.attach("i-abc123", principal=other, policy=SandboxPolicy())
+    assert len(assume_calls) == 2
 
 
 @pytest.mark.asyncio
@@ -934,12 +996,15 @@ def daytona_env(monkeypatch):
 
             outer = self
 
-            def code_run(code, params=None, timeout=None):
+            # timeout is keyword-only here on purpose: the provider passes it by keyword, so a
+            # regression back to positional args (the fragility the PR review flagged) would
+            # raise TypeError instead of silently binding to the wrong parameter.
+            def code_run(code, params=None, *, timeout=None):
                 outer.code_calls.append((code, params, timeout))
                 outer.exec_threads.append(threading.current_thread())
                 return types.SimpleNamespace(exit_code=outer.next_exit_code, result=outer.next_result)
 
-            def exec_(command, cwd=None, env=None, timeout=None):
+            def exec_(command, *, cwd=None, env=None, timeout=None):
                 outer.exec_calls.append((command, cwd, env, timeout))
                 outer.exec_threads.append(threading.current_thread())
                 return types.SimpleNamespace(exit_code=outer.next_exit_code, result=outer.next_result)

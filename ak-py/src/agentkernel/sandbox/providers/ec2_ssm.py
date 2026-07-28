@@ -8,9 +8,11 @@ Mode-3 attach: both ``create`` and ``attach`` bind to an already-running instanc
 every call runs in ``asyncio.to_thread``.
 
 Identity mapping (spec §PrincipalResolver): agent mode uses the default boto3 credential
-chain; user mode calls ``sts:AssumeRole`` on ``credentials["role_arn"]`` and, when
-``credentials["run_as"]`` is set, runs each command as that OS user (realized as a
-``sudo -n -u <run_as>`` prefix — ``AWS-RunShellScript`` has no native RunAs).
+chain; user mode assumes ``credentials["role_arn"]`` via an auto-refreshing
+``sts:AssumeRole`` provider (the client is cached per ``(subject, role_arn)`` and re-assumes
+transparently near token expiry, so a long-lived session does not issue one AssumeRole per
+execution) and, when ``credentials["run_as"]`` is set, runs each command as that OS user
+(realized as a ``sudo -n -u <run_as>`` prefix — ``AWS-RunShellScript`` has no native RunAs).
 
 Isolation is ``none``: commands run directly on the shared instance with whatever
 permissions the SSM agent grants. All policy flags are declared False; only the
@@ -26,10 +28,12 @@ in a single command (``cd /app && ./run.sh``). The injected agent guidance says 
 
 import asyncio
 import logging
+import re
 import shlex
 from typing import Any, Optional
 
 import boto3
+from botocore.credentials import AssumeRoleCredentialFetcher as _AssumeRoleCredentialFetcher
 
 from ..base import AttachedEnvironment, AttachedEnvironmentProvider, Sandbox
 from ..errors import SandboxCapabilityError, SandboxGoneError, SandboxTimeoutError
@@ -40,6 +44,29 @@ logger = logging.getLogger("ak.sandbox.provider")
 _HEREDOC_DELIMITER = "AK_SANDBOX_EOF"
 _POLL_INTERVAL = 1.0  # seconds between get_command_invocation polls
 _PENDING_STATUSES = {"Pending", "InProgress", "Delayed"}
+# STS RoleSessionName allows [\w+=,.@-] and 2-64 chars; anything else is replaced.
+_ROLE_SESSION_INVALID = re.compile(r"[^\w+=,.@-]")
+
+
+def _heredoc_delimiter(code: str) -> str:
+    """Return a heredoc delimiter that does not appear as a line in ``code``.
+
+    A fixed delimiter would terminate the heredoc early if the user's code contained that
+    exact line, so append a counter until the delimiter is collision-free."""
+    lines = code.splitlines()
+    delimiter = _HEREDOC_DELIMITER
+    counter = 0
+    while delimiter in lines:
+        counter += 1
+        delimiter = f"{_HEREDOC_DELIMITER}_{counter}"
+    return delimiter
+
+
+def _role_session_name(subject: str) -> str:
+    """Build a valid STS ``RoleSessionName`` from ``subject``: replace characters outside the
+    allowed set, then clamp to STS's 2-64 length window (a fallback keeps the 2-char minimum)."""
+    sanitized = _ROLE_SESSION_INVALID.sub("_", f"ak-sandbox-{subject}")[:64]
+    return sanitized if len(sanitized) >= 2 else "ak-sandbox"
 
 
 class EC2SSMEnvironment(AttachedEnvironment):
@@ -58,7 +85,8 @@ class EC2SSMEnvironment(AttachedEnvironment):
         """Wrap the code in a ``python3 - <<'EOF'`` heredoc and run it as a shell command."""
         if language not in EC2SSMSandboxProvider.capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
-        script = f"python3 - <<'{_HEREDOC_DELIMITER}'\n{code}\n{_HEREDOC_DELIMITER}"
+        delimiter = _heredoc_delimiter(code)  # collision-safe: never a line already in `code`
+        script = f"python3 - <<'{delimiter}'\n{code}\n{delimiter}"
         return await self.execute_command(script, timeout)
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
@@ -140,6 +168,10 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
         """Store the config; boto3 clients are created lazily per identity mode."""
         super().__init__(config)
         self._agent_client: Optional[Any] = None
+        # user-mode: one auto-refreshing assumed-role client per (subject, role_arn), so a
+        # long-lived session re-assumes transparently near token expiry instead of issuing an
+        # sts:AssumeRole + new client on every execution.
+        self._user_clients: dict[tuple[str, str], Any] = {}
 
     async def attach(self, sandbox_id: str, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
         """Bind to the instance id after verifying SSM can see it; a missing/offline
@@ -174,14 +206,29 @@ class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
             from ..errors import SandboxPolicyError
 
             raise SandboxPolicyError("ec2_ssm user mode requires credentials['role_arn'] on the principal")
-        sts = boto3.client("sts", region_name=region)
-        assumed = sts.assume_role(RoleArn=role_arn, RoleSessionName=f"ak-sandbox-{principal.subject}"[:64])
-        credentials = assumed["Credentials"]
-        client = boto3.client(
-            "ssm",
-            region_name=region,
-            aws_access_key_id=credentials["AccessKeyId"],
-            aws_secret_access_key=credentials["SecretAccessKey"],
-            aws_session_token=credentials["SessionToken"],
+        run_as = principal.credentials.get("run_as")
+        cache_key = (principal.subject, role_arn)
+        client = self._user_clients.get(cache_key)
+        if client is None:
+            client = self._assumed_role_client(region, role_arn, principal.subject)
+            self._user_clients[cache_key] = client
+        return client, run_as
+
+    @staticmethod
+    def _assumed_role_client(region: Optional[str], role_arn: str, subject: str) -> Any:
+        """Build an SSM client whose credentials come from an auto-refreshing
+        ``sts:AssumeRole`` provider: the role is assumed on first use and re-assumed
+        transparently as the temporary credentials near expiry, so a cached client stays
+        valid across a long-lived session without a per-execution STS call."""
+        from botocore.credentials import DeferredRefreshableCredentials
+        from botocore.session import get_session
+
+        botocore_session = get_session()
+        fetcher = _AssumeRoleCredentialFetcher(
+            client_creator=botocore_session.create_client,
+            source_credentials=botocore_session.get_credentials(),
+            role_arn=role_arn,
+            extra_args={"RoleSessionName": _role_session_name(subject)},
         )
-        return client, principal.credentials.get("run_as")
+        botocore_session._credentials = DeferredRefreshableCredentials(method="assume-role", refresh_using=fetcher.fetch_credentials)
+        return boto3.Session(botocore_session=botocore_session).client("ssm", region_name=region)

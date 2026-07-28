@@ -54,12 +54,12 @@ class DaytonaSandbox(Sandbox):
         """Run the code via ``process.code_run``; a non-zero exit is data on the response."""
         if language not in DaytonaSandboxProvider.capabilities.languages:
             raise SandboxCapabilityError(self.__class__.__name__, f"language:{language}")
-        response = await asyncio.to_thread(self._sandbox.process.code_run, code, None, int(timeout) if timeout else None)
+        response = await asyncio.to_thread(self._sandbox.process.code_run, code, timeout=int(timeout) if timeout else None)
         return _to_result(response)
 
     async def execute_command(self, command: str, timeout: float | None = None) -> SandboxResult:
         """Run a shell command via ``process.exec``."""
-        response = await asyncio.to_thread(self._sandbox.process.exec, command, None, None, int(timeout) if timeout else None)
+        response = await asyncio.to_thread(self._sandbox.process.exec, command, timeout=int(timeout) if timeout else None)
         return _to_result(response)
 
     async def install_packages(self, packages: list[str]) -> SandboxResult:

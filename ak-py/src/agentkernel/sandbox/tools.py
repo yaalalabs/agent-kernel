@@ -287,7 +287,10 @@ def _profiles_text(config: Any) -> str:
         marker = " (default)" if name == config.default_profile else ""
         detail = f"provider '{prof.type}', scope {prof.scope}"
         if getattr(prof, "environment", "managed") == "attached":
-            detail += ", environment attached (connects to an existing system; never reset or destroyed)"
+            detail += (
+                ", environment attached (connects to an existing system the framework never provisions or "
+                "destroys; idle expiry or destroy only drops this session's binding, leaving the system itself untouched)"
+            )
         if prof.type in _NO_PERSISTENT_SHELL_TYPES:
             detail += (
                 "; NO persistent shell — each command runs as its own process, so a working-directory "

@@ -17,6 +17,7 @@ explicitly on every SDK call.
 
 import logging
 import os
+import shlex
 from typing import Optional
 
 from e2b.exceptions import NotFoundException
@@ -62,7 +63,7 @@ class E2BSandbox(Sandbox):
 
     async def install_packages(self, packages: list[str]) -> SandboxResult:
         """Install packages with pip via a shell command."""
-        return await self.execute_command("pip install " + " ".join(packages))
+        return await self.execute_command("pip install " + " ".join(shlex.quote(p) for p in packages))
 
     async def upload_file(self, path: str, content: bytes) -> None:
         """Write the bytes to the sandbox filesystem."""
