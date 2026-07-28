@@ -995,6 +995,10 @@ Key fields:
   instance via SSM; `aws` extra), or a dotted path to your own `SandboxProvider`.
 - **`scope`** — `per_call` (fresh per execution), `per_session` (persists across turns),
   `per_runtime` (one shared sandbox per profile).
+- **`environment`** — `managed` (default; the provider creates and disposes sandboxes) or
+  `attached` (deliberately connect to an existing environment the framework never owns,
+  e.g. an EC2 instance via `ec2_ssm`; requires the provider's `attach_to` and is validated
+  against the provider's lifecycle capabilities at startup).
 - **`policy`** — network egress, filesystem paths, cpu/memory, timeout; enforced per provider,
   fail-closed under `strict`.
 - **`identity.mode`** + **`principal_resolver`** — run code under the agent's or the invoking

@@ -826,6 +826,7 @@ sandbox:
     workspace:
       type: docker
       scope: per_session       # per_call | per_session | per_runtime
+      environment: managed     # managed (default) | attached (connect to an existing environment; needs attach_to)
       idle_timeout: 1800
       policy:
         network_egress: deny   # allow | deny | allowlist

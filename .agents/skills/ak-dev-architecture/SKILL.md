@@ -255,11 +255,11 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
   shell, languages, files, package_install, stateful, attach, principal_user, policy_*). The
   manager/worker consult it before routing; the worker enforces principal and policy **fail-closed**
   against it (unenforceable + `strict` → `SandboxPolicyError`).
-- **`SandboxManager`** (`manager.py`): process-wide singleton (like `ConversationThreadManager`).
+- **`ExecutionManager`** (`manager.py`): process-wide singleton (like `ConversationThreadManager`).
   Resolves the workload **profile** → provider, owns sandbox **sessions** (nv_cache registry,
   namespace-isolated per AK session; `per_call`/`per_session`/`per_runtime` scopes), and records
-  promoted tasks. `SandboxManager.get()` returns `None` when disabled.
-- **`SandboxProviderFactory` / `SandboxBrokerFactory`** (`factory.py`): the #541 house pattern —
+  promoted tasks. `ExecutionManager.get()` returns `None` when disabled.
+- **`SandboxProviderFactory` / `ExecutionBrokerFactory`** (`factory.py`): the #541 house pattern —
   built-in short names are `if/elif` real-import branches listed in `_BUILTIN_PROVIDER_NAMES`; a
   dotted-path `type` resolves via `resolve_dotted` (bring-your-own). Providers: `local_subprocess`
   (no isolation), `docker` (container). Broker flavors: `thread` (default, dedicated loop thread),
@@ -374,8 +374,8 @@ ak-py/src/agentkernel/
 │   ├── base.py              # Sandbox, SandboxProvider ABCs
 │   ├── model.py             # SandboxCapabilities, SandboxResult, SandboxSession, policy/principal
 │   ├── errors.py            # SandboxError hierarchy
-│   ├── manager.py           # SandboxManager (profile routing, sessions, fail-closed enforcement)
-│   ├── factory.py           # SandboxProviderFactory + SandboxBrokerFactory
+│   ├── manager.py           # ExecutionManager (profile routing, sessions, fail-closed enforcement)
+│   ├── factory.py           # SandboxProviderFactory + ExecutionBrokerFactory
 │   ├── principal.py         # PrincipalResolver, AgentPrincipalResolver
 │   ├── tools.py             # The eight agent-facing system tools
 │   ├── hooks.py             # SandboxPreHook (task-completion ingestion)

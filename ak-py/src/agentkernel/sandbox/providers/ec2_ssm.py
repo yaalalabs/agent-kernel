@@ -24,8 +24,8 @@ from typing import Any, Optional
 
 import boto3
 
-from ..base import Sandbox, SandboxProvider
-from ..errors import SandboxCapabilityError, SandboxConfigError, SandboxGoneError, SandboxTimeoutError
+from ..base import AttachedEnvironmentProvider, AttachedEnvironment, Sandbox
+from ..errors import SandboxCapabilityError, SandboxGoneError, SandboxTimeoutError
 from ..model import IsolationTier, SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
 
 logger = logging.getLogger("ak.sandbox.provider")
@@ -35,8 +35,11 @@ _POLL_INTERVAL = 1.0  # seconds between get_command_invocation polls
 _PENDING_STATUSES = {"Pending", "InProgress", "Delayed"}
 
 
-class EC2SSMSandbox(Sandbox):
-    """Handle bound to one EC2 instance; executions are SSM Run Command invocations."""
+class EC2SSMEnvironment(AttachedEnvironment):
+    """Handle bound to one EC2 instance; executions are SSM Run Command invocations.
+
+    An ``AttachedEnvironment``, not a sandbox: the instance exists and keeps running independently
+    of the framework, so ``close()`` (inherited) releases nothing."""
 
     def __init__(self, instance_id: str, ssm_client: Any, run_as: Optional[str] = None) -> None:
         """Bind the handle to the instance id (the sandbox id) and the resolved SSM client."""
@@ -94,10 +97,6 @@ class EC2SSMSandbox(Sandbox):
         except Exception as exc:  # noqa: BLE001 — the cancel is best-effort by contract
             logger.warning("Best-effort cancel of SSM command %s failed: %s", command_id, exc)
 
-    async def close(self) -> None:
-        """Nothing to release — the instance keeps running independently. Idempotent."""
-        return None
-
 
 def _map_instance_error(exc: Exception, instance_id: str) -> Exception:
     """Translate a boto3 invalid/unknown-instance error into ``SandboxGoneError``; pass others through."""
@@ -107,8 +106,12 @@ def _map_instance_error(exc: Exception, instance_id: str) -> Exception:
     return exc
 
 
-class EC2SSMSandboxProvider(SandboxProvider):
-    """Attach-only provider running commands on an existing EC2 instance over SSM."""
+class EC2SSMSandboxProvider(AttachedEnvironmentProvider):
+    """Attach-only provider running commands on an existing EC2 instance over SSM.
+
+    Lifecycle non-ownership comes from ``AttachedEnvironmentProvider``: ``create`` binds to
+    the configured ``attach_to`` instance and ``destroy`` is a no-op.
+    """
 
     capabilities = SandboxCapabilities(
         isolation=IsolationTier.NONE,  # commands run directly on the shared instance
@@ -118,6 +121,8 @@ class EC2SSMSandboxProvider(SandboxProvider):
         package_install=False,
         stateful=False,
         attach=True,
+        provisions=False,  # attach-only: never creates the environment
+        attaches_external=True,  # binds to an instance the framework does not own
         principal_user=True,  # user mode: sts:AssumeRole + optional run_as
         policy_network=False,
         policy_filesystem=False,
@@ -128,12 +133,6 @@ class EC2SSMSandboxProvider(SandboxProvider):
         """Store the config; boto3 clients are created lazily per identity mode."""
         super().__init__(config)
         self._agent_client: Optional[Any] = None
-
-    async def create(self, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
-        """Bind to the configured ``attach_to`` instance — ``create`` never provisions."""
-        if not self._config.attach_to:
-            raise SandboxConfigError("ec2_ssm is attach-only: set the profile's ec2_ssm.attach_to to an EC2 instance id")
-        return await self.attach(self._config.attach_to, principal=principal, policy=policy)
 
     async def attach(self, sandbox_id: str, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
         """Bind to the instance id after verifying SSM can see it; a missing/offline
@@ -151,7 +150,7 @@ class EC2SSMSandboxProvider(SandboxProvider):
             raise
         except Exception as exc:  # noqa: BLE001 — mapped to the typed hierarchy
             raise _map_instance_error(exc, sandbox_id)
-        return EC2SSMSandbox(sandbox_id, ssm_client, run_as)
+        return EC2SSMEnvironment(sandbox_id, ssm_client, run_as)
 
     def _resolve_client(self, principal: SandboxPrincipal) -> tuple[Any, Optional[str]]:
         """Map the principal onto an SSM client (spec §PrincipalResolver): agent mode uses the
@@ -179,7 +178,3 @@ class EC2SSMSandboxProvider(SandboxProvider):
             aws_session_token=credentials["SessionToken"],
         )
         return client, principal.credentials.get("run_as")
-
-    async def destroy(self, sandbox_id: str) -> None:
-        """No-op — the provider never owns the host, so there is nothing to dispose."""
-        return None

@@ -11,9 +11,9 @@ providers, and broker flavors stay internal.
 """
 
 from . import errors
-from .base import Sandbox, SandboxProvider
-from .broker.base import SandboxBroker
-from .manager import SandboxManager
+from .base import AttachedEnvironmentProvider, AttachedEnvironment, Sandbox, SandboxProvider
+from .broker.base import ExecutionBroker
+from .manager import ExecutionManager
 from .model import (
     IsolationTier,
     SandboxCapabilities,
@@ -30,8 +30,10 @@ __all__ = [
     "errors",
     "Sandbox",
     "SandboxProvider",
-    "SandboxBroker",
-    "SandboxManager",
+    "AttachedEnvironmentProvider",
+    "AttachedEnvironment",
+    "ExecutionBroker",
+    "ExecutionManager",
     "PrincipalResolver",
     "AgentPrincipalResolver",
     "IsolationTier",

@@ -446,10 +446,10 @@ class _SandboxEC2SSMConfig(BaseModel):
     attach_to: Optional[str] = Field(default=None, description="EC2 instance id to run commands against via SSM (attach-only)")
 
 
-class _SandboxBrokerConfig(BaseModel):
+class _ExecutionBrokerConfig(BaseModel):
     flavor: str = Field(
         default="thread",
-        description="Broker flavor: 'embedded' | 'thread' (in-process, available now) | a dotted path to a SandboxBroker subclass. The AWS 'sqs' flavor is planned in a later iteration.",
+        description="Broker flavor: 'embedded' | 'thread' (in-process, available now) | a dotted path to an ExecutionBroker subclass. The AWS 'sqs' flavor is planned in a later iteration.",
     )
     wait_timeout: float = Field(default=60.0, description="Max seconds a synchronous wait blocks before promotion to a task (0 = always promote)")
     inline_payload_max_bytes: int = Field(
@@ -477,6 +477,12 @@ class _SandboxProfileConfig(BaseModel):
         default="per_session",
         pattern="^(per_call|per_session|per_runtime)$",
         description="Sandbox lifetime: 'per_call' (new per execution), 'per_session' (per AK session), or 'per_runtime' (shared)",
+    )
+    environment: str = Field(
+        default="managed",
+        pattern="^(managed|attached)$",
+        description="Environment lifecycle: 'managed' (the provider creates and disposes sandboxes) or 'attached' "
+        "(deliberately connect to an existing environment the framework never owns; requires the provider's attach_to)",
     )
     idle_timeout: int = Field(default=1800, description="Seconds of inactivity before a sandbox session is closed on next touch")
     identity: _SandboxIdentityConfig = Field(default_factory=_SandboxIdentityConfig, description="Execution identity configuration")
@@ -508,7 +514,7 @@ class _SandboxConfig(BaseModel):
         default=None, description="Dotted path to a PrincipalResolver mapping the session/agent to a SandboxPrincipal"
     )
     tool_output_max_chars: int = Field(default=8000, description="Maximum characters of tool output returned to the agent before truncation")
-    broker: _SandboxBrokerConfig = Field(default_factory=_SandboxBrokerConfig, description="Sandbox broker configuration")
+    broker: _ExecutionBrokerConfig = Field(default_factory=_ExecutionBrokerConfig, description="Sandbox broker configuration")
     profiles: dict[str, _SandboxProfileConfig] = Field(
         default_factory=dict, description="Named workload profiles, each selecting a provider and its policy/identity"
     )
@@ -521,6 +527,11 @@ class _SandboxConfig(BaseModel):
         default=None,
         pattern="^(per_call|per_session|per_runtime)$",
         description="Single-backend sugar: scope for the synthesized default profile",
+    )
+    environment: Optional[str] = Field(
+        default=None,
+        pattern="^(managed|attached)$",
+        description="Single-backend sugar: environment lifecycle for the synthesized default profile",
     )
     local_subprocess: Optional[_SandboxLocalSubprocessConfig] = Field(
         default=None, description="Single-backend sugar: 'local_subprocess' provider configuration"
@@ -554,6 +565,8 @@ class _SandboxConfig(BaseModel):
             }
             if self.scope is not None:
                 profile_kwargs["scope"] = self.scope
+            if self.environment is not None:
+                profile_kwargs["environment"] = self.environment
             self.profiles = {self.default_profile: _SandboxProfileConfig(**profile_kwargs)}
         return self
 

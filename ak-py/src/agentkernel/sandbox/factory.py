@@ -59,8 +59,44 @@ class SandboxProviderFactory:
         if cached is not None:
             return cached
         provider = cls._build(profile_name, profile)
+        cls._validate_environment(profile_name, profile, provider)
         cls._cache[cache_key] = provider
         return provider
+
+    @classmethod
+    def _validate_environment(cls, profile_name: str, profile: Any, provider: SandboxProvider) -> None:
+        """Enforce the profile's ``environment`` mode against the provider's declared lifecycle
+        capabilities, both directions, at build time (startup fails, not the first execution):
+
+        * ``attached`` requires a provider that can bind to an external environment
+          (``attaches_external``) AND a configured ``attach_to`` target.
+        * ``managed`` (the default) requires a provider that can provision
+          (``provisions``) and must NOT carry an ``attach_to`` target — connecting to an
+          existing environment is a deliberate, explicit choice, never a side effect.
+        """
+        caps = provider.capabilities
+        mode = getattr(profile, "environment", "managed")
+        attach_to = getattr(provider._config, "attach_to", None)
+        if mode == "attached":
+            if not caps.attaches_external:
+                raise SandboxConfigError(
+                    f"sandbox profile '{profile_name}' declares environment: attached, but provider "
+                    f"'{type(provider).__name__}' cannot attach to an existing environment; it only provisions managed sandboxes"
+                )
+            if not attach_to:
+                raise SandboxConfigError(f"sandbox profile '{profile_name}' declares environment: attached but no attach_to target is configured")
+        else:  # managed
+            if not caps.provisions:
+                raise SandboxConfigError(
+                    f"sandbox profile '{profile_name}' selects attach-only provider '{profile.type}', which cannot "
+                    "provision managed sandboxes; set environment: attached (and attach_to) to deliberately "
+                    "connect to an existing environment"
+                )
+            if attach_to:
+                raise SandboxConfigError(
+                    f"sandbox profile '{profile_name}' sets attach_to but environment is 'managed'; set "
+                    "environment: attached to deliberately connect to an existing environment, or remove attach_to"
+                )
 
     @classmethod
     def _build(cls, profile_name: str, profile: Any) -> SandboxProvider:
@@ -140,27 +176,27 @@ class SandboxProviderFactory:
         cls._cache = {}
 
 
-class SandboxBrokerFactory:
-    """Resolves the configured broker flavor to a ``SandboxBroker`` instance."""
+class ExecutionBrokerFactory:
+    """Resolves the configured broker flavor to a ``ExecutionBroker`` instance."""
 
     @classmethod
     def get(cls):
         """Build the broker for the configured ``sandbox.broker.flavor``.
 
         Built-in short names map to their dotted paths; a dotted path is treated as a
-        ``SandboxBroker`` subclass (BYO); an unknown non-dotted flavor fails loud, naming the
+        ``ExecutionBroker`` subclass (BYO); an unknown non-dotted flavor fails loud, naming the
         value and the built-ins (#541 error shape — matching the provider path). The broker is
         constructed with the ``sandbox.broker`` config block.
         """
-        from .broker.base import SandboxBroker  # local import: avoid eager broker import at module load
+        from .broker.base import ExecutionBroker  # local import: avoid eager broker import at module load
 
         config = AKConfig.get().sandbox
         flavor = config.broker.flavor
         if flavor not in _BUILTIN_BROKERS and "." not in flavor:
             raise SandboxConfigError(
                 f"unknown sandbox broker flavor '{flavor}'; expected one of {sorted(_BUILTIN_BROKERS)} "
-                "or a dotted path to a SandboxBroker subclass"
+                "or a dotted path to an ExecutionBroker subclass"
             )
         dotted = _BUILTIN_BROKERS.get(flavor, flavor)  # short name -> dotted path, else treat as dotted path
-        broker_cls = resolve_dotted(dotted, base=SandboxBroker, error=SandboxConfigError)
+        broker_cls = resolve_dotted(dotted, base=ExecutionBroker, error=SandboxConfigError)
         return broker_cls(config.broker)

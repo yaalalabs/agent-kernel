@@ -12,7 +12,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from .errors import SandboxCapabilityError
+from .errors import SandboxCapabilityError, SandboxConfigError
 from .model import SandboxCapabilities, SandboxPolicy, SandboxPrincipal, SandboxResult
 
 
@@ -20,7 +20,7 @@ class Sandbox(ABC):
     """Handle to one live sandbox. Created by a ``SandboxProvider``, never constructed directly.
 
     Concurrency: a ``Sandbox`` instance is used only from the event loop that created it,
-    with at most one in-flight execute call. Callers (``SandboxManager`` / broker worker)
+    with at most one in-flight execute call. Callers (``ExecutionManager`` / broker worker)
     uphold this via a per-``sandbox_session_id`` lock; providers may assume it.
     """
 
@@ -110,3 +110,45 @@ class SandboxProvider(ABC):
     @abstractmethod
     async def destroy(self, sandbox_id: str) -> None:
         """Permanently dispose backend state. Idempotent; unknown ids are a no-op."""
+
+
+class AttachedEnvironment(Sandbox):
+    """Handle to an environment the framework connects to but never owns.
+
+    The handle counterpart of ``AttachedEnvironmentProvider``: where a ``Sandbox`` handle
+    fronts something the provider created (and will eventually destroy), an ``AttachedEnvironment``
+    fronts something that already exists independently — an EC2 instance, a running pod, a
+    production service. Concrete attach-only handles subclass this instead of ``Sandbox``
+    so their names stop claiming sandbox-ness (e.g. ``EC2SSMEnvironment``).
+
+    The one lifecycle rule it fixes: ``close()`` is a no-op — releasing the handle must
+    never affect an environment that runs independently of the framework.
+    """
+
+    async def close(self) -> None:
+        """Nothing to release — the environment runs independently of the framework. Idempotent."""
+        return None
+
+
+class AttachedEnvironmentProvider(SandboxProvider):
+    """Base for attach-only providers: environments the framework connects to but never owns.
+
+    Subclasses bind to something that already exists (an EC2 instance, a running pod, a
+    production service) and therefore implement only ``attach``, returning an
+    ``AttachedEnvironment`` handle. This base fixes the lifecycle non-ownership once: ``create``
+    binds to the configured ``attach_to`` target (never provisions) and ``destroy`` is a
+    no-op (never disposes). Declare ``provisions=False`` and ``attaches_external=True`` in
+    ``capabilities``; profiles selecting such a provider must opt in with
+    ``environment: attached``.
+    """
+
+    async def create(self, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
+        """Bind to the configured ``attach_to`` target — attach-only providers never provision."""
+        attach_to = getattr(self._config, "attach_to", None)
+        if not attach_to:
+            raise SandboxConfigError(f"{self.__class__.__name__} is attach-only: configure the profile's attach_to with the target to connect to")
+        return await self.attach(attach_to, principal=principal, policy=policy)
+
+    async def destroy(self, sandbox_id: str) -> None:
+        """No-op — the provider never owns the environment, so there is nothing to dispose."""
+        return None

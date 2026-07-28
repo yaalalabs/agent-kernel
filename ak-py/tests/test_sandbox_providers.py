@@ -20,7 +20,7 @@ import pytest
 
 from agentkernel.core.config import (
     AKConfig,
-    _SandboxBrokerConfig,
+    _ExecutionBrokerConfig,
     _SandboxConfig,
     _SandboxDockerConfig,
     _SandboxLocalSubprocessConfig,
@@ -29,7 +29,7 @@ from agentkernel.core.config import (
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxGoneError, SandboxPolicyError, SandboxTimeoutError
 from agentkernel.sandbox.factory import SandboxProviderFactory
-from agentkernel.sandbox.manager import SandboxManager
+from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import SandboxPolicy, SandboxPrincipal
 from agentkernel.sandbox.providers.local_subprocess import LocalSubprocessSandboxProvider
 from agentkernel.sandbox.testing import SandboxProviderContract
@@ -38,11 +38,11 @@ from agentkernel.sandbox.testing import SandboxProviderContract
 @pytest.fixture(autouse=True)
 def reset_singletons():
     AKConfig._reset()
-    SandboxManager._reset()
+    ExecutionManager._reset()
     SandboxProviderFactory._reset()
     yield
     AKConfig._reset()
-    SandboxManager._reset()
+    ExecutionManager._reset()
     SandboxProviderFactory._reset()
 
 
@@ -158,14 +158,14 @@ async def test_subprocess_end_to_end_through_manager(monkeypatch):
     """The full path: config -> factory real import -> manager -> embedded broker -> real
     subprocess, with workspace state persisting across manager calls (attach path)."""
     profile = _SandboxProfileConfig(type="local_subprocess", local_subprocess=_SandboxLocalSubprocessConfig())
-    cfg = _SandboxConfig(enabled=True, broker=_SandboxBrokerConfig(flavor="embedded"), profiles={"default": profile})
+    cfg = _SandboxConfig(enabled=True, broker=_ExecutionBrokerConfig(flavor="embedded"), profiles={"default": profile})
 
     class _Cfg:
         sandbox = cfg
         multimodal = None
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         result = await mgr.execute(command="echo persisted > state.txt")
@@ -639,10 +639,15 @@ async def test_ssm_invalid_instance_maps_to_gone(ssm_env):
 
 @pytest.mark.asyncio
 async def test_ssm_close_and_destroy_are_no_ops(ssm_env):
+    from agentkernel.sandbox.base import AttachedEnvironment
+
     module, fake = ssm_env
     provider = _ssm_provider(module)
     principal, policy = _principal_policy()
     sandbox = await provider.create(principal=principal, policy=policy)
+    # The handle is an AttachedEnvironment, not a plain Sandbox: it fronts an instance the
+    # framework never owns, so releasing it must never affect the instance.
+    assert isinstance(sandbox, AttachedEnvironment)
     await sandbox.close()
     await sandbox.close()  # idempotent
     await provider.destroy(sandbox.id)  # never owns the host

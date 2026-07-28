@@ -898,3 +898,37 @@ Ordered by `plan.md`; listed here for completeness:
 - New dev skill `.agents/skills/ak-dev-new-sandbox-provider/` cloned from
   `ak-dev-new-guardrail-provider`'s structure once the interface lands; the research skill's
   status metadata flips per its own maintenance note.
+
+## Amendment (2026-07-28): execution plane rename + managed/attached environment lifecycle
+
+Adopted during post-merge iterations 7-8, after the `ec2_ssm` provider made "sandbox"
+inaccurate for attach-mode targets (production systems the framework connects to but never
+owns). Domain objects keep their `Sandbox*` names; the orchestration plane is renamed and
+lifecycle ownership becomes an explicit, validated profile choice.
+
+**Renames (code-facing only; config keys unchanged):** `SandboxManager` →
+`ExecutionManager`, `SandboxBroker` → `ExecutionBroker`, `SandboxBrokerRequest` →
+`ExecutionRequest`, `SandboxCompletion` → `ExecutionCompletion`, `SandboxBrokerFactory` →
+`ExecutionBrokerFactory`, `SandboxBrokerError` → `ExecutionBrokerError`; the planned AWS
+runner lands as `ExecutionBrokerRunner`. `BrokerWorkerCore` and all `Sandbox*` domain
+models/ABCs/errors are unchanged.
+
+**Environment lifecycle:** profiles gain `environment: managed | attached` (default
+`managed`; also available on the single-backend sugar). `SandboxCapabilities` gains
+`provisions` (default `True`) and `attaches_external` (default `False`).
+`AttachedEnvironmentProvider(SandboxProvider)` is a public intermediate base for attach-only
+backends: `create` binds to the config's `attach_to`, `destroy` is a no-op; its handle
+counterpart `AttachedEnvironment(Sandbox)` fixes `close()` as a no-op (the environment runs
+independently of the framework). `ec2_ssm` derives from both (`EC2SSMSandboxProvider` /
+`EC2SSMEnvironment`, `provisions=False, attaches_external=True`); `docker` declares
+`attaches_external=True`.
+
+**Validation (factory, at build time, both directions):** `attached` requires
+`attaches_external` and a configured `attach_to`; `managed` requires `provisions` and
+rejects a configured `attach_to` (connecting to an existing environment is a deliberate
+choice, never a side effect).
+
+**Worker/manager rules for `attached`:** the `destroy` operation drops the session binding
+without calling the provider's `destroy`; the `SandboxGoneError` self-heal never provisions
+a replacement (the error is surfaced instead); the idle-expiry notice reports a binding
+reset with the environment untouched.

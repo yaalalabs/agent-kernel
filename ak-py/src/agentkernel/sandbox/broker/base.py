@@ -1,7 +1,7 @@
-"""Broker wire contract and the ``SandboxBroker`` ABC.
+"""Broker wire contract and the ``ExecutionBroker`` ABC.
 
-``SandboxBrokerRequest``/``SandboxCompletion`` are the public messages exchanged between
-the agent-side ``SandboxManager`` and a broker worker. They are self-sufficient — a request
+``ExecutionRequest``/``ExecutionCompletion`` are the public messages exchanged between
+the agent-side ``ExecutionManager`` and a broker worker. They are self-sufficient — a request
 carries the resolved principal, policy, and the sandbox session (including the reconnect
 handle) so a remote worker needs nothing else to execute it.
 """
@@ -18,30 +18,30 @@ BrokerOperation = Literal["execute_code", "execute_command", "install_packages",
 
 
 class BoundedCompletionStore:
-    """A bounded, LRU-evicting ``task_id -> SandboxCompletion`` map for the in-process broker
+    """A bounded, LRU-evicting ``task_id -> ExecutionCompletion`` map for the in-process broker
     flavors, so a long-running server does not accumulate one completion per execution for the
     process lifetime. The cap only bounds the tail: a completion is normally dropped as soon as
-    ``SandboxManager`` consumes it (``discard``), and promoted tasks are polled within seconds —
+    ``ExecutionManager`` consumes it (``discard``), and promoted tasks are polled within seconds —
     far inside the cap — while synchronous results are never polled at all and just age out."""
 
     def __init__(self, maxlen: int = 1024) -> None:
         self._maxlen = maxlen
-        self._items: "OrderedDict[str, SandboxCompletion]" = OrderedDict()
+        self._items: "OrderedDict[str, ExecutionCompletion]" = OrderedDict()
 
-    def set(self, task_id: str, completion: "SandboxCompletion") -> None:
+    def set(self, task_id: str, completion: "ExecutionCompletion") -> None:
         self._items[task_id] = completion
         self._items.move_to_end(task_id)
         while len(self._items) > self._maxlen:
             self._items.popitem(last=False)  # evict the oldest
 
-    def get(self, task_id: str) -> Optional["SandboxCompletion"]:
+    def get(self, task_id: str) -> Optional["ExecutionCompletion"]:
         return self._items.get(task_id)
 
     def discard(self, task_id: str) -> None:
         self._items.pop(task_id, None)
 
 
-class SandboxBrokerRequest(BaseModel):
+class ExecutionRequest(BaseModel):
     task_id: str
     operation: BrokerOperation
     payload: dict[str, Any] = Field(default_factory=dict)  # operation arguments
@@ -54,7 +54,7 @@ class SandboxBrokerRequest(BaseModel):
     wait_deadline: Optional[float] = None  # epoch seconds; None = caller will not wait
 
 
-class SandboxCompletion(BaseModel):
+class ExecutionCompletion(BaseModel):
     task_id: str
     status: Literal["succeeded", "failed", "timed_out"]
     result: Optional[SandboxResult] = None  # inline when small
@@ -63,7 +63,7 @@ class SandboxCompletion(BaseModel):
     sandbox_session: SandboxSession  # updated handle (e.g. newly created sandbox_id)
 
 
-class SandboxBroker(ABC):
+class ExecutionBroker(ABC):
     """Transport between the agent-side manager and the execution engine.
 
     In-process flavors (``embedded``, ``thread``) run ``BrokerWorkerCore`` locally; the AWS
@@ -71,12 +71,12 @@ class SandboxBroker(ABC):
     """
 
     @abstractmethod
-    async def submit(self, request: SandboxBrokerRequest, wait: Optional[float]) -> Union[SandboxResult, SandboxTask]:
+    async def submit(self, request: ExecutionRequest, wait: Optional[float]) -> Union[SandboxResult, SandboxTask]:
         """Submit a request. Returns a ``SandboxResult`` when it completes within ``wait``,
         or a ``SandboxTask`` handle when execution is promoted to run asynchronously."""
 
     @abstractmethod
-    async def result(self, task_id: str) -> Optional[SandboxCompletion]:
+    async def result(self, task_id: str) -> Optional[ExecutionCompletion]:
         """Return the completion for a previously submitted task, or None if not yet available."""
 
     async def discard(self, task_id: str) -> None:

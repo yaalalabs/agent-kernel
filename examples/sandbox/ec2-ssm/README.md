@@ -2,12 +2,15 @@
 
 See [../README.md](../README.md) for the full set of sandbox examples.
 
-This example demonstrates **mode-3 attach**: instead of provisioning a sandbox, the agent
-executes code on an **EC2 instance you already own**, over AWS Systems Manager (SSM) Run
-Command. The `ec2_ssm` provider is attach-only — `create` binds to the configured instance
-and never provisions; `destroy` is a no-op (the provider never owns the host). Commands are
-`ssm:SendCommand` (`AWS-RunShellScript`) invocations polled to completion; Python code is
-wrapped in a `python3 - <<'EOF'` heredoc.
+This example demonstrates an **attached environment**: instead of provisioning a sandbox,
+the agent executes code on an **EC2 instance you already own**, over AWS Systems Manager
+(SSM) Run Command. The profile must declare `environment: attached` — connecting agents to
+an existing system is a deliberate, validated opt-in (a managed profile selecting the
+attach-only `ec2_ssm` provider is rejected at startup). Attached environments are never
+destroyed or recreated by the framework: destroying the session or idling out only drops
+the binding, and if the instance becomes unreachable the failure is surfaced instead of
+self-healing into a fresh sandbox. Commands are `ssm:SendCommand` (`AWS-RunShellScript`)
+invocations polled to completion; Python code is wrapped in a `python3 - <<'EOF'` heredoc.
 
 > **Warning:** isolation is **`none`**. Commands run directly on the instance with the SSM
 > agent's OS permissions, and every policy dimension except the execution timeout is
