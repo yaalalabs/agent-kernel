@@ -71,6 +71,23 @@
       ]
     },
     {
+      "id": "cap-tracing-logfire",
+      "name": "Add Pydantic Logfire tracing",
+      "input": "Add Pydantic Logfire tracing to my project",
+      "expected_outputs": [
+        "trace:",
+        "type: logfire",
+        "enabled: true",
+        "LOGFIRE_TOKEN",
+        "agentkernel[",
+        "logfire"
+      ],
+      "must_not_contain": [
+        "type: langfuse",
+        "type: openllmetry"
+      ]
+    },
+    {
       "id": "cap-session-redis",
       "name": "Add Redis session persistence",
       "input": "Add Redis session persistence to my project",
