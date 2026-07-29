@@ -388,6 +388,7 @@ class AWSWebsocketAPI(RESTAPI):
     registered ``AuthValidator``) and one application handler (chat + every route registered via ``register``).
     Authentication is mandatory: call ``set_auth_handler`` (claims must include a ``userId``) before ``run()``.
     """
+
     _ws_auth_validator: Optional[AuthValidator] = None
     _ws_custom_routes: ClassVar[dict[str, Callable]] = {}
 

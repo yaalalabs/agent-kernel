@@ -31,6 +31,7 @@ class CustomAuthValidator(AuthValidator):
 async def echo(ctx: dict) -> dict:
     return ctx
 
+
 def main():
     ECSIOHandler.run(auth_validator=CustomAuthValidator())
 

@@ -49,9 +49,7 @@ class RestHandler(AgentRESTRequestHandler):
             # Unique request_id, distinct from session_id.
             request_id = str(uuid.uuid4())
 
-            self._log.info(
-                f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={body.prompt[:50]}"
-            )
+            self._log.info(f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={body.prompt[:50]}")
 
             # Offload the sync send so it doesn't block the event loop.
             queue_result = await asyncio.to_thread(

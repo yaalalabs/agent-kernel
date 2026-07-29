@@ -52,6 +52,7 @@ class CustomAuthValidator(AuthValidator):
         except Exception as e:
             return ValidationResult(is_valid=False, error_msg=f"Token validation failed: {str(e)}")
 
+
 @AWSWebsocketAPI.register("status")  # Terraform: ws_routes = [{ route = "status" }]
 async def status(ctx: dict) -> dict:
     return {"status": "OK", "user_id": ctx["user_id"]}

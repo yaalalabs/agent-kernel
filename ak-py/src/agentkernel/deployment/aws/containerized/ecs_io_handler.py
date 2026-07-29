@@ -32,13 +32,13 @@ class ECSIOHandler:
             # Auth is mandatory in WebSocket mode — fail fast rather than raise deep inside the thread.
             if auth_validator is None:
                 raise ValueError(
-                    "auth_validator is required for WebSocket (ASYNC/STREAM) mode. "
-                    "Call ECSIOHandler.run(auth_validator=MyValidator())."
+                    "auth_validator is required for WebSocket (ASYNC/STREAM) mode. " "Call ECSIOHandler.run(auth_validator=MyValidator())."
                 )
 
             # Register the validator on AWSWebsocketAPI so its default handler picks it up.
             def run_api() -> None:
                 AWSWebsocketAPI.set_auth_handler(auth_validator=auth_validator).run()
+
         else:
             from .core.api.rest_api import AWSRestAPI
 
