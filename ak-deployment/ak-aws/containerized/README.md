@@ -491,6 +491,12 @@ scaling_config = {
 See [examples/aws-containerized/](../../examples/aws-containerized/) for complete examples:
 
 - **openai-dynamodb-scalable** - Production-ready OpenAI agent with auto-scaling
+- **openai-websocket** - OpenAI agent over a WebSocket API in direct (non-queue) mode: one ECS
+  service authenticates `$connect`, runs the agent inline, and pushes the reply back over the
+  same connection
+- **openai-websocket-scalable** - OpenAI agent over a WebSocket API in queue mode: the REST/IO
+  service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner
+  service processes them from SQS
 
 ## Migration
 
@@ -526,6 +532,15 @@ output "private_subnet_ids"         # Private subnet IDs
 
 output "api_gateway_cloudwatch_log_group_arn"   # API Gateway log group ARN (null when logging disabled)
 output "api_gateway_cloudwatch_log_group_name"  # API Gateway log group name (null when logging disabled)
+
+# WebSocket mode only (`execution_mode = "async"` or `"stream"`) — null otherwise
+output "websocket_api_endpoint_url"       # WebSocket API Gateway connect URL (wss://...)
+output "websocket_api_id"                 # WebSocket API Gateway ID
+output "websocket_api_execution_arn"      # WebSocket API Gateway execution ARN
+output "websocket_api_stage_name"         # WebSocket API Gateway stage name
+output "websocket_endpoint_url"           # Management API endpoint used for PostToConnection
+output "websocket_connection_table_name"  # DynamoDB connections table name
+output "websocket_connection_table_arn"   # DynamoDB connections table ARN
 ```
 
 ## Requirements

@@ -36,11 +36,11 @@ If missing, suggest `ak-init` first.
 2. Runtime mode:
 - Serverless
 - Containerized
-3. Execution pattern (AWS serverless only):
-- Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode)
-- Asynchronous REST (`rest_async`, queue/scalable mode)
-- WebSocket full-response (`async`, queue/scalable mode)
-- WebSocket token streaming (`stream`, queue/scalable mode) — also available on containerized deployments via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
+3. Execution pattern (AWS only):
+- Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode; AWS serverless or containerized)
+- Asynchronous REST (`rest_async`, queue/scalable mode; AWS serverless or containerized)
+- WebSocket full-response (`async`, works with or without queue mode — `queue_mode = false` runs the agent inline, `queue_mode = true` enqueues to a separately-scalable Agent Runner) — AWS serverless (token streaming works) or AWS containerized/ECS (full-response only; `stream` is accepted by Terraform/config but not yet implemented on ECS — use `async`)
+- WebSocket token streaming (`stream`, queue/scalable mode) — AWS serverless only for WebSocket streaming; also available on any REST deployment (serverless or containerized, AWS/Azure/GCP) via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
@@ -763,7 +763,7 @@ module "containerized_agents" {
   }
 
   queue_mode = true
-  execution_mode   = "sync"   # or "async"
+  execution_mode   = "rest_sync"   # or "rest_async"
 
   queue_config = {
     input_queue_visibility_timeout  = 120
@@ -810,6 +810,96 @@ dependencies = [
 - Agent definitions (`OpenAIModule([...])`) go in `app_agent_runner.py` only — never in `app_rest_service.py`.
 - `ECSIOHandler` starts two threads via `ThreadRunner`; if the output-consumer pool crashes, sibling consumer threads finish their in-flight message first (graceful drain via a shared `shutdown_event`), then the container exits (`os._exit(1)`) so ECS can restart it. The REST API thread doesn't participate in the drain — it's just terminated at that point.
 - `ECSAgentRunner` and `ECSOutputConsumer` both extend `ECSSQSConsumer` (itself a `QueueConsumer` — the same base `LambdaSQSConsumer` extends) — extend either class to customise message processing.
+
+### C) WebSocket Mode (`async`)
+
+A WebSocket API Gateway proxies frames to the ECS REST service via a VPC Link V1 + internal NLB
+in front of the existing ALB. Supports both **direct** (`queue_mode = false`, one ECS service,
+agent runs inline) and **queue** (`queue_mode = true`, same two-container split as section B,
+with the REST/IO service enqueueing chat frames and its output-queue consumer pushing replies
+back over the socket) variants. Use `execution_mode = "async"` — `"stream"` is accepted by
+Terraform/config validation for forward compatibility but **not yet implemented**: in direct
+mode it still sends one full `CHAT_RESPONSE` (never per-token `STREAM_CHUNK`s); in queue mode it
+silently fails instead — the response-store fallback it hits is never provisioned in WebSocket
+mode, so the request retries until `max_receive_count` and is dropped with no reply. Always use
+`async` on ECS today.
+
+**`app.py`** (direct/single-container variant; register custom routes before calling `run()`):
+
+```python
+from agentkernel.aws import AWSWebsocketAPI
+from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
+from agentkernel.openai import OpenAIModule
+from typing import Optional
+
+OpenAIModule([...])
+
+class CustomAuthValidator(AuthValidator):
+    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+        # userId claim is mandatory — it's how a connection maps to a user for reply routing
+        ...
+        return ValidationResult(is_valid=True, claims={"userId": "userId-claim-value"})
+
+@AWSWebsocketAPI.register("status")  # bare route name, no leading slash, no HTTP verb
+async def status(ctx: dict) -> dict:
+    # ctx = {"message": <raw JSON body dict>, "user_id": ...} — no BaseRequest schema imposed
+    return {"status": "OK", "user_id": ctx["user_id"]}  # dict return -> broadcast as SYSTEM_RESPONSE; None -> no broadcast
+
+if __name__ == "__main__":
+    # Direct mode calls AWSWebsocketAPI directly — NOT ECSIOHandler, which always starts a
+    # second thread polling an output queue that doesn't exist in direct (non-queue) mode.
+    AWSWebsocketAPI.set_auth_handler(auth_validator=CustomAuthValidator()).run()
+```
+
+Queue mode is different: it splits into `app_rest_service.py` (`ECSIOHandler.run(auth_validator=...)`
+— correct here, since `ECSIOHandler` also starts the output-queue consumer thread — custom routes
+registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunner.run`,
+`OpenAIModule([...])` here only) — identical shape to section B.
+
+**Terraform:**
+
+```hcl
+module "containerized_agents" {
+  source  = "yaalalabs/ak-containerized/aws"
+  version = "0.7.0"
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  region        = var.region
+  vpc_id        = var.vpc_id
+  private_subnet_ids = var.private_subnet_ids
+
+  rest_service = {
+    package_path   = "../dist"
+    container_port = 8000
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  queue_mode     = false          # or true for the two-container queue variant (see section B)
+  execution_mode = "async"        # "stream" validates but is not implemented on ECS — use "async"
+  ws_chat_route  = "chat"         # optional, defaults to "chat"
+  ws_routes = [                   # every @AWSWebsocketAPI.register(...) route must be listed here too
+    { route = "status" },
+  ]
+
+  create_dynamodb_memory_table = true
+}
+```
+
+**Key rules:**
+- Auth is **mandatory**: `AuthValidator.validate()` must resolve a `userId` claim, or the framework
+  raises at `$connect` construction time. There is no API Gateway authorizer for WebSocket mode.
+- Every custom route needs both a Python `@AWSWebsocketAPI.register("name")` decorator **and** a
+  matching Terraform `ws_routes = [{ route = "name" }]` entry — Python cannot create the API
+  Gateway route/integration, so both sides must declare it (same requirement as `ws_chat_route`).
+- The DynamoDB response store is simply never created in WebSocket mode (no `response_store`
+  input to set) — replies are always pushed over the connection instead. `gateway_endpoints`
+  specifically has a Terraform validation rule rejecting it in `async`/`stream` modes.
+- Client wire format: `{"route": "chat", "body": {...}}` — the WebSocket API's
+  `route_selection_expression` is `$request.body.route`.
 
 ## Azure Serverless (Functions + APIM)
 

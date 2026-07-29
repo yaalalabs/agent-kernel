@@ -186,13 +186,6 @@ details on tuning `backlog_target` and cooldowns.
    `wss://<websocket_api_endpoint_url>/<websocket_api_stage_name>?token=<jwt>` with a WebSocket
    client of your choice and send frames per the wire protocol above.
 
-### Module source (temporary)
-
-`deploy/main.tf` points `source` at the local `ak-deployment/ak-aws/containerized` module rather
-than the published `yaalalabs/ak-containerized/aws` registry module, because containerized
-WebSocket mode hasn't been released to the registry yet. Once a release picks it up, switch back
-to the versioned registry source (see the comment in `main.tf`).
-
 ## Cleanup
 
 From `examples/aws-containerized/openai-websocket-scalable/deploy/` run:
