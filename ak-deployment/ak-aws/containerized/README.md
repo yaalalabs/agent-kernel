@@ -346,12 +346,12 @@ execution_mode = "rest_async"
 
 ```bash
 # 1. Submit request
-curl -X POST .../chat -d '{"prompt":"..."}'
-# Returns: {"status":"ACCEPTED","request_id":"..."}
+curl -X POST .../chat -d '{"session_id":"...","prompt":"..."}'
+# Returns: {"status":"ACCEPTED","request_id":"...","session_id":"..."}
 
-# 2. Poll for result
-curl -X GET .../chat/{session_id}?request_id=...
-# Returns: {"result":"..."}
+# 2. Poll for result (request_id required, session_id optional)
+curl -X GET ".../chat?request_id=..."
+# Returns the stored response body directly, e.g.: {"...": "..."}
 ```
 
 ### WebSocket Mode - Async (`async`) and Stream (`stream`)

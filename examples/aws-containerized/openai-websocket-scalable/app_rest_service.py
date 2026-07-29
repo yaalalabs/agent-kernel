@@ -2,7 +2,7 @@ from typing import Optional
 
 import jwt
 from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
-from agentkernel.aws import AWSWebsocketAPI, ECSIOHandler, ECSWebSocketRequestHandler
+from agentkernel.aws import AWSWebsocketAPI, ECSIOHandler
 
 
 # Auth validator for the WebSocket $connect handshake. The client passes a token via the

@@ -17,9 +17,9 @@ scalability of queue mode for lower latency and a single container to operate. S
 
 ## Deployed Resources
 
-- ECS Fargate service running the containerized application (the framework-managed
-  `ECSWebSocketRequestHandler`, carrying the built-in `chat` route plus the custom `status` and
-  `echo` routes registered in `app.py`)
+- ECS Fargate service running the containerized application (the framework-managed WebSocket
+  handler, carrying the built-in `chat` route plus the custom `status` and `echo` routes
+  registered in `app.py`)
 - WebSocket API Gateway (`$connect` / `$disconnect` / `chat` / `status` / `echo` / `$default`
   routes), proxied to the ECS service via VPC Link + ALB
 - DynamoDB table mapping `user_id` <-> `connection_id` (managed by the Terraform module)
@@ -71,7 +71,7 @@ path is always `/ws/<route>`). The decorated function receives a plain `dict` �
 broadcasts to the client:
 
 ```python
-from agentkernel.aws import AWSWebsocketAPI, ECSWebSocketRequestHandler
+from agentkernel.aws import AWSWebsocketAPI
 
 @AWSWebsocketAPI.register("status")
 async def status(ctx: dict) -> dict:
@@ -105,24 +105,13 @@ Receive (pushed back over the connection as a `SYSTEM_RESPONSE`):
 
 `status` ignores the frame's payload. The second custom route, `echo`, reads it — `ctx["message"]`
 is the frame's raw JSON body, exactly as the client sent it: no `BaseRequest`/`BaseRunRequest` schema
-is imposed on custom routes, so `echo` reads `body["prompt"]` directly and keeps every other key as-is:
+is imposed on custom routes, so `echo` simply returns `ctx` unchanged, broadcasting the whole context
+(`message` and `user_id`) back to the client as-is:
 
 ```python
 @AWSWebsocketAPI.register("echo")
 async def echo(ctx: dict) -> dict:
-    message = ctx["message"]
-    body = message.get("body") or {}
-    prompt = body.get("prompt")
-    if not prompt:
-        raise ECSWebSocketRequestHandler.WSRouteError(400, "body.prompt is required")
-
-    return {
-        "status": "OK",
-        "user_id": ctx["user_id"],
-        "request_id": message.get("request_id"),
-        "echo": prompt.upper(),
-        "extras": {k: v for k, v in body.items() if k != "prompt"},
-    }
+    return ctx
 ```
 
 Send:
@@ -142,23 +131,22 @@ Receive:
 ```json
 {
   "type": "SYSTEM_RESPONSE",
-  "status": "OK",
-  "user_id": "user-1",
-  "request_id": null,
-  "echo": "HELLO THERE",
-  "extras": { "locale": "en-US" }
+  "message": {
+    "route": "echo",
+    "body": { "prompt": "hello there", "locale": "en-US" }
+  },
+  "user_id": "user-1"
 }
 ```
 
 Custom routes impose no schema on the frame's body — unlike `chat`, it is never validated as a
-`BaseRunRequest`. `echo` checks `prompt` itself and raises `WSRouteError` when it's missing; a route
-whose payload doesn't fit a `prompt`/`body` shape at all can read `ctx["message"]` however it likes.
+`BaseRunRequest`. `echo` reads `ctx` however it likes; a route can validate whatever shape it
+expects (e.g. requiring `body.prompt`) and simply raise on failure.
 
-The framework resolves the authenticated user (`WSRouteContext`, kept internal), broadcasts the
-returned `dict`, builds the HTTP response envelope, and handles errors — a registered route only
-implements its own logic. Return `None` to broadcast nothing. Raise `WSRouteError` for a specific
-HTTP status; any other exception is logged, an error is broadcast to the client, and a 500 is
-returned. See `ECSWebSocketRequestHandler`'s class docstring for the full contract.
+The framework resolves the authenticated user internally, broadcasts the returned `dict`, builds
+the HTTP response envelope, and handles errors — a registered route only implements its own logic.
+Return `None` to broadcast nothing. Any exception raised by the route is logged, an error is
+broadcast to the client, and a 500 is returned.
 
 ## Auth
 
@@ -174,10 +162,10 @@ back to the right client.
 
 `config.yaml` sets `execution.mode: async`, meaning the full agent reply is sent as one
 `CHAT_RESPONSE` message. Terraform's `execution_mode` variable also accepts `stream`
-(token-by-token, one `STREAM_CHUNK` message per token) for forward compatibility, but
-`ECSWebSocketRequestHandler` doesn't implement chunked streaming yet — it always runs the
-request through `ChatService.process_async_chat_request()` and sends one `CHAT_RESPONSE`.
-Use `async` here until containerized stream support lands.
+(token-by-token, one `STREAM_CHUNK` message per token) for forward compatibility, but the
+framework doesn't implement chunked streaming yet — it always runs the request through
+`ChatService.process_async_chat_request()` and sends one `CHAT_RESPONSE`. Use `async` here
+until containerized stream support lands.
 
 ## Prerequisites
 

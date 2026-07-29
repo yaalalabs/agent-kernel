@@ -15,8 +15,8 @@ the agent workers independently of the number of open connections.
 
 - **REST/IO Service ECS Task** (`app_rest_service.py`, started via `ECSIOHandler.run()`):
   - Thread 1: authenticates `$connect`, on the `chat` route enqueues the request to the Input
-    Queue (never runs the agent itself), and answers the custom `status` route directly (registered
-    via `@AWSWebsocketAPI.register("status")`)
+    Queue (never runs the agent itself), and answers the custom `echo` route directly (registered
+    via `@AWSWebsocketAPI.register("echo")`)
   - Thread 2 (`ECSOutputConsumer`): polls the Output Queue and pushes each chat reply back over
     the originating WebSocket connection
 - **Agent Runner ECS Task** (`app_agent_runner.py`, `ECSAgentRunner`): polls the Input Queue, runs
@@ -24,7 +24,7 @@ the agent workers independently of the number of open connections.
   Scales on SQS backlog per task, independently of the REST/IO service.
 - **SQS Queues**: FIFO input and output queues
 - **DynamoDB**: session memory table + WebSocket `user_id` <-> `connection_id` connections table
-- **WebSocket API Gateway + ALB**: routes `$connect` / `$disconnect` / `chat` / `status` /
+- **WebSocket API Gateway + ALB**: routes `$connect` / `$disconnect` / `chat` / `echo` /
   `$default` to the REST/IO service via VPC Link
 
 ```
@@ -74,33 +74,35 @@ request was queued — the actual agent reply arrives later as a separate push:
 
 ## Custom Routes
 
-Beyond the built-in `chat` route, `app_rest_service.py` registers a custom `status` route with the
-`@AWSWebsocketAPI.register("status")` decorator — route name only (the method is always POST and
-the path is always `/ws/status`). The decorated function receives a plain `dict` — `{"message": ...,
+Beyond the built-in `chat` route, `app_rest_service.py` registers a custom `echo` route with the
+`@AWSWebsocketAPI.register("echo")` decorator — route name only (the method is always POST and
+the path is always `/ws/echo`). The decorated function receives a plain `dict` — `{"message": ...,
 "user_id": ...}` — not the connection id or push endpoint, and returns a `dict`, which the framework
 broadcasts to the client:
 
 ```python
-from agentkernel.aws import AWSWebsocketAPI, ECSWebSocketRequestHandler
+from agentkernel.aws import AWSWebsocketAPI
 
-@AWSWebsocketAPI.register("status")
-async def status(ctx: dict) -> dict:
-    return {"status": "OK", "user_id": ctx["user_id"]}
+@AWSWebsocketAPI.register("echo")
+async def echo(ctx: dict) -> dict:
+    return ctx
 ```
 
 The route is also declared in Terraform via `ws_routes` (`deploy/main.tf`), which must agree with
 the route name registered in code — Python cannot create the API Gateway integration, so both
 sides declare the route (exactly like the configurable `chat` route).
 
-Unlike `chat`, `status` is answered directly by the REST/IO service — it doesn't enqueue to the
+Unlike `chat`, `echo` is answered directly by the REST/IO service — it doesn't enqueue to the
 Input Queue or involve the Agent Runner, since it doesn't need agent processing.
 
 Send:
 
 ```json
 {
-  "route": "status",
-  "body": {}
+  "route": "echo",
+  "body": {
+    "prompt": "hello there"
+  }
 }
 ```
 
@@ -109,20 +111,22 @@ Receive (pushed back over the connection as a `SYSTEM_RESPONSE`, no queue round 
 ```json
 {
   "type": "SYSTEM_RESPONSE",
-  "status": "OK",
+  "message": {
+    "route": "echo",
+    "body": { "prompt": "hello there" }
+  },
   "user_id": "user-1"
 }
 ```
 
-The framework resolves the authenticated user (`WSRouteContext`, kept internal), broadcasts the
-returned `dict`, builds the HTTP response envelope, and handles errors — a registered route only
-implements its own logic. Return `None` to broadcast nothing. Raise `WSRouteError` for a specific
-HTTP status; any other exception is logged, an error is broadcast to the client, and a 500 is
-returned. See `ECSWebSocketRequestHandler`'s class docstring for the full contract.
+The framework resolves the authenticated user internally, broadcasts the returned `dict`, builds
+the HTTP response envelope, and handles errors — a registered route only implements its own logic.
+Return `None` to broadcast nothing. Any exception raised by the route is logged, an error is
+broadcast to the client, and a 500 is returned.
 
 Because routes are registered globally (before `run()` is called), `main()` calls
 `ECSIOHandler.run(auth_validator=CustomAuthValidator())` directly — the framework-managed handler
-picks up the registered `status` route automatically, so no custom handler injection or manual
+picks up the registered `echo` route automatically, so no custom handler injection or manual
 `ThreadRunner` wiring is needed.
 
 ## Auth
@@ -137,9 +141,8 @@ matching `email` is `test1@test.com`/`test2@test.com`.
 ## Execution mode
 
 `config.yaml` sets `execution.mode: async` — the only WebSocket execution mode currently wired up
-for ECS. Terraform's `execution_mode` variable also accepts `stream`, but neither
-`ECSWebSocketRequestHandler` nor `ECSAgentRunner` implement chunked token streaming yet; use
-`async` here.
+for ECS. Terraform's `execution_mode` variable also accepts `stream`, but neither the WebSocket
+handler nor `ECSAgentRunner` implement chunked token streaming yet; use `async` here.
 
 There is no REST response store in WebSocket modes — replies are always pushed over the
 connection, never polled.
