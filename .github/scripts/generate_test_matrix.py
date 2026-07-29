@@ -33,21 +33,14 @@ def generate_matrix_from_config(config_path: str, tier: str) -> tuple[dict, dict
         raise ValueError(f"Invalid tier: {tier}")
     
     matrix_tests = []
-    GCP_STAGGER_SECONDS = 90
-    gcp_index = 0
-
+    
     for idx, test in enumerate(tests):
-        ttype = test['type']
-        is_gcp = ttype.startswith('gcp-')
         test_item = {
             'id': idx,
-            'type': ttype,
+            'type': test['type'],
             'path': test['path'],
-            'deploy_dir': test.get('deploy_dir', 'deploy'),
-            'deploy_stagger': gcp_index * GCP_STAGGER_SECONDS if is_gcp else 0,
+            'deploy_dir': test.get('deploy_dir', 'deploy')
         }
-        if is_gcp:
-            gcp_index += 1
         
         # Add optional fields
         if 'requires_slack' in test:

@@ -252,12 +252,6 @@ jobs:
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         run: python3 scripts/deploy/inject_dependencies.py
 
-      - name: Stagger GCP deploy start
-        if: (matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized') && matrix.deploy_stagger > 0
-        run: |
-          echo "Waiting ${{ matrix.deploy_stagger }}s before deploy to avoid simultaneous VPC connector provisioning..."
-          sleep ${{ matrix.deploy_stagger }}
-
       - name: Deploy - ${{ matrix.path }}
         id: deploy
         env:

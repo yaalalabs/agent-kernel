@@ -277,21 +277,14 @@ def deploy_gcp_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = No
         env=tf_env
     ):
         return False
-
-    max_attempts = 3
-    for attempt in range(1, max_attempts + 1):
-        if run_command(
-            ['./deploy.sh', 'local'],
-            cwd=str(deploy_path),
-            description=f"Deploying {path} (attempt {attempt}/{max_attempts})",
-            env=tf_env
-        ):
-            return True
-        if attempt < max_attempts:
-            print(f" Deploy attempt {attempt}/{max_attempts} failed; sweeping "
-                  f"ERROR-state VPC connectors before retrying...")
-            sweep_gcp_error_connectors(deploy_path)
-    return False
+    
+    # Deploy
+    return run_command(
+        ['./deploy.sh', 'local'],
+        cwd=str(deploy_path),
+        description=f"Deploying {path}",
+        env=tf_env
+    )
 
 def test_gcp_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     """Test an already deployed GCP resource."""
