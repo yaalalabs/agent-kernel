@@ -39,6 +39,7 @@ class Test:
         self.last_user_input = ""
         self.match_threshold = match_threshold
         self.mode = AKTestConfig.get().mode if mode is None else mode
+        self._stderr_task = None
 
     @classmethod
     def _update_prompt(cls, text: str):
@@ -91,8 +92,12 @@ class Test:
             self.path,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,  # merge stderr into stdout
+            # Keep stderr separate: agent responses are stdout-only, while log output
+            # (AK loggers write to stderr) would otherwise pollute captured responses
+            # and break comparisons. It is drained in the background for diagnostics.
+            stderr=asyncio.subprocess.PIPE,
         )
+        self._stderr_task = asyncio.get_running_loop().create_task(self._drain_stderr())
 
         # Capture the initial welcome message and prompt
         welcome, prompt_text = await self._read_until_prompt()
@@ -272,12 +277,27 @@ class Test:
             mode=self.mode,
         )
 
+    async def _drain_stderr(self):
+        """
+        Continuously drains the CLI's stderr (log output), echoing each line to the test
+        runner's stderr. Keeps the pipe from filling (which would block the subprocess)
+        while keeping logs out of the captured agent responses.
+        """
+        while True:
+            line = await self.proc.stderr.readline()
+            if not line:
+                break
+            print(line.decode("utf-8", errors="replace").rstrip(), file=sys.stderr, flush=True)
+
     async def stop(self):
         """
         Stops the CLI.
         """
         self.proc.stdin.close()
         await self.proc.wait()
+        if self._stderr_task is not None:
+            await self._stderr_task  # finishes on stderr EOF once the process exits
+            self._stderr_task = None
 
 
 Test.__test__ = False  # pytest tries to run Test as a test without the flag

@@ -7,7 +7,6 @@ from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.hooks import PostHook, PreHook
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
-from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.session.redis import RedisSessionStore
 from agentkernel.core.session.valkey import ValkeySessionStore
 
@@ -101,21 +100,18 @@ def test_runtime_instance_valkey_when_config(monkeypatch):
     assert type(runtime.sessions()) is ValkeySessionStore
 
 
-def test_runtime_instance_invalid_fallback(monkeypatch):
+def test_runtime_instance_invalid_type_fails_loud(monkeypatch):
+    # An unknown session store type no longer silently falls back to in-memory; it fails loud.
+    from agentkernel.core.util.factory import AKConfigError
+
     class FakeCfg:
         class session:
             type = "not-a-real-type"
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    runtime = Runtime(SessionStoreBuilder.build())
-    assert runtime.sessions() is not None
-    assert type(runtime.sessions()) is InMemorySessionStore
-
-    # Should be able to register and list agents
-    agent = DummyAgent("a1")
-    runtime.register(agent)
-    assert "a1" in runtime.agents()
+    with pytest.raises(AKConfigError):
+        SessionStoreBuilder.build()
 
 
 @pytest.mark.asyncio

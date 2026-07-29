@@ -2,6 +2,13 @@
 
 EXAMPLE_DIRS := examples
 
+# Example linters run standalone via uvx (isolated, no project env): black/isort only
+# format .py text and must never resolve an example's agentkernel dependency — some example
+# locks legitimately pin agentkernel to a local ../../../ak-py/dist source (an unreleased
+# extra), which a project-env sync would fail to resolve during lint. Pin black to match
+# the version examples pin in their dev groups so formatting is identical.
+BLACK_VERSION := 26.5.1
+
 # Ensure venv uses pyenv-managed Python when available
 define ENSURE_PYENV_VENV
 if command -v pyenv >/dev/null 2>&1; then \
@@ -52,9 +59,8 @@ lint-examples:
 		echo "Processing $$dir..."; \
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
-			$(ENSURE_PYENV_VENV) && \
-			uv run --only-dev isort --skip .venv --skip .terraform --skip dist --skip __pycache__ . || true; \
-			uv run --only-dev black --exclude '/\.venv/|/\.terraform/|/dist/|/__pycache__/' . || true; \
+			uvx isort --skip .venv --skip .terraform --skip dist --skip __pycache__ . || true; \
+			uvx black@$(BLACK_VERSION) --exclude '/\.venv/|/\.terraform/|/dist/|/__pycache__/' . || true; \
 			cd - > /dev/null; \
 		fi; \
 	done
@@ -66,9 +72,8 @@ lint-examples-check:
 		echo "Checking $$dir..."; \
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
-			$(ENSURE_PYENV_VENV) && \
-			uv run --only-dev isort --check-only --skip .venv --skip .terraform --skip dist --skip __pycache__ . || EXIT_CODE=1; \
-			uv run --only-dev black --check --exclude '/\.venv/|/\.terraform/|/dist/|/__pycache__/' . || EXIT_CODE=1; \
+			uvx isort --check-only --skip .venv --skip .terraform --skip dist --skip __pycache__ . || EXIT_CODE=1; \
+			uvx black@$(BLACK_VERSION) --check --exclude '/\.venv/|/\.terraform/|/dist/|/__pycache__/' . || EXIT_CODE=1; \
 			cd - > /dev/null; \
 		fi; \
 	done; \

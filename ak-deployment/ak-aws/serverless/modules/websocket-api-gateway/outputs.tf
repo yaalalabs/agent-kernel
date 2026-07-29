@@ -31,12 +31,12 @@ output "websocket_connection_table_gsi_name" {
 }
 
 output "websocket_cloudwatch_log_group_arn" {
-  description = "ARN of the CloudWatch log group for WebSocket API"
-  value       = module.websocket_api.stage_access_logs_cloudwatch_log_group_arn
+  description = "ARN of the CloudWatch log group for WebSocket API (null when access logging is disabled)"
+  value       = var.enable_api_gateway_logs ? module.websocket_api.stage_access_logs_cloudwatch_log_group_arn : null
 }
 
 output "websocket_cloudwatch_log_group_name" {
-  description = "Name of the CloudWatch log group for WebSocket API"
-  value       = module.websocket_api.stage_access_logs_cloudwatch_log_group_name
+  description = "Name of the CloudWatch log group for WebSocket API (null when access logging is disabled)"
+  value       = var.enable_api_gateway_logs ? module.websocket_api.stage_access_logs_cloudwatch_log_group_name : null
 }
 

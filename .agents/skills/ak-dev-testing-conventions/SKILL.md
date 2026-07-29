@@ -54,9 +54,11 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_tool_langgraph.py` | LangGraph ToolBuilder |
 | `test_tool_adk.py` | Google ADK ToolBuilder |
 | `test_tool_smolagents.py` | Smolagents ToolBuilder |
+| `test_tool_pydanticai.py` | Pydantic AI ToolBuilder |
 | `test_openai_runner.py` | OpenAIRunner execution, error handling |
 | `test_crewai_runner.py` | CrewAIRunner execution (mocked Crew kickoff) |
 | `test_smolagents_runner.py` | SmolagentsRunner execution, multimodal requests, error handling |
+| `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
 | `test_chat_service_streaming.py` | ChatService SSE/stream chunk formatting |
@@ -74,6 +76,12 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_error_util.py` | `user_facing_error_message` error mapping |
 | `test_thread_runner.py` | ThreadRunner task validation, failure/shutdown semantics |
 | `test_ecs_sqs_consumer_parallel.py` | ECSSQSConsumer message processing + delete/retry semantics |
+| `test_sandbox.py` | Sandbox core: model/capabilities, error hierarchy, config, provider contract, manager + factory + embedded broker, agent surface (system tools + task-completion pre-hook), `agents` scoping |
+| `test_sandbox_broker.py` | Broker flavors (embedded/thread) end-to-end, thread loop-identity contract, wait-policy promotion + late-completion recovery, suspend/resume completion ingestion |
+| `test_sandbox_providers.py` | `local_subprocess` (real subprocess) + `docker` (mocked SDK) providers, run against the reusable `SandboxProviderContract` |
+| `test_factory.py` | Shared pluggable-backend helpers (`resolve_dotted`, `require_extra`, `AKConfigError`) in `core/util/factory.py` |
+| `test_store_builders.py` | Session/thread/multimodal store builders: fail-loud on unknown type, BYO dotted-path subclass resolution |
+| `test_trace.py` | Trace factory built-in resolution, BYO dotted path, unknown-type error |
 
 ## Test Patterns
 
@@ -294,6 +302,8 @@ async def http_client():
 - **`integration-test.yaml`**: "Nightly" (tier `nightly`) integration tests against deployed environments; scheduled weekly on Sundays at 5:30 PM UTC (`cron: '30 17 * * 0'`), plus manual dispatch
 - **`integration-test-weekly.yaml`**: Weekly integration tests against deployed environments (cron currently commented out; manual dispatch, with option to keep cloud resources on failure)
 - **`code-quality.yml`**: Runs linting checks (see `code-quality` skill)
+
+Both integration workflows restore the branch-built `agentkernel` wheel from the `ak-py-${{ github.sha }}` cache with `fail-on-cache-miss: true` — the job fails loudly instead of silently falling back to the published PyPI wheel if the build/cache step didn't run first. `.github/scripts/run_single_test.py`'s `test_aws_deployment()` then runs `./build.sh local` in the example directory (force-reinstalling the local wheel with `--no-cache-dir` before packaging/deploying) and invokes the test client with `uv run --no-sync pytest ...` so `uv` doesn't re-sync the venv from `uv.lock` and revert the local wheel back to the PyPI version. When adding a new example to `integration-test-config.yaml`, make sure its `build.sh`/`deploy.sh` `local` branch force-reinstalls `agentkernel` from `../../../ak-py/dist` with `--no-cache-dir`, matching this pattern — otherwise the test can silently exercise a stale published version instead of the branch's code.
 
 ## Best Practices
 

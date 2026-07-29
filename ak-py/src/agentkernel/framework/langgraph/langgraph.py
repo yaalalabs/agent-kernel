@@ -503,18 +503,23 @@ class LangGraphToolBuilder(ToolBuilder):
     """
 
     @classmethod
-    def bind(cls, funcs: list[Callable]) -> list[Any]:
+    def bind(cls, funcs: list[Callable], *, agent_name: str | None = None) -> list[Any]:
         """
         Bind generic tool functions to LangChain StructuredTool instances.
         Also automatically appends global system tools (such as multimodal attachments).
 
         :param funcs: List of generic tool functions to bind.
+        :param agent_name: When known, the agent these tools are bound for, so per-capability
+                           `agents` scoping (e.g. `sandbox.agents`, `multimodal.agents`) is
+                           honored. Omitted → no scoping filter (all enabled system tools).
         :return: List of LangChain StructuredTool instances.
         :raises TypeError: If any item in funcs is not callable.
         """
-        # Inject system tools (e.g., analyze_attachments)
+        # Inject system tools (e.g., analyze_attachments). Pass agent_name so per-capability
+        # `agents` scoping applies when the caller knows the agent; without it (the historical
+        # call), scoping still holds at agent wrap time (Agent._attach_system_tools).
         all_funcs = list(funcs)
-        for sys_tool in SystemToolFactory.get_all():
+        for sys_tool in SystemToolFactory.get_all(agent_name):
             if sys_tool.func not in all_funcs:
                 all_funcs.append(sys_tool.func)
 

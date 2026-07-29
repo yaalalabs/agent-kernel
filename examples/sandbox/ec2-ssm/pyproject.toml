@@ -1,0 +1,38 @@
+[project]
+name = "cli-sandbox-ec2-ssm"
+version = "0.1.0"
+description = "Demo of the Agent Kernel sandbox capability with the ec2_ssm provider: attach to an existing EC2 instance and execute code on it via SSM"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[cli,openai,aws]>=0.7.0",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.7.0",
+    # ragas imports langchain_community.chat_models.vertexai, removed in langchain-community
+    # 0.4.2; pinned until an agentkernel release ships the pin in its `test` extra.
+    "langchain-community==0.4.1",
+    "black==26.5.1",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

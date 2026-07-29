@@ -164,34 +164,59 @@ class ToolBuilder:
 
 class SystemToolFactory:
     @staticmethod
-    def get_all() -> list[SystemTool]:
+    def _agent_allowed(config: Any, agent_name: str | None) -> bool:
         """
-        Retrieves the enabled system tools applicable to all agents (e.g., multimodal tools).
+        Per-capability agent filter: a capability's optional ``agents`` list restricts its
+        tools/prompt to the named agents; an absent list means all agents (an empty list
+        means none). Anonymous callers (``agent_name`` None, e.g. a ToolBuilder binding
+        outside any agent context) are not filtered — filtering happens at agent wrap time,
+        where the name is known.
+        """
+        allowed = getattr(config, "agents", None)
+        return allowed is None or agent_name is None or agent_name in allowed
+
+    @staticmethod
+    def get_all(agent_name: str | None = None) -> list[SystemTool]:
+        """
+        Retrieves the enabled system tools (e.g., multimodal, sandbox).
+
+        :param agent_name: When given, capabilities restricted via their `agents` config
+                           list are included only for the named agent.
         """
         tools = []
 
         config = AKConfig.get().multimodal
-        if config and config.enabled:
+        if config and config.enabled and SystemToolFactory._agent_allowed(config, agent_name):
             from .multimodal import AnalyzeAttachmentsTool
 
             tools.append(AnalyzeAttachmentsTool())
 
+        sandbox_config = getattr(AKConfig.get(), "sandbox", None)
+        if sandbox_config and sandbox_config.enabled and SystemToolFactory._agent_allowed(sandbox_config, agent_name):
+            from ..sandbox.tools import get_sandbox_tools
+
+            tools.extend(get_sandbox_tools())
+
         return tools
 
     @staticmethod
-    def get_system_prompt_suffix() -> str:
+    def get_system_prompt_suffix(agent_name: str | None = None) -> str:
         """
         Generate the system prompt suffix based on enabled tools.
 
         This method retrieves all enabled system tools and constructs a suffix string
         containing their descriptions, which can be appended to the system prompt for agents.
 
+        :param agent_name: When given, capabilities restricted via their `agents` config
+                           list contribute to the suffix only for the named agent.
         :return: A string containing the concatenated descriptions of all enabled tools,
                  or an empty string if no tools are enabled.
         """
 
-        tools: List[SystemTool] = SystemToolFactory.get_all()
+        tools: List[SystemTool] = SystemToolFactory.get_all(agent_name)
 
         if tools is None or len(tools) == 0:
             return ""
-        return "\n".join(tool.description for tool in tools)
+        # A capability may carry its whole prompt section on one tool and leave the
+        # others' descriptions empty (the sandbox pattern) — skip the empties.
+        return "\n".join(tool.description for tool in tools if tool.description)

@@ -57,6 +57,12 @@ variable "enable_api_gateway" {
   }
 }
 
+variable "enable_api_gateway_logs" {
+  type        = bool
+  description = "When true, creates the API Gateway CloudWatch account role/log groups and enables access logging for the REST and WebSocket API Gateways. Off by default."
+  default     = false
+}
+
 variable "execution_mode" {
   type        = string
   description = "Execution mode for the deployment. Allowed values: rest_sync, async, stream (always allowed), rest_async (only when queue_mode is true). Use 'stream' for WebSocket streaming where each chunk is sent individually via SQS."
@@ -333,7 +339,7 @@ variable "request_handler" {
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables             = optional(map(string), {})
     event_source_mapping              = optional(any, [])
-    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
+    lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
   })
   default = {}
@@ -369,7 +375,7 @@ variable "agent_runner" {
     layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables             = optional(map(string), {})
-    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
+    lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
   })
   default = {}
@@ -405,7 +411,7 @@ variable "response_handler" {
     layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
     environment_variables             = optional(map(string), {})
-    lambda_package_s3                 = optional(object({ bucket = string, key = string }), null)
+    lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
   })
   default = {}

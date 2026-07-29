@@ -9,7 +9,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.6.1"
+  version: "0.7.0"
   category: user
 ---
 
@@ -56,7 +56,7 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.6.1`) unless user requests another.
+Use current module version (`0.7.0`) unless user requests another.
 
 AWS-only features in this skill:
 - `execution_mode`
@@ -78,7 +78,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.6.1"
+  "agentkernel[openai,api,redis]>=0.7.0"
 ]
 ```
 
@@ -105,7 +105,7 @@ OSS engine. Agent Kernel treats it as a first-class session and response store b
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,valkey]>=0.6.1"
+  "agentkernel[openai,api,aws,valkey]>=0.7.0"
 ]
 ```
 
@@ -133,7 +133,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.6.1"
+  "agentkernel[openai,api,aws]>=0.7.0"
 ]
 ```
 
@@ -154,7 +154,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.6.1"
+  "agentkernel[openai,api,azure]>=0.7.0"
 ]
 ```
 
@@ -176,7 +176,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.6.1"
+  "agentkernel[openai,api,gcp]>=0.7.0"
 ]
 ```
 
@@ -221,7 +221,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.6.1"
+  version = "0.7.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -264,7 +264,7 @@ Each Lambda can use one of three `package_type` values:
 | `package_type` | Artifact source                    | Required field(s)                                    | What Terraform does                                                                                                                                                                                       |
 | -------------- | ---------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `LocalZip`     | Local ZIP file or source directory | `package_path`                                       | Uses the Lambda module's local packaging support. No shared source bucket is managed by this module.                                                                                                      |
-| `S3Zip`        | ZIP artifact stored in S3          | **Either** `package_path` **or** `lambda_package_s3` | If `package_path` is provided, this module creates/uses a shared source bucket, uploads the ZIP, and deploys from S3. If `lambda_package_s3` is provided, Terraform uses the existing S3 object directly. |
+| `S3Zip`        | ZIP artifact stored in S3          | **Either** `package_path` **or** `lambda_package_s3` | If `package_path` is provided, this module creates/uses a shared source bucket, uploads the ZIP, and deploys from S3. If `lambda_package_s3` (`{ bucket, key, version_id? }`) is provided, Terraform uses the existing S3 object directly; set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function. |
 | `Image`        | Container image in ECR             | **Either** `ecr_image_uri` **or** `package_path`     | If `ecr_image_uri` is provided, Terraform uses the existing image. If `package_path` is provided, Terraform builds and pushes an image to ECR and deploys it.                                             |
 
 
@@ -275,7 +275,7 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.6.1"
+  version = "0.7.0"
 
   product_alias      = var.product_alias
   env_alias          = var.env_alias
@@ -354,8 +354,9 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
     handler_path     = "lambda_request_handler.handler"
     package_type     = "S3Zip"
     lambda_package_s3 = {
-      bucket = "my-lambda-packages-bucket"
-      key    = "dist_request_handler.zip"
+      bucket     = "my-lambda-packages-bucket"
+      key        = "dist_request_handler.zip"
+      version_id = "<object-version-id>" # from your versioned bucket → redeploys work (#548)
     }
     timeout     = 45
     memory_size = 256
@@ -379,8 +380,9 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
     handler_path     = "lambda_response_handler.handler"
     package_type     = "S3Zip"
     lambda_package_s3 = {
-      bucket = "my-lambda-packages-bucket"
-      key    = "dist_response_handler.zip"
+      bucket     = "my-lambda-packages-bucket"
+      key        = "dist_response_handler.zip"
+      version_id = "<object-version-id>" # from your versioned bucket → redeploys work (#548)
     }
     timeout     = 45
     memory_size = 256
@@ -388,6 +390,8 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
 ```
 
 See [examples/aws-serverless/scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) for a complete working example of this pattern.
+
+Terraform only replaces a Lambda's code when `s3_bucket`, `s3_key`, `s3_object_version`, or `source_code_hash` changes. If you re-upload to the **same** S3 key in an **unversioned** bucket, none of those change and the function keeps running the old code. To make `S3Zip` redeploys reliable when pointing at your own artifact (`lambda_package_s3`): enable versioning on the bucket holding the ZIPs, then pass the uploaded object's version through `lambda_package_s3.version_id`.
 
 **Queue mode `config.yaml`** (bundled into every Lambda package — `execution.mode`, queue URLs, table names, and `max_receive_count` are all injected automatically by Terraform as environment variables; only set values that are NOT injected):
 
@@ -410,7 +414,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.6.1"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
+  "agentkernel[openai,api,aws]>=0.7.0"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -423,7 +427,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.6.1"
+  version = "0.7.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -567,7 +571,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis,auth]>=0.6.1"
+  "agentkernel[openai,api,aws,redis,auth]>=0.7.0"
 ]
 ```
 
@@ -580,7 +584,7 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.6.1"
+  version = "0.7.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -665,7 +669,7 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.6.1"
+  version = "0.7.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -740,7 +744,7 @@ session:
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.6.1"
+  version = "0.7.0"
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -825,7 +829,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.6.1"
+  version = "0.7.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -869,7 +873,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.6.1"
+  version = "0.7.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -967,8 +971,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.6.1"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.6.1"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.7.0"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.7.0"  # for Redis sessions
 ]
 ```
 

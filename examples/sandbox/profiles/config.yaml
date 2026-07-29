@@ -1,0 +1,30 @@
+# Profiles demo: multiple named workload profiles, each routing to its own provider.
+#
+# A profile bundles a provider + scope + policy + identity. The agent chooses a profile
+# per call (the `profile=` argument on run_code/run_command/...); the injected guidance
+# lists the available profiles so the model knows what it can pick.
+#
+# The two profiles here differ in BOTH provider and lifetime — one call can land in a
+# container while the next runs locally, purely by profile choice:
+#   - workspace : docker, per_session — one container-isolated sandbox per conversation;
+#                 files persist across turns. Needs the sandbox-docker extra (installed
+#                 by build.sh) and a running Docker daemon (see ../docker for the
+#                 provider itself).
+#   - scratch   : local_subprocess, per_call — a fresh, throwaway local sandbox for every
+#                 execution; zero services, but NO isolation (development/test only).
+sandbox:
+  enabled: true
+  default_profile: workspace
+  profiles:
+    workspace:
+      type: docker
+      scope: per_session
+      idle_timeout: 21600 # 6 hours; an idle-expired container is removed and the workspace resets
+      docker:
+        image: python:3.12-slim
+    scratch:
+      type: local_subprocess
+      scope: per_call
+      local_subprocess: {}
+  broker:
+    flavor: thread

@@ -1,9 +1,11 @@
 import logging
-from enum import StrEnum
-from typing import Any, Self
+from typing import Any
 
 from .config import AKConfig
 from .session import SessionCache, SessionStore
+from .util.factory import AKConfigError, require_extra, resolve_dotted
+
+_BUILTIN_SESSION_STORES = ["in_memory", "redis", "valkey", "dynamodb", "cosmosdb", "firestore"]
 
 
 class Builder:
@@ -81,82 +83,50 @@ class SessionStoreBuilder(Builder):
     configuration.
     """
 
-    class Types(StrEnum):
-        """
-        Enumeration of supported session store types.
-        """
-
-        IN_MEMORY = "IN_MEMORY"
-        REDIS = "REDIS"
-        VALKEY = "VALKEY"
-        DYNAMODB = "DYNAMODB"
-        COSMOSDB = "COSMOSDB"
-        FIRESTORE = "FIRESTORE"
-
-        @classmethod
-        def from_str(cls, type_str: str) -> Self:
-            """
-            Create a SessionStoreBuilder.Types enum member from a string representation.
-
-            This class method attempts to convert a string to its corresponding SessionStoreBuilder.Types
-            enum value. If the conversion fails, it logs a warning and returns the default
-            IN_MEMORY type.
-
-            :param type_str: The string representation of the session store type. Case-insensitive input is supported.
-
-            :returns: The corresponding SessionStoreBuilder.Types enum member.
-                Returns SessionStoreBuilder.Types.IN_MEMORY as a fallback if the input string doesn't match any valid enum member.
-            """
-            try:
-                return cls[type_str.upper()]
-            except KeyError:
-                Builder._log.warning(f"Invalid session store type '{type_str}', falling back to IN_MEMORY")
-                return SessionStoreBuilder.Types.IN_MEMORY
-
     @staticmethod
     def build() -> SessionStore:
         """
-        Build and return a SessionStore instance based on the configured session store type.
+        Build and return a SessionStore instance based on the configured ``session.type``.
 
-        This static method reads the session store type from the application configuration
-        and instantiates the appropriate SessionStore implementation. Currently supports
-        Redis-backed, DynamoDB-backed, and in-memory session stores.
-
-        :returns: An instance of RedisSessionStore (if configured type is REDIS),
-            DynamoDBSessionStore (if configured type is DYNAMODB),
-            or InMemorySessionStore (for all other types).
-
-        :raises: Any exceptions raised by SessionStoreBuilder.Types.from_str(), AKConfig.get(),
-            RedisSessionStore(), or InMemorySessionStore() initialization.
+        ``type`` is a built-in short name (in_memory, redis, valkey, dynamodb, cosmosdb,
+        firestore) or a dotted path to a user-supplied ``SessionStore`` subclass
+        (bring-your-own). An unknown, non-dotted value raises ``AKConfigError``.
         """
-        session_store_type: SessionStoreBuilder.Types = SessionStoreBuilder.Types.from_str(AKConfig.get().session.type)
-        Builder._log.info(f"Building {session_store_type} session store")
-        if session_store_type == SessionStoreBuilder.Types.REDIS:
-            from .session.redis import RedisSessionStore
-
-            return RedisSessionStore(cache=SessionCacheBuilder.build())
-        elif session_store_type == SessionStoreBuilder.Types.VALKEY:
-            try:
-                from .session.valkey import ValkeySessionStore
-            except ImportError as e:
-                raise ImportError(
-                    "The 'valkey' package is required for session.type: valkey. Install it with: pip install agentkernel[valkey]"
-                ) from e
-
-            return ValkeySessionStore(cache=SessionCacheBuilder.build())
-        elif session_store_type == SessionStoreBuilder.Types.DYNAMODB:
-            from .session.dynamodb import DynamoDBSessionStore
-
-            return DynamoDBSessionStore(cache=SessionCacheBuilder.build())
-        elif session_store_type == SessionStoreBuilder.Types.COSMOSDB:
-            from .session.cosmosdb import CosmosDBSessionStore
-
-            return CosmosDBSessionStore(cache=SessionCacheBuilder.build())
-        elif session_store_type == SessionStoreBuilder.Types.FIRESTORE:
-            from .session.firestore import FirestoreSessionStore
-
-            return FirestoreSessionStore(cache=SessionCacheBuilder.build())
-        else:
+        store_type = AKConfig.get().session.type
+        Builder._log.info(f"Building '{store_type}' session store")
+        cache = SessionCacheBuilder.build()
+        key = store_type.lower()
+        if key == "in_memory":
             from .session.in_memory import InMemorySessionStore
 
             return InMemorySessionStore()
+        if key == "redis":
+            with require_extra("redis", "session.type: redis"):
+                from .session.redis import RedisSessionStore
+
+            return RedisSessionStore(cache=cache)
+        if key == "valkey":
+            with require_extra("valkey", "session.type: valkey"):
+                from .session.valkey import ValkeySessionStore
+
+            return ValkeySessionStore(cache=cache)
+        if key == "dynamodb":
+            with require_extra("aws", "session.type: dynamodb"):
+                from .session.dynamodb import DynamoDBSessionStore
+
+            return DynamoDBSessionStore(cache=cache)
+        if key == "cosmosdb":
+            with require_extra("azure", "session.type: cosmosdb"):
+                from .session.cosmosdb import CosmosDBSessionStore
+
+            return CosmosDBSessionStore(cache=cache)
+        if key == "firestore":
+            with require_extra("gcp", "session.type: firestore"):
+                from .session.firestore import FirestoreSessionStore
+
+            return FirestoreSessionStore(cache=cache)
+        if "." not in store_type:
+            raise AKConfigError(
+                f"unknown session store type '{store_type}'; expected one of {_BUILTIN_SESSION_STORES} or a dotted path to a SessionStore subclass"
+            )
+        return resolve_dotted(store_type, base=SessionStore)(cache=cache)

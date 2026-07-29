@@ -161,27 +161,35 @@ class _MultimodalConfig(BaseModel):
     # ... existing fields ...
     storage_type: str = Field(
         default="in_memory",
-        pattern="^(session_cache|in_memory|redis|dynamodb|<backend>)$",  # ADD <backend>
-        description="Storage backend for multimodal attachments.",
+        description="Storage backend for multimodal attachments: a built-in short name "
+                     "(session_cache, in_memory, redis, dynamodb, <backend>) or a dotted "
+                     "path to an AttachmentStore subclass",  # ADD <backend> to the short-name list
     )
     # ... existing backends ...
     <backend>: Optional[_MultimodalStorage<Backend>Config] = None       # ADD THIS
 ```
 
+`storage_type` is a free-form string (no regex `pattern=`) so that a dotted path resolves as
+bring-your-own — do not add a `pattern=` constraint back.
+
 ### 4. Register with the Storage Manager Factory
 
-Update `AttachmentStorageManager._build_driver()` in `ak-py/src/agentkernel/core/multimodal/storage/storage_manager.py`:
+Update `AttachmentStorageManager._build_driver()` in `ak-py/src/agentkernel/core/multimodal/storage/storage_manager.py`. It shares the house pluggable-backend shape from `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError` — the same pattern used by the guardrail, trace, session/thread store, and sandbox provider factories): matching is case-insensitive on `storage_type.lower()`, each built-in's lazy import for an optional-dependency backend is wrapped in `require_extra`, and anything left over is treated as a dotted path to an `AttachmentStore` subclass (bring-your-own):
 
 ```python
+_BUILTIN_ATTACHMENT_STORES = ["session_cache", "in_memory", "redis", "dynamodb", "<backend>"]  # ADD <backend>
+
 @staticmethod
 def _build_driver(session_id: str) -> AttachmentStore:
     config = AKConfig.get().multimodal
     storage_type = config.storage_type
+    key = storage_type.lower()
 
-    # ... existing backends ...
+    # ... existing backends (session_cache, in_memory) ...
 
-    elif storage_type == "<backend>":
-        from .<backend> import <Backend>AttachmentStore
+    if key == "<backend>":                                                # ADD THIS
+        with require_extra("<backend>", "multimodal.storage_type: <backend>"):
+            from .<backend> import <Backend>AttachmentStore
 
         backend_config = config.<backend>
         if backend_config is None:
@@ -195,11 +203,20 @@ def _build_driver(session_id: str) -> AttachmentStore:
             ttl=backend_config.ttl,
         )
 
-    else:
-        # Default: in_memory
-        from .in_memory import InMemoryAttachmentStore
-        return InMemoryAttachmentStore(session_id)
+    # ... existing backends (redis, dynamodb) ...
+
+    # Bring-your-own: a dotted path to an AttachmentStore subclass (session-scoped).
+    if "." not in storage_type:
+        raise AKConfigError(
+            f"unknown multimodal storage_type '{storage_type}'; expected one of {_BUILTIN_ATTACHMENT_STORES} or a dotted path to an AttachmentStore subclass"
+        )
+    return resolve_dotted(storage_type, base=AttachmentStore)(session_id)
 ```
+
+A dotted `storage_type` (e.g. `myorg.storage.CustomAttachmentStore`) resolves via `resolve_dotted`
+without any factory edit at all — only add an `if` branch here for a first-party, in-repo backend
+you want addressable by a short name. There is no `else` fallback to `in_memory` anymore: an
+unrecognized non-dotted value now fails loudly via `AKConfigError`.
 
 ### 5. Add Optional Dependencies
 
@@ -349,7 +366,7 @@ Add or update `docs/docs/advanced/multimodal.md` with:
 
 - [ ] `ak-py/src/agentkernel/core/multimodal/storage/<backend>.py` implementing `AttachmentStore`
 - [ ] Backend-specific config class in `config.py` (e.g., `_MultimodalStorage<Backend>Config`)
-- [ ] `storage_type` pattern regex updated in `_MultimodalConfig`
+- [ ] `storage_type` description updated in `_MultimodalConfig` to list the new short name (no `pattern=` regex — the field stays free-form for bring-your-own)
 - [ ] Registration in `AttachmentStorageManager._build_driver()` factory
 - [ ] Optional dependencies in `pyproject.toml`
 - [ ] Unit tests for save/get/delete, max attachments pruning, session isolation

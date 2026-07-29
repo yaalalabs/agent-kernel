@@ -4,6 +4,9 @@ from ..core.base import Agent, Session
 from ..core.config import AKConfig
 from ..core.hooks import PostHook, PreHook
 from ..core.model import AgentReply, AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequest, AgentRequestText
+from ..core.util.factory import AKConfigError, require_extra, resolve_dotted
+
+_BUILTIN_GUARDRAILS = ["openai", "bedrock", "walledai"]
 
 
 class InputGuardrail(PreHook):
@@ -26,46 +29,60 @@ class InputGuardrailFactory:
 
     @staticmethod
     def get() -> PreHook:
-        if AKConfig.get().guardrail.input.enabled:
-            if AKConfig.get().guardrail.input.type == "openai":
+        config = AKConfig.get().guardrail.input
+        if not config.enabled:
+            return InputGuardrail()  # OFF: pass-through hook
+        gtype = config.type
+        if gtype == "openai":
+            with require_extra("openai", "guardrail.input.type: openai"):
                 from .openai import OpenAIInputGuardrail
 
-                return OpenAIInputGuardrail()
-            elif AKConfig.get().guardrail.input.type == "bedrock":
+            return OpenAIInputGuardrail()
+        if gtype == "bedrock":
+            with require_extra("aws", "guardrail.input.type: bedrock"):
                 from .bedrock import BedrockInputGuardrail
 
-                return BedrockInputGuardrail()
-            elif AKConfig.get().guardrail.input.type == "walledai":
+            return BedrockInputGuardrail()
+        if gtype == "walledai":
+            with require_extra("walledai", "guardrail.input.type: walledai"):
                 from .walledai import WalledAIInputGuardrail
 
-                return WalledAIInputGuardrail()
-            else:
-                raise Exception(f"Unknown guardrail type: {AKConfig.get().guardrail.input.type}")
-        else:
-            return InputGuardrail()
+            return WalledAIInputGuardrail()
+        if "." not in gtype:
+            raise AKConfigError(
+                f"unknown guardrail type '{gtype}'; expected one of {_BUILTIN_GUARDRAILS} or a dotted path to an InputGuardrail subclass"
+            )
+        return resolve_dotted(gtype, base=InputGuardrail)()
 
 
 class OutputGuardrailFactory:
 
     @staticmethod
     def get() -> PostHook:
-        if AKConfig.get().guardrail.output.enabled:
-            if AKConfig.get().guardrail.output.type == "openai":
+        config = AKConfig.get().guardrail.output
+        if not config.enabled:
+            return OutputGuardrail()  # OFF: pass-through hook
+        gtype = config.type
+        if gtype == "openai":
+            with require_extra("openai", "guardrail.output.type: openai"):
                 from .openai import OpenAIOutputGuardrail
 
-                return OpenAIOutputGuardrail()
-            elif AKConfig.get().guardrail.output.type == "bedrock":
+            return OpenAIOutputGuardrail()
+        if gtype == "bedrock":
+            with require_extra("aws", "guardrail.output.type: bedrock"):
                 from .bedrock import BedrockOutputGuardrail
 
-                return BedrockOutputGuardrail()
-            elif AKConfig.get().guardrail.output.type == "walledai":
+            return BedrockOutputGuardrail()
+        if gtype == "walledai":
+            with require_extra("walledai", "guardrail.output.type: walledai"):
                 from .walledai import WalledAIOutputGuardrail
 
-                return WalledAIOutputGuardrail()
-            else:
-                raise Exception(f"Unknown guardrail type: {AKConfig.get().guardrail.output.type}")
-        else:
-            return OutputGuardrail()
+            return WalledAIOutputGuardrail()
+        if "." not in gtype:
+            raise AKConfigError(
+                f"unknown guardrail type '{gtype}'; expected one of {_BUILTIN_GUARDRAILS} or a dotted path to an OutputGuardrail subclass"
+            )
+        return resolve_dotted(gtype, base=OutputGuardrail)()
 
 
 class BaseGuardrailUtil:

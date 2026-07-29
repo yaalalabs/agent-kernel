@@ -1,0 +1,28 @@
+# ec2_ssm provider demo: attach to an EXISTING EC2 instance and run code on it via SSM
+# (mode-3 attach — the sandbox capability drives a runtime you already own).
+#
+# The provider is attach-only: it never provisions or destroys the instance. Point it at
+# your instance with an environment override (keeps instance ids out of the config file):
+#
+#   export AK_SANDBOX__PROFILES__EC2__EC2_SSM__ATTACH_TO=i-0123456789abcdef0
+#
+# Requirements: the instance runs the SSM agent and is registered with Systems Manager,
+# and your AWS credentials (default boto3 chain) may call ssm:SendCommand,
+# ssm:GetCommandInvocation, ssm:DescribeInstanceInformation, and ssm:CancelCommand.
+#
+# WARNING: isolation is `none` — commands run directly on that instance with the SSM
+# agent's permissions. Use an instance you own and can afford to mutate.
+sandbox:
+  enabled: true
+  default_profile: ec2
+  profiles:
+    ec2:
+      type: ec2_ssm
+      scope: per_session
+      idle_timeout: 21600 # 6 hours; expiry only drops the session binding — the instance is untouched
+      ec2_ssm:
+        {}
+        # region: us-east-1        # optional; omitted = boto3 default region
+        # attach_to: i-...         # or set it here instead of the env override above
+  broker:
+    flavor: thread

@@ -20,7 +20,7 @@ graph TB
     D --> G[Trace Events]
     E --> G
     F --> G
-    G --> H[Langfuse/OpenLLMetry]
+    G --> H[Langfuse/OpenLLMetry/Logfire]
     
     style G fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style H fill:#ff6b35,stroke:#fff,stroke-width:2px,color:#fff
@@ -32,6 +32,7 @@ Agent Kernel supports the following observability platforms:
 
 - **Langfuse** - Open-source LLM engineering platform for tracing, evaluating, and monitoring AI applications
 - **OpenLLMetry (Traceloop)** - OpenTelemetry-based observability for LLM applications with support for multiple backends
+- **Pydantic Logfire** - OpenTelemetry-based observability from the Pydantic team, with a native OpenAI Agents SDK integration
 
 ## Getting Started with Langfuse
 
@@ -291,6 +292,21 @@ This should return `True` if credentials are valid.
 python -c "from traceloop.sdk import Traceloop; Traceloop.init(app_name='test'); print('Success')"
 ```
 
+### Logfire Issues
+
+**Traces Not Appearing:**
+
+1. **Check Token**: Verify `LOGFIRE_TOKEN` is set — without it, Logfire runs locally and does not ship traces
+2. **Verify Configuration**: Ensure `trace.enabled` is `true` and `trace.type` is `logfire`
+3. **Check Installation**: Confirm `agentkernel[logfire]` is installed
+4. **Review Logs**: Look for the `ak.trace.logfire` "Logfire configured" debug message
+
+**Setup Check:**
+
+```bash
+python -c "import logfire; logfire.configure(send_to_logfire='if-token-present'); print('Success')"
+```
+
 ### Performance Impact
 
 Tracing adds minimal overhead:
@@ -314,6 +330,7 @@ When tracing is enabled:
 - All prompts and completions are sent to your chosen tracing platform
 - **Langfuse**: Data sent to Langfuse cloud or self-hosted instance
 - **OpenLLMetry**: Data sent to Traceloop or configured OpenTelemetry backend
+- **Logfire**: Data sent to Logfire when `LOGFIRE_TOKEN` is set; otherwise kept local
 - Ensure compliance with your data privacy requirements
 - Consider self-hosting for sensitive data
 
@@ -374,6 +391,73 @@ export TRACELOOP_BASE_URL=http://your-otel-collector:4318
 
 See [OpenLLMetry documentation](https://www.traceloop.com/docs/openllmetry/integrations) for more backend options.
 
+## Getting Started with Pydantic Logfire
+
+[Pydantic Logfire](https://logfire.pydantic.dev) is an OpenTelemetry-based observability platform from the Pydantic team.
+
+### Installation
+
+```bash
+pip install agentkernel[logfire]
+```
+
+Or with a framework integration:
+
+```bash
+# OpenAI with Logfire
+pip install agentkernel[openai,logfire]
+
+# CrewAI with Logfire
+pip install agentkernel[crewai,logfire]
+
+# Google ADK with Logfire
+pip install agentkernel[adk,logfire]
+```
+
+### Configuration
+
+#### Method 1: Configuration File
+
+```yaml
+trace:
+  enabled: true
+  type: logfire
+```
+
+#### Method 2: Environment Variables
+
+```bash
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=logfire
+```
+
+### Logfire Credentials
+
+Set your Logfire write token via an environment variable:
+
+```bash
+export LOGFIRE_TOKEN=your-write-token
+```
+
+Without `LOGFIRE_TOKEN`, Logfire runs locally and does **not** ship traces (Agent Kernel configures it with `send_to_logfire="if-token-present"`), so your agents still run.
+
+### Getting a Logfire Token
+
+1. Sign up at [https://logfire.pydantic.dev](https://logfire.pydantic.dev)
+2. Create a new project
+3. Copy the project's **write token**
+
+### Framework Coverage
+
+Logfire configures the global OpenTelemetry tracer provider, and each non-streaming agent run (`execution.mode: invoke`) is wrapped in a Logfire span carrying the `session_id`. Streaming runs (`execution.mode: stream`) are not wrapped in a session span — matching the Langfuse and OpenLLMetry runners — though deep instrumentation still emits LLM/tool spans where it is active. Deep (LLM/tool-level) instrumentation depends on the framework:
+
+| Framework | Depth under Logfire |
+|-----------|---------------------|
+| OpenAI Agents SDK | Full — native `logfire.instrument_openai_agents()` |
+| CrewAI | Full — OpenInference CrewAI + LiteLLM instrumentors |
+| Google ADK | Full — OpenInference Google ADK instrumentor |
+| LangGraph | Session span only |
+| Smolagents | Session span only |
 
 ## Integrate with Your Own Traceability Platform
 
@@ -453,9 +537,10 @@ Upcoming observability features:
 ## Summary
 
 - Enable observability with simple configuration
-- **Two Platform Options**: Choose between Langfuse and OpenLLMetry
+- **Three Platform Options**: Choose between Langfuse, OpenLLMetry, and Pydantic Logfire
 - **Langfuse**: Specialized LLM observability platform with rich analytics
 - **OpenLLMetry**: OpenTelemetry-based solution with multi-backend support
+- **Pydantic Logfire**: OpenTelemetry-based platform with a native OpenAI Agents SDK integration
 - Comprehensive trace data including LLM calls, tools, and performance
 - Minimal performance impact
 - Self-hosting and custom backend options for data privacy

@@ -70,7 +70,7 @@ docs/specs/<issue-number>-<short-title>/
 - **`design.md` distills; `research/` backs.** The design states the decision and *cites* the research file where a motivation or a decision leans on a finding (e.g. "per-session is the default — see `research/lifecycle-survey.md`"). Do not paste long surveys into `design.md`; that is exactly the padding the point-form format exists to avoid.
 - **A different bar.** Research is held to the *claims-are-true* bar (property 1 above) — verified code citations, and external claims marked as verified or not — but **not** to the point-form / concise / review-cycle bar of `design.md`. It may be long-form and exploratory, and it is not rewritten every review cycle.
 - **Not requirements.** `ak-dev-review-pr` does not extract requirements from `research/` and does not hold it to the spec rubric; reviewers may consult it for context. It ships in the design PR as supporting material (see PR Guidance).
-- **When research is large or reusable** — a landscape survey worth discovering from outside this one change — it may instead live as its own research-companion dev skill under `.agents/skills/` (as `ak-dev-sandbox-research` does, with its `references/`). Use `research/` for change-scoped material; promote to a skill only when the research is a durable reference in its own right.
+- **When research is large or reusable** — a landscape survey worth discovering from outside this one change — it may instead live as its own research-companion dev skill under `.agents/skills/`. Use `research/` for change-scoped material; promote to a skill only when the research is a durable reference in its own right.
 
 ## Inputs
 

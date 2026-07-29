@@ -340,7 +340,7 @@ class Agent(ABC):
         """
         from agentkernel.core.tool import SystemToolFactory
 
-        suffix = SystemToolFactory.get_system_prompt_suffix()
+        suffix = SystemToolFactory.get_system_prompt_suffix(self.name)
         self.override_system_prompt(prompt=suffix)
 
     def _attach_system_tools(self) -> None:
@@ -349,5 +349,5 @@ class Agent(ABC):
         """
         from agentkernel.core.tool import SystemToolFactory
 
-        for tool in SystemToolFactory.get_all():
+        for tool in SystemToolFactory.get_all(self.name):
             self.attach_tool(tool.func)
