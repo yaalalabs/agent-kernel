@@ -1,7 +1,7 @@
 {
   "skill": "ak-add-capabilities",
   "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, hooks, multimodal, conversation threads, sandbox) skill",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "evals": [
     {
       "id": "cap-guardrail-openai",
@@ -68,6 +68,23 @@
         "enabled: true",
         "agentkernel[",
         "openllmetry"
+      ]
+    },
+    {
+      "id": "cap-tracing-logfire",
+      "name": "Add Pydantic Logfire tracing",
+      "input": "Add Pydantic Logfire tracing to my project",
+      "expected_outputs": [
+        "trace:",
+        "type: logfire",
+        "enabled: true",
+        "LOGFIRE_TOKEN",
+        "agentkernel[",
+        "logfire"
+      ],
+      "must_not_contain": [
+        "type: langfuse",
+        "type: openllmetry"
       ]
     },
     {

@@ -41,7 +41,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
 | 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
-| 🔍 **Production Observability** | LangFuse and OpenLLMetry tracing wired in. Every agent, tool, and LLM call — visible. |
+| 🔍 **Production Observability** | LangFuse, OpenLLMetry, and Pydantic Logfire tracing wired in. Every agent, tool, and LLM call — visible. |
 | 🤝 **Open Standards** | Native **MCP** (Model Context Protocol) and **A2A** (Agent-to-Agent) support. |
 | 🆓 **Apache 2.0** | No licensing fees. No vendor lock-in. Production-ready open source. |
 
@@ -109,7 +109,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 - **Guardrails** — OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, content moderation.
 - **Pre/Post Execution Hooks** — Inject policy checks, RAG context, redaction, or moderation around every agent call.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
-- **Observability** — LangFuse and OpenLLMetry tracing with a single config line.
+- **Observability** — LangFuse, OpenLLMetry, and Pydantic Logfire tracing with a single config line.
 - **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.
 
 ### 📦 Sandboxed Code Execution
@@ -117,7 +117,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 Let agents run code and shell commands in an isolated, permission-bounded environment — the platform handles it, your agent code stays clean.
 
 - **Enable it in config** — agents automatically gain code/command/file tools and the usage guidance is injected into their prompt.
-- **Pluggable providers** — `local_subprocess` (dev) and `docker` (container-isolated) today, with `e2b`, `daytona`, `kubernetes`, and cloud-native backends planned; bring your own via a dotted path.
+- **Pluggable providers** — `local_subprocess` (dev), `docker` (container-isolated), `e2b` (managed micro-VMs), `daytona` (cloud containers), and `ec2_ssm` (attach to an existing EC2 instance) today, with `kubernetes` and other cloud-native backends planned; bring your own via a dotted path.
 - **Workload profiles** — per-call, per-session, or shared lifetimes; each with its own permission policy (network egress, filesystem, CPU/memory, timeout) enforced fail-closed.
 - **Per-user identity** — run sandboxed code under the invoking user's identity, not one shared agent identity, via a pluggable principal resolver.
 

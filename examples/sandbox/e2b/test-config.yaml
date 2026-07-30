@@ -1,0 +1,8 @@
+# Agent Kernel test harness configuration (loaded only when running tests).
+# See https://kernel.yaala.ai/docs/testing/overview for details.
+#
+# The sandbox executes real code and the prompts pin sentinel replies, so every
+# expected answer is an exact value ("42", "hello sandbox", "XLII", "OFFLINE").
+# Fuzzy string matching keeps the comparison deterministic and offline: no LLM
+# judge is involved in evaluating results.
+mode: fuzzy

@@ -1,4 +1,4 @@
-"""``SandboxManager`` — the agent-side façade over the sandbox capability.
+"""``ExecutionManager`` — the agent-side façade over the sandbox capability.
 
 A process-wide singleton (mirroring ``ConversationThreadManager``) that owns:
 
@@ -20,15 +20,15 @@ from typing import Any, ClassVar, Optional, Union
 from ..core.base import Session
 from ..core.config import AKConfig
 from ..core.util.factory import resolve_dotted
-from .broker.base import SandboxBroker, SandboxBrokerRequest, SandboxCompletion
+from .broker.base import ExecutionBroker, ExecutionCompletion, ExecutionRequest
 from .errors import SandboxConfigError, SandboxSessionNotFoundError
-from .factory import SandboxBrokerFactory
+from .factory import ExecutionBrokerFactory
 from .model import SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession, SandboxTask
 from .principal import AgentPrincipalResolver, PrincipalResolver
 
 
-class SandboxManager:
-    _instance: ClassVar[Optional["SandboxManager"]] = None
+class ExecutionManager:
+    _instance: ClassVar[Optional["ExecutionManager"]] = None
     _lock: ClassVar[RLock] = RLock()
     _runtime_registry: ClassVar[dict[str, SandboxSession]] = {}  # per_runtime scope: sandbox_session_id -> session
     _log = logging.getLogger("ak.sandbox")
@@ -39,7 +39,7 @@ class SandboxManager:
         """Build the manager from the ``sandbox`` config section: the broker client (via the
         factory) and the principal resolver. Use :meth:`get`, not this constructor."""
         self._config = config
-        self._broker: SandboxBroker = SandboxBrokerFactory.get()
+        self._broker: ExecutionBroker = ExecutionBrokerFactory.get()
         self._resolver: PrincipalResolver = self._build_resolver(config)
 
     @staticmethod
@@ -51,7 +51,7 @@ class SandboxManager:
         return AgentPrincipalResolver()
 
     @classmethod
-    def get(cls) -> Optional["SandboxManager"]:
+    def get(cls) -> Optional["ExecutionManager"]:
         """Return the shared instance, or None when the sandbox capability is disabled.
         Callers use the None check as the feature-enabled check."""
         config = AKConfig.get().sandbox
@@ -142,7 +142,7 @@ class SandboxManager:
             )
         return None
 
-    def ingest_completion(self, completion: SandboxCompletion) -> Optional[SandboxTask]:
+    def ingest_completion(self, completion: ExecutionCompletion) -> Optional[SandboxTask]:
         """Consume a task-completion event (called by ``SandboxPreHook`` under the session lock).
 
         Returns the updated task after marking it consumed and terminal and refreshing the
@@ -210,7 +210,7 @@ class SandboxManager:
         sandbox_session_id: Optional[str] = None,
         wait: Optional[float] = None,
     ) -> Union[SandboxResult, SandboxTask]:
-        """Resolve profile, session, principal, and policy into a ``SandboxBrokerRequest``
+        """Resolve profile, session, principal, and policy into a ``ExecutionRequest``
         and submit it. Persists the (updated) session handle on success; ``per_call``
         sessions are ephemeral and their backend is torn down in ``finally``.
 
@@ -225,7 +225,7 @@ class SandboxManager:
 
         session, ephemeral, notice = await self._resolve_session(profile_name, sandbox_session_id, profile_cfg)
         principal = await self._resolve_principal()
-        request = SandboxBrokerRequest(
+        request = ExecutionRequest(
             task_id=uuid.uuid4().hex,
             operation=operation,  # type: ignore[arg-type]
             payload=payload,
@@ -364,17 +364,24 @@ class SandboxManager:
                 )
 
         # Idle timeout: opportunistically close+destroy an expired sandbox on touch, then let
-        # the worker recreate it under the same sandbox_session_id.
+        # the worker recreate it under the same sandbox_session_id. For attached environments
+        # the worker's destroy only drops the binding — the environment itself is untouched.
         notice = None
         if existing.sandbox_id and (now - existing.last_used_at) > profile_cfg.idle_timeout:
             await self._destroy_backend(existing)
             existing.sandbox_id = None
             existing.status = "active"
             existing.created_at = now
-            notice = (
-                f"sandbox session '{existing.sandbox_session_id}' was idle for more than {profile_cfg.idle_timeout}s "
-                "and has been reset; its previous workspace state was discarded"
-            )
+            if getattr(profile_cfg, "environment", "managed") == "attached":
+                notice = (
+                    f"sandbox session '{existing.sandbox_session_id}' was idle for more than {profile_cfg.idle_timeout}s "
+                    "and its binding was reset; the attached environment itself is untouched"
+                )
+            else:
+                notice = (
+                    f"sandbox session '{existing.sandbox_session_id}' was idle for more than {profile_cfg.idle_timeout}s "
+                    "and has been reset; its previous workspace state was discarded"
+                )
         existing.last_used_at = now
         return existing, False, notice
 
@@ -444,7 +451,7 @@ class SandboxManager:
         if not session.sandbox_id:
             session.status = "closed"
             return
-        request = SandboxBrokerRequest(
+        request = ExecutionRequest(
             task_id=uuid.uuid4().hex,
             operation="destroy",
             payload={},

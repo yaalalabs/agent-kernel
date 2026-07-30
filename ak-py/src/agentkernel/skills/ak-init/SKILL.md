@@ -90,12 +90,12 @@ description = "<description>"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[<extras>]>=0.6.1",
+    "agentkernel[<extras>]>=0.7.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.6.1",
+    "agentkernel[test]>=0.7.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -120,7 +120,7 @@ target-version = ["py312"]
 - Pydantic AI framework extra: `pydanticai` (installs the provider-agnostic `pydantic-ai-slim` core only — also add a provider, e.g. `pydantic-ai-slim[openai]`)
 - With messaging: add `slack`, `whatsapp`, etc.
 - With session store: add `redis`, `aws` (for DynamoDB), `azure` (for Cosmos DB)
-- With tracing: add `langfuse` or `openllmetry`
+- With tracing: add `langfuse`, `openllmetry`, or `logfire`
 
 #### Agent definition file
 
@@ -331,7 +331,7 @@ session:
 # Tracing (optional)
 # trace:
 #   enabled: true
-#   type: langfuse     # langfuse | openllmetry
+#   type: langfuse     # langfuse | openllmetry | logfire
 
 # Testing
 test:

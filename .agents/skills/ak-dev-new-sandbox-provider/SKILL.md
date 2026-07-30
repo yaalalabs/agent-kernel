@@ -3,9 +3,9 @@ name: ak-dev-new-sandbox-provider
 description: >
   Step-by-step guide for adding a new sandbox provider to Agent Kernel.
   Use this skill when you need to integrate a new code-execution backend for the sandbox
-  capability (beyond local_subprocess and docker). Covers implementing the Sandbox /
-  SandboxProvider ABCs, declaring capabilities honestly, factory registration, configuration,
-  the contract test suite, and examples.
+  capability (beyond local_subprocess, docker, e2b, daytona, and ec2_ssm). Covers implementing
+  the Sandbox / SandboxProvider ABCs, declaring capabilities honestly, factory registration,
+  configuration, the contract test suite, and examples.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -24,8 +24,28 @@ This guide walks through adding a new sandbox provider to Agent Kernel. Use the 
 |---|---|---|---|
 | Local subprocess | `local_subprocess` | `none` (no isolation; dev/test) | — (stdlib) |
 | Docker | `docker` | `container` | `agentkernel[sandbox-docker]` |
+| E2B | `e2b` | `micro_vm` | `agentkernel[e2b]` |
+| Daytona | `daytona` | `container` | `agentkernel[daytona]` |
+| EC2 via SSM | `ec2_ssm` | `none` (attach-only to an existing instance) | `agentkernel[aws]` |
 
-Planned in later iterations: `e2b`, `daytona`, `kubernetes`, `bedrock_agentcore`, `ec2_ssm`.
+Planned in later iterations: `kubernetes`, `bedrock_agentcore`.
+
+Reference implementations by pattern: `docker.py` (sync SDK via `to_thread`), `e2b.py`
+(native async SDK + native idle timeout passthrough), `daytona.py` (sync SDK + native
+auto-stop + configurable base image/snapshot/env_vars + resource mapping), `ec2_ssm.py`
+(attach-only provider with user-identity
+mapping: `sts:AssumeRole` + `run_as`). Providers with a native auto-stop take the profile's
+`idle_timeout` as a second constructor argument, passed by their factory branch.
+
+**Attach-only backends** (environments the framework connects to but never owns) subclass
+`AttachedEnvironmentProvider` instead of `SandboxProvider`: it fixes `create` (binds to the
+config's `attach_to`, never provisions) and `destroy` (no-op) once, so only `attach` is
+implemented. The handle subclasses `AttachedEnvironment` (not `Sandbox` directly), which fixes
+`close()` as a no-op and keeps the class name honest (e.g. `EC2SSMEnvironment`). Declare
+`provisions=False, attaches_external=True` — the factory validates the profile's
+`environment: managed | attached` mode against these flags at startup (attach-only providers
+are rejected under `managed`, and `attached` requires `attaches_external` plus an `attach_to`
+target), and the worker never self-heal-provisions or disposes an attached environment.
 
 ## Architecture Overview
 
@@ -110,6 +130,8 @@ class <Provider>SandboxProvider(SandboxProvider):
         package_install=False,
         stateful=False,
         attach=True,
+        provisions=True,                     # False for attach-only backends (never create)
+        attaches_external=False,             # True only if attach_to can bind to something you didn't create
         principal_user=False,                # True only if you enforce a user identity
         policy_network=False,                # True only if you actually restrict egress
         policy_filesystem=False,

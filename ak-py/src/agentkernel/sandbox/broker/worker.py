@@ -1,13 +1,13 @@
 """``BrokerWorkerCore`` — the flavor-independent sandbox execution engine.
 
 Every broker flavor (embedded, thread, ECS, Lambda) drives the same engine to turn one
-``SandboxBrokerRequest`` into a result. Two entry points:
+``ExecutionRequest`` into a result. Two entry points:
 
 * ``run`` — executes and returns ``(SandboxResult, SandboxSession)``, raising ``SandboxError``
   on any machinery/policy failure. In-process flavors that report synchronously use this so
   the real exception reaches the caller.
 * ``process`` — the terminal-guarantee wrapper for asynchronous flavors: never raises, always
-  returns a ``SandboxCompletion`` (a failure becomes a ``failed``/``timed_out`` completion).
+  returns a ``ExecutionCompletion`` (a failure becomes a ``failed``/``timed_out`` completion).
 """
 
 import asyncio
@@ -27,7 +27,7 @@ from ..errors import (
 )
 from ..factory import SandboxProviderFactory
 from ..model import SandboxFile, SandboxResult, SandboxSession
-from .base import SandboxBrokerRequest, SandboxCompletion
+from .base import ExecutionCompletion, ExecutionRequest
 
 logger = logging.getLogger("ak.sandbox.broker")
 
@@ -50,7 +50,7 @@ class BrokerWorkerCore:
             self._locks[sandbox_session_id] = lock
         return lock
 
-    async def run(self, request: SandboxBrokerRequest) -> tuple[SandboxResult, SandboxSession]:
+    async def run(self, request: ExecutionRequest) -> tuple[SandboxResult, SandboxSession]:
         """Execute one request and return ``(result, updated session)``.
 
         Raises the real ``SandboxError`` on any machinery/policy failure, so synchronous
@@ -64,10 +64,12 @@ class BrokerWorkerCore:
             raise SandboxConfigError("sandbox capability is disabled")
 
         session = request.sandbox_session
+        attached = self._environment_mode(request.profile) == "attached"
 
         # Teardown short-circuits before the fail-closed checks — it never executes code.
+        # An attached environment is never disposed: only the session binding is dropped.
         if request.operation == "destroy":
-            if session.sandbox_id:
+            if session.sandbox_id and not attached:
                 await provider.destroy(session.sandbox_id)
             session.status = "closed"
             session.sandbox_id = None
@@ -79,7 +81,7 @@ class BrokerWorkerCore:
 
         async with self._lock_for(session.sandbox_session_id):
             # 3. Attach-or-create with self-heal.
-            sandbox, recreated = await self._acquire(provider, request)
+            sandbox, recreated = await self._acquire(provider, request, attached)
             session.sandbox_id = sandbox.id
             session.last_used_at = time.time()
             # 4 (serialize, above) + 5. Execute under the effective timeout.
@@ -94,21 +96,21 @@ class BrokerWorkerCore:
             )
         return result, session
 
-    async def process(self, request: SandboxBrokerRequest) -> SandboxCompletion:
+    async def process(self, request: ExecutionRequest) -> ExecutionCompletion:
         """Terminal-guarantee wrapper: always returns a completion, never raises (step 8)."""
         try:
             result, session = await self.run(request)
-            return SandboxCompletion(task_id=request.task_id, status="succeeded", result=result, sandbox_session=session)
+            return ExecutionCompletion(task_id=request.task_id, status="succeeded", result=result, sandbox_session=session)
         except SandboxTimeoutError as exc:
             logger.warning("Sandbox task %s timed out: %s", request.task_id, exc)
-            return SandboxCompletion(task_id=request.task_id, status="timed_out", error=str(exc), sandbox_session=request.sandbox_session)
+            return ExecutionCompletion(task_id=request.task_id, status="timed_out", error=str(exc), sandbox_session=request.sandbox_session)
         except Exception as exc:  # noqa: BLE001 — terminal guarantee: never end a task without a completion
             logger.warning("Sandbox task %s failed: %s", request.task_id, exc)
-            return SandboxCompletion(task_id=request.task_id, status="failed", error=str(exc), sandbox_session=request.sandbox_session)
+            return ExecutionCompletion(task_id=request.task_id, status="failed", error=str(exc), sandbox_session=request.sandbox_session)
 
     # -- internals ---------------------------------------------------------- #
 
-    def _check_principal(self, provider: SandboxProvider, request: SandboxBrokerRequest) -> None:
+    def _check_principal(self, provider: SandboxProvider, request: ExecutionRequest) -> None:
         """Fail closed on user identity: a ``user``-mode profile requires both a provider
         that declares ``principal_user`` and a resolver that actually produced a user
         principal; otherwise raise before any provider call."""
@@ -124,7 +126,7 @@ class BrokerWorkerCore:
                 "no user identity is available on the session"
             )
 
-    def _enforce_policy(self, provider: SandboxProvider, request: SandboxBrokerRequest) -> None:
+    def _enforce_policy(self, provider: SandboxProvider, request: ExecutionRequest) -> None:
         """Check every non-default policy dimension against the provider's declared
         ``policy_*`` capabilities: unenforceable under ``strict`` raises
         ``SandboxPolicyError`` listing all of them; non-strict proceeds with one WARNING
@@ -156,16 +158,25 @@ class BrokerWorkerCore:
                 unenforceable,
             )
 
-    async def _acquire(self, provider: SandboxProvider, request: SandboxBrokerRequest):
+    async def _acquire(self, provider: SandboxProvider, request: ExecutionRequest, attached: bool):
         """Attach to the session's existing sandbox, self-healing a stale handle
         (``SandboxGoneError`` recreates under the same session id), or create a new one.
         Returns ``(sandbox, recreated)`` — ``recreated`` marks the self-heal case so the
-        caller can surface the silent workspace reset as a result notice."""
+        caller can surface the silent workspace reset as a result notice.
+
+        ``attached`` profiles never self-heal by provisioning: the framework does not own
+        the environment, so a gone target is surfaced as the real ``SandboxGoneError``
+        instead of being silently replaced with a fresh sandbox."""
         session = request.sandbox_session
         if session.sandbox_id:
             try:
                 return await provider.attach(session.sandbox_id, principal=request.principal, policy=request.policy), False
             except SandboxGoneError:
+                if attached:
+                    raise SandboxGoneError(
+                        f"attached environment '{session.sandbox_id}' (profile '{request.profile}') is unreachable; "
+                        "not recreating — attached environments are never provisioned by the framework"
+                    )
                 logger.info(
                     "Sandbox %s for session %s is gone; recreating (self-heal)",
                     session.sandbox_id,
@@ -174,7 +185,13 @@ class BrokerWorkerCore:
                 return await provider.create(principal=request.principal, policy=request.policy), True
         return await provider.create(principal=request.principal, policy=request.policy), False
 
-    async def _execute(self, sandbox, request: SandboxBrokerRequest) -> SandboxResult:
+    @staticmethod
+    def _environment_mode(profile_name: str) -> str:
+        """Return the profile's declared environment lifecycle ('managed' unless configured)."""
+        profile_cfg = AKConfig.get().sandbox.profiles.get(profile_name)
+        return getattr(profile_cfg, "environment", "managed") if profile_cfg is not None else "managed"
+
+    async def _execute(self, sandbox, request: ExecutionRequest) -> SandboxResult:
         """Dispatch the request's operation to the sandbox handle under
         ``asyncio.wait_for(policy.timeout)``; expiry raises ``SandboxTimeoutError``."""
         op = request.operation

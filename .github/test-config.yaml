@@ -27,6 +27,8 @@ e2e:
     - type: cli
       path: examples/cli/multi
     - type: cli
+      path: examples/cli/logfire
+    - type: cli
       path: examples/cli/knowledgebase/openai/chromadb
     - type: cli
       path: examples/cli/guardrail/openai
@@ -48,6 +50,11 @@ e2e:
       path: examples/sandbox/policy
     - type: cli
       path: examples/sandbox/docker
+    # daytona/e2b need a DAYTONA_API_KEY / E2B_API_KEY secret wired into the reusable workflow; enable once set.
+    # - type: cli
+    #   path: examples/sandbox/daytona
+    # - type: cli
+    #   path: examples/sandbox/e2b
     - type: api
       path: examples/sandbox/identity
 

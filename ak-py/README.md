@@ -11,7 +11,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, and Pydantic AI
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
-- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`), workload profiles, policy enforcement, and per-user identity
+- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
@@ -39,10 +39,14 @@ For LLM-based thread naming with Conversation Thread Support:
 pip install "agentkernel[thread]"
 ```
 
-For the Docker sandbox provider (the `local_subprocess` provider needs no extra):
+For the sandbox providers (the `local_subprocess` provider needs no extra; `ec2_ssm` rides
+the `aws` extra):
 
 ```bash
-pip install "agentkernel[sandbox-docker]"
+pip install "agentkernel[sandbox-docker]"   # docker provider
+pip install "agentkernel[e2b]"              # e2b cloud provider
+pip install "agentkernel[daytona]"          # daytona cloud provider
+pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
 ```
 
 **Requirements:**
@@ -685,7 +689,7 @@ Configure tracing and observability for monitoring agent execution.
 
 - **Type**
   - **Field**: `trace.type`
-  - **Options**: `langfuse`, `openllmetry`
+  - **Options**: `langfuse`, `openllmetry`, `logfire`
   - **Default**: `langfuse`
   - **Description**: Type of tracing provider to use
   - **Environment Variable**: `AK_TRACE__TYPE`
@@ -735,6 +739,29 @@ Enable tracing in your configuration:
 trace:
   enabled: true
   type: openllmetry
+```
+
+**Pydantic Logfire Setup:**
+
+To use Logfire for tracing, install the logfire extra:
+
+```bash
+pip install agentkernel[logfire]
+```
+
+Configure the Logfire write token via an environment variable (optional — without a token, Logfire
+runs locally and does not ship traces):
+
+```bash
+export LOGFIRE_TOKEN=your-write-token
+```
+
+Enable tracing in your configuration:
+
+```yaml
+trace:
+  enabled: true
+  type: logfire
 ```
 
 #### Test Configuration
@@ -986,9 +1013,15 @@ Key fields:
 - **`enabled`** (`AK_SANDBOX__ENABLED`, default `false`) — master switch; inert when off.
 - **`agents`** — agent names the tools/prompt attach to; omit for all agents.
 - **`type`** (per profile) — `local_subprocess` (no isolation; dev/test), `docker`
-  (container isolation; `sandbox-docker` extra), or a dotted path to your own `SandboxProvider`.
+  (container isolation; `sandbox-docker` extra), `e2b` (managed micro-VMs; `e2b` extra),
+  `daytona` (cloud containers; `daytona` extra), `ec2_ssm` (attach to an existing EC2
+  instance via SSM; `aws` extra), or a dotted path to your own `SandboxProvider`.
 - **`scope`** — `per_call` (fresh per execution), `per_session` (persists across turns),
   `per_runtime` (one shared sandbox per profile).
+- **`environment`** — `managed` (default; the provider creates and disposes sandboxes) or
+  `attached` (deliberately connect to an existing environment the framework never owns,
+  e.g. an EC2 instance via `ec2_ssm`; requires the provider's `attach_to` and is validated
+  against the provider's lifecycle capabilities at startup).
 - **`policy`** — network egress, filesystem paths, cpu/memory, timeout; enforced per provider,
   fail-closed under `strict`.
 - **`identity.mode`** + **`principal_resolver`** — run code under the agent's or the invoking
@@ -1088,13 +1121,15 @@ export AK_API__PORT=8000
 export AK_A2A__ENABLED=true
 export AK_MCP__ENABLED=false
 export AK_TRACE__ENABLED=true
-export AK_TRACE__TYPE=langfuse  # or openllmetry
+export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
 # For Langfuse:
 # export LANGFUSE_PUBLIC_KEY=pk-lf-...
 # export LANGFUSE_SECRET_KEY=sk-lf-...
 # export LANGFUSE_HOST=https://cloud.langfuse.com
 # For OpenLLMetry:
 # export TRACELOOP_API_KEY=your-api-key
+# For Logfire:
+# export LOGFIRE_TOKEN=your-write-token
 # Test harness (loaded from the separate test-config.yaml — see Test Configuration)
 export AK_TEST__MODE=fallback  # Options: fuzzy, judge, fallback
 export AK_TEST__JUDGE__MODEL=gpt-4o-mini
@@ -1140,13 +1175,15 @@ AK_API__PORT=8080
 AK_A2A__ENABLED=true
 AK_A2A__URL=http://localhost:8080/a2a
 AK_TRACE__ENABLED=true
-AK_TRACE__TYPE=langfuse  # or openllmetry
+AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
 # Langfuse credentials (if using langfuse):
 # LANGFUSE_PUBLIC_KEY=pk-lf-...
 # LANGFUSE_SECRET_KEY=sk-lf-...
 # LANGFUSE_HOST=https://cloud.langfuse.com
 # OpenLLMetry credentials (if using openllmetry):
 # TRACELOOP_API_KEY=your-api-key
+# Logfire credentials (if using logfire):
+# LOGFIRE_TOKEN=your-write-token
 ```
 
 #### config.yaml

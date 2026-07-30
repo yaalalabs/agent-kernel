@@ -39,7 +39,7 @@ graph TB
         MM[Multimodal<br/>attachments]
         TH[Conversation Threads]
         KB[Knowledge Bases<br/>Chroma · Neo4j · Starburst]
-        TR[Tracing<br/>Langfuse · OpenLLMetry]
+        TR[Tracing<br/>Langfuse · OpenLLMetry · Logfire]
     end
 
     subgraph STORE["State Stores"]
@@ -138,7 +138,7 @@ Built-in support for:
 - Queue-based scalable execution (SQS-backed, on Lambda and ECS)
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
-- Observability and tracing (Langfuse, OpenLLMetry)
+- Observability and tracing (Langfuse, OpenLLMetry, Logfire)
 
 ### 5. Extensible
 

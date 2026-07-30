@@ -15,7 +15,7 @@ sandbox mechanics.
 ```mermaid
 flowchart LR
     Agent -->|run_code / run_command / file tools| Tools[Sandbox Tools]
-    Tools --> Manager[SandboxManager]
+    Tools --> Manager[ExecutionManager]
     Manager -->|resolve profile| Factory[Provider Factory]
     Manager -->|submit| Broker[Broker]
     Broker --> Worker[BrokerWorkerCore]
@@ -151,6 +151,50 @@ id. The same recreation happens if a backend sandbox has vanished (self-heal). E
 reset is **surfaced to the agent** as a `notice` field on the result, and the injected guidance
 tells the agent to relay it — so a wiped workspace is reported, never silently hidden.
 
+(For `environment: attached` profiles the semantics differ deliberately — see the next
+section: expiry only drops the session binding, and a vanished target is never recreated.)
+
+## Managed vs attached environments
+
+Every profile declares its **environment lifecycle** — who owns the thing code runs in:
+
+```yaml
+profiles:
+  ec2:
+    type: ec2_ssm
+    environment: attached        # managed (default) | attached
+    ec2_ssm:
+      attach_to: i-0123456789abcdef0
+```
+
+- **`managed`** (default): the provider creates the sandbox and the framework owns its
+  lifecycle end to end — creation, idle reset, self-heal recreation, destruction.
+- **`attached`**: the framework deliberately **connects to an environment that already
+  exists** and never owns it — an EC2 instance over SSM, an existing container, a runtime
+  you operate. This is an explicit opt-in: pointing agents at a live system must be a
+  deliberate configuration choice, never a side effect.
+
+The mode is validated at startup against the provider's declared lifecycle capabilities
+(`provisions` / `attaches_external`), in both directions:
+
+| Profile mode | Provider can only provision (`e2b`, `daytona`, `local_subprocess`) | Provider supports both (`docker`) | Provider is attach-only (`ec2_ssm`) |
+|---|---|---|---|
+| `managed` (default) | OK | OK (`attach_to` must be unset) | **rejected** — attach-only providers require `environment: attached` |
+| `attached` | **rejected** — cannot attach to an existing environment | OK (`attach_to` required) | OK (`attach_to` required) |
+
+Setting `attach_to` under a `managed` profile is also rejected, so the deliberate-choice rule
+cannot be bypassed.
+
+`attached` changes the runtime rules to match non-ownership:
+
+- **Never destroyed.** `destroy_sandbox_session` (and idle expiry) only drop the session
+  binding; the environment itself is untouched.
+- **Never recreated.** If the attached target becomes unreachable, the failure is surfaced
+  as an error instead of the managed self-heal (which would silently provision a fresh
+  sandbox that is not your system).
+- **Idle notices say so.** An expired attached session reports that its *binding* was
+  reset and the environment is untouched, instead of "workspace state was discarded".
+
 ## Policy and permissions
 
 A profile's `policy` block is the permission and resource envelope for an execution:
@@ -237,9 +281,12 @@ Providers available today:
 |---|---|---|---|
 | `local_subprocess` | — (stdlib) | `none` | Runs on the host. Dev/test only. Shell + files + `python`/`bash`. |
 | `docker` | `sandbox-docker` | `container` | Container per sandbox (`sleep infinity`); files via archives; `pip install`. Maps `deny`→`network_mode: none`, cpu/memory→limits, fs→read-only rootfs + writable workdir. Requires a Docker daemon. |
+| `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls); shell, files, `pip install`. Maps `deny`→no internet access, `allowlist`→`allow_out` network rules; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
+| `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, `pip install`. Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
+| `ec2_ssm` | `aws` | `none` | **Attach-only** (requires `environment: attached`): executes on an existing EC2 instance via SSM Run Command — binds to `attach_to`, never provisions or disposes. Shell + `python` (heredoc); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). No persistent shell: each command is its own process, so cwd/env/`sudo su` do not carry across commands (`stateful=False`); chain dependent steps (`cd /app && ./run.sh`). |
 
-Additional providers (`e2b`, `daytona`, `kubernetes`, `bedrock_agentcore`, `ec2_ssm`) and the
-AWS `sqs` broker for queue-based deployments are planned in later iterations.
+Additional providers (`kubernetes`, `bedrock_agentcore`) and the AWS `sqs` broker for
+queue-based deployments are planned in later iterations.
 
 ### `docker` setup
 
@@ -257,10 +304,84 @@ sandbox:
     flavor: thread
 ```
 
+### `e2b` setup
+
+```bash
+pip install "agentkernel[e2b]"
+export E2B_API_KEY=e2b_...
+```
+
+```yaml
+sandbox:
+  enabled: true
+  type: e2b
+  e2b:
+    template: base              # E2B sandbox template
+    # api_key_env: E2B_API_KEY  # env variable holding the API key
+  broker:
+    flavor: thread
+```
+
+### `daytona` setup
+
+```bash
+pip install "agentkernel[daytona]"
+export DAYTONA_API_KEY=dtn_...
+```
+
+```yaml
+sandbox:
+  enabled: true
+  type: daytona
+  daytona:
+    image: python:3.12-slim         # container image for the sandbox...
+    # snapshot: my-warm-snapshot    # ...OR a named Daytona snapshot (mutually exclusive)
+    env_vars:                       # environment variables set inside the sandbox
+      APP_ENV: demo
+    # target: us                    # Daytona target/region; omitted = SDK default
+    # api_key_env: DAYTONA_API_KEY  # env variable holding the API key
+  broker:
+    flavor: thread
+```
+
+A sandbox launches from one base — an `image` or a `snapshot`, never both (neither = Daytona's
+default snapshot). Resource limits (`policy.cpu` / `policy.memory_mb`) only attach to an
+**image-based** sandbox, so a resource policy forces the image path (using your `image`, or
+`python:3.12-slim` if unset); pinning both a `snapshot` and resource limits is rejected.
+
+### `ec2_ssm` setup
+
+```bash
+pip install "agentkernel[aws]"
+```
+
+```yaml
+sandbox:
+  enabled: true
+  type: ec2_ssm
+  environment: attached             # required: ec2_ssm is attach-only (deliberate opt-in)
+  ec2_ssm:
+    attach_to: i-0123456789abcdef0  # existing instance id (or via AK_SANDBOX__... env override)
+    # region: us-east-1             # omitted = boto3 default
+  broker:
+    flavor: thread
+```
+
+The instance must run the SSM agent, and the caller needs `ssm:SendCommand`,
+`ssm:GetCommandInvocation`, `ssm:DescribeInstanceInformation`, and `ssm:CancelCommand`.
+Isolation is `none`: commands run directly on the instance, so attach only to hosts you
+own. In user-identity mode the provider assumes the principal's `role_arn` and, when
+`run_as` is set, executes commands as that OS user.
+
 ### Bring your own provider
 
 Any dotted path to a `SandboxProvider` subclass works as a `type`, so you can plug in a backend
-Agent Kernel doesn't ship:
+Agent Kernel doesn't ship. For attach-only backends (an environment you own that the framework
+should connect to but never create or dispose), subclass `AttachedEnvironmentProvider` instead:
+it fixes the non-ownership lifecycle (`create` binds to the configured `attach_to`, `destroy`
+is a no-op) so you implement only `attach`, returning an `AttachedEnvironment` handle (the `Sandbox`
+subclass for targets the framework never owns, whose `close()` is likewise fixed as a no-op).
+Profiles selecting such a provider must declare `environment: attached`.
 
 ```yaml
 profiles:
@@ -351,4 +472,7 @@ e.g. `AK_SANDBOX__ENABLED=true`, `AK_SANDBOX__BROKER__FLAVOR=embedded`,
 - [`sandbox/profiles`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/profiles) — multiple profiles with different scopes; the agent routes per call.
 - [`sandbox/policy`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/policy) — policy/permissions on the docker provider: an enforced envelope plus the fail-closed `strict` model for what docker cannot enforce.
 - [`sandbox/docker`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/docker) — the `docker` provider: container-isolated execution with policy actually enforced (`network_egress: deny` → no network).
+- [`sandbox/daytona`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/daytona) — the `daytona` provider: cloud container sandboxes with enforced network and resource policy (needs a Daytona API key).
+- [`sandbox/e2b`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/e2b) — the `e2b` provider: Firecracker micro-VM sandboxes with a stateful Jupyter kernel and enforced network policy (needs an E2B API key).
 - [`sandbox/identity`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/identity) — a REST app running sandboxed code under the authenticated end user's identity, end-to-end.
+- [`sandbox/ec2-ssm`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/ec2-ssm) — the `ec2_ssm` provider attaching to an existing EC2 instance over SSM (manual; needs a real instance).
