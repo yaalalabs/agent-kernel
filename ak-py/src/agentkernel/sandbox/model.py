@@ -39,7 +39,9 @@ class SandboxCapabilities(BaseModel):
     files: bool = False  # upload_file / download_file supported
     package_install: bool = False  # install_packages supported
     stateful: bool = False  # variables persist across execute_code calls in one sandbox
-    attach: bool = False  # attach-to-existing supported
+    attach: bool = False  # reconnect to a live sandbox by id supported (session continuity)
+    provisions: bool = True  # can create new environments (False = attach-only, e.g. ec2_ssm)
+    attaches_external: bool = False  # can bind to an environment it did not create (attach_to)
     principal_user: bool = False  # user-assumed identity supported
     policy_network: bool = False  # network egress policy enforceable
     policy_filesystem: bool = False  # filesystem policy enforceable
@@ -69,7 +71,7 @@ class SandboxResult(BaseModel):
 class SandboxSession(BaseModel):
     """A cross-turn handle to one sandbox, addressed by a stable ``sandbox_session_id``."""
 
-    sandbox_session_id: str  # uuid4 hex, minted by SandboxManager
+    sandbox_session_id: str  # uuid4 hex, minted by ExecutionManager
     name: str | None = None  # optional human-friendly label (shown in listings; addressing is by id)
     profile: str  # workload profile that created it
     provider_type: str  # resolved backend type (e.g. "docker")

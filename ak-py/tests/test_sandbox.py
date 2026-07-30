@@ -16,12 +16,15 @@ from pydantic import BaseModel, ValidationError
 from agentkernel.core.base import Agent, Runner, Session
 from agentkernel.core.config import (
     AKConfig,
+    _ExecutionBrokerConfig,
     _GuardrailConfig,
-    _SandboxBrokerConfig,
     _SandboxConfig,
+    _SandboxDaytonaConfig,
     _SandboxDockerConfig,
     _SandboxE2BConfig,
+    _SandboxEC2SSMConfig,
     _SandboxIdentityConfig,
+    _SandboxKubernetesConfig,
     _SandboxLocalSubprocessConfig,
     _SandboxPolicyConfig,
     _SandboxProfileConfig,
@@ -32,11 +35,11 @@ from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import SystemToolFactory
 from agentkernel.sandbox import errors
 from agentkernel.sandbox.base import Sandbox
-from agentkernel.sandbox.broker.base import SandboxCompletion
+from agentkernel.sandbox.broker.base import ExecutionCompletion
 from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxConfigError, SandboxPolicyError, SandboxSessionNotFoundError
 from agentkernel.sandbox.factory import SandboxProviderFactory
 from agentkernel.sandbox.hooks import NoOpSandboxPreHook, SandboxPreHook, SandboxPreHookFactory
-from agentkernel.sandbox.manager import SandboxManager
+from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import (
     IsolationTier,
     SandboxCapabilities,
@@ -64,13 +67,13 @@ from agentkernel.sandbox.tools import (
 @pytest.fixture(autouse=True)
 def reset_config_singleton():
     AKConfig._reset()
-    SandboxManager._reset()
+    ExecutionManager._reset()
     SandboxProviderFactory._reset()
     Runtime._system_pre_hooks = None  # rebuilt from each test's mocked config
     Runtime._system_post_hooks = None
     yield
     AKConfig._reset()
-    SandboxManager._reset()
+    ExecutionManager._reset()
     SandboxProviderFactory._reset()
     Runtime._system_pre_hooks = None
     Runtime._system_post_hooks = None
@@ -84,7 +87,7 @@ class _SandboxRunner(Runner):
 
     async def run(self, agent, session, requests):
         code = requests[0].prompt if requests and isinstance(requests[0], AgentRequestText) else "print(1)"
-        result = await SandboxManager.get().execute(code=code)
+        result = await ExecutionManager.get().execute(code=code)
         return AgentReplyText(response=result.stdout)
 
     async def stream(self, agent, session, requests):
@@ -132,7 +135,7 @@ def _install_sandbox_cfg(monkeypatch, sandbox_cfg):
 def _sandbox_cfg(profiles=None, **overrides):
     if profiles is None:
         profiles = {"default": _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_session")}
-    return _SandboxConfig(enabled=True, broker=_SandboxBrokerConfig(flavor="embedded"), profiles=profiles, **overrides)
+    return _SandboxConfig(enabled=True, broker=_ExecutionBrokerConfig(flavor="embedded"), profiles=profiles, **overrides)
 
 
 # --------------------------------------------------------------------------- #
@@ -147,6 +150,9 @@ def test_model_package_public_exports():
     assert sandbox.SandboxResult is SandboxResult
     assert sandbox.IsolationTier is IsolationTier
     assert sandbox.errors.SandboxError is errors.SandboxError
+    # the attached-environment surface is public: handle base + provider base
+    assert issubclass(sandbox.AttachedEnvironment, sandbox.Sandbox)
+    assert issubclass(sandbox.AttachedEnvironmentProvider, sandbox.SandboxProvider)
 
 
 def test_model_capabilities_defaults():
@@ -160,12 +166,14 @@ def test_model_capabilities_defaults():
         caps.package_install,
         caps.stateful,
         caps.attach,
+        caps.attaches_external,
         caps.principal_user,
         caps.policy_network,
         caps.policy_filesystem,
         caps.policy_resources,
     ):
         assert flag is False
+    assert caps.provisions is True  # providers create managed sandboxes unless declared attach-only
 
 
 def test_model_capabilities_isolation_is_required():
@@ -211,7 +219,7 @@ def test_errors_hierarchy():
         errors.SandboxProvisionError,
         errors.SandboxGoneError,
         errors.SandboxSessionNotFoundError,
-        errors.SandboxBrokerError,
+        errors.ExecutionBrokerError,
     ):
         assert issubclass(exc, errors.SandboxError)
     assert issubclass(errors.SandboxGoneError, errors.SandboxProvisionError)
@@ -376,7 +384,7 @@ async def test_principal_resolver_tolerates_no_agent():
 def test_factory_disabled_returns_none(monkeypatch):
     _install_sandbox_cfg(monkeypatch, _SandboxConfig(enabled=False))
     assert SandboxProviderFactory.get() is None
-    assert SandboxManager.get() is None
+    assert ExecutionManager.get() is None
 
 
 def test_factory_unknown_profile_raises(monkeypatch):
@@ -461,11 +469,63 @@ def test_factory_builtin_local_subprocess_real_import(monkeypatch):
 def test_factory_unknown_short_name_raises_listing_builtins(monkeypatch):
     """A short name with no landed if/elif branch (e.g. a provider from a future iteration)
     is an unknown type: fail loud, naming the available built-ins (#541 shape)."""
-    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="e2b", e2b=_SandboxE2BConfig())})
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="kubernetes", kubernetes=_SandboxKubernetesConfig())})
     _install_sandbox_cfg(monkeypatch, cfg)
     with pytest.raises(SandboxConfigError) as exc_info:
         SandboxProviderFactory.get("default")
     assert "local_subprocess" in str(exc_info.value) and "docker" in str(exc_info.value)
+
+
+def test_factory_builtin_ec2_ssm_real_import(monkeypatch):
+    cfg = _sandbox_cfg(
+        profiles={"default": _SandboxProfileConfig(type="ec2_ssm", environment="attached", ec2_ssm=_SandboxEC2SSMConfig(attach_to="i-1"))}
+    )
+    _install_sandbox_cfg(monkeypatch, cfg)
+    provider = SandboxProviderFactory.get("default")
+    assert type(provider).__name__ == "EC2SSMSandboxProvider"
+
+
+def test_factory_ec2_ssm_managed_mode_fails_closed(monkeypatch):
+    """An attach-only provider under the default managed mode is rejected at build time."""
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="ec2_ssm", ec2_ssm=_SandboxEC2SSMConfig(attach_to="i-1"))})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    with pytest.raises(SandboxConfigError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "attach-only" in str(exc_info.value) and "environment: attached" in str(exc_info.value)
+
+
+def test_factory_builtin_ec2_ssm_missing_extra_raises_import_error(monkeypatch):
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="ec2_ssm", ec2_ssm=_SandboxEC2SSMConfig())})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    monkeypatch.delitem(sys.modules, "agentkernel.sandbox.providers.ec2_ssm", raising=False)
+    monkeypatch.setitem(sys.modules, "boto3", None)  # simulate boto3 not being installed
+    with pytest.raises(ImportError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "agentkernel[aws]" in str(exc_info.value)
+
+
+def test_factory_builtin_e2b_missing_extra_raises_import_error(monkeypatch):
+    """The e2b SDK is not a dev dependency, so the real-import branch naturally exercises
+    the missing-extra path here; the provider itself is covered against a fake SDK in
+    test_sandbox_providers.py."""
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="e2b", e2b=_SandboxE2BConfig())})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    monkeypatch.delitem(sys.modules, "agentkernel.sandbox.providers.e2b", raising=False)
+    monkeypatch.setitem(sys.modules, "e2b_code_interpreter", None)
+    monkeypatch.setitem(sys.modules, "e2b", None)
+    with pytest.raises(ImportError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "agentkernel[e2b]" in str(exc_info.value)
+
+
+def test_factory_builtin_daytona_missing_extra_raises_import_error(monkeypatch):
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="daytona", daytona=_SandboxDaytonaConfig())})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    monkeypatch.delitem(sys.modules, "agentkernel.sandbox.providers.daytona", raising=False)
+    monkeypatch.setitem(sys.modules, "daytona", None)
+    with pytest.raises(ImportError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "agentkernel[daytona]" in str(exc_info.value)
 
 
 def test_factory_builtin_missing_config_block_raises(monkeypatch):
@@ -476,21 +536,21 @@ def test_factory_builtin_missing_config_block_raises(monkeypatch):
 
 
 def test_manager_build_resolver_custom_and_invalid():
-    resolver = SandboxManager._build_resolver(_sandbox_cfg(principal_resolver="agentkernel.sandbox.principal.AgentPrincipalResolver"))
+    resolver = ExecutionManager._build_resolver(_sandbox_cfg(principal_resolver="agentkernel.sandbox.principal.AgentPrincipalResolver"))
     assert isinstance(resolver, AgentPrincipalResolver)
     with pytest.raises(SandboxConfigError):
-        SandboxManager._build_resolver(_sandbox_cfg(principal_resolver="agentkernel.sandbox.model.SandboxResult"))
+        ExecutionManager._build_resolver(_sandbox_cfg(principal_resolver="agentkernel.sandbox.model.SandboxResult"))
 
 
 # --------------------------------------------------------------------------- #
-# SandboxManager end-to-end via the embedded broker (manager.py / broker/*)
+# ExecutionManager end-to-end via the embedded broker (manager.py / broker/*)
 # --------------------------------------------------------------------------- #
 
 
 @pytest.mark.asyncio
 async def test_manager_execute_code_and_command(monkeypatch):
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         code_result = await mgr.execute(code="print('hi')")
@@ -521,7 +581,7 @@ async def test_manager_session_round_trip_and_reuse(monkeypatch):
 @pytest.mark.asyncio
 async def test_manager_unknown_session_id_raises(monkeypatch):
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         with pytest.raises(SandboxSessionNotFoundError):
@@ -531,7 +591,7 @@ async def test_manager_unknown_session_id_raises(monkeypatch):
 @pytest.mark.asyncio
 async def test_manager_cross_session_isolation(monkeypatch):
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     store = InMemorySessionStore()
     a = store.new("ak-a")
     b = store.new("ak-b")
@@ -550,7 +610,7 @@ async def test_manager_cross_session_isolation(monkeypatch):
 @pytest.mark.asyncio
 async def test_manager_stale_handle_self_heal(monkeypatch):
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     provider = SandboxProviderFactory.get("default")
     session = InMemorySessionStore().new("ak-1")
     async with session:
@@ -570,7 +630,7 @@ async def test_manager_stale_handle_self_heal(monkeypatch):
 @pytest.mark.asyncio
 async def test_manager_idle_timeout_recreates_on_touch(monkeypatch):
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     provider = SandboxProviderFactory.get("default")
     session = InMemorySessionStore().new("ak-1")
     async with session:
@@ -604,7 +664,7 @@ async def test_tool_result_carries_idle_reset_notice(monkeypatch):
 async def test_manager_per_call_scope_creates_and_destroys(monkeypatch):
     profile = _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_call")
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     provider = SandboxProviderFactory.get("default")
     session = InMemorySessionStore().new("ak-1")
     async with session:
@@ -620,7 +680,7 @@ async def test_manager_per_call_destroys_in_finally_on_failure(monkeypatch):
     sandbox (and the exception propagates)."""
     profile = _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_call")
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     provider = SandboxProviderFactory.get("default")
 
     async def boom(self, code, language="python", timeout=None):
@@ -642,7 +702,7 @@ async def test_manager_explicit_session_uses_its_own_profile(monkeypatch):
     default_profile = _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_session")
     other_profile = _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_session")
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": default_profile, "gpu": other_profile}))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         minted = mgr.new_session(profile="gpu")
@@ -662,7 +722,7 @@ async def test_manager_per_runtime_shared_across_ak_sessions(monkeypatch):
     # reused across distinct AK sessions (no pooling in v1).
     profile = _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_runtime")
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     provider = SandboxProviderFactory.get("default")
     store = InMemorySessionStore()
     a = store.new("ak-a")
@@ -678,7 +738,7 @@ async def test_manager_per_runtime_shared_across_ak_sessions(monkeypatch):
 @pytest.mark.asyncio
 async def test_manager_upload_download_round_trip(monkeypatch):
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         await mgr.upload("data.txt", b"hello")
@@ -689,7 +749,7 @@ async def test_manager_upload_download_round_trip(monkeypatch):
 @pytest.mark.asyncio
 async def test_manager_destroy_session(monkeypatch):
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     provider = SandboxProviderFactory.get("default")
     session = InMemorySessionStore().new("ak-1")
     async with session:
@@ -710,7 +770,7 @@ async def test_manager_destroy_session(monkeypatch):
 async def test_fail_closed_user_mode_unsupported_provider(monkeypatch):
     profile = _SandboxProfileConfig(type=FAKE_DOTTED, identity=_SandboxIdentityConfig(mode="user"))
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         with pytest.raises(SandboxCapabilityError):
@@ -723,7 +783,7 @@ async def test_fail_closed_user_mode_resolver_returns_agent(monkeypatch):
     monkeypatch.setattr(FakeSandboxProvider, "capabilities", user_caps)
     profile = _SandboxProfileConfig(type=FAKE_DOTTED, identity=_SandboxIdentityConfig(mode="user"))
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         with pytest.raises(SandboxPolicyError):
@@ -734,7 +794,7 @@ async def test_fail_closed_user_mode_resolver_returns_agent(monkeypatch):
 async def test_fail_closed_policy_strict(monkeypatch):
     profile = _SandboxProfileConfig(type=FAKE_DOTTED, policy=_SandboxPolicyConfig(network_egress="deny", strict=True))
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         with pytest.raises(SandboxPolicyError):
@@ -745,7 +805,7 @@ async def test_fail_closed_policy_strict(monkeypatch):
 async def test_policy_non_strict_proceeds_with_warning(monkeypatch, caplog):
     profile = _SandboxProfileConfig(type=FAKE_DOTTED, policy=_SandboxPolicyConfig(network_egress="deny", strict=False))
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     with caplog.at_level("WARNING", logger="ak.sandbox.broker"):
         async with session:
@@ -792,6 +852,17 @@ def test_tool_descriptions_render_profiles_and_truncation(monkeypatch):
     assert FAKE_DOTTED in guidance
     assert "per_session" in guidance
     assert "1234" in guidance
+
+
+def test_tool_guidance_flags_attached_and_no_persistent_shell(monkeypatch):
+    """An ec2_ssm attached profile is annotated in the injected guidance so the agent knows
+    the environment is a pre-existing system with no persistent shell across commands."""
+    profile = _SandboxProfileConfig(type="ec2_ssm", environment="attached", ec2_ssm=_SandboxEC2SSMConfig(attach_to="i-1"))
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"ec2": profile}, default_profile="ec2"))
+    guidance = get_sandbox_tools()[0].description
+    assert "environment attached" in guidance
+    assert "NO persistent shell" in guidance
+    assert "cd /app && ./run.sh" in guidance
 
 
 def test_system_prompt_suffix_carries_sandbox_guidance(monkeypatch):
@@ -995,7 +1066,7 @@ async def test_tool_destroy_session_resets_default(monkeypatch):
 
 def test_manager_new_session_unknown_profile(monkeypatch):
     _install_sandbox_cfg(monkeypatch, _sandbox_cfg())
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     with pytest.raises(SandboxConfigError):
         mgr.new_session("no-such-profile")
 
@@ -1027,7 +1098,7 @@ async def test_tool_list_sessions_shows_names_and_shrinks_on_destroy(monkeypatch
 
 
 def _completion(task_id, sandbox_session_id="default:default", status="succeeded", stdout="task output", **kwargs):
-    return SandboxCompletion(
+    return ExecutionCompletion(
         task_id=task_id,
         status=status,
         result=SandboxResult(stdout=stdout, exit_code=0, sandbox_session_id=sandbox_session_id),
@@ -1177,3 +1248,97 @@ def test_runtime_system_pre_hooks_include_sandbox(monkeypatch):
         assert isinstance(hooks[2], NoOpSandboxPreHook)
     finally:
         Runtime._system_pre_hooks = None
+
+
+# --------------------------------------------------------------------------- #
+# Environment lifecycle: managed vs attached (factory validation + worker rules)
+# --------------------------------------------------------------------------- #
+
+ATTACHING_CAPS = SandboxCapabilities(
+    isolation=IsolationTier.NONE,
+    shell=True,
+    languages=["python", "bash"],
+    files=True,
+    stateful=True,
+    attach=True,
+    attaches_external=True,
+)
+
+
+def test_environment_mode_validates_and_defaults():
+    assert _SandboxProfileConfig(type=FAKE_DOTTED).environment == "managed"
+    with pytest.raises(ValidationError):
+        _SandboxProfileConfig(type=FAKE_DOTTED, environment="isolated")
+    # single-backend sugar passes the mode onto the synthesized profile
+    cfg = _SandboxConfig(enabled=True, type=FAKE_DOTTED, environment="attached")
+    assert cfg.profiles["default"].environment == "attached"
+
+
+def test_factory_attached_requires_attaches_external(monkeypatch):
+    """attached + a provider that can only provision managed sandboxes -> fail at build time."""
+    profile = _SandboxProfileConfig(type=FAKE_DOTTED, environment="attached", params={"attach_to": "target-1"})
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
+    with pytest.raises(SandboxConfigError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "cannot attach to an existing environment" in str(exc_info.value)
+
+
+def test_factory_attached_requires_attach_to(monkeypatch):
+    monkeypatch.setattr(FakeSandboxProvider, "capabilities", ATTACHING_CAPS)
+    profile = _SandboxProfileConfig(type=FAKE_DOTTED, environment="attached")  # no attach_to
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
+    with pytest.raises(SandboxConfigError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "no attach_to target" in str(exc_info.value)
+
+
+def test_factory_attached_resolves_with_target(monkeypatch):
+    monkeypatch.setattr(FakeSandboxProvider, "capabilities", ATTACHING_CAPS)
+    profile = _SandboxProfileConfig(type=FAKE_DOTTED, environment="attached", params={"attach_to": "target-1"})
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
+    assert isinstance(SandboxProviderFactory.get("default"), FakeSandboxProvider)
+
+
+def test_factory_managed_rejects_attach_to(monkeypatch):
+    """attach_to under the default managed mode is rejected: connecting to an existing
+    environment must be a deliberate choice, never a side effect."""
+    profile = _SandboxProfileConfig(type=FAKE_DOTTED, params={"attach_to": "target-1"})
+    _install_sandbox_cfg(monkeypatch, _sandbox_cfg(profiles={"default": profile}))
+    with pytest.raises(SandboxConfigError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "environment: attached" in str(exc_info.value)
+
+
+def _attached_fake_cfg(monkeypatch):
+    monkeypatch.setattr(FakeSandboxProvider, "capabilities", ATTACHING_CAPS)
+    profile = _SandboxProfileConfig(type=FAKE_DOTTED, environment="attached", params={"attach_to": "target-1"})
+    return _sandbox_cfg(profiles={"default": profile})
+
+
+@pytest.mark.asyncio
+async def test_worker_attached_destroy_drops_binding_without_disposing(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _attached_fake_cfg(monkeypatch))
+    mgr = ExecutionManager.get()
+    session = InMemorySessionStore().new("s-attached")
+    async with session:
+        result = await mgr.execute(code="print('hi')")
+        provider = SandboxProviderFactory.get("default")
+        assert provider.created_ids  # bound to a live handle
+        await mgr.destroy_session(result.sandbox_session_id)
+        assert provider.destroyed_ids == []  # binding dropped, environment untouched
+
+
+@pytest.mark.asyncio
+async def test_worker_attached_gone_is_not_recreated(monkeypatch):
+    _install_sandbox_cfg(monkeypatch, _attached_fake_cfg(monkeypatch))
+    mgr = ExecutionManager.get()
+    session = InMemorySessionStore().new("s-attached-gone")
+    async with session:
+        await mgr.execute(code="print('hi')")
+        provider = SandboxProviderFactory.get("default")
+        assert len(provider.created_ids) == 1
+        provider._sandboxes.clear()  # the attached environment vanishes
+        with pytest.raises(errors.SandboxGoneError) as exc_info:
+            await mgr.execute(code="print('again')")
+        assert "not recreating" in str(exc_info.value)
+        assert len(provider.created_ids) == 1  # self-heal never provisioned a replacement

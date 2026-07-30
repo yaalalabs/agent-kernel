@@ -19,8 +19,8 @@ from ..core.base import Agent, Session
 from ..core.config import AKConfig
 from ..core.hooks import PreHook
 from ..core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
-from .broker.base import SandboxCompletion
-from .manager import SandboxManager
+from .broker.base import ExecutionCompletion
+from .manager import ExecutionManager
 from .model import SandboxTask
 
 COMPLETION_REQUEST_NAME = "sandbox_task_completion"
@@ -57,7 +57,7 @@ class SandboxPreHook(PreHook):
         if not completions:
             return requests
 
-        manager = SandboxManager.get()
+        manager = ExecutionManager.get()
         if manager is None:
             # A completion arrived while the capability is disabled: strip it, never crash the turn.
             return [r for r in requests if not (isinstance(r, AgentRequestAny) and r.name == COMPLETION_REQUEST_NAME)]
@@ -92,20 +92,20 @@ class SandboxPreHook(PreHook):
         return filtered
 
     @staticmethod
-    def _parse_completion(content: Any) -> Optional[SandboxCompletion]:
+    def _parse_completion(content: Any) -> Optional[ExecutionCompletion]:
         """Coerce the request content (model instance, dict, or JSON string) into a
-        ``SandboxCompletion``; ``None`` when malformed (dropped, never raised)."""
+        ``ExecutionCompletion``; ``None`` when malformed (dropped, never raised)."""
         try:
-            if isinstance(content, SandboxCompletion):
+            if isinstance(content, ExecutionCompletion):
                 return content
             if isinstance(content, str):
                 content = json.loads(content)
-            return SandboxCompletion.model_validate(content)
+            return ExecutionCompletion.model_validate(content)
         except Exception:  # noqa: BLE001 — a malformed completion is dropped, not raised
             return None
 
     @staticmethod
-    def _summary(completion: SandboxCompletion, task: SandboxTask) -> str:
+    def _summary(completion: ExecutionCompletion, task: SandboxTask) -> str:
         """Render the bounded result summary injected into the agent's text: status, exit
         code, stdout/stderr truncated at ``tool_output_max_chars``, the ref location when
         the result was offloaded, and the sandbox_session_id to continue with."""

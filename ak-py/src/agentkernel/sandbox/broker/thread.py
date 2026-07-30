@@ -8,7 +8,7 @@ the response future back to the caller's loop:
   ``SandboxError``, matching the embedded flavor).
 * ``wait=N`` bounds the wait; on expiry the execution is promoted to a ``SandboxTask``
   and continues on the broker thread. Its completion is kept in worker memory and,
-  because the process is shared, ``result()`` serves it to ``SandboxManager.task_status``.
+  because the process is shared, ``result()`` serves it to ``ExecutionManager.task_status``.
 
 Concurrency contract: every provider handle is created and used only on the broker
 thread's loop — callers never touch one.
@@ -23,15 +23,15 @@ from typing import Optional, Union
 
 from pydantic import BaseModel
 
-from ..errors import SandboxBrokerError, SandboxTimeoutError
+from ..errors import ExecutionBrokerError, SandboxTimeoutError
 from ..model import SandboxResult, SandboxTask
-from .base import BoundedCompletionStore, SandboxBroker, SandboxBrokerRequest, SandboxCompletion
+from .base import BoundedCompletionStore, ExecutionBroker, ExecutionCompletion, ExecutionRequest
 from .worker import BrokerWorkerCore
 
 logger = logging.getLogger("ak.sandbox.broker")
 
 
-class ThreadBroker(SandboxBroker):
+class ThreadBroker(ExecutionBroker):
     """In-process broker running executions on a dedicated daemon thread."""
 
     def __init__(self, config: Optional[BaseModel] = None) -> None:
@@ -56,7 +56,7 @@ class ThreadBroker(SandboxBroker):
             if self._thread is not None:
                 return
             if self._closed:
-                raise SandboxBrokerError("sandbox thread broker is closed")
+                raise ExecutionBrokerError("sandbox thread broker is closed")
             self._thread = threading.Thread(target=self._run_loop, name="ak-sandbox-broker", daemon=True)
             self._thread.start()
         self._ready.wait()
@@ -100,7 +100,7 @@ class ThreadBroker(SandboxBroker):
 
     # -- request path -------------------------------------------------------- #
 
-    async def submit(self, request: SandboxBrokerRequest, wait: Optional[float] = None) -> Union[SandboxResult, SandboxTask]:
+    async def submit(self, request: ExecutionRequest, wait: Optional[float] = None) -> Union[SandboxResult, SandboxTask]:
         """Enqueue the request on the broker loop and await its result.
 
         ``wait=None`` awaits indefinitely; ``wait=N`` promotes to a ``SandboxTask`` on
@@ -127,7 +127,7 @@ class ThreadBroker(SandboxBroker):
                 submitted_at=time.time(),
             )
 
-    async def _handle(self, request: SandboxBrokerRequest, response: concurrent.futures.Future) -> None:
+    async def _handle(self, request: ExecutionRequest, response: concurrent.futures.Future) -> None:
         """Run one request on the broker loop; store its completion and deliver the result
         (or the real exception) to a caller that is still waiting."""
         try:
@@ -142,16 +142,16 @@ class ThreadBroker(SandboxBroker):
         else:
             self._completions.set(
                 request.task_id,
-                SandboxCompletion(task_id=request.task_id, status="succeeded", result=result, sandbox_session=session),
+                ExecutionCompletion(task_id=request.task_id, status="succeeded", result=result, sandbox_session=session),
             )
             if not response.done():
                 response.set_result(result)
 
-    def _complete(self, request: SandboxBrokerRequest, status: str, *, error: str) -> None:
+    def _complete(self, request: ExecutionRequest, status: str, *, error: str) -> None:
         """Record a terminal failure completion for ``result()`` lookups."""
         self._completions.set(
             request.task_id,
-            SandboxCompletion(task_id=request.task_id, status=status, error=error, sandbox_session=request.sandbox_session),
+            ExecutionCompletion(task_id=request.task_id, status=status, error=error, sandbox_session=request.sandbox_session),
         )
 
     @staticmethod
@@ -161,7 +161,7 @@ class ThreadBroker(SandboxBroker):
         if not response.done():
             response.set_exception(exc)
 
-    async def result(self, task_id: str) -> Optional[SandboxCompletion]:
+    async def result(self, task_id: str) -> Optional[ExecutionCompletion]:
         """Return the completion held in worker memory for ``task_id``, or ``None``."""
         return self._completions.get(task_id)
 

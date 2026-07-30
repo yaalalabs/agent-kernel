@@ -162,8 +162,14 @@ multimodal = [
 sandbox-docker = [
     "docker>=7.0.0",
 ]
-# The e2b, daytona, and kubernetes sandbox extras land with their providers in post-merge
-# iterations 9-10 (version floors confirmed against current SDKs at that point).
+e2b = [
+    "e2b-code-interpreter>=2.8.0",
+]
+daytona = [
+    # <0.199: from 0.199 the daytona api clients require pydantic>=2.13.4, which conflicts
+    # with crewai's pydantic<2.13 pin; 0.198 accepts pydantic>=2.11 and has the same SDK surface.
+    "daytona>=0.198.0,<0.199",
+]
 
 [project.scripts]
 ak = "agentkernel.cli.ak:main"

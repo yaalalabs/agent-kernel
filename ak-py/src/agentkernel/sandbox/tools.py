@@ -15,7 +15,7 @@ from typing import Any, Optional, Union
 
 from ..core.config import AKConfig
 from ..core.model import SystemTool
-from .manager import SandboxManager
+from .manager import ExecutionManager
 from .model import SandboxResult, SandboxTask
 
 _log = logging.getLogger("ak.sandbox.tools")
@@ -76,7 +76,7 @@ async def run_code(code: str, language: str = "python", sandbox_session_id: Opti
         {"task_id", "status": "pending", "sandbox_session_id"} when execution continues
         in the background; or {"error": ...} on a sandbox machinery failure.
     """
-    manager = SandboxManager.get()
+    manager = ExecutionManager.get()
     if manager is None:
         return _DISABLED
     try:
@@ -102,7 +102,7 @@ async def run_command(command: str, sandbox_session_id: Optional[str] = None, pr
         {"task_id", "status": "pending", "sandbox_session_id"} when execution continues
         in the background; or {"error": ...} on a sandbox machinery failure.
     """
-    manager = SandboxManager.get()
+    manager = ExecutionManager.get()
     if manager is None:
         return _DISABLED
     try:
@@ -127,7 +127,7 @@ async def write_sandbox_file(path: str, content: str, sandbox_session_id: Option
     Returns:
         JSON with path, written flag, and sandbox_session_id; or {"error": ...} on failure.
     """
-    manager = SandboxManager.get()
+    manager = ExecutionManager.get()
     if manager is None:
         return _DISABLED
     try:
@@ -151,7 +151,7 @@ async def read_sandbox_file(path: str, sandbox_session_id: Optional[str] = None,
         JSON with path, content (truncated to the configured maximum), and
         sandbox_session_id; or {"error": ...} on failure.
     """
-    manager = SandboxManager.get()
+    manager = ExecutionManager.get()
     if manager is None:
         return _DISABLED
     try:
@@ -174,7 +174,7 @@ async def check_sandbox_task(task_id: str) -> str:
         JSON with task_id, status ("pending", "succeeded", "failed", "timed_out", or
         "unknown"), and sandbox_session_id when known; or {"error": ...} on failure.
     """
-    manager = SandboxManager.get()
+    manager = ExecutionManager.get()
     if manager is None:
         return _DISABLED
     try:
@@ -203,7 +203,7 @@ async def new_sandbox_session(name: Optional[str] = None, profile: Optional[str]
     Returns:
         JSON with sandbox_session_id, name, and profile; or {"error": ...} on failure.
     """
-    manager = SandboxManager.get()
+    manager = ExecutionManager.get()
     if manager is None:
         return _DISABLED
     try:
@@ -225,7 +225,7 @@ async def list_sandbox_sessions() -> str:
         JSON {"sessions": [{sandbox_session_id, name, profile, status, last_used_at}, ...]};
         or {"error": ...} on failure.
     """
-    manager = SandboxManager.get()
+    manager = ExecutionManager.get()
     if manager is None:
         return _DISABLED
     try:
@@ -262,7 +262,7 @@ async def destroy_sandbox_session(sandbox_session_id: str) -> str:
     Returns:
         JSON with sandbox_session_id and destroyed=true; or {"error": ...} on failure.
     """
-    manager = SandboxManager.get()
+    manager = ExecutionManager.get()
     if manager is None:
         return _DISABLED
     try:
@@ -273,13 +273,31 @@ async def destroy_sandbox_session(sandbox_session_id: str) -> str:
         return _error_json(exc, sandbox_session_id)
 
 
+# Providers whose backend runs each command as an independent process with no persistent
+# shell, so in-shell state (working directory, exported vars, `sudo su`) does NOT carry
+# across separate commands. Config-derived only: no provider import at registration time.
+_NO_PERSISTENT_SHELL_TYPES = {"ec2_ssm"}
+
+
 def _profiles_text(config: Any) -> str:
     """Render the configured workload profiles for the tool guidance (config-derived only —
     provider capabilities are not imported at registration time)."""
     lines = []
     for name, prof in config.profiles.items():
         marker = " (default)" if name == config.default_profile else ""
-        lines.append(f"- '{name}'{marker}: provider '{prof.type}', scope {prof.scope}")
+        detail = f"provider '{prof.type}', scope {prof.scope}"
+        if getattr(prof, "environment", "managed") == "attached":
+            detail += (
+                ", environment attached (connects to an existing system the framework never provisions or "
+                "destroys; idle expiry or destroy only drops this session's binding, leaving the system itself untouched)"
+            )
+        if prof.type in _NO_PERSISTENT_SHELL_TYPES:
+            detail += (
+                "; NO persistent shell — each command runs as its own process, so a working-directory "
+                "change or `sudo su` does NOT carry to the next command. Chain state-dependent steps in "
+                "one command (e.g. `cd /app && ./run.sh`)"
+            )
+        lines.append(f"- '{name}'{marker}: {detail}")
     return "\n".join(lines) if lines else "- (none configured)"
 
 
