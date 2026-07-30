@@ -165,11 +165,10 @@ graph TB
 ```
 
 :::note
-Token-level **streaming** delivery is **not available on ECS** (`execution_mode = "stream"`
-validates but is not implemented there); that remains an AWS Lambda serverless feature.
-**WebSocket (`async`) delivery is available on ECS** — see [WebSocket (Async) Mode in
-ECS](#websocket-async-mode-in-ecs) below. `rest_sync` and `rest_async` always deliver replies
-through the response store; `async` always pushes over the WebSocket connection instead.
+**WebSocket delivery is available on ECS in both `async` and `stream` modes** — see
+[WebSocket (Async/Stream) Mode in ECS](#websocket-asyncstream-mode-in-ecs) below. `rest_sync` and
+`rest_async` always deliver replies through the response store; `async`/`stream` always push over
+the WebSocket connection instead.
 :::
 
 ### Python Class Hierarchy
@@ -222,39 +221,44 @@ Identical infrastructure to REST Sync. The difference is purely in `ECSQueueRequ
   nothing is there yet (`session_id` is optional and used only for logging, not validated
   against the stored reply).
 
-### WebSocket (Async) Mode in ECS
+### WebSocket (Async/Stream) Mode in ECS
 
-Set `execution_mode = "async"` (with `queue_mode = true`) to combine the queue pipeline above
-with a WebSocket API Gateway instead of an HTTP API:
+Set `execution_mode = "async"` or `"stream"` (with `queue_mode = true`) to combine the queue
+pipeline above with a WebSocket API Gateway instead of an HTTP API:
 
 1. Client connects to `wss://<endpoint>/<stage>?token=<jwt>`. Thread 1 runs `AWSWebsocketAPI`
    instead of `AWSRestAPI`; `$connect` authenticates via the registered `AuthValidator`
    (mandatory) and stores `user_id` ↔ `connection_id` in a DynamoDB connections table.
 2. A `chat` frame (`{"route": "chat", "body": {...}}`) is enqueued to the Input Queue exactly
    like REST Async — the framework never runs the agent inline in this mode.
-3. `ECSAgentRunner` processes it exactly as in REST modes, but also forwards the connection's
-   `endpoint_url` as a custom SQS attribute to the Output Queue.
-4. `ECSOutputConsumer` branches on `execution.mode`: in `async` mode it pushes a `CHAT_RESPONSE`
-   over the WebSocket connection via `PostToConnection` (using the forwarded `endpoint_url` +
-   `user_id`) instead of writing to the response store.
+3. `ECSAgentRunner` processes it in `async` mode exactly as in REST modes, then forwards the
+   connection's `endpoint_url` as a custom SQS attribute to the Output Queue. In `stream` mode,
+   the exported `ECSAgentRunner` name resolves to `ECSStreamAgentRunner` instead (a mode-based
+   swap in `containerized/__init__.py`, mirroring the serverless `ServerlessAgentRunner` /
+   `ServerlessStreamAgentRunner` split): it runs the agent via
+   `ChatService.process_stream_chat_sync()` and sends **one Output Queue message per streamed
+   chunk** (each carrying the forwarded `endpoint_url`), instead of one message for the full
+   reply.
+4. `ECSOutputConsumer` branches on `execution.mode`: `async` pushes a `CHAT_RESPONSE` over the
+   WebSocket connection via `PostToConnection`; `stream` pushes each Output Queue message as its
+   own `STREAM_CHUNK` (using the forwarded `endpoint_url` + `user_id`), terminated by a chunk with
+   `"done": true`. Neither mode falls back to the response store — that path only runs for
+   `rest_sync`/`rest_async`.
 5. Custom routes (registered with `AWSWebsocketAPI.register`) bypass the queue entirely — they
    are answered directly by Thread 1, the same as chat frames in direct (non-queue) WebSocket
    mode.
 
-Direct (non-queue) WebSocket mode works the same way minus the queue hop: `chat` runs the
-agent inline via `ChatService` and the reply is pushed immediately, no `ECSAgentRunner` or
-Output Queue involved.
+Direct (non-queue) WebSocket mode works the same way minus the queue hop: `chat` runs the agent
+inline via `ChatService` and the reply is pushed immediately, no `ECSAgentRunner` or Output Queue
+involved. In `stream` mode, direct-mode chat runs
+`ChatService.process_stream_chat_async()` and broadcasts each chunk as it's produced instead of
+waiting for the full reply.
 
-`execution_mode = "stream"` is accepted by Terraform/config validation for forward
-compatibility, but neither `ECSWebSocketRequestHandler` nor `ECSAgentRunner`/`ECSOutputConsumer`
-implement chunked token delivery yet. In queue mode this is more than just "no streaming": since
-`execution.mode` is only branched to a WebSocket push for `ASYNC`, a `STREAM` message falls
-through to `ECSOutputConsumer`'s response-store write path — but the response store is never
-provisioned in WebSocket mode, so that write raises, the message is left for visibility-timeout
-retry, and once `max_receive_count` is hit it's dropped with **no reply ever sent to the
-client**. Use `async` on ECS today. See the [AWS Containerized WebSocket
+See the [AWS Containerized WebSocket
 Mode](../deployment/aws-containerized.md#websocket-mode) docs for the full Terraform
-configuration, IAM, and wire protocol.
+configuration, IAM, and wire protocol, and
+[`examples/aws-containerized/openai-stream`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream)
+for a full queue-mode streaming example.
 
 ### Entrypoint Code
 
@@ -358,4 +362,4 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | DynamoDB Response Store | ✅ serverless stack | ✅ containerized stack |
 | Thread management | N/A | ✅ `ThreadRunner` (`deployment/common/thread_runner.py`) |
 | WebSocket Mode (`async`) | ✅ `modules/websocket-api-gateway/` + `modules/ws-connection-handler/` | ✅ WebSocket API Gateway + VPC Link V1/NLB + DynamoDB connections table (`api_gateway_ws.tf`); direct and queue variants both supported |
-| Streaming Mode (`stream`) | ✅ `ServerlessStreamAgentRunner` → one SQS message per chunk → WebSocket `STREAM_CHUNK` | ❌ Accepted by Terraform/config validation but not implemented — use `async` on ECS instead |
+| Streaming Mode (`stream`) | ✅ `ServerlessStreamAgentRunner` → one SQS message per chunk → WebSocket `STREAM_CHUNK` | ✅ `ECSStreamAgentRunner` → one SQS message per chunk → WebSocket `STREAM_CHUNK` (queue mode); `ChatService.process_stream_chat_async` inline (direct mode) |

@@ -140,9 +140,10 @@ matching `email` is `test1@test.com`/`test2@test.com`.
 
 ## Execution mode
 
-`config.yaml` sets `execution.mode: async` — the only WebSocket execution mode currently wired up
-for ECS. Terraform's `execution_mode` variable also accepts `stream`, but neither the WebSocket
-handler nor `ECSAgentRunner` implement chunked token streaming yet; use `async` here.
+`config.yaml` sets `execution.mode: async` — the full agent reply is pushed back as one
+`CHAT_RESPONSE` message. See [`openai-stream`](../openai-stream) — the same
+architecture with `execution.mode: stream` instead, which delivers the reply token-by-token as a
+sequence of `STREAM_CHUNK` messages.
 
 There is no REST response store in WebSocket modes — replies are always pushed over the
 connection, never polled.

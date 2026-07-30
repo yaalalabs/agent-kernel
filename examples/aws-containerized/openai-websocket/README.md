@@ -161,12 +161,11 @@ back to the right client.
 ## Execution mode
 
 `config.yaml` sets `execution.mode: async`, meaning the full agent reply is sent as one
-`CHAT_RESPONSE` message. Terraform's `execution_mode` variable also accepts `stream`
-(token-by-token, one `STREAM_CHUNK` message per token) for forward compatibility, but the
-framework doesn't implement chunked streaming yet — it always runs the request through
-`ChatService.process_async_chat_request()` and sends one `CHAT_RESPONSE`. Use `async` here
-until containerized stream support lands.
-
+`CHAT_RESPONSE` message. Setting it to `stream` instead delivers the reply token-by-token as a
+sequence of `STREAM_CHUNK` messages, terminated by a chunk with `"done": true` — see
+[`openai-stream`](../openai-stream) for a full streaming example (built on the
+queue-mode architecture, since streaming pairs naturally with an independently-scalable Agent
+Runner).
 ## Prerequisites
 
 - AWS CLI configured with appropriate credentials

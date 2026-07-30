@@ -25,7 +25,7 @@ module "containerized_agents" {
 
   # Queue mode + WebSocket
   queue_mode     = true
-  execution_mode = "async" # only "async" is wired up end-to-end today; "stream" isn't yet implemented for ECS
+  execution_mode = "async" # see ../../openai-stream for the "stream" (token-by-token) variant
   ws_chat_route  = "chat"
 
   # Custom route beyond chat — registered via @AWSWebsocketAPI.register("echo"), answered directly (no queue).

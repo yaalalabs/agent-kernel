@@ -12,10 +12,10 @@ Three topologies are supported:
 |------|-----------|-------------|----------|
 | **Simple REST** | One (runs `RESTAPI`) | `queue_mode = false` (default) in Terraform; app entrypoint `RESTAPI.run` | Moderate traffic, simplest setup |
 | **Scalable queue mode** | Two (IO container + Agent Runner service) | `queue_mode = true`, `execution_mode = "rest_sync"` or `"rest_async"` in Terraform; entrypoints `ECSIOHandler.run` + `ECSAgentRunner.run`; `execution.queues.*` config | High throughput, long-running agents, backpressure control |
-| **WebSocket mode** | One (direct) or two (queue, same split as above) | `execution_mode = "async"` (or `"stream"`, accepted but not yet implemented) in Terraform | Real-time, bidirectional, connection-based interactions |
+| **WebSocket mode** | One (direct) or two (queue, same split as above) | `execution_mode = "async"` or `"stream"` in Terraform | Real-time, bidirectional, connection-based interactions |
 
 :::note Protocol support
-ECS containers serve JSON REST by default. **SSE token streaming** (`execution.mode: stream`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. **WebSocket mode** (`execution_mode = "async"`) is also available on ECS via a WebSocket API Gateway — see [WebSocket Mode](#websocket-mode) below. `"stream"` validates as a Terraform value but the containerized WebSocket handler does not yet implement token-by-token delivery; use `"async"` until containerized WebSocket streaming lands.
+ECS containers serve JSON REST by default. **SSE token streaming** (`execution.mode: stream`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. **WebSocket mode** is also available on ECS via a WebSocket API Gateway — see [WebSocket Mode](#websocket-mode) below — as either `execution_mode = "async"` (one `CHAT_RESPONSE` push per reply) or `"stream"` (one `STREAM_CHUNK` push per token delta).
 :::
 
 ## Simple REST Architecture
@@ -303,7 +303,7 @@ module "containerized_agents" {
   }
 
   queue_mode     = false          # or true for the two-container queue variant
-  execution_mode = "async"        # "stream" validates but is not implemented on ECS yet
+  execution_mode = "async"        # "stream" delivers the reply as STREAM_CHUNK messages instead
   ws_chat_route  = "chat"         # optional, defaults to "chat"
   ws_routes = [                   # every @AWSWebsocketAPI.register(...) route, declared here too
     { route = "status" },
@@ -323,8 +323,9 @@ instead of stored. `gateway_endpoints` specifically has a Terraform validation r
 it in `async`/`stream` modes.
 
 For the full examples see [examples/aws-containerized/openai-websocket](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket)
-(direct mode) and [examples/aws-containerized/openai-websocket-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket-scalable)
-(queue mode).
+(direct mode, async), [examples/aws-containerized/openai-websocket-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket-scalable)
+(queue mode, async), and [examples/aws-containerized/openai-stream](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream)
+(queue mode, stream).
 
 ## Advantages
 
@@ -628,6 +629,7 @@ See [examples/aws-containerized/crewai-auth](https://github.com/yaalalabs/agent-
 ## Example Deployment
 
 See [examples/aws-containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized), including
-[openai-websocket](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket) and
-[openai-websocket-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket-scalable)
+[openai-websocket](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket),
+[openai-websocket-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket-scalable),
+and [openai-stream](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream)
 for WebSocket mode.

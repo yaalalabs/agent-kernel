@@ -39,8 +39,8 @@ If missing, suggest `ak-init` first.
 3. Execution pattern (AWS only):
 - Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode; AWS serverless or containerized)
 - Asynchronous REST (`rest_async`, queue/scalable mode; AWS serverless or containerized)
-- WebSocket full-response (`async`, works with or without queue mode — `queue_mode = false` runs the agent inline, `queue_mode = true` enqueues to a separately-scalable Agent Runner) — AWS serverless (token streaming works) or AWS containerized/ECS (full-response only; `stream` is accepted by Terraform/config but not yet implemented on ECS — use `async`)
-- WebSocket token streaming (`stream`, queue/scalable mode) — AWS serverless only for WebSocket streaming; also available on any REST deployment (serverless or containerized, AWS/Azure/GCP) via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
+- WebSocket full-response (`async`, works with or without queue mode — `queue_mode = false` runs the agent inline, `queue_mode = true` enqueues to a separately-scalable Agent Runner) — AWS serverless or AWS containerized/ECS
+- WebSocket token streaming (`stream`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available on any REST deployment (serverless or containerized, AWS/Azure/GCP) via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
@@ -811,18 +811,19 @@ dependencies = [
 - `ECSIOHandler` starts two threads via `ThreadRunner`; if the output-consumer pool crashes, sibling consumer threads finish their in-flight message first (graceful drain via a shared `shutdown_event`), then the container exits (`os._exit(1)`) so ECS can restart it. The REST API thread doesn't participate in the drain — it's just terminated at that point.
 - `ECSAgentRunner` and `ECSOutputConsumer` both extend `ECSSQSConsumer` (itself a `QueueConsumer` — the same base `LambdaSQSConsumer` extends) — extend either class to customise message processing.
 
-### C) WebSocket Mode (`async`)
+### C) WebSocket Mode (`async` / `stream`)
 
 A WebSocket API Gateway proxies frames to the ECS REST service via a VPC Link V1 + internal NLB
 in front of the existing ALB. Supports both **direct** (`queue_mode = false`, one ECS service,
 agent runs inline) and **queue** (`queue_mode = true`, same two-container split as section B,
 with the REST/IO service enqueueing chat frames and its output-queue consumer pushing replies
-back over the socket) variants. Use `execution_mode = "async"` — `"stream"` is accepted by
-Terraform/config validation for forward compatibility but **not yet implemented**: in direct
-mode it still sends one full `CHAT_RESPONSE` (never per-token `STREAM_CHUNK`s); in queue mode it
-silently fails instead — the response-store fallback it hits is never provisioned in WebSocket
-mode, so the request retries until `max_receive_count` and is dropped with no reply. Always use
-`async` on ECS today.
+back over the socket) variants. `execution_mode = "async"` delivers the full reply as one
+`CHAT_RESPONSE` push; `execution_mode = "stream"` delivers it token-by-token as a sequence of
+`STREAM_CHUNK` pushes (terminated by a chunk with `"done": true`) — in queue mode the exported
+`ECSAgentRunner` name resolves to `ECSStreamAgentRunner`, which fans out one Output Queue message
+per chunk instead of one for the full reply; in direct mode the chat route runs
+`ChatService.process_stream_chat_async()` and broadcasts each chunk inline. See
+`examples/aws-containerized/openai-stream` for a full streaming example.
 
 **`app.py`** (direct/single-container variant; register custom routes before calling `run()`):
 
@@ -879,7 +880,7 @@ module "containerized_agents" {
   }
 
   queue_mode     = false          # or true for the two-container queue variant (see section B)
-  execution_mode = "async"        # "stream" validates but is not implemented on ECS — use "async"
+  execution_mode = "async"        # "stream" delivers the reply as STREAM_CHUNK messages instead
   ws_chat_route  = "chat"         # optional, defaults to "chat"
   ws_routes = [                   # every @AWSWebsocketAPI.register(...) route must be listed here too
     { route = "status" },

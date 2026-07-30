@@ -375,7 +375,7 @@ module "containerized_agents" {
 | **Queue Module**    | ✅                       | ✅                      |
 | **Scaling Config**  | Built-in                 | `scaling_config` object |
 | **Load Balancer**   | API Gateway direct       | ALB + API Gateway       |
-| **WebSocket Mode**  | ✅ (`async`/`stream`)     | ✅ `async` (accepts but does not yet implement `stream`) |
+| **WebSocket Mode**  | ✅ (`async`/`stream`)     | ✅ (`async`/`stream`)   |
 
 ## Migration from Old Structure
 
