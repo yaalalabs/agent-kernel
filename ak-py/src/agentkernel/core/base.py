@@ -15,19 +15,6 @@ from .util.key_value_cache import KeyValueCache
 _log = logging.getLogger("ak.core.runner")
 
 
-def _not_picklable(value: Any) -> bool:
-    """
-    Checks whether the given value can be pickled.
-    :param value: The value to test for picklability.
-    :return: True if the value cannot be pickled, otherwise False.
-    """
-    try:
-        pickle.dumps(value)
-        return False
-    except Exception:
-        return True
-
-
 class Session:
     """
     Session is the base class for a tracking state across related interactions with agents.
@@ -309,7 +296,20 @@ class Runner(ABC):
         session.set_framework_context(merged)
 
     @staticmethod
-    def _ensure_framework_context_picklable(session: Session, ctx: Mapping[str, Any]) -> None:
+    def _not_picklable(value: Any) -> bool:
+        """
+        Checks whether the given value can be pickled.
+        :param value: The value to test for picklability.
+        :return: True if the value cannot be pickled, otherwise False.
+        """
+        try:
+            pickle.dumps(value)
+            return False
+        except Exception:
+            return True
+
+    @classmethod
+    def _ensure_framework_context_picklable(cls, session: Session, ctx: Mapping[str, Any]) -> None:
         """
         Fails fast if the merged context cannot be pickled. Sessions are persisted with pickle, so a
         non-picklable value would otherwise abort the whole session store() with an opaque error.
@@ -321,7 +321,7 @@ class Runner(ABC):
             pickle.dumps(ctx)
         except Exception as exc:
             offender = next(
-                (f"{k!r} ({type(v).__name__})" for k, v in ctx.items() if _not_picklable(v)),
+                (f"{k!r} ({type(v).__name__})" for k, v in ctx.items() if cls._not_picklable(v)),
                 "<unknown key>",
             )
             raise TypeError(

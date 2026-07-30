@@ -408,9 +408,11 @@ session.clear_framework_context()
 ```
 
 These accessors are for **pre-hooks and post-hooks** — the two places Agent Kernel hands your code the
-session around a run. A pre-hook seeds or edits the context *before* the runner loads it, so the edit is
-part of what gets injected this turn; a post-hook reads it *after* write-back, so it sees the completed
-run's mutations, and its own edits are still persisted (post-hooks run before the session is stored).
+session around a run (see
+[Hooks → Per-run framework context](../integrations/hooks.md#per-run-framework-context)). A pre-hook
+seeds or edits the context *before* the runner loads it, so the edit is part of what gets injected this
+turn; a post-hook reads it *after* write-back, so it sees the completed run's mutations, and its own
+edits are still persisted (post-hooks run before the session is stored).
 
 ```python
 class SeedContext(PreHook):

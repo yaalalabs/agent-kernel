@@ -42,6 +42,38 @@ def _partial_event(text: str):
     return event
 
 
+def _final_event(text: str | None):
+    """An ADK event the runner treats as a final response, or as a final response with no text."""
+    event = MagicMock()
+    event.is_final_response = MagicMock(return_value=True)
+    part = MagicMock()
+    part.text = text
+    event.content = MagicMock(parts=[part])
+    return event
+
+
+def _non_final_event():
+    """An intermediate ADK event the runner must skip."""
+    event = MagicMock()
+    event.is_final_response = MagicMock(return_value=False)
+    event.content = MagicMock(parts=[MagicMock(text="intermediate")])
+    return event
+
+
+def _draining_runner(events):
+    """An ADK runner whose run_async yields `events` and records whether it was drained to exhaustion."""
+    drained: list[bool] = []
+
+    async def run_async(**kwargs):
+        for event in events:
+            yield event
+        drained.append(True)
+
+    adk_runner = MagicMock()
+    adk_runner.run_async = run_async
+    return adk_runner, drained
+
+
 def _stream_setup(events, state):
     """Patch _setup_session_context so stream() drains `events` and reads `state` back."""
     adk_session = MagicMock()
@@ -64,6 +96,43 @@ def _run_with_response(runner, agent, session, requests, response_text, adk_sess
     setup = AsyncMock(return_value=("user", MagicMock(), _ctx_mock(), adk_session))
     get_response = AsyncMock(return_value=response_text)
     return patch.object(runner, "_setup_session_context", setup), patch.object(GoogleADKRunner, "get_response", get_response)
+
+
+class TestGoogleADKRunnerGetResponse:
+    """get_response drains the event stream and keeps the last final response."""
+
+    @pytest.mark.asyncio
+    async def test_last_final_response_wins_and_the_stream_is_drained(self):
+        """Sub-agent flows emit several final responses; the root agent's (last) one is the reply, and
+        stopping early would make ADK cancel the still-running root agent task and skip its state writes."""
+        adk_runner, drained = _draining_runner([_final_event("sub-agent answer"), _non_final_event(), _final_event("root answer")])
+
+        response = await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[])
+
+        assert response == "root answer"
+        assert drained == [True]
+
+    @pytest.mark.asyncio
+    async def test_multiple_text_parts_are_joined(self):
+        event = MagicMock()
+        event.is_final_response = MagicMock(return_value=True)
+        event.content = MagicMock(parts=[MagicMock(text="hello"), MagicMock(text="world")])
+        adk_runner, _ = _draining_runner([event])
+
+        assert await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[]) == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_no_final_response_returns_empty_string(self):
+        adk_runner, drained = _draining_runner([_non_final_event()])
+
+        assert await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[]) == ""
+        assert drained == [True]
+
+    @pytest.mark.asyncio
+    async def test_final_response_without_text_yields_empty_string(self):
+        adk_runner, _ = _draining_runner([_final_event(None)])
+
+        assert await GoogleADKRunner.get_response(runner=adk_runner, user_id="user", session_id="s", parts=[]) == ""
 
 
 class TestGoogleADKSessionState:
