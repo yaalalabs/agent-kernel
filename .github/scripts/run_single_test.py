@@ -61,13 +61,22 @@ def wait_for_endpoint(url: str, timeout: int = 300, interval: int = 10) -> bool:
     is reaching the application.
     """
     print(f"\n{'='*80}")
-    print(f"Waiting for endpoint to become ready: {url}")
+    print(f"Waiting for endpoint to become ready (POST): {url}")
     print(f"{'='*80}\n")
+
+    body = json.dumps({"prompt": "readiness probe"}).encode()
+    request_timeout = 35
 
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
+            req = urllib.request.Request(
+                url,
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=request_timeout) as resp:
                 print(f"✅ Endpoint ready (HTTP {resp.status})")
                 return True
         except urllib.error.HTTPError as e:
