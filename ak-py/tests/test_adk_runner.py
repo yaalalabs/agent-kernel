@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from agentkernel.core import Session
-from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
+from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestImage, AgentRequestText
 from agentkernel.framework.adk.adk import GoogleADKRunner, GoogleADKSession
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
@@ -324,6 +324,24 @@ class TestGoogleADKRunnerFrameworkContext:
         assert deltas == ["tok"]
         assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 1}
         assert any("framework_context write-back was skipped" in r.message for r in caplog.records)
+
+
+class TestGoogleADKRunnerErrorHandling:
+    """Error replies from failures that happen before the prompt is extracted"""
+
+    @pytest.mark.asyncio
+    async def test_request_processing_error_returns_error_reply(self):
+        """A request that fails inside _process_requests still returns a clean error reply."""
+        runner = GoogleADKRunner()
+        session = Session("test-session")
+        requests = [AgentRequestImage(name="empty.png", image_data="")]  # raises inside _process_requests
+        agent = _mock_agent(output_schema=None)
+
+        reply = await runner.run(agent, session, requests)
+
+        assert isinstance(reply, AgentReplyText)
+        assert reply.response.startswith("Error")
+        assert reply.prompt == ""
 
 
 class TestGoogleADKRunnerStructuredOutput:

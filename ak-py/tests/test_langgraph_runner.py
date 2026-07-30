@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -150,6 +151,24 @@ class TestLangGraphRunnerFrameworkContext:
 
         agent.agent.aget_state.assert_not_called()
         assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_stream_write_back_failure_is_logged_not_raised(self, caplog):
+        """A failed aget_state must not escape the generator after the response was streamed."""
+        runner = LangGraphRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+        requests = [AgentRequestText(prompt="hi")]
+        event = {"event": "on_chat_model_stream", "data": {"chunk": _chunk("tok")}}
+        agent = _mock_stream_agent([event], {})
+        agent.agent.aget_state = AsyncMock(side_effect=RuntimeError("state read failed"))
+
+        with caplog.at_level(logging.ERROR, logger="ak.core.runner"):
+            deltas = [delta async for delta in runner.stream(agent, session, requests)]
+
+        assert deltas == ["tok"]
+        assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "42"}
+        assert any("framework_context write-back was skipped" in r.message for r in caplog.records)
 
 
 class TestLangGraphRunnerStructuredOutput:

@@ -9,6 +9,7 @@ from agentkernel.core import Session
 from agentkernel.core.model import (
     AgentReplyAny,
     AgentReplyText,
+    AgentRequestImage,
     AgentRequestText,
 )
 from agentkernel.framework.openai.openai import OpenAIRunner
@@ -215,6 +216,21 @@ class TestOpenAIRunnerFrameworkContext:
 
 class TestOpenAIRunnerErrorHandling:
     """Test error handling in OpenAIRunner.run() method"""
+
+    @pytest.mark.asyncio
+    async def test_request_processing_error_returns_error_reply(self):
+        """A request that fails before the prompt is extracted still returns a clean error reply."""
+        runner = OpenAIRunner()
+        session = Session("test-session")
+        requests = [AgentRequestImage(name="empty.png", image_data="")]  # raises inside _process_requests
+        mock_agent = MagicMock()
+        mock_agent.agent = MagicMock()
+
+        reply = await runner.run(mock_agent, session, requests)
+
+        assert isinstance(reply, AgentReplyText)
+        assert reply.response.startswith("Error")
+        assert reply.prompt == ""
 
     @pytest.mark.asyncio
     async def test_runner_with_none_reply_returns_empty_string(self):
