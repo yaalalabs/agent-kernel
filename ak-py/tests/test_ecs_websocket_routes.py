@@ -1,12 +1,12 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from agentkernel.api.http import RESTAPI
 from agentkernel.auth.handler import AuthValidator, ValidationResult
-from agentkernel.core.model import BaseRequest
+from agentkernel.core.model import BaseRequest, ExecutionMode
 from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
     AWSWebsocketAPI,
     ECSWebSocketRequestHandler,
@@ -17,7 +17,7 @@ from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandle
 CHAT_ROUTE = "chat"
 
 
-def _fake_config():
+def _fake_config(mode: ExecutionMode = ExecutionMode.ASYNC):
     """Minimal AKConfig stand-in exposing only what the WS handlers/register read."""
     return SimpleNamespace(
         websocket_api=SimpleNamespace(
@@ -25,7 +25,7 @@ def _fake_config():
             chat_route=CHAT_ROUTE,
             connection_table=SimpleNamespace(table_name="ak-connections", ttl=3600),
         ),
-        execution=SimpleNamespace(queues=SimpleNamespace(input=SimpleNamespace(url=None))),
+        execution=SimpleNamespace(mode=mode, queues=SimpleNamespace(input=SimpleNamespace(url=None))),
     )
 
 
@@ -343,3 +343,133 @@ def test_run_builds_default_handlers(monkeypatch):
     _, app = captured["handlers"]
     assert isinstance(app, ECSWebSocketRequestHandler)
     assert "status" in app._custom_routes
+
+
+# --------------------------------------------------------------------------------------------------
+# STREAM mode: direct (non-queue) chat path
+# --------------------------------------------------------------------------------------------------
+
+
+def _make_async_gen(items):
+    async def _gen(req, sse_format=False):
+        for item in items:
+            yield item
+
+    return _gen
+
+
+@pytest.mark.asyncio
+async def test_process_chat_direct_stream_broadcasts_each_chunk():
+    handler = _make_handler()
+    ws_mock = MagicMock()
+    handler.get_websocket_handler = lambda: ws_mock
+
+    chunks = [
+        json.dumps({"delta": "Hello", "done": False}),
+        json.dumps({"delta": " world", "done": False}),
+        json.dumps({"done": True}),
+    ]
+    mock_chat_service = MagicMock()
+    mock_chat_service.process_stream_chat_async = _make_async_gen(chunks)
+    handler.get_chat_service = lambda: mock_chat_service
+
+    from agentkernel.core.model import BaseRunRequest
+
+    body = BaseRunRequest(session_id="s1", prompt="hi")
+    response = await handler._process_chat_direct_stream(body, "u1", "https://abc.execute-api.us-east-1.amazonaws.com/prod")
+
+    assert response.status_code == 200
+    assert ws_mock.broadcast.call_count == 3
+    for call in ws_mock.broadcast.call_args_list:
+        assert call.kwargs["message_type"] == AWSWebSocketHandler.MessageType.STREAM_CHUNK
+    assert ws_mock.broadcast.call_args_list[0].kwargs["message"] == {"delta": "Hello", "done": False}
+
+
+@pytest.mark.asyncio
+async def test_process_chat_direct_stream_broadcasts_error_chunk_on_exception():
+    handler = _make_handler()
+    ws_mock = MagicMock()
+    handler.get_websocket_handler = lambda: ws_mock
+
+    async def _failing_gen(req, sse_format=False):
+        yield json.dumps({"delta": "partial", "done": False})
+        raise RuntimeError("boom")
+
+    mock_chat_service = MagicMock()
+    mock_chat_service.process_stream_chat_async = _failing_gen
+    handler.get_chat_service = lambda: mock_chat_service
+
+    from agentkernel.core.model import BaseRunRequest
+
+    body = BaseRunRequest(session_id="s1", prompt="hi")
+    response = await handler._process_chat_direct_stream(body, "u1", "https://abc.execute-api.us-east-1.amazonaws.com/prod")
+
+    assert response.status_code == 500
+    assert ws_mock.broadcast.call_count == 2
+    error_call = ws_mock.broadcast.call_args_list[-1]
+    assert error_call.kwargs["message_type"] == AWSWebSocketHandler.MessageType.STREAM_CHUNK
+    assert error_call.kwargs["message"]["error"] == "boom"
+    assert error_call.kwargs["message"]["done"] is True
+    assert error_call.kwargs["message"]["session_id"] == "s1"
+
+
+@pytest.mark.asyncio
+async def test_handle_chat_stream_mode_routes_to_direct_stream(monkeypatch):
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _fake_config(mode=ExecutionMode.STREAM)))
+    handler = _make_handler()
+    ws_mock = MagicMock()
+    handler.get_websocket_handler = lambda: ws_mock
+
+    handler.build_route_context = AsyncMock(
+        return_value=handler.WSRouteContext(
+            message=BaseRequest.from_payload({"request_id": "r1", "body": {"session_id": "s1", "prompt": "hi"}}),
+            user_id="u1",
+            connection_id="c1",
+            endpoint_url="https://abc.execute-api.us-east-1.amazonaws.com/prod",
+        )
+    )
+
+    called = {}
+
+    async def _fake_stream(body, user_id, endpoint_url):
+        called["invoked"] = True
+        return handler.build_success_http_response("ok", user_id=user_id)
+
+    handler._process_chat_direct_stream = _fake_stream
+
+    response = await handler._handle_chat(request=MagicMock())
+
+    assert called.get("invoked") is True
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_handle_chat_queue_mode_unaffected_by_stream_setting(monkeypatch):
+    """Regression: queue mode must still enqueue, even when execution.mode is STREAM."""
+
+    def _fake_config_queue_stream():
+        cfg = _fake_config(mode=ExecutionMode.STREAM)
+        cfg.execution.queues.input.url = "https://sqs.test/input"
+        return cfg
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _fake_config_queue_stream()))
+    handler = _make_handler()
+
+    handler.build_route_context = AsyncMock(
+        return_value=handler.WSRouteContext(
+            message=BaseRequest.from_payload({"request_id": "r1", "body": {"session_id": "s1", "prompt": "hi"}}),
+            user_id="u1",
+            connection_id="c1",
+            endpoint_url="https://abc.execute-api.us-east-1.amazonaws.com/prod",
+        )
+    )
+
+    stream_called = {}
+    handler._process_chat_direct_stream = lambda *a, **k: stream_called.setdefault("invoked", True)
+
+    with patch("agentkernel.deployment.aws.containerized.core.api.websocket_api.SQSHandler") as mock_sqs:
+        response = await handler._handle_chat(request=MagicMock())
+
+    mock_sqs.send_message_to_input_queue.assert_called_once()
+    assert "invoked" not in stream_called
+    assert response.status_code == 200

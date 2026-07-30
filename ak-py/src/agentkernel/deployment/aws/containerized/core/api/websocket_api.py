@@ -15,7 +15,7 @@ from ......api.http import RESTAPI
 from ......auth.handler import AuthValidator
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
-from ......core.model import BaseRequest, BaseRunRequest
+from ......core.model import BaseRequest, BaseRunRequest, ExecutionMode, StreamChunk
 from ....core.sqs_handler import SQSHandler
 from ....core.websocket_service import AWSWebSocketHandler, WebSocketConnectionStore
 
@@ -359,6 +359,36 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         )
         return self.build_success_http_response("Request processed successfully", user_id=user_id, status_code=status_code)
 
+    async def _process_chat_direct_stream(self, body: BaseRunRequest, user_id: str, endpoint_url: str) -> JSONResponse:
+        """Direct (non-queue) mode, STREAM execution: run the agent inline and broadcast each chunk as it's produced."""
+        self._log.info(f"Streaming WS chat request inline (direct mode) for user_id={user_id}")
+        session_id = body.session_id
+        try:
+            async for raw_chunk in self.get_chat_service().process_stream_chat_async(req=body, sse_format=False):
+                chunk_dict = json.loads(raw_chunk)
+                self.get_websocket_handler().broadcast(
+                    endpoint_url=endpoint_url,
+                    message=chunk_dict,
+                    user_id=user_id,
+                    message_type=AWSWebSocketHandler.MessageType.STREAM_CHUNK,
+                )
+            return self.build_success_http_response("Stream completed successfully", user_id=user_id)
+        except Exception as e:
+            self._log.exception(f"Stream direct request failed: {e}")
+            try:
+                error_chunk = StreamChunk(error=str(e), done=True).model_dump(exclude_none=True)
+                if session_id:
+                    error_chunk["session_id"] = session_id
+                self.get_websocket_handler().broadcast(
+                    endpoint_url=endpoint_url,
+                    message=error_chunk,
+                    user_id=user_id,
+                    message_type=AWSWebSocketHandler.MessageType.STREAM_CHUNK,
+                )
+            except Exception:
+                self._log.warning("Failed to broadcast stream error chunk")
+            return self.build_error_http_response(500, "Stream request processing failed", user_id=user_id)
+
     async def _handle_chat(self, request: Request) -> JSONResponse:
         """Handle a chat frame: enqueue it (queue mode) or run the agent inline (direct mode)."""
         try:
@@ -373,6 +403,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
             if self._is_queue_mode():
                 return self._enqueue_chat(ctx.message.body, ctx.user_id, ctx.message.request_id, session_id, ctx.endpoint_url)
+            if self._config.execution.mode == ExecutionMode.STREAM:
+                return await self._process_chat_direct_stream(ctx.message.body, ctx.user_id, ctx.endpoint_url)
             return await self._process_chat_direct(ctx.message.body, ctx.user_id, ctx.endpoint_url)
         except self.WSRouteError as e:
             return self.build_error_http_response(e.status_code, e.message)
