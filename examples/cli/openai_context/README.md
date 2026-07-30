@@ -60,14 +60,12 @@ yet both earlier items are still there because `framework_context` round-tripped
 
 ## Reading the context outside a tool
 
-Any code with the session in hand can seed or read the context via the enum member (not the raw
-string):
+A pre-hook or post-hook with the session in hand seeds or reads the context through the dedicated
+accessors — no need to name the reserved key:
 
 ```python
-from agentkernel.core import Session
-
-session.set(Session.Keys.FRAMEWORK_CONTEXT.value, {"cart": []})   # seed
-cart = session.get(Session.Keys.FRAMEWORK_CONTEXT.value)          # read back
+session.set_framework_context({"cart": []})   # seed
+cart = session.get_framework_context()        # read back
 ```
 
 A tool that is not written against a specific framework can also reach the stored value through

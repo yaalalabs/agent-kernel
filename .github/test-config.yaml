@@ -34,6 +34,8 @@ e2e:
       path: examples/cli/guardrail/bedrock
     - type: cli
       path: examples/cli/pydanticai/
+    - type: cli
+      path: examples/cli/pydanticai_context
     # - type: cli
     #   path: examples/cli/guardrail/walledai
 

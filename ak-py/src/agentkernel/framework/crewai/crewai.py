@@ -380,7 +380,7 @@ class CrewAIRunner(Runner):
             # CrewAI's kickoff(inputs=...) are template-interpolation variables, not a context/state object, so
             # there is no per-run caller-state slot. The stored key is left untouched and warned about once per
             # runner, since the condition holds for every turn of the session.
-            if not self._context_warned and session is not None and session.get(Session.Keys.FRAMEWORK_CONTEXT.value):
+            if not self._context_warned and session is not None and session.get_framework_context():
                 self._log.warning("framework_context is set but CrewAI does not support per-run caller context/state; ignoring it.")
                 self._context_warned = True
             reply = await crew.kickoff_async(inputs={})

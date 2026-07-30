@@ -160,7 +160,7 @@ async def stream(self, agent: Any, session: Session, requests: list[AgentRequest
 ### 3c. Wire up the per-run framework context
 
 The base `Runner` provides two helpers so a caller-supplied, framework-agnostic context/state dict
-(the reserved `Session.Keys.FRAMEWORK_CONTEXT` key) rides across turns. **Your `run()` and
+(seeded by a hook via `session.set_framework_context(...)`) rides across turns. **Your `run()` and
 `stream()` must call them and map the one AK-level dict onto your framework's native
 context/state mechanism** (or decline it explicitly, as CrewAI does):
 
@@ -199,9 +199,11 @@ so callers know not to put secrets in `framework_context`.
 
 **Declare your round-trip fidelity honestly** in the framework's docs and the fidelity table in
 `docs/docs/core-concepts/runner.md` — how much of a caller dict actually survives depends on the
-framework (full round-trip, filtered to seeded keys, declared-channels-only, or unsupported). If the
-framework has no safe caller-state slot, do **not** inject; instead log a single warning per run and
-skip both load and write-back (see the CrewAI adapter for the pattern).
+framework (full round-trip, filtered to seeded keys, declared-channels-only, or unsupported). Name the
+**native handle a tool uses** to reach the context (`RunContextWrapper.context` on OpenAI,
+`RunContext.deps` on Pydantic AI, `tool_context.state` on ADK, …) — tools use that, never the `Session`
+accessors. If the framework has no safe caller-state slot, do **not** inject; instead log a single
+warning per runner instance and skip both load and write-back (see the CrewAI adapter for the pattern).
 
 ### 4. Implement the Agent Wrapper
 

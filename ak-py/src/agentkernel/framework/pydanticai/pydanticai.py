@@ -146,10 +146,16 @@ class PydanticAIRunner(BaseRunner):
             fw_session = self._session(session)
             history = ModelMessagesTypeAdapter.validate_python(fw_session.messages) if fw_session and fw_session.messages else None
 
-            result = await agent.agent.run(content, message_history=history)
+            # `deps` is Pydantic AI's only caller-dependency slot and AK owns it, so injecting the per-run
+            # framework context is additive: tools and instruction functions read and mutate it via RunContext.deps.
+            incoming = self._load_framework_context(session)
+            result = await agent.agent.run(content, message_history=history, deps=incoming)
 
             if fw_session is not None:
                 fw_session.messages = to_jsonable_python(result.all_messages())
+
+            # Tools mutate the injected object in place, so the produced state is the same object.
+            self._store_framework_context(session, incoming, incoming)
 
             structured = AgentReplyAny.from_output(result.output, prompt)
             if structured is not None:
@@ -186,13 +192,22 @@ class PydanticAIRunner(BaseRunner):
             fw_session = self._session(session)
             history = ModelMessagesTypeAdapter.validate_python(fw_session.messages) if fw_session and fw_session.messages else None
 
-            async with agent.agent.run_stream(content, message_history=history) as result:
+            incoming = self._load_framework_context(session)
+
+            async with agent.agent.run_stream(content, message_history=history, deps=incoming) as result:
                 async for delta in result.stream_text(delta=True):
                     if delta:
                         yield delta
 
                 if fw_session is not None:
                     fw_session.messages = to_jsonable_python(result.all_messages())
+
+                # Write back only when the stream drains normally, so a disconnect or a mid-stream error leaves
+                # the stored context intact. Deliberately not in a finally.
+                try:
+                    self._store_framework_context(session, incoming, incoming)
+                except Exception as e:
+                    self._log_framework_context_stream_failure(session, e)
         finally:
             if context is not None:
                 context.reset()

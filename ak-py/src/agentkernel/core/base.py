@@ -175,6 +175,37 @@ class Session:
         """
         return cast(KeyValueCache, self.get(Session.Keys.NON_VOLATILE_CACHE.value))
 
+    def get_framework_context(self) -> dict | None:
+        """
+        Returns the per-run framework context carried across turns, or None when none is set.
+        The returned dict is the live stored object, so a pre-hook can edit it in place before the runner
+        loads it. Never auto-creates the key: absent (nothing injected) and {} (injected and round-tripped)
+        are different states, and a read must not turn one into the other.
+        :return: The stored framework context dict, or None when the key is absent.
+        """
+        return self.get(Session.Keys.FRAMEWORK_CONTEXT.value)
+
+    def set_framework_context(self, context: dict) -> dict:
+        """
+        Seeds or replaces the per-run framework context carried across turns.
+        :param context: The context dict to store. Must be picklable, since sessions are persisted with pickle.
+        :return: The stored context dict.
+        :raises TypeError: If context is not a dict, so caller misuse fails here rather than mid-run.
+        """
+        if not isinstance(context, dict):
+            raise TypeError(
+                f"Session '{self._id}' framework_context must be a dict, got "
+                f"{type(context).__name__}. The reserved framework_context key carries a "
+                f"per-run context/state dict; wrap the value in a dict before setting it."
+            )
+        return self.set(Session.Keys.FRAMEWORK_CONTEXT.value, context)
+
+    def clear_framework_context(self) -> None:
+        """
+        Deletes the per-run framework context, so nothing is injected on the next turn.
+        """
+        self.delete(Session.Keys.FRAMEWORK_CONTEXT.value)
+
     def set(self, key: str, value: Any) -> Any:
         """
         Sets a session data object for the specified key.
@@ -249,7 +280,7 @@ class Runner(ABC):
         """
         if session is None:
             return None
-        stored = session.get(Session.Keys.FRAMEWORK_CONTEXT.value)
+        stored = session.get_framework_context()
         if stored is None:
             return None
         if not isinstance(stored, dict):
@@ -275,7 +306,7 @@ class Runner(ABC):
         if produced:
             merged.update(produced)
         self._ensure_framework_context_picklable(session, merged)
-        session.set(Session.Keys.FRAMEWORK_CONTEXT.value, merged)
+        session.set_framework_context(merged)
 
     @staticmethod
     def _ensure_framework_context_picklable(session: Session, ctx: Mapping[str, Any]) -> None:

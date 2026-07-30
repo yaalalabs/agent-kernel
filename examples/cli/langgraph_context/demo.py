@@ -2,7 +2,7 @@ import logging
 from typing import Annotated, Sequence, TypedDict
 
 from agentkernel.cli import CLI
-from agentkernel.core import AgentReplyText, PostHook, PreHook, Session
+from agentkernel.core import AgentReplyText, PostHook, PreHook
 from agentkernel.langgraph import LangGraphModule
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("ak.example.langgraph_context")
 
-FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
 CART_PREFIX = "Current cart:"
 
@@ -64,8 +63,8 @@ class SeedCartContextPreHook(PreHook):
     """Seed an empty framework_context on the first turn so the graph has a cart channel to fill."""
 
     async def on_run(self, session, agent, requests):
-        if session is not None and session.get(FRAMEWORK_CONTEXT) is None:
-            session.set(FRAMEWORK_CONTEXT, {"cart": []})
+        if session is not None and session.get_framework_context() is None:
+            session.set_framework_context({"cart": []})
         return requests
 
     def name(self) -> str:
@@ -78,7 +77,7 @@ class AppendCartPostHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         if session is None or not isinstance(agent_reply, AgentReplyText):
             return agent_reply
-        context = session.get(FRAMEWORK_CONTEXT) or {}
+        context = session.get_framework_context() or {}
         cart = context.get("cart", [])
         summary = ", ".join(cart) if cart else "(empty)"
         agent_reply.response = f"{agent_reply.response}\n\n{CART_PREFIX} {summary}"

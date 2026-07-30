@@ -197,11 +197,11 @@ async def run(self, agent, session, requests):
 
 ### Per-run framework context {#per-run-framework-context}
 
-In addition to their own internal state, all runners honour one reserved session key,
-`Session.Keys.FRAMEWORK_CONTEXT` (`"framework_context"`), which carries a **framework-agnostic,
-per-run context/state dict** across turns (see
-[Session → Framework context / per-run state](./session.md#framework-context--per-run-state) for how
-to seed and read it). When the key is set, a runner:
+In addition to their own internal state, runners honour one reserved session value, the
+**framework context** — a framework-agnostic, per-run context/state dict carried across turns. Seed and
+read it with `session.set_framework_context()` / `get_framework_context()` from a pre- or post-hook (see
+[Session → Framework context / per-run state](./session.md#framework-context--per-run-state)). When a
+context is set, a runner:
 
 1. **Loads** a deep copy of the stored context before invoking the framework.
 2. **Injects** it into the native framework call (mapped to each framework's own context/state
@@ -215,6 +215,7 @@ to seed and read it). When the key is set, a runner:
 | Framework | Fidelity | Injected as | Written back |
 |-----------|----------|-------------|--------------|
 | OpenAI | **Full round-trip** | `Runner.run(..., context=ctx)` — tools mutate it in place | the same object, in full |
+| Pydantic AI | **Full round-trip** | `agent.run(..., deps=ctx)` — native tools mutate it in place via `RunContext.deps` ([caveats](../frameworks/pydantic-ai.md#per-run-contextstate)) | the same object, in full |
 | Google ADK | **Round-trips (filtered), accumulate-only** | merged into the ADK session `state` (AK-internal keys always win, so they cannot be displaced by a caller key) | the accumulated session state, minus AK-internal and `app:`/`user:`/`temp:`-prefixed keys — **tool-added keys survive**, and so does anything else written to the state ([caveats](../frameworks/google-adk.md#per-run-contextstate)) |
 | Smolagents | **Round-trips (filtered)** | `agent.run(..., additional_args=ctx)` — which smolagents **also appends to the task prompt** ([caveat](../frameworks/smolagents.md#per-run-contextstate)) | `agent.state` **restricted to pre-seeded keys** — brand-new keys are dropped |
 | LangGraph | **Declared channels only** | spread into the graph input alongside `messages` (written last, so a caller key cannot replace it) | only keys the graph's state schema declares as channels (prebuilt agents drop unknown keys) |
