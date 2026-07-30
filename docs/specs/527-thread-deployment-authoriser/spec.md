@@ -1,12 +1,15 @@
 # #527: Thread store deployment support and Authoriser support for serverless and ECS — Implementation Spec
 
 This spec details how the requirements in [`design.md`](./design.md) are built. It covers four bodies
-of work: (1) a Valkey thread store in core; (2) DynamoDB/Firestore/Cosmos DB thread-store provisioning
-and `AK_THREAD__*` env wiring across the AWS, GCP, and Azure Terraform (each mirroring its cloud's
-existing session-store flag); (3) native thread REST routes on the Lambda serverless router, protected
-by the existing gateway-level `APIGatewayAuthorizer`; and (4) an `Authoriser`-mounting parameter on
-ECS's queue-mode `ECSIOHandler`. `design.md` is the requirements source — every requirement there maps
-to a section here.
+of work: (1) a Valkey thread store in core; (2) DynamoDB thread-store provisioning and `AK_THREAD__*`
+env wiring on the AWS Terraform, plus Firestore env wiring on the GCP Terraform (each mirroring its
+cloud's existing session-store flag; Redis/Valkey thread wiring stays fully manual — no new Terraform
+variables; Azure is out of scope for this change, see design.md Non-goals); (3) reusable thread-handler
+logic for the Lambda serverless path that the deployer wires up themselves via the existing
+`Lambda.register` decorator, at manually-configured `gateway_endpoints` paths, protected by the
+existing gateway-level `APIGatewayAuthorizer`; and (4) an `Authoriser`-mounting parameter on ECS's
+queue-mode `ECSIOHandler`. `design.md` is the requirements source — every requirement there maps to a
+section here.
 
 ## Design
 
@@ -83,86 +86,127 @@ Config in `core/config.py`:
   the `type` field's `description` (and to `_BUILTIN_THREAD_STORES`), not editing a pattern. This
   aligns the thread store's built-in set with `SessionStoreBuilder`, which already has `valkey`.
 
+### Serverless (Lambda): generic path-parameter routing
+
+A standalone platform capability in `RESTLambdaRouter.dispatch()` (`rest_lambda.py:354-388`),
+independent of thread — usable by any custom Lambda route, present or future.
+
+**The gap**: `dispatch()` matches against `event["path"]` (the *concrete* URL, e.g.
+`/api/v1/threads/abc-123`) exclusively — never `event["resource"]` (the *template* API Gateway
+matched, e.g. `/api/v1/threads/{session_id}`, curly braces intact). A route registered via
+`Lambda.register("/threads/{session_id}", method="GET")` already sits in `self._routes` under that
+exact literal string (`register()` does no parsing of its `route` argument at all) — it just never
+gets looked up correctly, and the request 500s via `dispatch()`'s no-route `ValueError`.
+
+**The fix** — an additive fallback, appended after the existing lookup:
+
+```python
+# RESTLambdaRouter.dispatch(), after the existing exact-match lookup on `converted_event_path` misses:
+if not handler:
+    resource = event.get("resource")
+    if resource and env_base_path:
+        methods = self._routes.get(resource.removeprefix(env_base_path), {})
+        handler = methods.get(method)
+```
+
+Governing rules:
+
+1. **Still zero wildcard/regex parsing** — this is a second literal-string dict lookup, on a
+   different field. API Gateway itself already resolves which resource template matched a given
+   request and populates `event["pathParameters"]` accordingly; the router's only job is finding the
+   handler registered under that same template string.
+2. **`register()` is untouched.** `@Lambda.register("/threads/{session_id}", method="GET")` is
+   already legal Python today — the string is just an opaque dict key to `register()`. This fix makes
+   that already-legal call work.
+3. **Zero regression risk for existing routes.** The fallback only ever triggers when the primary
+   `path`-based lookup misses — i.e., only for requests that would otherwise hit the no-route
+   `ValueError` today. Every existing static route (all four current examples using `Lambda.register`)
+   matches on the first attempt, completely unaffected. This must be proven by a dedicated regression
+   test asserting existing dispatch behavior is unchanged (see Testing), not just asserted here.
+4. **Interacts with, but does not change, the default-chat-path special-casing** earlier in the same
+   function (`rest_lambda.py:368-380`) — that logic runs first and is untouched; the new fallback
+   only applies to the custom-route lookup that follows it.
+
 ### Serverless (Lambda): thread REST routes
 
 The Lambda REST path does not use FastAPI — `RESTLambdaRouter` (`rest_lambda.py:292-388`) dispatches
-raw API Gateway REST v1 events against a `self._routes[path][method]` table. Thread routes are added
-natively, reusing `ConversationThreadManager` (the same data path `ThreadRESTRequestHandler` uses,
-`api/thread.py`) — no logic is re-implemented, only the transport is translated from FastAPI to Lambda
-handler functions.
+raw API Gateway REST v1 events against a `self._routes[path][method]` table, populated via the
+already-public `Lambda.register(route, method)` decorator (`aklambda.py:38-47`, delegating to
+`RESTLambdaRouter.register`, `rest_lambda.py:327-352`) — the same decorator four existing examples
+already use for custom routes (`examples/aws-serverless/openai-auth/lambda.py:30-38`,
+`scalable-openai/lambda_request_handler.py`, `streaming-openai/lambda_request_handler.py`,
+`websocket-openai/lambda_request_handler.py`).
 
-New `ThreadEndpointsHandler` in
-`ak-py/src/agentkernel/deployment/aws/serverless/core/router/thread_endpoints.py`, mirroring
-`DefaultEndpointsHandler` (`rest_lambda.py:14-74`):
+**AK does not auto-register any thread routes.** Instead it exposes reusable thread-handling logic
+that the deployer wires up themselves, in their own `lambda.py`, exactly like any other custom Lambda
+route — no changes to `rest_lambda.py`, `aklambda.py`, or `common.py` at all.
 
-The resource templates must honour the deployer-configurable base path/version, not hardcode
-`api`/`v1` — both `event["resource"]` and the deployed routes are
-`/{api_base_path}/{api_version}/threads[...]`, and those segments default to `api`/`v1` but are
-overridable (`serverless/variables.tf:179-207`). The Lambda already receives `API_BASE_PATH` /
-`API_VERSION` env vars (`modules/request-handler/main.tf`), and `_get_base_paths_from_env`
-(`core/router/common.py:47-60`) reads them; build the templates from that (falling back to
-`api`/`v1`), otherwise thread routes on a custom-base-path/version stack fail the resource match and
-hit the no-route `ValueError` (a 500):
+New `ThreadLambdaHandler` in `ak-py/src/agentkernel/deployment/aws/serverless/akthreadhandler.py`,
+reusing `ConversationThreadManager` (the same data path `ThreadRESTRequestHandler` uses,
+`api/thread.py`) — no logic is re-implemented, only the transport differs:
 
 ```python
-class ThreadEndpointsHandler:
-    """Native Lambda handlers for the thread read routes, keyed by API Gateway
-    resource template so the {session_id} path parameter needs no path parsing."""
-
-    def __init__(self):
-        # honour deployer-configurable base path / version; default to api / v1
-        base, version = self._get_base_paths_from_env()
-        prefix = f"/{base or 'api'}/{version or 'v1'}"
-        self.LIST_RESOURCE = f"{prefix}/threads"
-        self.DETAIL_RESOURCE = f"{prefix}/threads/{{session_id}}"
-
-    def get_routes(self) -> Dict[str, Dict[str, Callable]]:
-        return {
-            self.LIST_RESOURCE:   {"GET": self._handle_list},
-            self.DETAIL_RESOURCE: {"GET": self._handle_detail},
-        }
+class ThreadLambdaHandler:
+    """Reusable thread list/detail handlers for a deployer's own Lambda.register(...) wiring."""
 
     def _resolve_user(self, event) -> Optional[str]:
         # principal injected by the gateway APIGatewayAuthorizer; None when no
         # authorizer is attached (routes open — same semantics as ThreadRESTRequestHandler)
         return (event.get("requestContext", {}).get("authorizer") or {}).get("principalId")
 
-    def _handle_list(self, event, context) -> tuple[int, dict]: ...
-    def _handle_detail(self, event, context) -> tuple[int, dict]: ...
+    def list_threads(self, event, context) -> tuple[int, dict]: ...
+    def get_thread(self, event, context) -> tuple[int, dict]: ...
 ```
 
-Handler behaviour mirrors `ThreadRESTRequestHandler.get_router()` (`api/thread.py:57-107`) exactly:
+Handler behaviour mirrors `ThreadRESTRequestHandler.get_router()` (`api/thread.py:57-107`) exactly,
+now that the generic path-parameter routing above makes the path-parameter shape work on Lambda too:
 
 - Both call `ConversationThreadManager.get()`; when it is `None` → `(404, {"error": "Thread support
   is not enabled"})` (matches `api/thread.py:72-73,89-90`).
-- `_handle_list`: read `user_id`/`group_id`/`limit`/`cursor` from `event.get("queryStringParameters")`;
+- `list_threads`: read `user_id`/`group_id`/`limit`/`cursor` from `event.get("queryStringParameters")`;
   when `_resolve_user` returns non-`None`, force `user_id` to it (matches `api/thread.py:74-76`); call
   `manager.list_threads(...)`; return the same `{"threads": [...exclude messages...], "next_cursor":
   ...}` body (matches `api/thread.py:81-84`); `ValueError` (bad cursor) → `(400, ...)`.
-- `_handle_detail`: `session_id` from `event["pathParameters"]["session_id"]`; call
+- `get_thread`: `session_id` from `event["pathParameters"]["session_id"]` (populated by API Gateway
+  once the detail route's `{session_id}` template matches, per the routing fix above); call
   `manager.get_thread(session_id, user_id=resolved)`; `PermissionError` → `(403, ...)`, `None` →
   `(404, ...)`; then `manager.get_messages(...)`; return the merged thread + messages + `next_cursor`
   body (matches `api/thread.py:86-105`).
 
 Governing rules:
 
-1. **Routing keys off `event["resource"]` (the template), not `event["path"]` (the concrete URL).**
-   API Gateway REST v1 proxy events carry `resource` = `/api/v1/threads/{session_id}`, `path` =
-   `/api/v1/threads/abc-123`, and `pathParameters` = `{"session_id": "abc-123"}`. Matching the
-   template means the `{session_id}` segment needs no wildcard parsing — this is the **thread-specific**
-   path-parameter handling the design calls for, not a general router feature.
-2. **`RESTLambdaRouter.dispatch()` gets one thread pre-check.** Before the existing default-chat-path
-   rewrite (`rest_lambda.py:368-385`), add: if `event.get("resource")` is a registered thread route
-   and the method matches, dispatch straight to that handler and return. The existing chat-path logic
-   is untouched for all other events.
-3. **Thread routes are registered at cold start, only when enabled.** In `RESTLambdaRouter.__init__`
-   (`rest_lambda.py:300-315`), after the default routes are built, if `AKConfig.get().thread is not
-   None`, merge `ThreadEndpointsHandler().get_routes()` into `self._routes`. The router is a
-   module-level singleton (`Lambda._router`, `aklambda.py:29-32`) built once per cold start, so
-   registration is race-free.
+1. **List is a flat endpoint; detail uses a `{session_id}` path parameter**, symmetric with
+   ECS/FastAPI's `/api/v1/threads/{session_id}`. This depends on "Serverless (Lambda): generic
+   path-parameter routing" above — without that fix, `Lambda.register("<path>/{session_id}", ...)`
+   would never match a real request, since the router previously matched only against
+   `event["path"]` (concrete), never `event["resource"]` (template).
+2. **The deployer chooses both path names and wires both decorators themselves**, e.g.:
+
+   ```python
+   from agentkernel.aws import Lambda, ThreadLambdaHandler
+
+   thread_handler = ThreadLambdaHandler()
+
+   @Lambda.register("/threads", method="GET")
+   def thread_list(event, context):
+       return thread_handler.list_threads(event, context)
+
+   @Lambda.register("/threads/{session_id}", method="GET")
+   def thread_detail(event, context):
+       return thread_handler.get_thread(event, context)
+   ```
+
+   Path names are illustrative — the deployer names them whatever they like, as long as the same
+   names (including the `{session_id}` segment) are used in the `gateway_endpoints` Terraform entries
+   (see below).
+3. **`ThreadLambdaHandler` is exported alongside `Lambda`** — add it to
+   `deployment/aws/serverless/__init__.py` and `deployment/aws/__init__.py` (both already re-export
+   `Lambda` from `aklambda.py`; `agentkernel/aws.py`'s `from .deployment.aws import *` picks it up
+   automatically) so `from agentkernel.aws import Lambda, ThreadLambdaHandler` works.
 
 Handler returns are `(status, dict)` tuples; `Lambda._wrap_response` (`aklambda.py:50-67`) already
-serialises those to `{"statusCode", "body": json.dumps(...)}`.
+serialises those to `{"statusCode", "body": json.dumps(...)}` — this is what every other
+`Lambda.register`-decorated handler already returns, so no new response-shape handling is needed.
 
 ### Serverless (Lambda): authorization
 
@@ -182,6 +226,14 @@ IAM policy whose `principalId` is the validator's `subject` and whose `context` 
   (`api/thread.py:43-44`).
 - No new cold-start hook, no in-Lambda `Authoriser` instance, and `authoriser.py`'s `Authoriser` ABC
   is not used on the serverless path.
+- **Risk — implement and test this carefully.** There is no code-level guard here that fails closed:
+  `_resolve_user`'s `(event.get("requestContext", {}).get("authorizer") or {}).get("principalId")`
+  returns `None` in two situations that must stay distinguishable in tests even though they hit the
+  same code path — (a) no authorizer attached at all (intentionally open, per above), and (b) an
+  authorizer *is* attached but a misconfiguration or bug leaves `principalId` unset (unintentionally
+  open — a silent security gap). Both need an explicit assertion in `tests/test_lambda_thread_routes.py`
+  (see Testing) so this equivalence is a deliberate, tested design choice rather than an accident of
+  the code path.
 
 ### Serverless (Lambda) Terraform: DynamoDB thread table
 
@@ -212,13 +264,15 @@ Mirror the session-memory table wiring end to end.
 - **Module variables**: add `create_dynamodb_thread_table`, `dynamodb_thread_table_arn`,
   `dynamodb_thread_table_name` to `modules/request-handler/variables.tf` and
   `modules/agent-runner/variables.tf`, matching the memory-table variable shape.
-- **Route exposure**: no auto-append logic in `state.tf`. `gateway_endpoints` paths are **relative**
-  to `/{api_base_path}/{api_version}`, so the deployer lists `threads` and `threads/{session_id}` (the
-  serverless entry shape is `{path, method}`) — **not** `api/v1/threads`, which the module would
-  deploy as `/api/v1/api/v1/threads`. `threads/{session_id}` is 2 segments, within the module's
-  3-segment limit (`modules/api-gateway/main.tf:1-16`); the literal `{session_id}` `path_part` is
-  treated as a path parameter. Endpoints in `gateway_endpoints` are covered by the deployment's
-  `authorizer` variable. The example (below) ships the exact entries.
+- **Route exposure**: manual — the deployer adds `gateway_endpoints` entries for whatever path names
+  they chose in their `lambda.py` `Lambda.register` decorators (see "Serverless (Lambda): thread REST
+  routes"). `gateway_endpoints` paths are **relative** to `/{api_base_path}/{api_version}` (the
+  module prepends `api`/`v1`), so an entry named e.g. `threads` deploys as `/api/v1/threads` —
+  **not** `api/v1/threads`, which would deploy `/api/v1/api/v1/threads`. The detail route's
+  `{session_id}` segment brings it to 2 segments, within the module's 3-segment limit
+  (`modules/api-gateway/main.tf:1-16`); the literal `{session_id}` `path_part` is treated as a path
+  parameter, same as containerized. Entries are covered by the deployment's `authorizer` variable,
+  same as any other endpoint.
 
 ### Containerized (ECS) Terraform: DynamoDB thread table
 
@@ -270,9 +324,12 @@ def run(cls, authoriser: Optional[Authoriser] = None) -> None:
 ### Containerized (ECS): thread route exposure
 
 Mounting the handler (above) only registers the routes inside the service — the containerized HTTP
-API must also expose them, the same mechanism as serverless but a different entry shape. Routes come
-from `gateway_endpoints` (`containerized/variables.tf:51-70`); by default only the chat endpoints
-exist (`containerized/state.tf`), so the deployer adds the thread entries.
+API must also expose them, the same mechanism as serverless but a different entry shape and, unlike
+serverless, no code-side workaround needed: FastAPI already supports path parameters natively
+(`ThreadRESTRequestHandler.get_router()` already serves `/api/v1/threads/{session_id}`,
+`api/thread.py:63,86`). Routes come from `gateway_endpoints`
+(`containerized/variables.tf:51-70`); by default only the chat endpoints exist
+(`containerized/state.tf`), so the deployer adds the thread entries.
 
 - The containerized entry shape is `{path, method, overwrite_path}` — `overwrite_path` is **required**
   (validated non-empty), unlike the serverless `{path, method}` shape. Paths are relative to
@@ -308,51 +365,18 @@ implicitly on first write, so no new database resource is needed.
   the same database) already covers the thread collection; verify the binding is database-scoped (not
   collection-scoped) and extend only if not.
 
-### Azure Terraform: Cosmos DB thread table
-
-Thread reuses the Cosmos DB **account** provisioned by `create_cosmosdb_cluster`
-(`ak-azure/serverless/state.tf:70-73`) but needs its own table — the cosmos module currently
-provisions exactly one `azurerm_cosmosdb_table` (`common/modules/cosmos/main.tf:63-76`) named from
-`var.table_name`, coupled to the account it also creates.
-
-- Add an **optional second table** in the same account rather than re-instantiating the module (which
-  would duplicate the account, private endpoint, DNS zone, and NSG). Two acceptable shapes — the pick
-  is an implementation-time decision (see plan.md Iteration 6), but the trade-off differs:
-  1. Extend the cosmos module with an optional `thread_table_name` input that adds a second
-     `azurerm_cosmosdb_table` (`count` on the name being set) in the existing account, exposed via a
-     new output. **Note:** the module is a *pinned external registry module*
-     (`source = "yaalalabs/ak-common/azurerm//modules/cosmos", version = "0.6.1"`,
-     `ak-azure/serverless/state.tf:70-72`) — this is a **cross-repo change** that only takes effect
-     after an `ak-common` module release **and** a version bump here (so plan.md Iteration 6 must
-     include that release/bump step); or
-  2. A small sibling `azurerm_cosmosdb_table` declared **in this repo**, attached to the existing
-     `module.cosmos` account (there is precedent for raw `azurerm_*` resources beside modules in
-     `ak-azure/serverless/linux_function.tf`). This ships without an `ak-common` release; because the
-     module does not output the account **name**, the resource obtains it in-repo (derive from the
-     existing `module.cosmos[0].cosmosdb_account_id` output, or reconstruct/`data`-look-up the
-     account name), gated `count = var.create_cosmosdb_cluster ? 1 : 0` with `depends_on =
-     [module.cosmos]`.
-- Gate on a new bool `create_cosmosdb_thread_table` (default `false`), valid only with
-  `create_cosmosdb_cluster = true`.
-- Env vars, appended to the existing cosmosdb env block when the flag is true
-  (`serverless/linux_function.tf:132-133`, `containerized/container_app.tf:106-108`):
-  `AK_THREAD__TYPE=cosmosdb`, `AK_THREAD__COSMOSDB__TABLE_NAME`, `AK_THREAD__COSMOSDB__CONNECTION_STRING`.
-  The table name must be sourced from the **provisioned** table's name (the module prefixes table
-  names as `"${product_alias}-${env_alias}-${module_name}-${table_name}"`, `common/modules/cosmos/main.tf:64`),
-  **not** the raw Python default `akagentthreads` (`config.py:237`), or the app would look up a table
-  that does not exist. The connection string is sourced the same way session does (direct local on
-  serverless `linux_function.tf:133`; Key Vault secret reference on containerized
-  `container_app.tf:108,120`).
-
 ### Docs and example
 
 - New `examples/aws-serverless/thread-openai/`, structured like `examples/aws-serverless/openai-auth/`
   (`build.sh`, `config.yaml`, `lambda.py`, `lambda_auth.py`, `lambda_test.py`, `pyproject.toml`,
   `deploy/`, `test-config.yaml`, `README.md`):
   - `config.yaml` declares a `thread:` block (type omitted → Terraform injects `AK_THREAD__TYPE`).
-  - `deploy/` sets `create_dynamodb_thread_table = true` and lists the relative entries `threads` +
-    `threads/{session_id}` in `gateway_endpoints` (serverless `{path, method}` shape), with the
-    `authorizer` wired to the auth Lambda (per `openai-auth`).
+  - `lambda.py` imports `ThreadLambdaHandler` alongside `Lambda` and wires the two thread handlers via
+    `@Lambda.register(...)` at the example's chosen path names (e.g. `/threads`, `/threads/{session_id}`)
+    — see "Serverless (Lambda): thread REST routes" for the exact pattern.
+  - `deploy/` sets `create_dynamodb_thread_table = true` **and** manually lists `gateway_endpoints`
+    entries matching the exact path names used in `lambda.py`'s decorators, with the `authorizer`
+    wired to the auth Lambda (per `openai-auth`).
   - **`lambda_auth.py` must set a real per-user `subject`.** `ValidationResult.subject` defaults to
     `"user"` (`auth/handler.py:13-17`) and `openai-auth`'s validator never sets it (`lambda_auth.py:14-16`);
     cloned as-is, every authorized caller resolves to principal `"user"`, so list scoping is trivially
@@ -365,8 +389,11 @@ provisions exactly one `azurerm_cosmosdb_table` (`common/modules/cosmos/main.tf:
     401/403.
   - Register under `weekly.tests` in `.github/integration-test-config.yaml:56-71` as
     `{type: aws-serverless, path: examples/aws-serverless/thread-openai, deploy_dir: deploy}`.
-- Docs: document the `AK_THREAD__TYPE` + backend-vars pairing prominently (deployment guide), since
-  thread is the only `AK_*` store whose type Terraform must set explicitly.
+- Docs: document the `AK_THREAD__TYPE` + backend-vars pairing prominently (deployment guide) — thread
+  is the one `AK_*` store where Terraform must set the type explicitly, and it is easy to
+  misconfigure (feature "on", silently wrong backend). Also document the `Lambda.register` +
+  `gateway_endpoints` wiring pattern for thread routes as the canonical example of exposing a custom,
+  deployer-named Lambda endpoint.
 
 ### Config changes
 
@@ -398,10 +425,19 @@ provisions exactly one `azurerm_cosmosdb_table` (`common/modules/cosmos/main.tf:
 3. **`thread.type: valkey` with no `thread.valkey` block raises `ValueError`.** Intentional — mirrors
    `RedisThreadStore`'s missing-config guard (`redis.py:33-34`) and `ValkeySessionStore`'s
    (`valkey.py:24-25`).
-4. **Lambda serverless now serves `GET /api/v1/threads[...]`** when `thread` is configured and the
-   routes are added to `gateway_endpoints`. Previously the router had no such routes and `dispatch()`
-   raised `ValueError` → 500 (`rest_lambda.py:383-385`). Intentional — the feature being added.
-5. **ECS `RESTAPI.run` receives an explicit `ThreadRESTRequestHandler`** from `ECSIOHandler` when
+4. **`RESTLambdaRouter.dispatch()` gains a path-parameter fallback lookup** keyed on
+   `event["resource"]`, tried only when the existing `event["path"]`-based lookup misses. Intentional
+   and additive — every existing static route (all four current `Lambda.register` examples) matches
+   on the first attempt, unchanged; the fallback only activates for requests that would otherwise hit
+   the no-route `ValueError` (`rest_lambda.py:383-385`) today. This is a general Lambda platform
+   capability, not thread-specific.
+5. **A deployer who wires `ThreadLambdaHandler` via `Lambda.register` gets working
+   `GET /threads[...]`-shaped endpoints** — including a `{session_id}` path-parameter detail route,
+   thanks to change 4 — at whatever paths they chose, once matching `gateway_endpoints` entries
+   exist. Previously no reusable thread-handling logic existed for Lambda at all. Intentional — the
+   feature being added; opt-in, entirely under the deployer's own control, same as every other custom
+   Lambda route.
+6. **ECS `RESTAPI.run` receives an explicit `ThreadRESTRequestHandler`** from `ECSIOHandler` when
    thread is enabled, instead of relying on auto-mount. Intentional and behaviour-preserving when
    `authoriser=None` (open routes, as before); the new capability is that a caller can now pass an
    `Authoriser`.
@@ -409,16 +445,20 @@ provisions exactly one `azurerm_cosmosdb_table` (`common/modules/cosmos/main.tf:
 **Non-changes** (verified): the DynamoDB thread table schema/`Scan` behaviour
 (`core/thread/store/dynamodb.py`); `ThreadStore` ABC and the Redis/DynamoDB/Firestore/Cosmos store
 bodies; `ConversationThreadManager`'s API and the FastAPI `ThreadRESTRequestHandler`
-(`api/thread.py`); the default chat-path routing in `RESTLambdaRouter.dispatch()`
-(`rest_lambda.py:368-385`); the `Authoriser` ABC (`authoriser.py`); and all existing
-session/multimodal/response-store deployment wiring.
+(`api/thread.py`); `RESTLambdaRouter.register()` and the existing default-chat-path dispatch logic
+(`rest_lambda.py:368-380`) — unchanged; only `dispatch()`'s no-route fallback path gains the new
+lookup (change 4); the `Authoriser` ABC (`authoriser.py`); the existing `chat_endpoint`/
+`default_gateway_map`/`mcp_gateway_map` auto-attach logic (untouched — thread routes never join it);
+and all existing session/multimodal/response-store deployment wiring.
 
 ## Error handling
 
-- **Thread not configured** (`AKConfig.get().thread is None`): Lambda thread routes are never
-  registered (cold-start guard), so no `ThreadStoreBuilder.build()` is attempted; the ECS handler
-  skips mounting the thread handler. FastAPI/`ConversationThreadManager.get()` returns `None` → 404 on
-  any thread route that is somehow reached (`api/thread.py:72-73`).
+- **Thread not configured** (`AKConfig.get().thread is None`): if the deployer has wired
+  `ThreadLambdaHandler` regardless, `ConversationThreadManager.get()` returns `None` inside
+  `list_threads`/`get_thread`, and both return `(404, {"error": "Thread support is not enabled"})` —
+  no `ThreadStoreBuilder.build()` is attempted. The ECS handler skips mounting the thread handler
+  entirely in this case. FastAPI/`ConversationThreadManager.get()` returns `None` → 404 on any thread
+  route that is somehow reached (`api/thread.py:72-73`).
 - **Missing `valkey` extra**: `ImportError` with `pip install agentkernel[valkey]` hint at build time
   (change 2 above).
 - **Missing `thread.valkey`/`thread.redis` block for the chosen type**: `ValueError` at store
@@ -428,6 +468,10 @@ session/multimodal/response-store deployment wiring.
   documented, and enforced by every cloud's env block setting both.
 - **Lambda authorizer absent on a thread route**: `requestContext.authorizer` missing →
   `_resolve_user` returns `None` → open access (matches open `ThreadRESTRequestHandler`).
+- **Lambda authorizer attached but `principalId` missing/falsy**: same code path and same result
+  (open access) as the fully-absent case above — intentional per `_resolve_user`'s `or {}` fallback,
+  but this equivalence must be covered by an explicit test (see Testing), not left as an accidental
+  consequence of the missing-authorizer case.
 - **Lambda thread reads**: unknown `session_id` → 404; ownership mismatch (`PermissionError` from
   `manager.get_thread`) → 403; malformed cursor (`ValueError`) → 400 — same mapping as
   `api/thread.py:92-101`.
@@ -450,13 +494,20 @@ New test files:
   a `FakeValkeyClient` (as in `tests/test_sessions_valkey.py:9-40`) into `store._driver._client`, and
   assert create/append/list/paginate round trips, TTL refresh on the user/group index keys, and the
   missing-`thread.valkey` `ValueError`.
-- **`tests/test_lambda_thread_routes.py`** — for `ThreadEndpointsHandler` + the `RESTLambdaRouter`
-  thread pre-check. Following `tests/test_lambda_router.py`'s patched-`DefaultEndpointsHandler`/
-  `SQSHandler` fixture and enabling thread via `AKConfig.get().thread` + `InMemoryThreadStore` +
-  `ConversationThreadManager.reset()` (as `tests/test_thread_router.py:22-37` does). Assert: list
-  route dispatches on `resource="/api/v1/threads"`; detail route resolves `pathParameters.session_id`;
-  `requestContext.authorizer.principalId` scopes listings and drives 403 on ownership mismatch; no
-  authorizer → open; 404 when thread disabled; 400 on bad cursor.
+- **`tests/test_lambda_thread_routes.py`** — for `ThreadLambdaHandler` directly, calling
+  `list_threads(event, context)`/`get_thread(event, context)` with synthetic `event` dicts. Enable
+  thread via `AKConfig.get().thread` + `InMemoryThreadStore` + `ConversationThreadManager.reset()`
+  (as `tests/test_thread_router.py:22-37` does). Assert: `get_thread` resolves `session_id` from
+  `event["pathParameters"]["session_id"]`; `requestContext.authorizer.principalId` scopes listings
+  and drives 403 on ownership mismatch; no authorizer → open; 404 when thread disabled; 400 on bad
+  cursor. **Also assert, as a distinct case from "no authorizer attached"**:
+  `requestContext.authorizer` present but `principalId` missing or falsy (e.g. `{}` or
+  `{"principalId": None}`) resolves to the same open-access behavior — this is the risk flagged in
+  Design/Error handling above, and it must be a named test case, not incidentally covered by the
+  no-authorizer test. A separate, integration-style case may also dispatch through the real
+  `RESTLambdaRouter` (registering `ThreadLambdaHandler` via `Lambda.register` and calling
+  `dispatch()` with an event carrying both `path` and `resource`) to prove the two modules work
+  together end to end — but the unit-level assertions above don't require it.
 - **`tests/test_ecs_io_handler.py`** (new — no existing coverage) — patch `RESTAPI.run` and
   `ThreadRunner.run`; assert that with `thread` enabled, `ECSIOHandler.run(authoriser=a)` builds a
   handlers list containing a `ThreadRESTRequestHandler` whose `_authoriser is a`, and that with
@@ -464,10 +515,13 @@ New test files:
 
 Changed test files:
 
-- **`tests/test_lambda_router.py`** — the router fixture builds a real `RESTLambdaRouter`; ensure it
-  runs with `AKConfig.get().thread` at its default (`None`) so no thread routes register and existing
-  assertions hold. Add an autouse guard resetting `AKConfig.get().thread = None` +
-  `ConversationThreadManager.reset()` if any new thread-enabling test shares the module.
+- **`tests/test_lambda_router.py`** — add dedicated coverage for the new path-parameter fallback in
+  `dispatch()`: register a synthetic `{param}`-containing route via `RESTLambdaRouter.register()`,
+  dispatch a synthetic event whose `path` has the concrete value and whose `resource` has the literal
+  template, and assert the correct handler fires with `event["pathParameters"]` intact. Also add an
+  explicit regression assertion that every existing static-route dispatch scenario in this file
+  (the default chat path, and any `Lambda.register`-style custom route already covered) is unchanged —
+  this is the proof that the fallback is additive, not just an assertion in `spec.md`.
 - **`tests/test_config.py`** — add an assertion that `thread.type: "valkey"` validates and that
   `_ThreadValkeyConfig` carries the `2592000` ttl / `ak:thread:` prefix defaults.
 - **`tests/test_store_builders.py`** — extend the builder-dispatch coverage with the `valkey` branch
@@ -476,5 +530,8 @@ Changed test files:
   is the only test file exercising `ThreadStoreBuilder` dispatch; store-behaviour tests stay in
   `tests/test_thread_store_valkey.py`.
 
-Terraform changes are validated by the `examples/aws-serverless/thread-openai` weekly integration test
-(deploy → chat → list → history → unauthorized), not by pytest.
+AWS Terraform changes are validated by the `examples/aws-serverless/thread-openai` weekly integration
+test (deploy → chat → list → history → unauthorized), not by pytest. GCP Terraform changes have no
+live integration test in this change (consistent with GCP's env-wiring-only scope) — they are
+verified with `terraform validate` only, the same level the AWS Terraform iterations get outside that
+one live example.
