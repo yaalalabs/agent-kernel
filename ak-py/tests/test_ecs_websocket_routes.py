@@ -148,7 +148,7 @@ async def test_build_route_context_chat_parses_base_request():
     handler.get_websocket_handler = lambda: ws_mock
 
     request = _fake_request({"route": "chat", "request_id": "r1", "body": {"session_id": "s1", "prompt": "hi"}})
-    ctx = await handler.build_route_context(request, is_chat=True)
+    ctx = await handler.build_route_context(request, is_chat_request=True)
 
     assert isinstance(ctx.message, BaseRequest)
     assert ctx.message.request_id == "r1"
