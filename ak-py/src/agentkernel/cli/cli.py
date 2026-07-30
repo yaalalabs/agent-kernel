@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import readline  # Enables line editing and history features for input() in the CLI
 import threading
 
 from ..core import AgentService
