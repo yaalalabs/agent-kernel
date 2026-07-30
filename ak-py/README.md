@@ -11,7 +11,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, and Pydantic AI
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
-- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`), workload profiles, policy enforcement, and per-user identity
+- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
@@ -39,10 +39,14 @@ For LLM-based thread naming with Conversation Thread Support:
 pip install "agentkernel[thread]"
 ```
 
-For the Docker sandbox provider (the `local_subprocess` provider needs no extra):
+For the sandbox providers (the `local_subprocess` provider needs no extra; `ec2_ssm` rides
+the `aws` extra):
 
 ```bash
-pip install "agentkernel[sandbox-docker]"
+pip install "agentkernel[sandbox-docker]"   # docker provider
+pip install "agentkernel[e2b]"              # e2b cloud provider
+pip install "agentkernel[daytona]"          # daytona cloud provider
+pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
 ```
 
 **Requirements:**
@@ -1009,9 +1013,15 @@ Key fields:
 - **`enabled`** (`AK_SANDBOX__ENABLED`, default `false`) — master switch; inert when off.
 - **`agents`** — agent names the tools/prompt attach to; omit for all agents.
 - **`type`** (per profile) — `local_subprocess` (no isolation; dev/test), `docker`
-  (container isolation; `sandbox-docker` extra), or a dotted path to your own `SandboxProvider`.
+  (container isolation; `sandbox-docker` extra), `e2b` (managed micro-VMs; `e2b` extra),
+  `daytona` (cloud containers; `daytona` extra), `ec2_ssm` (attach to an existing EC2
+  instance via SSM; `aws` extra), or a dotted path to your own `SandboxProvider`.
 - **`scope`** — `per_call` (fresh per execution), `per_session` (persists across turns),
   `per_runtime` (one shared sandbox per profile).
+- **`environment`** — `managed` (default; the provider creates and disposes sandboxes) or
+  `attached` (deliberately connect to an existing environment the framework never owns,
+  e.g. an EC2 instance via `ec2_ssm`; requires the provider's `attach_to` and is validated
+  against the provider's lifecycle capabilities at startup).
 - **`policy`** — network egress, filesystem paths, cpu/memory, timeout; enforced per provider,
   fail-closed under `strict`.
 - **`identity.mode`** + **`principal_resolver`** — run code under the agent's or the invoking

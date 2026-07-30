@@ -59,5 +59,5 @@ class SandboxSessionNotFoundError(SandboxError):
     """No sandbox session matches the given ``sandbox_session_id``."""
 
 
-class SandboxBrokerError(SandboxError):
+class ExecutionBrokerError(SandboxError):
     """A broker transport or delivery failure."""

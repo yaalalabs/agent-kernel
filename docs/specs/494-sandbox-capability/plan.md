@@ -143,8 +143,10 @@ post-merge iterations.
 - **Goal:** attach-to-existing-runtime working end-to-end against a real EC2 instance via SSM,
   driven from a local (thread-broker) deployment — the checkpoint for evaluating the attach
   model and the identity mapping before further iterations proceed.
-- **Files:** `sandbox/providers/ec2_ssm.py`, `sandbox/factory.py`; `examples/cli/sandbox/` extended
+- **Files:** `sandbox/providers/ec2_ssm.py`, `sandbox/factory.py`; `examples/sandbox/` extended
   with an `ec2_ssm` profile (`attach_to` fed via `AK_SANDBOX__PROFILES__EC2__EC2_SSM__ATTACH_TO`).
+  (Path updated 2026-07-22: the sandbox examples were regrouped from `examples/cli/sandbox/` to
+  `examples/sandbox/`.)
 - **Steps:** spec §First-party providers (`ec2_ssm` row + notes: `send_command` +
   `get_command_invocation` polling, `python3 - <<'EOF'` heredoc wrapping, attach-only `create`,
   no-op `destroy`), §PrincipalResolver mapping (agent: default boto3 chain; user:
@@ -156,7 +158,24 @@ post-merge iterations.
   same `sandbox_session_id` across turns). **Pause here for evaluation — iterations 8+ proceed
   only after this checkpoint is reviewed.**
 
-## Iteration 8 (post-merge): AWS broker plane — sqs flavor, workers, terraform
+> **Sequencing change (2026-07-22).** Iterations 8 and 9 are **swapped**: the cloud SaaS
+> providers (`e2b`, `daytona`) move ahead of the AWS broker plane. They are independent of
+> the broker work and of the iteration-7 attach-model findings (both are create-mode
+> backends), so they deliver config-swappable value sooner; the heavier AWS plane follows.
+
+## Iteration 8 (post-merge): Cloud SaaS providers — e2b, daytona
+
+- **Goal:** the two cloud sandbox backends, config-swappable.
+- **Files:** `sandbox/providers/e2b.py`, `sandbox/providers/daytona.py`, `sandbox/factory.py`,
+  `ak-py/pyproject.toml` (declare the `e2b` and `daytona` extras — deferred from iteration 1).
+- **Steps:** spec §First-party providers (rows + notes); declare the `e2b`/`daytona` extras with
+  version floors confirmed against current SDK releases (flagged in spec §Consumer changes); wire
+  `e2b` (`require_extra("e2b", …)`) and `daytona` (`require_extra("daytona", …)`) into the factory
+  `if/elif` as real imports and append them to `_BUILTIN_PROVIDER_NAMES` (spec §Factory).
+- **Verify:** `uv run pytest tests/test_sandbox_providers.py -k "e2b or daytona"` (mocked
+  SDKs: call shapes, native idle timeout pass-through, `to_thread` for daytona).
+
+## Iteration 9 (post-merge): AWS broker plane — sqs flavor, workers, terraform
 
 - **Goal:** brokered execution on AWS: SQS client flavor, ECS + Lambda workers, DB-first
   completions via the reused `ResponseStore`, session inventory + idle sweep, payload offload,
@@ -171,18 +190,6 @@ post-merge iterations.
 - **Verify:** `uv run pytest tests/test_sandbox_broker.py` (stubbed boto3: message schema,
   DB-before-event ordering, emission rule, `on_permanent_failure` → failed completion, offload,
   ceiling rejection); `terraform validate` in the module.
-
-## Iteration 9 (post-merge): Cloud SaaS providers — e2b, daytona
-
-- **Goal:** the two cloud sandbox backends, config-swappable.
-- **Files:** `sandbox/providers/e2b.py`, `sandbox/providers/daytona.py`, `sandbox/factory.py`,
-  `ak-py/pyproject.toml` (declare the `e2b` and `daytona` extras — deferred from iteration 1).
-- **Steps:** spec §First-party providers (rows + notes); declare the `e2b`/`daytona` extras with
-  version floors confirmed against current SDK releases (flagged in spec §Consumer changes); wire
-  `e2b` (`require_extra("e2b", …)`) and `daytona` (`require_extra("daytona", …)`) into the factory
-  `if/elif` as real imports and append them to `_BUILTIN_PROVIDER_NAMES` (spec §Factory).
-- **Verify:** `uv run pytest tests/test_sandbox_providers.py -k "e2b or daytona"` (mocked
-  SDKs: call shapes, native idle timeout pass-through, `to_thread` for daytona).
 
 ## Iteration 8.5 (post-merge): process-exit cleanup backstop (`atexit`)
 
@@ -233,10 +240,10 @@ Most of this iteration was **brought forward** to the pre-merge checkpoint above
 and is done for the iterations 1–6 surface. What remains here is the documentation/skill work
 for the surfaces that land *after* the first merge:
 
-- **AWS broker plane** (iteration 8): `ak-deployment/ak-aws/` README for the new
+- **AWS broker plane** (iteration 9): `ak-deployment/ak-aws/` README for the new
   `sandbox_broker` module; the `docs/docs/advanced/sandbox.md` broker section grows from
   "thread/embedded only" to include the `sqs` flavor, workers, and queue-mode deployment.
-- **Remaining providers** (iterations 7, 9, 10): each adds its row to the provider/isolation
+- **Remaining providers** (iterations 7, 8, 10): each adds its row to the provider/isolation
   table on `docs/docs/advanced/sandbox.md`, its extra to `ak-py/README.md`, and (where it
   introduces new identity mapping) a note to the `ak-dev-new-sandbox-provider` skill.
 - **Final pass:** re-run `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch`
