@@ -1007,7 +1007,7 @@ def main() -> None:
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.2.14"
+  version = "0.7.0"
 
   project_id           = var.project_id
   region               = var.region
@@ -1036,7 +1036,7 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.2.14"
+  version = "0.7.0"
 
   project_id           = var.project_id
   region               = var.region
@@ -1087,7 +1087,7 @@ def main() -> None:
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.2.14"
+  version = "0.7.0"
 
   project_id           = var.project_id
   region               = var.region

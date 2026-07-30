@@ -76,7 +76,7 @@ dependencies = [
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.2.14"
+  version = "0.7.0"
 
   project_id           = var.project_id
   region               = var.region
@@ -107,7 +107,7 @@ module "containerized_agent" {
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.2.14"
+  version = "0.7.0"
 
   project_id           = var.project_id
   region               = var.region
