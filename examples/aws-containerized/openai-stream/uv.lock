@@ -276,7 +276,7 @@ wheels = [
 ]
 
 [[package]]
-name = "aws-containerized-openai-websocket-stream"
+name = "aws-containerized-openai-stream"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

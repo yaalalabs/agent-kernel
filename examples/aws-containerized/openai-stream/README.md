@@ -11,13 +11,9 @@ token-by-token as a sequence of `STREAM_CHUNK` messages instead of one final `CH
 
 Chat frames are enqueued to SQS and processed by a separately-scalable Agent Runner service, same
 as `openai-websocket-scalable` — the only difference is `execution.mode: stream` in `config.yaml`
-(and `execution_mode = "stream"` in `deploy/main.tf`), which switches:
-
-- `agentkernel.aws.ECSAgentRunner` (imported in `app_agent_runner.py`) to resolve to
-  `ECSStreamAgentRunner` — instead of running the agent to completion and sending one message to
-  the Output Queue, it fans out **one Output Queue message per streamed chunk**.
-- `ECSOutputConsumer` (running as Thread 2 of the REST/IO service) to broadcast each of those
-  chunks as its own `STREAM_CHUNK` WebSocket push, instead of a single `CHAT_RESPONSE`.
+(and `execution_mode = "stream"` in `deploy/main.tf`): the agent's reply is delivered as a sequence
+of `STREAM_CHUNK` messages, one per token delta, instead of a single `CHAT_RESPONSE` once the
+agent finishes.
 
 No application code changes are needed to go from `async` to `stream` — both `app_rest_service.py`
 and `app_agent_runner.py` are identical to `openai-websocket-scalable`'s; only `config.yaml` and
@@ -150,7 +146,7 @@ details on tuning `backlog_target` and cooldowns.
 
 ## Cleanup
 
-From `examples/aws-containerized/openai-websocket-stream/deploy/` run:
+From `examples/aws-containerized/openai-stream/deploy/` run:
 
 ```bash
 terraform destroy
