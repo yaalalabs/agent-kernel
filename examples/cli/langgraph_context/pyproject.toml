@@ -5,14 +5,14 @@ description = "Demo of per-run framework context/state carried across turns by a
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,langgraph]>=0.6.1",
+    "agentkernel[cli,langgraph]>=0.7.0",
     "langchain-openai>=1.1.16",
     "openai>=1.99.1",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.6.1",
+    "agentkernel[test]>=0.7.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
