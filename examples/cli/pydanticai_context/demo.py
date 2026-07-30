@@ -13,7 +13,7 @@ CART_PREFIX = "Current cart:"
 
 
 # Native Pydantic AI tools: a first parameter typed RunContext receives the run's deps, which is where
-# Agent Kernel injects framework_context. Mutations are made in place on ctx.deps.
+# Agent Kernel injects framework_context. Mutate it in place.
 def add_to_cart(ctx: RunContext[dict], item: str) -> str:
     """Add a grocery item to the shopping cart carried in the per-run context.
 
@@ -34,8 +34,8 @@ def view_cart(ctx: RunContext[dict]) -> str:
     return "The cart contains: " + ", ".join(cart)
 
 
-# A framework-agnostic Agent Kernel tool for contrast: bound through PydanticAIToolBuilder, it takes no
-# RunContext and reaches execution context through ToolContext instead, so it never sees deps.
+# An Agent Kernel tool for contrast: bound through PydanticAIToolBuilder, it takes no RunContext and
+# reaches execution context through ToolContext instead, so it never sees deps.
 def get_delivery_estimate(city: str) -> str:
     """Return the delivery estimate for a city.
 
@@ -74,8 +74,8 @@ class AppendCartPostHook(PostHook):
         return "append_cart"
 
 
-# deps_type=dict documents that this agent's deps is the framework_context dict. Pydantic AI does not
-# type-check deps at runtime, so this is a static-typing aid rather than a guard.
+# deps_type=dict documents that this agent's deps is the framework_context dict. It is a static-typing
+# aid only: Pydantic AI does not check deps at runtime.
 shopping_agent = Agent(
     model=MODEL,
     name="shopping",

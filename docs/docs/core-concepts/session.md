@@ -455,9 +455,6 @@ Each framework's native handle:
 - **CrewAI** — no injection and so no native handle; use
   [`get_non_volatile_cache()`](#session-data-storage) for tool-visible per-run state instead (see
   [CrewAI](../frameworks/crewai.md))
-
-See the fidelity table in the [Runner](./runner.md#per-run-framework-context) documentation for what
-each framework round-trips.
 :::
 
 **Rules and constraints:**

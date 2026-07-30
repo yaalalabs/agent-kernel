@@ -181,11 +181,11 @@ class OpenAIRunner(BaseRunner):
                 return AgentReplyText(response="Sorry. No valid content found in the requests")
 
             input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
-            # Inject the per-run framework context so tools can read and write it via RunContextWrapper.context.
+            # Injected as the run context, so tools read and write it via RunContextWrapper.context.
             incoming = self._load_framework_context(session)
             reply = (await Runner.run(agent.agent, input_data, session=session_to_use, context=incoming)).final_output
 
-            # OpenAI tools mutate the injected object in place, so the produced state is the same object.
+            # Tools mutate the injected object in place, so the produced state is that same object.
             self._store_framework_context(session, incoming, incoming)
 
             structured = AgentReplyAny.from_output(reply, prompt)
@@ -225,8 +225,8 @@ class OpenAIRunner(BaseRunner):
                     if event.data.delta:
                         yield event.data.delta
 
-            # Write back only when the stream drains normally, so a disconnect or a framework error leaves the
-            # stored context intact. Deliberately not in a finally.
+            # Only after the stream drains normally, so a disconnect or framework error leaves the stored
+            # context intact. Deliberately not in a finally.
             try:
                 self._store_framework_context(session, incoming, incoming)
             except Exception as e:

@@ -164,10 +164,8 @@ class Session:
 
     def get_framework_context(self) -> dict | None:
         """
-        Returns the per-run framework context carried across turns, or None when none is set.
-        The returned dict is the live stored object, so a pre-hook can edit it in place before the runner
-        loads it. Never auto-creates the key: absent (nothing injected) and {} (injected and round-tripped)
-        are different states, and a read must not turn one into the other.
+        Returns the live per-run framework context dict, so hooks can edit it in place.
+        Never auto-creates the key: absent means "nothing injected", {} means "injected but empty".
         :return: The stored framework context dict, or None when the key is absent.
         """
         return self.get(Session.Keys.FRAMEWORK_CONTEXT.value)
@@ -177,7 +175,7 @@ class Session:
         Seeds or replaces the per-run framework context carried across turns.
         :param context: The context dict to store. Must be picklable, since sessions are persisted with pickle.
         :return: The stored context dict.
-        :raises TypeError: If context is not a dict, so caller misuse fails here rather than mid-run.
+        :raises TypeError: If context is not a dict.
         """
         if not isinstance(context, dict):
             raise TypeError(
@@ -258,11 +256,10 @@ class Runner(ABC):
 
     def _load_framework_context(self, session: Session | None) -> dict | None:
         """
-        Returns a deep copy of the per-run framework context stored in the session, or None if the key is absent.
-        The copy isolates the stored value from in-run mutation, so a failed run leaves the previously stored
-        context intact.
-        :param session: The session to read the reserved framework_context key from, or None.
-        :return: A deep copy of the stored dict, or None when the key is absent.
+        Loads the per-run framework context to inject into this run.
+        Returns a deep copy, so a failed run leaves the stored context intact.
+        :param session: The session to read the framework context from, or None.
+        :return: A deep copy of the stored dict, or None when nothing is stored.
         :raises TypeError: If the stored value is not a dict.
         """
         if session is None:
@@ -280,12 +277,11 @@ class Runner(ABC):
 
     def _store_framework_context(self, session: Session | None, incoming: dict | None, produced: Mapping[str, Any] | None) -> None:
         """
-        Shallow-merges the framework's post-run state over the context loaded this turn and writes the result
-        back to the reserved framework_context key. Keys the framework touched win; untouched caller keys are
-        preserved. No-op when the key was absent this turn.
-        :param session: The session to write the merged framework_context back to, or None.
-        :param incoming: The deep copy loaded this turn, or None when the key was absent.
-        :param produced: The framework's post-run state delta, or None.
+        Merges the framework's post-run state over the context loaded this turn and stores the result.
+        Keys the framework touched win; untouched caller keys are preserved. No-op when nothing was loaded.
+        :param session: The session to write the merged context back to, or None.
+        :param incoming: The context loaded this turn, or None when nothing was stored.
+        :param produced: The framework's post-run state, or None.
         """
         if session is None or incoming is None:
             return
@@ -299,8 +295,8 @@ class Runner(ABC):
     def _not_picklable(value: Any) -> bool:
         """
         Checks whether the given value can be pickled.
-        :param value: The value to test for picklability.
-        :return: True if the value cannot be pickled, otherwise False.
+        :param value: The value to test.
+        :return: True if the value cannot be pickled.
         """
         try:
             pickle.dumps(value)
@@ -311,10 +307,9 @@ class Runner(ABC):
     @classmethod
     def _ensure_framework_context_picklable(cls, session: Session, ctx: Mapping[str, Any]) -> None:
         """
-        Fails fast if the merged context cannot be pickled. Sessions are persisted with pickle, so a
-        non-picklable value would otherwise abort the whole session store() with an opaque error.
+        Fails fast if the context cannot be pickled, before it can break the session store.
         :param session: The session whose id is named in the error.
-        :param ctx: The merged framework_context to validate.
+        :param ctx: The framework context to validate.
         :raises TypeError: If any value in ctx is not pickle-serializable.
         """
         try:
@@ -333,10 +328,9 @@ class Runner(ABC):
     @staticmethod
     def _log_framework_context_stream_failure(session: Session | None, error: Exception) -> None:
         """
-        Logs a streamed-run framework_context write-back failure instead of raising it. Raising from a stream
-        would escape the generator as a transport error and skip Runtime.stream's session store(), losing the
-        whole turn's state rather than just the context.
-        :param session: The session whose write-back failed, named in the log message.
+        Logs a framework context write-back failure at the end of a streamed run instead of raising it.
+        Raising here would surface as a transport error and skip the turn's session store.
+        :param session: The session whose write-back failed.
         :param error: The exception raised while producing or storing the context.
         """
         session_id = session.id if session is not None else "<none>"
@@ -481,9 +475,7 @@ class Agent(ABC):
     @staticmethod
     def _append_tools(agent: Any, wrapped: list[Any]) -> None:
         """
-        Appends already-wrapped tools to a framework-native agent's list-based `tools` attribute,
-        creating the list when it is absent and skipping tools that are already attached. Shared by
-        the framework agents whose native tool collection is a plain list.
+        Appends already-wrapped tools to a framework agent's list-based `tools` attribute, skipping duplicates.
         :param agent: The framework-native agent holding the `tools` attribute.
         :param wrapped: The wrapped tools to attach.
         """

@@ -27,12 +27,7 @@ class CalendarEvent(BaseModel):
 def _mock_agent(output, messages=None):
     """
     Build a mock wrapping a native Pydantic AI agent whose ``run()`` returns a result with ``.output``.
-
-    Note the mock-target correction from ``test_openai_runner.py``: Pydantic AI has no module-level
-    ``Runner`` class (the OpenAI SDK calls ``Runner.run(agent.agent, ...)`` as a free function). Here
-    ``run()`` is an instance method on the agent object itself, so the mock lives on
-    ``mock_agent.agent.run`` and returns a result whose structured value is on ``.output`` (not
-    ``.final_output``). ``.all_messages()`` returns an empty list so history persistence is a no-op.
+    ``run()`` is an instance method on the agent itself, so the mock lives on ``mock_agent.agent.run``.
     """
     mock_run_result = MagicMock()
     mock_run_result.output = output
@@ -75,10 +70,8 @@ def _mock_stream_agent(deltas, on_stream=None):
 
 class TestPydanticAIRunnerFrameworkContext:
     """
-    framework_context injection and write-back for PydanticAIRunner. ``deps`` is Pydantic AI's only
-    caller-dependency slot and AK owns it — the runner previously passed no ``deps=`` at all, so every
-    agent received the ``None`` default. Fidelity matches OpenAI (full round-trip), because tools mutate
-    the injected object in place through ``RunContext.deps``.
+    framework_context injection and write-back for PydanticAIRunner. The context is injected as ``deps``,
+    and tools mutating it through ``RunContext.deps`` round-trip back to the session.
     """
 
     @pytest.mark.asyncio
@@ -172,8 +165,8 @@ class TestPydanticAIRunnerFrameworkContext:
     async def test_stream_disconnect_leaves_context_intact(self):
         """
         A client disconnect (GeneratorExit at a yield) skips the write-back after the delta loop.
-        Mocks run_stream rather than using TestModel: closing the generator mid-stream from the test task
-        cannot unwind Pydantic AI's real anyio cancel scope, which is a test-harness limit, not a runner one.
+        Mocks run_stream because closing the generator from the test task cannot unwind Pydantic AI's
+        real anyio cancel scope.
         """
         runner = PydanticAIRunner()
         session = Session("stream-session")
@@ -370,10 +363,7 @@ class TestPydanticAIRunnerStructuredOutput:
 
 class TestPydanticAIRunnerStreaming:
     """
-    Cover PydanticAIRunner.stream() — the adapter's headline differentiator (every sibling except
-    OpenAI stubs stream() with NotImplementedError), and previously the only capability shipped with
-    no automated test. The e2e harness can't drive SSE, but a generator-level unit test can: it
-    asserts deltas are yielded and that session history is persisted from the streamed result,
+    PydanticAIRunner.stream() yields deltas and persists session history from the streamed result,
     mirroring the run() tests. Uses the real TestModel streaming path rather than mocks.
     """
 

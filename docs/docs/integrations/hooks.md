@@ -135,13 +135,11 @@ class AppendCart(PostHook):
 ```
 
 :::warning Tools use the framework's native handle, not these accessors
-The runner injects a **deep copy** and, on success, replaces the stored context wholesale with what the
-framework produced. A tool that writes through `ToolContext.get().session` is therefore writing to a
-different object than the run is carrying, and its write is discarded on every framework except CrewAI.
-Tools should use `RunContextWrapper.context` (OpenAI), `RunContext.deps` (Pydantic AI),
-`tool_context.state` (Google ADK), a declared state channel (LangGraph), or a pre-seeded `agent.state`
-key (smolagents). See the [fidelity table](../core-concepts/runner.md#per-run-framework-context) for
-what each framework round-trips.
+These accessors are for hooks only. A tool that writes through `ToolContext.get().session` writes to a
+different object than the run is carrying, so its write is discarded — tools must use their framework's
+native handle instead. See
+[Session → Framework context / per-run state](../core-concepts/session.md#framework-context--per-run-state)
+for the handle to use per framework and why.
 :::
 
 ### Structured Replies in Hooks

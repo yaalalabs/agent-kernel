@@ -1,10 +1,7 @@
 """Regression tests: the Langfuse LangGraph traced runner must not bypass framework_context.
 
-Before the fix, ``LangFuseLangGraph.run()`` reimplemented the ``ainvoke`` call and never loaded,
-injected, or wrote back the reserved ``framework_context`` key — so the feature silently no-opped
-whenever Langfuse tracing was enabled for LangGraph. The runner now delegates to
-``LangGraphRunner.run()`` (wiring the Langfuse callback in via ``_prepare_session_and_messages``),
-so the shared base plumbing runs in the traced path too.
+``LangFuseLangGraph.run()`` delegates to ``LangGraphRunner.run()`` and wires the Langfuse callback in
+via ``_prepare_session_and_messages``, so the shared base plumbing runs in the traced path too.
 """
 
 import contextlib

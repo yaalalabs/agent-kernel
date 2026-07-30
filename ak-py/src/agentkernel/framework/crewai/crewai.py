@@ -274,7 +274,7 @@ class CrewAIRunner(Runner):
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.crewai.runner")
         self._context_warned = False
-        """Whether the unsupported-framework_context warning has already been logged by this runner."""
+        """Whether the unsupported-framework_context warning was already logged."""
 
     def _transcript(self, session: Session) -> list[str] | None:
         """
@@ -378,8 +378,7 @@ class CrewAIRunner(Runner):
                 memory=memory,
             )
             # CrewAI's kickoff(inputs=...) are template-interpolation variables, not a context/state object, so
-            # there is no per-run caller-state slot. The stored key is left untouched and warned about once per
-            # runner, since the condition holds for every turn of the session.
+            # there is no per-run caller-state slot. Warn once, and leave the stored context untouched.
             if not self._context_warned and session is not None and session.get_framework_context():
                 self._log.warning("framework_context is set but CrewAI does not support per-run caller context/state; ignoring it.")
                 self._context_warned = True

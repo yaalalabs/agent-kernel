@@ -153,7 +153,7 @@ class SmolagentsRunner(Runner):
             # Rehydrate framework memory from the AgentKernel session before execution.
             self._hydrate_memory(agent, session)
 
-            # Inject the per-run framework context as smolagents additional_args, only when one is present.
+            # Injected as smolagents additional_args, only when a context is present.
             incoming = self._load_framework_context(session)
             run_kwargs: dict[str, Any] = {"reset": False}
             if incoming is not None:
@@ -165,8 +165,8 @@ class SmolagentsRunner(Runner):
             # Persist updated framework memory back to the AgentKernel session.
             self._sync_memory(agent, session)
 
-            # Write back only the keys the caller seeded: agent.state also holds framework-internal entries with
-            # no clean prefix to filter on, so a brand-new key a tool adds is not round-tripped.
+            # Only the keys the caller seeded: agent.state also holds framework-internal entries with no prefix
+            # to filter on, so a brand-new key a tool adds is not round-tripped.
             produced: dict[str, Any] | None = None
             if incoming is not None and hasattr(agent.agent, "state") and isinstance(agent.agent.state, dict):
                 produced = {k: agent.agent.state[k] for k in incoming if k in agent.agent.state}

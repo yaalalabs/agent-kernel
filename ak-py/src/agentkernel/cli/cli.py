@@ -51,8 +51,7 @@ class CLI:
     async def _ainput(prompt: str) -> str:
         """
         Reads a line of input without blocking the event loop, so background tasks keep running between turns.
-        The reader runs on a daemon thread so Ctrl+C exits promptly instead of waiting on a thread parked in
-        `input()`.
+        The reader is a daemon thread, so Ctrl+C exits instead of waiting on a thread parked in `input()`.
         :param prompt: The prompt to display to the user.
         :return: The line entered by the user.
         """

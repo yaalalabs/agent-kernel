@@ -11,11 +11,8 @@ from agentkernel.core.logger import AKLogger
 def restore_logging_state():
     """
     Snapshots and restores process-wide logging state around every test in this module.
-
-    AKLogger mutates the root and "ak" loggers in place — level, handlers, propagate — and
-    attach_stream_handler installs a StreamHandler writing to real stderr. Without this restore
-    that handler outlives the test and every later test in the session prints its expected logs
-    (including deliberately triggered error paths) to stderr, which reads as a CI failure.
+    AKLogger mutates the root and "ak" loggers in place, so without this the handlers it installs
+    outlive the test and later tests print their expected logs to stderr.
     """
     loggers = [logging.getLogger(), logging.getLogger("ak")]
     snapshot = [(logger, logger.level, logger.handlers.copy(), logger.propagate) for logger in loggers]

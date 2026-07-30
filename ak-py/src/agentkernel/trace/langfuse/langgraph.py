@@ -24,8 +24,7 @@ class LangFuseLangGraph(LangGraphRunner):
     def _prepare_session_and_messages(self, agent: Any, session: Session, prompt: str) -> tuple[dict, list]:
         """
         Wires the Langfuse callback handler into the base runner's session config so LangGraph emits traces.
-        Overriding this seam rather than the whole run/stream bodies keeps the base runner in charge of message
-        building and framework_context handling, so tracing never bypasses them.
+        Overriding only this seam keeps message building and framework_context handling in the base runner.
         :param agent: The LangGraph agent.
         :param session: The AgentKernel session.
         :param prompt: The prompt text.

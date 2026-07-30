@@ -78,10 +78,9 @@ class GoogleADKSession:
 
     async def get_state(self) -> dict:
         """
-        Returns the current session-scoped ADK state with non-caller keys stripped: the AK-internal
-        ``ak_tool_context`` id, plus the ``app:`` / ``user:`` / ``temp:`` prefixed keys that are app-, user- or
-        invocation-scoped rather than session state.
-        :return: The accumulated session-scoped ADK state, or an empty dict when no session exists.
+        Returns the caller-visible ADK session state, stripping the AK-internal ``ak_tool_context`` id and the
+        ``app:`` / ``user:`` / ``temp:`` prefixed keys that are not session-scoped.
+        :return: The accumulated session state, or an empty dict when no session exists.
         """
         if self._session is None:
             return {}
@@ -167,12 +166,11 @@ class GoogleADKRunner(BaseRunner):
         :param agent: The ADK agent.
         :param session: The AgentKernel session.
         :param requests: The requests.
-        :param injected: The per-run framework context to seed into the ADK session state alongside
-                         the AK-internal ``ak_tool_context`` id, or None to seed nothing extra.
+        :param injected: The per-run framework context to seed into the ADK session state, or None.
         :return: Tuple of (user_id, runner, tool_context, adk_session). The caller is responsible for
                  entering/exiting the returned tool_context around the runner's actual execution, since
                  tools invoked by the agent look up this context by id from the cache while the agent is
-                 running; the returned adk_session lets the caller read state back without re-fetching.
+                 running. The returned adk_session lets the caller read state back without re-fetching.
         """
         app_name = "AgentKernel"
         user_id = "AgentKernel"
@@ -180,8 +178,7 @@ class GoogleADKRunner(BaseRunner):
 
         ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
         await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
-        # The AK-internal key is assigned last so a caller key of the same name cannot replace the id tools
-        # resolve their context by.
+        # Assigned last so a caller key of the same name cannot replace the id tools resolve their context by.
         state = dict(injected or {})
         state["ak_tool_context"] = ctx.id
         await adk_session.update_session_state(ctx.id, agent.name, state)
@@ -203,9 +200,8 @@ class GoogleADKRunner(BaseRunner):
         response_text = ""
 
         if hasattr(runner, "run_async"):
-            # Drain the stream instead of breaking on the first final response. Stopping early makes ADK cancel
-            # its still-running root agent task, and the last final response is the right one when sub-agents
-            # are involved.
+            # Drain the stream instead of breaking early: stopping early cancels ADK's still-running root agent
+            # task, and with sub-agents the last final response is the one to return.
             async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=new_message):
                 if event.is_final_response() and event.content and event.content.parts:
                     text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
@@ -238,8 +234,8 @@ class GoogleADKRunner(BaseRunner):
             with ctx:
                 reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
 
-            # Read ADK's accumulated state back and write it back in full, so keys a tool added during the run
-            # also round-trip. After the run, so a framework error leaves the stored context intact.
+            # Write back the full ADK state, so keys a tool added during the run also round-trip. Done after
+            # the run, so a framework error leaves the stored context intact.
             if incoming is not None:
                 produced = await adk_session.get_state()
                 self._store_framework_context(session, incoming, produced)
@@ -289,8 +285,8 @@ class GoogleADKRunner(BaseRunner):
                     if chunk:
                         yield chunk
 
-                # Write back only after the event stream drains normally, so a disconnect or a mid-stream error
-                # leaves the stored context intact. Deliberately not in a finally.
+                # Only after the stream drains normally, so a disconnect or mid-stream error leaves the stored
+                # context intact. Deliberately not in a finally.
                 if incoming is not None:
                     try:
                         produced = await adk_session.get_state()

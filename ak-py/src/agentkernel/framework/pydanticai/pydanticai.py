@@ -146,15 +146,15 @@ class PydanticAIRunner(BaseRunner):
             fw_session = self._session(session)
             history = ModelMessagesTypeAdapter.validate_python(fw_session.messages) if fw_session and fw_session.messages else None
 
-            # `deps` is Pydantic AI's only caller-dependency slot and AK owns it, so injecting the per-run
-            # framework context is additive: tools and instruction functions read and mutate it via RunContext.deps.
+            # `deps` is Pydantic AI's only caller-dependency slot and AK owns it, so tools and instruction
+            # functions read and mutate the context via RunContext.deps.
             incoming = self._load_framework_context(session)
             result = await agent.agent.run(content, message_history=history, deps=incoming)
 
             if fw_session is not None:
                 fw_session.messages = to_jsonable_python(result.all_messages())
 
-            # Tools mutate the injected object in place, so the produced state is the same object.
+            # Tools mutate the injected object in place, so the produced state is that same object.
             self._store_framework_context(session, incoming, incoming)
 
             structured = AgentReplyAny.from_output(result.output, prompt)
@@ -202,8 +202,8 @@ class PydanticAIRunner(BaseRunner):
                 if fw_session is not None:
                     fw_session.messages = to_jsonable_python(result.all_messages())
 
-                # Write back only when the stream drains normally, so a disconnect or a mid-stream error leaves
-                # the stored context intact. Deliberately not in a finally.
+                # Only after the stream drains normally, so a disconnect or mid-stream error leaves the stored
+                # context intact. Deliberately not in a finally.
                 try:
                     self._store_framework_context(session, incoming, incoming)
                 except Exception as e:
