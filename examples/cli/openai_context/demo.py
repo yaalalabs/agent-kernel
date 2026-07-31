@@ -69,7 +69,9 @@ shopping_agent = Agent(
     tools=OpenAIToolBuilder.bind([add_to_cart, view_cart]),
 )
 
-OpenAIModule([shopping_agent]).pre_hook(shopping_agent, [SeedCartContextPreHook()]).post_hook(shopping_agent, [AppendCartPostHook()])
+OpenAIModule([shopping_agent]).pre_hook(shopping_agent, [SeedCartContextPreHook()]).post_hook(
+    shopping_agent, [AppendCartPostHook()]
+)
 
 if __name__ == "__main__":
     CLI.main()
