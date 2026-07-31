@@ -53,31 +53,21 @@ def run_command(command: list[str], cwd: str = None, description: str = "", env:
 
 
 def wait_for_endpoint(url: str, timeout: int = 300, interval: int = 10) -> bool:
-    """Poll an endpoint with POST until it responds with a non-5xx status.
+    """Poll an endpoint until it responds with a non-5xx status.
 
     Containerized deployments return 5xx from the load balancer until the
-    tasks are running and registered as healthy targets. The probe sends a
-    generic POST body, so a non-5xx response (including 4xx, which the app
-    may return because the probe can't match each example's exact request
-    schema) means traffic is reaching the application.
+    tasks are running and registered as healthy targets. A non-5xx response
+    (including 4xx, since the invoke endpoint may reject GET) means traffic
+    is reaching the application.
     """
     print(f"\n{'='*80}")
-    print(f"Waiting for endpoint to become ready (POST): {url}")
+    print(f"Waiting for endpoint to become ready: {url}")
     print(f"{'='*80}\n")
-
-    body = json.dumps({"prompt": "readiness probe"}).encode()
-    request_timeout = 35
 
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            req = urllib.request.Request(
-                url,
-                data=body,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=request_timeout) as resp:
+            with urllib.request.urlopen(url, timeout=10) as resp:
                 print(f"✅ Endpoint ready (HTTP {resp.status})")
                 return True
         except urllib.error.HTTPError as e:
