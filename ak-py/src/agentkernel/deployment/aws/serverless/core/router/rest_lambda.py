@@ -115,6 +115,15 @@ class DefaultEndpointsHandler:
             result = operation(request)
             return (200, result)  # (statusCode, body) will be handled in aklambda.py
 
+        # Missing/invalid request fields (e.g. session_id) are caller errors, so
+        # surface them as 400 instead of masking them behind a server 500. This
+        # also lets a generic readiness probe — which can't know each example's
+        # required fields — tell "reachable but bad request" (4xx) apart from
+        # "infra still rolling out" (5xx). ValidationError subclasses ValueError.
+        except ValueError as e:
+            self._log.warning(f"Invalid request: {e}")
+            return (400, self._build_failure_body(request_id, message=str(e)))  # (statusCode, body) will be handled in aklambda.py
+
         # Log and hide unexpected failures behind a generic 500 response.
         except Exception as e:
             self._log.error(f"Request failed: {e}\n{traceback.format_exc()}")
