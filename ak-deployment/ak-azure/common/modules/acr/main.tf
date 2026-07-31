@@ -44,7 +44,7 @@ resource "azurerm_container_registry" "acr" {
   ))
 
   resource_group_name = data.azurerm_resource_group.current_group[0].name
-  location            = data.azurerm_resource_group.current_group[0].location
+  location            = var.region
   sku                 = "Basic"
   admin_enabled       = true
 }

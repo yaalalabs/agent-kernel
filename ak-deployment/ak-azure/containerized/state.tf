@@ -69,6 +69,7 @@ module "vnet" {
 module "redis" {
   count                    = var.create_redis_cluster == true ? 1 : 0
   source                   = "yaalalabs/ak-common/azurerm//modules/redis"
+  region                         = var.region
   version                  = "0.7.0"
   product_alias            = var.product_alias
   subnet_name              = local.subnet_name
@@ -88,6 +89,7 @@ module "redis" {
 module "cosmos" {
   count                          = var.create_cosmosdb_cluster == true ? 1 : 0
   source                         = "yaalalabs/ak-common/azurerm//modules/cosmos"
+  region                         = var.region
   version                        = "0.7.0"
   product_alias                  = var.product_alias
   env_alias                      = var.env_alias

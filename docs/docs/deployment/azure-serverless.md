@@ -92,6 +92,8 @@ Response:
 }
 ```
 
+> The handler also accepts a flat body (no `body` envelope) — e.g. `{"agent": "assistant", "prompt": "Hello!", "session_id": "user-123"}` — validating it directly as the chat request. This is useful for probes/health checks that POST a bare JSON object; a request with neither form (empty/null body) still raises a client error.
+
 ### Custom endpoints (multiple handlers)
 
 You can attach additional HTTP routes to the same Function App by registering handlers per path and method:
