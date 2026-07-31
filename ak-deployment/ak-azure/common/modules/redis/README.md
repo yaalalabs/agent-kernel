@@ -30,6 +30,7 @@ Perfect for session storage, caching, and real-time applications requiring high-
 ## Inputs
 Key inputs (see `variables.tf` for full list):
 - `product_alias`, `env_alias`, `module_name`, `tags`
+- `region` (required) — Azure region for resources (Redis instance, private endpoint, and NSG all deploy here, independent of the resource group's own location)
 - `resource_group_name` (required) — Azure resource group name
 - `vnet_name` (required) — Virtual Network name for private endpoint
 - `vnet_resource_group_name` (optional) — VNet resource group if different from current RG
