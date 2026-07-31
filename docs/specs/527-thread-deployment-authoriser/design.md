@@ -5,9 +5,9 @@ Conversation Thread Support (`thread:` config block, #348) shipped with pluggabl
 store, and no way to protect thread routes on serverless or containerized deployments. This change
 adds thread-store provisioning + env-var wiring + IAM to the AWS and GCP Terraform (mirroring each
 cloud's existing session-store pattern; Azure is out of scope, see Non-goals), native thread routes
-to the Lambda REST router
-protected by the existing `APIGatewayAuthorizer`, and an `Authoriser`-mounting seam to ECS's
-queue-mode entrypoint.
+to the Lambda REST router protected by the existing `APIGatewayAuthorizer`, and a matching
+gateway-level Lambda authorizer in front of ECS's containerized HTTP API — so no deployer-authored
+authorization code ever runs inside the ECS container itself (see Motivation).
 
 ## Motivation
 
@@ -21,23 +21,40 @@ queue-mode entrypoint.
 - **No Authoriser on serverless.** The Lambda REST router only exact-matches literal, static paths
   (`ak-py/src/agentkernel/deployment/aws/serverless/core/router/rest_lambda.py:354-388`), so no
   thread-listing or thread-detail endpoint exists today.
-- **No Authoriser on containerized queue mode.** `ECSIOHandler.run()` hardcodes
-  `RESTAPI.run(handlers=[ECSQueueRequestHandler()])`
+- **No Authoriser on containerized queue mode — and the obvious in-process fix is itself a risk.**
+  `ECSIOHandler.run()` hardcodes `RESTAPI.run(handlers=[ECSQueueRequestHandler()])`
   (`ak-py/src/agentkernel/deployment/aws/containerized/ecs_io_handler.py:29-51`), so `RESTAPI.run`
   auto-mounts an *open* `ThreadRESTRequestHandler` (`ak-py/src/agentkernel/api/http.py:96-104`) with
   no way to pass a configured `Authoriser` — exactly the interim state the #348 design said to close
-  (`docs/specs/348-conversation-thread-support/design.md:81`).
+  (`docs/specs/348-conversation-thread-support/design.md:81`). An earlier draft of this design closed
+  the gap by giving `ECSIOHandler.run()` a deployer-suppliable `authoriser` parameter, mirroring
+  ECS's own `ThreadRESTRequestHandler(authoriser=...)` mechanism used elsewhere. That was
+  reconsidered and rejected: `ECSIOHandler` is an AK-maintained, shared entrypoint reused across many
+  deployments, running in the same container/process as the SQS output-consumer thread — accepting
+  and executing an arbitrary deployer-authored `Authoriser` subclass there means AK's own shared code
+  executes untrusted authorization logic in a trust boundary it doesn't control. This is different
+  from a deployer's own hand-written `app.py` (e.g. `examples/aws-containerized/crewai-auth/app.py:44-60`,
+  which already does something similar via `RESTAPI.add_auth_handlers`) — that is code the deployer
+  wrote and owns for their own process, not code AK's shared entrypoint is asked to run on their
+  behalf. The fix adopted instead: mirror serverless's model exactly — move authorization to an
+  isolated Lambda invoked by API Gateway, before the request ever reaches ECS (see Requirements).
 
 ## Scope
 
-- This change covers thread-store provisioning + env wiring across **AWS and GCP** — plus the
-  Authoriser work on AWS serverless and ECS. Issue #527 originally scoped GCP provisioning as a
-  follow-up ticket; that scope was **intentionally expanded during design review** to land it
-  alongside AWS (they share one env-var contract and mirror the existing session-store wiring).
-  Azure is **dropped from this change entirely** (see Non-goals) — it can be scoped as a separate
-  follow-up. Issue #527 is being updated to match this scope.
-- Authoriser/route-authorization plumbing remains AWS-only (see Non-goals); the GCP work here is
-  store provisioning + env wiring only.
+- This change covers thread-store provisioning + env wiring across **AWS and GCP**, but Authoriser /
+  route-authorization plumbing is **AWS-only** (serverless + ECS) — see Non-goals. Issue #527
+  originally scoped GCP provisioning as a follow-up ticket; that scope was **intentionally expanded
+  during design review** to land it alongside AWS (they share one env-var contract and mirror the
+  existing session-store wiring). GCP Authoriser work was considered during this same review pass and
+  **deliberately kept out** (see Non-goals and Open questions) — Azure is **dropped from this change
+  entirely** (see Non-goals) — it can be scoped as a separate follow-up. Issue #527 is being updated
+  to match this scope.
+- The two AWS mechanisms are **not the same shape**, and that's deliberate: serverless protects its
+  raw-event Lambda router with a gateway-level Lambda authorizer (unchanged from the original design);
+  ECS gets a **new** gateway-level Lambda authorizer of its own (not an in-process `Authoriser`
+  parameter — see Motivation and Requirements) protecting its containerized HTTP API, with the
+  resolved principal forwarded to the ECS container via a header rather than by executing any
+  deployer-supplied code inside it.
 
 ## Architecture overview
 
@@ -54,8 +71,14 @@ flowchart TB
     end
 
     subgraph ecs["AWS containerized (ECS, queue mode)"]
-        IOH["ECSIOHandler.run(authoriser=...)<br/>(new parameter)"]
-        TRH["ThreadRESTRequestHandler<br/>(authoriser)"]
+        APIGW2["API Gateway (HTTP API)<br/>gateway_endpoints:<br/>deployer-named, manually configured"]
+        AuthL2["Lambda authorizer<br/>(user-supplied AuthValidator)<br/>(new)"]
+        ALB["ALB (internal only)"]
+        IOH["ECSIOHandler.run()<br/>(no authoriser param)"]
+        TRH["ThreadRESTRequestHandler<br/>(trusts forwarded principal header)"]
+        APIGW2 -.->|"authorize"| AuthL2
+        APIGW2 -->|"forward principal via header"| ALB
+        ALB --> IOH
         IOH --> TRH
     end
 
@@ -72,7 +95,7 @@ flowchart TB
     end
 
     Client --> APIGW
-    Client --> IOH
+    Client --> APIGW2
     AppL --> CTM
     TRH --> CTM
     TSB --> DDB
@@ -155,7 +178,7 @@ rather than worked around by any one feature.
 - **Zero regression risk for existing routes**: the fallback only ever triggers on requests that
   would otherwise hit the no-route `ValueError`. Every existing static route (all four current
   examples using `Lambda.register`) matches on the first (`path`-based) attempt, completely
-  unaffected — verified by dedicated regression tests (see `spec.md` Testing).
+  unaffected — to be verified by dedicated regression tests during implementation.
 - **Trade-off, explicitly accepted**: this touches `dispatch()`, shared production routing code used
   by every existing Lambda deployment. It needs its own dedicated tests (not just thread-specific
   ones) and must be checked against the existing default-chat-path special-casing in the same
@@ -216,15 +239,55 @@ rather than worked around by any one feature.
   `dynamodb_policy`/`tasks_iam_role_policies` (`rest-service/main.tf:33-61`, `:185-189`) and
   `agent_runner_dynamodb_memory_policy` (`agent-runner/main.tf:123-154`).
 
-### AWS containerized (ECS) — Authoriser mounting
+### AWS containerized (ECS) Terraform — API Gateway Lambda authorizer
 
-- `ECSIOHandler.run()` gains an optional `authoriser: Optional[Authoriser] = None` parameter
-  (`ecs_io_handler.py:29-51`), and when `AKConfig.get().thread is not None` passes
-  `ThreadRESTRequestHandler(authoriser=authoriser)` explicitly in the handlers list so
-  `RESTAPI.run`'s `isinstance` check skips auto-mounting a second, open one (`api/http.py:96-104`).
-- Non-queue-mode ECS (direct `RESTAPI.run(handlers=[...])`, e.g.
-  `examples/aws-containerized/openai-dynamodb/app.py`) needs no change — the caller already controls
-  the handlers list, same as `examples/api/thread-openai/app.py`.
+Mirrors serverless's gateway-level authorizer, not ECS's own in-process mechanism — see Motivation
+for why an in-process `authoriser` parameter on `ECSIOHandler.run()` was rejected.
+
+- New `authorizer` Terraform variable on `ak-deployment/ak-aws/containerized/variables.tf`, same
+  shape as serverless's (`serverless/variables.tf:284-304`: `function_name`, `handler_path`,
+  `package_path`, `package_type`, `module_name`, etc.), reusing the same shared
+  `ak-deployment/ak-aws/common/modules/authorizer/` Lambda-building module already used by serverless
+  (referenced via `source = "yaalalabs/ak-common/aws//modules/authorizer"`,
+  `serverless/state.tf:170`) — that module only builds a Lambda + IAM role and is
+  API-Gateway-version-agnostic, so it needs no changes to be reused here.
+- New `aws_apigatewayv2_authorizer` resource in containerized `api_gateway.tf` attaching that Lambda
+  to the HTTP API (v2), alongside the existing `aws_apigatewayv2_vpc_link`/`aws_apigatewayv2_integration`
+  resources (`api_gateway.tf:20-37`) — no such resource exists anywhere in this repo today (verified
+  by grep). **The exact `authorizer_payload_format_version` needed to reuse the existing IAM-policy-shaped
+  `APIGatewayAuthorizer`/`AuthValidator` Python classes unchanged is not yet verified against AWS's
+  actual behavior** (likely `"1.0"`, which uses the same IAM-policy response shape as REST API v1 —
+  to be confirmed via `terraform validate`/testing during implementation, not assumed here).
+- New header-forwarding mapping on the existing ALB integration's `request_parameters`
+  (`api_gateway.tf:26-37`, which today only sets `"overwrite:path"`) so the authorizer's resolved
+  principal reaches the ECS container as a plain header instead of requiring any code to run inside
+  it. **The exact mapping syntax for forwarding `$context.authorizer.principalId` this way is not yet
+  verified** — to be confirmed during implementation.
+- This is safe specifically because the ALB is already internal-only
+  (`ak-deployment/ak-aws/containerized/modules/rest-service/main.tf:109`: `internal = true`) — nothing
+  can reach the ECS container directly to forge that header, bypassing the gateway authorizer
+  entirely.
+- Reuses the existing `AuthValidator`/`APIGatewayAuthorizer` Python classes unchanged (same as
+  serverless, `ak-py/src/agentkernel/deployment/aws/serverless/akauthorizer.py`) — the deployer's
+  custom validation logic lives only in this isolated Lambda, never inside the ECS container.
+
+### AWS containerized (ECS) — authorization
+
+- `ECSIOHandler.run()` gains **no** deployer-suppliable `authoriser` parameter — this is a deliberate,
+  named rejected alternative (see Motivation): AK's shared, maintained queue-mode entrypoint must not
+  execute arbitrary deployer-authored authorization code in a trust boundary it doesn't control.
+- When thread is enabled, `ECSIOHandler` mounts `ThreadRESTRequestHandler` using an AK-authored (not
+  deployer-supplied) mechanism that trusts the principal forwarded via header by the new gateway
+  authorizer above, instead of invoking a deployer's `Authoriser.authorise()` in-process. The exact
+  shape of this mechanism — a new `ThreadRESTRequestHandler` header-trust mode vs. an AK-internal
+  built-in `Authoriser` implementation that simply reads the header — is an implementation decision
+  deferred to the implementation spec, not pinned down here.
+- **Non-queue-mode ECS is unchanged.** A deployer writing their own `app.py` directly (the
+  `examples/aws-containerized/crewai-auth/app.py:44-60` pattern, which already calls
+  `RESTAPI.add_auth_handlers(auth_validators=[CustomAuthValidator()])` in-process) can still construct
+  `ThreadRESTRequestHandler(authoriser=...)` themselves with their own `Authoriser` — that is the
+  deployer's own process and their own risk to accept, no different from what `crewai-auth` already
+  does today. Only `ECSIOHandler`'s shared, AK-maintained entrypoint is restricted.
 
 ### AWS containerized (ECS) — route exposure
 
@@ -241,8 +304,9 @@ rather than worked around by any one feature.
   free choice of the *external* path name while the *internal* FastAPI route stays fixed:
   - `{ path = "threads",              method = "GET", overwrite_path = "/api/v1/threads" }`
   - `{ path = "threads/{session_id}", method = "GET", overwrite_path = "/api/v1/threads/${request.path.session_id}" }`
-- These entries are protected by the deployment's configured `authorizer`, and the mounted
-  `ThreadRESTRequestHandler` applies the same principal scoping as serverless.
+- These entries are now protected by the new gateway-level Lambda authorizer above (attached to the
+  HTTP API), the same protection model as serverless's `gateway_endpoints` — replacing the earlier
+  draft's in-process-only protection.
 
 ### GCP Terraform — Firestore thread wiring
 
@@ -286,9 +350,19 @@ rather than worked around by any one feature.
   resources, no new Terraform booleans.
 - Changing session/multimodal/response-store deployment wiring — thread mirrors their patterns but
   does not touch them.
-- GCP thread REST-route authorization plumbing beyond what its gateway already provides — this
-  issue's Authoriser work targets AWS serverless (APIGatewayAuthorizer) and ECS (`ECSIOHandler`);
-  GCP scope here is store provisioning + env wiring only.
+- **GCP thread-route authorization, entirely** — gateway-level or in-process, in any form. GCP gets
+  store provisioning + env wiring only (see "GCP Terraform — Firestore thread wiring"); no
+  `CloudRun.run(authoriser=...)` parameter, no gateway-authorizer Terraform, nothing analogous to the
+  ECS mechanism above. This was considered and rejected during this design's review pass — see Open
+  questions.
+- `GCPAuthorizer` (`ak-py/src/agentkernel/deployment/gcp/akauthorizer.py`) is unrelated to this change
+  regardless — it wires the separate all-routes `AuthValidator` mechanism (`api/http.py:125-153`),
+  not the per-thread ownership `Authoriser`; this change neither touches nor depends on it.
+- **An in-process, deployer-suppliable `authoriser` parameter on `ECSIOHandler.run()`.** Considered
+  and rejected (see Motivation): it would make AK's shared, maintained queue-mode entrypoint execute
+  arbitrary deployer-authored authorization code inside the same container/process as the SQS
+  output-consumer thread — a trust boundary AK's own code shouldn't be asked to cross. The
+  gateway-level Lambda authorizer above is the adopted alternative.
 - Azure thread-store provisioning — dropped from this change entirely; can be scoped as a separate
   follow-up ticket if needed.
 
@@ -319,6 +393,30 @@ rather than worked around by any one feature.
     however they like while forwarding to the fixed internal FastAPI route.
   - Azure is dropped from this change entirely; GCP remains, verified via `terraform validate` only
     (no live GCP credentials available to this project for `plan`/`apply`).
+  - **GCP Authoriser mounting was pulled into scope, then pulled back out again.** An earlier draft
+    limited Authoriser/route-authorization work to AWS, treating GCP as store-provisioning only. A
+    later revision reconsidered and added a GCP `CloudRun.run(authoriser=...)` mounting mechanism
+    (reasoning: `CloudRun.run()` already calls `RESTAPI.run()` with no `handlers`, the same auto-mount
+    path ECS has, so it looked like a cheap, symmetric addition). This design's current revision
+    reverts that: GCP Authoriser work is fully out of scope again (see Non-goals) — the priority is
+    keeping the AWS-side security fix (below) focused and well-tested, not expanding auth surface
+    area to a third platform in the same change. GCP thread-store *provisioning* stays in scope
+    throughout both revisions — it was never affected by this back-and-forth, since it carries none
+    of the same code-execution/trust concerns.
+  - **ECS's Authoriser mounting was redesigned from an in-process parameter to a gateway-level
+    Lambda authorizer.** An earlier draft gave `ECSIOHandler.run()` a deployer-suppliable `authoriser`
+    parameter, executed in-process inside the same container as the SQS output-consumer thread. This
+    was reconsidered and rejected: AK's shared, maintained queue-mode entrypoint should not execute
+    arbitrary deployer-authored authorization code in a trust boundary it doesn't control (see
+    Motivation, Non-goals). The adopted fix mirrors serverless exactly — an isolated Lambda invoked by
+    API Gateway, with the resolved principal forwarded to ECS via a header, relying on the ALB already
+    being internal-only (`ak-deployment/ak-aws/containerized/modules/rest-service/main.tf:109`) so that
+    header can't be forged by bypassing the gateway. Two implementation specifics are flagged as
+    **unverified from this codebase** and must be confirmed via `terraform validate`/testing during
+    implementation, not assumed: (a) the `authorizer_payload_format_version` HTTP API v2 needs to reuse the
+    existing IAM-policy-shaped `APIGatewayAuthorizer`/`AuthValidator` classes unchanged, and (b) the
+    exact `request_parameters` mapping syntax to forward `$context.authorizer.principalId` as a header
+    on the ALB integration.
   - The Lambda authorization mechanism (gateway-level `APIGatewayAuthorizer`) is unchanged throughout
     all of this — only the route-registration transport changed, not how authorization works — but is
     flagged as needing careful implementation and test attention (see the Risk callout above).
