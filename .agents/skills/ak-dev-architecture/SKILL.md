@@ -425,7 +425,7 @@ The containerized deployment runs on ECS Fargate and uses a two-container archit
 | `AWSRestAPI` | `containerized/core/api/rest_api.py` | Extends `RESTAPI`; defaults to `ECSQueueRequestHandler` (eager `_default_handlers`, safe to construct without config) |
 | `ECSWebSocketHandlerBase` | `containerized/core/api/websocket_api.py` | Abstract shared base for the two WS handlers: connection store, push-endpoint construction, response envelope, `x-ws-*` headers |
 | `ECSWebSocketSystemRequestHandler` | `containerized/core/api/websocket_api.py` | Framework-managed protocol routes `$connect`/`$disconnect`/`$default`; owns the `AuthValidator` (only `$connect` authenticates). Not an extension point |
-| `ECSWebSocketRequestHandler` | `containerized/core/api/websocket_api.py` | Application routes: built-in chat route + custom routes. Framework-managed (not a subclassing extension point); custom routes added via `AWSWebsocketAPI.register(route)` and passed in as `custom_routes`. Needs **no** `AuthValidator` (user resolved from the connection store) |
+| `ECSWebSocketRequestHandler` | `containerized/core/api/websocket_api.py` | Application routes: built-in chat route + custom routes. Framework-managed (not a subclassing extension point) and **not publicly exported** — `AWSWebsocketAPI` constructs it; custom routes are added via `AWSWebsocketAPI.register(route)` and passed in as `custom_routes`. Needs **no** `AuthValidator` (user resolved from the connection store) |
 | `AWSWebsocketAPI` | `containerized/core/api/websocket_api.py` | Extends `RESTAPI`; `run()` (no params) **always builds** exactly two handlers — the system handler (built lazily from the validator registered via `set_auth_handler`) plus one `ECSWebSocketRequestHandler` carrying every route registered via the `register(route)` decorator. Lazy build keeps importing the module safe when WebSocket mode isn't configured |
 
 ### Shared WebSocket Transport (Serverless + Containerized)
@@ -583,7 +583,6 @@ from agentkernel.deployment.aws import (
     ECSOutputConsumer,        # Subclass ECSSQSConsumer for custom output processing
     AWSRestAPI,               # RESTAPI subclass defaulting to ECSQueueRequestHandler
     AWSWebsocketAPI,          # RESTAPI subclass; builds system + custom-route handlers; register(route) decorator
-    ECSWebSocketRequestHandler,       # Application handler (chat + custom routes); routes added via AWSWebsocketAPI.register
     ECSWebSocketSystemRequestHandler, # Framework $connect/$disconnect/$default handler (injected automatically)
 )
 from agentkernel.deployment.aws.containerized.core import ECSSQSConsumer
