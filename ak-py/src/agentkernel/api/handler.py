@@ -78,6 +78,9 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         prompt: str = Form(...),
         agent: Optional[str] = Form(None),
         session_id: Optional[str] = Form(None),
+        user_id: Optional[str] = Form(None),
+        group_id: Optional[str] = Form(None),
+        thread_name: Optional[str] = Form(None),
         files: Optional[List[UploadFile]] = File(None),
         images: Optional[List[UploadFile]] = File(None),
     ):
@@ -85,6 +88,9 @@ class AgentRESTRequestHandler(RESTRequestHandler):
             prompt=prompt,
             agent=agent,
             session_id=session_id,
+            user_id=user_id,
+            group_id=group_id,
+            thread_name=thread_name,
             files=files,
             images=images,
         )
