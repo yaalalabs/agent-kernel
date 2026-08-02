@@ -6,6 +6,8 @@ token-by-token as a sequence of `STREAM_CHUNK` messages instead of one final `CH
 
 - `openai-websocket` (direct WebSocket mode, `async`) — see that example for the auth/wire-protocol
   basics of non-streaming WebSocket mode
+- `openai-websocket-stream` (direct WebSocket mode, `stream`) — see that example if you don't need
+  the Agent Runner to scale independently of ingress; same wire protocol, single ECS service
 - `openai-websocket-scalable` (queue-based WebSocket mode, `async`) — see that example for the
   two-image / autoscaling pattern this one reuses unchanged
 
