@@ -1,7 +1,7 @@
 [project]
-name = "aws-containerized-openai-websocket-stream"
+name = "aws-containerized-openai-stream"
 version = "0.1.0"
-description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on AWS ECS in direct (non-queue), token-streaming WebSocket mode"
+description = "Demo of OpenAI Agents SDK based agents running in Agent Kernel on AWS ECS in queue-based, token-streaming WebSocket mode"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

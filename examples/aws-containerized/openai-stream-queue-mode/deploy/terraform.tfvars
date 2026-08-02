@@ -1,4 +1,4 @@
 region        = "ap-southeast-2"
-product_alias = "ak-oai-ws-dstr-ecs"
+product_alias = "ak-oai-ws-str-ecs"
 env_alias     = "dev"
-module_name   = "examples"
+module_name   = "stream"
