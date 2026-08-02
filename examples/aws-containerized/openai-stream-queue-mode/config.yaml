@@ -6,6 +6,4 @@ session:
   dynamodb:
     table_name: "ak-oai-ws-dstr-ecs-dev-examples-session_store"
 execution:
-  # "async": the full agent reply is pushed back as one CHAT_RESPONSE message.
-  # "stream": each token is pushed back as a separate STREAM_CHUNK message.
   mode: stream
