@@ -94,18 +94,20 @@ class RestHandler(AgentRESTRequestHandler):
             self._log.error(f"Error processing request: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail={"error": str(e), "session_id": body.session_id if body else None})
 
-    async def poll_response(self, request_id: str = None):
+    async def poll_response(self, payload: BaseRunRequest):
         """
         Poll for response (REST_ASYNC mode only).
 
-        :param request_id: Specific request to poll for (query parameter). Unique per request (UUIDv4) and
-            sufficient on its own to fetch the right response — the response store is keyed by request_id
-            alone, matching the serverless Lambda poll path.
+        :param payload: Request body carrying request_id (GET with a JSON body — same model the
+            serverless Lambda poll path parses via BaseRequest.from_payload). Only request_id is used;
+            it's unique per request (UUIDv4) and sufficient on its own to fetch the right response — the
+            response store is keyed by request_id alone.
         """
         try:
             if self._config.execution.mode != ExecutionMode.REST_ASYNC:
                 raise HTTPException(status_code=404, detail="GET endpoint only available in REST_ASYNC mode")
 
+            request_id = payload.request_id
             if not request_id:
                 raise HTTPException(status_code=400, detail={"error": "request_id is required"})
 
