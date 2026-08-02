@@ -217,15 +217,12 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
     CHAT_PATH = "/ws/chat"
 
     def __init__(self, custom_routes: Optional[dict[str, Callable]] = None):
-        """Validate the chat-route config; the connection store is set up by the base class.
+        """The connection store is set up by the base class.
 
         :param custom_routes: Mapping of ``route name -> user function`` (from ``AWSWebsocketAPI.register``); each becomes a ``POST /ws/<route>`` endpoint.
         """
         super().__init__()
         self._log = logging.getLogger("ak.ecs.ws_handler")
-
-        if not self._config.websocket_api.chat_route:
-            raise ValueError("websocket_api.chat_route is required for WebSocket mode")
 
         self._custom_routes: dict[str, Callable] = dict(custom_routes or {})
         self._chat_service: Optional[ChatService] = None
@@ -424,6 +421,7 @@ class AWSWebsocketAPI(RESTAPI):
         ECSWebSocketSystemRequestHandler.CONNECT_PATH.rsplit("/", 1)[-1],
         ECSWebSocketSystemRequestHandler.DISCONNECT_PATH.rsplit("/", 1)[-1],
         ECSWebSocketSystemRequestHandler.DEFAULT_PATH.rsplit("/", 1)[-1],
+        ECSWebSocketRequestHandler.CHAT_PATH.rsplit("/", 1)[-1],
     }
 
     _ws_auth_validator: Optional[AuthValidator] = None
@@ -471,9 +469,6 @@ class AWSWebsocketAPI(RESTAPI):
             )
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", route):
             raise ValueError(f"Invalid WebSocket route name '{route}': only letters, digits, '_' and '-' are allowed.")
-        chat_route = AKConfig.get().websocket_api.chat_route
-        if chat_route and route == chat_route:
-            raise ValueError(f"WebSocket route name '{route}' collides with the configured chat_route '{chat_route}'.")
 
     @classmethod
     def set_auth_handler(cls, auth_validator: AuthValidator) -> "type[AWSWebsocketAPI]":
