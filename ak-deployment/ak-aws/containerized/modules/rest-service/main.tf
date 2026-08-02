@@ -151,7 +151,6 @@ resource "aws_lb_listener" "http" {
   }
 
   tags = var.tags
-  depends_on = [module.ecs_service]
 }
 
 # Network Load Balancer (WebSocket private integration)
