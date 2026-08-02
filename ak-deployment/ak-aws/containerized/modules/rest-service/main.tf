@@ -160,6 +160,8 @@ module "ecs_service" {
   subnet_ids         = var.subnet_ids
   security_group_ids = [aws_security_group.ecs_service.id]
 
+  health_check_grace_period_seconds = var.rest_service.health_check_grace_period_seconds
+
   load_balancer = {
     service = {
       target_group_arn = aws_lb_target_group.app.arn

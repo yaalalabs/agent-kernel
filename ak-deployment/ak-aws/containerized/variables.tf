@@ -135,10 +135,11 @@ variable "rest_service" {
     desired_count         = optional(number, 1)
     container_port        = optional(number, 8000)
     health_check_endpoint = optional(string, "/health")
-    package_path          = string                 # Docker image source path (required)
-    image_uri             = optional(string, null) # Or provide pre-built image URI
-    command               = optional(list(string), null)
-    environment_variables = optional(map(string), {})
+    health_check_grace_period_seconds = optional(number, 120)
+    package_path                      = string                 # Docker image source path (required)
+    image_uri                         = optional(string, null) # Or provide pre-built image URI
+    command                           = optional(list(string), null)
+    environment_variables             = optional(map(string), {})
   })
 }
 
