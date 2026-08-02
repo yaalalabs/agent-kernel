@@ -94,21 +94,22 @@ class RestHandler(AgentRESTRequestHandler):
             self._log.error(f"Error processing request: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail={"error": str(e), "session_id": body.session_id if body else None})
 
-    async def poll_response(self, request_id: str = None, session_id: str = None):
+    async def poll_response(self, request_id: str = None):
         """
         Poll for response (REST_ASYNC mode only).
 
-        :param request_id: Specific request to poll for (query parameter)
-        :param session_id: Optional session identifier (query parameter, used for logging/errors)
+        :param request_id: Specific request to poll for (query parameter). Unique per request (UUIDv4) and
+            sufficient on its own to fetch the right response — the response store is keyed by request_id
+            alone, matching the serverless Lambda poll path.
         """
         try:
             if self._config.execution.mode != ExecutionMode.REST_ASYNC:
                 raise HTTPException(status_code=404, detail="GET endpoint only available in REST_ASYNC mode")
 
             if not request_id:
-                raise HTTPException(status_code=400, detail={"error": "request_id is required", "session_id": session_id})
+                raise HTTPException(status_code=400, detail={"error": "request_id is required"})
 
-            self._log.info(f"Polling for response: request_id={request_id}, session_id={session_id}")
+            self._log.info(f"Polling for response: request_id={request_id}")
 
             response = await self.get_response_store().get_message_with_retry(request_id=request_id, get_and_delete=True, async_mode=True)
 
@@ -119,7 +120,6 @@ class RestHandler(AgentRESTRequestHandler):
                         "error": "NOT_FOUND",
                         "message": f"No response message found for request_id '{request_id}'. The message may be unavailable. Please try again.",
                         "request_id": request_id,
-                        "session_id": session_id,
                     },
                 )
 
@@ -129,7 +129,7 @@ class RestHandler(AgentRESTRequestHandler):
             raise
         except Exception as e:
             self._log.error(f"Error polling response: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail={"error": str(e), "session_id": session_id})
+            raise HTTPException(status_code=500, detail={"error": str(e)})
 
     def get_router(self) -> APIRouter:
         """Return the APIRouter: inherited direct-mode routes, or agents plus queue-based chat routes in queue mode."""

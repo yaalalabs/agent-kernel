@@ -349,7 +349,7 @@ execution_mode = "rest_async"
 curl -X POST .../chat -d '{"session_id":"...","prompt":"..."}'
 # Returns: {"status":"ACCEPTED","request_id":"...","session_id":"..."}
 
-# 2. Poll for result (request_id required, session_id optional)
+# 2. Poll for result (request_id is the only lookup key — it's a unique UUIDv4 per request)
 curl -X GET ".../chat?request_id=..."
 # Returns the stored response body directly, e.g.: {"...": "..."}
 ```
