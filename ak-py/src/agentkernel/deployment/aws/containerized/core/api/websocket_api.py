@@ -420,6 +420,11 @@ class AWSWebsocketAPI(RESTAPI):
     registered ``AuthValidator``) and one application handler (chat + every route registered via ``register``).
     Authentication is mandatory: call ``set_auth_handler`` (claims must include a ``userId``) before ``run()``.
     """
+    _RESERVED_ROUTES: ClassVar[set[str]] = {
+        ECSWebSocketSystemRequestHandler.CONNECT_PATH.rsplit("/", 1)[-1],
+        ECSWebSocketSystemRequestHandler.DISCONNECT_PATH.rsplit("/", 1)[-1],
+        ECSWebSocketSystemRequestHandler.DEFAULT_PATH.rsplit("/", 1)[-1],
+    }
 
     _ws_auth_validator: Optional[AuthValidator] = None
     _ws_custom_routes: ClassVar[dict[str, Callable]] = {}
@@ -449,9 +454,6 @@ class AWSWebsocketAPI(RESTAPI):
 
         return _decorator
 
-    # Reserved API Gateway protocol routes; owned by the system handler, never registerable.
-    _RESERVED_ROUTES = frozenset({"$connect", "$disconnect", "$default"})
-
     @classmethod
     def _validate_route_name(cls, route: str) -> None:
         """Validate a custom route name, raising ValueError on any violation (see ``register``)."""
@@ -463,7 +465,10 @@ class AWSWebsocketAPI(RESTAPI):
                 "it with '/ws/' (the framework maps it to POST /ws/<route> automatically)."
             )
         if route in cls._RESERVED_ROUTES:
-            raise ValueError(f"WebSocket route name '{route}' is reserved and cannot be registered.")
+            raise ValueError(
+                f"WebSocket route name '{route}' is already registered by the framework "
+                "($connect/$disconnect/$default or chat) and cannot be reused."
+            )
         if not re.fullmatch(r"[a-zA-Z0-9_-]+", route):
             raise ValueError(f"Invalid WebSocket route name '{route}': only letters, digits, '_' and '-' are allowed.")
         chat_route = AKConfig.get().websocket_api.chat_route

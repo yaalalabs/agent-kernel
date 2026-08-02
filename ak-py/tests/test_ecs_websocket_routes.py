@@ -17,12 +17,12 @@ from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandle
 CHAT_ROUTE = "chat"
 
 
-def _fake_config(mode: ExecutionMode = ExecutionMode.ASYNC):
+def _fake_config(chat_route=CHAT_ROUTE):
     """Minimal AKConfig stand-in exposing only what the WS handlers/register read."""
     return SimpleNamespace(
         websocket_api=SimpleNamespace(
             endpoint_url="https://abc.execute-api.us-east-1.amazonaws.com/prod",
-            chat_route=CHAT_ROUTE,
+            chat_route=chat_route,
             connection_table=SimpleNamespace(table_name="ak-connections", ttl=3600),
         ),
         execution=SimpleNamespace(mode=mode, queues=SimpleNamespace(input=SimpleNamespace(url=None))),
@@ -81,15 +81,27 @@ async def _invoke(handler, func):
 # --------------------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("route", ["$connect", "$disconnect", "$default"])
+@pytest.mark.parametrize("route", ["connect", "disconnect", "default", "chat"])
 def test_register_rejects_reserved_routes(route):
-    with pytest.raises(ValueError, match="reserved"):
+    """Bare names already owned by the system/chat routers (POST /ws/connect etc.) must be rejected —
+    registering them would silently be dead code, since those routers are mounted first."""
+    with pytest.raises(ValueError, match="already registered"):
         AWSWebsocketAPI.register(route)
 
 
-def test_register_rejects_chat_route_collision():
+@pytest.mark.parametrize("route", ["$connect", "$disconnect", "$default"])
+def test_register_rejects_dollar_prefixed_routes_as_invalid_charset(route):
+    """`$`-prefixed names aren't valid bare route names regardless of reservation."""
+    with pytest.raises(ValueError, match="Invalid WebSocket route name"):
+        AWSWebsocketAPI.register(route)
+
+
+def test_register_rejects_renamed_chat_route_collision(monkeypatch):
+    """When ``chat_route`` is configured to something other than the hardcoded 'chat' backend path,
+    that configured name must still be rejected as a custom route."""
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _fake_config(chat_route="support")))
     with pytest.raises(ValueError, match="chat_route"):
-        AWSWebsocketAPI.register(CHAT_ROUTE)
+        AWSWebsocketAPI.register("support")
 
 
 @pytest.mark.parametrize("route", ["foo bar", "foo!", "foo.bar", "status?x", ""])
