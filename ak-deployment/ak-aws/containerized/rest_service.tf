@@ -45,7 +45,6 @@ module "rest_service" {
   # WebSocket mode (async / stream): REST service handles connections and push.
   execution_mode                   = var.execution_mode
   websocket_mode                   = local.is_websocket_mode
-  ws_chat_route                    = var.ws_chat_route
   websocket_connections_table_name = local.is_websocket_mode ? module.websocket_connections[0].table_name : null
   websocket_connections_table_arn  = local.is_websocket_mode ? module.websocket_connections[0].table_arn : null
   websocket_api_execution_arn      = local.is_websocket_mode ? aws_apigatewayv2_api.ws_api[0].execution_arn : null

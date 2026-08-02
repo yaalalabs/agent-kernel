@@ -894,7 +894,9 @@ module "containerized_agents" {
   raises at `$connect` construction time. There is no API Gateway authorizer for WebSocket mode.
 - Every custom route needs both a Python `@AWSWebsocketAPI.register("name")` decorator **and** a
   matching Terraform `ws_routes = [{ route = "name" }]` entry — Python cannot create the API
-  Gateway route/integration, so both sides must declare it (same requirement as `ws_chat_route`).
+  Gateway route/integration, so both sides must declare it. `ws_chat_route` is Terraform-only —
+  it just names the API Gateway route key that forwards to the container's hardcoded `/ws/chat`
+  endpoint; the container never reads it from config, and renaming it needs no Python change.
 - The DynamoDB response store is simply never created in WebSocket mode (no `response_store`
   input to set) — replies are always pushed over the connection instead. `gateway_endpoints`
   specifically has a Terraform validation rule rejecting it in `async`/`stream` modes.

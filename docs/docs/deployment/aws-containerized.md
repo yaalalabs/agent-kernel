@@ -282,8 +282,9 @@ A `dict` return is broadcast as a `SYSTEM_RESPONSE`; `None` broadcasts nothing. 
 `WSRouteError(status_code, message)` short-circuits with that HTTP status; any other exception
 is logged, an error is best-effort broadcast to the client, and 500 is returned. Every custom
 route must **also** be declared in Terraform via `ws_routes` — Python cannot create the API
-Gateway route/integration, so both sides must agree (same requirement as the configurable
-chat route).
+Gateway route/integration, so both sides must agree. `ws_chat_route` is Terraform-only — it
+names the API Gateway route key that forwards to the container's hardcoded `/ws/chat`
+endpoint; the container never reads it from config, so renaming it needs no Python change.
 
 ### Terraform
 

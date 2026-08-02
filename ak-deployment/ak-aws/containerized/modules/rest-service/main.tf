@@ -24,7 +24,6 @@ locals {
     var.websocket_mode ? {
       AK_EXECUTION__MODE                             = var.execution_mode
       AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = var.websocket_connections_table_name
-      AK_WEBSOCKET_API__CHAT_ROUTE                   = var.ws_chat_route
       AK_WEBSOCKET_API__ENDPOINT_URL                 = var.websocket_endpoint_url
     } : {}
   )

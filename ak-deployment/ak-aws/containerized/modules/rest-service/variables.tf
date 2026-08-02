@@ -142,12 +142,6 @@ variable "websocket_mode" {
   default     = false
 }
 
-variable "ws_chat_route" {
-  type        = string
-  description = "WebSocket default chat route name"
-  default     = null
-}
-
 variable "websocket_connections_table_name" {
   type        = string
   description = "DynamoDB WebSocket connections table name (for WebSocket mode)"
