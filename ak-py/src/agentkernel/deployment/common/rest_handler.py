@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from ...api.handler import AgentRESTRequestHandler
 from ...core.config import AKConfig
-from ...core.model import BaseRunRequest, ExecutionMode
+from ...core.model import BaseRequest, BaseRunRequest, ExecutionMode
 from .queue_handler import QueueHandler
 from .response_store import ResponseStore
 
@@ -94,7 +94,7 @@ class RestHandler(AgentRESTRequestHandler):
             self._log.error(f"Error processing request: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail={"error": str(e), "session_id": body.session_id if body else None})
 
-    async def poll_response(self, payload: BaseRunRequest):
+    async def poll_response(self, payload: BaseRequest):
         """
         Poll for response (REST_ASYNC mode only).
 
