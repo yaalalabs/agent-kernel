@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import logging
@@ -61,6 +62,12 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
 
     def _connection_id(self, request: Request) -> Optional[str]:
         return request.headers.get(self.CONNECTION_ID_HEADER)
+
+    @staticmethod
+    async def _offload(func: Callable, *args, **kwargs) -> Any:
+        """Run a blocking boto3 call (DynamoDB/SQS/API Gateway Management API) in a worker thread
+        so it doesn't block the uvicorn event loop for other in-flight requests."""
+        return await asyncio.to_thread(func, *args, **kwargs)
 
     def _construct_endpoint_url(self, request: Request) -> Optional[str]:
         """Build the API Gateway management endpoint from x-ws-* headers, falling back to config."""
@@ -140,7 +147,7 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
             if not user_id:
                 return self.build_error_http_response(401, "'userId' claim is required in token")
 
-            self.get_websocket_handler().on_connect(connection_id=connection_id, user_id=user_id)
+            await self._offload(self.get_websocket_handler().on_connect, connection_id=connection_id, user_id=user_id)
             return self.build_success_http_response("WebSocket connection established", user_id=user_id)
         except Exception as e:
             self._log.exception(f"WebSocket $connect failed: {e}")
@@ -151,7 +158,7 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
         try:
             connection_id = self._connection_id(request)
             if connection_id:
-                self.get_websocket_handler().on_disconnect(connection_id=connection_id)
+                await self._offload(self.get_websocket_handler().on_disconnect, connection_id=connection_id)
             return self.build_success_http_response("WebSocket connection closed")
         except Exception as e:
             self._log.exception(f"WebSocket $disconnect failed: {e}")
@@ -162,10 +169,11 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
         try:
             connection_id = self._connection_id(request)
             if connection_id:
-                user_id = self.get_websocket_handler().get_user_id(connection_id)
+                user_id = await self._offload(self.get_websocket_handler().get_user_id, connection_id)
                 endpoint_url = self._construct_endpoint_url(request)
                 if user_id and endpoint_url:
-                    self.get_websocket_handler().broadcast(
+                    await self._offload(
+                        self.get_websocket_handler().broadcast,
                         endpoint_url=endpoint_url,
                         message={"status": "FAILED", "message": "Route not found"},
                         user_id=user_id,
@@ -265,7 +273,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
                 if inspect.isawaitable(result):
                     result = await result
                 if result is not None:
-                    self.get_websocket_handler().broadcast(
+                    await self._offload(
+                        self.get_websocket_handler().broadcast,
                         endpoint_url=ctx.endpoint_url,
                         message=result,
                         user_id=ctx.user_id,
@@ -278,7 +287,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
                 self._log.exception(f"WebSocket custom route failed: {e}")
                 if ctx is not None:
                     try:
-                        self.get_websocket_handler().broadcast(
+                        await self._offload(
+                            self.get_websocket_handler().broadcast,
                             endpoint_url=ctx.endpoint_url,
                             message={"status": "FAILED", "message": "Route handler encountered an error"},
                             user_id=ctx.user_id,
@@ -307,7 +317,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         payload = json.loads(raw_body) if raw_body else {}
         message = BaseRequest.from_payload(payload) if is_chat_request else payload
 
-        user_id = self.get_websocket_handler().get_user_id(connection_id)
+        user_id = await self._offload(self.get_websocket_handler().get_user_id, connection_id)
         if not user_id:
             raise self.WSRouteError(401, f"No user found for connection_id: {connection_id}")
 
@@ -322,11 +332,12 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
             endpoint_url=endpoint_url,
         )
 
-    def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: Optional[str], session_id: str, endpoint_url: str) -> JSONResponse:
+    async def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: Optional[str], session_id: str, endpoint_url: str) -> JSONResponse:
         """Queue mode: send to the input queue; ECSOutputConsumer pushes the reply."""
         self._log.info(f"Enqueuing WS chat request: request_id={request_id}, session_id={session_id}, user_id={user_id}")
 
-        SQSHandler.send_message_to_input_queue(
+        await self._offload(
+            SQSHandler.send_message_to_input_queue,
             message_body=body.model_dump(),
             attributes={"message_group_id": session_id, "message_deduplication_id": request_id},
             request_id=request_id,
@@ -348,7 +359,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         status_code, res_body = await self.get_chat_service().process_async_chat_request(body)
         message = res_body if isinstance(res_body, dict) else {"response": res_body}
 
-        self.get_websocket_handler().broadcast(
+        await self._offload(
+            self.get_websocket_handler().broadcast,
             endpoint_url=endpoint_url,
             message=message,
             user_id=user_id,
@@ -399,9 +411,7 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
                 return self.build_error_http_response(400, "session_id is required")
 
             if self._is_queue_mode():
-                return self._enqueue_chat(ctx.message.body, ctx.user_id, ctx.message.request_id, session_id, ctx.endpoint_url)
-            if self._config.execution.mode == ExecutionMode.STREAM:
-                return await self._process_chat_direct_stream(ctx.message.body, ctx.user_id, ctx.endpoint_url)
+                return await self._enqueue_chat(ctx.message.body, ctx.user_id, ctx.message.request_id, session_id, ctx.endpoint_url)
             return await self._process_chat_direct(ctx.message.body, ctx.user_id, ctx.endpoint_url)
         except self.WSRouteError as e:
             return self.build_error_http_response(e.status_code, e.message)
