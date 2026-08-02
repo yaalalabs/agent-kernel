@@ -356,19 +356,34 @@ curl -X GET ".../chat?request_id=..."
 
 ### WebSocket Mode - Async (`async`) and Stream (`stream`)
 
-Creates a **WebSocket API Gateway** that proxies frames to the ECS REST service
-via the shared VPC Link + internal ALB. The REST service handles the connection
-lifecycle (`$connect`/`$disconnect`), forwards chat frames to the input queue,
-and its output-queue consumer pushes responses back to the client over the socket
-via `PostToConnection`. Requires `queue_mode = true`.
+Creates a **WebSocket API Gateway** that proxies frames to the ECS ingress service over a
+dedicated VPC Link (V1) and an internal NLB that fronts the same internal ALB — WebSocket
+private integrations require a V1, NLB-backed link, so the HTTP API's V2 link is not created
+in these modes. The ingress service handles the connection lifecycle
+(`$connect`/`$disconnect`) and pushes replies back to the client via `PostToConnection`.
+
+Both `queue_mode` settings are supported:
+
+- `queue_mode = true` — chat frames are forwarded to the input queue, and the output-queue
+  consumer pushes the reply over the socket. Adds the agent-runner service and queues.
+- `queue_mode = false` — the ingress service runs the agent inline and pushes the reply
+  itself. No queues and no agent-runner service.
+
+Modes:
 
 - `async` — the full response is delivered in one WebSocket message once the agent finishes.
-- `stream` — the response is streamed token-by-token as it is produced.
+- `stream` — **not implemented for containerized deployments yet.** The ECS runtime emits no
+  per-token `STREAM_CHUNK` messages: with `queue_mode = false` it silently behaves like
+  `async` (one `CHAT_RESPONSE`), and with `queue_mode = true` the output consumer falls
+  through to the response store, which is not created in WebSocket modes. Use `async` until
+  streaming lands. (Token-by-token streaming is available today in the AWS **serverless**
+  deployment, and over SSE via `execution_mode = "stream"` on a non-WebSocket REST setup.)
 
-**What gets created (in addition to queue-mode resources):**
+**What gets created (in addition to the base — and, with `queue_mode = true`, queue-mode — resources):**
 
 - WebSocket API Gateway (`route_selection_expression = "$request.body.route"`)
 - Predefined routes `$connect`, `$disconnect`, `$default`, a configurable chat route (`ws_chat_route`, default `chat`), and any `ws_routes`
+- An internal NLB in front of the existing ALB, plus a dedicated API Gateway VPC Link (V1) targeting it
 - A DynamoDB `websocket-connections` table (hash `user_id`, range `connection_id`, GSI `connection_id-index`, TTL `expiry_time`)
 - IAM for the REST service task role: `execute-api:ManageConnections` + connections-table access
 
@@ -380,8 +395,8 @@ there is no API Gateway authorizer.
 **Configuration:**
 
 ```hcl
-queue_mode     = true
-execution_mode = "stream"      # or "async"
+queue_mode     = true          # or false to run the agent inline in the ingress service
+execution_mode = "async"
 
 # Optional route customization
 ws_chat_route = "conversation"
