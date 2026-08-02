@@ -373,7 +373,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
         self._log.info(f"Streaming WS chat request inline (direct mode) for user_id={user_id}")
         session_id = body.session_id
         try:
-            async for raw_chunk in self.get_chat_service().process_stream_chat_async(req=body, sse_format=False):
+            stream = await self.get_chat_service().process_stream_chat_async(req=body, sse_format=False)
+            async for raw_chunk in stream:
                 chunk_dict = json.loads(raw_chunk)
                 self.get_websocket_handler().broadcast(
                     endpoint_url=endpoint_url,
