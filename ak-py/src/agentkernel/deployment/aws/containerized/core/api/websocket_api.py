@@ -412,6 +412,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
             if self._is_queue_mode():
                 return await self._enqueue_chat(ctx.message.body, ctx.user_id, ctx.message.request_id, session_id, ctx.endpoint_url)
+            if self._config.execution.mode == ExecutionMode.STREAM:
+                return await self._process_chat_direct_stream(ctx.message.body, ctx.user_id, ctx.endpoint_url)
             return await self._process_chat_direct(ctx.message.body, ctx.user_id, ctx.endpoint_url)
         except self.WSRouteError as e:
             return self.build_error_http_response(e.status_code, e.message)

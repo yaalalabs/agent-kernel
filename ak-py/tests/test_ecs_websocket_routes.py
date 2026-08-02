@@ -14,7 +14,7 @@ from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
 )
 from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandler
 
-def _fake_config():
+def _fake_config(mode=ExecutionMode.ASYNC):
     """Minimal AKConfig stand-in exposing only what the WS handlers/register read."""
     return SimpleNamespace(
         websocket_api=SimpleNamespace(
