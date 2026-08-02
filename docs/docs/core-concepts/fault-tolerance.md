@@ -52,6 +52,7 @@ ECS deployments provide the most comprehensive fault tolerance features with ext
 # Example Terraform configuration
 ecs_desired_count = 3              # Number of tasks to maintain
 ecs_health_check_endpoint = "/health"
+ecs_health_check_grace_period_seconds = 120  # ECS ignores ALB unhealthy signals for this long after task start
 ```
 
 #### Service Auto-Scaling
