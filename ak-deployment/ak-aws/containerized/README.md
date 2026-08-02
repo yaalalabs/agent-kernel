@@ -349,8 +349,10 @@ execution_mode = "rest_async"
 curl -X POST .../chat -d '{"session_id":"...","prompt":"..."}'
 # Returns: {"status":"ACCEPTED","request_id":"...","session_id":"..."}
 
-# 2. Poll for result (request_id is the only lookup key — it's a unique UUIDv4 per request)
-curl -X GET ".../chat?request_id=..."
+# 2. Poll for result — request_id travels in the body (GET with a JSON body), not a query
+# string, matching the serverless Lambda poll path. It's the only lookup key: a unique
+# UUIDv4 per request, sufficient on its own to fetch the right reply.
+curl -X GET .../chat -d '{"request_id":"..."}'
 # Returns the stored response body directly, e.g.: {"...": "..."}
 ```
 
