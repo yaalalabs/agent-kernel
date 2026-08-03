@@ -113,7 +113,8 @@ shopping_agent = Agent(
     tools=GoogleADKToolBuilder.bind([view_cart, set_delivery_note]) + [add_to_cart],
 )
 
-GoogleADKModule([shopping_agent]).pre_hook(shopping_agent, [SeedCartContextPreHook()]).post_hook(
+GoogleADKModule([shopping_agent]).pre_hook(
+    shopping_agent, [SeedCartContextPreHook()]).post_hook(
     shopping_agent, [AppendCartPostHook()]
 )
 
