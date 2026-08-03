@@ -1,6 +1,6 @@
 import logging
 
-from agentkernel.adk import GoogleADKModule
+from agentkernel.adk import GoogleADKModule,GoogleADKToolBuilder
 from agentkernel.cli import CLI
 from agentkernel.core import AgentReplyText, PostHook, PreHook
 from google.adk.agents import Agent
@@ -90,12 +90,10 @@ shopping_agent = Agent(
     Use the set_delivery_note tool whenever they say where or how the order should be delivered.
     Keep answers short and state only what changed or what the cart currently contains.
     """,
-    tools=[add_to_cart, view_cart, set_delivery_note],
+    tools=GoogleADKToolBuilder.bind([view_cart, set_delivery_note])+[add_to_cart],
 )
 
-module = GoogleADKModule([shopping_agent])
-module.pre_hook(shopping_agent, [SeedCartContextPreHook()])
-module.post_hook(shopping_agent, [AppendCartPostHook()])
+GoogleADKModule([shopping_agent]).pre_hook(shopping_agent, [SeedCartContextPreHook()]).post_hook(shopping_agent, [AppendCartPostHook()])
 
 if __name__ == "__main__":
     CLI.main()

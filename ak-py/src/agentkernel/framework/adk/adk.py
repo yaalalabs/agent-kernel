@@ -441,15 +441,40 @@ class GoogleADKToolBuilder(ToolBuilder):
         if not callable(func):
             raise TypeError(f"Expected a callable, got {type(func).__name__}")
 
+        signature = inspect.signature(func)
+        parameters = list(signature.parameters.values())
+
+        # ADK-aware tools declare `tool_context` themselves and expect the live ADK
+        # context to reach them, so it has to be forwarded. Generic tools do not, and
+        # for those the parameter is consumed here purely to activate the AK context.
+        declares_tool_context = "tool_context" in signature.parameters
+        tool_context_position = list(signature.parameters).index("tool_context") if declares_tool_context else -1
+
+        def forwarded_kwargs(args: tuple[Any, ...], kwargs: dict[str, Any], tool_context: ToolContext | None) -> dict[str, Any]:
+            """
+            Builds the keyword arguments for the wrapped function.
+
+            :param args: Positional arguments the wrapper was called with.
+            :param kwargs: Keyword arguments the wrapper was called with.
+            :param tool_context: The ADK tool context supplied to the wrapper.
+            :return: The keyword arguments to pass to the wrapped function.
+            """
+            if not declares_tool_context or "tool_context" in kwargs:
+                return kwargs
+            # The caller already bound tool_context positionally; do not bind it twice.
+            if len(args) > tool_context_position:
+                return kwargs
+            return {**kwargs, "tool_context": tool_context}
+
         if asyncio.iscoroutinefunction(func):
 
             @functools.wraps(func)
-            async def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
+            async def wrapper(*args: Any, tool_context: ToolContext | None = None, **kwargs: Any) -> Any:
                 tctx: AKToolContext | None = None
                 try:
                     if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
                         tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
-                    return await func(*args, **kwargs)
+                    return await func(*args, **forwarded_kwargs(args, kwargs, tool_context))
                 finally:
                     if tctx:
                         tctx.reset()
@@ -457,23 +482,20 @@ class GoogleADKToolBuilder(ToolBuilder):
         else:
 
             @functools.wraps(func)
-            def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
+            def wrapper(*args: Any, tool_context: ToolContext | None = None, **kwargs: Any) -> Any:
                 tctx: AKToolContext | None = None
                 try:
                     if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
                         tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
-                    return func(*args, **kwargs)
+                    return func(*args, **forwarded_kwargs(args, kwargs, tool_context))
                 finally:
                     if tctx:
                         tctx.reset()
 
-        signature = inspect.signature(func)
-        parameters = list(signature.parameters.values())
-
         # Only add a tool_context parameter if the original function does not already
         # declare one, and insert it before any **kwargs (VAR_KEYWORD) parameter to
         # maintain a valid inspect.Signature ordering.
-        if "tool_context" not in signature.parameters:
+        if not declares_tool_context:
             tool_context_param = inspect.Parameter(
                 "tool_context",
                 kind=inspect.Parameter.KEYWORD_ONLY,

@@ -94,9 +94,7 @@ shopping_agent = Agent(
     tools=[add_to_cart, *PydanticAIToolBuilder.bind([view_cart, get_delivery_estimate])],
 )
 
-module = PydanticAIModule([shopping_agent])
-module.pre_hook(shopping_agent, [SeedCartContextPreHook()])
-module.post_hook(shopping_agent, [AppendCartPostHook()])
+PydanticAIModule([shopping_agent]).pre_hook(shopping_agent, [SeedCartContextPreHook()]).post_hook(shopping_agent, [AppendCartPostHook()])
 
 if __name__ == "__main__":
     CLI.main()
