@@ -61,8 +61,9 @@ resource "aws_apigatewayv2_route" "ws" {
   target    = "integrations/${aws_apigatewayv2_integration.ws[each.value].id}"
 }
 
+# CloudWatch Log Group for WebSocket API Gateway (only when access logging is enabled)
 resource "aws_cloudwatch_log_group" "ws_api" {
-  count             = local.is_websocket_mode ? 1 : 0
+  count             = local.is_websocket_mode && var.enable_api_gateway_logs ? 1 : 0
   name              = "/aws/apigateway/${var.product_alias}-${var.env_alias}-ws-api"
   retention_in_days = 90
   tags              = var.tags
@@ -70,7 +71,7 @@ resource "aws_cloudwatch_log_group" "ws_api" {
 
 # WebSocket access logging requires an account-level CloudWatch Logs role (region-wide singleton); else CreateStage fails.
 resource "aws_iam_role" "apigw_cloudwatch" {
-  count = local.is_websocket_mode ? 1 : 0
+  count = local.is_websocket_mode && var.enable_api_gateway_logs ? 1 : 0
   name  = "${var.product_alias}-${var.env_alias}-apigw-cw-role-${var.region}"
 
   assume_role_policy = jsonencode({
@@ -86,13 +87,13 @@ resource "aws_iam_role" "apigw_cloudwatch" {
 }
 
 resource "aws_iam_role_policy_attachment" "apigw_cloudwatch" {
-  count      = local.is_websocket_mode ? 1 : 0
+  count      = local.is_websocket_mode && var.enable_api_gateway_logs ? 1 : 0
   role       = aws_iam_role.apigw_cloudwatch[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
 }
 
 resource "aws_api_gateway_account" "this" {
-  count               = local.is_websocket_mode ? 1 : 0
+  count               = local.is_websocket_mode && var.enable_api_gateway_logs ? 1 : 0
   cloudwatch_role_arn = aws_iam_role.apigw_cloudwatch[0].arn
 
   depends_on = [aws_iam_role_policy_attachment.apigw_cloudwatch]
@@ -115,19 +116,22 @@ resource "aws_apigatewayv2_stage" "ws" {
     }
   }
 
-  access_log_settings {
-    destination_arn = aws_cloudwatch_log_group.ws_api[0].arn
-    format = jsonencode({
-      requestId               = "$context.requestId"
-      sourceIp                = "$context.identity.sourceIp"
-      requestTime             = "$context.requestTime"
-      protocol                = "$context.protocol"
-      routeKey                = "$context.routeKey"
-      status                  = "$context.status"
-      responseLength          = "$context.responseLength"
-      connectionId            = "$context.connectionId"
-      integrationErrorMessage = "$context.integrationErrorMessage"
-    })
+  dynamic "access_log_settings" {
+    for_each = var.enable_api_gateway_logs ? [1] : []
+    content {
+      destination_arn = aws_cloudwatch_log_group.ws_api[0].arn
+      format = jsonencode({
+        requestId               = "$context.requestId"
+        sourceIp                = "$context.identity.sourceIp"
+        requestTime             = "$context.requestTime"
+        protocol                = "$context.protocol"
+        routeKey                = "$context.routeKey"
+        status                  = "$context.status"
+        responseLength          = "$context.responseLength"
+        connectionId            = "$context.connectionId"
+        integrationErrorMessage = "$context.integrationErrorMessage"
+      })
+    }
   }
 
   tags = var.tags

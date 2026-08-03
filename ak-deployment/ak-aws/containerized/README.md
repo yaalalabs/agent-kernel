@@ -270,25 +270,41 @@ scaling_config = {
 
 | Variable | Description | Type | Default | Required |
 |---|---|---|---|---|
-| `enable_api_gateway_logs` | Create the CloudWatch log group and enable access logging on the HTTP API stage | `bool` | `false` | no |
+| `enable_api_gateway_logs` | Create the CloudWatch log group and enable access logging on the HTTP API stage (or the WebSocket API stage, in WebSocket modes) | `bool` | `false` | no |
 
 ```hcl
 enable_api_gateway_logs = true
 ```
 
-- Off by default, matching the AWS serverless deployment. When `false`, no `/aws/apigateway/{product_alias}-{env_alias}-http-api` log group is created and the stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
-- When `true`, the log group is created with 90-day retention (tagged with `var.tags`) and requests are logged as JSON (request ID, source IP, request time, protocol, HTTP method, route key, status, response length, integration error message).
-- Unlike the serverless REST API, this is an HTTP API (`aws_apigatewayv2_*`), so access logging does **not** require the account-level `aws_api_gateway_account` CloudWatch role. Enabling it here does not contend with other deployments in the same account/region.
-- **Upgrade note:** deployments created before this toggle existed always had logging on. Applying with the new default (`false`) removes the stage's access log settings and destroys the log group. Set `enable_api_gateway_logs = true` to keep the existing behaviour.
-- **Upgrade note (keeping logging on):** the log group is now gated by `count`, so its state address changed from `aws_cloudwatch_log_group.http_api` to `aws_cloudwatch_log_group.http_api[0]`. Before the first apply with `enable_api_gateway_logs = true`, move it:
+- Off by default, matching the AWS serverless deployment. When `false`:
+  - **REST/queue modes:** no `/aws/apigateway/{product_alias}-{env_alias}-http-api` log group is created and the HTTP API stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
+  - **WebSocket modes:** no `/aws/apigateway/{product_alias}-{env_alias}-ws-api` log group is created, the WebSocket API stage carries no `access_log_settings`, and the account-level CloudWatch role (`aws_iam_role.apigw_cloudwatch` / `aws_api_gateway_account.this`) is not created; the `websocket_api_cloudwatch_log_group_arn` / `websocket_api_cloudwatch_log_group_name` outputs return `null`.
+- When `true`, the relevant log group is created with 90-day retention (tagged with `var.tags`). REST/queue modes log request ID, source IP, request time, protocol, HTTP method, route key, status, response length, and integration error message; WebSocket modes log the same fields plus `connectionId` in place of HTTP method.
+- Unlike the serverless REST API, the HTTP API (`aws_apigatewayv2_*` with `protocol_type = "HTTP"`) does **not** require the account-level `aws_api_gateway_account` CloudWatch role for access logging, so enabling it there does not contend with other deployments in the same account/region. The WebSocket API (`protocol_type = "WEBSOCKET"`) **does** require that account-level role — it is created only when `enable_api_gateway_logs = true` in a WebSocket mode, and it is a region-wide singleton shared with any other API Gateway in the account that also enables access logging.
+- **Upgrade note:** deployments created before this toggle existed always had logging on. Applying with the new default (`false`) removes the stage's access log settings and destroys the log group (and, in WebSocket modes, the account-level CloudWatch role resources). Set `enable_api_gateway_logs = true` to keep the existing behaviour.
+- **Upgrade note (keeping logging on):** the log groups (and, in WebSocket modes, the IAM role/policy attachment/account resources) are now gated by `count`, so their state addresses gained a `[0]` index. Before the first apply with `enable_api_gateway_logs = true`, move each affected resource, e.g.:
 
   ```bash
   terraform state mv \
     'module.<module_name>.aws_cloudwatch_log_group.http_api' \
     'module.<module_name>.aws_cloudwatch_log_group.http_api[0]'
+
+  # WebSocket modes only:
+  terraform state mv \
+    'module.<module_name>.aws_cloudwatch_log_group.ws_api' \
+    'module.<module_name>.aws_cloudwatch_log_group.ws_api[0]'
+  terraform state mv \
+    'module.<module_name>.aws_iam_role.apigw_cloudwatch' \
+    'module.<module_name>.aws_iam_role.apigw_cloudwatch[0]'
+  terraform state mv \
+    'module.<module_name>.aws_iam_role_policy_attachment.apigw_cloudwatch' \
+    'module.<module_name>.aws_iam_role_policy_attachment.apigw_cloudwatch[0]'
+  terraform state mv \
+    'module.<module_name>.aws_api_gateway_account.this' \
+    'module.<module_name>.aws_api_gateway_account.this[0]'
   ```
 
-  Skipping this makes Terraform destroy and recreate the log group, discarding any retained logs.
+  Skipping this makes Terraform destroy and recreate these resources, discarding any retained logs.
 
 ## Deployment Modes
 
