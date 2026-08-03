@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 
 from ...api.handler import AgentRESTRequestHandler
 from ...core.config import AKConfig
-from ...core.model import BaseRequest, BaseRunRequest, ExecutionMode
+from ...core.model import BaseRunRequest, ExecutionMode
 from .queue_handler import QueueHandler
 from .response_store import ResponseStore
 
@@ -94,24 +94,21 @@ class RestHandler(AgentRESTRequestHandler):
             self._log.error(f"Error processing request: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail={"error": str(e), "session_id": body.session_id if body else None})
 
-    async def poll_response(self, payload: BaseRequest):
+    async def poll_response(self, request_id: str = None, session_id: str = None):
         """
         Poll for response (REST_ASYNC mode only).
 
-        :param payload: Request body carrying request_id (GET with a JSON body — same model the
-            serverless Lambda poll path parses via BaseRequest.from_payload). Only request_id is used;
-            it's unique per request (UUIDv4) and sufficient on its own to fetch the right response — the
-            response store is keyed by request_id alone.
+        :param request_id: Specific request to poll for (query parameter)
+        :param session_id: Optional session identifier (query parameter, used for logging/errors)
         """
         try:
             if self._config.execution.mode != ExecutionMode.REST_ASYNC:
                 raise HTTPException(status_code=404, detail="GET endpoint only available in REST_ASYNC mode")
 
-            request_id = payload.request_id
             if not request_id:
-                raise HTTPException(status_code=400, detail={"error": "request_id is required"})
+                raise HTTPException(status_code=400, detail={"error": "request_id is required", "session_id": session_id})
 
-            self._log.info(f"Polling for response: request_id={request_id}")
+            self._log.info(f"Polling for response: request_id={request_id}, session_id={session_id}")
 
             response = await self.get_response_store().get_message_with_retry(request_id=request_id, get_and_delete=True, async_mode=True)
 
@@ -122,6 +119,7 @@ class RestHandler(AgentRESTRequestHandler):
                         "error": "NOT_FOUND",
                         "message": f"No response message found for request_id '{request_id}'. The message may be unavailable. Please try again.",
                         "request_id": request_id,
+                        "session_id": session_id,
                     },
                 )
 
@@ -131,7 +129,7 @@ class RestHandler(AgentRESTRequestHandler):
             raise
         except Exception as e:
             self._log.error(f"Error polling response: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail={"error": str(e)})
+            raise HTTPException(status_code=500, detail={"error": str(e), "session_id": session_id})
 
     def get_router(self) -> APIRouter:
         """Return the APIRouter: inherited direct-mode routes, or agents plus queue-based chat routes in queue mode."""
