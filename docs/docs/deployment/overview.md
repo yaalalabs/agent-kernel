@@ -107,7 +107,7 @@ graph LR
     OQ --> RSH[Response Handler]
     RSH --> RS[(Response Store)]
     RS -.->|rest_sync / rest_async| RH
-    RSH -.->|"async (Lambda + ECS) / stream (Lambda only)"| WS[WebSocket push]
+    RSH -.->|"async / stream (Lambda + ECS)"| WS[WebSocket push]
 
     style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
@@ -119,7 +119,7 @@ graph LR
 | Request handler | Request Handler Lambda | `ECSQueueRequestHandler` thread in the IO container |
 | Agent runner | Agent Runner Lambda (SQS event source mapping) | `ECSAgentRunner` service, a pool of long-poll consumer threads |
 | Response handler | Response Handler Lambda | `ECSOutputConsumer` thread pool in the IO container |
-| Reply delivery | Response store, or WebSocket push (`async`/`stream`) | Response store, or WebSocket push (`async` only) |
+| Reply delivery | Response store, or WebSocket push (`async`/`stream`) | Response store, or WebSocket push (`async`/`stream`) |
 | Scaling | Automatic per SQS batch | Backlog-per-task target tracking |
 
 See [AWS Serverless](./aws-serverless), [AWS Containerized](./aws-containerized), and the [Queue Mode Guide](../advanced/queue-mode-guide) for full component walkthroughs.
@@ -238,7 +238,7 @@ terraform init && terraform apply
 - **Small web app** → **REST API**: simple, self-hosted
 - **Variable traffic on AWS** → **AWS Lambda**: auto-scales, pay per use; add queue mode for backpressure and retries
 - **High traffic / long-running agents on AWS** → **AWS ECS in queue mode**: consistent performance, backlog-based auto-scaling
-- **Real-time UX on AWS** → **WebSocket mode**: `async` for push delivery on Lambda or ECS, `stream` for token streaming (Lambda only)
+- **Real-time UX on AWS** → **WebSocket mode**: `async` for push delivery, `stream` for token streaming — both on Lambda or ECS
 - **Variable traffic on Azure** → **Azure Functions**; **high traffic** → **Azure Container Apps** (KEDA scaling, SSE streaming)
 - **Variable traffic on GCP** → **Cloud Run scale-to-zero**; **high traffic** → **Cloud Run always-on**
 - **AI integration** → **MCP/A2A**: protocol-based integration
