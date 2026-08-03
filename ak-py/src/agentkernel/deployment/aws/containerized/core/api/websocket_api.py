@@ -397,6 +397,7 @@ class AWSWebsocketAPI(RESTAPI):
     registered ``AuthValidator``) and one application handler (chat + every route registered via ``register``).
     Authentication is mandatory: call ``set_auth_handler`` (claims must include a ``userId``) before ``run()``.
     """
+
     _RESERVED_ROUTES: ClassVar[set[str]] = {
         ECSWebSocketSystemRequestHandler.CONNECT_PATH.rsplit("/", 1)[-1],
         ECSWebSocketSystemRequestHandler.DISCONNECT_PATH.rsplit("/", 1)[-1],
