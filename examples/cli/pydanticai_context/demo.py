@@ -91,7 +91,7 @@ shopping_agent = Agent(
     deps_type=dict,
     # Both styles compose in one list: plain callables Pydantic AI registers itself, alongside tools
     # bound by the builder.
-    tools=[add_to_cart, *PydanticAIToolBuilder.bind([view_cart,get_delivery_estimate])],
+    tools=[add_to_cart, *PydanticAIToolBuilder.bind([view_cart, get_delivery_estimate])],
 )
 
 module = PydanticAIModule([shopping_agent])
