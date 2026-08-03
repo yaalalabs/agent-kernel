@@ -1,62 +1,76 @@
 import logging
-from typing import Annotated, Sequence, TypedDict
+from typing import Annotated
 
 from agentkernel.cli import CLI
-from agentkernel.core import AgentReplyText, PostHook, PreHook
-from agentkernel.langgraph import LangGraphModule
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from agentkernel.core import AgentReplyText, PostHook, PreHook, ToolContext
+from agentkernel.langgraph import LangGraphModule, LangGraphToolBuilder
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import InjectedToolCallId, tool
 from langchain_openai import ChatOpenAI
-from langgraph.graph import END, StateGraph, add_messages
-from pydantic import BaseModel, Field
+from langgraph.prebuilt import InjectedState, create_react_agent
+from langgraph.prebuilt.chat_agent_executor import AgentState
+from langgraph.types import Command
 
 logger = logging.getLogger("ak.example.langgraph_context")
-
 
 CART_PREFIX = "Current cart:"
 
 model = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
 
+SYSTEM_PROMPT = (
+    "You are a grocery shopping assistant. Call `add_to_cart` only when the user clearly asks to "
+    "add items, and `view_cart` when they ask what is in the cart. After using a tool, reply with a "
+    "short, friendly message stating what changed or what the cart currently contains."
+)
 
-class ShoppingState(TypedDict):
-    """Graph state. `cart` is a declared channel, which is what lets it round-trip via framework_context."""
 
-    messages: Annotated[Sequence[BaseMessage], add_messages]
+class ShoppingState(AgentState):
+    """ReAct agent state plus a declared `cart` channel, which is what lets it round-trip via framework_context."""
+
     cart: list[str]
 
 
-class CartUpdate(BaseModel):
-    """Structured decision the shopping assistant makes for one turn."""
+@tool
+def add_to_cart(
+    items: list[str],
+    state: Annotated[ShoppingState, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId],
+) -> Command:
+    """Add one or more grocery items to the user's cart.
 
-    items_to_add: list[str] = Field(
-        default_factory=list,
-        description="Grocery items the user asked to add this turn. Empty when they only ask what is in the cart.",
-    )
-    reply: str = Field(description="A short, friendly reply stating what changed or what the cart currently contains.")
-
-
-SYSTEM_MESSAGE = SystemMessage(
-    content="You are a grocery shopping assistant. Decide which items the user wants to add to their cart this turn "
-    "and write a short reply. Add an item only when the user clearly asks to add it."
-)
-
-structured_model = model.with_structured_output(CartUpdate)
-
-
-def shopping_node(state: ShoppingState) -> dict:
-    """Read the cart carried in the graph state, apply the user's request, and write it back."""
+    A native LangGraph tool: `@tool` plus `InjectedState`, writing the `cart` state channel through a
+    `Command`. This is the write path — the runner reads the declared channel back after the run and
+    stores it on `framework_context`.
+    """
     cart = list(state.get("cart") or [])
-    decision: CartUpdate = structured_model.invoke([SYSTEM_MESSAGE] + list(state["messages"]))
-    cart.extend(decision.items_to_add)
+    cart.extend(items)
     logger.debug("cart is now %s", cart)
-    return {"messages": [AIMessage(content=decision.reply)], "cart": cart}
+    return Command(
+        update={
+            "cart": cart,
+            "messages": [
+                ToolMessage(
+                    f"Added {', '.join(items)}. Cart now contains: {', '.join(cart)}",
+                    tool_call_id=tool_call_id,
+                )
+            ],
+        }
+    )
 
 
-def _build_shopping_graph() -> "StateGraph":
-    graph = StateGraph(ShoppingState)
-    graph.add_node("shopping", shopping_node)
-    graph.set_entry_point("shopping")
-    graph.add_edge("shopping", END)
-    return graph.compile(name="shopping")
+def view_cart() -> str:
+    """Report what is currently in the user's cart.
+
+    A plain, framework-agnostic function bound through `LangGraphToolBuilder`: it takes no LangGraph
+    types and reads the cart from the session via `ToolContext`, so the same function would work
+    unchanged on any other framework. It sees the context as of the start of this turn — write-back
+    happens once the run completes, so items added by `add_to_cart` in the *same* turn are not
+    visible here (the state channel, used by `add_to_cart`, is the within-turn view).
+    """
+    context = ToolContext.get()
+    session = context.session if context is not None else None
+    cart = (session.get_framework_context() or {}).get("cart", []) if session is not None else []
+    return ", ".join(cart) if cart else "(empty)"
 
 
 class SeedCartContextPreHook(PreHook):
@@ -87,7 +101,16 @@ class AppendCartPostHook(PostHook):
         return "append_cart"
 
 
-shopping_graph = _build_shopping_graph()
+# `add_to_cart` is already a LangChain tool, so it is passed through as-is; `view_cart` is a plain
+# function that LangGraphToolBuilder.bind() wraps into a StructuredTool (and which also appends any
+# enabled system tools, such as multimodal attachment analysis).
+shopping_graph = create_react_agent(
+    model,
+    tools=[add_to_cart, *LangGraphToolBuilder.bind([view_cart])],
+    state_schema=ShoppingState,
+    prompt=SYSTEM_PROMPT,
+    name="shopping",
+)
 
 LangGraphModule([shopping_graph]).pre_hook(shopping_graph, [SeedCartContextPreHook()]).post_hook(
     shopping_graph, [AppendCartPostHook()]
