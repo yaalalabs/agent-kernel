@@ -374,12 +374,11 @@ Both `queue_mode` settings are supported:
 Modes:
 
 - `async` — the full response is delivered in one WebSocket message once the agent finishes.
-- `stream` — **not implemented for containerized deployments yet.** The ECS runtime emits no
-  per-token `STREAM_CHUNK` messages: with `queue_mode = false` it silently behaves like
-  `async` (one `CHAT_RESPONSE`), and with `queue_mode = true` the output consumer falls
-  through to the response store, which is not created in WebSocket modes. Use `async` until
-  streaming lands. (Token-by-token streaming is available today in the AWS **serverless**
-  deployment, and over SSE via `execution_mode = "stream"` on a non-WebSocket REST setup.)
+- `stream` — the agent's token deltas are pushed as they're generated, each as its own
+  `STREAM_CHUNK` WebSocket message. With `queue_mode = false`, the ingress service streams
+  the agent inline and broadcasts each chunk directly over the connection. With
+  `queue_mode = true`, `ECSStreamAgentRunner` fans out each chunk as its own Output Queue
+  message and `ECSOutputConsumer` broadcasts every one as a `STREAM_CHUNK`.
 
 **What gets created (in addition to the base — and, with `queue_mode = true`, queue-mode — resources):**
 
