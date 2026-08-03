@@ -344,9 +344,12 @@ def test_run_builds_default_handlers(monkeypatch):
 
 
 def _make_async_gen(items):
-    async def _gen(req, sse_format=False):
+    async def _stream():
         for item in items:
             yield item
+
+    async def _gen(req, sse_format=False):
+        return _stream()
 
     return _gen
 
@@ -384,9 +387,12 @@ async def test_process_chat_direct_stream_broadcasts_error_chunk_on_exception():
     ws_mock = MagicMock()
     handler.get_websocket_handler = lambda: ws_mock
 
-    async def _failing_gen(req, sse_format=False):
+    async def _stream():
         yield json.dumps({"delta": "partial", "done": False})
         raise RuntimeError("boom")
+
+    async def _failing_gen(req, sse_format=False):
+        return _stream()
 
     mock_chat_service = MagicMock()
     mock_chat_service.process_stream_chat_async = _failing_gen
