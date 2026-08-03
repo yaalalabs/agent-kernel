@@ -65,6 +65,8 @@ module "containerized_agents" {
     scale_out_cooldown = 30
   }
 
+  enable_api_gateway_logs = false
+
   tags = {
     Example     = "openai-websocket-scalable"
     Environment = var.env_alias
