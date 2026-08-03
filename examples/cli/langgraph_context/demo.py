@@ -89,7 +89,9 @@ class AppendCartPostHook(PostHook):
 
 shopping_graph = _build_shopping_graph()
 
-LangGraphModule([shopping_graph]).pre_hook(shopping_graph, [SeedCartContextPreHook()]).post_hook(shopping_graph, [AppendCartPostHook()])
+LangGraphModule([shopping_graph]).pre_hook(shopping_graph, [SeedCartContextPreHook()]).post_hook(
+    shopping_graph, [AppendCartPostHook()]
+)
 
 if __name__ == "__main__":
     CLI.main()
