@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
@@ -148,14 +149,15 @@ class PydanticAIRunner(BaseRunner):
 
             # `deps` is Pydantic AI's only caller-dependency slot and AK owns it, so tools and instruction
             # functions read and mutate the context via RunContext.deps.
+            # A deep copy is passed in so tools mutating it in place don't also mutate `incoming`.
             incoming = self._load_framework_context(session)
-            result = await agent.agent.run(content, message_history=history, deps=incoming)
+            produced = copy.deepcopy(incoming)
+            result = await agent.agent.run(content, message_history=history, deps=produced)
 
             if fw_session is not None:
                 fw_session.messages = to_jsonable_python(result.all_messages())
 
-            # Tools mutate the injected object in place, so the produced state is that same object.
-            self._store_framework_context(session, incoming, incoming)
+            self._store_framework_context(session, incoming, produced)
 
             structured = AgentReplyAny.from_output(result.output, prompt)
             if structured is not None:
@@ -193,8 +195,9 @@ class PydanticAIRunner(BaseRunner):
             history = ModelMessagesTypeAdapter.validate_python(fw_session.messages) if fw_session and fw_session.messages else None
 
             incoming = self._load_framework_context(session)
+            produced = copy.deepcopy(incoming)
 
-            async with agent.agent.run_stream(content, message_history=history, deps=incoming) as result:
+            async with agent.agent.run_stream(content, message_history=history, deps=produced) as result:
                 async for delta in result.stream_text(delta=True):
                     if delta:
                         yield delta
@@ -205,7 +208,7 @@ class PydanticAIRunner(BaseRunner):
                 # Only after the stream drains normally, so a disconnect or mid-stream error leaves the stored
                 # context intact. Deliberately not in a finally.
                 try:
-                    self._store_framework_context(session, incoming, incoming)
+                    self._store_framework_context(session, incoming, produced)
                 except Exception as e:
                     self._log_framework_context_stream_failure(session, e)
         finally:

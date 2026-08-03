@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
@@ -182,11 +183,12 @@ class OpenAIRunner(BaseRunner):
 
             input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
             # Injected as the run context, so tools read and write it via RunContextWrapper.context.
+            # A deep copy is passed in so tools mutating it in place don't also mutate `incoming`.
             incoming = self._load_framework_context(session)
-            reply = (await Runner.run(agent.agent, input_data, session=session_to_use, context=incoming)).final_output
+            produced = copy.deepcopy(incoming)
+            reply = (await Runner.run(agent.agent, input_data, session=session_to_use, context=produced)).final_output
 
-            # Tools mutate the injected object in place, so the produced state is that same object.
-            self._store_framework_context(session, incoming, incoming)
+            self._store_framework_context(session, incoming, produced)
 
             structured = AgentReplyAny.from_output(reply, prompt)
             if structured is not None:
@@ -218,7 +220,8 @@ class OpenAIRunner(BaseRunner):
 
             input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
             incoming = self._load_framework_context(session)
-            result = Runner.run_streamed(agent.agent, input_data, session=session_to_use, context=incoming)
+            produced = copy.deepcopy(incoming)
+            result = Runner.run_streamed(agent.agent, input_data, session=session_to_use, context=produced)
 
             async for event in result.stream_events():
                 if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
@@ -228,7 +231,7 @@ class OpenAIRunner(BaseRunner):
             # Only after the stream drains normally, so a disconnect or framework error leaves the stored
             # context intact. Deliberately not in a finally.
             try:
-                self._store_framework_context(session, incoming, incoming)
+                self._store_framework_context(session, incoming, produced)
             except Exception as e:
                 self._log_framework_context_stream_failure(session, e)
         finally:
