@@ -7,7 +7,6 @@ requires-python = ">=3.12"
 dependencies = [
     "agentkernel[cli,langgraph]>=0.8.0",
     "langchain-openai>=1.1.16",
-    "openai>=1.99.1",
 ]
 
 [dependency-groups]
