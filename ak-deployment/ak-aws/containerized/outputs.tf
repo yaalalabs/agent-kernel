@@ -112,3 +112,13 @@ output "websocket_connection_table_arn" {
   description = "DynamoDB WebSocket connections table ARN"
   value       = try(module.websocket_connections[0].table_arn, null)
 }
+
+output "websocket_api_cloudwatch_log_group_arn" {
+  description = "ARN of the CloudWatch log group for the WebSocket API Gateway (null when access logging is disabled)"
+  value       = local.is_websocket_mode && var.enable_api_gateway_logs ? aws_cloudwatch_log_group.ws_api[0].arn : null
+}
+
+output "websocket_api_cloudwatch_log_group_name" {
+  description = "Name of the CloudWatch log group for the WebSocket API Gateway (null when access logging is disabled)"
+  value       = local.is_websocket_mode && var.enable_api_gateway_logs ? aws_cloudwatch_log_group.ws_api[0].name : null
+}

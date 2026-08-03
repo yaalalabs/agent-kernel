@@ -215,7 +215,7 @@ variable "throttling_burst_limit" {
 
 variable "enable_api_gateway_logs" {
   type        = bool
-  description = "When true, creates the API Gateway CloudWatch log group and enables access logging on the HTTP API stage. Off by default."
+  description = "When true, creates the API Gateway CloudWatch log group and enables access logging on the HTTP API stage (or the WebSocket API stage, in WebSocket modes). Off by default."
   default     = false
 }
 
