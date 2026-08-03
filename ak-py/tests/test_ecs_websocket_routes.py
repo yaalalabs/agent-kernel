@@ -14,6 +14,7 @@ from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
 )
 from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandler
 
+
 def _fake_config(mode=ExecutionMode.ASYNC):
     """Minimal AKConfig stand-in exposing only what the WS handlers/register read."""
     return SimpleNamespace(
@@ -126,9 +127,7 @@ def test_register_duplicate_warns_and_keeps_first(caplog):
     assert any("already registered" in r.message for r in caplog.records)
 
 
-
 # build_route_context: is_chat controls how `message` is parsed
-
 
 
 def _fake_request(body: dict):
@@ -168,9 +167,7 @@ async def test_build_route_context_custom_route_keeps_raw_dict():
     assert not isinstance(ctx.message, BaseRequest)
 
 
-
 # _wrap_custom_route behavior
-
 
 
 @pytest.mark.asyncio
@@ -282,9 +279,7 @@ async def test_wrap_context_resolution_error_maps_to_status():
     ws_mock.broadcast.assert_not_called()
 
 
-
 # get_router / handler assembly
-
 
 
 def test_get_router_emits_post_per_route():
