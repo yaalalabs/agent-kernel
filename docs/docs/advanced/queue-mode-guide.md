@@ -87,10 +87,10 @@ Failure handling:
 Same as REST Sync except:
 
 1. The `POST` returns immediately (202) with a `request_id`.
-2. The client polls `GET /api/v1/chat` with `request_id` in a JSON body (not a query string) to
-   retrieve the result. Same path as the `POST`, differentiated by HTTP method — no path segment.
-3. `request_id` is the only lookup key: it's a unique UUIDv4 per request, generated on submit and
-   returned in the `POST` response, so it's sufficient on its own to fetch the right reply.
+2. The client polls `GET /api/v1/chat?request_id=...&session_id=...` (query params, no path
+   segment) to retrieve the result. Same path as the `POST`, differentiated by HTTP method.
+3. `request_id` is the only lookup key. `session_id` is optional and used only for
+   logging/error messages — it is not validated against the stored reply.
 
 ### WebSocket (Async) Mode
 
@@ -175,7 +175,7 @@ through the response store; `async` always pushes over the WebSocket connection 
 | Class | Container | Role |
 |-------|-----------|------|
 | `ECSIOHandler` | IO container | Entrypoint: starts Thread 1 + Thread 2 via `ThreadRunner`; Thread 1 is `AWSRestAPI` (`rest_sync`/`rest_async`) or `AWSWebsocketAPI` (`async`/`stream`), selected by `execution.mode` |
-| `ECSQueueRequestHandler` | IO container / Thread 1 (REST modes) | FastAPI: `POST /api/v1/chat` enqueues; `GET /api/v1/chat` polls with `request_id` in the JSON body (not a query string, no path segment) |
+| `ECSQueueRequestHandler` | IO container / Thread 1 (REST modes) | FastAPI: `POST /api/v1/chat` enqueues; `GET /api/v1/chat?request_id=...&session_id=...` polls (query params only, no path segment) |
 | `ECSWebSocketRequestHandler` / `ECSWebSocketSystemRequestHandler` | IO container / Thread 1 (WebSocket modes) | Chat + custom routes, and `$connect`/`$disconnect`/`$default` respectively — see [WebSocket (Async) Mode in ECS](#websocket-async-mode-in-ecs) |
 | `ECSOutputConsumer` | IO container / Thread 2 | Extends `ECSSQSConsumer`; runs `output.no_of_consumers` (default 2) threads polling Output Queue → response store |
 | `ECSAgentRunner` | Agent Runner container | Extends `ECSSQSConsumer`; runs `input.no_of_consumers` (default 5) threads polling Input Queue, running the agent, sending to Output Queue |
@@ -215,10 +215,10 @@ Identical infrastructure to REST Sync. The difference is purely in `ECSQueueRequ
 
 - `POST /api/v1/chat` returns **202 Accepted** with a `request_id` immediately after
   enqueuing (Thread 1 does not wait on DynamoDB).
-- `GET /api/v1/chat` (no path segment) reads `request_id` from a JSON body — not a query string —
-  matching the serverless Lambda poll path. It looks the request up in the DynamoDB Response
-  Store and returns the result, or `404 NOT_FOUND` if nothing is there yet. `request_id` is the
-  only lookup key: a unique UUIDv4 per request.
+- `GET /api/v1/chat?request_id=...&session_id=...` (query params, no path segment) reads from
+  the DynamoDB Response Store by `request_id` and returns the result, or `404 NOT_FOUND` if
+  nothing is there yet (`session_id` is optional and used only for logging, not validated
+  against the stored reply).
 
 ### WebSocket (Async) Mode in ECS
 
