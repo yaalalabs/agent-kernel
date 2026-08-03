@@ -81,8 +81,7 @@ shopping_agent = Agent(
     tools=[add_to_cart] + OpenAIToolBuilder.bind([view_cart]),
 )
 
-OpenAIModule([shopping_agent]).pre_hook(
-    shopping_agent, [SeedCartContextPreHook()]).post_hook(
+OpenAIModule([shopping_agent]).pre_hook(shopping_agent, [SeedCartContextPreHook()]).post_hook(
     shopping_agent, [AppendCartPostHook()]
 )
 
