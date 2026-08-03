@@ -179,7 +179,7 @@ the full agent reply as one `CHAT_RESPONSE` message instead — see [`openai-web
 
 ## Cleanup
 
-From `examples/aws-containerized/openai-websocket-stream/deploy/` run:
+From `examples/aws-containerized/openai-stream/deploy/` run:
 
 ```bash
 terraform destroy
