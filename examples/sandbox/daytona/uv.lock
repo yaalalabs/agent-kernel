@@ -18,8 +18,8 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.7.0"
-source = { registry = "../../../ak-py/dist" }
+version = "0.8.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -27,9 +27,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { path = "agentkernel-0.7.0.tar.gz" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/8a/fd760ca8bb46e1d912f4bdb2a51b1d10fea63e330d67cdde18de1855aca0/agentkernel-0.8.0.tar.gz", hash = "sha256:95d45978804bd1bcc35954d1913622c02eb5f0d319e26725a8adeeeebc9bdfc4", size = 307958, upload-time = "2026-08-03T09:42:56.242Z" }
 wheels = [
-    { path = "agentkernel-0.7.0-py3-none-any.whl" },
+    { url = "https://files.pythonhosted.org/packages/46/76/6db44eeca0ba5402ab47eb6d991d59ec5bf868e53de1c67c77b96ca2314a/agentkernel-0.8.0-py3-none-any.whl", hash = "sha256:a8299e704d37a7c5aff8e75bdbd8e33885e8fc9bd32bd7087c1bba8d688aa158", size = 432873, upload-time = "2026-08-03T09:42:54.387Z" },
 ]
 
 [package.optional-dependencies]
@@ -543,11 +543,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["cli", "openai", "daytona"], specifier = ">=0.7.0" }]
+requires-dist = [{ name = "agentkernel", extras = ["cli", "openai", "daytona"], specifier = ">=0.8.0" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.7.0" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.8.0" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "langchain-community", specifier = "==0.4.1" },

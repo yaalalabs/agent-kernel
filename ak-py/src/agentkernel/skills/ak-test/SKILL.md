@@ -24,7 +24,7 @@ Update `pyproject.toml`:
 ```toml
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.7.0",
+    "agentkernel[test]>=0.8.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -256,7 +256,7 @@ pip install "agentkernel[pydanticai]" # For Pydantic AI (add a provider, e.g. py
 
 Or in `pyproject.toml`:
 ```toml
-dependencies = ["agentkernel[openai,api]>=0.7.0"]
+dependencies = ["agentkernel[openai,api]>=0.8.0"]
 ```
 
 #### Issue: Redis connection errors

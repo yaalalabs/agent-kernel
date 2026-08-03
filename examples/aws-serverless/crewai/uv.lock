@@ -15,7 +15,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.7.0"
+version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -24,9 +24,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a4/4d/de669ab63a38c1237f9116d7cee43487a090ede57b398298988d03ba97c2/agentkernel-0.7.0.tar.gz", hash = "sha256:8b50eb3b0bd625b0c2019d66874fe0c43a0c4cbc747ded798f85668bb257d3df", size = 298327, upload-time = "2026-07-28T06:44:49.335Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/8a/fd760ca8bb46e1d912f4bdb2a51b1d10fea63e330d67cdde18de1855aca0/agentkernel-0.8.0.tar.gz", hash = "sha256:95d45978804bd1bcc35954d1913622c02eb5f0d319e26725a8adeeeebc9bdfc4", size = 307958, upload-time = "2026-08-03T09:42:56.242Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/76/c1/6dee86b227094f5adde17e611988e4a4305f0daf83b868de2a469ef7a152/agentkernel-0.7.0-py3-none-any.whl", hash = "sha256:f6cf96ec5c52bac516a1eb6c3f32516a1ce61a6fda0be8759d3ab39b75611f4f", size = 419333, upload-time = "2026-07-28T06:44:47.72Z" },
+    { url = "https://files.pythonhosted.org/packages/46/76/6db44eeca0ba5402ab47eb6d991d59ec5bf868e53de1c67c77b96ca2314a/agentkernel-0.8.0-py3-none-any.whl", hash = "sha256:a8299e704d37a7c5aff8e75bdbd8e33885e8fc9bd32bd7087c1bba8d688aa158", size = 432873, upload-time = "2026-08-03T09:42:54.387Z" },
 ]
 
 [package.optional-dependencies]
@@ -212,11 +212,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["crewai", "redis"], specifier = ">=0.7.0" }]
+requires-dist = [{ name = "agentkernel", extras = ["crewai", "redis"], specifier = ">=0.8.0" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.7.0" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.8.0" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
