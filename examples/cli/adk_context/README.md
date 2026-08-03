@@ -18,7 +18,7 @@ session. Without the `framework_context` round-trip, anything your tools put in 
 soon as the process goes away. The write-back copies that state into a durable session key, so the
 cart is reloaded on the next turn by whatever session store you have configured.
 
-The post-hook in this demo deliberately reads `session.get(framework_context)` — the Agent Kernel
+The post-hook in this demo deliberately reads `session.get_framework_context()` — the Agent Kernel
 session, not ADK's state. Everything it prints is therefore proof that the round-trip happened.
 
 ## How it works

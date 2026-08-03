@@ -36,7 +36,7 @@ feature.
 
 5. **Showing it on every reply.** A `PostHook` (`AppendCartPostHook`) appends a `Current cart: …`
    line to every reply. Post-hooks run *after* the runner has already written the context back, so
-   the hook reads the up-to-date cart straight from `session.get(framework_context)` — no need for
+   the hook reads the up-to-date cart straight from `session.get_framework_context()` — no need for
    the agent to call `view_cart`. This also shows that the same per-run state is reachable from a
    hook (via the session) as from a tool (via the run context).
 

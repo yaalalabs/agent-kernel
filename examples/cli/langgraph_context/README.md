@@ -26,7 +26,7 @@ injected on the way in but never come back on the way out — so it would not pe
 `cart` channel, as this demo does, is what makes the round-trip real.
 
 > `framework_context` is also **distinct from LangGraph's own checkpointed state**. This demo reads
-> and writes the cart through `session.get(framework_context)` — the framework-agnostic, caller-facing
+> and writes the cart through `session.get_framework_context()` — the framework-agnostic, caller-facing
 > slot — not through LangGraph's internal checkpointer. That is what lets a plain `PreHook`/`PostHook`
 > (and any tool, on any framework) touch the same state with identical code.
 
@@ -51,7 +51,7 @@ injected on the way in but never come back on the way out — so it would not pe
 
 5. **Showing it on every reply.** A `PostHook` (`AppendCartPostHook`) appends a `Current cart: …`
    line to every reply. Post-hooks run *after* the runner has already written the context back, so
-   the hook reads the up-to-date cart straight from `session.get(framework_context)`. This shows that
+   the hook reads the up-to-date cart straight from `session.get_framework_context()`. This shows that
    the same per-run state is reachable from a hook (via the session) as from inside the graph (via
    the state channel).
 
