@@ -12,8 +12,9 @@ MODEL = "openai:gpt-4o-mini"
 CART_PREFIX = "Current cart:"
 
 
-# Native Pydantic AI tools: a first parameter typed RunContext receives the run's deps, which is where
-# Agent Kernel injects framework_context. Mutate it in place.
+# Framework-recommended style: a plain callable handed straight to ``tools=``, which Pydantic AI
+# registers itself. A first parameter typed RunContext receives the run's deps, which is where Agent
+# Kernel injects framework_context. Mutate it in place.
 def add_to_cart(ctx: RunContext[dict], item: str) -> str:
     """Add a grocery item to the shopping cart carried in the per-run context.
 
@@ -26,6 +27,9 @@ def add_to_cart(ctx: RunContext[dict], item: str) -> str:
     return f"Added '{item}'. The cart now has {len(cart)} item(s)."
 
 
+# Agent Kernel style, still context-aware: bound with ``PydanticAIToolBuilder.bind``, which wraps
+# the function in a Pydantic AI ``Tool``. Binding does not cut the tool off from deps — a RunContext
+# first parameter is honoured exactly as in the native style above.
 def view_cart(ctx: RunContext[dict]) -> str:
     """Return the current contents of the shopping cart from the per-run context."""
     cart = ctx.deps.get("cart", [])
@@ -34,8 +38,9 @@ def view_cart(ctx: RunContext[dict]) -> str:
     return "The cart contains: " + ", ".join(cart)
 
 
-# An Agent Kernel tool for contrast: bound through PydanticAIToolBuilder, it takes no RunContext and
-# reaches execution context through ToolContext instead, so it never sees deps.
+# Agent Kernel style, framework-agnostic: also bound through PydanticAIToolBuilder, but it declares
+# no RunContext and reaches execution context through ToolContext instead, so it never sees deps.
+# Written this way the same function can be bound to any other framework unchanged.
 def get_delivery_estimate(city: str) -> str:
     """Return the delivery estimate for a city.
 
@@ -84,7 +89,9 @@ shopping_agent = Agent(
     "the view_cart tool whenever they ask what is in their cart, and get_delivery_estimate for delivery questions. "
     "Keep answers short and state only what changed or what the cart currently contains.",
     deps_type=dict,
-    tools=[add_to_cart, view_cart, *PydanticAIToolBuilder.bind([get_delivery_estimate])],
+    # Both styles compose in one list: plain callables Pydantic AI registers itself, alongside tools
+    # bound by the builder.
+    tools=[add_to_cart, *PydanticAIToolBuilder.bind([view_cart,get_delivery_estimate])],
 )
 
 module = PydanticAIModule([shopping_agent])

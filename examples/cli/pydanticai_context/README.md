@@ -4,12 +4,14 @@ This demo shows how to carry a **framework-agnostic context/state object across 
 Kernel's reserved `framework_context` session value, with an agent built on Pydantic AI.
 
 A grocery shopping assistant keeps a **cart** in the framework context. Three tools run side by side,
-and the pairing is the point of this example:
+declared in **both supported styles**, and the pairing is the point of this example:
 
-- `add_to_cart(ctx, item)` — **native Pydantic AI tool**; appends to `ctx.deps`
-- `view_cart(ctx)` — **native Pydantic AI tool**; reads `ctx.deps`
-- `get_delivery_estimate(city)` — **Agent Kernel tool** bound with `PydanticAIToolBuilder`; uses
-  `ToolContext`, takes no `RunContext`, and never sees `deps`
+- `add_to_cart(ctx, item)` — **framework-recommended style**: a plain callable handed straight to
+  `tools=` for Pydantic AI to register; appends to `ctx.deps`
+- `view_cart(ctx)` — **Agent Kernel style**: bound with `PydanticAIToolBuilder`, yet still declares a
+  `RunContext` and reads `ctx.deps` — binding does not cut a tool off from the per-run context
+- `get_delivery_estimate(city)` — **Agent Kernel style, framework-agnostic**: also bound with
+  `PydanticAIToolBuilder`, but it uses `ToolContext`, takes no `RunContext`, and never sees `deps`
 
 The cart survives across turns even though each turn is a separate run — that persistence is the
 feature.
@@ -30,7 +32,9 @@ feature.
 
 3. **Tools read/write it.** A tool whose first parameter is typed `RunContext` receives the run's deps
    and reads or mutates `ctx.deps` — the injected dict — **in place**. This applies to instruction
-   functions and output validators too, anything taking a `RunContext`.
+   functions and output validators too, anything taking a `RunContext` — and it holds whether the tool
+   was registered directly or bound with `PydanticAIToolBuilder`, since the builder just wraps the
+   function in a Pydantic AI `Tool`.
 
 4. **Write-back.** After a **successful** run, Agent Kernel writes the (mutated) object back to the
    session. On a framework error or a client disconnect mid-stream, the previously stored context is
@@ -66,17 +70,34 @@ Current cart: milk, eggs
 The `Current cart:` line is appended by the post-hook on every turn. The third turn is a fresh run,
 yet both earlier items are still there because the context round-tripped across every turn.
 
+## Two ways to declare a tool
+
+Both styles work on the same agent and compose in a single `tools=` list:
+
+```python
+tools=[add_to_cart, *PydanticAIToolBuilder.bind([view_cart, get_delivery_estimate])]
+```
+
+| | Declared as | Notes |
+|---|---|---|
+| Framework-recommended | plain callable in `tools=[add_to_cart]` (or the `@agent.tool` decorator) | Pydantic AI registers it; full access to the framework's own tool options — `retries`, `prepare`, docstring format, custom `Tool(...)` construction |
+| Agent Kernel | `tools=PydanticAIToolBuilder.bind([view_cart, get_delivery_estimate])` | The builder wraps each function in a Pydantic AI `Tool`; a function written without `RunContext` can be bound to another framework's builder unchanged |
+
+Reach for the builder when you want the tool to stay portable across frameworks, and for direct
+registration when you need framework-specific tool options.
+
 ## `RunContext` vs `ToolContext`
 
-Both tool styles work on the same agent, and they reach different things:
+Declaration style is independent of how a tool reaches context. What decides that is the tool's
+**signature** — `view_cart` is bound by the builder *and* takes a `RunContext`:
 
-| | Declared as | Reaches |
+| | Signature | Reaches |
 |---|---|---|
-| Native Pydantic AI tool | `tools=[add_to_cart]`, first param `RunContext` | `ctx.deps` — the per-run framework context (and Pydantic AI's own run metadata) |
-| Agent Kernel tool | `tools=PydanticAIToolBuilder.bind([get_delivery_estimate])` | `ToolContext.get()` — session, agent, requests; portable to every other framework |
+| `RunContext` tool | first param typed `RunContext` (`add_to_cart`, `view_cart`) | `ctx.deps` — the per-run framework context (and Pydantic AI's own run metadata) |
+| `ToolContext` tool | no `RunContext` param (`get_delivery_estimate`) | `ToolContext.get()` — session, agent, requests; portable to every other framework |
 
-Use the native style when a tool needs to read or write the per-run context, and the builder style for
-tools you want to reuse unchanged on another framework.
+Take a `RunContext` when a tool needs to read or write the per-run context; leave it out — and use
+`ToolContext` — for tools you want to reuse unchanged on another framework.
 
 ## Reading the context outside a tool
 

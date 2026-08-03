@@ -3,7 +3,7 @@ import logging
 from agentkernel.cli import CLI
 from agentkernel.core import AgentReplyText, PostHook, PreHook
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
-from agents import Agent, RunContextWrapper
+from agents import Agent, RunContextWrapper, function_tool
 
 logger = logging.getLogger("ak.example.openai_context")
 
@@ -11,6 +11,11 @@ logger = logging.getLogger("ak.example.openai_context")
 CART_PREFIX = "Current cart:"
 
 
+# Framework-recommended style: decorate the function with the OpenAI Agents SDK's own
+# ``function_tool`` and hand the result straight to ``tools=``. A first parameter typed
+# ``RunContextWrapper`` receives the run context, which is where Agent Kernel injects
+# framework_context. Mutate ``ctx.context`` in place.
+@function_tool
 def add_to_cart(ctx: RunContextWrapper, item: str) -> str:
     """Add a grocery item to the shopping cart carried in the per-run context.
 
@@ -24,6 +29,9 @@ def add_to_cart(ctx: RunContextWrapper, item: str) -> str:
     return f"Added '{item}'. The cart now has {len(cart)} item(s)."
 
 
+# Agent Kernel style: leave the function plain and bind it with ``OpenAIToolBuilder.bind``, which
+# applies ``function_tool`` for you. The context plumbing is identical — a ``RunContextWrapper``
+# first parameter still receives the injected framework_context.
 def view_cart(ctx: RunContextWrapper) -> str:
     """Return the current contents of the shopping cart from the per-run context."""
     context = ctx.context or {}
@@ -66,7 +74,9 @@ shopping_agent = Agent(
     instructions="You are a grocery shopping assistant. Use the add_to_cart tool whenever the user wants to add an item, "
     "and the view_cart tool whenever they ask what is in their cart. Keep answers short and state only what changed "
     "or what the cart currently contains.",
-    tools=OpenAIToolBuilder.bind([add_to_cart, view_cart]),
+    # Both styles compose in one list: already-decorated tools go in as they are, plain functions
+    # go through the builder.
+    tools=[add_to_cart]+OpenAIToolBuilder.bind([view_cart]),
 )
 
 OpenAIModule([shopping_agent]).pre_hook(shopping_agent, [SeedCartContextPreHook()]).post_hook(

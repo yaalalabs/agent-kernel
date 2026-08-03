@@ -3,10 +3,13 @@
 This demo shows how to carry a **framework-agnostic context/state object across turns** using Agent
 Kernel's reserved `framework_context` session key, with an agent built on the OpenAI Agents SDK.
 
-A grocery shopping assistant keeps a **cart** in `framework_context`. Two tools operate on it:
+A grocery shopping assistant keeps a **cart** in `framework_context`. Two tools operate on it, and
+each is declared in a **different but equally supported style**:
 
-- `add_to_cart(item)` — appends an item to the cart
-- `view_cart()` — returns the cart's current contents
+- `add_to_cart(ctx, item)` — appends an item to the cart; declared the **framework-recommended** way,
+  decorated with the OpenAI Agents SDK's own `@function_tool` and passed straight into `tools=`
+- `view_cart(ctx)` — returns the cart's current contents; declared the **Agent Kernel** way, left as a
+  plain function and bound with `OpenAIToolBuilder.bind`
 
 The cart survives across turns even though each turn is a separate run — that persistence is the
 feature.
@@ -23,7 +26,9 @@ feature.
    OpenAI Agents SDK run **context** (`Runner.run(..., context=...)`).
 
 3. **Tools read/write it.** Each tool declares a first parameter typed `RunContextWrapper` and reads
-   or mutates `ctx.context` — the injected dict — **in place**.
+   or mutates `ctx.context` — the injected dict — **in place**. This works in either declaration
+   style: `OpenAIToolBuilder.bind` applies `function_tool` for you, so a bound tool sees the run
+   context exactly as a hand-decorated one does.
 
 4. **Write-back.** After a **successful** run, Agent Kernel writes the (mutated) object back to the
    same session key. On a framework error or a client disconnect mid-stream, the previously stored
@@ -57,6 +62,23 @@ Current cart: milk, eggs
 
 The `Current cart:` line is appended by the post-hook on every turn. The third turn is a fresh run,
 yet both earlier items are still there because `framework_context` round-tripped across every turn.
+
+## Two ways to declare a tool
+
+Both styles work on the same agent and compose in a single `tools=` list:
+
+```python
+tools=[add_to_cart] + OpenAIToolBuilder.bind([view_cart])
+```
+
+| | Declared as | Notes |
+|---|---|---|
+| Framework-recommended | `@function_tool` on the function, then `tools=[add_to_cart]` | Use the SDK directly; full access to `function_tool`'s own options (custom name, description override, failure handler) |
+| Agent Kernel | plain function, then `tools=OpenAIToolBuilder.bind([view_cart])` | The builder calls `function_tool` for you; the same function body can be bound to another framework's builder unchanged |
+
+Neither style changes how the per-run context is reached — a `RunContextWrapper` first parameter is
+honoured in both. Reach for the builder when you want the tool to stay portable across frameworks,
+and for the decorator when you need SDK-specific tool options.
 
 ## Reading the context outside a tool
 
