@@ -14,6 +14,16 @@ CART_PREFIX = "Current cart:"
 NOTE_PREFIX = "Delivery note:"
 
 
+# This demo declares its three tools in the two different ways Agent Kernel supports, to show
+# that both work side by side and that both can reach the per-run context. Nothing else about
+# the three tools differs.
+
+
+# TOOL 1 OF 3 — declared Google ADK's own way ("native").
+# A plain function passed straight to ``tools=`` (see the agent below); ADK turns it into a
+# ``FunctionTool`` itself and Agent Kernel plays no part in it.
+# To reach the per-run context, declare a ``tool_context: ToolContext`` parameter. ADK fills it
+# with the live tool context, and Agent Kernel injects framework_context into ``tool_context.state``.
 def add_to_cart(item: str, tool_context: ToolContext) -> str:
     """Add a grocery item to the shopping cart carried in the per-run context.
 
@@ -28,6 +38,11 @@ def add_to_cart(item: str, tool_context: ToolContext) -> str:
     return f"Added '{item}'. The cart now has {len(cart)} item(s)."
 
 
+# TOOL 2 OF 3 — declared the Agent Kernel way.
+# ``GoogleADKToolBuilder.bind`` wraps the function for you where the agent is created below, which
+# also makes Agent Kernel's own ``ToolContext.get()`` (session, runtime, agent) available inside it.
+# Context access is exactly the same as in tool 1: the builder forwards ADK's ``tool_context`` when
+# the function declares it, so a bound tool still reads and writes ADK state.
 def view_cart(tool_context: ToolContext) -> str:
     """Return the current contents of the shopping cart from the per-run context."""
     cart = tool_context.state.get("cart") or []
@@ -36,6 +51,9 @@ def view_cart(tool_context: ToolContext) -> str:
     return "The cart contains: " + ", ".join(cart)
 
 
+# TOOL 3 OF 3 — also declared the Agent Kernel way, like tool 2. What it adds is a write to a key
+# that was never seeded into framework_context, to show that keys a tool invents mid-run survive
+# on ADK (see the README for how this differs on other frameworks).
 def set_delivery_note(note: str, tool_context: ToolContext) -> str:
     """Attach a delivery note to the order, e.g. where to leave it.
 
@@ -90,6 +108,8 @@ shopping_agent = Agent(
     Use the set_delivery_note tool whenever they say where or how the order should be delivered.
     Keep answers short and state only what changed or what the cart currently contains.
     """,
+    # Both declaration styles go into the same list: the two functions handed to the builder,
+    # alongside the plain function ADK registers itself. The agent cannot tell them apart.
     tools=GoogleADKToolBuilder.bind([view_cart, set_delivery_note]) + [add_to_cart],
 )
 

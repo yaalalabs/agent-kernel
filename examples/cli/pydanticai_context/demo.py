@@ -12,9 +12,13 @@ MODEL = "openai:gpt-4o-mini"
 CART_PREFIX = "Current cart:"
 
 
-# Framework-recommended style: a plain callable handed straight to ``tools=``, which Pydantic AI
-# registers itself. A first parameter typed RunContext receives the run's deps, which is where Agent
-# Kernel injects framework_context. Mutate it in place.
+# The three tools are declared two different ways — the framework's own and Agent Kernel's — to show
+# both work side by side, and both reach the per-run context.
+
+
+# TOOL 1 — native: a plain callable that Pydantic AI registers itself.
+# A ``RunContext`` first parameter receives the run's ``deps``, which is where framework_context is
+# injected — so mutating ``ctx.deps`` in place updates the cart.
 def add_to_cart(ctx: RunContext[dict], item: str) -> str:
     """Add a grocery item to the shopping cart carried in the per-run context.
 
@@ -27,9 +31,8 @@ def add_to_cart(ctx: RunContext[dict], item: str) -> str:
     return f"Added '{item}'. The cart now has {len(cart)} item(s)."
 
 
-# Agent Kernel style, still context-aware: bound with ``PydanticAIToolBuilder.bind``, which wraps
-# the function in a Pydantic AI ``Tool``. Binding does not cut the tool off from deps — a RunContext
-# first parameter is honoured exactly as in the native style above.
+# TOOL 2 — Agent Kernel: ``PydanticAIToolBuilder.bind`` wraps the function in a Pydantic AI
+# ``Tool``. Context is unchanged — a ``RunContext`` first parameter still receives framework_context.
 def view_cart(ctx: RunContext[dict]) -> str:
     """Return the current contents of the shopping cart from the per-run context."""
     cart = ctx.deps.get("cart", [])
@@ -38,9 +41,9 @@ def view_cart(ctx: RunContext[dict]) -> str:
     return "The cart contains: " + ", ".join(cart)
 
 
-# Agent Kernel style, framework-agnostic: also bound through PydanticAIToolBuilder, but it declares
-# no RunContext and reaches execution context through ToolContext instead, so it never sees deps.
-# Written this way the same function can be bound to any other framework unchanged.
+# TOOL 3 — Agent Kernel, framework-agnostic: bound like tool 2, but it declares no ``RunContext``
+# so it never sees deps. It reaches the session through Agent Kernel's ``ToolContext`` instead, so
+# the same function can be bound to any other framework unchanged.
 def get_delivery_estimate(city: str) -> str:
     """Return the delivery estimate for a city.
 
@@ -89,8 +92,7 @@ shopping_agent = Agent(
     "the view_cart tool whenever they ask what is in their cart, and get_delivery_estimate for delivery questions. "
     "Keep answers short and state only what changed or what the cart currently contains.",
     deps_type=dict,
-    # Both styles compose in one list: plain callables Pydantic AI registers itself, alongside tools
-    # bound by the builder.
+    # Both styles in one list: the plain callable as is, the other two through the builder.
     tools=[add_to_cart, *PydanticAIToolBuilder.bind([view_cart, get_delivery_estimate])],
 )
 
