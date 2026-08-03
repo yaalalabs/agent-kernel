@@ -207,7 +207,8 @@ class WebSocketHandlerABC(ABC):
         message_type: Optional["WebSocketHandlerABC.MessageType"] = None,
     ) -> None:
         """
-        Broadcast a message to multiple connections; when message_type is set it wraps as {"type": ..., ...message}.
+        Broadcast a message to multiple connections; when message_type is set it wraps as {...message, "type": ...},
+        so message_type always wins over any caller-provided message["type"].
 
         :param endpoint_url: WebSocket management endpoint URL
         :param message: Message dictionary to broadcast
@@ -221,7 +222,7 @@ class WebSocketHandlerABC(ABC):
             raise ValueError("Provide either user_id or connection_ids")
 
         if message_type is not None:
-            message = {"type": message_type.value, **message}
+            message = {**message, "type": message_type.value}
 
         if user_id:
             connection_ids = self.get_connections(user_id)
