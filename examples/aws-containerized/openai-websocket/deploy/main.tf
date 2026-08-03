@@ -33,6 +33,8 @@ module "containerized_agents" {
     { route = "echo" }
   ]
 
+  enable_api_gateway_logs = false
+
   tags = {
     Example     = "openai-websocket"
     Environment = var.env_alias
