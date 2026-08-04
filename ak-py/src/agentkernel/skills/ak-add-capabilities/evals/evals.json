@@ -207,6 +207,21 @@
       ]
     },
     {
+      "id": "cap-hooks-framework-context",
+      "name": "Seed and read per-run framework context via hooks",
+      "input": "I want to carry some per-run state through to my agent's native framework call using a hook",
+      "expected_outputs": [
+        "framework_context",
+        "get_framework_context(",
+        "set_framework_context(",
+        "PreHook",
+        "PostHook"
+      ],
+      "must_not_contain": [
+        "ToolContext.get().session.set_framework_context"
+      ]
+    },
+    {
       "id": "cap-multimodal",
       "name": "Enable multimodal support",
       "input": "Enable image and file processing",
