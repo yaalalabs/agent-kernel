@@ -163,9 +163,9 @@ back to the right client.
 `config.yaml` sets `execution.mode: async`, meaning the full agent reply is sent as one
 `CHAT_RESPONSE` message. Setting it to `stream` instead delivers the reply token-by-token as a
 sequence of `STREAM_CHUNK` messages, terminated by a chunk with `"done": true` — see
-[`openai-stream`](../openai-stream) for a full streaming example (built on the
-queue-mode architecture, since streaming pairs naturally with an independently-scalable Agent
-Runner).
+[`openai-stream`](../openai-stream) for the direct-mode streaming counterpart of this example, or
+[`openai-stream-queue-mode`](../openai-stream-queue-mode) if you need the Agent Runner to scale
+independently of ingress.
 ## Prerequisites
 
 - AWS CLI configured with appropriate credentials
