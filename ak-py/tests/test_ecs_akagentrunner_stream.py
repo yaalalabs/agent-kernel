@@ -110,6 +110,32 @@ def test_process_message_streams_chunks_to_output_queue():
     assert mock_send.call_count == 3
 
 
+def test_process_message_retry_does_not_reuse_prior_attempt_dedup_ids():
+    """A redelivered message (ApproximateReceiveCount > 1) must get different dedup IDs than
+    the first attempt, or SQS FIFO's dedup window silently drops the retry's chunks."""
+    record = _make_record({"prompt": "hello", "session_id": "s1"})
+    record["Attributes"]["ApproximateReceiveCount"] = "1"
+    retry_record = _make_record({"prompt": "hello", "session_id": "s1"})
+    retry_record["Attributes"]["ApproximateReceiveCount"] = "2"
+
+    def _mock_process_stream_sync(req, sse_format=False):
+        yield json.dumps({"delta": "Hello", "done": False, "session_id": "s1"})
+
+    mock_chat_service = MagicMock()
+    mock_chat_service.process_stream_chat_sync = _mock_process_stream_sync
+
+    with (
+        patch.object(ECSStreamAgentRunner, "_get_chat_service", return_value=mock_chat_service),
+        patch.object(SQSHandler, "send_message_to_output_queue") as mock_send,
+    ):
+        ECSStreamAgentRunner.process_message(record)
+        ECSStreamAgentRunner.process_message(retry_record)
+
+    first_dedup_id = mock_send.call_args_list[0].kwargs["attributes"]["message_deduplication_id"]
+    retry_dedup_id = mock_send.call_args_list[1].kwargs["attributes"]["message_deduplication_id"]
+    assert first_dedup_id != retry_dedup_id
+
+
 def test_on_permanent_failure_sends_error_chunk():
     record = _make_record({"prompt": "hello", "session_id": "s1"})
 
