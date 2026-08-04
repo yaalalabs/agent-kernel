@@ -195,6 +195,7 @@ rest_service = {
   desired_count         = 1            # Number of tasks
   container_port        = 8000         # Container port
   health_check_endpoint = "/health"    # Health check path
+  health_check_grace_period_seconds = 120 # ECS ignores ALB unhealthy signals for this long after task start
   image_uri             = null         # Pre-built image URI (alternative to package_path)
   command               = null         # Override Docker CMD
   environment_variables = {}           # Service-specific env vars

@@ -6,8 +6,10 @@ Used by parallel GitHub Actions jobs for both integration tests and e2e tests.
 
 import argparse
 import os
+import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -129,6 +131,57 @@ def run_containerized_test(path: str) -> bool:
     """Run containerized example test."""
     return run_simple_test(path)
 
+def _read_tfvar(deploy_path: Path, key: str) -> str | None:
+    """Read a scalar value from a deploy dir's terraform.tfvars (best-effort)."""
+    tfvars = deploy_path / 'terraform.tfvars'
+    if not tfvars.exists():
+        return None
+    pattern = re.compile(rf'^\s*{re.escape(key)}\s*=\s*"?([^"\n]+?)"?\s*$')
+    for line in tfvars.read_text().splitlines():
+        match = pattern.match(line)
+        if match:
+            return match.group(1).strip()
+    return None
+
+
+def sweep_gcp_error_connectors(deploy_path: Path) -> None:
+    region = _read_tfvar(deploy_path, 'region')
+    product_alias = _read_tfvar(deploy_path, 'product_alias')
+    env_alias = _read_tfvar(deploy_path, 'env_alias')
+    if not (region and product_alias and env_alias):
+        print("Skipping GCP connector sweep - could not resolve "
+              "region/product_alias/env_alias from terraform.tfvars")
+        return
+
+    network = f"{product_alias}-{env_alias}-vpc"
+    print(f"\n🧹 Sweeping ERROR-state VPC connectors on network '{network}' (region {region})...")
+    try:
+        result = subprocess.run(
+            ['gcloud', 'compute', 'networks', 'vpc-access', 'connectors', 'list',
+             f'--region={region}',
+             f'--filter=state=ERROR AND network~{network}$',
+             '--format=value(name)'],
+            check=True, capture_output=True, text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"Could not list VPC connectors (skipping sweep): {e}")
+        return
+
+    connectors = [line.strip().split('/')[-1] for line in result.stdout.splitlines() if line.strip()]
+    if not connectors:
+        print(" No ERROR-state connectors to clean up.")
+        return
+
+    for name in connectors:
+        print(f"   Deleting ERROR connector: {name}")
+        subprocess.run(
+            ['gcloud', 'compute', 'networks', 'vpc-access', 'connectors', 'delete', name,
+             f'--region={region}', '--quiet'],
+            check=False,
+        )
+    print(" Connector sweep complete.")
+
+
 def destroy_gcp_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:
     """Destroy GCP resources."""
     deploy_path = Path(path) / deploy_dir
@@ -170,7 +223,9 @@ def destroy_gcp_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = N
         env=tf_env
     ):
         return False
-    
+
+    sweep_gcp_error_connectors(deploy_path)
+
     # Destroy (already has -auto-approve flag)
     return run_command(
         ['terraform', 'destroy', '-auto-approve'],
@@ -222,14 +277,21 @@ def deploy_gcp_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = No
         env=tf_env
     ):
         return False
-    
-    # Deploy
-    return run_command(
-        ['./deploy.sh', 'local'],
-        cwd=str(deploy_path),
-        description=f"Deploying {path}",
-        env=tf_env
-    )
+
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        if run_command(
+            ['./deploy.sh', 'local'],
+            cwd=str(deploy_path),
+            description=f"Deploying {path} (attempt {attempt}/{max_attempts})",
+            env=tf_env
+        ):
+            return True
+        if attempt < max_attempts:
+            print(f" Deploy attempt {attempt}/{max_attempts} failed; sweeping "
+                  f"ERROR-state VPC connectors before retrying...")
+            sweep_gcp_error_connectors(deploy_path)
+    return False
 
 def test_gcp_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
     """Test an already deployed GCP resource."""
@@ -431,6 +493,82 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
         env=test_env
     )
 
+def _resolve_lambda_sg_ids(deploy_path: Path, region: str) -> list[str]:
+    """Look up the example's Lambda security group ids by module-convention name."""
+    product_alias = _read_tfvar(deploy_path, 'product_alias')
+    env_alias = _read_tfvar(deploy_path, 'env_alias')
+    if not (product_alias and env_alias):
+        return []
+    sg_names = [
+        f"{product_alias}-{env_alias}-lambda-sg",
+        f"{product_alias}-{env_alias}-authorizer-lambda-sg",
+    ]
+    try:
+        result = subprocess.run(
+            ['aws', 'ec2', 'describe-security-groups', '--region', region,
+             '--filters', f'Name=group-name,Values={",".join(sg_names)}',
+             '--query', 'SecurityGroups[].GroupId', '--output', 'text'],
+            check=True, capture_output=True, text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return []
+    return [sg for sg in result.stdout.split() if sg and sg != 'None']
+
+
+def _delete_lambda_functions_on_sgs(sg_ids: list[str], region: str) -> None:
+    """Delete Lambda functions attached to sg_ids up front so AWS starts
+    releasing their Hyperplane ENIs immediately."""
+    wanted = set(sg_ids)
+    try:
+        res = subprocess.run(
+            ['aws', 'lambda', 'list-functions', '--region', region,
+             '--query', 'Functions[].{Name:FunctionName,SGs:VpcConfig.SecurityGroupIds}',
+             '--output', 'json'],
+            check=False, capture_output=True, text=True,
+        )
+        functions = json.loads(res.stdout or '[]')
+    except Exception as e:  # never let cleanup crash the run
+        print(f"   Could not list Lambda functions (ignored): {e}")
+        return
+    for fn in functions:
+        if wanted.intersection(fn.get('SGs') or []):
+            name = fn['Name']
+            print(f"   Pre-deleting Lambda function {name} to start ENI release")
+            subprocess.run(
+                ['aws', 'lambda', 'delete-function', '--region', region,
+                 '--function-name', name],
+                check=False, capture_output=True, text=True,
+            )
+
+
+def _start_lambda_eni_sweeper(sg_ids: list[str], region: str, stop_event: threading.Event) -> threading.Thread:
+    """Background loop that deletes detached Lambda ENIs on the given SGs."""
+    def loop():
+        while not stop_event.is_set():
+            try:
+                res = subprocess.run(
+                    ['aws', 'ec2', 'describe-network-interfaces', '--region', region,
+                     '--filters', f'Name=group-id,Values={",".join(sg_ids)}',
+                     'Name=status,Values=available',
+                     '--query', 'NetworkInterfaces[].NetworkInterfaceId', '--output', 'text'],
+                    check=False, capture_output=True, text=True,
+                )
+                for eni in res.stdout.split():
+                    print(f"   Deleting detached Lambda ENI {eni} to free SGs {sg_ids}")
+                    subprocess.run(
+                        ['aws', 'ec2', 'delete-network-interface', '--region', region,
+                         '--network-interface-id', eni],
+                        check=False, capture_output=True, text=True,
+                    )
+            except Exception as e:  # never let the sweeper thread crash the run
+                print(f"   Lambda ENI sweep iteration error (ignored): {e}")
+            stop_event.wait(15)
+
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+    return thread
+
+
 def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:
     """Destroy AWS resources."""
     deploy_path = Path(path) / deploy_dir
@@ -471,14 +609,29 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = N
         env=tf_env
     ):
         return False
-    
-    # Destroy (already has -auto-approve flag)
-    return run_command(
-        ['terraform', 'destroy', '-auto-approve'],
-        cwd=str(deploy_path),
-        description=f"Destroying {path}",
-        env=tf_env
-    )
+
+    region = _read_tfvar(deploy_path, 'region') or os.environ.get('AWS_REGION')
+    sweeper = None
+    stop_event = threading.Event()
+    if region:
+        sg_ids = _resolve_lambda_sg_ids(deploy_path, region)
+        if sg_ids:
+            print(f"Starting Lambda ENI sweeper for security groups {sg_ids} "
+                  f"(region {region}) to speed up destroy...")
+            _delete_lambda_functions_on_sgs(sg_ids, region)
+            sweeper = _start_lambda_eni_sweeper(sg_ids, region, stop_event)
+
+    try:
+        return run_command(
+            ['terraform', 'destroy', '-auto-approve'],
+            cwd=str(deploy_path),
+            description=f"Destroying {path}",
+            env=tf_env
+        )
+    finally:
+        stop_event.set()
+        if sweeper:
+            sweeper.join(timeout=20)
 
 
 def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:

@@ -8,7 +8,7 @@ data "azurerm_client_config" "current" {}
 # Create Virtual Network (equivalent to VPC)
 resource "azurerm_virtual_network" "main" {
   name                = "${var.product_alias}-${var.env_alias}-vnet"
-  location            = data.azurerm_resource_group.current_group.location
+  location            = var.location
   resource_group_name = data.azurerm_resource_group.current_group.name
   address_space       = [var.vnet_cidr]
 
@@ -63,7 +63,7 @@ resource "azurerm_subnet" "private" {
 # Create Public IP for NAT Gateway
 resource "azurerm_public_ip" "nat" {
   name                = "${var.product_alias}-${var.env_alias}-nat-pip"
-  location            = data.azurerm_resource_group.current_group.location
+  location            = var.location
   resource_group_name = data.azurerm_resource_group.current_group.name
   allocation_method   = "Static"
   sku                 = "Standard"
@@ -79,7 +79,7 @@ resource "azurerm_public_ip" "nat" {
 # Create NAT Gateway
 resource "azurerm_nat_gateway" "nat" {
   name                = "${var.product_alias}-${var.env_alias}-nat"
-  location            = data.azurerm_resource_group.current_group.location
+  location            = var.location
   resource_group_name = data.azurerm_resource_group.current_group.name
   sku_name            = "Standard"
 

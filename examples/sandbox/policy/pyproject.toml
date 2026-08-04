@@ -5,12 +5,12 @@ description = "Agent Kernel sandbox example: policy and permissions, including t
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,openai,sandbox-docker]>=0.7.0",
+    "agentkernel[cli,openai,sandbox-docker]>=0.8.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.7.0",
+    "agentkernel[test]>=0.8.0",
     # ragas imports langchain_community.chat_models.vertexai, removed in langchain-community
     # 0.4.2; pinned until an agentkernel release ships the pin in its `test` extra.
     "langchain-community==0.4.1",

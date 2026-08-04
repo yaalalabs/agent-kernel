@@ -45,7 +45,7 @@ resource "azurerm_subnet_network_security_group_association" "redis_subnet_nsg_a
 
 resource "azurerm_managed_redis" "redis" {
   name                      = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-enterprise"
-  location                  = data.azurerm_resource_group.current_group.location
+  location                  = var.region
   resource_group_name       = data.azurerm_resource_group.current_group.name
   sku_name                  = var.is_production ? "Balanced_B5" : "Balanced_B0"
   high_availability_enabled = false
@@ -65,7 +65,7 @@ resource "azurerm_managed_redis" "redis" {
 resource "azurerm_network_security_group" "redis_nsg" {
   count               = var.create_NSG ? 1 : 0
   name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-nsg"
-  location            = data.azurerm_resource_group.current_group.location
+  location            = var.region
   resource_group_name = data.azurerm_resource_group.current_group.name
 
   tags = var.tags
@@ -75,7 +75,7 @@ resource "azurerm_network_security_group" "redis_nsg" {
 # Private Endpoint for Redis(need this when we are not binding the redis to a subnet)
 resource "azurerm_private_endpoint" "redis" {
   name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-pe"
-  location            = data.azurerm_resource_group.current_group.location
+  location            = var.region
   resource_group_name = data.azurerm_resource_group.current_group.name
   subnet_id           = data.azurerm_subnet.redis_subnet.id
 

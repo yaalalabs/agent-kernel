@@ -160,6 +160,14 @@ resource "null_resource" "deploy_function_code" {
     command = <<EOT
       set -e
 
+      reauth() {
+        if [ -n "$${AK_PRE_DEPLOY_AUTH_CMD:-}" ]; then
+          echo "Refreshing Azure CLI session via AK_PRE_DEPLOY_AUTH_CMD..."
+          eval "$${AK_PRE_DEPLOY_AUTH_CMD}"
+        fi
+      }
+
+      reauth
       echo "Waiting for Function App to be in 'Running' state..."
       TIMEOUT=300
       ELAPSED=0
@@ -188,12 +196,14 @@ resource "null_resource" "deploy_function_code" {
         exit 1
       fi
 
+      reauth
       echo "Deploying function code..."
       az functionapp deployment source config-zip \
         --resource-group ${data.azurerm_resource_group.rg.name} \
         --name ${local.function_app_name} \
         --src ${var.package_path}
 
+      reauth
       echo "Waiting for deployment to complete and host keys to be available..."
       TIMEOUT=300
       ELAPSED=0

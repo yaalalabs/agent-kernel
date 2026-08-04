@@ -62,7 +62,7 @@ locals {
 
 module "vpc" {
   source               = "yaalalabs/ak-common/aws//modules/vpc"
-  version              = "0.7.0"
+  version              = "0.8.0"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
@@ -74,7 +74,7 @@ module "vpc" {
 
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
-  version       = "0.7.0"
+  version       = "0.8.0"
   count         = var.create_redis_cluster == true ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
@@ -86,7 +86,7 @@ module "redis" {
 
 module "valkey" {
   source        = "yaalalabs/ak-common/aws//modules/valkey"
-  version       = "0.7.0"
+  version       = "0.8.0"
   count         = var.create_valkey_cluster == true ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
@@ -99,7 +99,7 @@ module "valkey" {
 module "docker_image" {
   count         = 1
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.7.0"
+  version       = "0.8.0"
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
@@ -110,7 +110,7 @@ module "docker_image" {
 module "agent_runner_docker_image" {
   count         = var.queue_mode && var.agent_runner.package_path != null ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.7.0"
+  version       = "0.8.0"
   env_alias     = var.env_alias
   module_name   = "${var.module_name}-runner"
   product_alias = var.product_alias
@@ -119,7 +119,7 @@ module "agent_runner_docker_image" {
 
 module "dynamodb_memory" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.7.0"
+  version = "0.8.0"
   count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
