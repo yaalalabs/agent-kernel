@@ -1,9 +1,9 @@
 import asyncio
 import logging
 import readline  # Enables line editing and history features for input() in the CLI
+import threading
 
 from ..core import AgentService
-from ..core.config import AKConfig
 
 ak_cli_logger = logging.getLogger("ak.cli")
 
@@ -47,6 +47,32 @@ class CLI:
                 self._print(f"  {agent.name}")
             self._print()
 
+    @staticmethod
+    async def _ainput(prompt: str) -> str:
+        """
+        Reads a line of input without blocking the event loop, so background tasks keep running between turns.
+        The reader is a daemon thread, so Ctrl+C exits instead of waiting on a thread parked in `input()`.
+        :param prompt: The prompt to display to the user.
+        :return: The line entered by the user.
+        """
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[str] = loop.create_future()
+
+        def resolve(setter, value):
+            if not future.done():
+                setter(value)
+
+        def read():
+            try:
+                line = input(prompt)
+            except BaseException as e:  # noqa: BLE001 - relayed to the awaiting caller
+                loop.call_soon_threadsafe(resolve, future.set_exception, e)
+            else:
+                loop.call_soon_threadsafe(resolve, future.set_result, line)
+
+        threading.Thread(target=read, daemon=True, name="ak-cli-input").start()
+        return await future
+
     async def run(self):
         self._print("AgentKernel CLI (type !help for commands or !quit to exit):")
         self._service.select()
@@ -57,7 +83,7 @@ class CLI:
         while True:
             try:
                 name = self._service.agent.name if self._service.agent else "none"
-                prompt = input(f"({name}) >> ")
+                prompt = await self._ainput(f"({name}) >> ")
                 if not prompt.strip():
                     continue
                 if prompt.startswith("!"):

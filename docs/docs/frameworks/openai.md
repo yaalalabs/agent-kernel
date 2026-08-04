@@ -110,6 +110,10 @@ Pydantic results are converted via `model_dump()`, and `str(reply)` returns the 
 Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.
 :::
 
+## Per-run context/state
+
+OpenAI has **full round-trip** fidelity for the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key. It is injected as the OpenAI Agents SDK run **context** (`Runner.run(..., context=...)`), which tools read and mutate in place via `RunContextWrapper.context`; the mutated object is written back to the session after a successful run, so every key — including ones a tool adds mid-run — survives to the next turn.
+
 ## Features
 
 - ✅ Function calling
@@ -124,3 +128,5 @@ Structured output applies to non-streaming execution only. Streamed runs emit to
 See [examples/cli/openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai) for complete examples.
 
 For structured output, see [examples/cli/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai_structured) and [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai_structured) (REST API + post-execution hook).
+
+For per-run context/state carried across turns, see [examples/cli/openai_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai_context) (a cart kept in `framework_context`, seeded by a pre-hook and round-tripped by the runner).

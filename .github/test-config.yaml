@@ -13,11 +13,17 @@ e2e:
     - type: cli
       path: examples/cli/openai_structured
     - type: cli
+      path: examples/cli/openai_context
+    - type: cli
       path: examples/cli/adk
+    - type: cli
+      path: examples/cli/adk_context
     - type: cli
       path: examples/cli/crewai
     - type: cli
       path: examples/cli/langgraph
+    - type: cli
+      path: examples/cli/langgraph_context
     - type: cli
       path: examples/cli/multi
     - type: cli
@@ -30,6 +36,8 @@ e2e:
       path: examples/cli/guardrail/bedrock
     - type: cli
       path: examples/cli/pydanticai/
+    - type: cli
+      path: examples/cli/pydanticai_context
     # - type: cli
     #   path: examples/cli/guardrail/walledai
 

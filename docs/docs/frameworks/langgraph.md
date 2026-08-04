@@ -131,6 +131,10 @@ Pydantic results are converted via `model_dump()`; graphs without `response_form
 Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.
 :::
 
+## Per-run context/state
+
+LangGraph round-trips the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key **only for keys the graph's state schema declares as channels**. Its top-level keys are spread into the graph input alongside `messages` (never replacing `messages`); on write-back only keys present on the result come back. A prebuilt `create_react_agent` uses `AgentState` and silently drops unknown keys, so for prebuilt agents the value is the uniform cross-framework API rather than new persistence — custom graphs whose state schema includes your keys get a real round-trip.
+
 ## Features
 
 - ✅ Graph-based workflows
@@ -143,3 +147,5 @@ Structured output applies to non-streaming execution only. Streamed runs emit to
 ## Example
 
 See [examples/cli/langgraph](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph) for complete examples.
+
+For per-run context/state carried across turns, see [examples/cli/langgraph_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph_context) (a custom graph declaring a `cart` state channel, showing the declared-channel round-trip that a prebuilt `create_react_agent` cannot do).

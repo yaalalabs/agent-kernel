@@ -1,14 +1,12 @@
 import logging
 from typing import Any
 
-from langchain_core.messages import HumanMessage
 from langfuse import Langfuse, propagate_attributes
 from langfuse.langchain import CallbackHandler
 
 from ...core import Session
-from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
-from ...core.util.error_util import user_facing_error_message
-from ...framework.langgraph.langgraph import LangGraphRunner, LangGraphSessionConfigModel, LangGraphSessionConfigurable
+from ...core.model import AgentReply, AgentRequest
+from ...framework.langgraph.langgraph import LangGraphRunner
 
 
 class LangFuseLangGraph(LangGraphRunner):
@@ -23,48 +21,29 @@ class LangFuseLangGraph(LangGraphRunner):
         self._log = logging.getLogger("ak.trace.langfuse.langgraph")
         self._callback_handler = CallbackHandler()
 
+    def _prepare_session_and_messages(self, agent: Any, session: Session, prompt: str) -> tuple[dict, list]:
+        """
+        Wires the Langfuse callback handler into the base runner's session config so LangGraph emits traces.
+        Overriding only this seam keeps message building and framework_context handling in the base runner.
+        :param agent: The LangGraph agent.
+        :param session: The AgentKernel session.
+        :param prompt: The prompt text.
+        :return: Tuple of (session_config with Langfuse callbacks wired in, messages).
+        """
+        config, messages = super()._prepare_session_and_messages(agent, session, prompt)
+        config["callbacks"] = [self._callback_handler]
+        return config, messages
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
-        Runs the LangGraph agent with provided multi modal inputs.
+        Runs the LangGraph agent inside a Langfuse span, delegating execution to the base runner.
         :param agent: The LangGraph agent to run.
         :param session: The session to use for the agent.
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
-        prompt = ""
-        try:
-            for req in requests:
-                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
-                    continue
-                if isinstance(req, AgentRequestText):
-                    prompt = prompt + "\n" + req.prompt if prompt else req.prompt
-                else:
-                    return AgentReplyText(
-                        response="Sorry. Agent kernel LangGraph runner is unable to handle content other than text at the moment",
-                        prompt=prompt,
-                    )
-
-            if prompt.strip() == "":
-                return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
-
-            with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
-                with self._client.start_as_current_observation(name="Agent Kernel LangGraph", as_type="span") as span:
-                    session_config = LangGraphSessionConfigModel(configurable=LangGraphSessionConfigurable(thread_id=session.id))
-                    config = session_config.model_dump()
-                    config["callbacks"] = [self._callback_handler]
-                    agent.agent.checkpointer = self._session(session).checkpointer
-
-                    result = await agent.agent.ainvoke(
-                        input={"messages": [HumanMessage(content=prompt)]},
-                        config=config,
-                    )
-                    structured = AgentReplyAny.from_output(result.get("structured_response"), prompt)
-                    if structured is not None:
-                        span.update(input=prompt, output=str(structured))
-                        return structured
-                    last_message = result["messages"][-1]
-
-                    span.update(input=prompt, output=last_message.content)
-            return AgentReplyText(response=last_message.content, prompt=prompt)
-        except Exception as e:
-            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
+        with propagate_attributes(session_id=session.id, tags=["agentkernel"]):
+            with self._client.start_as_current_observation(name="Agent Kernel LangGraph", as_type="span") as span:
+                result = await super().run(agent, session, requests)
+                span.update(input=result.prompt, output=str(result))
+        return result

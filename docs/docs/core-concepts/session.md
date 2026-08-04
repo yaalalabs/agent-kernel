@@ -384,6 +384,98 @@ openai_session = session.get("openai_assistant_session")
 - Multiple agents can share the same session
 - Session data is automatically persisted to the configured backend
 
+### Framework context / per-run state
+
+Beyond the framework-internal keys above, the session exposes **one reserved key** that lets your
+application carry a **framework-agnostic context/state object** across turns of a conversation:
+`framework_context`. When set, the active framework's runner injects this object into the underlying
+framework call, and writes the (possibly mutated) object back after a **successful** run — so tools can
+read and update shared state that survives to the next turn.
+
+Reach it through three dedicated `Session` methods — you never need to name the reserved key, the same
+way `get_volatile_cache()` fronts its own key:
+
+```python
+# Read the stored context (the live dict), or None when none is set. Never creates the key.
+ctx = session.get_framework_context()
+
+# Seed or replace it (any picklable dict). Raises TypeError if the value is not a dict.
+if ctx is None:
+    ctx = session.set_framework_context({"user_id": "42", "cart": []})
+
+# Remove it, so nothing is injected on the next turn.
+session.clear_framework_context()
+```
+
+These accessors are for **pre-hooks and post-hooks** — the two places Agent Kernel hands your code the
+session around a run (see
+[Hooks → Per-run framework context](../integrations/hooks.md#per-run-framework-context)). A pre-hook
+seeds or edits the context *before* the runner loads it, so the edit is part of what gets injected this
+turn; a post-hook reads it *after* write-back, so it sees the completed run's mutations, and its own
+edits are still persisted (post-hooks run before the session is stored).
+
+```python
+class SeedContext(PreHook):
+    async def on_run(self, session, agent, requests):
+        if session.get_framework_context() is None:
+            session.set_framework_context({"cart": []})
+        return requests
+```
+
+Inside a tool, read and write the context through the **framework's native handle** instead — that is
+what the runner injected it into:
+
+```python
+from agents import RunContextWrapper   # OpenAI Agents SDK
+
+def add_to_cart(wrapper: RunContextWrapper[dict], item: str) -> str:
+    """Read and mutate the per-run context through the framework's own handle."""
+    wrapper.context.setdefault("cart", []).append(item)
+    return f"Added {item}"
+```
+
+:::warning Tools use the native handle, not the session accessors
+The runner injects a **deep copy** of the stored dict into the framework and, on a successful run,
+replaces the stored context wholesale with what the framework produced. A tool that reaches back through
+`ToolContext.get().session` is therefore reading and writing a *different* object than the run is
+carrying: its write is silently discarded on OpenAI, Pydantic AI, Google ADK, LangGraph and smolagents
+(it survives only on CrewAI, which never writes back), and it would break the atomic-per-turn guarantee,
+since the write would persist even when the run fails.
+
+Each framework's native handle:
+
+- **OpenAI** — mutate `wrapper.context` from a tool taking `RunContextWrapper`
+  ([example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai_context))
+- **Pydantic AI** — mutate `ctx.deps` from a native tool taking `RunContext`
+  ([example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/pydanticai_context))
+- **LangGraph** — return an update for a declared state channel
+  ([example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/langgraph_context))
+- **Google ADK** — write to `tool_context.state`
+- **Smolagents** — write to a **pre-seeded** key in `agent.state`
+- **CrewAI** — no injection and so no native handle; use
+  [`get_non_volatile_cache()`](#session-data-storage) for tool-visible per-run state instead (see
+  [CrewAI](../frameworks/crewai.md))
+:::
+
+**Rules and constraints:**
+- **Optional and non-breaking.** If no context is set (`get_framework_context()` returns `None`),
+  nothing is injected and behaviour is unchanged. A caller-set empty dict `{}` is treated as "present
+  but empty" — it is injected and round-tripped, so tools can populate it. This is why
+  `get_framework_context()` never auto-creates the context.
+- **Must be a picklable `dict`.** `set_framework_context()` rejects a non-`dict` with a `TypeError` at
+  your call site. Sessions are persisted with `pickle`, so a non-picklable value likewise raises a
+  `TypeError` naming the offending key/type rather than an opaque store-level failure. In a
+  non-streamed run these surface as an error reply; at the end of a **streamed** run — where the
+  response has already reached the client — a write-back failure is logged and skipped instead, so
+  the stored context stays intact and the rest of the session is still persisted.
+- **Write-back is atomic per turn.** The updated context is stored only after the run completes
+  successfully. On a framework error — or a client disconnect mid-stream — the previously stored
+  context is left intact (partial state is discarded, not saved).
+- **Round-trip fidelity differs per framework.** See the fidelity table in the
+  [Runner](./runner.md#per-run-framework-context) documentation — notably, CrewAI does not support it
+  (it warns and ignores a set context), and smolagents / prebuilt LangGraph agents round-trip only
+  a subset of keys.
+
 ### Multi-Agent Sessions
 
 Sessions can track multiple agents within the same conversation:

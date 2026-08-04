@@ -133,10 +133,11 @@ agent = Agent(
 PydanticAIModule([agent])
 ```
 
-Tools reach execution context (session, agent, requests) through `ToolContext.get()` — the same
-portable mechanism as every other adapter. Agent Kernel does **not** use Pydantic AI's
-`deps_type`/`RunContext` dependency injection, so a tool function bound here also works unchanged on
-any other framework. See [Tools](../core-concepts/tools) for the full guide.
+Tools bound this way reach execution context (session, agent, requests) through `ToolContext.get()` —
+the same portable mechanism as every other adapter, so a tool function bound here also works unchanged
+on any other framework. Agent Kernel does not require `deps_type`/`RunContext` for its own tools;
+`deps` carries the per-run [framework context](#per-run-contextstate) instead, which your **native**
+Pydantic AI tools can read. See [Tools](../core-concepts/tools) for the full guide.
 
 ## Structured Output
 
@@ -175,10 +176,45 @@ Pydantic AI run stops at the **first `output_type` match** and ends the run, so 
 streaming (the common case) is unaffected — it emits token-by-token deltas as usual.
 :::
 
+## Per-run context/state
+
+Pydantic AI has **full round-trip** fidelity for the reserved
+[`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key. It is
+injected as the run's **`deps`** (`agent.run(..., deps=...)` and `agent.run_stream(..., deps=...)`),
+which native tools, instruction functions and output validators read and mutate in place via
+`RunContext.deps`; the mutated object is written back to the session after a successful run, so every
+key — including ones a tool adds mid-run — survives to the next turn.
+
+```python
+from pydantic_ai import Agent, RunContext
+
+agent = Agent(model="openai:gpt-4o-mini", name="shop", deps_type=dict)
+
+@agent.tool
+def add_to_cart(ctx: RunContext[dict], item: str) -> str:
+    """Native Pydantic AI tool: reads and writes the per-run context via ctx.deps."""
+    ctx.deps.setdefault("cart", []).append(item)
+    return f"Added {item}"
+```
+
+Two caveats:
+
+- **`deps` is not validated at runtime.** Pydantic AI deliberately does not type-check `deps` against
+  `deps_type`, so an agent declaring `deps_type=MyDeps` receives the context **dict** without error. A
+  tool doing `ctx.deps.some_field` fails at tool-call time — as it already did against the previous
+  `deps=None` default. Annotate `deps_type=dict` (as above) when you use the framework context.
+- **`agent.override(deps=...)` wins.** Pydantic AI resolves an active override ahead of the `deps=`
+  argument, so inside an override block the framework context never reaches your tools and the
+  write-back stores the unmutated copy.
+
+Agent Kernel owns the `deps` slot: it exposes no way for application code to pass its own `deps`, so
+this injection cannot displace a caller-supplied value.
+
 ## Features
 
 - ✅ Function calling
 - ✅ Multi-agent delegation (delegation-via-tool; no `handoffs=` primitive)
+- ✅ Per-run context/state (`framework_context` → `deps`, full round-trip)
 - ✅ Streaming responses (native token streaming)
 - ✅ Structured output (`output_type` → `AgentReplyAny`)
 - ✅ Session management (message history persisted per session)
@@ -189,3 +225,8 @@ streaming (the common case) is unaffected — it emits token-by-token deltas as 
 
 See [examples/cli/pydanticai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/pydanticai)
 for a complete triage/math/weather delegation-via-tool example.
+
+For per-run context/state carried across turns, see
+[examples/cli/pydanticai_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/pydanticai_context)
+— a cart kept in the framework context, mutated by native `RunContext` tools alongside an Agent Kernel
+tool that uses `ToolContext`, so the two tool styles are shown side by side.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
@@ -171,6 +172,7 @@ class OpenAIRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
+        prompt = ""
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
@@ -180,7 +182,13 @@ class OpenAIRunner(BaseRunner):
                 return AgentReplyText(response="Sorry. No valid content found in the requests")
 
             input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
-            reply = (await Runner.run(agent.agent, input_data, session=session_to_use)).final_output
+            # Injected as the run context, so tools read and write it via RunContextWrapper.context.
+            # A deep copy is passed in so tools mutating it in place don't also mutate `incoming`.
+            incoming = self._load_framework_context(session)
+            produced = copy.deepcopy(incoming)
+            reply = (await Runner.run(agent.agent, input_data, session=session_to_use, context=produced)).final_output
+
+            self._store_framework_context(session, incoming, produced)
 
             structured = AgentReplyAny.from_output(reply, prompt)
             if structured is not None:
@@ -211,12 +219,21 @@ class OpenAIRunner(BaseRunner):
                 return
 
             input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
-            result = Runner.run_streamed(agent.agent, input_data, session=session_to_use)
+            incoming = self._load_framework_context(session)
+            produced = copy.deepcopy(incoming)
+            result = Runner.run_streamed(agent.agent, input_data, session=session_to_use, context=produced)
 
             async for event in result.stream_events():
                 if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
                     if event.data.delta:
                         yield event.data.delta
+
+            # Only after the stream drains normally, so a disconnect or framework error leaves the stored
+            # context intact. Deliberately not in a finally.
+            try:
+                self._store_framework_context(session, incoming, produced)
+            except Exception as e:
+                self._log_framework_context_stream_failure(session, e)
         finally:
             if context is not None:
                 context.reset()
@@ -268,12 +285,7 @@ class OpenAIAgent(BaseAgent):
         :param tool: Raw Python callable or already-wrapped OpenAI function_tool.
         """
         # Delegate to the tool builder to handle binding
-        wrapped = OpenAIToolBuilder.bind([tool])
-        for w in wrapped:
-            if not hasattr(self._agent, "tools") or self._agent.tools is None:
-                self._agent.tools = []
-            if w not in self._agent.tools:
-                self._agent.tools.append(w)
+        self._append_tools(self._agent, OpenAIToolBuilder.bind([tool]))
 
     def get_a2a_card(self):
         """

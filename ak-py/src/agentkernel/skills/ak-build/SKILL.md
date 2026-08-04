@@ -401,7 +401,7 @@ If the new tool or agent requires additional packages, update `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.7.0",
+    "agentkernel[openai,api,redis]>=0.8.0",
     "httpx>=0.27.0",        # Add any new deps for your tool
 ]
 ```

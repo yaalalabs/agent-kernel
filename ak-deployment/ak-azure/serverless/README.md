@@ -21,7 +21,7 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 | Name | Version |
 |------|---------|
 | Terraform | >= 1.9.5 |
-| Azure Provider | >= 4.57.0 |
+| Azure Provider | >= 4.57.0, < 5.0.0 |
 | Docker Provider | 3.6.2 |
 | Null Provider | 3.2.4 |
 

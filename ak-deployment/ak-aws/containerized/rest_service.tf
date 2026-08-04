@@ -29,14 +29,15 @@ module "rest_service" {
   dynamodb_thread_table_name   = local.dynamodb_thread_table_name
 
   rest_service = {
-    cpu                   = var.rest_service.cpu
-    memory                = var.rest_service.memory
-    desired_count         = var.rest_service.desired_count
-    container_port        = var.rest_service.container_port
-    health_check_endpoint = var.rest_service.health_check_endpoint
-    image_uri             = var.rest_service.image_uri != null ? var.rest_service.image_uri : module.docker_image[0].docker_image_uri
-    command               = var.rest_service.command
-    environment_variables = merge(var.environment_variables, var.rest_service.environment_variables)
+    cpu                               = var.rest_service.cpu
+    memory                            = var.rest_service.memory
+    desired_count                     = var.rest_service.desired_count
+    container_port                    = var.rest_service.container_port
+    health_check_endpoint             = var.rest_service.health_check_endpoint
+    health_check_grace_period_seconds = var.rest_service.health_check_grace_period_seconds
+    image_uri                         = var.rest_service.image_uri != null ? var.rest_service.image_uri : module.docker_image[0].docker_image_uri
+    command                           = var.rest_service.command
+    environment_variables             = merge(var.environment_variables, var.rest_service.environment_variables)
   }
 
   queue_mode                = var.queue_mode

@@ -68,6 +68,7 @@ Pre-execution hooks run **before** an agent processes a prompt. They can:
 - Prompt validation
 - User authentication/authorization
 - Request logging and analytics
+- Seeding or editing the per-run [framework context](#per-run-framework-context) carried across turns
 
 :::info Passing additional context to PreHooks
 The built in REST and Lambda servers automatically packs any properties in the request body, other than ["session_id", "prompt", "agent"] as AgentRequestAny objects (with the key name). 
@@ -90,6 +91,56 @@ Post-execution hooks run **after** an agent generates a response. They can:
 - Response formatting
 - Sentiment analysis
 - Response logging and analytics
+- Reading (or editing) the per-run [framework context](#per-run-framework-context) after the run wrote it back
+
+### Per-run framework context {#per-run-framework-context}
+
+Hooks are the supported surface for the reserved
+[`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key — a
+framework-agnostic, picklable context/state dict the runner injects into the native framework call and
+writes back after a successful run. Reach it through three `Session` methods:
+`get_framework_context()`, `set_framework_context(dict)`, `clear_framework_context()`.
+
+The ordering around a run is what makes each hook type useful:
+
+- A **pre-hook** runs before the runner loads the context, so its seed or edit is part of the dict
+  injected **this turn**.
+- A **post-hook** runs after write-back but before the session is stored, so it observes the completed
+  run's mutations **and** its own edits are persisted.
+
+```python
+from agentkernel import PostHook, PreHook
+from agentkernel.core.model import AgentReplyText
+
+class SeedCart(PreHook):
+    async def on_run(self, session, agent, requests):
+        # Never auto-created, so seed it explicitly on the first turn.
+        if session.get_framework_context() is None:
+            session.set_framework_context({"cart": []})
+        return requests
+
+    def name(self):
+        return "SeedCart"
+
+class AppendCart(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        # The runner has already written back, so this is the completed run's context.
+        cart = (session.get_framework_context() or {}).get("cart", [])
+        if isinstance(agent_reply, AgentReplyText):
+            agent_reply.response += f"\n\nCurrent cart: {', '.join(cart) or '(empty)'}"
+        return agent_reply
+
+    def name(self):
+        return "AppendCart"
+```
+
+:::warning Tools use the framework's native handle, not these accessors
+These accessors are for hooks only. A tool that writes through `ToolContext.get().session` writes to a
+different object than the run is carrying, so its write is discarded — tools must use their framework's
+native handle instead. See
+[Session → Framework context / per-run state](../core-concepts/session.md#framework-context--per-run-state)
+for the handle to use per framework and why.
+:::
 
 ### Structured Replies in Hooks
 

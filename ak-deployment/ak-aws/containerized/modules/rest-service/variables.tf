@@ -104,14 +104,15 @@ variable "dynamodb_thread_table_name" {
 variable "rest_service" {
   description = "REST service configuration object"
   type = object({
-    cpu                   = optional(number, 256)
-    memory                = optional(number, 512)
-    desired_count         = optional(number, 1)
-    container_port        = optional(number, 8000)
-    health_check_endpoint = optional(string, "/health")
-    image_uri             = string
-    command               = optional(list(string), null)
-    environment_variables = optional(map(string), {})
+    cpu                               = optional(number, 256)
+    memory                            = optional(number, 512)
+    desired_count                     = optional(number, 1)
+    container_port                    = optional(number, 8000)
+    health_check_endpoint             = optional(string, "/health")
+    health_check_grace_period_seconds = optional(number, 120)
+    image_uri                         = string
+    command                           = optional(list(string), null)
+    environment_variables             = optional(map(string), {})
   })
 }
 

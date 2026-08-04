@@ -1,0 +1,40 @@
+[project]
+name = "cli-pydanticai-context"
+version = "0.1.0"
+description = "Demo of per-run framework context/state carried across turns by Pydantic AI agents in Agent Kernel"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[cli,pydanticai]>=0.8.0",
+    # agentkernel[pydanticai] installs the provider-agnostic pydantic-ai-slim core only — pick a
+    # model provider explicitly. This demo uses OpenAI; swap for [anthropic], [google], etc.
+    "pydantic-ai-slim[openai]>=2.13.0",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.8.0",
+    "black==26.5.1",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+# ragas 0.4.3 imports langchain_community.chat_models.vertexai, removed in langchain-community 0.4.2
+constraint-dependencies = ["langchain-community<0.4.2"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

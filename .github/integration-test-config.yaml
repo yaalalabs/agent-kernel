@@ -52,7 +52,7 @@ weekly:
     - type: aws-containerized
       path: examples/aws-containerized/openai-dynamodb-scalable
       deploy_dir: deploy
-    
+
     # AWS Serverless
     - type: aws-serverless
       path: examples/aws-serverless/adk
@@ -69,7 +69,7 @@ weekly:
     - type: aws-serverless
       path: examples/aws-serverless/openai-auth
       deploy_dir: deploy
-    
+
     # Memory options
     - type: aws-serverless
       path: examples/memory/redis
@@ -85,7 +85,7 @@ weekly:
     - type: azure-serverless
       path: examples/azure-serverless/openai
       deploy_dir: deploy
-    
+
     # Azure Containerized
     - type: azure-containerized
       path: examples/azure-containerized/openai-cosmos
@@ -101,7 +101,7 @@ weekly:
     - type: gcp-serverless
       path: examples/gcp-serverless/openai-auth
       deploy_dir: deploy
-    
+
     # GCP Containerized
     - type: gcp-containerized
       path: examples/gcp-containerized/openai

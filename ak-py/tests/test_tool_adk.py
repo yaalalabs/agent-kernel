@@ -86,6 +86,21 @@ def multi_type_params(text: str, count: int, flag: bool = False) -> str:
     return f"{text}-{count}-{flag}"
 
 
+def read_state(tool_context: ADKToolContext) -> str:
+    """An ADK-aware tool that only needs the ADK tool context."""
+    return f"state={tool_context.state.get('cart')}"
+
+
+def append_state(item: str, tool_context: ADKToolContext) -> str:
+    """An ADK-aware tool that takes its own args plus the ADK tool context."""
+    return f"{item}:{tool_context.state.get('cart')}"
+
+
+async def async_read_state(tool_context: ADKToolContext) -> str:
+    """An async ADK-aware tool that only needs the ADK tool context."""
+    return f"async-state={tool_context.state.get('cart')}"
+
+
 # bind – basic behaviour
 class TestGoogleADKToolBuilderBind:
 
@@ -215,6 +230,67 @@ class TestWrapSignature:
         assert "count" in param_names
         assert "flag" in param_names
         assert "tool_context" in param_names
+
+
+# _wrap – tools that declare tool_context themselves
+class TestWrapAdkAwareTools:
+
+    def test_signature_keeps_single_tool_context_param(self):
+        wrapped = GoogleADKToolBuilder._wrap(read_state)
+        sig = inspect.signature(wrapped)
+        assert list(sig.parameters) == ["tool_context"]
+
+    def test_signature_preserves_declared_tool_context_kind(self):
+        wrapped = GoogleADKToolBuilder._wrap(read_state)
+        param = inspect.signature(wrapped).parameters["tool_context"]
+        assert param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+        assert param.default is inspect.Parameter.empty
+
+    def test_sync_wrapper_forwards_tool_context(self):
+        adk_ctx = _make_adk_tool_context({"cart": ["milk"]})
+        wrapped = GoogleADKToolBuilder._wrap(read_state)
+        assert wrapped(tool_context=adk_ctx) == "state=['milk']"
+
+    def test_sync_wrapper_forwards_tool_context_alongside_args(self):
+        adk_ctx = _make_adk_tool_context({"cart": ["milk"]})
+        wrapped = GoogleADKToolBuilder._wrap(append_state)
+        assert wrapped("bread", tool_context=adk_ctx) == "bread:['milk']"
+
+    def test_sync_wrapper_accepts_positional_tool_context(self):
+        adk_ctx = _make_adk_tool_context({"cart": ["milk"]})
+        wrapped = GoogleADKToolBuilder._wrap(read_state)
+        assert wrapped(adk_ctx) == "state=['milk']"
+
+    @pytest.mark.asyncio
+    async def test_async_wrapper_forwards_tool_context(self):
+        adk_ctx = _make_adk_tool_context({"cart": ["eggs"]})
+        wrapped = GoogleADKToolBuilder._wrap(async_read_state)
+        assert await wrapped(tool_context=adk_ctx) == "async-state=['eggs']"
+
+    @pytest.mark.asyncio
+    async def test_function_tool_invokes_adk_aware_tool(self):
+        """The full ADK path: FunctionTool injects tool_context and it reaches the tool."""
+        [tool] = GoogleADKToolBuilder.bind([append_state])
+        adk_ctx = _make_adk_tool_context({"cart": ["milk"]})
+        result = await tool.run_async(args={"item": "bread"}, tool_context=adk_ctx)
+        assert result == "bread:['milk']"
+
+    def test_ak_context_still_activated_for_adk_aware_tool(self):
+        """Forwarding the ADK context must not skip AK tool context activation."""
+        runtime = MagicMock(spec=Runtime)
+        ak_ctx = AKToolContext(runtime, MockAgent(), Session("adk-aware-session"), [AgentRequestText(prompt="hi")])
+        with ak_ctx:
+            captured_ids = []
+
+            def both_contexts(tool_context: ADKToolContext) -> str:
+                """Read both the ADK and AK contexts."""
+                captured_ids.append(AKToolContext.get().id)
+                return str(tool_context.state.get("cart"))
+
+            adk_ctx = _make_adk_tool_context({"ak_tool_context": ak_ctx.id, "cart": ["milk"]})
+            wrapped = GoogleADKToolBuilder._wrap(both_contexts)
+            assert wrapped(tool_context=adk_ctx) == "['milk']"
+            assert captured_ids == [ak_ctx.id]
 
 
 # _wrap – invocation with AKToolContext integration
@@ -624,7 +700,9 @@ class TestGoogleADKRunnerToolContext:
         mock_runner = MagicMock()
         mock_runner.run_async = mock_run_async
 
-        with patch.object(GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock())):
+        with patch.object(
+            GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock(), MagicMock())
+        ):
             chunks = []
             async for delta in runner.stream(mock_agent, session, requests):
                 chunks.append(delta)
@@ -651,7 +729,9 @@ class TestGoogleADKRunnerToolContext:
         mock_runner = MagicMock()
         mock_runner.run_async = mock_run_async
 
-        with patch.object(GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock())):
+        with patch.object(
+            GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock(), MagicMock())
+        ):
             chunks = []
             async for delta in runner.stream(mock_agent, session, requests):
                 chunks.append(delta)

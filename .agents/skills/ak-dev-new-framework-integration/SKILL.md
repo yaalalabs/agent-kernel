@@ -157,6 +157,54 @@ async def stream(self, agent: Any, session: Session, requests: list[AgentRequest
 
 `Runtime.stream()` wraps each yielded token in a `StreamChunk`, runs it through `PostHook.on_stream_chunk()`, and forwards it to the caller (REST SSE endpoint or AWS Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new framework's streaming — just implement `Runner.stream()`.
 
+### 3c. Wire up the per-run framework context
+
+The base `Runner` provides two helpers so a caller-supplied, framework-agnostic context/state dict
+(seeded by a hook via `session.set_framework_context(...)`) rides across turns. **Your `run()` and
+`stream()` must call them and map the one AK-level dict onto your framework's native
+context/state mechanism** (or decline it explicitly, as CrewAI does):
+
+- `incoming = self._load_framework_context(session)` — call **before** the native invocation.
+  Returns a **deep copy** of the stored dict, or `None` when the key is absent. When `None`, inject
+  nothing (framework default) — this keeps the no-context path unchanged for existing apps.
+- Inject `incoming` (when not `None`) via the framework's native mechanism (a run `context=`, an
+  input state channel, a session-state delta, `additional_args=`, …).
+- After a **successful** native call, extract the framework's post-run state as `produced` and call
+  `self._store_framework_context(session, incoming, produced)`. This shallow-merges `produced` over
+  `incoming` (framework-touched top-level keys win; untouched caller keys preserved) and fail-fast
+  checks picklability before writing back.
+
+```python
+# In run(), inside the existing try, around the native call:
+incoming = self._load_framework_context(session)
+result = await self._execute(agent, fw_session, prompt, context=incoming)  # inject natively
+produced = self._extract_state(result, incoming)  # framework-specific; may be a subset of keys
+self._store_framework_context(session, incoming, produced)  # only after a successful call
+```
+
+**Placement matters (atomicity):** put the write-back **inside the `try`, after the native call,
+before the `except`** — and for `stream()`, **after the `async for` loop but still inside the
+`try`**, never in `finally`. A framework error or a client disconnect (`GeneratorExit`) then unwinds
+before it, leaving the previously stored context intact rather than persisting partial state.
+
+**Seed AK-internal keys last.** If you inject the caller's dict by merging it into a native state
+dict that also carries AK-internal entries, assign the internal ones **after** the caller's keys so a
+caller key can never displace them (`ak_tool_context` in ADK, `messages` in LangGraph). The failures
+this prevents are silent and confusing — a broken tool-context lookup, or a replaced message list.
+
+**Watch for injection side effects.** A framework's "context" slot is not always private: smolagents'
+`additional_args` is merged into the agent state *and* appended to the task prompt, so the caller's
+dict reaches the model. If your framework does something similar, document it on the framework's page
+so callers know not to put secrets in `framework_context`.
+
+**Declare your round-trip fidelity honestly** in the framework's docs and the fidelity table in
+`docs/docs/core-concepts/runner.md` — how much of a caller dict actually survives depends on the
+framework (full round-trip, filtered to seeded keys, declared-channels-only, or unsupported). Name the
+**native handle a tool uses** to reach the context (`RunContextWrapper.context` on OpenAI,
+`RunContext.deps` on Pydantic AI, `tool_context.state` on ADK, …) — tools use that, never the `Session`
+accessors. If the framework has no safe caller-state slot, do **not** inject; instead log a single
+warning per runner instance and skip both load and write-back (see the CrewAI adapter for the pattern).
+
 ### 4. Implement the Agent Wrapper
 
 Subclass `Agent` from `agentkernel.core.base`:

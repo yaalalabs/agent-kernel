@@ -117,6 +117,10 @@ With `output_pydantic`, the `CrewOutput.pydantic` result is converted via `model
 Structured output applies to non-streaming execution only. (CrewAI does not support streaming in Agent Kernel.)
 :::
 
+## Per-run context/state
+
+CrewAI **does not support** per-run caller context/state. Its `kickoff(inputs=...)` are `.format()` template-interpolation variables, not a state object, so there is no safe slot for a caller dict. If the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key is set to a non-empty value, the CrewAI runner logs a single warning and **ignores it** (no injection, no write-back); the stored key is left untouched. A tool that still needs the dict can reach it directly via `ToolContext.get().session`.
+
 ## Features
 
 - ✅ Role-based agents

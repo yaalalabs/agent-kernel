@@ -113,6 +113,15 @@ If the model's reply does not validate against the schema, the runner logs a war
 Structured output applies to non-streaming execution only. Streamed runs emit token-by-token text deltas.
 :::
 
+## Per-run context/state
+
+Google ADK **round-trips all caller keys** of the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key **except AK-internal ones**. It is merged into the ADK session `state` on input (the internal `ak_tool_context` key is written last, so a caller key of that name cannot displace it); on write-back the accumulated state is read back with `ak_tool_context` and ADK's `app:`/`user:`/`temp:`-prefixed keys stripped — the first two are app- and user-scoped values ADK merges in on read, the third is invocation-scoped, and none are per-session caller state. Because the rest of the state is returned whole, keys a tool **adds** during the run survive to the next turn. ADK's native state is in-memory only, so this write-back is what gives the context cross-turn durability.
+
+Two consequences of reading the state back wholesale:
+
+- **The state is accumulate-only.** ADK keeps every key written to a session for that session's lifetime, so removing a key from `framework_context` does not remove it from ADK — it reappears on the next write-back. To clear a value on ADK, overwrite it (e.g. set it to `None` or `[]`) rather than deleting the key.
+- **Agent-written state round-trips too.** A value an agent writes itself — most commonly `LlmAgent(output_key="...")`, which stores the agent's response in the state — is indistinguishable from a key a tool wrote, so it also lands in `framework_context`. Expect the stored context on ADK to hold more than what your tools put there.
+
 ## Features
 
 - ✅ Gemini models
@@ -125,3 +134,5 @@ Structured output applies to non-streaming execution only. Streamed runs emit to
 ## Example
 
 See [examples/cli/adk](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/adk) for complete examples.
+
+For per-run context/state carried across turns, see [examples/cli/adk_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/adk_context) (a cart kept in `framework_context`, written through `tool_context.state`, with a tool-added key demonstrating ADK's full read-back).
