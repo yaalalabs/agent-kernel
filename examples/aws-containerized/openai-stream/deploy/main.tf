@@ -35,7 +35,7 @@ module "containerized_agents" {
   ]
 
   tags = {
-    Example     = "openai-websocket-stream"
+    Example     = "openai-stream"
     Environment = var.env_alias
   }
 }
