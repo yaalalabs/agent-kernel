@@ -287,6 +287,10 @@ variable "ws_routes" {
     condition     = !contains(["async", "stream"], var.execution_mode) || alltrue([for r in var.ws_routes : r.route != null && can(regex("^[a-zA-Z0-9_-]+$", r.route))])
     error_message = "Routes in 'ws_routes' must contain only alphanumeric characters, hyphens (-), and underscores (_)."
   }
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || alltrue([for r in var.ws_routes : r.route != var.ws_chat_route && !contains(["connect", "disconnect", "default", "chat"], r.route)])
+    error_message = "Routes in 'ws_routes' must not equal 'ws_chat_route' or reuse a framework-reserved name ('connect', 'disconnect', 'default', 'chat') — these are handled by the built-in system/chat routes and would shadow or dead-end. Matches AWSWebsocketAPI._validate_route_name."
+  }
 }
 
 # Queue Configuration Object
