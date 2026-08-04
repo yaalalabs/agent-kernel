@@ -250,6 +250,8 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         cls._log.info(f"Processing stream message: {record}")
         body = cls._parse_body(record)
         record_attributes = cls._get_record_attributes(raw_queue_message=record)
+        # Included in the dedup suffix below so a retry's chunks never collide with a prior attempt's.
+        receive_count = record.get("attributes", {}).get("ApproximateReceiveCount", "1")
 
         chunk_count = 0
         for raw_chunk in cls._get_chat_service().process_stream_chat_sync(req=body):
@@ -257,7 +259,7 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
             cls._send_chunk_to_output_queue(
                 chunk_body=chunk_dict,
                 record_attributes=record_attributes,
-                chunk_dedup_suffix=str(chunk_count),
+                chunk_dedup_suffix=f"{receive_count}-{chunk_count}",
             )
             chunk_count += 1
         cls._log.info(f"Streamed {chunk_count} chunks to output queue for request_id: {record_attributes['request_id']}")
@@ -273,6 +275,7 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         cls._log.info(f"Permanent failure: {record}: Retried message {cls._get_max_receive_count()} times. Sending error chunk to Output Queue")
         try:
             record_attributes = cls._get_record_attributes(raw_queue_message=record)
+            receive_count = record.get("attributes", {}).get("ApproximateReceiveCount", "1")
             error_chunk = StreamChunk(
                 error=f"Failed to process message. Retried {cls._get_max_receive_count()} times",
                 done=True,
@@ -282,7 +285,7 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
             cls._send_chunk_to_output_queue(
                 chunk_body=error_chunk_body,
                 record_attributes=record_attributes,
-                chunk_dedup_suffix="error",
+                chunk_dedup_suffix=f"{receive_count}-error",
             )
             cls._log.info(f"Sent Permanent Failure chunk to Output Queue: '{SQSHandler.get_output_queue_url()}'")
         except Exception as e:
