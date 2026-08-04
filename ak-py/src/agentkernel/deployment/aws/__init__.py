@@ -11,7 +11,6 @@ from .containerized import (
     ECSAgentRunner,
     ECSIOHandler,
     ECSOutputConsumer,
-    ECSStreamAgentRunner,
     ECSWebSocketSystemRequestHandler,
 )
 from .containerized.core import ECSSQSConsumer

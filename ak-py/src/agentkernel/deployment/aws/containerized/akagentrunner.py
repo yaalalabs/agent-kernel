@@ -20,11 +20,7 @@ class ECSAgentRunner(ECSSQSConsumer):
     which drives a blocking long-poll loop — meant to be the container's
     main process.
 
-    ``run()`` dispatches to ``ECSStreamAgentRunner`` when ``execution.mode`` is
-    ``STREAM``, re-reading config each call (mirroring ``ECSIOHandler.run``) rather
-    than freezing the choice at import time. Users who want the STREAM behavior
-    explicitly (or a custom subclass of it) can call ``ECSStreamAgentRunner.run()``
-    directly instead.
+    run() dispatches to ECSStreamAgentRunner when execution.mode is STREAM.
 
     Usage::
 
@@ -135,11 +131,8 @@ class ECSAgentRunner(ECSSQSConsumer):
 
     @classmethod
     def run(cls) -> None:
-        """Dispatch to ECSStreamAgentRunner when execution.mode is STREAM, re-reading config on
-        every call (unlike the import-time selection this used to require) so it mirrors
-        ECSIOHandler.run's dispatch. Only takes effect when called as ECSAgentRunner.run() itself —
-        a subclass's own run() (e.g. ECSStreamAgentRunner's, inherited from here) runs as that
-        subclass, never redirected."""
+        """Dispatch to ECSStreamAgentRunner when execution.mode is STREAM."""
+        # cls check avoids redirect loops when a subclass (e.g. ECSStreamAgentRunner) calls this via inheritance.
         if cls is ECSAgentRunner and cls._config.execution.mode == ExecutionMode.STREAM:
             return ECSStreamAgentRunner.run()
         return super().run()
@@ -152,9 +145,9 @@ class ECSStreamAgentRunner(ECSAgentRunner):
 
     The ECS equivalent of ServerlessStreamAgentRunner. Each chunk is sent as a separate SQS
     message so ECSOutputConsumer can push them to the client one at a time as they arrive,
-    instead of waiting for the full response like ECSAgentRunner. Subclasses ECSAgentRunner to
-    reuse get_queue_url/_get_chat_service/_send_to_output_queue attribute plumbing; only
-    endpoint_url validation and the chunk fan-out (process_message/on_permanent_failure) differ.
+    instead of waiting for the full response like ECSAgentRunner. Subclasses ECSAgentRunner
+    for the shared queue/chat-service plumbing; only endpoint_url validation and the chunk
+    fan-out (process_message/on_permanent_failure) differ.
 
     Note: unlike Lambda's ESM (which supports partial-batch failure reporting), ECSSQSConsumer
     leaves the whole message in the queue for a full redelivery if process_message raises
@@ -209,10 +202,7 @@ class ECSStreamAgentRunner(ECSAgentRunner):
     def process_message(cls, record: dict) -> None:
         """Implements ECSSQSConsumer.process_message for STREAM mode."""
         message_id = record.get("MessageId")
-        # Redelivery attempt marker: a mid-stream failure re-runs this method from chunk 0, and
-        # without this, the retry's chunk-0..k dedup IDs would collide with the prior attempt's
-        # (already sent within the 5-minute SQS FIFO dedup window) and get silently dropped —
-        # stitching the first attempt's prefix to the retry's suffix with no error in between.
+        # Included in the dedup suffix below so a retry's chunks never collide with a prior attempt's.
         receive_count = record.get("Attributes", {}).get("ApproximateReceiveCount", "1")
         cls._log.info(f"[STREAM AGENT START] Processing message {message_id} (receive_count={receive_count})")
 
