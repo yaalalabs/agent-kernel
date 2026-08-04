@@ -117,14 +117,15 @@ queue_config = {
 
 ```hcl
 rest_service = {
-  cpu                   = 256
-  memory                = 512
-  desired_count         = 1
-  container_port        = 8000
-  health_check_endpoint = "/health"
-  image_uri             = "..."
-  command               = ["python", "app.py"]
-  environment_variables = {}
+  cpu                                = 256
+  memory                             = 512
+  desired_count                      = 1
+  container_port                     = 8000
+  health_check_endpoint              = "/health"
+  health_check_grace_period_seconds  = 120
+  image_uri                          = "..."
+  command                            = ["python", "app.py"]
+  environment_variables              = {}
 }
 ```
 

@@ -3,6 +3,7 @@ mcp:
   port: 8000
   expose_agents: true
   agents: ['*']
+  stateless_http: true
 
 logging:
   ak:

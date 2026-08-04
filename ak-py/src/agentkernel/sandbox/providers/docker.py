@@ -130,6 +130,7 @@ class DockerSandboxProvider(SandboxProvider):
         package_install=True,
         stateful=False,
         attach=True,
+        attaches_external=True,  # attach_to binds to a container the framework did not create
         principal_user=False,
         policy_network=True,  # deny -> network_mode="none"; allowlist is unenforceable (fails closed under strict)
         policy_filesystem=True,  # coarse: read-only rootfs + writable tmpfs workdir

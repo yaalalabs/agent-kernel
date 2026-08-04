@@ -8,7 +8,7 @@ How the [sandbox capability](../advanced/sandbox.md) works under the hood: the c
 
 ## Component view
 
-The capability is split into three layers with one wire contract between them. Everything the agent sees lives in the agent process (tools, `SandboxManager`, registries). The **broker** is a transport seam: in-process flavors call the worker engine directly, while remote flavors ship the same `SandboxBrokerRequest` over a queue. The worker engine is the only component that touches providers.
+The capability is split into three layers with one wire contract between them. Everything the agent sees lives in the agent process (tools, `ExecutionManager`, registries). The **broker** is a transport seam: in-process flavors call the worker engine directly, while remote flavors ship the same `ExecutionRequest` over a queue. The worker engine is the only component that touches providers.
 
 ```mermaid
 flowchart TB
@@ -16,7 +16,7 @@ flowchart TB
         LLM["Agent turn (LLM)"]
         TOOLS["System tools<br/>run_code · run_command · read/write_sandbox_file<br/>check_sandbox_task · list/new/destroy_sandbox_session"]
         HOOK["SandboxPreHook<br/>task-completion ingestion"]
-        MGR["SandboxManager (singleton façade)"]
+        MGR["ExecutionManager (singleton façade)"]
         RES["PrincipalResolver<br/>default: AgentPrincipalResolver"]
         REG[("Session registries<br/>AK-session nv_cache + per_runtime memory")]
     end
@@ -42,9 +42,9 @@ flowchart TB
     HOOK --> MGR
     MGR --> RES
     MGR <--> REG
-    MGR -- "SandboxBrokerRequest" --> EMB
-    MGR -- "SandboxBrokerRequest" --> THR
-    MGR -. "SandboxBrokerRequest over queue" .-> SQS
+    MGR -- "ExecutionRequest" --> EMB
+    MGR -- "ExecutionRequest" --> THR
+    MGR -. "ExecutionRequest over queue" .-> SQS
     EMB --> CORE
     THR --> CORE
     SQS -.-> CORE
@@ -54,7 +54,7 @@ flowchart TB
     PF --> BYO
 ```
 
-A `SandboxBrokerRequest` is **self-sufficient**: it carries the resolved principal, the policy, and the full sandbox-session handle (including the provider reconnect id), so a remote worker needs nothing else to execute it.
+A `ExecutionRequest` is **self-sufficient**: it carries the resolved principal, the policy, and the full sandbox-session handle (including the provider reconnect id), so a remote worker needs nothing else to execute it.
 
 ## The execution contract
 
@@ -81,6 +81,17 @@ classDiagram
         +attach(sandbox_id, principal, policy) Sandbox
         +destroy(sandbox_id)* None
     }
+    class AttachedEnvironment {
+        <<abstract>>
+        handle to an environment the framework never owns
+        +close() None — fixed no-op
+    }
+    class AttachedEnvironmentProvider {
+        <<abstract>>
+        attach-only: environments the framework never owns
+        +create(principal, policy) — binds to attach_to
+        +destroy(sandbox_id) — fixed no-op
+    }
     class SandboxCapabilities {
         +isolation IsolationTier
         +shell bool
@@ -89,6 +100,8 @@ classDiagram
         +package_install bool
         +stateful bool
         +attach bool
+        +provisions bool
+        +attaches_external bool
         +principal_user bool
         +policy_network bool
         +policy_filesystem bool
@@ -105,38 +118,61 @@ classDiagram
     }
     class LocalSubprocessSandbox
     class DockerSandbox
+    class E2BSandbox
+    class DaytonaSandbox
+    class EC2SSMEnvironment
     class LocalSubprocessSandboxProvider
     class DockerSandboxProvider
+    class E2BSandboxProvider
+    class DaytonaSandboxProvider
+    class EC2SSMSandboxProvider
     class SandboxProviderFactory {
         -_cache dict$
         +get(profile_name)$ SandboxProvider
         -_build(profile_name, profile)$ SandboxProvider
+        -_validate_environment(profile_name, profile, provider)$ None
     }
 
     Sandbox <|-- LocalSubprocessSandbox
     Sandbox <|-- DockerSandbox
+    Sandbox <|-- E2BSandbox
+    Sandbox <|-- DaytonaSandbox
+    Sandbox <|-- AttachedEnvironment
+    AttachedEnvironment <|-- EC2SSMEnvironment
     SandboxProvider <|-- LocalSubprocessSandboxProvider
     SandboxProvider <|-- DockerSandboxProvider
+    SandboxProvider <|-- E2BSandboxProvider
+    SandboxProvider <|-- DaytonaSandboxProvider
+    SandboxProvider <|-- AttachedEnvironmentProvider
+    AttachedEnvironmentProvider <|-- EC2SSMSandboxProvider
     SandboxProvider --> SandboxCapabilities : declares honestly
     SandboxCapabilities --> IsolationTier
     SandboxProvider ..> Sandbox : create / attach
+    AttachedEnvironmentProvider ..> AttachedEnvironment : attach
     SandboxProviderFactory ..> SandboxProvider : builds, caches per profile+type
 ```
+
+**Attached environments:** `AttachedEnvironment` / `AttachedEnvironmentProvider` are the public bases
+for backends that connect to something the framework never owns (an EC2 instance, a running
+pod, a production service). The provider base fixes `create` (binds to the configured
+`attach_to`) and `destroy` (no-op); the handle base fixes `close` (no-op). Profiles selecting
+such a backend must declare `environment: attached`, validated by the factory against the
+`provisions` / `attaches_external` capability flags.
 
 **Result discipline:** a failing *program* (non-zero exit, exception in user code) comes back as a `SandboxResult` with `exit_code != 0`. Exceptions are reserved for failures of the sandbox *machinery* (see [Error hierarchy](#error-hierarchy)).
 
 ## The control plane
 
-`SandboxManager` is a process-wide singleton (mirroring `ConversationThreadManager`). `SandboxManager.get()` returning `None` is the feature-disabled check every tool performs. Both in-process brokers delegate to the same `BrokerWorkerCore`; the difference is only where it runs and whether a bounded wait can promote the execution to a background task.
+`ExecutionManager` is a process-wide singleton (mirroring `ConversationThreadManager`). `ExecutionManager.get()` returning `None` is the feature-disabled check every tool performs. Both in-process brokers delegate to the same `BrokerWorkerCore`; the difference is only where it runs and whether a bounded wait can promote the execution to a background task.
 
 ```mermaid
 classDiagram
     direction TB
-    class SandboxManager {
-        -_broker SandboxBroker
+    class ExecutionManager {
+        -_broker ExecutionBroker
         -_resolver PrincipalResolver
         -_runtime_registry dict$
-        +get()$ SandboxManager
+        +get()$ ExecutionManager
         +execute(code, command, language, profile, sandbox_session_id, wait)
         +upload(path, content, profile, sandbox_session_id)
         +download(path, profile, sandbox_session_id) bytes
@@ -146,10 +182,10 @@ classDiagram
         +destroy_session(sandbox_session_id)
         +list_sessions() list
     }
-    class SandboxBroker {
+    class ExecutionBroker {
         <<abstract>>
         +submit(request, wait)* SandboxResult or SandboxTask
-        +result(task_id)* SandboxCompletion
+        +result(task_id)* ExecutionCompletion
         +discard(task_id)
         +close()
     }
@@ -166,7 +202,7 @@ classDiagram
     class BrokerWorkerCore {
         -_locks dict per sandbox_session_id
         +run(request) result and session
-        +process(request) SandboxCompletion
+        +process(request) ExecutionCompletion
         -_check_principal(provider, request)
         -_enforce_policy(provider, request)
         -_acquire(provider, request) sandbox and recreated
@@ -174,7 +210,7 @@ classDiagram
     }
     class BoundedCompletionStore {
         +set(task_id, completion)
-        +get(task_id) SandboxCompletion
+        +get(task_id) ExecutionCompletion
         +discard(task_id)
     }
     class PrincipalResolver {
@@ -185,21 +221,21 @@ classDiagram
     class SandboxPreHook {
         +on_run(session, agent, requests)
     }
-    class SandboxBrokerFactory {
-        +get()$ SandboxBroker
+    class ExecutionBrokerFactory {
+        +get()$ ExecutionBroker
     }
 
-    SandboxBroker <|-- EmbeddedBroker
-    SandboxBroker <|-- ThreadBroker
+    ExecutionBroker <|-- EmbeddedBroker
+    ExecutionBroker <|-- ThreadBroker
     PrincipalResolver <|-- AgentPrincipalResolver
-    SandboxManager --> SandboxBroker : submit / result / discard
-    SandboxManager --> PrincipalResolver : resolve identity
-    SandboxBrokerFactory ..> SandboxBroker : builds from broker.flavor
+    ExecutionManager --> ExecutionBroker : submit / result / discard
+    ExecutionManager --> PrincipalResolver : resolve identity
+    ExecutionBrokerFactory ..> ExecutionBroker : builds from broker.flavor
     EmbeddedBroker --> BrokerWorkerCore : inline
     ThreadBroker --> BrokerWorkerCore : on broker thread
     EmbeddedBroker --> BoundedCompletionStore
     ThreadBroker --> BoundedCompletionStore
-    SandboxPreHook --> SandboxManager : ingest_completion
+    SandboxPreHook --> ExecutionManager : ingest_completion
     BrokerWorkerCore ..> SandboxProviderFactory : resolve provider
 ```
 
@@ -215,7 +251,7 @@ All models are Pydantic. The left column is what travels between manager and wor
 ```mermaid
 classDiagram
     direction LR
-    class SandboxBrokerRequest {
+    class ExecutionRequest {
         +task_id str
         +operation execute_code, execute_command, install_packages, upload_file, download_file, destroy
         +payload dict
@@ -227,7 +263,7 @@ classDiagram
         +agent str
         +wait_deadline float
     }
-    class SandboxCompletion {
+    class ExecutionCompletion {
         +task_id str
         +status succeeded, failed, timed_out
         +result SandboxResult
@@ -285,11 +321,11 @@ classDiagram
         +mime_type str
     }
 
-    SandboxBrokerRequest *-- SandboxPrincipal
-    SandboxBrokerRequest *-- SandboxPolicy
-    SandboxBrokerRequest *-- SandboxSession
-    SandboxCompletion *-- SandboxResult
-    SandboxCompletion *-- SandboxSession
+    ExecutionRequest *-- SandboxPrincipal
+    ExecutionRequest *-- SandboxPolicy
+    ExecutionRequest *-- SandboxSession
+    ExecutionCompletion *-- SandboxResult
+    ExecutionCompletion *-- SandboxSession
     SandboxResult o-- SandboxFile
     SandboxTask ..> SandboxSession : addresses by id
 ```
@@ -303,7 +339,7 @@ sequenceDiagram
     autonumber
     participant LLM as Agent turn
     participant Tool as run_code tool
-    participant Mgr as SandboxManager
+    participant Mgr as ExecutionManager
     participant Brk as ThreadBroker
     participant Core as BrokerWorkerCore
     participant Fac as ProviderFactory
@@ -313,7 +349,7 @@ sequenceDiagram
     LLM->>Tool: run_code(code, sandbox_session_id?)
     Tool->>Mgr: execute(code, wait = broker.wait_timeout)
     Mgr->>Mgr: resolve profile, session (scope, idle check), principal, policy
-    Mgr->>Brk: submit(SandboxBrokerRequest, wait)
+    Mgr->>Brk: submit(ExecutionRequest, wait)
     Note over Brk: enqueue to broker thread, bridge future back
     Brk->>Core: run(request)
     Core->>Fac: get(profile)
@@ -343,7 +379,7 @@ When `wait_timeout` expires before the execution finishes, `ThreadBroker.submit`
 sequenceDiagram
     autonumber
     participant LLM as Agent turn
-    participant Mgr as SandboxManager
+    participant Mgr as ExecutionManager
     participant Brk as ThreadBroker
     participant Core as BrokerWorkerCore
 
@@ -360,7 +396,7 @@ sequenceDiagram
     LLM->>Mgr: check_sandbox_task(task_id)
     Mgr->>Mgr: registry lookup, still pending
     Mgr->>Brk: result(task_id)
-    Brk-->>Mgr: SandboxCompletion
+    Brk-->>Mgr: ExecutionCompletion
     Mgr->>Mgr: mark task terminal, refresh session handle
     Mgr->>Brk: discard(task_id)
     Mgr-->>LLM: JSON status succeeded / failed / timed_out
@@ -374,7 +410,7 @@ sequenceDiagram
     participant W as Remote worker
     participant Chat as ChatService
     participant Hook as SandboxPreHook
-    participant Mgr as SandboxManager
+    participant Mgr as ExecutionManager
     participant LLM as Agent turn
 
     W-->>Chat: completion event as request sandbox_task_completion
@@ -410,7 +446,7 @@ stateDiagram-v2
 
 ## Error hierarchy
 
-Every machinery failure derives from `SandboxError`. `SandboxGoneError` doubles as a protocol signal: raised by `attach`, it tells the worker to self-heal by recreating the backend under the same session id. Tools never raise into the framework: any of these is caught at the tool layer and returned to the agent as an `{"error": ...}` JSON string.
+Every machinery failure derives from `SandboxError`. `SandboxGoneError` doubles as a protocol signal: raised by `attach`, it tells the worker to self-heal by recreating the backend under the same session id — unless the profile declares `environment: attached`, in which case the worker never provisions a replacement (the framework does not own the environment) and surfaces the `SandboxGoneError` instead. For the same reason, the worker's `destroy` operation on an attached profile only drops the session binding and never calls the provider's `destroy`. Tools never raise into the framework: any of these is caught at the tool layer and returned to the agent as an `{"error": ...}` JSON string.
 
 ```mermaid
 classDiagram
@@ -423,7 +459,7 @@ classDiagram
     class SandboxProvisionError { create or attach failed }
     class SandboxGoneError { attach target vanished, self-heal signal }
     class SandboxSessionNotFoundError { unknown sandbox_session_id }
-    class SandboxBrokerError { transport or delivery failure }
+    class ExecutionBrokerError { transport or delivery failure }
 
     SandboxError <|-- SandboxConfigError
     SandboxError <|-- SandboxCapabilityError
@@ -432,7 +468,7 @@ classDiagram
     SandboxError <|-- SandboxProvisionError
     SandboxProvisionError <|-- SandboxGoneError
     SandboxError <|-- SandboxSessionNotFoundError
-    SandboxError <|-- SandboxBrokerError
+    SandboxError <|-- ExecutionBrokerError
 ```
 
 ## Where each piece lives
@@ -443,13 +479,13 @@ All paths are under `ak-py/src/agentkernel/`.
 |---|---|
 | `sandbox/base.py` | `Sandbox` and `SandboxProvider` ABCs, the public bring-your-own surface |
 | `sandbox/model.py` | `SandboxCapabilities`, `SandboxResult`, `SandboxSession`, `SandboxTask`, `SandboxPrincipal`, `SandboxPolicy`, `IsolationTier` |
-| `sandbox/manager.py` | `SandboxManager` singleton façade, session and task registries, scope handling |
+| `sandbox/manager.py` | `ExecutionManager` singleton façade, session and task registries, scope handling |
 | `sandbox/tools.py` | The eight system tools plus the system-prompt guidance injected via the first tool's description |
 | `sandbox/hooks.py` | `SandboxPreHook` for push-based task-completion ingestion with dedup |
 | `sandbox/principal.py` | `PrincipalResolver` ABC and the default `AgentPrincipalResolver` |
-| `sandbox/factory.py` | `SandboxProviderFactory` and `SandboxBrokerFactory`, lazy imports and dotted-path escape hatches |
+| `sandbox/factory.py` | `SandboxProviderFactory` and `ExecutionBrokerFactory`, lazy imports and dotted-path escape hatches |
 | `sandbox/errors.py` | The `SandboxError` hierarchy |
-| `sandbox/broker/base.py` | `SandboxBroker` ABC, `SandboxBrokerRequest`, `SandboxCompletion`, `BoundedCompletionStore` |
+| `sandbox/broker/base.py` | `ExecutionBroker` ABC, `ExecutionRequest`, `ExecutionCompletion`, `BoundedCompletionStore` |
 | `sandbox/broker/worker.py` | `BrokerWorkerCore`, the flavor-independent execution engine |
 | `sandbox/broker/embedded.py`, `thread.py` | The two in-process broker flavors |
 | `sandbox/providers/` | `local_subprocess.py` and `docker.py` reference providers |

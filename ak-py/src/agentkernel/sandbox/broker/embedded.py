@@ -11,18 +11,18 @@ from typing import Optional, Union
 from pydantic import BaseModel
 
 from ..model import SandboxResult, SandboxTask
-from .base import BoundedCompletionStore, SandboxBroker, SandboxBrokerRequest, SandboxCompletion
+from .base import BoundedCompletionStore, ExecutionBroker, ExecutionCompletion, ExecutionRequest
 from .worker import BrokerWorkerCore
 
 
-class EmbeddedBroker(SandboxBroker):
+class EmbeddedBroker(ExecutionBroker):
     def __init__(self, config: Optional[BaseModel] = None) -> None:
         """Create the broker with its own in-process ``BrokerWorkerCore``; ``config`` (the
         ``sandbox.broker`` block) is accepted for factory uniformity but unused."""
         self._worker = BrokerWorkerCore()
         self._completions = BoundedCompletionStore()
 
-    async def submit(self, request: SandboxBrokerRequest, wait: Optional[float] = None) -> Union[SandboxResult, SandboxTask]:
+    async def submit(self, request: ExecutionRequest, wait: Optional[float] = None) -> Union[SandboxResult, SandboxTask]:
         """Run the request inline to completion and return its ``SandboxResult``.
 
         ``wait`` is ignored (always synchronous, never promotes). ``run()`` raises the real
@@ -30,10 +30,12 @@ class EmbeddedBroker(SandboxBroker):
         layer) sees the true exception type.
         """
         result, session = await self._worker.run(request)
-        self._completions.set(request.task_id, SandboxCompletion(task_id=request.task_id, status="succeeded", result=result, sandbox_session=session))
+        self._completions.set(
+            request.task_id, ExecutionCompletion(task_id=request.task_id, status="succeeded", result=result, sandbox_session=session)
+        )
         return result
 
-    async def result(self, task_id: str) -> Optional[SandboxCompletion]:
+    async def result(self, task_id: str) -> Optional[ExecutionCompletion]:
         """Return the completion recorded for ``task_id`` in this process, or ``None``."""
         return self._completions.get(task_id)
 

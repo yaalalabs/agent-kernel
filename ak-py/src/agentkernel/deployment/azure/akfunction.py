@@ -41,6 +41,8 @@ class AzureFunctions:
 
             if isinstance(body, dict) and body.get("body") is not None:
                 body = BaseRunRequest.model_validate(body["body"])
+            elif isinstance(body, dict) and body:
+                body = BaseRunRequest.model_validate(body)
             else:
                 raise ValueError("Invalid request, request body cannot be empty or null")
 

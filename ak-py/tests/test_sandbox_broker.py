@@ -14,15 +14,15 @@ import time
 import pytest
 
 from agentkernel import Agent, Runner
-from agentkernel.core.config import AKConfig, _GuardrailConfig, _SandboxBrokerConfig, _SandboxConfig, _SandboxPolicyConfig, _SandboxProfileConfig
+from agentkernel.core.config import AKConfig, _ExecutionBrokerConfig, _GuardrailConfig, _SandboxConfig, _SandboxPolicyConfig, _SandboxProfileConfig
 from agentkernel.core.model import AgentReplyText, AgentRequestAny, AgentRequestText
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
-from agentkernel.sandbox.broker.base import SandboxCompletion
+from agentkernel.sandbox.broker.base import ExecutionCompletion
 from agentkernel.sandbox.broker.thread import ThreadBroker
 from agentkernel.sandbox.errors import SandboxConfigError, SandboxPolicyError
-from agentkernel.sandbox.factory import SandboxBrokerFactory, SandboxProviderFactory
-from agentkernel.sandbox.manager import SandboxManager
+from agentkernel.sandbox.factory import ExecutionBrokerFactory, SandboxProviderFactory
+from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import SandboxResult, SandboxSession, SandboxTask
 from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider
 from agentkernel.sandbox.tools import check_sandbox_task, run_code
@@ -34,7 +34,7 @@ def _stop_leaked_broker():
     """Synchronously stop the current manager's thread broker so its daemon thread + private
     event loop don't leak across tests (only ThreadBroker.close() joins the thread, and it's
     async — here we drive the same shutdown from a sync fixture teardown)."""
-    mgr = SandboxManager._instance
+    mgr = ExecutionManager._instance
     broker = getattr(mgr, "_broker", None) if mgr is not None else None
     thread = getattr(broker, "_thread", None)
     if thread is not None and thread.is_alive():
@@ -46,14 +46,14 @@ def _stop_leaked_broker():
 @pytest.fixture(autouse=True)
 def reset_singletons():
     AKConfig._reset()
-    SandboxManager._reset()
+    ExecutionManager._reset()
     SandboxProviderFactory._reset()
     Runtime._system_pre_hooks = None
     Runtime._system_post_hooks = None
     yield
     _stop_leaked_broker()  # close the thread broker before dropping the manager instance
     AKConfig._reset()
-    SandboxManager._reset()
+    ExecutionManager._reset()
     SandboxProviderFactory._reset()
     Runtime._system_pre_hooks = None
     Runtime._system_post_hooks = None
@@ -73,7 +73,7 @@ def _install_cfg(monkeypatch, sandbox_cfg):
 def _sandbox_cfg(flavor="thread", profiles=None, **overrides):
     if profiles is None:
         profiles = {"default": _SandboxProfileConfig(type=FAKE_DOTTED, scope="per_session")}
-    return _SandboxConfig(enabled=True, broker=_SandboxBrokerConfig(flavor=flavor), profiles=profiles, **overrides)
+    return _SandboxConfig(enabled=True, broker=_ExecutionBrokerConfig(flavor=flavor), profiles=profiles, **overrides)
 
 
 def _release_gate():
@@ -109,7 +109,7 @@ async def _wait_for_status(mgr, task_id, status, timeout=5.0):
 @pytest.mark.parametrize("flavor", ["embedded", "thread"])
 async def test_flavor_end_to_end(monkeypatch, flavor):
     _install_cfg(monkeypatch, _sandbox_cfg(flavor=flavor))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         result = await mgr.execute(code="print('hi')")
@@ -124,7 +124,7 @@ async def test_flavor_end_to_end(monkeypatch, flavor):
 async def test_thread_flavor_machinery_error_raises_while_waiting(monkeypatch):
     profile = _SandboxProfileConfig(type=FAKE_DOTTED, policy=_SandboxPolicyConfig(network_egress="deny", strict=True))
     _install_cfg(monkeypatch, _sandbox_cfg(flavor="thread", profiles={"default": profile}))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         with pytest.raises(SandboxPolicyError):
@@ -143,7 +143,7 @@ async def test_thread_flavor_runs_provider_on_broker_loop(monkeypatch):
         return await original(self, code, language, timeout)
 
     monkeypatch.setattr(FakeSandbox, "execute_code", capture)
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         result = await mgr.execute(code="print(1)")
@@ -164,7 +164,7 @@ async def test_promotion_and_late_completion_recovery(monkeypatch):
     _install_cfg(monkeypatch, _sandbox_cfg(flavor="thread"))
     release, blocked = _release_gate()
     monkeypatch.setattr(FakeSandbox, "execute_code", blocked)
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         outcome = await mgr.execute(code="slow", wait=0.05)
@@ -193,7 +193,7 @@ async def test_wait_zero_always_promotes(monkeypatch):
     _install_cfg(monkeypatch, _sandbox_cfg(flavor="thread"))
     release, blocked = _release_gate()
     monkeypatch.setattr(FakeSandbox, "execute_code", blocked)
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         outcome = await mgr.execute(code="slow", wait=0)
@@ -213,7 +213,7 @@ async def test_promoted_failure_becomes_failed_completion(monkeypatch):
         raise RuntimeError("backend blew up")
 
     monkeypatch.setattr(FakeSandbox, "execute_code", blocked_failure)
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         outcome = await mgr.execute(code="slow", wait=0.05)
@@ -236,7 +236,7 @@ async def test_promoted_failure_becomes_failed_completion(monkeypatch):
 @pytest.mark.asyncio
 async def test_thread_broker_close_is_idempotent(monkeypatch):
     _install_cfg(monkeypatch, _sandbox_cfg(flavor="thread"))
-    mgr = SandboxManager.get()
+    mgr = ExecutionManager.get()
     session = InMemorySessionStore().new("ak-1")
     async with session:
         await mgr.execute(code="print(1)")
@@ -289,7 +289,7 @@ class DummyAgent(Agent):
 
 
 def _completion(task_id, sandbox_session_id="default:default", stdout="late stdout"):
-    return SandboxCompletion(
+    return ExecutionCompletion(
         task_id=task_id,
         status="succeeded",
         result=SandboxResult(stdout=stdout, exit_code=0, sandbox_session_id=sandbox_session_id),
@@ -357,5 +357,5 @@ def test_broker_factory_unknown_flavor_raises_listing_builtins(monkeypatch):
     """An unknown non-dotted broker flavor fails loud with the #541 error shape."""
     _install_cfg(monkeypatch, _sandbox_cfg(flavor="sqs"))  # not landed until iteration 8
     with pytest.raises(SandboxConfigError) as exc_info:
-        SandboxBrokerFactory.get()
+        ExecutionBrokerFactory.get()
     assert "embedded" in str(exc_info.value) and "thread" in str(exc_info.value)
