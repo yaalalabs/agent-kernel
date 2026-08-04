@@ -231,9 +231,8 @@ pipeline above with a WebSocket API Gateway instead of an HTTP API:
    like REST Async — the framework never runs the agent inline in this mode.
 3. `ECSAgentRunner` processes it in `async` mode exactly as in REST modes, then forwards the
    connection's `endpoint_url` as a custom SQS attribute to the Output Queue. In `stream` mode,
-   the exported `ECSAgentRunner` name resolves to `ECSStreamAgentRunner` instead (a mode-based
-   swap in `containerized/__init__.py`, mirroring the serverless `ServerlessAgentRunner` /
-   `ServerlessStreamAgentRunner` split): it runs the agent via
+   `ECSAgentRunner.run()` dispatches to `ECSStreamAgentRunner` instead (re-checking
+   `execution.mode` on every call, mirroring `ECSIOHandler.run`'s dispatch): it runs the agent via
    `ChatService.process_stream_chat_sync()` and sends **one Output Queue message per streamed
    chunk** (each carrying the forwarded `endpoint_url`), instead of one message for the full
    reply.

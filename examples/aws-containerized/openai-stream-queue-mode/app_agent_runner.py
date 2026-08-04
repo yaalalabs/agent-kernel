@@ -26,7 +26,7 @@ triage_agent = Agent(
 
 OpenAIModule([triage_agent, math_agent, history_agent])
 
-# Agent Runner entrypoint. ECSAgentRunner resolves to ECSStreamAgentRunner at import time because
+# Agent Runner entrypoint. ECSAgentRunner.run() dispatches to ECSStreamAgentRunner because
 # config.yaml sets execution.mode: stream — it polls the Input Queue, runs the agent, and fans out
 # each streamed token delta as its own message on the Output Queue (instead of one full reply).
 handler = ECSAgentRunner.run
