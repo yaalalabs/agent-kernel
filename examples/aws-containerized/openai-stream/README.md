@@ -9,7 +9,7 @@ is delivered token-by-token as a sequence of `STREAM_CHUNK` messages instead of 
 - `openai-websocket` (direct WebSocket mode, `async`) — see that example for the auth/wire-protocol
   basics of non-streaming direct mode; this one is identical except for `execution.mode` and the
   streamed reply
-- `openai-stream` (queue-based WebSocket mode, `stream`) — see that example if you need the Agent
+- `openai-stream-queue-mode` (queue-based WebSocket mode, `stream`) — see that example if you need the Agent
   Runner to scale independently of ingress; this one trades that horizontal scalability for lower
   latency and a single container to operate
 
