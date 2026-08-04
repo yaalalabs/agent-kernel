@@ -65,6 +65,36 @@ if __name__ == "__main__":
 
 Refer to [example ECS implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) for ECS deployment.
 
+The module is provider-agnostic — it does not configure the `aws`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
+
+```hcl
+provider "aws" {
+  region = var.region
+}
+
+# Docker authenticates against ECR to push the images this module builds
+data "aws_caller_identity" "current" {}
+data "aws_ecr_authorization_token" "token" {}
+
+provider "docker" {
+  registry_auth {
+    address  = format("%v.dkr.ecr.%v.amazonaws.com", data.aws_caller_identity.current.account_id, var.region)
+    username = data.aws_ecr_authorization_token.token.user_name
+    password = data.aws_ecr_authorization_token.token.password
+  }
+}
+
+module "containerized_agents" {
+  source    = "yaalalabs/ak-containerized/aws"
+  version   = "0.8.0"
+  providers = { aws = aws, docker = docker }
+
+  # ... other configuration
+}
+```
+
+See the [ak-aws/containerized module docs](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-aws/containerized#providers) for details.
+
 ## Scalable Queue Mode
 
 For high-throughput or long-running agents, use the two-container queue architecture.

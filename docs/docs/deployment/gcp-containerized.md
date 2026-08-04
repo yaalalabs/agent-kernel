@@ -71,12 +71,42 @@ dependencies = [
 
 ## Terraform Configuration
 
+### Providers
+
+The module is provider-agnostic — it does not configure the `google`/`google-beta`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
+
+```hcl
+provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
+provider "google-beta" {
+  project = var.project_id
+  region  = var.region
+}
+
+# Docker authenticates against Artifact Registry to push the images this module builds
+data "google_client_config" "current" {}
+
+provider "docker" {
+  registry_auth {
+    address  = "${var.region}-docker.pkg.dev"
+    username = "oauth2accesstoken"
+    password = data.google_client_config.current.access_token
+  }
+}
+```
+
+Pass them into every `module "containerized_agent"` block below via `providers = { google = google, google-beta = google-beta, docker = docker }`. See the [ak-gcp/containerized module docs](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/containerized#-providers) for details.
+
 ### Basic Deployment (with Redis, always-on)
 
 ```hcl
 module "containerized_agent" {
-  source  = "yaalalabs/ak-containerized/google"
-  version = "0.2.14"
+  source    = "yaalalabs/ak-containerized/google"
+  version   = "0.8.0"
+  providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region
@@ -106,8 +136,9 @@ module "containerized_agent" {
 
 ```hcl
 module "containerized_agent" {
-  source  = "yaalalabs/ak-containerized/google"
-  version = "0.2.14"
+  source    = "yaalalabs/ak-containerized/google"
+  version   = "0.8.0"
+  providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region

@@ -1,8 +1,9 @@
 # Lambda module configuration for deploying OpenAI Agent Lambda function
 module "serverless_agents" {
-  source = "yaalalabs/ak-serverless/aws"
+  source  = "yaalalabs/ak-serverless/aws"
   version = "0.8.0"
 
+  providers = { aws = aws, docker = docker }
   # Basic lambda configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias

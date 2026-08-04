@@ -6,6 +6,7 @@ module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
   version = "0.8.0"
 
+  providers            = { aws = aws, docker = docker }
   product_alias        = var.product_alias
   env_alias            = var.env_alias
   module_name          = var.module_name

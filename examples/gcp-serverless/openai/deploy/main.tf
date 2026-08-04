@@ -10,6 +10,7 @@ module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/google"
   version = "0.8.0"
 
+  providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration
   project_id           = var.project_id
   product_alias        = var.product_alias
