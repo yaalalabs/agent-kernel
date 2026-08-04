@@ -26,10 +26,9 @@ the reasoning is evidence a reviewer will want.
    The suffix `"thread_store"` is therefore used throughout, consistent with session; the deployed table
    is `<product>-<env>-<module>-thread_store`. A literal `ak-agent-threads` table was considered and
    rejected — it would break the naming convention every other table in the stack follows.
-2. **`AKConfig.thread` is at `config.py:609`, not `config.py:580`.** `design.md`'s "Env-var contract"
-   bullet cites `580`, which is inside the sandbox provider mapping. Pre-existing citation error,
-   unrelated to any code change; this spec uses the correct line. Still present in `design.md` — worth a
-   one-line fix there, but harmless.
+2. **`AKConfig.thread` is at `config.py:609`, not `config.py:580`.** ✅ **Resolved — `design.md` corrected.**
+   Its "Env-var contract" bullet cited `580`, which is inside the sandbox provider mapping. Pre-existing
+   citation error, unrelated to any code change.
 
 One asymmetry worth recording (no design change needed): the containerized session IAM policy grants
 on both the table ARN **and** `"${arn}/index/*"` (`ak-aws/containerized/modules/rest-service/main.tf:52-55`),

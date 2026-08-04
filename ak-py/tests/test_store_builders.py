@@ -6,20 +6,22 @@ construction contract (session store gets ``cache=``, thread store is no-arg, at
 gets ``session_id``).
 """
 
+import sys
 import types
 from unittest.mock import Mock, patch
 
 import pytest
 
 from agentkernel.core.builder import SessionStoreBuilder
-from agentkernel.core.config import AKConfig
+from agentkernel.core.config import AKConfig, _ThreadValkeyConfig
 from agentkernel.core.multimodal.storage.base import AttachmentStore
 from agentkernel.core.multimodal.storage.in_memory import InMemoryAttachmentStore
 from agentkernel.core.multimodal.storage.storage_manager import AttachmentStorageManager
 from agentkernel.core.session.base import SessionStore
 from agentkernel.core.session.in_memory import InMemorySessionStore
-from agentkernel.core.thread.store.base import ThreadStore, ThreadStoreBuilder
+from agentkernel.core.thread.store.base import _BUILTIN_THREAD_STORES, ThreadStore, ThreadStoreBuilder
 from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
+from agentkernel.core.thread.store.valkey import ValkeyThreadStore
 from agentkernel.core.util.factory import AKConfigError
 
 
@@ -148,6 +150,35 @@ def test_thread_builder_byo_dotted_path(monkeypatch):
         cfg.thread.type = "byo_pkg.Store"
         mock_get.return_value = cfg
         assert isinstance(ThreadStoreBuilder.build(), _ByoThreadStore)
+
+
+def test_thread_builder_valkey():
+    # A real _ThreadValkeyConfig, not a Mock attribute: ValkeyThreadStore reads
+    # url/prefix/ttl off it and int(Mock()) would raise.
+    with patch.object(AKConfig, "get") as mock_get:
+        cfg = Mock()
+        cfg.thread.type = "valkey"
+        cfg.thread.valkey = _ThreadValkeyConfig()
+        mock_get.return_value = cfg
+        assert isinstance(ThreadStoreBuilder.build(), ValkeyThreadStore)
+
+
+def test_thread_builder_valkey_missing_extra_points_at_pip_extra(monkeypatch):
+    # Poisoning sys.modules with None makes the branch's `from .valkey import ...`
+    # raise ImportError, which require_extra should rewrite with an install hint.
+    monkeypatch.setitem(sys.modules, "agentkernel.core.thread.store.valkey", None)
+    with patch.object(AKConfig, "get") as mock_get:
+        cfg = Mock()
+        cfg.thread.type = "valkey"
+        mock_get.return_value = cfg
+        with pytest.raises(ImportError) as exc_info:
+            ThreadStoreBuilder.build()
+    assert 'pip install "agentkernel[valkey]"' in str(exc_info.value)
+
+
+def test_builtin_thread_stores_lists_valkey_for_the_unknown_type_error():
+    # The unknown-type AKConfigError names this list, so it is user-facing.
+    assert "valkey" in _BUILTIN_THREAD_STORES
 
 
 # --- multimodal attachment storage ----------------------------------------- #

@@ -222,6 +222,11 @@ class _ThreadRedisConfig(_RedisConfig):
     prefix: str = Field(default="ak:thread:", description="Key prefix for Redis thread storage")
 
 
+class _ThreadValkeyConfig(_ValkeyConfig):
+    ttl: int = Field(default=2592000, description="Thread TTL in seconds (0 disables)")
+    prefix: str = Field(default="ak:thread:", description="Key prefix for Valkey thread storage")
+
+
 class _ThreadDynamoDBConfig(_DynamoDBConfig):
     table_name: str = Field(
         default="ak-agent-threads",
@@ -253,10 +258,11 @@ class _ThreadStoreConfig(BaseModel):
 
     type: str = Field(
         default="memory",
-        description="Thread store backend: a built-in short name (memory, redis, dynamodb, cosmosdb, firestore) or a dotted path to a ThreadStore subclass",
+        description="Thread store backend: a built-in short name (memory, redis, valkey, dynamodb, cosmosdb, firestore) or a dotted path to a ThreadStore subclass",
     )
     naming: _ThreadNamingConfig = Field(default_factory=_ThreadNamingConfig, description="Auto-naming settings for the built-in naming strategies")
     redis: Optional[_ThreadRedisConfig] = None
+    valkey: Optional[_ThreadValkeyConfig] = None
     dynamodb: Optional[_ThreadDynamoDBConfig] = None
     firestore: Optional[_ThreadFirestoreConfig] = None
     cosmosdb: Optional[_ThreadCosmosDBConfig] = None

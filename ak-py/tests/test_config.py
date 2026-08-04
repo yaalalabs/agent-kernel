@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from agentkernel.core.config import AKConfig
+from agentkernel.core.config import AKConfig, _ThreadStoreConfig, _ThreadValkeyConfig
 
 
 @pytest.fixture(autouse=True)
@@ -209,6 +209,36 @@ def test_lazy_singleton_identity():
     AKConfig._reset()
     cfg_3 = AKConfig.get()
     assert cfg_3 is not cfg_1
+
+
+def test_thread_valkey_defaults():
+    # _ThreadValkeyConfig narrows _ValkeyConfig for thread use: a 30-day TTL and a
+    # thread-scoped key prefix, rather than session's 7-day TTL / "ak:sessions:".
+    cfg = _ThreadValkeyConfig()
+    assert cfg.url == "valkey://localhost:6379"
+    assert cfg.ttl == 2592000
+    assert cfg.prefix == "ak:thread:"
+
+
+def test_thread_valkey_absent_by_default():
+    # Every thread backend sub-block is opt-in; the store guards on it being None.
+    assert _ThreadStoreConfig().valkey is None
+
+
+def test_thread_type_valkey_from_yaml(tmp_path, monkeypatch):
+    yaml_text = "thread:\n" "  type: valkey\n" "  valkey:\n" "    url: valkey://example:6379\n" "    ttl: 120\n" "    prefix: 'ak:t:'\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    AKConfig._reset()
+
+    cfg = AKConfig.get()
+    assert cfg.thread.type == "valkey"
+    assert cfg.thread.valkey.url == "valkey://example:6379"
+    assert cfg.thread.valkey.ttl == 120
+    assert cfg.thread.valkey.prefix == "ak:t:"
+    # Sibling backends stay unset
+    assert cfg.thread.redis is None
 
 
 def test_import_does_not_load_config(tmp_path):

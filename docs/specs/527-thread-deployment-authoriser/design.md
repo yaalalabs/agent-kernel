@@ -77,7 +77,7 @@ flowchart TB
 ### Env-var contract (all clouds)
 
 - `AKConfig.thread` is `Optional[...] = None` with no `default_factory`
-  (`ak-py/src/agentkernel/core/config.py:580`), so the presence of any `AK_THREAD__*` env var
+  (`ak-py/src/agentkernel/core/config.py:609`), so the presence of any `AK_THREAD__*` env var
   turns the feature on — but `thread.type` then defaults to `"memory"` (`config.py:254-257`) and
   `ThreadStoreBuilder.build()` reads it directly (`ak-py/src/agentkernel/core/thread/store/base.py:149-153`).
 - Therefore every Terraform wiring below must inject `AK_THREAD__TYPE=<backend>` **together with** the
