@@ -95,7 +95,11 @@ flowchart TB
   (`state.tf:297-313`):
   - `attributes = [{session_id, S}, {sk, S}]`, `hash_key = "session_id"`, `range_key = "sk"`
   - `ttl_enabled = true`, `ttl_attribute_name = "expiry_time"`
-  - `table_name = "ak-agent-threads"` (Python-side default, `config.py:220-223`)
+  - `table_name = "thread_store"` — a **name suffix**, not the full table name: the shared module
+    composes `<product_alias>-<env_alias>-<module_name>-<suffix>`
+    (`ak-deployment/ak-aws/common/modules/dynamodb/main.tf:6`) and injects the composed name into the
+    env var, so the Python-side default (`config.py:226-229`) never applies on a deployed stack. Mirrors
+    session's `"session_store"` (`ak-aws/serverless/state.tf:314`).
   - **No GSI** — `list_threads` is a full-table `Scan`
     (`ak-py/src/agentkernel/core/thread/store/dynamodb.py:207-241`); do not copy the
     response-store GSI pattern.
@@ -126,7 +130,7 @@ flowchart TB
 
 - Thread reuses the Firestore database provisioned by `create_firestore_database`; Firestore
   collections are implicit, so no new database resource is needed — the thread store writes to its
-  own collection (`ak-agent-threads` default, `config.py:227-231`; one document per session with a
+  own collection (`ak-agent-threads` default, `config.py:234-237`; one document per session with a
   `messages` subcollection, `ak-py/src/agentkernel/core/thread/store/firestore.py:5-10`).
 - New opt-in boolean (e.g. `create_firestore_thread_collection`, env-wiring only) on both
   `ak-gcp/serverless` and `ak-gcp/containerized`, requiring `create_firestore_database = true`.
