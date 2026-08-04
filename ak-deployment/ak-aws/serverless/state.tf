@@ -512,7 +512,7 @@ module "request_handler" {
   dynamodb_memory_table_name              = var.queue_mode ? null : local.dynamodb_memory_table_name
   dynamodb_multimodal_memory_table_arn    = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_arn
   dynamodb_multimodal_memory_table_name   = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_name
-  # Thread is not zeroed under queue_mode: the request handler serves thread reads in both modes.
+  # Not zeroed under queue_mode, unlike the memory flags — threads are used in both modes.
   create_dynamodb_thread_table            = var.create_dynamodb_thread_table
   dynamodb_thread_table_arn               = local.dynamodb_thread_table_arn
   dynamodb_thread_table_name              = local.dynamodb_thread_table_name

@@ -10,8 +10,6 @@ locals {
     var.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
     } : {},
-    # Thread has no declared type in the committed config, so TYPE must be injected
-    # alongside the table name or threads silently run on the in-memory backend.
     var.dynamodb_thread_table_arn != null ? {
       AK_THREAD__TYPE                 = "dynamodb"
       AK_THREAD__DYNAMODB__TABLE_NAME = var.dynamodb_thread_table_name
@@ -85,8 +83,7 @@ resource "aws_iam_policy" "dynamodb_thread_policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        # Table ARN only, unlike the session policy above — list_threads is a
-        # full-table Scan and the thread table is provisioned without a GSI.
+        # No /index/* unlike the session policy: list_threads Scans, this table has no GSI.
         Resource = var.dynamodb_thread_table_arn
       }
     ]
@@ -219,8 +216,7 @@ module "ecs_service" {
     ]
   }
 
-  # Attach DynamoDB access to the task role for whichever tables exist. Merged, not
-  # replaced: session and thread are independent flags and may both be enabled.
+  # Attach DynamoDB access to the task role for whichever tables exist
   create_tasks_iam_role = true
   tasks_iam_role_policies = merge(
     var.create_dynamodb_memory_table ? {

@@ -99,7 +99,7 @@ resource "aws_iam_policy" "agent_runner_dynamodb_thread_policy" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        # Table ARN only — list_threads is a full-table Scan, the thread table has no GSI.
+        # No /index/*: list_threads Scans, this table has no GSI.
         Resource = var.dynamodb_thread_table_arn
       }
     ]
@@ -250,8 +250,6 @@ module "agent_runner_lambda" {
     var.dynamodb_multimodal_memory_table_arn != null ? {
       AK_MULTIMODAL__DYNAMODB__TABLE_NAME = var.dynamodb_multimodal_memory_table_name
     } : {},
-    # Thread is the one AK_* store with no declared type in the committed config, so
-    # TYPE must be injected alongside the table name or threads silently run in-memory.
     var.dynamodb_thread_table_arn != null ? {
       AK_THREAD__TYPE                 = "dynamodb"
       AK_THREAD__DYNAMODB__TABLE_NAME = var.dynamodb_thread_table_name
