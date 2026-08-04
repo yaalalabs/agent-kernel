@@ -65,7 +65,7 @@ module "containerized_agents" {
   }
 
   tags = {
-    Example     = "openai-stream"
+    Example     = "openai-stream-queue-mode"
     Environment = var.env_alias
   }
 }
