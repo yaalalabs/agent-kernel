@@ -376,7 +376,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
             stream = await self.get_chat_service().process_stream_chat_async(req=body, sse_format=False)
             async for raw_chunk in stream:
                 chunk_dict = json.loads(raw_chunk)
-                self.get_websocket_handler().broadcast(
+                await self._offload(
+                    self.get_websocket_handler().broadcast,
                     endpoint_url=endpoint_url,
                     message=chunk_dict,
                     user_id=user_id,
@@ -389,7 +390,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
                 error_chunk = StreamChunk(error=str(e), done=True).model_dump(exclude_none=True)
                 if session_id:
                     error_chunk["session_id"] = session_id
-                self.get_websocket_handler().broadcast(
+                await self._offload(
+                    self.get_websocket_handler().broadcast,
                     endpoint_url=endpoint_url,
                     message=error_chunk,
                     user_id=user_id,
