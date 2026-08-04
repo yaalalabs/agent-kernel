@@ -307,8 +307,15 @@ collections are created implicitly on first write, so no new database or collect
   the `weekly.tests` matrix (`.github/integration-test-config.yaml:78-79`, `type: aws-serverless` — note
   the "Memory options" entries omit `deploy_dir`, unlike the entries above them), already sets
   `create_dynamodb_memory_table = true` (`examples/memory/dynamodb/deploy/main.tf:11`), and already has a
-  real test (`lambda_test.py`). Add a `thread:` block to its `config.yaml` and
-  `create_dynamodb_thread_table = true` to `deploy/main.tf`. **No matrix change needed.**
+  real test (`lambda_test.py`). Add `create_dynamodb_thread_table = true` to `deploy/main.tf`.
+  **No matrix change needed.**
+  - **No `thread:` block in `config.yaml`** — decided during implementation, replacing this spec's
+    original "add a `thread:` block". `AKConfig.thread` is `Optional[...] = None`, so the injected
+    `AK_THREAD__TYPE` alone materialises the block and enables the feature. Committing a `thread:` block
+    would turn the feature on regardless, meaning a broken `AK_THREAD__TYPE` injection could pass
+    unnoticed — the example would look like it covered the env-var contract while actually bypassing it.
+    Omitting it makes the example a real test of the wiring. A comment in `config.yaml` records this so
+    nobody "fixes" it by adding one.
   - **Do not use `examples/aws-serverless/openai`**: it is `deployment_base` — "always deployed but not
     part of test matrix" (`integration-test-config.yaml:4-8`). Nothing tests it, so it cannot prove
     provisioning works, and it is shared infrastructure other tests deploy against, so imposing thread's

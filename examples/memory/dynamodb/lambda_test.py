@@ -14,12 +14,16 @@ class APITestClient:
     def __init__(self, url):
         self.url = url
         self.session_id = str(uuid.uuid4())
+        # Thread support is enabled on this deployment, which makes user_id required on
+        # every chat request. A fresh id per run keeps threads isolated between runs.
+        self.user_id = str(uuid.uuid4())
 
     async def send(self, prompt, endpoint: str = "", additional_context=None, body=None):
         payload = (
             {
                 "prompt": prompt,
                 "session_id": self.session_id,
+                "user_id": self.user_id,
                 "agent": "triage",
                 "additional_context": additional_context,
             }

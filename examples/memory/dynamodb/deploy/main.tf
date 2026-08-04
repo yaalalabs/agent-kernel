@@ -9,6 +9,7 @@ module "serverless_agents" {
   module_name                  = var.module_name
   product_display_name         = "Agent Kernel OpenAI with DynamoDB"
   create_dynamodb_memory_table = true
+  create_dynamodb_thread_table = true
   vpc_id                       = var.vpc_id
   private_subnet_ids           = var.private_subnet_ids
   region                       = var.region
