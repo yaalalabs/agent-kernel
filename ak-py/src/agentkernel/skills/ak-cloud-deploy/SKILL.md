@@ -615,7 +615,7 @@ execution:
   mode: stream
 ```
 
-This selects `ServerlessStreamAgentRunner` automatically at import time (queue mode) — no code change needed in the agent runner Lambda beyond the standard `Lambda.handler` entrypoint.
+This makes `ServerlessAgentRunner.handle()` dispatch to `ServerlessStreamAgentRunner` (queue mode) — no code change needed in the agent runner Lambda beyond the standard `Lambda.handler` entrypoint.
 
 **Message format** — clients receive a sequence of `STREAM_CHUNK` messages instead of one `CHAT_RESPONSE`:
 
@@ -819,11 +819,12 @@ agent runs inline) and **queue** (`queue_mode = true`, same two-container split 
 with the REST/IO service enqueueing chat frames and its output-queue consumer pushing replies
 back over the socket) variants. `execution_mode = "async"` delivers the full reply as one
 `CHAT_RESPONSE` push; `execution_mode = "stream"` delivers it token-by-token as a sequence of
-`STREAM_CHUNK` pushes (terminated by a chunk with `"done": true`) — in queue mode the exported
-`ECSAgentRunner` name resolves to `ECSStreamAgentRunner`, which fans out one Output Queue message
-per chunk instead of one for the full reply; in direct mode the chat route runs
+`STREAM_CHUNK` pushes (terminated by a chunk with `"done": true`) — in queue mode
+`ECSAgentRunner.run()` dispatches to `ECSStreamAgentRunner`, which fans out one Output Queue
+message per chunk instead of one for the full reply; in direct mode the chat route runs
 `ChatService.process_stream_chat_async()` and broadcasts each chunk inline. See
-`examples/aws-containerized/openai-stream` for a full streaming example.
+`examples/aws-containerized/openai-stream` (direct mode) or
+`examples/aws-containerized/openai-stream-queue-mode` (queue mode) for full streaming examples.
 
 **`app.py`** (direct/single-container variant; register custom routes before calling `run()`):
 

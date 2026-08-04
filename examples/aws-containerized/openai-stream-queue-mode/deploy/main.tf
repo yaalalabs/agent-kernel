@@ -41,8 +41,8 @@ module "containerized_agents" {
   }
 
   # Agent Runner: separate ECS service that polls the Input Queue, runs the agent, and fans out
-  # each streamed chunk as its own message on the Output Queue (agentkernel.aws.ECSAgentRunner
-  # resolves to ECSStreamAgentRunner because config.yaml sets execution.mode: stream).
+  # each streamed chunk as its own message on the Output Queue (agentkernel.aws.ECSAgentRunner.run()
+  # dispatches to ECSStreamAgentRunner because config.yaml sets execution.mode: stream).
   agent_runner = {
     cpu           = 1024
     memory        = 2048
