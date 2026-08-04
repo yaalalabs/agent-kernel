@@ -33,7 +33,7 @@ sequenceDiagram
   first chat request; every later request with the same `session_id` appends to it.
 - **`user_id` becomes required** on every chat request once threads are enabled; requests without it are
   rejected with 400.
-- **Pluggable storage**: in-memory, Redis, DynamoDB, Firestore, or Cosmos DB.
+- **Pluggable storage**: in-memory, Redis, Valkey, DynamoDB, Firestore, or Cosmos DB.
 - **Optional, pluggable authorization**: you supply an `Authoriser` that validates a Bearer token against
   *your* authentication provider; Agent Kernel never authenticates users itself.
 - **Streaming included**: with `execution.mode: stream`, the user message is recorded before the stream

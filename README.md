@@ -128,7 +128,7 @@ Let agents run code and shell commands in an isolated, permission-bounded enviro
 | Layer | Backends |
 |---|---|
 | **Session / Memory** | In-memory, Redis, Valkey (AWS), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
-| **Conversation Threads** | Persistent, named threads keyed by `session_id` — in-memory, Redis, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
+| **Conversation Threads** | Persistent, named threads keyed by `session_id` — in-memory, Redis, Valkey, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
 | **Vector Knowledge** | ChromaDB |
 | **Graph Knowledge** | Neo4j |
 | **SQL Analytics** | Starburst Galaxy (Trino) |

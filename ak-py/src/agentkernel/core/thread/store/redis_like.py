@@ -16,11 +16,25 @@ import datetime
 import logging
 from typing import List, Optional, Tuple
 
+from ...util.driver.redis_like import _RedisLikeDriver
 from ..model import Thread, ThreadMessage, _utc_now
 from .base import ThreadStore
 
 
 class _RedisLikeThreadStore(ThreadStore):
+    """
+    Shared thread store body for the Redis-protocol backends.
+
+    Concrete subclasses (``RedisThreadStore``, ``ValkeyThreadStore``) implement only
+    ``__init__``, where they must set all three attributes below — this class reads
+    them but never assigns them. Mirrors ``_RedisLikeDriver``, whose subclasses supply
+    the driver-specific bits the same way.
+    """
+
+    _driver: _RedisLikeDriver
+    _prefix: str
+    _log: logging.Logger
+
     def _meta_key(self, session_id: str) -> str:
         return self._driver.key(f"{session_id}:meta")
 

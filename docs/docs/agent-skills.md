@@ -96,7 +96,7 @@ Deploy your agent to AWS, Azure, or GCP. Generates complete Terraform configurat
 
 ### ak-add-capabilities
 
-Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, custom hooks, multimodal support, and conversation thread support (in-memory, Redis, DynamoDB, Firestore, Cosmos DB).
+Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, custom hooks, multimodal support, and conversation thread support (in-memory, Redis, Valkey, DynamoDB, Firestore, Cosmos DB).
 
 **Example prompts:**
 - *"Add OpenAI guardrails to my agent"*

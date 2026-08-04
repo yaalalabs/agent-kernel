@@ -413,7 +413,7 @@ mode additionally require `multimodal.enabled: true` with a shared attachment st
 
 - **Field**: `thread.type`
 - **Type**: string
-- **Options**: `memory`, `redis`, `dynamodb` (AWS), `firestore` (GCP), `cosmosdb` (Azure)
+- **Options**: `memory`, `redis`, `valkey`, `dynamodb` (AWS), `firestore` (GCP), `cosmosdb` (Azure)
 - **Default**: `memory`
 - **Environment Variable**: `AK_THREAD__TYPE`
 
@@ -452,6 +452,28 @@ Required when `thread.type=redis`:
   - **Default**: `ak:thread:`
   - **Description**: Key prefix for Redis thread storage
   - **Environment Variable**: `AK_THREAD__REDIS__PREFIX`
+
+##### Valkey Thread Store
+
+Required when `thread.type=valkey`. Requires the `valkey` extra (`pip install "agentkernel[valkey]"`):
+
+- **URL**
+  - **Field**: `thread.valkey.url`
+  - **Default**: `valkey://localhost:6379`
+  - **Description**: Valkey connection URL. Use `valkeys://` for SSL
+  - **Environment Variable**: `AK_THREAD__VALKEY__URL`
+
+- **TTL (Time to Live)**
+  - **Field**: `thread.valkey.ttl`
+  - **Default**: `2592000` (30 days)
+  - **Description**: Thread TTL in seconds (0 disables)
+  - **Environment Variable**: `AK_THREAD__VALKEY__TTL`
+
+- **Key Prefix**
+  - **Field**: `thread.valkey.prefix`
+  - **Default**: `ak:thread:`
+  - **Description**: Key prefix for Valkey thread storage
+  - **Environment Variable**: `AK_THREAD__VALKEY__PREFIX`
 
 ##### DynamoDB Thread Store
 
