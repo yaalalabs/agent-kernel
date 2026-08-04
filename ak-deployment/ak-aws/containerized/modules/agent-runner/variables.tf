@@ -93,6 +93,24 @@ variable "dynamodb_memory_table_name" {
   default     = null
 }
 
+variable "create_dynamodb_thread_table" {
+  type        = bool
+  description = "Whether the DynamoDB conversation thread table is created"
+  default     = false
+}
+
+variable "dynamodb_thread_table_arn" {
+  type        = string
+  description = "DynamoDB conversation thread table ARN"
+  default     = null
+}
+
+variable "dynamodb_thread_table_name" {
+  type        = string
+  description = "DynamoDB conversation thread table name"
+  default     = null
+}
+
 variable "agent_runner" {
   description = "Agent runner configuration object"
   type = object({

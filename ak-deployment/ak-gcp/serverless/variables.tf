@@ -172,6 +172,12 @@ variable "create_firestore_database" {
   default     = false
 }
 
+variable "create_firestore_thread_collection" {
+  type        = bool
+  description = "Wire the Firestore-backed conversation thread store. Requires create_firestore_database; the collection itself is created implicitly on first write, so no extra Firestore resource is provisioned."
+  default     = false
+}
+
 variable "gateway_endpoints" {
   description = "Additional API endpoints to expose"
   type = list(object({

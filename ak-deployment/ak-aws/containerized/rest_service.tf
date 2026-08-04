@@ -24,6 +24,9 @@ module "rest_service" {
   create_dynamodb_memory_table = var.create_dynamodb_memory_table
   dynamodb_memory_table_arn    = local.dynamodb_memory_table_arn
   dynamodb_memory_table_name   = local.dynamodb_memory_table_name
+  create_dynamodb_thread_table = var.create_dynamodb_thread_table
+  dynamodb_thread_table_arn    = local.dynamodb_thread_table_arn
+  dynamodb_thread_table_name   = local.dynamodb_thread_table_name
 
   rest_service = {
     cpu                   = var.rest_service.cpu

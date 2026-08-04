@@ -13,6 +13,12 @@ locals {
     var.valkey_url != null ? { AK_SESSION__VALKEY__URL = var.valkey_url } : {},
     var.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
+    } : {},
+    # Thread has no declared type in the committed config, so TYPE must be injected
+    # alongside the table name or threads silently run on the in-memory backend.
+    var.dynamodb_thread_table_arn != null ? {
+      AK_THREAD__TYPE                 = "dynamodb"
+      AK_THREAD__DYNAMODB__TABLE_NAME = var.dynamodb_thread_table_name
     } : {}
   )
 }
@@ -151,6 +157,38 @@ resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_memory_attachme
   count      = var.create_dynamodb_memory_table ? 1 : 0
   role       = aws_iam_role.agent_runner_task_role.name
   policy_arn = aws_iam_policy.agent_runner_dynamodb_memory_policy[0].arn
+}
+
+resource "aws_iam_policy" "agent_runner_dynamodb_thread_policy" {
+  count = var.create_dynamodb_thread_table ? 1 : 0
+  name  = "${var.prefix}-agent-runner-dynamodb-thread"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query",
+        "dynamodb:Scan"
+      ]
+      # Table ARN only, unlike the session policy above — list_threads is a
+      # full-table Scan and the thread table is provisioned without a GSI.
+      Resource = var.dynamodb_thread_table_arn
+    }]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_thread_attachment" {
+  count      = var.create_dynamodb_thread_table ? 1 : 0
+  role       = aws_iam_role.agent_runner_task_role.name
+  policy_arn = aws_iam_policy.agent_runner_dynamodb_thread_policy[0].arn
 }
 
 # ---------- ECS Resources ----------

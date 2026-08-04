@@ -10,6 +10,12 @@ locals {
     var.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
     } : {},
+    # Thread has no declared type in the committed config, so TYPE must be injected
+    # alongside the table name or threads silently run on the in-memory backend.
+    var.dynamodb_thread_table_arn != null ? {
+      AK_THREAD__TYPE                 = "dynamodb"
+      AK_THREAD__DYNAMODB__TABLE_NAME = var.dynamodb_thread_table_name
+    } : {},
     # Queue mode — inject queue URLs and response store table name
     var.queue_mode ? {
       AK_EXECUTION__QUEUES__INPUT__URL                   = var.input_queue_url
@@ -53,6 +59,35 @@ resource "aws_iam_policy" "dynamodb_policy" {
           var.dynamodb_memory_table_arn,
           "${var.dynamodb_memory_table_arn}/index/*"
         ]
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_policy" "dynamodb_thread_policy" {
+  count       = var.create_dynamodb_thread_table ? 1 : 0
+  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-dynamodb-thread-policy"
+  description = "Policy for DynamoDB conversation thread table access"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        # Table ARN only, unlike the session policy above — list_threads is a
+        # full-table Scan and the thread table is provisioned without a GSI.
+        Resource = var.dynamodb_thread_table_arn
       }
     ]
   })
@@ -182,11 +217,17 @@ module "ecs_service" {
     ]
   }
 
-  # Attach DynamoDB access to the task role if a memory table exists
+  # Attach DynamoDB access to the task role for whichever tables exist. Merged, not
+  # replaced: session and thread are independent flags and may both be enabled.
   create_tasks_iam_role = true
-  tasks_iam_role_policies = var.create_dynamodb_memory_table ? {
-    DynamoDB = aws_iam_policy.dynamodb_policy[0].arn
-  } : {}
+  tasks_iam_role_policies = merge(
+    var.create_dynamodb_memory_table ? {
+      DynamoDB = aws_iam_policy.dynamodb_policy[0].arn
+    } : {},
+    var.create_dynamodb_thread_table ? {
+      DynamoDBThread = aws_iam_policy.dynamodb_thread_policy[0].arn
+    } : {}
+  )
 
   container_definitions = {
     (var.container_name) = {

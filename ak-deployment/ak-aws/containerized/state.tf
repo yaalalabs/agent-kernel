@@ -11,6 +11,8 @@ locals {
   valkey_url                = var.create_valkey_cluster == true ? module.valkey[0].url : null
   dynamodb_memory_table_arn = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
   dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
+  dynamodb_thread_table_arn = var.create_dynamodb_thread_table == true ? module.dynamodb_thread[0].table_arn : null
+  dynamodb_thread_table_name = var.create_dynamodb_thread_table == true ? module.dynamodb_thread[0].table_name : null
   prefix                    = "${var.product_alias}-${var.env_alias}-${var.module_name}"
   service_name              = "${local.prefix}-service"
   container_name            = "${local.prefix}-app"
@@ -124,5 +126,23 @@ module dynamodb_memory {
   module_name        = var.module_name
   product_alias      = var.product_alias
   table_name         = "session_store"
+  ttl_attribute_name = "expiry_time"
+}
+
+module dynamodb_thread {
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.7.0"
+  count   = var.create_dynamodb_thread_table == true ? 1 : 0
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "sk", type = "S" },
+  ]
+  hash_key           = "session_id"
+  range_key          = "sk"
+  ttl_enabled        = true
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  product_alias      = var.product_alias
+  table_name         = "thread_store"
   ttl_attribute_name = "expiry_time"
 }
