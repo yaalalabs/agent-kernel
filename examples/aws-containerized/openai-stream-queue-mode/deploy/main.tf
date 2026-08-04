@@ -1,7 +1,7 @@
 # OpenAI Agents in ECS over a WebSocket API with queue-based, token-streaming processing — see ../README.md.
 module "containerized_agents" {
   source = "yaalalabs/ak-containerized/aws"
-  version = "0.7.0"
+  version = "0.8.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias

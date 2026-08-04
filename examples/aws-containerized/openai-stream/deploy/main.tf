@@ -2,7 +2,7 @@
 # delta pushed over the connection as its own STREAM_CHUNK message.
 module "containerized_agents" {
   source = "yaalalabs/ak-containerized/aws"
-  version = "0.7.0"
+  version = "0.8.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
