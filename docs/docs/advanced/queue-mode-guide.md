@@ -255,8 +255,10 @@ waiting for the full reply.
 See the [AWS Containerized WebSocket
 Mode](../deployment/aws-containerized.md#websocket-mode) docs for the full Terraform
 configuration, IAM, and wire protocol, and
-[`examples/aws-containerized/openai-stream`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream)
-for a full queue-mode streaming example.
+[`examples/aws-containerized/openai-stream-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream-queue-mode)
+for a full queue-mode streaming example (or
+[`openai-stream`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream)
+for the direct-mode variant).
 
 ### Entrypoint Code
 
