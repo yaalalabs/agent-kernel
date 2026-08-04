@@ -528,6 +528,12 @@ See [examples/aws-containerized/](../../examples/aws-containerized/) for complet
 - **openai-websocket-scalable** - OpenAI agent over a WebSocket API in queue mode: the REST/IO
   service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner
   service processes them from SQS
+- **openai-stream** - OpenAI agent over a WebSocket API in direct (non-queue), STREAM execution
+  mode: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final
+  `CHAT_RESPONSE`
+- **openai-stream-queue-mode** - OpenAI agent over a WebSocket API in queue-based STREAM execution
+  mode: the Agent Runner streams token-by-token chunks onto the Output Queue so it can scale
+  independently of ingress
 
 ## Migration
 

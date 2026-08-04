@@ -65,6 +65,8 @@ AWS ECS/Fargate deployment examples:
 - **`openai-dynamodb-scalable/`** - OpenAI agents on AWS ECS with SQS queue mode for scalable, asynchronous request processing and DynamoDB response storage
 - **`openai-websocket/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue) mode: one service authenticates `$connect`, runs the agent inline, and pushes the reply back over the same connection
 - **`openai-websocket-scalable/`** - OpenAI agents on AWS ECS over a WebSocket API in queue mode: the REST/IO service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner service processes them from SQS
+- **`openai-stream/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue), STREAM execution mode: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
+- **`openai-stream-queue-mode/`** - OpenAI agents on AWS ECS over a WebSocket API in queue-based STREAM execution mode: the Agent Runner streams token-by-token chunks onto the Output Queue so it can scale independently of ingress
 
 ### 📁 AWS Serverless Examples (`/examples/aws-serverless`)
 
