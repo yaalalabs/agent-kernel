@@ -172,6 +172,12 @@ variable "create_dynamodb_multimodal_memory_table" {
   default     = false
 }
 
+variable "create_dynamodb_thread_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the conversation threads"
+  default     = false
+}
+
 variable "dynamodb_memory_table_arn" {
   type        = string
   description = "ARN of the DynamoDB memory table"
@@ -193,6 +199,18 @@ variable "dynamodb_multimodal_memory_table_arn" {
 variable "dynamodb_multimodal_memory_table_name" {
   type        = string
   description = "Name of the DynamoDB multimodal memory table"
+  default     = null
+}
+
+variable "dynamodb_thread_table_arn" {
+  type        = string
+  description = "ARN of the DynamoDB conversation thread table"
+  default     = null
+}
+
+variable "dynamodb_thread_table_name" {
+  type        = string
+  description = "Name of the DynamoDB conversation thread table"
   default     = null
 }
 

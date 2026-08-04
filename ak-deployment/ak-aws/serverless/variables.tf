@@ -176,6 +176,12 @@ variable "create_dynamodb_multimodal_memory_table" {
   default     = false
 }
 
+variable "create_dynamodb_thread_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the conversation threads"
+  default     = false
+}
+
 variable "private_subnet_cidrs" {
   type        = list(string)
   description = "CIDR blocks for the private subnets"

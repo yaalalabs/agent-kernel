@@ -81,6 +81,37 @@ resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_multimodal_atta
   policy_arn = aws_iam_policy.agent_runner_dynamodb_multimodal_policy[0].arn
 }
 
+resource "aws_iam_policy" "agent_runner_dynamodb_thread_policy" {
+  count = var.create_dynamodb_thread_table == true ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-ddb-thread"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        # Table ARN only — list_threads is a full-table Scan, the thread table has no GSI.
+        Resource = var.dynamodb_thread_table_arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_thread_attachment" {
+  count      = var.create_dynamodb_thread_table == true ? 1 : 0
+  role       = aws_iam_role.agent_runner_lambda_role.name
+  policy_arn = aws_iam_policy.agent_runner_dynamodb_thread_policy[0].arn
+}
+
 resource "aws_signer_signing_job" "agent_runner_lambda_signing_job" {
   count = var.is_production && var.agent_runner.package_type == "S3Zip" ? 1 : 0
 
@@ -218,6 +249,12 @@ module "agent_runner_lambda" {
     } : {},
     var.dynamodb_multimodal_memory_table_arn != null ? {
       AK_MULTIMODAL__DYNAMODB__TABLE_NAME = var.dynamodb_multimodal_memory_table_name
+    } : {},
+    # Thread is the one AK_* store with no declared type in the committed config, so
+    # TYPE must be injected alongside the table name or threads silently run in-memory.
+    var.dynamodb_thread_table_arn != null ? {
+      AK_THREAD__TYPE                 = "dynamodb"
+      AK_THREAD__DYNAMODB__TABLE_NAME = var.dynamodb_thread_table_name
     } : {},
     {
       AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT = tostring(local.queue_input_consumer_max_receive_count)

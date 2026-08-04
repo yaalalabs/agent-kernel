@@ -23,6 +23,8 @@ locals {
   dynamodb_memory_table_name            = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
   dynamodb_multimodal_memory_table_arn  = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_arn : null
   dynamodb_multimodal_memory_table_name = var.create_dynamodb_multimodal_memory_table == true ? module.dynamodb_multimodal_memory[0].table_name : null
+  dynamodb_thread_table_arn             = var.create_dynamodb_thread_table == true ? module.dynamodb_thread[0].table_arn : null
+  dynamodb_thread_table_name            = var.create_dynamodb_thread_table == true ? module.dynamodb_thread[0].table_name : null
 
   request_handler_enabled               = var.enable_api_gateway
   request_handler_lambda_function_name  = local.request_handler_enabled ? module.request_handler[0].lambda_function_name : null
@@ -333,6 +335,24 @@ module "dynamodb_multimodal_memory" {
   table_name         = "mm-attachments"
 }
 
+module "dynamodb_thread" {
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.7.0"
+  count   = var.create_dynamodb_thread_table == true ? 1 : 0
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "sk", type = "S" },
+  ]
+  hash_key           = "session_id"
+  range_key          = "sk"
+  ttl_enabled        = true
+  ttl_attribute_name = "expiry_time"
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  product_alias      = var.product_alias
+  table_name         = "thread_store"
+}
+
 module "queues" {
   count  = var.queue_mode ? 1 : 0
   source = "./modules/queues"
@@ -492,6 +512,10 @@ module "request_handler" {
   dynamodb_memory_table_name              = var.queue_mode ? null : local.dynamodb_memory_table_name
   dynamodb_multimodal_memory_table_arn    = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_arn
   dynamodb_multimodal_memory_table_name   = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_name
+  # Thread is not zeroed under queue_mode: the request handler serves thread reads in both modes.
+  create_dynamodb_thread_table            = var.create_dynamodb_thread_table
+  dynamodb_thread_table_arn               = local.dynamodb_thread_table_arn
+  dynamodb_thread_table_name              = local.dynamodb_thread_table_name
   input_queue_arn                         = local.input_queue_arn
   input_queue_url                         = local.input_queue_url
   websocket_connections_dynamodb = local.websocket_api_enabled ? {
@@ -545,6 +569,9 @@ module "agent_runner" {
   dynamodb_memory_table_name    = local.dynamodb_memory_table_name
   dynamodb_multimodal_memory_table_arn  = local.dynamodb_multimodal_memory_table_arn
   dynamodb_multimodal_memory_table_name = local.dynamodb_multimodal_memory_table_name
+  create_dynamodb_thread_table  = var.create_dynamodb_thread_table
+  dynamodb_thread_table_arn     = local.dynamodb_thread_table_arn
+  dynamodb_thread_table_name    = local.dynamodb_thread_table_name
   redis_url                     = local.redis_url
   valkey_url                    = local.valkey_url
 
