@@ -17,13 +17,13 @@ output "api_gateway_stage" {
 }
 
 output "api_gateway_cloudwatch_log_group_arn" {
-  description = "ARN of the CloudWatch log group for API Gateway (null when access logging is disabled)"
-  value       = var.enable_api_gateway_logs ? aws_cloudwatch_log_group.http_api[0].arn : null
+  description = "ARN of the CloudWatch log group for API Gateway (null when access logging is disabled, or in WebSocket modes)"
+  value       = var.enable_api_gateway_logs && !local.is_websocket_mode ? aws_cloudwatch_log_group.http_api[0].arn : null
 }
 
 output "api_gateway_cloudwatch_log_group_name" {
-  description = "Name of the CloudWatch log group for API Gateway (null when access logging is disabled)"
-  value       = var.enable_api_gateway_logs ? aws_cloudwatch_log_group.http_api[0].name : null
+  description = "Name of the CloudWatch log group for API Gateway (null when access logging is disabled, or in WebSocket modes)"
+  value       = var.enable_api_gateway_logs && !local.is_websocket_mode ? aws_cloudwatch_log_group.http_api[0].name : null
 }
 
 output "agent_invoke_url" {
