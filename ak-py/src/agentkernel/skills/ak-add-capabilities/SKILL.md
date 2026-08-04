@@ -697,7 +697,7 @@ dependencies = [
 2. Update `config.yaml`:
 ```yaml
 thread:
-  type: memory  # other supported backends: redis | dynamodb | firestore | cosmosdb
+  type: memory  # other supported backends: redis | valkey | dynamodb | firestore | cosmosdb
 ```
 
 3. No further code changes needed. When enabled:

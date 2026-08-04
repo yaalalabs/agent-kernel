@@ -7,8 +7,3 @@ session:
     size: 256
   dynamodb:
     table_name: "ak-oai-ddb-dev-examples-session_store"
-# No `thread:` block on purpose. Conversation threads are deployment-toggled here:
-# `create_dynamodb_thread_table = true` in deploy/main.tf provisions the table and injects
-# AK_THREAD__TYPE + AK_THREAD__DYNAMODB__TABLE_NAME, and the presence of those env vars is
-# what enables the feature. Unlike session above, the table name is not committed — Terraform
-# supplies the composed name. Adding a `thread:` block here would mask a broken injection.

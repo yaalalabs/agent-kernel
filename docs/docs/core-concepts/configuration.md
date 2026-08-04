@@ -124,12 +124,16 @@ multimodal:
 # Conversation threads (optional - feature is enabled by the presence of this block;
 # requires user_id on every chat request. See /docs/advanced/threads)
 thread:
-  type: memory  # memory | redis | dynamodb | firestore | cosmosdb
+  type: memory  # memory | redis | valkey | dynamodb | firestore | cosmosdb
   naming:
     model: gpt-4o-mini  # LLM used to auto-name threads (requires the thread extra)
     max_length: 80
   redis:
     url: "redis://localhost:6379"
+    ttl: 2592000
+    prefix: "ak:thread:"
+  valkey:
+    url: "valkey://localhost:6379"
     ttl: 2592000
     prefix: "ak:thread:"
   dynamodb:

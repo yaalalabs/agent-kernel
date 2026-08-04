@@ -51,7 +51,7 @@ Add a `thread` block to `config.yaml`; its presence turns the feature on:
 
 ```yaml
 thread:
-  type: memory        # memory | redis | dynamodb | firestore | cosmosdb
+  type: memory        # memory | redis | valkey | dynamodb | firestore | cosmosdb
 ```
 
 ## Chat Request Fields
@@ -183,6 +183,14 @@ thread:
     prefix: "ak:thread:"
     ttl: 2592000                   # seconds; 0 disables expiry
 
+# Valkey (Redis-protocol compatible; requires the `valkey` extra)
+thread:
+  type: valkey
+  valkey:
+    url: "valkey://localhost:6379"
+    prefix: "ak:thread:"
+    ttl: 2592000                   # seconds; 0 disables expiry
+
 # DynamoDB - table needs partition key `session_id` (S) and sort key `sk` (S)
 thread:
   type: dynamodb
@@ -206,6 +214,29 @@ thread:
     connection_string: "..."
     table_name: "akagentthreads"
 ```
+
+## Deploying the Thread Store
+
+On AWS and GCP the thread store is provisioned by Terraform and enabled by **environment variables**, so a
+deployed stack needs no committed `thread:` block at all:
+
+| Cloud | Flag | Provisions |
+|---|---|---|
+| AWS serverless + containerized | `create_dynamodb_thread_table` | A DynamoDB table (partition `session_id`, sort `sk`, TTL on `expiry_time`, no GSI) |
+| GCP serverless + containerized | `create_firestore_thread_collection` | Nothing new — reuses the database from `create_firestore_database`; the collection is created on first write |
+
+:::warning AK_THREAD__TYPE must be set alongside the connection variables
+Thread is the one `AK_*` store where Terraform injects the **type** as well as the connection detail.
+Session can rely on `session: {type: dynamodb}` in the committed `config.yaml`; thread is
+deployment-toggled, so there is no declared type to fall back on. If `AK_THREAD__DYNAMODB__TABLE_NAME`
+is set without `AK_THREAD__TYPE=dynamodb`, the feature still switches on but `thread.type` falls back to
+its `memory` default — threads run in-memory and are lost on every cold start, with no error. The
+built-in Terraform flags always inject both; wire both if you set these by hand.
+:::
+
+Redis/Valkey thread storage has no Terraform flag: point `AK_THREAD__TYPE=redis|valkey` plus the URL at
+whatever cluster `create_redis_cluster`/`create_valkey_cluster` already provisions, via the generic
+`environment_variables` passthrough.
 
 ## Attachments in Thread Mode
 
