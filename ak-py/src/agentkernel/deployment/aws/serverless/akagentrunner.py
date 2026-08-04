@@ -9,6 +9,9 @@ from .core import LambdaSQSConsumer
 
 
 class ServerlessAgentRunner(LambdaSQSConsumer):
+    """
+    handle() dispatches to ServerlessStreamAgentRunner when execution.mode is STREAM.
+    """
 
     _log = logging.getLogger("ak.aws.agentrunner")
     _chat_service = None
@@ -16,6 +19,13 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
     @classmethod
     def _get_max_receive_count(cls) -> int:
         return AKConfig.get().execution.queues.input.max_receive_count
+
+    @classmethod
+    def handle(cls, event: dict, context) -> dict:
+        """Dispatch to ServerlessStreamAgentRunner when execution.mode is STREAM."""
+        if AKConfig.get().execution.mode == ExecutionMode.STREAM:
+            return ServerlessStreamAgentRunner.handle(event, context)
+        return super().handle(event, context)
 
     @classmethod
     def _get_chat_service(cls) -> ChatService:
