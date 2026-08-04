@@ -175,7 +175,7 @@ terraform init && terraform apply
 
 - ECS Fargate + Application Load Balancer
 - Optional two-container scalable queue mode with backlog-based auto-scaling
-- Optional WebSocket mode (`async`) for real-time, connection-based interactions
+- Optional WebSocket mode (`async`/`stream`) for real-time, connection-based interactions
 - Consistent performance, lower latency
 
 [Learn more →](./aws-containerized)
