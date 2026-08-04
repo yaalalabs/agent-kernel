@@ -325,7 +325,8 @@ it in `async`/`stream` modes.
 
 For the full examples see [examples/aws-containerized/openai-websocket](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket)
 (direct mode, async), [examples/aws-containerized/openai-websocket-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket-scalable)
-(queue mode, async), and [examples/aws-containerized/openai-stream](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream)
+(queue mode, async), [examples/aws-containerized/openai-stream](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream)
+(direct mode, stream), and [examples/aws-containerized/openai-stream-queue-mode](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream-queue-mode)
 (queue mode, stream).
 
 ## Advantages
@@ -632,5 +633,6 @@ See [examples/aws-containerized/crewai-auth](https://github.com/yaalalabs/agent-
 See [examples/aws-containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized), including
 [openai-websocket](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket),
 [openai-websocket-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket-scalable),
-and [openai-stream](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream)
+[openai-stream](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream),
+and [openai-stream-queue-mode](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream-queue-mode)
 for WebSocket mode.
