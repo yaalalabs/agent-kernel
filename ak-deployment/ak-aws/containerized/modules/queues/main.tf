@@ -4,7 +4,7 @@ data "aws_region" "current" {}
 
 module "input_queue" {
   source  = "yaalalabs/ak-common/aws//modules/sqs"
-  version = "0.8.0"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -40,7 +40,7 @@ module "input_queue" {
 
 module "output_queue" {
   source  = "yaalalabs/ak-common/aws//modules/sqs"
-  version = "0.8.0"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias

@@ -11,7 +11,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.8.0"
+  version: "0.8.1"
   category: user
 ---
 
@@ -55,7 +55,7 @@ Which capability would you like to add?
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.8.0",
+    "agentkernel[openai,api]>=0.8.1",
     # OpenAI guardrails use the openai extra — already included if using OpenAI framework
 ]
 ```
@@ -109,7 +109,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.8.0",
+    "agentkernel[openai,api,aws]>=0.8.1",
 ]
 ```
 
@@ -135,7 +135,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,walledai]>=0.8.0",
+    "agentkernel[openai,api,walledai]>=0.8.1",
 ]
 ```
 
@@ -172,7 +172,7 @@ export WALLED_API_KEY="your-walledai-api-key"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,langfuse]>=0.8.0",
+    "agentkernel[openai,api,langfuse]>=0.8.1",
 ]
 ```
 
@@ -197,7 +197,7 @@ export LANGFUSE_HOST="https://cloud.langfuse.com"   # or self-hosted URL
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,openllmetry]>=0.8.0",
+    "agentkernel[openai,api,openllmetry]>=0.8.1",
 ]
 ```
 
@@ -215,7 +215,7 @@ trace:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,logfire]>=0.8.0",
+    "agentkernel[openai,api,logfire]>=0.8.1",
 ]
 ```
 
@@ -244,7 +244,7 @@ export LOGFIRE_TOKEN="your-write-token"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.8.0",
+    "agentkernel[openai,api,redis]>=0.8.1",
 ]
 ```
 
@@ -264,7 +264,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.8.0",
+    "agentkernel[openai,api,aws]>=0.8.1",
 ]
 ```
 
@@ -286,7 +286,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,azure]>=0.8.0",
+    "agentkernel[openai,api,azure]>=0.8.1",
 ]
 ```
 
@@ -308,7 +308,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gcp]>=0.8.0",
+    "agentkernel[openai,api,gcp]>=0.8.1",
 ]
 ```
 
@@ -341,9 +341,9 @@ Add durable knowledge tools that your agents can query and update across session
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,chromadb]>=0.8.0",  # for Chroma
-  # or "agentkernel[openai,api,neo4j]>=0.8.0"
-  # or "agentkernel[openai,api,trino]>=0.8.0"
+  "agentkernel[openai,api,chromadb]>=0.8.1",  # for Chroma
+  # or "agentkernel[openai,api,neo4j]>=0.8.1"
+  # or "agentkernel[openai,api,trino]>=0.8.1"
 ]
 ```
 
@@ -424,7 +424,7 @@ Expose your agents as MCP (Model Context Protocol) tools so other AI systems can
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,mcp]>=0.8.0",
+    "agentkernel[openai,api,mcp]>=0.8.1",
 ]
 ```
 
@@ -450,7 +450,7 @@ Enable Agent-to-Agent communication via Google's A2A protocol.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,a2a]>=0.8.0",
+    "agentkernel[openai,api,a2a]>=0.8.1",
 ]
 ```
 
@@ -545,6 +545,41 @@ class RedactingPostHook(DisclaimerPostHook):
         return delta.replace("SECRET", "***")
 ```
 
+**Per-run framework context (optional):** hooks are the supported surface for the reserved
+`framework_context` session key — a framework-agnostic, picklable context/state dict that the runner
+injects into the native framework call (`context=`, `deps=`, session state, ...) and writes back after a
+successful run. It is never auto-created; seed it explicitly from a pre-hook, and read it back from a
+post-hook once the run has written its results:
+
+```python
+class SeedCart(PreHook):
+    async def on_run(self, session, agent, requests):
+        if session.get_framework_context() is None:
+            session.set_framework_context({"cart": []})
+        return requests
+
+    def name(self):
+        return "SeedCart"
+
+
+class AppendCart(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        cart = (session.get_framework_context() or {}).get("cart", [])
+        agent_reply.response += f"\n\nCurrent cart: {', '.join(cart) or '(empty)'}"
+        return agent_reply
+
+    def name(self):
+        return "AppendCart"
+```
+
+Use `session.get_framework_context()` / `set_framework_context(dict)` / `clear_framework_context()` —
+these accessors are for hooks only. Tools must use their framework's native handle instead
+(`RunContextWrapper.context` on OpenAI, `RunContext.deps` on Pydantic AI, `tool_context.state` on ADK,
+...) since a tool writing through `ToolContext.get().session` writes to a different object than the one
+the run is carrying. Round-trip fidelity is framework-dependent (full for OpenAI/Pydantic AI, partial for
+ADK/smolagents/LangGraph, unsupported for CrewAI) — see the framework's page under `docs/docs/frameworks/`
+for specifics.
+
 ---
 
 #### Multimodal Support
@@ -558,7 +593,7 @@ Enable image and file processing in your agents.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,multimodal]>=0.8.0",
+    "agentkernel[openai,api,multimodal]>=0.8.1",
 ]
 ```
 
@@ -583,7 +618,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,multimodal]>=0.8.0",
+    "agentkernel[openai,api,redis,multimodal]>=0.8.1",
 ]
 ```
 
@@ -606,7 +641,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,multimodal]>=0.8.0",
+    "agentkernel[openai,api,aws,multimodal]>=0.8.1",
 ]
 ```
 
@@ -690,7 +725,7 @@ Enable persistent, named conversation threads keyed by `session_id`.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.8.0",
+    "agentkernel[openai,api]>=0.8.1",
 ]
 ```
 
@@ -710,7 +745,7 @@ thread:
 **For LLM-based thread naming**, add the `thread` extra:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,thread]>=0.8.0",
+    "agentkernel[openai,api,thread]>=0.8.1",
 ]
 ```
 ```yaml
@@ -725,7 +760,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,thread]>=0.8.0",
+    "agentkernel[openai,api,redis,thread]>=0.8.1",
 ]
 ```
 ```yaml
@@ -741,7 +776,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,thread]>=0.8.0",
+    "agentkernel[openai,api,aws,thread]>=0.8.1",
 ]
 ```
 ```yaml

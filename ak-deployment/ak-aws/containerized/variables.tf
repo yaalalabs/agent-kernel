@@ -136,11 +136,11 @@ variable "create_dynamodb_thread_table" {
 variable "rest_service" {
   description = "REST service configuration object"
   type = object({
-    cpu                   = optional(number, 256)
-    memory                = optional(number, 512)
-    desired_count         = optional(number, 1)
-    container_port        = optional(number, 8000)
-    health_check_endpoint = optional(string, "/health")
+    cpu                               = optional(number, 256)
+    memory                            = optional(number, 512)
+    desired_count                     = optional(number, 1)
+    container_port                    = optional(number, 8000)
+    health_check_endpoint             = optional(string, "/health")
     health_check_grace_period_seconds = optional(number, 120)
     package_path                      = string                 # Docker image source path (required)
     image_uri                         = optional(string, null) # Or provide pre-built image URI
@@ -228,7 +228,6 @@ variable "enable_mcp_server" {
   default     = false
 }
 
-data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}
 
 # ---------------------------------------------------------------------------
