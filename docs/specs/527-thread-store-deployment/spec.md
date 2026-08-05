@@ -8,9 +8,21 @@ requirements source — every requirement there maps to a section here.
 
 ## Deviations from `design.md` — raised and resolved
 
-Two claims in `design.md` did not survive the evidence pass. Both were raised for review and are now
-**resolved**; `design.md` has been updated to match, so the two documents agree. Recorded here because
-the reasoning is evidence a reviewer will want.
+Three claims in `design.md` did not survive review. All were raised and are now **resolved**;
+`design.md` has been updated to match, so the two documents agree. Recorded here because the reasoning
+is evidence a reviewer will want.
+
+0. **Terraform must not inject `AK_THREAD__TYPE`.** ✅ **Resolved — reversed in PR review (#559).**
+   The original contract had Terraform inject the type *and* the connection detail, so a deployed stack
+   needed no `thread:` block at all. That was rejected: the type is an application design decision, and
+   every other store in the repo has the app declare it — `examples/memory/dynamodb/config.yaml` says
+   `session: {type: dynamodb}` while AWS Terraform injects only the table name. GCP's Terraform does
+   inject `AK_SESSION__TYPE`, but redundantly (its example declares the type too), so it is not a
+   precedent. Thread was the only place Terraform was the sole source of the type.
+   The reversal removed the injection from six Terraform sites (4 AWS env blocks, 2 GCP), added
+   `thread: {type: dynamodb}` to the AWS example, and re-pointed the docs. It does **not** eliminate the
+   silent in-memory hazard — it moves it from "Terraform forgot `TYPE`" to "config forgot the block" —
+   so the warnings in `threads.md` and the deployment READMEs were rewritten rather than deleted.
 
 1. **The DynamoDB `table_name` input is a *suffix*, not the deployed table name.** ✅ **Resolved —
    `"thread_store"` approved.** `design.md` originally specified `table_name = "ak-agent-threads"` and called it
@@ -19,8 +31,8 @@ the reasoning is evidence a reviewer will want.
    (`ak-deployment/ak-aws/common/modules/dynamodb/main.tf:6`) and its `table_name` output returns that
    composed name (`common/modules/dynamodb/outputs.tf:1-3`), which Terraform then injects into the env
    var. So the Python-side default (`config.py:226-229`) never applies on a deployed stack. Session
-   passes the suffix `"session_store"` (`ak-aws/serverless/state.tf:314`,
-   `ak-aws/containerized/state.tf:126`), not its Python default — and
+   passes the suffix `"session_store"` (`ak-aws/serverless/state.tf:316`,
+   `ak-aws/containerized/state.tf:128`), not its Python default — and
    `examples/memory/dynamodb/config.yaml` independently confirms the composed result by hardcoding
    `table_name: "ak-oai-ddb-dev-examples-session_store"`.
    The suffix `"thread_store"` is therefore used throughout, consistent with session; the deployed table
@@ -31,7 +43,7 @@ the reasoning is evidence a reviewer will want.
    citation error, unrelated to any code change.
 
 One asymmetry worth recording (no design change needed): the containerized session IAM policy grants
-on both the table ARN **and** `"${arn}/index/*"` (`ak-aws/containerized/modules/rest-service/main.tf:52-55`),
+on both the table ARN **and** `"${arn}/index/*"` (`ak-aws/containerized/modules/rest-service/main.tf:55-58`),
 whereas serverless grants on the table ARN only (`ak-aws/serverless/modules/request-handler/main.tf:49`).
 The thread table has no GSI, so this spec follows the serverless (table-only) form on **both** clouds
 and deliberately does not copy containerized's `/index/*` grant.
@@ -201,20 +213,22 @@ Mirror the session-memory table wiring end to end.
   default `null`). Note the deployed table is `<product>-<env>-<module>-thread_store` (see Deviations),
   so nothing in the Python config needs to know the name — Terraform injects it.
 - **Env vars** in both modules' `environment_variables = merge(...)` blocks
-  (`request-handler/main.tf:253-284`; agent-runner equivalent). Gate on the **ARN being non-null**, which
+  (`request-handler/main.tf:283-318`; agent-runner equivalent). Gate on the **ARN being non-null**, which
   is the condition the existing session/multimodal entries use (`:264`, `:267`) rather than the boolean:
 
   ```hcl
   var.dynamodb_thread_table_arn != null ? {
-    AK_THREAD__TYPE                  = "dynamodb"
-    AK_THREAD__DYNAMODB__TABLE_NAME  = var.dynamodb_thread_table_name
+    AK_THREAD__DYNAMODB__TABLE_NAME = var.dynamodb_thread_table_name
   } : {},
   ```
+
+  The connection detail only — `AK_THREAD__TYPE` is **not** injected; the application declares
+  `thread.type` in its `config.yaml` (see design.md's env-var contract).
 
   Both vars together — see "Env-var contract" in `design.md` for why `TYPE` is mandatory here when
   session gets away with injecting only the table name (`:265`).
 - **IAM** on both Lambda roles — clone `lambda_dynamodb_describe_policy`
-  (`request-handler/main.tf:32-54`, `Resource` at `:49`) and its attachment (`:56-60`), `count`-gated on
+  (`request-handler/main.tf:32-53`, `Resource` at `:49`) and its attachment (`:56-60`), `count`-gated on
   `var.create_dynamodb_thread_table`, granting
   `DescribeTable/GetItem/PutItem/UpdateItem/DeleteItem/Query/Scan` with
   `Resource = var.dynamodb_thread_table_arn` — table ARN only, no `/index/*`.
@@ -232,10 +246,10 @@ Same shape, against the ECS modules.
   variables in `modules/rest-service/variables.tf` and `modules/agent-runner/variables.tf`.
 - **Env vars** in both modules' environment locals — `modules/rest-service/main.tf:2-20` (the
   `rest_service_environment` merge) and the agent-runner equivalent — gated on
-  `var.dynamodb_thread_table_arn != null`, injecting `AK_THREAD__TYPE = "dynamodb"` +
-  `AK_THREAD__DYNAMODB__TABLE_NAME`, mirroring the session entry at `rest-service/main.tf:10-12`.
+  `var.dynamodb_thread_table_arn != null`, injecting `AK_THREAD__DYNAMODB__TABLE_NAME` only,
+  mirroring the session entry at `rest-service/main.tf:10-12`.
 - **IAM** on **both** task roles: a `dynamodb_thread_policy` cloned from `dynamodb_policy`
-  (`rest-service/main.tf:33-63`) but scoped to the thread table ARN **only** (dropping the
+  (`rest-service/main.tf:36-64`) but scoped to the thread table ARN **only** (dropping the
   `"${arn}/index/*"` element at `:54` — no GSI exists), attached through the
   `tasks_iam_role_policies` map (`:187-189`), which must merge the new policy alongside the existing
   `DynamoDB` entry rather than replacing it:
@@ -273,7 +287,6 @@ collections are created implicitly on first write, so no new database or collect
 
   ```hcl
   (local.firestore_db_name != null && var.create_firestore_thread_collection) ? {
-    AK_THREAD__TYPE                       = "firestore"
     AK_THREAD__FIRESTORE__COLLECTION_NAME = "ak-agent-threads"
     AK_THREAD__FIRESTORE__PROJECT_ID      = var.project_id
     AK_THREAD__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
@@ -286,9 +299,10 @@ collections are created implicitly on first write, so no new database or collect
   distinct collection name, so it is supplied literally. **Use `"ak-agent-threads"`, matching the Python
   default exactly** (`config.py:234-237`) — unlike DynamoDB there is no name composition for Firestore
   collections, so injecting the same value the code would have defaulted to keeps behaviour identical
-  whether or not the var is set, and avoids inventing a second name for one collection. GCP already
-  sets `AK_SESSION__TYPE` explicitly (`cloud_function.tf:160`), so setting `AK_THREAD__TYPE` matches the
-  established GCP pattern rather than being an exception.
+  whether or not the var is set, and avoids inventing a second name for one collection. Note GCP's
+  Terraform *does* inject `AK_SESSION__TYPE` (`cloud_function.tf:160`), but redundantly — its example
+  declares `session: {type: firestore}` anyway — so that is not a precedent for injecting the thread
+  type here.
 - **TTL**: the firestore module registers one `google_firestore_field` TTL policy scoped to
   `var.collection_name` (`common/modules/firestore/main.tf:20-27`) — the session collection only.
   Thread's Firestore TTL defaults to `0` (disabled, `config.py:238`), so **no TTL resource is required**.
@@ -309,13 +323,10 @@ collections are created implicitly on first write, so no new database or collect
   `create_dynamodb_memory_table = true` (`examples/memory/dynamodb/deploy/main.tf:11`), and already has a
   real test (`lambda_test.py`). Add `create_dynamodb_thread_table = true` to `deploy/main.tf`.
   **No matrix change needed.**
-  - **No `thread:` block in `config.yaml`** — decided during implementation, replacing this spec's
-    original "add a `thread:` block". `AKConfig.thread` is `Optional[...] = None`, so the injected
-    `AK_THREAD__TYPE` alone materialises the block and enables the feature. Committing a `thread:` block
-    would turn the feature on regardless, meaning a broken `AK_THREAD__TYPE` injection could pass
-    unnoticed — the example would look like it covered the env-var contract while actually bypassing it.
-    Omitting it makes the example a real test of the wiring. A comment in `config.yaml` records this so
-    nobody "fixes" it by adding one.
+  - **Add `thread: {type: dynamodb}` to `config.yaml`** — the application declares the backend; the flag
+    provisions the table and injects its name. An intermediate implementation had Terraform inject
+    `AK_THREAD__TYPE` and the example commit no `thread:` block at all; that was reversed in review (see
+    Deviations).
   - **Do not use `examples/aws-serverless/openai`**: it is `deployment_base` — "always deployed but not
     part of test matrix" (`integration-test-config.yaml:4-8`). Nothing tests it, so it cannot prove
     provisioning works, and it is shared infrastructure other tests deploy against, so imposing thread's
@@ -323,17 +334,17 @@ collections are created implicitly on first write, so no new database or collect
   - **Behavioural trap:** enabling thread makes `user_id` **required on every chat request**
     (`docs/docs/advanced/threads.md`), so `lambda_test.py`'s requests must be updated to send it or the
     example breaks. This is the one real risk in the example work.
-  - `config.yaml` need not declare `thread.type` — Terraform injects `AK_THREAD__TYPE=dynamodb`; the
-    block's presence is what enables the feature. Note its `session` block hardcodes the composed table
-    name, so the thread block may mirror that style or omit the name entirely.
+  - The `thread:` block declares `type` **only**, not the table name — Terraform supplies the composed
+    name, so nothing account-specific is committed. (The `session` block in that same file does hardcode
+    its table name; deliberately not mirrored.)
 - **GCP — `examples/gcp-serverless/openai-firestore`** already provisions Firestore, making it the natural
   host: add the `thread:` block plus `create_firestore_thread_collection = true`, with the same `user_id`
   requirement. It is not in any matrix, and GCP has no live integration test per `design.md`, so this is
   verification-by-`terraform validate` only.
 - **Docs**: document `create_dynamodb_thread_table` / `create_firestore_thread_collection` and, per
-  `design.md`, the `AK_THREAD__TYPE` + connection-vars pairing prominently — thread is the one `AK_*`
-  store where Terraform must set the type explicitly, and misconfiguring it fails silently rather than
-  loudly. Targets: `docs/docs/advanced/threads.md` (storage backends section) and the AWS/GCP deployment
+  `design.md`, the two-step contract prominently — the app declares `thread.type`, the flag provisions
+  the backend and injects its address, and setting the flag *without* declaring the type fails silently
+  on the in-memory backend. Targets: `docs/docs/advanced/threads.md` (storage backends section) and the AWS/GCP deployment
   READMEs under `ak-deployment/`.
 
 ### Behavioural changes
@@ -367,9 +378,11 @@ existing session/multimodal/response-store deployment wiring; and every existing
 - **`thread.type: valkey` with `thread.valkey` unset**: `ValueError` at construction (change 3).
 - **Unknown `thread.type`**: unchanged — `AKConfigError` naming `_BUILTIN_THREAD_STORES` (now including
   `valkey`) or a dotted path (`base.py:180-183`).
-- **`AK_THREAD__DYNAMODB__TABLE_NAME` set but `AK_THREAD__TYPE` unset**: no exception — threads run
-  in-memory and are lost on every cold start. This is the silent failure the Terraform contract prevents
-  by always injecting both; it is not defended in code.
+- **Terraform flag enabled but `thread.type` not declared in `config.yaml`**: no exception — the injected
+  connection var materialises the block, `type` falls back to `"memory"`, and threads run in-memory with
+  the provisioned backend unused. Not defended in code; documented in `threads.md` and the deployment
+  READMEs. A `_ThreadStoreConfig` validator rejecting `type: memory` alongside a populated backend
+  sub-block would close it — scoped to a separate follow-up.
 - **Valkey connection failure**: handled by `_RedisLikeDriver` — lazy connect, 3 retries with 2s
   back-off, ping health-check with reconnect (`core/util/driver/redis_like.py`). Identical to Redis;
   `ValkeyDriver` adds no error handling of its own and raises `valkey.ValkeyError` where Redis raises

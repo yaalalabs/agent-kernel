@@ -181,10 +181,10 @@ module "containerized_agents" {
 
   create_dynamodb_memory_table = true
 
-  # Conversation threads: provisions a DynamoDB thread table and injects
-  # AK_THREAD__TYPE + AK_THREAD__DYNAMODB__TABLE_NAME into the rest-service and
-  # agent-runner tasks, which is what turns thread support on (no `thread:` block
-  # needed in config.yaml). Makes user_id required on every chat request.
+  # Conversation threads: provisions a DynamoDB thread table and injects its name as
+  # AK_THREAD__DYNAMODB__TABLE_NAME into the rest-service and agent-runner tasks.
+  # Declare `thread: {type: dynamodb}` in config.yaml to actually enable threads —
+  # this flag alone leaves them in-memory. Makes user_id required on every chat request.
   create_dynamodb_thread_table = true
 }
 ```

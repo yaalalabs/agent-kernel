@@ -236,12 +236,14 @@ thread:
     ttl: 0
 ```
 
-On a deployed stack the thread store is toggled by Terraform rather than a committed `thread:`
-block: `create_dynamodb_thread_table` (AWS serverless + containerized) or
-`create_firestore_thread_collection` (GCP) provisions the backend and injects
-`AK_THREAD__TYPE` **together with** the connection vars. Thread is the one `AK_*` store where
-`TYPE` must be injected explicitly — `AKConfig.thread` has no committed type to fall back on, so
-setting only a table name silently runs threads on the non-durable in-memory backend.
+Deployment splits the same way session does: the **application** declares `thread.type` in its
+committed `config.yaml`, and **Terraform** provisions the backend and injects only the connection
+detail — `create_dynamodb_thread_table` (AWS serverless + containerized) injects
+`AK_THREAD__DYNAMODB__TABLE_NAME`; `create_firestore_thread_collection` (GCP) injects the
+`AK_THREAD__FIRESTORE__*` vars. Terraform never sets `AK_THREAD__TYPE`. Note the failure mode this
+leaves: because `AKConfig.thread` is `Optional` and any `AK_THREAD__*` var materialises it while
+`type` defaults to `memory`, setting a flag *without* declaring `thread.type` enables the feature on
+the non-durable in-memory backend, with no error.
 
 Attachments in thread mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or `dynamodb` — `session_cache` is rejected, since threads need durable, cross-request-scoped attachment storage that a session-local cache can't provide).
 

@@ -10,10 +10,10 @@ This demo deploys the following AWS resources:
 - API Gateway endpoint for the Lambda function.
 - Configuration changes to enable dynamodb as agent memory (Refer to `config.yaml` for details).
 - A DynamoDB table for conversation threads, via `create_dynamodb_thread_table = true` in `deploy/main.tf`.
-  Unlike session memory there is deliberately **no `thread:` block in `config.yaml`** — the flag injects
-  `AK_THREAD__TYPE` and `AK_THREAD__DYNAMODB__TABLE_NAME`, and the presence of those env vars is what
-  enables thread support, so this example also verifies that Terraform wiring. Note it makes `user_id`
-  required on every chat request (see `lambda_test.py`).
+  As with session memory, the backend is declared by the application (`thread.type: dynamodb` in
+  `config.yaml`); the Terraform flag provisions the table and injects its generated name as
+  `AK_THREAD__DYNAMODB__TABLE_NAME`. Note that enabling threads makes `user_id` required on every chat
+  request (see `lambda_test.py`).
 
 ## Prerequisites
 

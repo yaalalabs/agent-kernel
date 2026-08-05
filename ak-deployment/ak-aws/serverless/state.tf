@@ -337,7 +337,7 @@ module "dynamodb_multimodal_memory" {
 
 module "dynamodb_thread" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.7.0"
+  version = "0.8.0"
   count   = var.create_dynamodb_thread_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },

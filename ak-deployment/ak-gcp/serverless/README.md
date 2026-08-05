@@ -365,7 +365,7 @@ gateway_endpoints = [
 |------|-------------|------|---------|:--------:|
 | `create_redis_cluster` | Create Memorystore Redis instance for agent memory | `bool` | `false` | no |
 | `create_firestore_database` | Create Firestore database for agent session storage | `bool` | `false` | no |
-| `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database` — it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects `AK_THREAD__TYPE=firestore` + the `AK_THREAD__FIRESTORE__*` vars, which is what turns thread support on. Note this makes `user_id` required on every chat request. | `bool` | `false` | no |
+| `create_firestore_thread_collection` | Wire the Firestore-backed conversation thread store. Requires `create_firestore_database` — it reuses that database and writes to its own collection (created implicitly), provisioning no new resource. Injects the `AK_THREAD__FIRESTORE__*` connection vars. Thread support is enabled by the application declaring `thread.type: firestore` in `config.yaml` — setting this flag alone leaves threads on the in-memory backend. Note that enabling threads makes `user_id` required on every chat request. | `bool` | `false` | no |
 
 **Redis Environment Variables (Auto-injected when enabled)**:
 - `AK_SESSION__REDIS__URL`: Complete Redis connection URL with authentication

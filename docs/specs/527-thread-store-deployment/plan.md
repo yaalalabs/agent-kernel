@@ -37,8 +37,9 @@ failure.
 
 ## Iteration 3: AWS serverless Terraform — DynamoDB thread table
 
-- **Goal:** `create_dynamodb_thread_table = true` provisions the table, injects `AK_THREAD__TYPE` +
-  `AK_THREAD__DYNAMODB__TABLE_NAME`, and grants scoped IAM on both Lambda roles.
+- **Goal:** `create_dynamodb_thread_table = true` provisions the table, injects
+  `AK_THREAD__DYNAMODB__TABLE_NAME`, and grants scoped IAM on both Lambda roles. The type is declared by
+  the application in `config.yaml`, not injected.
 - **Files:** `ak-deployment/ak-aws/serverless/{variables.tf,state.tf}`;
   `modules/request-handler/{main,variables}.tf`; `modules/agent-runner/{main,variables}.tf`
   (spec §"AWS serverless (Lambda) Terraform").
@@ -111,7 +112,8 @@ failure.
   - `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md` — add `valkey` to the thread backend
     lists (two `type:` comment lines).
   - Deployment docs/READMEs under `ak-deployment/ak-aws/*` and `ak-deployment/ak-gcp/*` — document
-    `create_dynamodb_thread_table` / `create_firestore_thread_collection`, and the mandatory
-    `AK_THREAD__TYPE` + connection-vars pairing (the silent-misconfiguration risk).
+    `create_dynamodb_thread_table` / `create_firestore_thread_collection`, and the two-step contract —
+    the app declares `thread.type`, the flag supplies the connection detail (the
+    silent-misconfiguration risk when the type is left undeclared).
 - **Verify:** run the `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` flows before
   merge.

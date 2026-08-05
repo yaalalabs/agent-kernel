@@ -298,7 +298,6 @@ module "lambda_deployment" {
       AK_MULTIMODAL__DYNAMODB__TABLE_NAME = var.dynamodb_multimodal_memory_table_name
     } : {},
       var.dynamodb_thread_table_arn != null ? {
-      AK_THREAD__TYPE                 = "dynamodb"
       AK_THREAD__DYNAMODB__TABLE_NAME = var.dynamodb_thread_table_name
     } : {},
       var.response_store_redis != null ? {

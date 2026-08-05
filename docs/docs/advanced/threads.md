@@ -217,25 +217,31 @@ thread:
 
 ## Deploying the Thread Store
 
-On AWS and GCP the thread store is provisioned by Terraform and enabled by **environment variables**, so a
-deployed stack needs no committed `thread:` block at all:
+Deploying threads takes **two** steps, and they split the same way session does — your application
+declares *which* backend, Terraform provisions it and supplies *where* it lives:
 
-| Cloud | Flag | Provisions |
-|---|---|---|
-| AWS serverless + containerized | `create_dynamodb_thread_table` | A DynamoDB table (partition `session_id`, sort `sk`, TTL on `expiry_time`, no GSI) |
-| GCP serverless + containerized | `create_firestore_thread_collection` | Nothing new — reuses the database from `create_firestore_database`; the collection is created on first write |
+1. Declare the backend in `config.yaml`, e.g. `thread: {type: dynamodb}`. This is what enables the
+   feature.
+2. Set the matching Terraform flag, which provisions the backend and injects its connection detail:
 
-:::warning AK_THREAD__TYPE must be set alongside the connection variables
-Thread is the one `AK_*` store where Terraform injects the **type** as well as the connection detail.
-Session can rely on `session: {type: dynamodb}` in the committed `config.yaml`; thread is
-deployment-toggled, so there is no declared type to fall back on. If `AK_THREAD__DYNAMODB__TABLE_NAME`
-is set without `AK_THREAD__TYPE=dynamodb`, the feature still switches on but `thread.type` falls back to
-its `memory` default — threads run in-memory and are lost on every cold start, with no error. The
-built-in Terraform flags always inject both; wire both if you set these by hand.
+| Cloud | Flag | Provisions | Injects |
+|---|---|---|---|
+| AWS serverless + containerized | `create_dynamodb_thread_table` | A DynamoDB table (partition `session_id`, sort `sk`, TTL on `expiry_time`, no GSI) | `AK_THREAD__DYNAMODB__TABLE_NAME` |
+| GCP serverless + containerized | `create_firestore_thread_collection` | Nothing new — reuses the database from `create_firestore_database`; the collection is created on first write | `AK_THREAD__FIRESTORE__COLLECTION_NAME`, `__PROJECT_ID`, `__DATABASE_ID` |
+
+You do not need to set the table or collection name yourself — Terraform generates it and passes it in.
+
+:::warning Setting the flag without declaring `thread.type` runs threads in-memory
+`AKConfig.thread` is absent until something populates it, and any `AK_THREAD__*` variable is enough to
+populate it — but `thread.type` then falls back to its `memory` default. So enabling the Terraform flag
+*without* a `thread:` block in `config.yaml` switches the feature on against the **in-memory** backend:
+the provisioned table sits unused and history is lost on every cold start, with no error. Declare
+`thread.type` and this cannot happen.
 :::
 
-Redis/Valkey thread storage has no Terraform flag: point `AK_THREAD__TYPE=redis|valkey` plus the URL at
-whatever cluster `create_redis_cluster`/`create_valkey_cluster` already provisions, via the generic
+Redis and Valkey have no Terraform flag — they reuse whatever cluster `create_redis_cluster` /
+`create_valkey_cluster` already provisions. Declare `thread: {type: redis}` (or `valkey`) with the
+cluster URL in `config.yaml`, or pass `AK_THREAD__REDIS__URL` through the generic
 `environment_variables` passthrough.
 
 ## Attachments in Thread Mode

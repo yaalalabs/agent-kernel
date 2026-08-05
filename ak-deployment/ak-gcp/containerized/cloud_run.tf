@@ -166,7 +166,6 @@ resource "google_cloud_run_v2_service" "service" {
           # Collection name is literal, not module.firestore[0].collection_name — that
           # output is the session collection; threads need their own.
           (local.firestore_db_name != null && var.create_firestore_thread_collection) ? {
-            AK_THREAD__TYPE                       = "firestore"
             AK_THREAD__FIRESTORE__COLLECTION_NAME = "ak-agent-threads"
             AK_THREAD__FIRESTORE__PROJECT_ID      = var.project_id
             AK_THREAD__FIRESTORE__DATABASE_ID     = module.firestore[0].database_name
