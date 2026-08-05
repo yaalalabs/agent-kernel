@@ -149,14 +149,10 @@ flowchart TB
   session storage (same database); verify and extend only if the existing binding is
   collection-scoped.
 
-### Docs and example
+### Docs
 
-- A deployable **AWS** example (existing or new — exact choice at spec time) exercises
-  `create_dynamodb_thread_table = true` end to end: deploy → chat (which auto-creates/appends thread
-  data via the existing `ConversationThreadManager`, no REST read route needed to prove provisioning
-  works) → destroy.
-- **No GCP example** — see Non-goals. The GCP Terraform wiring is in scope and implemented; only a
-  worked example of it is deferred.
+- **No example on any cloud** — deferred to its own change, see Non-goals. The Terraform wiring for both
+  clouds is in scope and implemented; only worked examples of it are deferred.
 - Document the two-step contract prominently — the application declares `thread.type`, the Terraform
   flag provisions the backend and injects its address. Setting the flag without declaring the type is
   easy to do and fails silently (feature "on", running in-memory).
@@ -183,12 +179,21 @@ flowchart TB
   `environment_variables` passthrough). No new cluster resources, no new Terraform booleans.
 - Changing session/multimodal/response-store deployment wiring — thread mirrors their patterns but
   does not touch them.
-- **A worked GCP example of the thread store.** The GCP Terraform wiring *is* in scope and implemented;
-  only an example demonstrating it is deferred. `examples/gcp-serverless/openai-firestore` would be the
-  host, but it sits in no test matrix and GCP has no live integration test, so adding a `thread:` block
-  there would be verified only by `terraform validate` — the depth the GCP Terraform already gets —
-  while imposing thread's `user_id`-required behaviour on an example nothing exercises. Worth adding
-  when GCP gains a live integration test.
+- **A worked example of the thread store, on any cloud.** The Terraform wiring *is* in scope and
+  implemented; demonstrating it in a deployable example is deferred to its own change. Reasons it needs
+  separate treatment rather than a bolt-on here:
+  - Threads are a **record, not a context mechanism** — `_thread_pre_run` creates the thread and appends
+    messages but never feeds thread history to the agent, so a passing chat test proves the *session*
+    store, not threads.
+  - With the thread REST read routes out of scope (above), a deployed example has **no HTTP surface** to
+    read thread state back from. The existing FastAPI showcase (`examples/api/thread-openai`) relies
+    entirely on those routes.
+  - A serverless example that genuinely showcases thread behaviour therefore needs a deliberate test
+    design — reading the store directly — which is a first for these examples and deserves its own
+    review.
+  - Bolting a `thread:` block onto a session-storage example (`examples/memory/dynamodb`) was tried and
+    reverted: it proved only that provisioning doesn't crash, while imposing thread's
+    `user_id`-required behaviour on tests about something else.
 - Azure thread-store provisioning — dropped from this change entirely; can be scoped as a separate
   follow-up ticket if needed.
 

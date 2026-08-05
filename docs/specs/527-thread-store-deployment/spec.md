@@ -312,39 +312,33 @@ collections are created implicitly on first write, so no new database or collect
   (`ak-gcp/serverless/cloud_function.tf:16-19`), not per-collection, so it already covers the thread
   collection in the same database.
 
-### Docs and example
+### Docs (example deferred)
 
-`design.md` left the example choice to spec time. There is no thread-enabled deployable example today
-(only the local-only `examples/api/thread-openai`).
+**No deployable example ships in this change, on either cloud** — see `design.md` Non-goals. The only
+thread example today remains the local-only `examples/api/thread-openai` (FastAPI).
 
-- **AWS — use `examples/memory/dynamodb`.** It is the storage-focused serverless example, is already in
-  the `weekly.tests` matrix (`.github/integration-test-config.yaml:78-79`, `type: aws-serverless` — note
-  the "Memory options" entries omit `deploy_dir`, unlike the entries above them), already sets
-  `create_dynamodb_memory_table = true` (`examples/memory/dynamodb/deploy/main.tf:11`), and already has a
-  real test (`lambda_test.py`). Add `create_dynamodb_thread_table = true` to `deploy/main.tf`.
-  **No matrix change needed.**
-  - **Add `thread: {type: dynamodb}` to `config.yaml`** — the application declares the backend; the flag
-    provisions the table and injects its name. An intermediate implementation had Terraform inject
-    `AK_THREAD__TYPE` and the example commit no `thread:` block at all; that was reversed in review (see
-    Deviations).
-  - **Do not use `examples/aws-serverless/openai`**: it is `deployment_base` — "always deployed but not
-    part of test matrix" (`integration-test-config.yaml:4-8`). Nothing tests it, so it cannot prove
-    provisioning works, and it is shared infrastructure other tests deploy against, so imposing thread's
-    `user_id` requirement on it risks breaking them.
-  - **Behavioural trap:** enabling thread makes `user_id` **required on every chat request**
-    (`docs/docs/advanced/threads.md`), so `lambda_test.py`'s requests must be updated to send it or the
-    example breaks. This is the one real risk in the example work.
-  - The `thread:` block declares `type` **only**, not the table name — Terraform supplies the composed
-    name, so nothing account-specific is committed. (The `session` block in that same file does hardcode
-    its table name; deliberately not mirrored.)
-- **GCP — deferred, not implemented in this change.** `examples/gcp-serverless/openai-firestore` already
-  provisions Firestore and would be the natural host for a `thread:` block plus
-  `create_firestore_thread_collection = true`. It is **deliberately left out**: the example is in no test
-  matrix and GCP has no live integration test (see `design.md`), so adding it would be
-  verification-by-`terraform validate` only — the same depth the GCP Terraform already gets — while
-  adding a `user_id`-required behaviour change to an example nothing exercises. The GCP Terraform wiring
-  itself **is** in scope and implemented; only the example is deferred. A follow-up should add it when
-  GCP gains a live integration test.
+An intermediate implementation added a `thread:` block plus `create_dynamodb_thread_table = true` to
+`examples/memory/dynamodb`; that was **reverted**. Recorded here because the reasoning is what the
+follow-up needs:
+
+- **A chat-only test can't demonstrate threads.** `_thread_pre_run` (`core/chat_service.py:507-541`)
+  stores attachments, creates the thread and appends the user message — it never injects thread history
+  into the agent's requests. Threads are a *record*, not a context mechanism, so a passing follow-up
+  question proves the *session* store.
+- **There is no HTTP surface to read thread state back from**, because the thread REST read routes are
+  out of scope. The FastAPI showcase makes 8 `GET /api/v1/threads*` calls and every assertion but one
+  ("`user_id` required") depends on them.
+- **So a serverless example needs a deliberate test design** — reading the provisioned store directly
+  (boto3 `Query` on `session_id`), which no example test does today. That is worth its own review rather
+  than a bolt-on.
+- **Bolting onto a session-storage example was the wrong host anyway**: it proved only that provisioning
+  doesn't crash, while forcing thread's `user_id` requirement onto tests about session memory.
+- **Do not use `examples/aws-serverless/openai`** when the follow-up lands: it is `deployment_base` —
+  "always deployed but not part of test matrix" (`integration-test-config.yaml:4-8`). Nothing tests it,
+  and it is shared infrastructure other tests deploy against, so imposing thread's `user_id` requirement
+  on it risks breaking them.
+- **Note for the follow-up:** CI passes only `AK_TEST_ENDPOINT`, from `terraform output agent_invoke_url`
+  (`.github/scripts/run_single_test.py:304-324`) — a store-reading test must source the table name itself.
 - **Docs**: document `create_dynamodb_thread_table` / `create_firestore_thread_collection` and, per
   `design.md`, the two-step contract prominently — the app declares `thread.type`, the flag provisions
   the backend and injects its address, and setting the flag *without* declaring the type fails silently
@@ -430,8 +424,7 @@ Changed test files:
   that `_ThreadStoreConfig(type="valkey")` validates and that `_ThreadValkeyConfig` carries the
   `2592000` ttl / `ak:thread:` prefix / `valkey://localhost:6379` url defaults.
 
-Not covered by pytest: the Terraform changes. AWS is exercised end to end by the weekly integration run
-of `examples/memory/dynamodb` once the thread block and flag are added (and its `lambda_test.py` sends
-`user_id`); both clouds are otherwise verified with `terraform init && terraform validate` per module
-directory, which is the same depth the existing Terraform gets outside the live examples. GCP has no live
-integration test in this change, consistent with `design.md`.
+Not covered by pytest: the Terraform changes. With no example shipping in this change (see "Docs"),
+**neither cloud gets live integration coverage** — both are verified with
+`terraform init && terraform validate` per module directory, the same depth the existing Terraform gets
+outside the live examples. End-to-end proof arrives with the deferred example.

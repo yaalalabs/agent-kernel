@@ -7,5 +7,3 @@ session:
     size: 256
   dynamodb:
     table_name: "ak-oai-ddb-dev-examples-session_store"
-thread:
-  type: dynamodb

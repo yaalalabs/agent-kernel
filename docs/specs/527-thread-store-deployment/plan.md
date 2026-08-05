@@ -2,8 +2,8 @@
 
 Ordering of the [`spec.md`](./spec.md) build. Each iteration leaves the branch working and testable.
 Unit tests land **with** the code they cover; the dedicated Tests iteration is the full-suite + lint
-gate. Terraform iterations are verified with `terraform validate`, not pytest — they are exercised end
-to end by the weekly integration run of `examples/memory/dynamodb` (Iteration 5).
+gate. Terraform iterations are verified with `terraform validate`, not pytest — no example ships in this
+change (Iteration 6 is deferred), so there is no live end-to-end run.
 
 Iterations 1–2 are ordered deliberately: the refactor lands **before** the new backend, so the existing
 Redis tests prove it behaviour-preserving on their own, without a new store in the picture to muddy a
@@ -73,19 +73,18 @@ failure.
 - **Verify:** `terraform init && terraform validate` in both GCP dirs. No live `plan`/`apply` — no GCP
   credentials available to this project.
 
-## Iteration 6: Examples
+## Iteration 6: Examples — DEFERRED to a separate change
 
-- **Goal:** A deployed stack proves thread provisioning works end to end.
-- **Files:** `examples/memory/dynamodb/{config.yaml,deploy/main.tf,lambda_test.py}`. No matrix change —
-  the AWS example is already in `weekly.tests`. The GCP example is **deferred** (see spec §"Docs and
-  example"): it is in no matrix and GCP has no live integration test, so it would add a
-  `user_id`-required change to an example nothing exercises.
-- **Steps:** 1) add the `thread:` block (declaring `type: dynamodb`) and
-  `create_dynamodb_thread_table = true` to the AWS example; 2) **update `lambda_test.py` to send
-  `user_id` on every chat request** — thread support makes it required, and this is the one change that
-  silently breaks the example if missed (spec §"Docs and example").
-- **Verify:** `cd examples/memory/dynamodb && ./build.sh && uv run pytest` locally; then the weekly
-  integration workflow.
+Not implemented here, on either cloud. A `thread:` block plus `create_dynamodb_thread_table = true` was
+added to `examples/memory/dynamodb` during implementation and then **reverted**: threads are a record
+rather than a context mechanism, and with the REST read routes out of scope a chat-only test can observe
+almost nothing, so the example proved only that provisioning doesn't crash while forcing thread's
+`user_id` requirement onto tests about session memory.
+
+A dedicated example that genuinely exercises thread behaviour — reading the provisioned store directly to
+assert auto-creation, ownership, auto-naming, rename, name locking, message ordering and TTL — is
+planned as its own change. See spec §"Docs (example deferred)" for the full reasoning and the constraints
+it has to work within.
 
 ## Iteration 7: Tests and lint gate
 
