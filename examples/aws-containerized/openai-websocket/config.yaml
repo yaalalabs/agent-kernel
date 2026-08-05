@@ -4,7 +4,7 @@ logging:
 session:
   type: dynamodb
   dynamodb:
-    table_name: "ak-oai-ws-ecs-dev-examples-session_store"
+    table_name: "ak-oai-ws-dev-examples-session_store"
 execution:
   # "async": the full agent reply is pushed back as one CHAT_RESPONSE message.
   # "stream": each token is pushed back as a separate STREAM_CHUNK message.

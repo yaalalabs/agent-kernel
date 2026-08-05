@@ -4,6 +4,6 @@ logging:
 session:
   type: dynamodb
   dynamodb:
-    table_name: "ak-oai-ws-dstr-ecs-dev-examples-session_store"
+    table_name: "ak-oai-ws-str-dev-examples-session_store"
 execution:
   mode: stream

@@ -5,7 +5,7 @@ logging:
 session:
   type: dynamodb
   dynamodb:
-    table_name: "ak-oai-ws-scl-ecs-dev-scalable-session_store"
+    table_name: "ak-oai-ws-scl-dev-scalable-session_store"
 
 execution:
   mode: async

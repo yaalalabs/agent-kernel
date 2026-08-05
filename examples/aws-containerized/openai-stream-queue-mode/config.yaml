@@ -5,7 +5,7 @@ logging:
 session:
   type: dynamodb
   dynamodb:
-    table_name: "ak-oai-ws-str-ecs-dev-stream-session_store"
+    table_name: "ak-oai-ws-q-dev-stream-session_store"
 
 execution:
   mode: stream
