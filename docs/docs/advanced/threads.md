@@ -237,6 +237,10 @@ populate it — but `thread.type` then falls back to its `memory` default. So en
 *without* a `thread:` block in `config.yaml` switches the feature on against the **in-memory** backend:
 the provisioned table sits unused and history is lost on every cold start, with no error. Declare
 `thread.type` and this cannot happen.
+
+The reverse mistake is safe: declaring `thread.type` *without* setting the flag fails loudly at
+startup — `ValueError: AKConfig.thread.dynamodb.table_name must be set` — because no connection detail
+was injected.
 :::
 
 Redis and Valkey have no Terraform flag — they reuse whatever cluster `create_redis_cluster` /
