@@ -1,10 +1,12 @@
 import asyncio
+import logging
+from contextlib import asynccontextmanager
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import BaseModel
-from pydantic_ai import Agent, FunctionToolset
+from pydantic_ai import Agent, FunctionToolset, RunContext
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from pydantic_ai.models.test import TestModel
 from pydantic_core import to_jsonable_python
@@ -25,12 +27,7 @@ class CalendarEvent(BaseModel):
 def _mock_agent(output, messages=None):
     """
     Build a mock wrapping a native Pydantic AI agent whose ``run()`` returns a result with ``.output``.
-
-    Note the mock-target correction from ``test_openai_runner.py``: Pydantic AI has no module-level
-    ``Runner`` class (the OpenAI SDK calls ``Runner.run(agent.agent, ...)`` as a free function). Here
-    ``run()`` is an instance method on the agent object itself, so the mock lives on
-    ``mock_agent.agent.run`` and returns a result whose structured value is on ``.output`` (not
-    ``.final_output``). ``.all_messages()`` returns an empty list so history persistence is a no-op.
+    ``run()`` is an instance method on the agent itself, so the mock lives on ``mock_agent.agent.run``.
     """
     mock_run_result = MagicMock()
     mock_run_result.output = output
@@ -40,6 +37,187 @@ def _mock_agent(output, messages=None):
     mock_agent.agent = MagicMock()
     mock_agent.agent.run = AsyncMock(return_value=mock_run_result)
     return mock_agent
+
+
+def _mock_stream_agent(deltas, on_stream=None):
+    """
+    Build a mock agent whose ``run_stream`` is an async context manager yielding the given deltas, so
+    ``stream()`` can be driven (and closed mid-stream) without Pydantic AI's real anyio scopes. The deps
+    the runner injected are recorded on ``captured_deps``; ``on_stream`` mutates them like a native tool.
+    """
+    mock_agent = MagicMock()
+    mock_agent.captured_deps = None
+
+    @asynccontextmanager
+    async def run_stream(content, message_history=None, deps=None):
+        mock_agent.captured_deps = deps
+        result = MagicMock()
+
+        async def stream_text(delta=True):
+            if on_stream is not None and deps is not None:
+                on_stream(deps)
+            for d in deltas:
+                yield d
+
+        result.stream_text = stream_text
+        result.all_messages = MagicMock(return_value=[])
+        yield result
+
+    mock_agent.agent = MagicMock()
+    mock_agent.agent.run_stream = run_stream
+    return mock_agent
+
+
+class TestPydanticAIRunnerFrameworkContext:
+    """
+    framework_context injection and write-back for PydanticAIRunner. The context is injected as ``deps``,
+    and tools mutating it through ``RunContext.deps`` round-trip back to the session.
+    """
+
+    @pytest.mark.asyncio
+    async def test_context_injected_as_deps(self):
+        runner = PydanticAIRunner()
+        session = Session("s")
+        session.set_framework_context({"user_id": "42"})
+
+        mock_agent = _mock_agent(output="done")
+        await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+        _, kwargs = mock_agent.agent.run.call_args
+        assert kwargs["deps"] == {"user_id": "42"}
+        # History handling is unchanged by the injection.
+        assert "message_history" in kwargs
+
+    @pytest.mark.asyncio
+    async def test_absent_key_passes_deps_none(self):
+        """Matches today's implicit behaviour: no context set means the deps default."""
+        runner = PydanticAIRunner()
+        session = Session("s")
+
+        mock_agent = _mock_agent(output="done")
+        await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+        _, kwargs = mock_agent.agent.run.call_args
+        assert kwargs["deps"] is None
+        assert session.get_framework_context() is None
+
+    @pytest.mark.asyncio
+    async def test_in_place_mutation_written_back(self):
+        """A RunContext-taking tool mutating ctx.deps round-trips to the session key."""
+        runner = PydanticAIRunner()
+        session = Session("s")
+        session.set_framework_context({"cart": []})
+
+        mock_result = MagicMock()
+        mock_result.output = "done"
+        mock_result.all_messages = MagicMock(return_value=[])
+
+        async def fake_run(content, message_history=None, deps=None):
+            deps["cart"].append("apple")
+            return mock_result
+
+        mock_agent = MagicMock()
+        mock_agent.agent = MagicMock()
+        mock_agent.agent.run = fake_run
+
+        await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+        assert session.get_framework_context() == {"cart": ["apple"]}
+
+    @pytest.mark.asyncio
+    async def test_error_leaves_stored_context_intact(self):
+        runner = PydanticAIRunner()
+        session = Session("s")
+        session.set_framework_context({"cart": []})
+
+        mock_agent = MagicMock()
+        mock_agent.agent = MagicMock()
+        mock_agent.agent.run = AsyncMock(side_effect=Exception("boom"))
+
+        reply = await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+        assert isinstance(reply, AgentReplyText)
+        assert session.get_framework_context() == {"cart": []}
+
+    @pytest.mark.asyncio
+    async def test_stream_normal_drain_writes_back(self):
+        """Uses the real run_stream path: a native tool mutates ctx.deps, write-back stores it."""
+        runner = PydanticAIRunner()
+        session = Session("stream-session")
+        session.set_framework_context({"cart": []})
+
+        native = Agent(model=TestModel(custom_output_text="ok"), name="s", deps_type=dict)
+
+        @native.tool
+        def add_item(ctx: RunContext[dict], item: str) -> str:
+            """Append an item to the caller's cart carried in deps."""
+            ctx.deps["cart"].append("apple")
+            return "added"
+
+        agent = PydanticAIAgent("s", runner, native)
+
+        deltas = [delta async for delta in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        assert deltas
+        assert session.get_framework_context() == {"cart": ["apple"]}
+
+    @pytest.mark.asyncio
+    async def test_stream_disconnect_leaves_context_intact(self):
+        """
+        A client disconnect (GeneratorExit at a yield) skips the write-back after the delta loop.
+        Mocks run_stream because closing the generator from the test task cannot unwind Pydantic AI's
+        real anyio cancel scope.
+        """
+        runner = PydanticAIRunner()
+        session = Session("stream-session")
+        session.set_framework_context({"cart": []})
+
+        mock_agent = _mock_stream_agent(["hello", " world"], on_stream=lambda deps: deps["cart"].append("apple"))
+
+        agen = runner.stream(mock_agent, session, [AgentRequestText(prompt="hi")])
+        assert await agen.__anext__() == "hello"
+        await agen.aclose()  # simulate client disconnect at the yield
+
+        assert session.get_framework_context() == {"cart": []}
+
+    @pytest.mark.asyncio
+    async def test_stream_injects_deps_and_absent_key_passes_none(self):
+        runner = PydanticAIRunner()
+        session = Session("stream-session")
+
+        mock_agent = _mock_stream_agent(["hi"])
+        _ = [delta async for delta in runner.stream(mock_agent, session, [AgentRequestText(prompt="hi")])]
+        assert mock_agent.captured_deps is None
+        assert session.get_framework_context() is None
+
+        session.set_framework_context({"user_id": "42"})
+        mock_agent = _mock_stream_agent(["hi"])
+        _ = [delta async for delta in runner.stream(mock_agent, session, [AgentRequestText(prompt="hi")])]
+        assert mock_agent.captured_deps == {"user_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_stream_write_back_failure_is_logged_not_raised(self, caplog):
+        """A non-picklable context must not turn an already-streamed response into a transport error."""
+        runner = PydanticAIRunner()
+        session = Session("stream-session")
+        session.set_framework_context({"cart": []})
+
+        native = Agent(model=TestModel(custom_output_text="ok"), name="s", deps_type=dict)
+
+        @native.tool
+        def stash_callable(ctx: RunContext[dict], item: str) -> str:
+            """Store a non-picklable value, standing in for a tool that stashes a live handle."""
+            ctx.deps["bad"] = lambda: 1
+            return "stashed"
+
+        agent = PydanticAIAgent("s", runner, native)
+
+        with caplog.at_level(logging.ERROR, logger="ak.core.runner"):
+            deltas = [delta async for delta in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        assert deltas
+        assert session.get_framework_context() == {"cart": []}
+        assert any("framework_context write-back was skipped" in r.message for r in caplog.records)
 
 
 class TestPydanticAIRunnerErrorHandling:
@@ -185,10 +363,7 @@ class TestPydanticAIRunnerStructuredOutput:
 
 class TestPydanticAIRunnerStreaming:
     """
-    Cover PydanticAIRunner.stream() — the adapter's headline differentiator (every sibling except
-    OpenAI stubs stream() with NotImplementedError), and previously the only capability shipped with
-    no automated test. The e2e harness can't drive SSE, but a generator-level unit test can: it
-    asserts deltas are yielded and that session history is persisted from the streamed result,
+    PydanticAIRunner.stream() yields deltas and persists session history from the streamed result,
     mirroring the run() tests. Uses the real TestModel streaming path rather than mocks.
     """
 

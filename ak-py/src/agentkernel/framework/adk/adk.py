@@ -13,7 +13,7 @@ from google.adk.agents import BaseAgent
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.events import Event, EventActions
 from google.adk.runners import Runner
-from google.adk.sessions import BaseSessionService, InMemorySessionService
+from google.adk.sessions import BaseSessionService, InMemorySessionService, State
 from google.adk.tools import FunctionTool, ToolContext
 from google.genai import types
 from pydantic import ValidationError
@@ -76,6 +76,21 @@ class GoogleADKSession:
             )
             await self._session_service.append_event(self._session, event)
 
+    async def get_state(self) -> dict:
+        """
+        Returns the caller-visible ADK session state, stripping the AK-internal ``ak_tool_context`` id and the
+        ``app:`` / ``user:`` / ``temp:`` prefixed keys that are not session-scoped.
+        :return: The accumulated session state, or an empty dict when no session exists.
+        """
+        if self._session is None:
+            return {}
+        refreshed = await self._session_service.get_session(
+            app_name=self._session.app_name, user_id=self._session.user_id, session_id=self._session.id
+        )
+        state = dict(getattr(refreshed, "state", {}) or {})
+        state.pop("ak_tool_context", None)
+        return {k: v for k, v in state.items() if not k.startswith((State.APP_PREFIX, State.USER_PREFIX, State.TEMP_PREFIX))}
+
 
 class GoogleADKRunner(BaseRunner):
     def __init__(self):
@@ -131,7 +146,7 @@ class GoogleADKRunner(BaseRunner):
                     parts.append(types.Part(file_data=types.FileData(file_uri=base64_data)))
                     continue
 
-                if base64_data.startswith(("data:")):
+                if base64_data.startswith("data:"):
                     mime_type = base64_data.split(";")[0][5:]
                 else:
                     if not req.mime_type:
@@ -143,15 +158,19 @@ class GoogleADKRunner(BaseRunner):
 
         return prompt, parts
 
-    async def _setup_session_context(self, agent: Any, session: Session, requests: list[AgentRequest]) -> tuple[str, Runner, AKToolContext]:
+    async def _setup_session_context(
+        self, agent: Any, session: Session, requests: list[AgentRequest], injected: dict | None = None
+    ) -> tuple[str, Runner, AKToolContext, GoogleADKSession]:
         """
         Setup ADK session and tool context.
         :param agent: The ADK agent.
         :param session: The AgentKernel session.
         :param requests: The requests.
-        :return: Tuple of (user_id, runner, tool_context). The caller is responsible for entering/exiting
-                 the returned tool_context around the runner's actual execution, since tools invoked by
-                 the agent look up this context by id from the cache while the agent is running.
+        :param injected: The per-run framework context to seed into the ADK session state, or None.
+        :return: Tuple of (user_id, runner, tool_context, adk_session). The caller is responsible for
+                 entering/exiting the returned tool_context around the runner's actual execution, since
+                 tools invoked by the agent look up this context by id from the cache while the agent is
+                 running. The returned adk_session lets the caller read state back without re-fetching.
         """
         app_name = "AgentKernel"
         user_id = "AgentKernel"
@@ -159,10 +178,13 @@ class GoogleADKRunner(BaseRunner):
 
         ctx: AKToolContext = AKToolContext(Runtime.current(), agent, session, requests)
         await adk_session.create_session(app_name=app_name, user_id=user_id, session_id=session.id)
-        await adk_session.update_session_state(ctx.id, agent.name, {"ak_tool_context": ctx.id})
+        # Assigned last so a caller key of the same name cannot replace the id tools resolve their context by.
+        state = dict(injected or {})
+        state["ak_tool_context"] = ctx.id
+        await adk_session.update_session_state(ctx.id, agent.name, state)
 
         runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
-        return user_id, runner, ctx
+        return user_id, runner, ctx, adk_session
 
     @staticmethod
     async def get_response(runner: Runner, user_id: str, session_id: str, parts: list[types.Part]) -> str:
@@ -178,15 +200,12 @@ class GoogleADKRunner(BaseRunner):
         response_text = ""
 
         if hasattr(runner, "run_async"):
-            events = runner.run_async(user_id=user_id, session_id=session_id, new_message=new_message)
-            try:
-                async for event in events:
-                    if event.is_final_response() and event.content and event.content.parts:
-                        text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
-                        response_text = " ".join(text_parts) if text_parts else ""
-                        break
-            finally:
-                await events.aclose()
+            # Drain the stream instead of breaking early: stopping early cancels ADK's still-running root agent
+            # task, and with sub-agents the last final response is the one to return.
+            async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=new_message):
+                if event.is_final_response() and event.content and event.content.parts:
+                    text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
+                    response_text = " ".join(text_parts) if text_parts else ""
         else:
             for event in runner.run(user_id=user_id, session_id=session_id, new_message=new_message):
                 if event.is_final_response() and event.content and event.content.parts:
@@ -203,15 +222,23 @@ class GoogleADKRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
+        prompt = ""
         try:
             prompt, parts = self._process_requests(requests)
 
             if not parts:
                 return AgentReplyText(response="Sorry. No valid content found in the requests")
 
-            user_id, runner, ctx = await self._setup_session_context(agent, session, requests)
+            incoming = self._load_framework_context(session)
+            user_id, runner, ctx, adk_session = await self._setup_session_context(agent, session, requests, incoming)
             with ctx:
                 reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
+
+            # Write back the full ADK state, so keys a tool added during the run also round-trip. Done after
+            # the run, so a framework error leaves the stored context intact.
+            if incoming is not None:
+                produced = await adk_session.get_state()
+                self._store_framework_context(session, incoming, produced)
 
             output_schema = getattr(agent.agent, "output_schema", None)
             if output_schema is not None:
@@ -237,7 +264,8 @@ class GoogleADKRunner(BaseRunner):
         if not parts:
             return
 
-        user_id, runner, ctx = await self._setup_session_context(agent, session, requests)
+        incoming = self._load_framework_context(session)
+        user_id, runner, ctx, adk_session = await self._setup_session_context(agent, session, requests, incoming)
         new_message = types.Content(role="user", parts=parts)
         run_config = RunConfig(streaming_mode=StreamingMode.SSE)
 
@@ -256,6 +284,15 @@ class GoogleADKRunner(BaseRunner):
                     chunk = "".join(getattr(part, "text", "") or "" for part in event.content.parts)
                     if chunk:
                         yield chunk
+
+                # Only after the stream drains normally, so a disconnect or mid-stream error leaves the stored
+                # context intact. Deliberately not in a finally.
+                if incoming is not None:
+                    try:
+                        produced = await adk_session.get_state()
+                        self._store_framework_context(session, incoming, produced)
+                    except Exception as e:
+                        self._log_framework_context_stream_failure(session, e)
 
 
 class GoogleADKAgent(AKBaseAgent):
@@ -293,9 +330,8 @@ class GoogleADKAgent(AKBaseAgent):
         Appends the given prompt text to the ADK agent's description.
         Called by the base Agent._setup_system_prompt() at init when multimodal is enabled.
         """
-        if hasattr(self._agent, "description") and self._agent.description:
-            if prompt not in self._agent.description:
-                self._agent.description += "\n" + prompt
+        if hasattr(self._agent, "description") and self._agent.description and prompt not in self._agent.description:
+            self._agent.description += "\n" + prompt
 
     def attach_tool(self, tool: Any) -> None:
         """
@@ -304,12 +340,7 @@ class GoogleADKAgent(AKBaseAgent):
         :param tool: Raw Python callable or already-wrapped ADK FunctionTool.
         """
         # Delegate to the tool builder to handle binding
-        wrapped = GoogleADKToolBuilder.bind([tool])
-        for w in wrapped:
-            if not hasattr(self._agent, "tools") or self._agent.tools is None:
-                self._agent.tools = []
-            if w not in self._agent.tools:
-                self._agent.tools.append(w)
+        self._append_tools(self._agent, GoogleADKToolBuilder.bind([tool]))
 
     def get_a2a_card(self):
         """
@@ -410,15 +441,40 @@ class GoogleADKToolBuilder(ToolBuilder):
         if not callable(func):
             raise TypeError(f"Expected a callable, got {type(func).__name__}")
 
+        signature = inspect.signature(func)
+        parameters = list(signature.parameters.values())
+
+        # ADK-aware tools declare `tool_context` themselves and expect the live ADK
+        # context to reach them, so it has to be forwarded. Generic tools do not, and
+        # for those the parameter is consumed here purely to activate the AK context.
+        declares_tool_context = "tool_context" in signature.parameters
+        tool_context_position = list(signature.parameters).index("tool_context") if declares_tool_context else -1
+
+        def forwarded_kwargs(args: tuple[Any, ...], kwargs: dict[str, Any], tool_context: ToolContext | None) -> dict[str, Any]:
+            """
+            Builds the keyword arguments for the wrapped function.
+
+            :param args: Positional arguments the wrapper was called with.
+            :param kwargs: Keyword arguments the wrapper was called with.
+            :param tool_context: The ADK tool context supplied to the wrapper.
+            :return: The keyword arguments to pass to the wrapped function.
+            """
+            if not declares_tool_context or "tool_context" in kwargs:
+                return kwargs
+            # The caller already bound tool_context positionally; do not bind it twice.
+            if len(args) > tool_context_position:
+                return kwargs
+            return {**kwargs, "tool_context": tool_context}
+
         if asyncio.iscoroutinefunction(func):
 
             @functools.wraps(func)
-            async def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
+            async def wrapper(*args: Any, tool_context: ToolContext | None = None, **kwargs: Any) -> Any:
                 tctx: AKToolContext | None = None
                 try:
                     if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
                         tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
-                    return await func(*args, **kwargs)
+                    return await func(*args, **forwarded_kwargs(args, kwargs, tool_context))
                 finally:
                     if tctx:
                         tctx.reset()
@@ -426,23 +482,20 @@ class GoogleADKToolBuilder(ToolBuilder):
         else:
 
             @functools.wraps(func)
-            def wrapper(*args: Any, tool_context: ToolContext, **kwargs: Any) -> Any:
+            def wrapper(*args: Any, tool_context: ToolContext | None = None, **kwargs: Any) -> Any:
                 tctx: AKToolContext | None = None
                 try:
                     if tool_context and tool_context.state and tool_context.state.get("ak_tool_context"):
                         tctx = AKToolContext.fetch(tool_context.state["ak_tool_context"]).set()
-                    return func(*args, **kwargs)
+                    return func(*args, **forwarded_kwargs(args, kwargs, tool_context))
                 finally:
                     if tctx:
                         tctx.reset()
 
-        signature = inspect.signature(func)
-        parameters = list(signature.parameters.values())
-
         # Only add a tool_context parameter if the original function does not already
         # declare one, and insert it before any **kwargs (VAR_KEYWORD) parameter to
         # maintain a valid inspect.Signature ordering.
-        if "tool_context" not in signature.parameters:
+        if not declares_tool_context:
             tool_context_param = inspect.Parameter(
                 "tool_context",
                 kind=inspect.Parameter.KEYWORD_ONLY,

@@ -371,6 +371,7 @@ class LangGraphRunner(BaseRunner):
         :param requests: The requests to the agent.
         :return: The result of the agent's execution.
         """
+        prompt = ""
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
@@ -387,10 +388,24 @@ class LangGraphRunner(BaseRunner):
 
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
+            # Spread the context's top-level keys into the input state so they map onto the graph's state
+            # channels. `messages` is written last so a caller key cannot replace it.
+            incoming = self._load_framework_context(session)
+            input_state: dict[str, Any] = {}
+            if incoming:
+                input_state.update(incoming)
+            input_state["messages"] = messages
+
             result = await agent.agent.ainvoke(
-                input={"messages": messages},
+                input=input_state,
                 config=config,
             )
+
+            # Only keys the graph declares as state channels come back on `result`; the rest keep their value.
+            if incoming is not None:
+                produced = {k: result[k] for k in incoming if k in result}
+                self._store_framework_context(session, incoming, produced)
+
             structured = AgentReplyAny.from_output(result.get("structured_response"), prompt)
             if structured is not None:
                 return structured
@@ -423,8 +438,14 @@ class LangGraphRunner(BaseRunner):
 
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
+            incoming = self._load_framework_context(session)
+            input_state: dict[str, Any] = {}
+            if incoming:
+                input_state.update(incoming)
+            input_state["messages"] = messages
+
             async for event in agent.agent.astream_events(
-                input={"messages": messages},
+                input=input_state,
                 config=config,
                 version="v2",
             ):
@@ -436,6 +457,16 @@ class LangGraphRunner(BaseRunner):
                         for item in content:
                             if isinstance(item, dict) and item.get("text"):
                                 yield item["text"]
+
+            # astream_events yields events, not a final state, so read the state back once the stream drains
+            # normally. A disconnect or mid-stream error unwinds first, leaving the stored context intact.
+            if incoming is not None:
+                try:
+                    state = await agent.agent.aget_state(config)
+                    produced = {k: state.values[k] for k in incoming if k in state.values}
+                    self._store_framework_context(session, incoming, produced)
+                except Exception as e:
+                    self._log_framework_context_stream_failure(session, e)
         finally:
             if context is not None:
                 context.reset()

@@ -545,6 +545,41 @@ class RedactingPostHook(DisclaimerPostHook):
         return delta.replace("SECRET", "***")
 ```
 
+**Per-run framework context (optional):** hooks are the supported surface for the reserved
+`framework_context` session key — a framework-agnostic, picklable context/state dict that the runner
+injects into the native framework call (`context=`, `deps=`, session state, ...) and writes back after a
+successful run. It is never auto-created; seed it explicitly from a pre-hook, and read it back from a
+post-hook once the run has written its results:
+
+```python
+class SeedCart(PreHook):
+    async def on_run(self, session, agent, requests):
+        if session.get_framework_context() is None:
+            session.set_framework_context({"cart": []})
+        return requests
+
+    def name(self):
+        return "SeedCart"
+
+
+class AppendCart(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        cart = (session.get_framework_context() or {}).get("cart", [])
+        agent_reply.response += f"\n\nCurrent cart: {', '.join(cart) or '(empty)'}"
+        return agent_reply
+
+    def name(self):
+        return "AppendCart"
+```
+
+Use `session.get_framework_context()` / `set_framework_context(dict)` / `clear_framework_context()` —
+these accessors are for hooks only. Tools must use their framework's native handle instead
+(`RunContextWrapper.context` on OpenAI, `RunContext.deps` on Pydantic AI, `tool_context.state` on ADK,
+...) since a tool writing through `ToolContext.get().session` writes to a different object than the one
+the run is carrying. Round-trip fidelity is framework-dependent (full for OpenAI/Pydantic AI, partial for
+ADK/smolagents/LangGraph, unsupported for CrewAI) — see the framework's page under `docs/docs/frameworks/`
+for specifics.
+
 ---
 
 #### Multimodal Support

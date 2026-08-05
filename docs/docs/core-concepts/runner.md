@@ -195,6 +195,35 @@ async def run(self, agent, session, requests):
     return result
 ```
 
+### Per-run framework context {#per-run-framework-context}
+
+In addition to their own internal state, runners honour one reserved session value, the
+**framework context** — a framework-agnostic, per-run context/state dict carried across turns. Seed and
+read it with `session.set_framework_context()` / `get_framework_context()` from a pre- or post-hook (see
+[Session → Framework context / per-run state](./session.md#framework-context--per-run-state)). When a
+context is set, a runner:
+
+1. **Loads** a deep copy of the stored context before invoking the framework.
+2. **Injects** it into the native framework call (mapped to each framework's own context/state
+   mechanism).
+3. **Writes back** the produced state — shallow-merged over the loaded copy (framework-touched
+   top-level keys win, untouched caller keys are preserved) — but only after the native call
+   **succeeds**, so a crashed or disconnected run leaves the previously stored context intact.
+
+**How faithfully a caller dict round-trips is not uniform across frameworks:**
+
+| Framework | Fidelity | Injected as | Written back |
+|-----------|----------|-------------|--------------|
+| OpenAI | **Full round-trip** | `Runner.run(..., context=ctx)` — tools mutate it in place | the same object, in full |
+| Pydantic AI | **Full round-trip** | `agent.run(..., deps=ctx)` — native tools mutate it in place via `RunContext.deps` ([caveats](../frameworks/pydantic-ai.md#per-run-contextstate)) | the same object, in full |
+| Google ADK | **Round-trips (filtered), accumulate-only** | merged into the ADK session `state` (AK-internal keys always win, so they cannot be displaced by a caller key) | the accumulated session state, minus AK-internal and `app:`/`user:`/`temp:`-prefixed keys — **tool-added keys survive**, and so does anything else written to the state ([caveats](../frameworks/google-adk.md#per-run-contextstate)) |
+| Smolagents | **Round-trips (filtered)** | `agent.run(..., additional_args=ctx)` — which smolagents **also appends to the task prompt** ([caveat](../frameworks/smolagents.md#per-run-contextstate)) | `agent.state` **restricted to pre-seeded keys** — brand-new keys are dropped |
+| LangGraph | **Declared channels only** | spread into the graph input alongside `messages` (written last, so a caller key cannot replace it) | only keys the graph's state schema declares as channels (prebuilt agents drop unknown keys) |
+| CrewAI | **Unsupported** | not injected | none — a set context is **ignored**, with one warning logged per runner |
+
+Because of this divergence, tool authors who want a context write to be portable across every
+framework should **pre-seed every key they intend to write** before the run.
+
 ## Best Practices
 
 ### Async Execution
@@ -227,6 +256,7 @@ except Exception as e:
 - Each framework has its own Runner implementation
 - OpenAI Agents SDK, LangGraph, and Google ADK support token streaming; CrewAI and Smolagents do not
 - Runners convert typed requests/replies and manage framework session state
+- Runners inject the reserved `framework_context` into the native call and write the produced state back on success (fidelity varies per framework)
 - Always use async/await, and prefer `Runtime.run()`/`AgentService` over calling runners directly
 
 ## Next Steps
