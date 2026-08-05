@@ -58,6 +58,8 @@ Use official modules:
 
 Use current module version (`0.8.0`) unless user requests another.
 
+All modules are provider-agnostic: they declare `required_providers` but do not configure them internally. Configure each provider (`aws`/`docker`, `azurerm`, or `google`/`google-beta`/`docker`) in the root module and pass it explicitly via the module's `providers = { ... }` argument, as shown in the examples below. Azure's containerized module builds and pushes its image via a nested submodule with its own internal `docker` provider, so no `docker` provider needs to be configured or passed by the caller there.
+
 AWS-only features in this skill:
 - `execution_mode`
 - `queue_mode`
@@ -220,8 +222,9 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 
 ```hcl
 module "serverless_agents" {
-  source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  source    = "yaalalabs/ak-serverless/aws"
+  version   = "0.8.0"
+  providers = { aws = aws, docker = docker }
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -274,8 +277,9 @@ Each Lambda can use one of three `package_type` values:
 
 ```hcl
 module "serverless_agents" {
-  source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  source    = "yaalalabs/ak-serverless/aws"
+  version   = "0.8.0"
+  providers = { aws = aws, docker = docker }
 
   product_alias      = var.product_alias
   env_alias          = var.env_alias
@@ -426,8 +430,9 @@ This follows the current websocket example shape: the request handler stays on t
 
 ```hcl
 module "serverless_agents" {
-  source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  source    = "yaalalabs/ak-serverless/aws"
+  version   = "0.8.0"
+  providers = { aws = aws, docker = docker }
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -583,8 +588,9 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 
 ```hcl
 module "serverless_agents" {
-  source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  source    = "yaalalabs/ak-serverless/aws"
+  version   = "0.8.0"
+  providers = { aws = aws, docker = docker }
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -668,8 +674,9 @@ if __name__ == "__main__":
 
 ```hcl
 module "containerized_agents" {
-  source  = "yaalalabs/ak-containerized/aws"
-  version = "0.8.0"
+  source    = "yaalalabs/ak-containerized/aws"
+  version   = "0.8.0"
+  providers = { aws = aws, docker = docker }
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -743,8 +750,9 @@ session:
 
 ```hcl
 module "containerized_agents" {
-  source  = "yaalalabs/ak-containerized/aws"
-  version = "0.8.0"
+  source    = "yaalalabs/ak-containerized/aws"
+  version   = "0.8.0"
+  providers = { aws = aws, docker = docker }
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -828,8 +836,9 @@ handler = AzureFunctions.handler
 
 ```hcl
 module "serverless_agents" {
-  source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.8.0"
+  source    = "yaalalabs/ak-serverless/azurerm"
+  version   = "0.8.0"
+  providers = { azurerm = azurerm }
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -872,8 +881,9 @@ module "serverless_agents" {
 
 ```hcl
 module "containerized_agents" {
-  source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.8.0"
+  source    = "yaalalabs/ak-containerized/azurerm"
+  version   = "0.8.0"
+  providers = { azurerm = azurerm }
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -916,8 +926,9 @@ def main() -> None:
 
 ```hcl
 module "serverless_agent" {
-  source  = "yaalalabs/ak-serverless/google"
-  version = "0.2.14"
+  source    = "yaalalabs/ak-serverless/google"
+  version   = "0.8.0"
+  providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region
@@ -945,8 +956,9 @@ module "serverless_agent" {
 
 ```hcl
 module "serverless_agent" {
-  source  = "yaalalabs/ak-serverless/google"
-  version = "0.2.14"
+  source    = "yaalalabs/ak-serverless/google"
+  version   = "0.8.0"
+  providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region
@@ -996,8 +1008,9 @@ def main() -> None:
 
 ```hcl
 module "containerized_agent" {
-  source  = "yaalalabs/ak-containerized/google"
-  version = "0.2.14"
+  source    = "yaalalabs/ak-containerized/google"
+  version   = "0.8.0"
+  providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region
