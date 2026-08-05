@@ -151,10 +151,12 @@ flowchart TB
 
 ### Docs and example
 
-- A deployable example (existing or new — exact choice at spec time) exercises
-  `create_dynamodb_thread_table = true` (AWS) and `create_firestore_thread_collection = true` (GCP)
-  end to end: deploy → chat (which auto-creates/appends thread data via the existing
-  `ConversationThreadManager`, no REST read route needed to prove provisioning works) → destroy.
+- A deployable **AWS** example (existing or new — exact choice at spec time) exercises
+  `create_dynamodb_thread_table = true` end to end: deploy → chat (which auto-creates/appends thread
+  data via the existing `ConversationThreadManager`, no REST read route needed to prove provisioning
+  works) → destroy.
+- **No GCP example** — see Non-goals. The GCP Terraform wiring is in scope and implemented; only a
+  worked example of it is deferred.
 - Document the two-step contract prominently — the application declares `thread.type`, the Terraform
   flag provisions the backend and injects its address. Setting the flag without declaring the type is
   easy to do and fails silently (feature "on", running in-memory).
@@ -181,6 +183,12 @@ flowchart TB
   `environment_variables` passthrough). No new cluster resources, no new Terraform booleans.
 - Changing session/multimodal/response-store deployment wiring — thread mirrors their patterns but
   does not touch them.
+- **A worked GCP example of the thread store.** The GCP Terraform wiring *is* in scope and implemented;
+  only an example demonstrating it is deferred. `examples/gcp-serverless/openai-firestore` would be the
+  host, but it sits in no test matrix and GCP has no live integration test, so adding a `thread:` block
+  there would be verified only by `terraform validate` — the depth the GCP Terraform already gets —
+  while imposing thread's `user_id`-required behaviour on an example nothing exercises. Worth adding
+  when GCP gains a live integration test.
 - Azure thread-store provisioning — dropped from this change entirely; can be scoped as a separate
   follow-up ticket if needed.
 

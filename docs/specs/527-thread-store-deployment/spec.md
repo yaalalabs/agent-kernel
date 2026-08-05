@@ -337,10 +337,14 @@ collections are created implicitly on first write, so no new database or collect
   - The `thread:` block declares `type` **only**, not the table name — Terraform supplies the composed
     name, so nothing account-specific is committed. (The `session` block in that same file does hardcode
     its table name; deliberately not mirrored.)
-- **GCP — `examples/gcp-serverless/openai-firestore`** already provisions Firestore, making it the natural
-  host: add the `thread:` block plus `create_firestore_thread_collection = true`, with the same `user_id`
-  requirement. It is not in any matrix, and GCP has no live integration test per `design.md`, so this is
-  verification-by-`terraform validate` only.
+- **GCP — deferred, not implemented in this change.** `examples/gcp-serverless/openai-firestore` already
+  provisions Firestore and would be the natural host for a `thread:` block plus
+  `create_firestore_thread_collection = true`. It is **deliberately left out**: the example is in no test
+  matrix and GCP has no live integration test (see `design.md`), so adding it would be
+  verification-by-`terraform validate` only — the same depth the GCP Terraform already gets — while
+  adding a `user_id`-required behaviour change to an example nothing exercises. The GCP Terraform wiring
+  itself **is** in scope and implemented; only the example is deferred. A follow-up should add it when
+  GCP gains a live integration test.
 - **Docs**: document `create_dynamodb_thread_table` / `create_firestore_thread_collection` and, per
   `design.md`, the two-step contract prominently — the app declares `thread.type`, the flag provisions
   the backend and injects its address, and setting the flag *without* declaring the type fails silently

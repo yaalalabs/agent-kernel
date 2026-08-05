@@ -76,13 +76,14 @@ failure.
 ## Iteration 6: Examples
 
 - **Goal:** A deployed stack proves thread provisioning works end to end.
-- **Files:** `examples/memory/dynamodb/{config.yaml,deploy/main.tf,lambda_test.py}`;
-  `examples/gcp-serverless/openai-firestore/{config.yaml,deploy/}`. No matrix change — the AWS example is
-  already in `weekly.tests`.
-- **Steps:** 1) add the `thread:` block and `create_dynamodb_thread_table = true` to the AWS example;
-  2) **update `lambda_test.py` to send `user_id` on every chat request** — thread support makes it
-  required, and this is the one change that silently breaks the example if missed (spec §"Docs and
-  example"); 3) same treatment for the GCP example.
+- **Files:** `examples/memory/dynamodb/{config.yaml,deploy/main.tf,lambda_test.py}`. No matrix change —
+  the AWS example is already in `weekly.tests`. The GCP example is **deferred** (see spec §"Docs and
+  example"): it is in no matrix and GCP has no live integration test, so it would add a
+  `user_id`-required change to an example nothing exercises.
+- **Steps:** 1) add the `thread:` block (declaring `type: dynamodb`) and
+  `create_dynamodb_thread_table = true` to the AWS example; 2) **update `lambda_test.py` to send
+  `user_id` on every chat request** — thread support makes it required, and this is the one change that
+  silently breaks the example if missed (spec §"Docs and example").
 - **Verify:** `cd examples/memory/dynamodb && ./build.sh && uv run pytest` locally; then the weekly
   integration workflow.
 
