@@ -40,7 +40,7 @@ If missing, suggest `ak-init` first.
 - Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode; AWS serverless or containerized)
 - Asynchronous REST (`rest_async`, queue/scalable mode; AWS serverless or containerized)
 - WebSocket full-response (`async`, works with or without queue mode — `queue_mode = false` runs the agent inline, `queue_mode = true` enqueues to a separately-scalable Agent Runner) — AWS serverless or AWS containerized/ECS
-- WebSocket token streaming (`stream`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available on any REST deployment (serverless or containerized, AWS/Azure/GCP) via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
+- WebSocket token streaming (`stream`, works with or without queue mode, same as `async` above) — AWS serverless or AWS containerized/ECS; also available via SSE (`POST /api/v1/chat` with `execution.mode: stream`, no Terraform changes required) wherever the built-in FastAPI REST server runs: local/self-hosted, AWS ECS single-container REST, Azure Container Apps, GCP Cloud Run — not on AWS Lambda or Azure Functions, which use WebSocket instead
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
@@ -633,7 +633,7 @@ On an unrecoverable error, the final chunk carries `error` instead of `delta`, w
 - `create_redis_response_store` / `create_valkey_response_store` / `create_dynamodb_response_store` must be `false` for `stream` (same constraint as `async`) — Terraform validation enforces this.
 - See [examples/aws-serverless/streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) for a complete working example.
 
-**Containerized / direct streaming (no Terraform WebSocket setup)**: any REST deployment (AWS containerized, Azure, GCP, or local) can enable SSE token streaming by setting `execution.mode: stream` in `config.yaml`. `POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode.
+**Containerized / direct streaming (no Terraform WebSocket setup)**: wherever the built-in FastAPI REST server runs — local/self-hosted, AWS ECS single-container REST, Azure Container Apps, GCP Cloud Run — SSE token streaming can be enabled by setting `execution.mode: stream` in `config.yaml`. `POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Not available on AWS Lambda or Azure Functions (serverless), which use WebSocket for streaming instead.
 
 ### E) API Gateway Custom Authorizer (AWS)
 
