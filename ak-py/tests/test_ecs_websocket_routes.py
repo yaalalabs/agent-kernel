@@ -1,12 +1,12 @@
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from agentkernel.api.http import RESTAPI
 from agentkernel.auth.handler import AuthValidator, ValidationResult
-from agentkernel.core.model import BaseRequest
+from agentkernel.core.model import BaseRequest, ExecutionMode
 from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
     AWSWebsocketAPI,
     ECSWebSocketRequestHandler,
@@ -15,14 +15,14 @@ from agentkernel.deployment.aws.containerized.core.api.websocket_api import (
 from agentkernel.deployment.aws.core.websocket_service import AWSWebSocketHandler
 
 
-def _fake_config():
+def _fake_config(mode=ExecutionMode.REST_SYNC):
     """Minimal AKConfig stand-in exposing only what the WS handlers/register read."""
     return SimpleNamespace(
         websocket_api=SimpleNamespace(
             endpoint_url="https://abc.execute-api.us-east-1.amazonaws.com/prod",
             connection_table=SimpleNamespace(table_name="ak-connections", ttl=3600),
         ),
-        execution=SimpleNamespace(queues=SimpleNamespace(input=SimpleNamespace(url=None))),
+        execution=SimpleNamespace(mode=mode, queues=SimpleNamespace(input=SimpleNamespace(url=None))),
     )
 
 
