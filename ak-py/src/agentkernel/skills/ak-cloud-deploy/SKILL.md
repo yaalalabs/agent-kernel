@@ -9,7 +9,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.8.0"
+  version: "0.8.1"
   category: user
 ---
 
@@ -36,11 +36,11 @@ If missing, suggest `ak-init` first.
 2. Runtime mode:
 - Serverless
 - Containerized
-3. Execution pattern (AWS serverless only):
-- Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode)
-- Asynchronous REST (`rest_async`, queue/scalable mode)
-- WebSocket full-response (`async`, queue/scalable mode)
-- WebSocket token streaming (`stream`, queue/scalable mode) — also available on containerized deployments via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
+3. Execution pattern (AWS only):
+- Synchronous HTTP (`rest_sync`, supports standard or queue/scalable mode; AWS serverless or containerized)
+- Asynchronous REST (`rest_async`, queue/scalable mode; AWS serverless or containerized)
+- WebSocket full-response (`async`, works with or without queue mode — `queue_mode = false` runs the agent inline, `queue_mode = true` enqueues to a separately-scalable Agent Runner) — AWS serverless (token streaming works) or AWS containerized/ECS (full-response only; `stream` is accepted by Terraform/config but not yet implemented on ECS — use `async`)
+- WebSocket token streaming (`stream`, queue/scalable mode) — AWS serverless only for WebSocket streaming; also available on any REST deployment (serverless or containerized, AWS/Azure/GCP) via SSE (`POST /api/v1/chat` with `execution.mode: stream`), no Terraform changes required
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
@@ -56,7 +56,7 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.8.0`) unless user requests another.
+Use current module version (`0.8.1`) unless user requests another.
 
 All modules are provider-agnostic: they declare `required_providers` but do not configure them internally. Configure each provider (`aws`/`docker`, `azurerm`, or `google`/`google-beta`/`docker`) in the root module and pass it explicitly via the module's `providers = { ... }` argument, as shown in the examples below. Azure's containerized module builds and pushes its image via a nested submodule with its own internal `docker` provider, so no `docker` provider needs to be configured or passed by the caller there.
 
@@ -80,7 +80,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.8.0"
+  "agentkernel[openai,api,redis]>=0.8.1"
 ]
 ```
 
@@ -107,7 +107,7 @@ OSS engine. Agent Kernel treats it as a first-class session and response store b
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,valkey]>=0.8.0"
+  "agentkernel[openai,api,aws,valkey]>=0.8.1"
 ]
 ```
 
@@ -135,7 +135,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.8.0"
+  "agentkernel[openai,api,aws]>=0.8.1"
 ]
 ```
 
@@ -156,7 +156,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.8.0"
+  "agentkernel[openai,api,azure]>=0.8.1"
 ]
 ```
 
@@ -178,7 +178,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.8.0"
+  "agentkernel[openai,api,gcp]>=0.8.1"
 ]
 ```
 
@@ -222,9 +222,8 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 
 ```hcl
 module "serverless_agents" {
-  source    = "yaalalabs/ak-serverless/aws"
-  version   = "0.8.0"
-  providers = { aws = aws, docker = docker }
+  source  = "yaalalabs/ak-serverless/aws"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -277,9 +276,8 @@ Each Lambda can use one of three `package_type` values:
 
 ```hcl
 module "serverless_agents" {
-  source    = "yaalalabs/ak-serverless/aws"
-  version   = "0.8.0"
-  providers = { aws = aws, docker = docker }
+  source  = "yaalalabs/ak-serverless/aws"
+  version = "0.8.1"
 
   product_alias      = var.product_alias
   env_alias          = var.env_alias
@@ -303,7 +301,7 @@ module "serverless_agents" {
     timeout              = 45
     memory_size          = 256
     environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
+    OPENAI_API_KEY = var.openai_api_key
     }
   }
 
@@ -418,7 +416,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.8.0"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
+  "agentkernel[openai,api,aws]>=0.8.1"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -430,9 +428,8 @@ This follows the current websocket example shape: the request handler stays on t
 
 ```hcl
 module "serverless_agents" {
-  source    = "yaalalabs/ak-serverless/aws"
-  version   = "0.8.0"
-  providers = { aws = aws, docker = docker }
+  source  = "yaalalabs/ak-serverless/aws"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -576,7 +573,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis,auth]>=0.8.0"
+  "agentkernel[openai,api,aws,redis,auth]>=0.8.1"
 ]
 ```
 
@@ -588,9 +585,8 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 
 ```hcl
 module "serverless_agents" {
-  source    = "yaalalabs/ak-serverless/aws"
-  version   = "0.8.0"
-  providers = { aws = aws, docker = docker }
+  source  = "yaalalabs/ak-serverless/aws"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -674,9 +670,8 @@ if __name__ == "__main__":
 
 ```hcl
 module "containerized_agents" {
-  source    = "yaalalabs/ak-containerized/aws"
-  version   = "0.8.0"
-  providers = { aws = aws, docker = docker }
+  source  = "yaalalabs/ak-containerized/aws"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -750,9 +745,8 @@ session:
 
 ```hcl
 module "containerized_agents" {
-  source    = "yaalalabs/ak-containerized/aws"
-  version   = "0.8.0"
-  providers = { aws = aws, docker = docker }
+  source  = "yaalalabs/ak-containerized/aws"
+  version = "0.8.1"
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -771,7 +765,7 @@ module "containerized_agents" {
   }
 
   queue_mode = true
-  execution_mode   = "sync"   # or "async"
+  execution_mode   = "rest_sync"   # or "rest_async"
 
   queue_config = {
     input_queue_visibility_timeout  = 120
@@ -810,7 +804,7 @@ module "containerized_agents" {
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.5.1"
+  "agentkernel[openai,api,aws]>=0.8.1"
 ]
 ```
 
@@ -818,6 +812,100 @@ dependencies = [
 - Agent definitions (`OpenAIModule([...])`) go in `app_agent_runner.py` only — never in `app_rest_service.py`.
 - `ECSIOHandler` starts two threads via `ThreadRunner`; if the output-consumer pool crashes, sibling consumer threads finish their in-flight message first (graceful drain via a shared `shutdown_event`), then the container exits (`os._exit(1)`) so ECS can restart it. The REST API thread doesn't participate in the drain — it's just terminated at that point.
 - `ECSAgentRunner` and `ECSOutputConsumer` both extend `ECSSQSConsumer` (itself a `QueueConsumer` — the same base `LambdaSQSConsumer` extends) — extend either class to customise message processing.
+
+### C) WebSocket Mode (`async`)
+
+A WebSocket API Gateway proxies frames to the ECS REST service via a VPC Link V1 + internal NLB
+in front of the existing ALB. Supports both **direct** (`queue_mode = false`, one ECS service,
+agent runs inline) and **queue** (`queue_mode = true`, same two-container split as section B,
+with the REST/IO service enqueueing chat frames and its output-queue consumer pushing replies
+back over the socket) variants. Use `execution_mode = "async"` — `"stream"` is accepted by
+Terraform/config validation for forward compatibility but **not yet implemented**: in direct
+mode it still sends one full `CHAT_RESPONSE` (never per-token `STREAM_CHUNK`s); in queue mode it
+silently fails instead — the response-store fallback it hits is never provisioned in WebSocket
+mode, so the request retries until `max_receive_count` and is dropped with no reply. Always use
+`async` on ECS today.
+
+**`app.py`** (direct/single-container variant; register custom routes before calling `run()`):
+
+```python
+from agentkernel.aws import AWSWebsocketAPI
+from agentkernel.auth import AuthValidator, ValidationContext, ValidationResult
+from agentkernel.openai import OpenAIModule
+from typing import Optional
+
+OpenAIModule([...])
+
+class CustomAuthValidator(AuthValidator):
+    def validate(self, token: str, context: Optional[ValidationContext] = None) -> ValidationResult:
+        # userId claim is mandatory — it's how a connection maps to a user for reply routing
+        ...
+        return ValidationResult(is_valid=True, claims={"userId": "userId-claim-value"})
+
+@AWSWebsocketAPI.register("status")  # bare route name, no leading slash, no HTTP verb
+async def status(ctx: dict) -> dict:
+    # ctx = {"message": <raw JSON body dict>, "user_id": ...} — no BaseRequest schema imposed
+    return {"status": "OK", "user_id": ctx["user_id"]}  # dict return -> broadcast as SYSTEM_RESPONSE; None -> no broadcast
+
+if __name__ == "__main__":
+    # Direct mode calls AWSWebsocketAPI directly — NOT ECSIOHandler, which always starts a
+    # second thread polling an output queue that doesn't exist in direct (non-queue) mode.
+    AWSWebsocketAPI.set_auth_handler(auth_validator=CustomAuthValidator()).run()
+```
+
+Queue mode is different: it splits into `app_rest_service.py` (`ECSIOHandler.run(auth_validator=...)`
+— correct here, since `ECSIOHandler` also starts the output-queue consumer thread — custom routes
+registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunner.run`,
+`OpenAIModule([...])` here only) — identical shape to section B.
+
+**Terraform:**
+
+```hcl
+module "containerized_agents" {
+  source  = "yaalalabs/ak-containerized/aws"
+  version = "0.8.1"
+
+  providers = { aws = aws, docker = docker }
+
+  product_alias = var.product_alias
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  region        = var.region
+  vpc_id        = var.vpc_id
+  private_subnet_ids = var.private_subnet_ids
+
+  rest_service = {
+    package_path   = "../dist"
+    container_port = 8000
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  queue_mode     = false          # or true for the two-container queue variant (see section B)
+  execution_mode = "async"        # "stream" validates but is not implemented on ECS — use "async"
+  ws_chat_route  = "chat"         # optional, defaults to "chat"
+  ws_routes = [                   # every @AWSWebsocketAPI.register(...) route must be listed here too
+    { route = "status" },
+  ]
+
+  create_dynamodb_memory_table = true
+}
+```
+
+**Key rules:**
+- Auth is **mandatory**: `AuthValidator.validate()` must resolve a `userId` claim, or the framework
+  raises at `$connect` construction time. There is no API Gateway authorizer for WebSocket mode.
+- Every custom route needs both a Python `@AWSWebsocketAPI.register("name")` decorator **and** a
+  matching Terraform `ws_routes = [{ route = "name" }]` entry — Python cannot create the API
+  Gateway route/integration, so both sides must declare it. `ws_chat_route` is Terraform-only —
+  it just names the API Gateway route key that forwards to the container's hardcoded `/ws/chat`
+  endpoint; the container never reads it from config, and renaming it needs no Python change.
+- The DynamoDB response store is simply never created in WebSocket mode (no `response_store`
+  input to set) — replies are always pushed over the connection instead. `gateway_endpoints`
+  specifically has a Terraform validation rule rejecting it in `async`/`stream` modes.
+- Client wire format: `{"route": "chat", "body": {...}}` — the WebSocket API's
+  `route_selection_expression` is `$request.body.route`.
 
 ## Azure Serverless (Functions + APIM)
 
@@ -836,9 +924,8 @@ handler = AzureFunctions.handler
 
 ```hcl
 module "serverless_agents" {
-  source    = "yaalalabs/ak-serverless/azurerm"
-  version   = "0.8.0"
-  providers = { azurerm = azurerm }
+  source  = "yaalalabs/ak-serverless/azurerm"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -881,9 +968,8 @@ module "serverless_agents" {
 
 ```hcl
 module "containerized_agents" {
-  source    = "yaalalabs/ak-containerized/azurerm"
-  version   = "0.8.0"
-  providers = { azurerm = azurerm }
+  source  = "yaalalabs/ak-containerized/azurerm"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -926,8 +1012,9 @@ def main() -> None:
 
 ```hcl
 module "serverless_agent" {
-  source    = "yaalalabs/ak-serverless/google"
-  version   = "0.8.0"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.8.1"
+
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
@@ -956,8 +1043,9 @@ module "serverless_agent" {
 
 ```hcl
 module "serverless_agent" {
-  source    = "yaalalabs/ak-serverless/google"
-  version   = "0.8.0"
+  source  = "yaalalabs/ak-serverless/google"
+  version = "0.8.1"
+
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
@@ -983,8 +1071,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.8.0"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.8.0"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.8.1"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.8.1"  # for Redis sessions
 ]
 ```
 
@@ -1008,8 +1096,9 @@ def main() -> None:
 
 ```hcl
 module "containerized_agent" {
-  source    = "yaalalabs/ak-containerized/google"
-  version   = "0.8.0"
+  source  = "yaalalabs/ak-containerized/google"
+  version = "0.8.1"
+
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id

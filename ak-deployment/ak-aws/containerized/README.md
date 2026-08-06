@@ -98,7 +98,7 @@ The REST service handles HTTP requests while Agent Runner processes the actual a
 ```hcl
 module "containerized_agents" {
   source    = "yaalalabs/ak-containerized/aws"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { aws = aws, docker = docker }
 
   product_alias = "my-agent"
@@ -128,7 +128,7 @@ module "containerized_agents" {
 ```hcl
 module "containerized_agents" {
   source    = "yaalalabs/ak-containerized/aws"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { aws = aws, docker = docker }
 
   product_alias = "my-agent"
@@ -149,8 +149,8 @@ module "containerized_agents" {
   }
 
   # Enable queue mode
-  queue_mode = true
-  execution_mode   = "async"  # or "sync"
+  queue_mode     = true
+  execution_mode = "rest_async"  # rest_sync | rest_async | async | stream
 
   # Queue configuration
   queue_config = {
@@ -274,25 +274,41 @@ scaling_config = {
 
 | Variable | Description | Type | Default | Required |
 |---|---|---|---|---|
-| `enable_api_gateway_logs` | Create the CloudWatch log group and enable access logging on the HTTP API stage | `bool` | `false` | no |
+| `enable_api_gateway_logs` | Create the CloudWatch log group and enable access logging on the HTTP API stage (or the WebSocket API stage, in WebSocket modes) | `bool` | `false` | no |
 
 ```hcl
 enable_api_gateway_logs = true
 ```
 
-- Off by default, matching the AWS serverless deployment. When `false`, no `/aws/apigateway/{product_alias}-{env_alias}-http-api` log group is created and the stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
-- When `true`, the log group is created with 90-day retention (tagged with `var.tags`) and requests are logged as JSON (request ID, source IP, request time, protocol, HTTP method, route key, status, response length, integration error message).
-- Unlike the serverless REST API, this is an HTTP API (`aws_apigatewayv2_*`), so access logging does **not** require the account-level `aws_api_gateway_account` CloudWatch role. Enabling it here does not contend with other deployments in the same account/region.
-- **Upgrade note:** deployments created before this toggle existed always had logging on. Applying with the new default (`false`) removes the stage's access log settings and destroys the log group. Set `enable_api_gateway_logs = true` to keep the existing behaviour.
-- **Upgrade note (keeping logging on):** the log group is now gated by `count`, so its state address changed from `aws_cloudwatch_log_group.http_api` to `aws_cloudwatch_log_group.http_api[0]`. Before the first apply with `enable_api_gateway_logs = true`, move it:
+- Off by default, matching the AWS serverless deployment. When `false`:
+  - **REST/queue modes:** no `/aws/apigateway/{product_alias}-{env_alias}-http-api` log group is created and the HTTP API stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
+  - **WebSocket modes:** no `/aws/apigateway/{product_alias}-{env_alias}-ws-api` log group is created, the WebSocket API stage carries no `access_log_settings`, and the account-level CloudWatch role (`aws_iam_role.apigw_cloudwatch` / `aws_api_gateway_account.this`) is not created; the `websocket_api_cloudwatch_log_group_arn` / `websocket_api_cloudwatch_log_group_name` outputs return `null`.
+- When `true`, the relevant log group is created with 90-day retention (tagged with `var.tags`). REST/queue modes log request ID, source IP, request time, protocol, HTTP method, route key, status, response length, and integration error message; WebSocket modes log the same fields plus `connectionId` in place of HTTP method.
+- Unlike the serverless REST API, the HTTP API (`aws_apigatewayv2_*` with `protocol_type = "HTTP"`) does **not** require the account-level `aws_api_gateway_account` CloudWatch role for access logging, so enabling it there does not contend with other deployments in the same account/region. The WebSocket API (`protocol_type = "WEBSOCKET"`) **does** require that account-level role — it is created only when `enable_api_gateway_logs = true` in a WebSocket mode, and it is a region-wide singleton shared with any other API Gateway in the account that also enables access logging.
+- **Upgrade note:** deployments created before this toggle existed always had logging on. Applying with the new default (`false`) removes the stage's access log settings and destroys the log group (and, in WebSocket modes, the account-level CloudWatch role resources). Set `enable_api_gateway_logs = true` to keep the existing behaviour.
+- **Upgrade note (keeping logging on):** the log groups (and, in WebSocket modes, the IAM role/policy attachment/account resources) are now gated by `count`, so their state addresses gained a `[0]` index. Before the first apply with `enable_api_gateway_logs = true`, move each affected resource, e.g.:
 
   ```bash
   terraform state mv \
     'module.<module_name>.aws_cloudwatch_log_group.http_api' \
     'module.<module_name>.aws_cloudwatch_log_group.http_api[0]'
+
+  # WebSocket modes only:
+  terraform state mv \
+    'module.<module_name>.aws_cloudwatch_log_group.ws_api' \
+    'module.<module_name>.aws_cloudwatch_log_group.ws_api[0]'
+  terraform state mv \
+    'module.<module_name>.aws_iam_role.apigw_cloudwatch' \
+    'module.<module_name>.aws_iam_role.apigw_cloudwatch[0]'
+  terraform state mv \
+    'module.<module_name>.aws_iam_role_policy_attachment.apigw_cloudwatch' \
+    'module.<module_name>.aws_iam_role_policy_attachment.apigw_cloudwatch[0]'
+  terraform state mv \
+    'module.<module_name>.aws_api_gateway_account.this' \
+    'module.<module_name>.aws_api_gateway_account.this[0]'
   ```
 
-  Skipping this makes Terraform destroy and recreate the log group, discarding any retained logs.
+  Skipping this makes Terraform destroy and recreate these resources, discarding any retained logs.
 
 ## Deployment Modes
 
@@ -312,9 +328,9 @@ Direct synchronous execution. The REST service contains both request handling an
 queue_mode = false  # This is the default
 ```
 
-### Queue Mode - Sync
+### Queue Mode - REST Sync (`rest_sync`)
 
-Requests use queues but client connection stays open until response is ready.
+Requests use queues but the client HTTP connection stays open until the response is ready.
 
 **Use when:**
 
@@ -325,13 +341,13 @@ Requests use queues but client connection stays open until response is ready.
 **Configuration:**
 
 ```hcl
-queue_mode = true
-execution_mode   = "sync"
+queue_mode     = true
+execution_mode = "rest_sync"
 ```
 
-### Queue Mode - Async
+### Queue Mode - REST Async (`rest_async`)
 
-Requests return immediately with a request ID. Client polls for results.
+Requests return immediately with a request ID. Client polls a separate GET endpoint for results.
 
 **Use when:**
 
@@ -342,21 +358,83 @@ Requests return immediately with a request ID. Client polls for results.
 **Configuration:**
 
 ```hcl
-queue_mode = true
-execution_mode   = "async"
+queue_mode     = true
+execution_mode = "rest_async"
 ```
 
 **Client flow:**
 
 ```bash
 # 1. Submit request
-curl -X POST .../chat -d '{"prompt":"..."}'
-# Returns: {"status":"ACCEPTED","request_id":"..."}
+curl -X POST .../chat -d '{"session_id":"...","prompt":"..."}'
+# Returns: {"status":"ACCEPTED","request_id":"...","session_id":"..."}
 
-# 2. Poll for result
-curl -X GET .../chat/{session_id}?request_id=...
-# Returns: {"result":"..."}
+# 2. Poll for result (request_id required, session_id optional)
+curl -X GET ".../chat?request_id=..."
+# Returns the stored response body directly, e.g.: {"...": "..."}
 ```
+
+### WebSocket Mode - Async (`async`) and Stream (`stream`)
+
+Creates a **WebSocket API Gateway** that proxies frames to the ECS ingress service over a
+dedicated VPC Link (V1) and an internal NLB that fronts the same internal ALB — WebSocket
+private integrations require a V1, NLB-backed link, so the HTTP API's V2 link is not created
+in these modes. The ingress service handles the connection lifecycle
+(`$connect`/`$disconnect`) and pushes replies back to the client via `PostToConnection`.
+
+Both `queue_mode` settings are supported:
+
+- `queue_mode = true` — chat frames are forwarded to the input queue, and the output-queue
+  consumer pushes the reply over the socket. Adds the agent-runner service and queues.
+- `queue_mode = false` — the ingress service runs the agent inline and pushes the reply
+  itself. No queues and no agent-runner service.
+
+Modes:
+
+- `async` — the full response is delivered in one WebSocket message once the agent finishes.
+- `stream` — **not implemented for containerized deployments yet.** The ECS runtime emits no
+  per-token `STREAM_CHUNK` messages: with `queue_mode = false` it silently behaves like
+  `async` (one `CHAT_RESPONSE`), and with `queue_mode = true` the output consumer falls
+  through to the response store, which is not created in WebSocket modes. Use `async` until
+  streaming lands. (Token-by-token streaming is available today in the AWS **serverless**
+  deployment, and over SSE via `execution_mode = "stream"` on a non-WebSocket REST setup.)
+
+**What gets created (in addition to the base — and, with `queue_mode = true`, queue-mode — resources):**
+
+- WebSocket API Gateway (`route_selection_expression = "$request.body.route"`)
+- Predefined routes `$connect`, `$disconnect`, `$default`, a configurable chat route (`ws_chat_route`, default `chat`), and any `ws_routes`
+- An internal NLB in front of the existing ALB, plus a dedicated API Gateway VPC Link (V1) targeting it
+- A DynamoDB `websocket-connections` table (hash `user_id`, range `connection_id`, GSI `connection_id-index`, TTL `expiry_time`)
+- IAM for the REST service task role: `execute-api:ManageConnections` + connections-table access
+
+**Not used in WebSocket modes:** the DynamoDB response store and `gateway_endpoints`
+(rejected by validation) — responses are pushed over the connection instead of stored.
+Authentication is handled in-app on `$connect` (bearer token with a `userId` claim);
+there is no API Gateway authorizer.
+
+**Configuration:**
+
+```hcl
+queue_mode     = true          # or false to run the agent inline in the ingress service
+execution_mode = "async"
+
+# Optional route customization
+ws_chat_route = "conversation"
+ws_routes = [
+  { route = "notifications" },
+  { route = "status_updates" },
+]
+```
+
+**Route selection:** the client includes a `route` field in the JSON frame body
+(e.g. `{"route":"chat","prompt":"..."}`). WebSocket `$context` values
+(`routeKey`, `connectionId`, `eventType`, `domainName`, `stage`) are forwarded to
+the app as `x-ws-*` request headers.
+
+> **App contract**: WebSocket modes assume the container image supports the same
+> `AK_EXECUTION__MODE = async|stream` behavior as the serverless deployment, exposes
+> an HTTP ingress route for forwarded frames, reads the `x-ws-*` headers, and reads
+> `AK_WEBSOCKET_API__ENDPOINT_URL` for `PostToConnection`. Verify these before use.
 
 ## Auto Scaling
 
@@ -448,6 +526,12 @@ scaling_config = {
 See [examples/aws-containerized/](../../examples/aws-containerized/) for complete examples:
 
 - **openai-dynamodb-scalable** - Production-ready OpenAI agent with auto-scaling
+- **openai-websocket** - OpenAI agent over a WebSocket API in direct (non-queue) mode: one ECS
+  service authenticates `$connect`, runs the agent inline, and pushes the reply back over the
+  same connection
+- **openai-websocket-scalable** - OpenAI agent over a WebSocket API in queue mode: the REST/IO
+  service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner
+  service processes them from SQS
 
 ## Migration
 
@@ -483,6 +567,15 @@ output "private_subnet_ids"         # Private subnet IDs
 
 output "api_gateway_cloudwatch_log_group_arn"   # API Gateway log group ARN (null when logging disabled)
 output "api_gateway_cloudwatch_log_group_name"  # API Gateway log group name (null when logging disabled)
+
+# WebSocket mode only (`execution_mode = "async"` or `"stream"`) — null otherwise
+output "websocket_api_endpoint_url"       # WebSocket API Gateway connect URL (wss://...)
+output "websocket_api_id"                 # WebSocket API Gateway ID
+output "websocket_api_execution_arn"      # WebSocket API Gateway execution ARN
+output "websocket_api_stage_name"         # WebSocket API Gateway stage name
+output "websocket_endpoint_url"           # Management API endpoint used for PostToConnection
+output "websocket_connection_table_name"  # DynamoDB connections table name
+output "websocket_connection_table_arn"   # DynamoDB connections table ARN
 ```
 
 ## Requirements
@@ -514,7 +607,7 @@ provider "docker" {
 
 module "containerized_agents" {
   source    = "yaalalabs/ak-containerized/aws"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { aws = aws, docker = docker }
 
   # ... other inputs

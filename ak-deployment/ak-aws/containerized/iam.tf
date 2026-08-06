@@ -1,4 +1,4 @@
-# ---------- REST Service IAM Policies ----------
+# REST Service IAM Policies
 
 resource "aws_iam_policy" "rest_service_sqs_policy" {
   count = var.queue_mode ? 1 : 0
@@ -38,7 +38,7 @@ resource "aws_iam_policy" "rest_service_sqs_policy" {
 }
 
 resource "aws_iam_policy" "rest_service_response_store_policy" {
-  count = var.queue_mode ? 1 : 0
+  count = var.queue_mode && !local.is_websocket_mode ? 1 : 0
 
   name        = "${local.prefix}-rest-svc-response-store"
   description = "Allow REST Service ECS task to read/write the DynamoDB response store"
@@ -75,7 +75,74 @@ resource "aws_iam_role_policy_attachment" "rest_service_sqs_attachment" {
 }
 
 resource "aws_iam_role_policy_attachment" "rest_service_response_store_attachment" {
-  count      = var.queue_mode ? 1 : 0
+  count      = var.queue_mode && !local.is_websocket_mode ? 1 : 0
   role       = module.rest_service.task_role_name
   policy_arn = aws_iam_policy.rest_service_response_store_policy[0].arn
+}
+
+# REST service WebSocket IAM policies (async / stream modes)
+
+# Push messages to connected clients (PostToConnection).
+resource "aws_iam_policy" "rest_service_websocket_api_policy" {
+  count = local.is_websocket_mode ? 1 : 0
+
+  name        = "${local.prefix}-rest-svc-websocket-api"
+  description = "Allow REST Service ECS task to manage WebSocket connections (PostToConnection)"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["execute-api:ManageConnections"]
+        Resource = "${aws_apigatewayv2_api.ws_api[0].execution_arn}/*"
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+# Read/write the WebSocket connections table.
+resource "aws_iam_policy" "rest_service_websocket_connections_policy" {
+  count = local.is_websocket_mode ? 1 : 0
+
+  name        = "${local.prefix}-rest-svc-websocket-connections"
+  description = "Allow REST Service ECS task to read/write the WebSocket connections table"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          module.websocket_connections[0].table_arn,
+          "${module.websocket_connections[0].table_arn}/index/*"
+        ]
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "rest_service_websocket_api_attachment" {
+  count      = local.is_websocket_mode ? 1 : 0
+  role       = module.rest_service.task_role_name
+  policy_arn = aws_iam_policy.rest_service_websocket_api_policy[0].arn
+}
+
+resource "aws_iam_role_policy_attachment" "rest_service_websocket_connections_attachment" {
+  count      = local.is_websocket_mode ? 1 : 0
+  role       = module.rest_service.task_role_name
+  policy_arn = aws_iam_policy.rest_service_websocket_connections_policy[0].arn
 }

@@ -64,8 +64,8 @@ if __name__ == "__main__":
 ```toml
 # pyproject.toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.4.0",    # for Redis sessions
-  # or: "agentkernel[openai,api,gcp]>=0.4.0"  # for Firestore sessions
+  "agentkernel[openai,api,redis]>=0.8.1",    # for Redis sessions
+  # or: "agentkernel[openai,api,gcp]>=0.8.1"  # for Firestore sessions
 ]
 ```
 
@@ -105,7 +105,7 @@ Pass them into every `module "containerized_agent"` block below via `providers =
 ```hcl
 module "containerized_agent" {
   source    = "yaalalabs/ak-containerized/google"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
@@ -137,7 +137,7 @@ module "containerized_agent" {
 ```hcl
 module "containerized_agent" {
   source    = "yaalalabs/ak-containerized/google"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id

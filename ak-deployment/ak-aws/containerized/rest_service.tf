@@ -1,4 +1,4 @@
-# ---------- REST Service Module ----------
+# REST Service Module
 # Manages the main ECS service that handles HTTP requests
 
 module "rest_service" {
@@ -40,13 +40,21 @@ module "rest_service" {
   queue_mode                = var.queue_mode
   input_queue_url           = var.queue_mode ? module.queues[0].input_queue_url : null
   output_queue_url          = var.queue_mode ? module.queues[0].output_queue_url : null
-  response_store_table_name = var.queue_mode ? aws_dynamodb_table.response_store[0].name : null
+  response_store_table_name = (var.queue_mode && !local.is_websocket_mode) ? aws_dynamodb_table.response_store[0].name : null
   queue_config              = var.queue_config
+
+  # WebSocket mode (async / stream): REST service handles connections and push.
+  execution_mode                   = var.execution_mode
+  websocket_mode                   = local.is_websocket_mode
+  websocket_connections_table_name = local.is_websocket_mode ? module.websocket_connections[0].table_name : null
+  websocket_connections_table_arn  = local.is_websocket_mode ? module.websocket_connections[0].table_arn : null
+  websocket_api_execution_arn      = local.is_websocket_mode ? aws_apigatewayv2_api.ws_api[0].execution_arn : null
+  websocket_endpoint_url           = local.is_websocket_mode ? "https://${aws_apigatewayv2_api.ws_api[0].id}.execute-api.${var.region}.amazonaws.com/${local.ws_stage_name}" : null
 
   tags = var.tags
 }
 
-# ---------- ECS Cluster ----------
+# ECS Cluster
 
 module "ecs" {
   source  = "terraform-aws-modules/ecs/aws"

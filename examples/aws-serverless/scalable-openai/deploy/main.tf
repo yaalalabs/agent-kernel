@@ -1,7 +1,7 @@
 # Scalable OpenAI Agent deployment using the updated serverless module
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
   providers = { aws = aws, docker = docker }
   # Basic configuration

@@ -36,7 +36,7 @@ provider "azurerm" {
 
 module "python_api" {
   source    = "yaalalabs/ak-serverless/azurerm"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { azurerm = azurerm }
 
   # ... other inputs, see below

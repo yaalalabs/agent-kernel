@@ -10,17 +10,26 @@ locals {
     var.dynamodb_memory_table_arn != null ? {
       AK_SESSION__DYNAMODB__TABLE_NAME = var.dynamodb_memory_table_name
     } : {},
-    # Queue mode — inject queue URLs and response store table name
+    # Queue mode — inject queue URLs and batch size
     var.queue_mode ? {
-      AK_EXECUTION__QUEUES__INPUT__URL                   = var.input_queue_url
-      AK_EXECUTION__QUEUES__OUTPUT__URL                  = var.output_queue_url
+      AK_EXECUTION__QUEUES__INPUT__URL  = var.input_queue_url
+      AK_EXECUTION__QUEUES__OUTPUT__URL = var.output_queue_url
+      AK_EXECUTION__QUEUES__BATCH_SIZE  = tostring(var.queue_config.batch_size)
+    } : {},
+    # Response store is only used in REST queue modes (not WebSocket)
+    (var.queue_mode && !var.websocket_mode) ? {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = var.response_store_table_name
-      AK_EXECUTION__QUEUES__BATCH_SIZE                   = tostring(var.queue_config.batch_size)
+    } : {},
+    # WebSocket modes (async / stream) — push responses over the connection
+    var.websocket_mode ? {
+      AK_EXECUTION__MODE                             = var.execution_mode
+      AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = var.websocket_connections_table_name
+      AK_WEBSOCKET_API__ENDPOINT_URL                 = var.websocket_endpoint_url
     } : {}
   )
 }
 
-# ---------- Service Discovery ----------
+# Service Discovery
 
 resource "aws_service_discovery_http_namespace" "this" {
   name        = "${var.product_alias}-${var.env_alias}-${var.module_name}"
@@ -28,7 +37,7 @@ resource "aws_service_discovery_http_namespace" "this" {
   tags        = var.tags
 }
 
-# ---------- IAM Policies ----------
+# IAM Policies
 
 resource "aws_iam_policy" "dynamodb_policy" {
   count       = var.create_dynamodb_memory_table ? 1 : 0
@@ -60,7 +69,7 @@ resource "aws_iam_policy" "dynamodb_policy" {
   tags = var.tags
 }
 
-# ---------- Security Groups ----------
+# Security Groups
 
 resource "aws_security_group" "ecs_alb" {
   name        = "${var.product_alias}-${var.env_alias}-ecs-alb-sg"
@@ -102,7 +111,7 @@ resource "aws_security_group" "ecs_service" {
   tags = var.tags
 }
 
-# ---------- Load Balancer ----------
+# Load Balancer
 
 resource "aws_lb" "app" {
   name               = "${var.product_alias}-${var.env_alias}-${var.module_name}-alb"
@@ -144,7 +153,62 @@ resource "aws_lb_listener" "http" {
   tags = var.tags
 }
 
-# ---------- ECS Service ----------
+# Network Load Balancer (WebSocket private integration)
+# WebSocket needs VPC Link V1 (NLB-only); NLB fronts the existing ALB. WebSocket mode only.
+resource "aws_lb" "nlb" {
+  count              = var.websocket_mode ? 1 : 0
+  name               = "${var.product_alias}-${var.env_alias}-${var.module_name}-nlb"
+  internal           = true
+  load_balancer_type = "network"
+  subnets            = var.subnet_ids
+
+  tags = var.tags
+}
+
+resource "aws_lb_target_group" "nlb_to_alb" {
+  count       = var.websocket_mode ? 1 : 0
+  name        = "${var.product_alias}-${var.env_alias}-nlb-tg"
+  port        = 80
+  protocol    = "TCP"
+  vpc_id      = var.vpc_id
+  target_type = "alb"
+
+  health_check {
+    protocol            = "HTTP"
+    path                = var.rest_service.health_check_endpoint
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    interval            = 30
+    matcher             = "200-399"
+  }
+
+  tags = var.tags
+}
+
+resource "aws_lb_target_group_attachment" "nlb_to_alb" {
+  count            = var.websocket_mode ? 1 : 0
+  target_group_arn = aws_lb_target_group.nlb_to_alb[0].arn
+  target_id        = aws_lb.app.arn
+  port             = 80
+
+  # The ALB must have its listener up before it can be registered as an NLB target.
+  depends_on = [aws_lb_listener.http]
+}
+
+resource "aws_lb_listener" "nlb" {
+  count             = var.websocket_mode ? 1 : 0
+  load_balancer_arn = aws_lb.nlb[0].arn
+  port              = 80
+  protocol          = "TCP"
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.nlb_to_alb[0].arn
+  }
+
+  tags = var.tags
+}
+
+# ECS Service
 
 module "ecs_service" {
   source  = "terraform-aws-modules/ecs/aws//modules/service"

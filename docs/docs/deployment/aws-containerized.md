@@ -6,15 +6,16 @@ sidebar_position: 4
 
 Deploy agents to AWS ECS Fargate for consistent, low-latency execution.
 
-Two topologies are supported:
+Three topologies are supported:
 
 | Mode | Containers | Selected by | Best for |
 |------|-----------|-------------|----------|
 | **Simple REST** | One (runs `RESTAPI`) | `queue_mode = false` (default) in Terraform; app entrypoint `RESTAPI.run` | Moderate traffic, simplest setup |
-| **Scalable queue mode** | Two (IO container + Agent Runner service) | `queue_mode = true` in Terraform; entrypoints `ECSIOHandler.run` + `ECSAgentRunner.run`; `execution.queues.*` config | High throughput, long-running agents, backpressure control |
+| **Scalable queue mode** | Two (IO container + Agent Runner service) | `queue_mode = true`, `execution_mode = "rest_sync"` or `"rest_async"` in Terraform; entrypoints `ECSIOHandler.run` + `ECSAgentRunner.run`; `execution.queues.*` config | High throughput, long-running agents, backpressure control |
+| **WebSocket mode** | One (direct) or two (queue, same split as above) | `execution_mode = "async"` (or `"stream"`, accepted but not yet implemented) in Terraform | Real-time, bidirectional, connection-based interactions |
 
 :::note Protocol support
-ECS containers serve JSON REST. **SSE token streaming** (`execution.mode: stream`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. WebSocket `async`/`stream` execution modes are **not** available on ECS (AWS Lambda only). The scalable queue mode supports `rest_sync` and `rest_async` only.
+ECS containers serve JSON REST by default. **SSE token streaming** (`execution.mode: stream`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. **WebSocket mode** (`execution_mode = "async"`) is also available on ECS via a WebSocket API Gateway — see [WebSocket Mode](#websocket-mode) below. `"stream"` validates as a Terraform value but the containerized WebSocket handler does not yet implement token-by-token delivery; use `"async"` until containerized WebSocket streaming lands.
 :::
 
 ## Simple REST Architecture
@@ -86,7 +87,7 @@ provider "docker" {
 
 module "containerized_agents" {
   source    = "yaalalabs/ak-containerized/aws"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { aws = aws, docker = docker }
 
   # ... other configuration
@@ -126,7 +127,7 @@ Both containers are internally multi-threaded, managed by `ThreadRunner` (one da
 ```mermaid
 graph TB
     subgraph IO["Container 1 - IO container (ECSIOHandler.run, max_workers=2)"]
-        T1["Thread rest-api<br/>uvicorn + ECSQueueRequestHandler<br/>POST /api/v1/chat · GET /api/v1/chat/{session_id}"]
+        T1["Thread rest-api<br/>uvicorn + ECSQueueRequestHandler<br/>POST /api/v1/chat · GET /api/v1/chat?request_id=..."]
         subgraph OC["Thread output-queue-consumer - ECSOutputConsumer.run()"]
             OC1[sqs-consumer-0]
             OC2["sqs-consumer-1<br/>(output.no_of_consumers, default 2)"]
@@ -168,7 +169,7 @@ graph TB
 
 - **`rest-api` thread**: `RESTAPI.run(handlers=[ECSQueueRequestHandler()])`, FastAPI/uvicorn.
   - `POST /api/v1/chat`: validates `session_id` + `prompt`, generates a `request_id` (UUID), and enqueues to the Input Queue with `MessageGroupId = session_id` and `MessageDeduplicationId = request_id`. In `rest_sync` mode it then polls the response store for that `request_id` and returns the reply on the same connection (504 if it never arrives); in `rest_async` mode it returns `{"status": "ACCEPTED", "request_id": ...}` immediately.
-  - `GET /api/v1/chat/{session_id}?request_id=...` (`rest_async` only, 404 otherwise): reads the response store, validates the stored reply's `session_id` matches the path (so a reply can't be read under the wrong session), and returns the body or `NOT_FOUND` while still processing.
+  - `GET /api/v1/chat?request_id=...&session_id=...` (`rest_async` only, 404 otherwise): reads the response store by `request_id` and returns the body, or a `NOT_FOUND` error if nothing has been written yet; `session_id` is optional and used only for logging, not validated against the stored reply.
   - The IO container registers **no agents**; agent validation and execution happen only in the Agent Runner.
 - **`output-queue-consumer` thread**: `ECSOutputConsumer.run()` spawns `execution.queues.output.no_of_consumers` (default **2**) long-poll threads on the Output Queue, each writing `{session_id, request_id, body}` records to the response store. On permanent failure (message exceeded `max_receive_count`), it writes an error record to the store so the waiting HTTP caller gets an error instead of hanging.
 
@@ -206,8 +207,8 @@ if __name__ == "__main__":
 Enable queue mode in the `yaalalabs/ak-containerized/aws` module:
 
 ```hcl
-queue_mode = true
-execution_mode   = "sync"   # or "async"
+queue_mode     = true
+execution_mode = "rest_sync"   # or "rest_async"
 
 rest_service = {
   package_path  = "../dist-rest-service"
@@ -241,6 +242,120 @@ scaling_config = {
 For the full example see [examples/aws-containerized/openai-dynamodb-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb-scalable).
 
 For queue mode internals see [Queue Mode Guide](../advanced/queue-mode-guide.md).
+
+## WebSocket Mode
+
+Set `execution_mode = "async"` to front the ECS service with a **WebSocket API Gateway**
+instead of (or alongside) the HTTP API. Since WebSocket API Gateway only supports a
+**VPC Link V1** integration, and V1 requires a Network Load Balancer target, the
+`rest-service` module adds an internal NLB in front of the existing ALB whenever WebSocket
+mode is enabled — the same ECS service serves both REST and WebSocket ingress.
+
+Both queue topologies from above are supported:
+
+- **Direct** (`queue_mode = false`): the single container authenticates `$connect`, runs the
+  agent inline via `ChatService`, and pushes the reply back over the same connection.
+- **Queue** (`queue_mode = true`): the same two-container split as [Scalable Queue
+  Mode](#scalable-queue-mode) — the IO container enqueues chat frames and its output-queue
+  consumer pushes replies over the socket instead of writing to a response store; the Agent
+  Runner is unchanged.
+
+```mermaid
+graph TB
+    A[Client] -->|"wss://.../chat?token=..."| B[WebSocket API Gateway]
+    B -->|VPC Link V1| N[NLB]
+    N --> LB[ALB]
+    LB --> C["ECS Service<br/>(AWSWebsocketAPI)"]
+
+    C -->|"$connect / $disconnect"| D[(DynamoDB<br/>Connections Table)]
+    C -->|"queue_mode=false: run inline"| E["ChatService"]
+    C -->|"queue_mode=true: enqueue"| F[/Input Queue/]
+    F --> G["Agent Runner<br/>(ECSAgentRunner)"]
+    G --> H[/Output Queue/]
+    H -->|"push via PostToConnection"| C
+
+    style C fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+### Connection Lifecycle and Wire Protocol
+
+1. Client connects to `wss://<websocket_api_endpoint_url>/<stage>?token=<jwt>`.
+2. API Gateway routes `$connect` to the container, which calls the registered `AuthValidator`
+   (mandatory for WebSocket mode — construction fails without one). The token must resolve a
+   `userId` claim; a non-2xx response rejects the socket. On success, `user_id` ↔
+   `connection_id` is stored in the DynamoDB connections table.
+3. The client sends JSON frames with a top-level `route` field — the API's
+   `route_selection_expression` is `$request.body.route`:
+   ```json
+   {"route": "chat", "body": {"session_id": "...", "agent": "triage", "prompt": "..."}}
+   ```
+4. The framework resolves `user_id` from `connection_id` (no re-auth per frame), runs the route,
+   and pushes a reply via `PostToConnection` — `CHAT_RESPONSE` for the chat route, or
+   `SYSTEM_RESPONSE` for custom routes that return a `dict`.
+5. `$disconnect` removes the connection record. Unmatched route keys fall through to
+   `$default`, which returns a `SYSTEM_RESPONSE` error (`"Route not found"`).
+
+### Custom Routes
+
+Register additional routes beyond the built-in chat route with `AWSWebsocketAPI.register`:
+
+```python
+from agentkernel.aws import AWSWebsocketAPI
+
+@AWSWebsocketAPI.register("status")   # bare route name — no leading slash, no HTTP verb
+async def status(ctx: dict) -> dict:
+    # ctx = {"message": <raw JSON body>, "user_id": ...} — no BaseRequest schema imposed
+    return {"status": "OK", "user_id": ctx["user_id"]}
+```
+
+A `dict` return is broadcast as a `SYSTEM_RESPONSE`; `None` broadcasts nothing. Raising
+`WSRouteError(status_code, message)` short-circuits with that HTTP status; any other exception
+is logged, an error is best-effort broadcast to the client, and 500 is returned. Every custom
+route must **also** be declared in Terraform via `ws_routes` — Python cannot create the API
+Gateway route/integration, so both sides must agree. `ws_chat_route` is Terraform-only — it
+names the API Gateway route key that forwards to the container's hardcoded `/ws/chat`
+endpoint; the container never reads it from config, so renaming it needs no Python change.
+
+### Terraform
+
+```hcl
+module "containerized_agents" {
+  source  = "yaalalabs/ak-containerized/aws"
+  version = "0.8.1"
+
+  # ... product_alias / env_alias / module_name / region / vpc_id / private_subnet_ids ...
+
+  rest_service = {
+    package_path   = "../dist"
+    container_port = 8000
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  queue_mode     = false          # or true for the two-container queue variant
+  execution_mode = "async"        # "stream" validates but is not implemented on ECS yet
+  ws_chat_route  = "chat"         # optional, defaults to "chat"
+  ws_routes = [                   # every @AWSWebsocketAPI.register(...) route, declared here too
+    { route = "status" },
+  ]
+
+  create_dynamodb_memory_table = true
+}
+```
+
+**What gets created in addition to the resources above:** a WebSocket API Gateway (routes
+`$connect`, `$disconnect`, `$default`, the configured chat route, and any `ws_routes`), an
+internal NLB + VPC Link V1, a DynamoDB connections table (hash `user_id`, range
+`connection_id`, GSI `connection_id-index`, TTL), and IAM for the REST service task role
+(`execute-api:ManageConnections` + connections-table CRUD/Query). The DynamoDB response store
+is simply never created in WebSocket mode — replies are always pushed over the connection
+instead of stored. `gateway_endpoints` specifically has a Terraform validation rule rejecting
+it in `async`/`stream` modes.
+
+For the full examples see [examples/aws-containerized/openai-websocket](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket)
+(direct mode) and [examples/aws-containerized/openai-websocket-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket-scalable)
+(queue mode).
 
 ## Advantages
 
@@ -543,4 +658,7 @@ See [examples/aws-containerized/crewai-auth](https://github.com/yaalalabs/agent-
 
 ## Example Deployment
 
-See [examples/aws-containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized)
+See [examples/aws-containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized), including
+[openai-websocket](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket) and
+[openai-websocket-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket-scalable)
+for WebSocket mode.

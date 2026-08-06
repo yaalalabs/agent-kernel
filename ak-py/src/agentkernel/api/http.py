@@ -21,6 +21,14 @@ class RESTAPI:
     _auth_token_validators = []
 
     @classmethod
+    def get_default_handlers(cls) -> list[RESTRequestHandler]:
+        """Return the default handler(s) used by run() when none are provided; override to customize (e.g. lazy construction).
+
+        :return: List of REST request handlers
+        """
+        return [AgentRESTRequestHandler()]
+
+    @classmethod
     def _get_router_dependencies(cls):
         """Get dependencies to apply to APIRouters.
         :return: List of dependencies or None if no auth validators are configured
@@ -84,7 +92,7 @@ class RESTAPI:
         :param handlers: List of REST request handlers to use (default: AgentRESTRequestHandler)
         """
         if handlers is None:
-            handlers = [AgentRESTRequestHandler()]
+            handlers = cls.get_default_handlers()
         host = AKConfig.get().api.host
         port = AKConfig.get().api.port
         cls._log.info(f"Agent Kernel REST API listening on http://{host}:{port}")

@@ -1,7 +1,7 @@
 # Containered module configuration for deploying OpenAI Agent in ECS
 module "containered_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
   providers = { aws = aws, docker = docker }
   # Basic ECS configuration
