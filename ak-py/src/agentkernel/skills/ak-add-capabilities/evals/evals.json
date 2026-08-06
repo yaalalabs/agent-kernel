@@ -301,6 +301,25 @@
       ]
     },
     {
+      "id": "cap-thread-valkey",
+      "name": "Enable conversation threads with Valkey storage",
+      "input": "Add conversation thread support with Valkey storage backend",
+      "expected_outputs": [
+        "thread:",
+        "type: valkey",
+        "valkey:",
+        "url:",
+        "ttl:",
+        "agentkernel[",
+        "valkey",
+        "thread"
+      ],
+      "must_not_contain": [
+        "type: redis",
+        "type: dynamodb"
+      ]
+    },
+    {
       "id": "cap-thread-dynamodb",
       "name": "Enable conversation threads with DynamoDB storage",
       "input": "Add conversation thread support with DynamoDB storage for my serverless deployment",

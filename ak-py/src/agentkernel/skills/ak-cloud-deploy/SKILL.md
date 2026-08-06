@@ -198,6 +198,27 @@ session:
 
 If the Terraform module creates the backing store (for example `create_redis_cluster = true`, `create_valkey_cluster = true`, or `create_dynamodb_memory_table = true`), make sure output values are wired to the app environment variables used by `config.yaml`.
 
+### Deploying Conversation Thread Storage
+
+Conversation threads (`ak-add-capabilities`) deploy the same way sessions do: the app declares
+`thread.type` in `config.yaml` and Terraform provisions the backend, injecting only the connection
+detail. Terraform never sets `AK_THREAD__TYPE` itself.
+
+- **AWS (serverless + containerized)**: `create_dynamodb_thread_table = true` provisions a DynamoDB
+  table (partition `session_id`, sort `sk`, TTL on `expiry_time`) and injects
+  `AK_THREAD__DYNAMODB__TABLE_NAME`.
+- **GCP (serverless + containerized)**: `create_firestore_thread_collection = true` requires
+  `create_firestore_database = true`, reuses that database, and injects
+  `AK_THREAD__FIRESTORE__COLLECTION_NAME`, `__PROJECT_ID`, and `__DATABASE_ID`. No new resource is
+  provisioned — the collection is created on first write.
+- **Redis / Valkey**: no dedicated Terraform flag — reuse whatever `create_redis_cluster` /
+  `create_valkey_cluster` already provisions and declare `thread: {type: redis}` (or `valkey`) with
+  the cluster URL in `config.yaml`.
+
+Setting the Terraform flag *without* declaring `thread.type` in `config.yaml` silently leaves
+threads on the non-durable in-memory backend (any `AK_THREAD__*` var materialises `AKConfig.thread`,
+but `type` still defaults to `memory`) — always pair the flag with the matching `thread.type`.
+
 ## AWS Serverless (Lambda + API Gateway)
 
 ### Agent Code Pattern

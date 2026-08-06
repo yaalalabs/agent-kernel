@@ -718,7 +718,7 @@ export AK_MULTIMODAL__DYNAMODB__TABLE_NAME="ak-attachments"
 
 Enable persistent, named conversation threads keyed by `session_id`.
 
-**Ask:** Which thread store backend — in-memory (default, dev), Redis, DynamoDB (AWS), Firestore (GCP), or Cosmos DB (Azure)?
+**Ask:** Which thread store backend — in-memory (default, dev), Redis, Valkey, DynamoDB (AWS), Firestore (GCP), or Cosmos DB (Azure)?
 
 **Basic setup (in-memory store, good for development):**
 
@@ -768,6 +768,22 @@ thread:
   type: redis
   redis:
     url: "redis://localhost:6379"
+    prefix: "ak:thread:"
+    ttl: 2592000            # Thread TTL in seconds (30 days, 0 disables)
+```
+
+**For Valkey storage (production, persistent, distributed, Redis-protocol compatible):**
+
+```toml
+dependencies = [
+    "agentkernel[openai,api,valkey,thread]>=0.8.1",
+]
+```
+```yaml
+thread:
+  type: valkey
+  valkey:
+    url: "valkey://localhost:6379"
     prefix: "ak:thread:"
     ttl: 2592000            # Thread TTL in seconds (30 days, 0 disables)
 ```

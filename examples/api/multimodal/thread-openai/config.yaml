@@ -3,4 +3,4 @@ multimodal:
   storage_type: in_memory # thread mode needs a shared attachment store (in_memory, redis, or dynamodb)
 
 thread:
-  type: memory # other supported backends: redis | dynamodb | firestore | cosmosdb
+  type: memory # other supported backends: redis | valkey | dynamodb | firestore | cosmosdb
