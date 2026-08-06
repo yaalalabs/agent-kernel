@@ -14,7 +14,7 @@ create_deployment_packages() {
         uv pip install -r requirements.txt --target=dist-rest-service/data
     else
         uv pip install -r requirements.txt --target=dist-rest-service/data --find-links ../../../ak-py/dist
-        uv pip install --force-reinstall --target=dist-rest-service/data --find-links ../../../ak-py/dist agentkernel[openai,api,aws,auth,test]
+        uv pip install --force-reinstall --no-deps --no-index --no-cache-dir --target=dist-rest-service/data --find-links ../../../ak-py/dist agentkernel[openai,api,aws,auth,test]
     fi
 	cp config.yaml app_rest_service.py dist-rest-service/data/
 
@@ -25,7 +25,7 @@ create_deployment_packages() {
         uv pip install -r requirements.txt --target=dist-agent-runner/data
     else
         uv pip install -r requirements.txt --target=dist-agent-runner/data --find-links ../../../ak-py/dist
-        uv pip install --force-reinstall --target=dist-agent-runner/data --find-links ../../../ak-py/dist agentkernel[openai,api,aws,auth,test]
+        uv pip install --force-reinstall --no-deps --no-index --no-cache-dir --target=dist-agent-runner/data --find-links ../../../ak-py/dist agentkernel[openai,api,aws,auth,test]
     fi
     cp config.yaml app_agent_runner.py dist-agent-runner/data/
 
