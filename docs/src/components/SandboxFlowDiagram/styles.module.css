@@ -1,0 +1,591 @@
+/* Sandbox execution flow diagram — panel styling aligned with AgentKernelRuntimeFlowDiagram */
+
+@keyframes sbFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes sbBrokerGlow {
+
+  0%,
+  100% {
+    border-color: rgba(255, 181, 71, 0.45);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+      0 8px 28px rgba(255, 181, 71, 0.14);
+  }
+
+  50% {
+    border-color: rgba(255, 181, 71, 0.75);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+      0 10px 40px rgba(255, 181, 71, 0.32);
+  }
+}
+
+.panel {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 0.75rem;
+  background: rgba(10, 12, 22, 0.52);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  overflow: hidden;
+  transition: border-color 300ms ease;
+}
+
+.panel:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.scrollHint {
+  display: none;
+  margin: 0;
+  padding: 0.625rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  padding: 2rem 1.5rem 1.75rem;
+}
+
+.diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 54rem;
+  margin: 0 auto;
+  max-width: 72rem;
+}
+
+.diagramDetailed {
+  min-width: 64rem;
+}
+
+/* ── Nodes ─────────────────────────────────────────────────────────────── */
+
+.node {
+  opacity: 0;
+  text-align: center;
+}
+
+.panelVisible .node {
+  animation: sbFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--node-delay, 0ms);
+}
+
+.nodeTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.25;
+}
+
+.nodeSub {
+  margin: 0.3rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* ── Stacked cards (one card in front, ghost copies behind) ────────────── */
+
+.stack {
+  position: relative;
+  z-index: 0;
+}
+
+.stack::before,
+.stack::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 13, 22, 0.9);
+  z-index: -1;
+}
+
+.stack::before {
+  transform: translate(6px, 6px);
+}
+
+.stack::after {
+  transform: translate(12px, 12px);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* front card paints above the ghosts, so their borders never cut content */
+.stackFront {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  border-radius: 0.75rem;
+  background: #0b0d16;
+}
+
+.agentStack {
+  margin-right: 12px;
+}
+
+.agentNode {
+  max-width: 26rem;
+  padding: 0.9rem 1.5rem 1rem;
+  gap: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.agentChip {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(0, 221, 255, 0.85);
+  border: 1px solid rgba(0, 221, 255, 0.35);
+  border-radius: 4px;
+  padding: 0.1rem 0.45rem;
+  line-height: 1.5;
+  margin-top: 0.15rem;
+}
+
+.chipNode {
+  padding: 0.55rem 1.15rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 221, 255, 0.35);
+  background: rgba(0, 221, 255, 0.06);
+}
+
+.chipNode .nodeTitle {
+  font-size: 0.85rem;
+  color: #00ddff;
+}
+
+/* Session pill with the security policy hanging off to the right */
+.sessionRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2.5rem;
+  width: 100%;
+}
+
+.sessionSide {
+  flex: 0 0 15rem;
+  min-width: 0;
+}
+
+/* first .sessionSide is an invisible spacer that keeps the pill centered */
+.sessionRow > .sessionSide:first-child {
+  visibility: hidden;
+  border: none;
+  padding: 0;
+}
+
+.sessionNode {
+  padding: 0.5rem 1.15rem;
+  border-radius: 999px;
+  border: 1px dashed rgba(0, 221, 255, 0.4);
+  background: rgba(10, 12, 22, 0.8);
+}
+
+.sessionNode .nodeTitle {
+  font-family: var(--ifm-font-family-monospace, monospace);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(0, 221, 255, 0.9);
+}
+
+.policyNode {
+  position: relative;
+  padding: 0.65rem 1rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(142, 93, 255, 0.5);
+  background: rgba(142, 93, 255, 0.08);
+}
+
+.policyNode .nodeTitle {
+  font-size: 0.85rem;
+  color: rgba(196, 170, 255, 1);
+}
+
+.policyNode::before {
+  content: "";
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 2.5rem;
+  height: 1px;
+  background: linear-gradient(90deg,
+      rgba(0, 221, 255, 0.35),
+      rgba(142, 93, 255, 0.55));
+}
+
+.brokerNode {
+  min-width: 24rem;
+  padding: 1rem 2rem 1.05rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(255, 181, 71, 0.55);
+  background: linear-gradient(180deg,
+      rgba(255, 181, 71, 0.14) 0%,
+      rgba(255, 181, 71, 0.03) 100%);
+}
+
+.panelVisible .brokerNode {
+  animation:
+    sbFadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both,
+    sbBrokerGlow 3.5s ease-in-out infinite;
+  animation-delay: var(--node-delay, 0ms), 1.2s;
+}
+
+.brokerRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+}
+
+.brokerLogo {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 10px rgba(0, 221, 255, 0.45));
+}
+
+.brokerText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.brokerEyebrow {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #ffb547;
+  line-height: 1.4;
+}
+
+.brokerTitle {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.brokerNode .nodeSub {
+  margin-top: 0.45rem;
+  color: rgba(255, 214, 156, 0.65);
+}
+
+/* ── Connectors ────────────────────────────────────────────────────────── */
+
+.stem {
+  width: 1px;
+  height: 1.6rem;
+  flex-shrink: 0;
+  background: linear-gradient(180deg,
+      rgba(0, 221, 255, 0.5),
+      rgba(0, 221, 255, 0.25));
+  opacity: 0;
+}
+
+.panelVisible .stem {
+  animation: sbFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--node-delay, 0ms);
+}
+
+/* ── Provider fan-out ──────────────────────────────────────────────────── */
+
+.providersRow {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr));
+  width: 100%;
+}
+
+.providerCol {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.6rem 0.5rem 0;
+}
+
+/* horizontal bus segment */
+.providerCol::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(0, 221, 255, 0.3);
+}
+
+.providerCol:first-child::before {
+  left: 50%;
+}
+
+.providerCol:last-child::before {
+  right: 50%;
+}
+
+/* vertical drop from the bus to the provider box */
+.providerCol::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 1.6rem;
+  background: linear-gradient(180deg,
+      rgba(0, 221, 255, 0.3),
+      rgba(0, 221, 255, 0.45));
+}
+
+.providerNode {
+  width: 100%;
+  padding: 0.75rem 0.6rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(0, 221, 255, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 1 1 auto;
+  justify-content: center;
+  text-decoration: none;
+  transition: border-color 250ms ease, background-color 250ms ease,
+    transform 250ms ease, box-shadow 250ms ease;
+}
+
+.providerNodeLink:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 221, 255, 0.6);
+  background: rgba(0, 221, 255, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 221, 255, 0.2);
+  text-decoration: none;
+}
+
+.providerIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  color: #ffffff;
+  margin-bottom: 0.1rem;
+}
+
+.providerLogoImg {
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 4px;
+  display: block;
+}
+
+.providerLogoImgInvert {
+  filter: invert(1);
+}
+
+.providerName {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #00ddff;
+  line-height: 1.3;
+}
+
+.providerSub {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.providerChip {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(196, 170, 255, 1);
+  border: 1px solid rgba(142, 93, 255, 0.5);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  line-height: 1.5;
+}
+
+.colStem {
+  width: 1px;
+  height: 1.4rem;
+  flex-shrink: 0;
+  background: linear-gradient(180deg,
+      rgba(0, 221, 255, 0.4),
+      rgba(255, 255, 255, 0.2));
+  opacity: 0;
+}
+
+.panelVisible .colStem {
+  animation: sbFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--node-delay, 0ms);
+}
+
+/* ── Sandbox stacks ────────────────────────────────────────────────────── */
+
+.sandboxStack {
+  width: calc(100% - 12px);
+  margin-right: 12px;
+}
+
+.sandboxStack::before,
+.sandboxStack::after {
+  border-radius: 0.6rem;
+}
+
+.sandboxNode {
+  width: 100%;
+  padding: 0.6rem 0.5rem 0.65rem;
+  border-radius: 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  gap: 0.35rem;
+}
+
+.sandboxName {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1.3;
+}
+
+.tierChip {
+  font-family: var(--ifm-font-family-monospace, monospace);
+  font-size: 0.62rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  padding: 0.1rem 0.45rem;
+  line-height: 1.5;
+}
+
+/* ── Detailed footer strip ─────────────────────────────────────────────── */
+
+.footer {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.footerCard {
+  padding: 1rem 1.125rem 1.125rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  transition: background-color 250ms ease;
+}
+
+.panelVisible .footerCard {
+  animation: sbFadeUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--node-delay, 0ms);
+}
+
+.footerCard:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.footerCard:last-child {
+  border-right: none;
+}
+
+.footerTitle {
+  margin: 0 0 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.3;
+}
+
+.footerDesc {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* ── Motion / responsive ───────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+
+  .node,
+  .stem,
+  .colStem,
+  .footerCard {
+    opacity: 1;
+    transform: none;
+    animation: none !important;
+  }
+}
+
+@media (max-width: 996px) {
+  .scrollHint {
+    display: block;
+  }
+
+  .footer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .footerCard:nth-child(2) {
+    border-right: none;
+  }
+
+  .footerCard:nth-child(1),
+  .footerCard:nth-child(2) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+}
+
+@media (max-width: 576px) {
+  .wrap {
+    padding: 1.25rem 1rem 1rem;
+  }
+
+  .footer {
+    grid-template-columns: 1fr;
+  }
+
+  .footerCard {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .footerCard:last-child {
+    border-bottom: none;
+  }
+}

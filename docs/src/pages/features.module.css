@@ -509,8 +509,8 @@
 
 .pageMapBottomRow {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.25rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
 }
 
 /* Center hub — dark glass circle with cyan glow */
@@ -3061,6 +3061,53 @@
     font-size: 0.5rem;
     padding: 0.05rem 0.3rem;
   }
+}
+
+/* ─── Sandboxed execution ─────────────────────────────────────────────────── */
+
+.sandboxSection .sectionHeader {
+  margin-bottom: 2.5rem;
+}
+
+.sandboxBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2.25rem;
+  width: 100%;
+}
+
+.sandboxLinksRow {
+  display: flex;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.sandboxLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: auto;
+  padding: 0.6rem 1.5rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  text-decoration: none;
+  transition: background-color 0.22s ease, border-color 0.22s ease, transform 0.2s ease, box-shadow 0.22s ease;
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
+.sandboxLink:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(0, 229, 255, 0.4);
+  color: #00e5ff;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3), 0 0 10px rgba(0, 229, 255, 0.1);
+  transform: translateY(-2px);
+  text-decoration: none;
 }
 
 /* Card Glow Effects for All Cards on the Features Page */
