@@ -4,7 +4,7 @@ locals {
 
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.7.0"
+  version = "0.8.0"
 
   product_alias                = var.product_alias
   env_alias                    = var.env_alias

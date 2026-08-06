@@ -291,7 +291,7 @@ endpoint; the container never reads it from config, so renaming it needs no Pyth
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.7.0"
+  version = "0.8.0"
 
   # ... product_alias / env_alias / module_name / region / vpc_id / private_subnet_ids ...
 

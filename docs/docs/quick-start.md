@@ -520,7 +520,7 @@ variable "openai_api_key" {
 
 module "serverless_agents" {
     source  = "yaalalabs/ak-serverless/aws"
-    version = "0.7.0"
+    version = "0.8.0"
 
     product_alias        = "ak"
     env_alias            = "dev"

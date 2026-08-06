@@ -861,7 +861,7 @@ registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunne
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.7.0"
+  version = "0.8.0"
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -1009,7 +1009,7 @@ def main() -> None:
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.7.0"
+  version = "0.8.0"
 
   project_id           = var.project_id
   region               = var.region
@@ -1038,7 +1038,7 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.7.0"
+  version = "0.8.0"
 
   project_id           = var.project_id
   region               = var.region
@@ -1089,7 +1089,7 @@ def main() -> None:
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.7.0"
+  version = "0.8.0"
 
   project_id           = var.project_id
   region               = var.region

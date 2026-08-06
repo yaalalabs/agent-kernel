@@ -97,7 +97,7 @@ The REST service handles HTTP requests while Agent Runner processes the actual a
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.7.0"
+  version = "0.8.0"
 
   product_alias = "my-agent"
   env_alias     = "dev"
@@ -126,7 +126,7 @@ module "containerized_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.7.0"
+  version = "0.8.0"
 
   product_alias = "my-agent"
   env_alias     = "prod"
