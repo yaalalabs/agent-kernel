@@ -14,6 +14,77 @@ from agentkernel.core.model import (
 from agentkernel.core.util.error_util import user_facing_error_message
 from agentkernel.framework.smolagents.smolagents import SmolagentsRunner
 
+FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
+
+
+class TestSmolagentsRunnerFrameworkContext:
+    """framework_context injection (additional_args) and filtered write-back for SmolagentsRunner."""
+
+    @pytest.mark.asyncio
+    async def test_context_injected_and_seeded_keys_round_trip(self):
+        runner = SmolagentsRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
+        requests = [AgentRequestText(prompt="hi")]
+
+        mock_agent = MagicMock()
+        # A tool mutated the seeded key and also added a brand-new internal entry.
+        mock_agent.agent.state = {"seeded": 5, "internal": "leak"}
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.return_value = "ok"
+            await runner.run(mock_agent, session, requests)
+
+            mock_to_thread.assert_called_once_with(mock_agent.agent.run, "hi", reset=False, additional_args={"seeded": 1})
+
+        # Only the seeded key round-trips; the brand-new internal key is dropped.
+        assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 5}
+
+    @pytest.mark.asyncio
+    async def test_no_context_call_is_unchanged(self):
+        """With no framework_context set, the call must not include additional_args."""
+        runner = SmolagentsRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+
+        mock_agent = MagicMock()
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.return_value = "ok"
+            await runner.run(mock_agent, session, requests)
+
+            mock_to_thread.assert_called_once_with(mock_agent.agent.run, "hi", reset=False)
+
+        assert session.get(FRAMEWORK_CONTEXT) is None
+
+    @pytest.mark.asyncio
+    async def test_error_leaves_stored_context_intact(self):
+        runner = SmolagentsRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"seeded": 1})
+        requests = [AgentRequestText(prompt="hi")]
+
+        mock_agent = MagicMock()
+        mock_agent.agent.state = {"seeded": 5}
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.side_effect = ValueError("boom")
+            await runner.run(mock_agent, session, requests)
+
+        assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 1}
+
 
 class TestSmolagentsRunnerErrorHandling:
     """Test error handling and memory persistence in SmolagentsRunner.run()"""

@@ -273,6 +273,8 @@ class CrewAIRunner(Runner):
         """
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.crewai.runner")
+        self._context_warned = False
+        """Whether the unsupported-framework_context warning was already logged."""
 
     def _transcript(self, session: Session) -> list[str] | None:
         """
@@ -375,6 +377,11 @@ class CrewAIRunner(Runner):
                 verbose=False,
                 memory=memory,
             )
+            # CrewAI's kickoff(inputs=...) are template-interpolation variables, not a context/state object, so
+            # there is no per-run caller-state slot. Warn once, and leave the stored context untouched.
+            if not self._context_warned and session is not None and session.get_framework_context():
+                self._log.warning("framework_context is set but CrewAI does not support per-run caller context/state; ignoring it.")
+                self._context_warned = True
             reply = await crew.kickoff_async(inputs={})
             if isinstance(getattr(reply, "pydantic", None), BaseModel):
                 agent_reply: AgentReply = AgentReplyAny(content=reply.pydantic.model_dump(mode="json"), prompt=prompt)
@@ -510,12 +517,7 @@ class CrewAIAgent(BaseAgent):
         :param tool: Raw Python callable or already-wrapped CrewAI tool.
         """
         # Delegate to the tool builder to handle binding
-        wrapped = CrewAIToolBuilder.bind([tool])
-        for w in wrapped:
-            if not hasattr(self.agent, "tools") or self.agent.tools is None:
-                self.agent.tools = []
-            if w not in self.agent.tools:
-                self.agent.tools.append(w)
+        self._append_tools(self.agent, CrewAIToolBuilder.bind([tool]))
 
     def override_system_prompt(self, prompt: str) -> None:
         """

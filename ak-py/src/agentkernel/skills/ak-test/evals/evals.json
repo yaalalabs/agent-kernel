@@ -1,7 +1,7 @@
 {
   "skill": "ak-test",
   "description": "Evaluations for the ak-test (testing and debugging) skill",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "evals": [
     {
       "id": "test-setup-cli",

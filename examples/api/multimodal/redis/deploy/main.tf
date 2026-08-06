@@ -1,8 +1,9 @@
 # Lambda module configuration for deploying Multimodal Agent Lambda function
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
+  providers = { aws = aws, docker = docker }
   # Basic lambda configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias

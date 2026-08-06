@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -9,6 +10,8 @@ from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
 from agentkernel.framework.crewai.crewai import CrewAIModule, CrewAIRunner
+
+FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
 
 class ResearchReport(BaseModel):
@@ -206,6 +209,71 @@ class TestTranscript:
         assert transcript == []
         transcript.append("User: hi")
         assert runner._transcript(session) is transcript
+
+
+class TestCrewAIRunnerFrameworkContext:
+    """CrewAI declines per-run caller context: warn once, never inject, never write back."""
+
+    @pytest.mark.asyncio
+    async def test_non_empty_context_warns_once_and_is_preserved(self, caplog):
+        runner = CrewAIRunner()
+        session = Session("test-session")
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+        mock_agent = _mock_agent()
+
+        with (
+            patch("agentkernel.framework.crewai.crewai.Crew", _mock_crew("ok")) as crew_cls,
+            patch("agentkernel.framework.crewai.crewai.Task"),
+            patch.object(runner, "_memory", return_value=None),
+            caplog.at_level(logging.WARNING, logger="ak.crewai.runner"),
+        ):
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+        warnings = [record for record in caplog.records if "framework_context" in record.getMessage()]
+        assert len(warnings) == 1
+        crew_cls.return_value.kickoff_async.assert_awaited_once_with(inputs={})
+        # The stored key is left untouched: no injection, no write-back.
+        assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_warning_is_not_repeated_on_later_runs(self, caplog):
+        """The condition holds on every turn of a seeded session — warn once per runner, not per turn."""
+        runner = CrewAIRunner()
+        session = Session("test-session")
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+        mock_agent = _mock_agent()
+
+        with (
+            patch("agentkernel.framework.crewai.crewai.Crew", _mock_crew("ok")),
+            patch("agentkernel.framework.crewai.crewai.Task"),
+            patch.object(runner, "_memory", return_value=None),
+            caplog.at_level(logging.WARNING, logger="ak.crewai.runner"),
+        ):
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="again")])
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="and again")])
+
+        warnings = [record for record in caplog.records if "framework_context" in record.getMessage()]
+        assert len(warnings) == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_context_logs_nothing_and_is_preserved(self, caplog):
+        runner = CrewAIRunner()
+        session = Session("test-session")
+        session.set(FRAMEWORK_CONTEXT, {})
+        mock_agent = _mock_agent()
+
+        with (
+            patch("agentkernel.framework.crewai.crewai.Crew", _mock_crew("ok")),
+            patch("agentkernel.framework.crewai.crewai.Task"),
+            patch.object(runner, "_memory", return_value=None),
+            caplog.at_level(logging.WARNING, logger="ak.crewai.runner"),
+        ):
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+        warnings = [record for record in caplog.records if "framework_context" in record.getMessage()]
+        assert warnings == []
+        assert session.get(FRAMEWORK_CONTEXT) == {}
 
 
 class TestCrewAIRunnerRun:
