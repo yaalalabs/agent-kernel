@@ -508,10 +508,9 @@ module "request_handler" {
   dynamodb_memory_table_name              = var.queue_mode ? null : local.dynamodb_memory_table_name
   dynamodb_multimodal_memory_table_arn    = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_arn
   dynamodb_multimodal_memory_table_name   = var.queue_mode ? null : local.dynamodb_multimodal_memory_table_name
-  # Not zeroed under queue_mode, unlike the memory flags — threads are used in both modes.
-  create_dynamodb_thread_table            = var.create_dynamodb_thread_table
-  dynamodb_thread_table_arn               = local.dynamodb_thread_table_arn
-  dynamodb_thread_table_name              = local.dynamodb_thread_table_name
+  create_dynamodb_thread_table            = var.queue_mode ? false : var.create_dynamodb_thread_table
+  dynamodb_thread_table_arn               = var.queue_mode ? null : local.dynamodb_thread_table_arn
+  dynamodb_thread_table_name              = var.queue_mode ? null : local.dynamodb_thread_table_name
   input_queue_arn                         = local.input_queue_arn
   input_queue_url                         = local.input_queue_url
   websocket_connections_dynamodb = local.websocket_api_enabled ? {

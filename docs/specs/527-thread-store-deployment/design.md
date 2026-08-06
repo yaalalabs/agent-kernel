@@ -11,7 +11,7 @@ entirely out of scope — see Non-goals.
 
 - **No cloud provisioning for the thread store.** Each cloud already provisions the *session* store
   behind a flag — `create_dynamodb_memory_table` (AWS,
-  `ak-deployment/ak-aws/serverless/state.tf:302-318`), `create_firestore_database` (GCP,
+  `ak-deployment/ak-aws/serverless/state.tf:298-314`), `create_firestore_database` (GCP,
   `ak-deployment/ak-gcp/serverless/variables.tf:169`), `create_cosmosdb_cluster` (Azure,
   `ak-deployment/ak-azure/serverless/variables.tf:101`) — but nothing provisions or wires the thread
   store's DynamoDB table / Firestore collection / Cosmos DB table, so `thread:` cannot be enabled on
@@ -63,9 +63,9 @@ flowchart TB
 
 - Add `valkey` to the built-in backend set: the `_ThreadStoreConfig.type` field description
   (a description-only field post-#541, no regex pattern —
-  `ak-py/src/agentkernel/core/config.py:254-257`) and `_BUILTIN_THREAD_STORES`
+  `ak-py/src/agentkernel/core/config.py:259-262`) and `_BUILTIN_THREAD_STORES`
   (`core/thread/store/base.py:13`), plus a `_ThreadValkeyConfig` sub-config (URL + ttl + prefix,
-  mirroring `_ThreadRedisConfig`, `config.py:220-223`).
+  mirroring `_ThreadRedisConfig`, `config.py:220-222`).
 - Add a `ValkeyThreadStore` and its `require_extra`-guarded `ThreadStoreBuilder` branch with the
   `agentkernel[valkey]` extra hint, mirroring how `SessionStoreBuilder` builds `ValkeySessionStore`
   (`ak-py/src/agentkernel/core/builder.py:108-112`). Valkey is Redis-protocol-compatible; the store
@@ -77,8 +77,8 @@ flowchart TB
 ### Env-var contract (all clouds)
 
 - `AKConfig.thread` is `Optional[...] = None` with no `default_factory`
-  (`ak-py/src/agentkernel/core/config.py:609`), so the presence of any `AK_THREAD__*` env var
-  turns the feature on — but `thread.type` then defaults to `"memory"` (`config.py:254-257`) and
+  (`ak-py/src/agentkernel/core/config.py:615`), so the presence of any `AK_THREAD__*` env var
+  turns the feature on — but `thread.type` then defaults to `"memory"` (`config.py:259-262`) and
   `ThreadStoreBuilder.build()` reads it directly (`ak-py/src/agentkernel/core/thread/store/base.py:149-153`).
 - **The application declares the backend; Terraform supplies only its address.** Every Terraform
   wiring below injects the connection vars (`AK_THREAD__DYNAMODB__TABLE_NAME`, the
@@ -98,19 +98,19 @@ flowchart TB
 - New `create_dynamodb_thread_table` boolean (default `false`) in
   `ak-deployment/ak-aws/serverless/variables.tf`, alongside `create_dynamodb_memory_table`.
 - New `dynamodb_thread` module invocation in `serverless/state.tf` mirroring `dynamodb_memory`
-  (`state.tf:302-318`):
+  (`state.tf:298-314`):
   - `attributes = [{session_id, S}, {sk, S}]`, `hash_key = "session_id"`, `range_key = "sk"`
   - `ttl_enabled = true`, `ttl_attribute_name = "expiry_time"`
   - `table_name = "thread_store"` — a **name suffix**, not the full table name: the shared module
     composes `<product_alias>-<env_alias>-<module_name>-<suffix>`
     (`ak-deployment/ak-aws/common/modules/dynamodb/main.tf:6`) and injects the composed name into the
-    env var, so the Python-side default (`config.py:226-229`) never applies on a deployed stack. Mirrors
-    session's `"session_store"` (`ak-aws/serverless/state.tf:316`).
+    env var, so the Python-side default (`config.py:230-234`) never applies on a deployed stack. Mirrors
+    session's `"session_store"` (`ak-aws/serverless/state.tf:312`).
   - **No GSI** — `list_threads` is a full-table `Scan`
     (`ak-py/src/agentkernel/core/thread/store/dynamodb.py:207-241`); do not copy the
     response-store GSI pattern.
 - Thread the table ARN/name through to both `request_handler` and `agent_runner` module blocks
-  (pattern: `state.tf:22-25`, `:482-489`, `:535-540`) with matching variables in each module's
+  (pattern: `state.tf:18-21`, `:503-510`, `:562-566`) with matching variables in each module's
   `variables.tf`.
 - Env vars, injected only when the flag is true, in both modules' environment-merge blocks
   (`request-handler/main.tf:283-318` pattern): `AK_THREAD__DYNAMODB__TABLE_NAME=<name>` only — the type
@@ -123,19 +123,19 @@ flowchart TB
 
 - Same shape as serverless: `create_dynamodb_thread_table` variable on
   `ak-deployment/ak-aws/containerized/variables.tf`, a `dynamodb_thread` module in `state.tf`
-  (mirrors `dynamodb_memory`, `containerized/state.tf:112-118`), and pass-through into both
+  (mirrors `dynamodb_memory`, `containerized/state.tf:122-137`), and pass-through into both
   `rest-service` and `agent-runner` modules.
-- Env vars on both modules' environment-merge blocks (`rest-service/main.tf:2-20`,
-  `agent-runner/main.tf:4-17`): `AK_THREAD__DYNAMODB__TABLE_NAME` only, injected when the flag is true.
+- Env vars on both modules' environment-merge blocks (`rest-service/main.tf:2-16`,
+  `agent-runner/main.tf:4-20`): `AK_THREAD__DYNAMODB__TABLE_NAME` only, injected when the flag is true.
 - IAM: task-role policy on both task roles scoped to the thread table ARN only, mirroring
-  `dynamodb_policy`/`tasks_iam_role_policies` (`rest-service/main.tf:36-64`, `:220-228`) and
-  `agent_runner_dynamodb_memory_policy` (`agent-runner/main.tf:123-154`).
+  `dynamodb_policy`/`tasks_iam_role_policies` (`rest-service/main.tf:45-73`, `:284-291`) and
+  `agent_runner_dynamodb_memory_policy` (`agent-runner/main.tf:130-155`).
 
 ### GCP Terraform — Firestore thread wiring
 
 - Thread reuses the Firestore database provisioned by `create_firestore_database`; Firestore
   collections are implicit, so no new database resource is needed — the thread store writes to its
-  own collection (`ak-agent-threads` default, `config.py:234-237`; one document per session with a
+  own collection (`ak-agent-threads` default, `config.py:239-242`; one document per session with a
   `messages` subcollection, `ak-py/src/agentkernel/core/thread/store/firestore.py:5-10`).
 - New opt-in boolean (e.g. `create_firestore_thread_collection`, env-wiring only) on both
   `ak-gcp/serverless` and `ak-gcp/containerized`, requiring `create_firestore_database = true`.

@@ -44,8 +44,9 @@ failure.
   `modules/request-handler/{main,variables}.tf`; `modules/agent-runner/{main,variables}.tf`
   (spec §"AWS serverless (Lambda) Terraform").
 - **Steps:** 1) variable; 2) locals + `dynamodb_thread` module (`table_name = "thread_store"`, no GSI);
-  3) pass-through to both modules — **not** gated on `queue_mode`, unlike the memory flags; 4) env vars
-  in both env-merge blocks, gated on `dynamodb_thread_table_arn != null`, TYPE + NAME together;
+  3) pass-through to both modules — gated on `queue_mode` for `request_handler`, same as the memory
+  flags (see spec §Deviations 3); 4) the table-name env var in both env-merge blocks, gated on
+  `dynamodb_thread_table_arn != null` — **name only, never `AK_THREAD__TYPE`** (spec §Deviations 0);
   5) IAM policy + attachment on both roles, table ARN only.
 - **Verify:** `terraform init && terraform validate` in `ak-deployment/ak-aws/serverless`.
 
@@ -100,13 +101,13 @@ it has to work within.
 
 - **Goal:** Reference surfaces match the shipped change.
 - **Files/lines:**
-  - `.agents/skills/ak-dev-architecture/SKILL.md:210` — add a `Valkey | ValkeyThreadStore |
+  - `.agents/skills/ak-dev-architecture/SKILL.md:213` — add a `Valkey | ValkeyThreadStore |
     store/valkey.py | …` row to the thread Store Backends table (between the Redis and DynamoDB rows).
-  - `.agents/skills/ak-dev-architecture/SKILL.md:219` — add `valkey` to the thread `type` comment list
+  - `.agents/skills/ak-dev-architecture/SKILL.md:222` — add `valkey` to the thread `type` comment list
     and show a `thread.valkey` block.
-  - `.agents/skills/ak-dev-architecture/SKILL.md:199` — **pre-existing error worth fixing while here:**
+  - `.agents/skills/ak-dev-architecture/SKILL.md:201` — **pre-existing error worth fixing while here:**
     it places `ThreadStoreBuilder` in `store/__init__.py`; it lives in `store/base.py:130`.
-  - `docs/docs/advanced/threads.md:176-208` — add a `# Valkey` block to the Storage Backends YAML
+  - `docs/docs/advanced/threads.md:177-216` — add a `# Valkey` block to the Storage Backends YAML
     examples, beside the Redis one.
   - `docs/docs/core-concepts/configuration.md` — add `valkey` to the thread `type` comment list.
   - `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md` — add `valkey` to the thread backend

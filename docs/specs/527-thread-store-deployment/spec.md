@@ -8,7 +8,7 @@ requirements source — every requirement there maps to a section here.
 
 ## Deviations from `design.md` — raised and resolved
 
-Three claims in `design.md` did not survive review. All were raised and are now **resolved**;
+Three claims in `design.md`, and one in this spec, did not survive review. All were raised and are now **resolved**;
 `design.md` has been updated to match, so the two documents agree. Recorded here because the reasoning
 is evidence a reviewer will want.
 
@@ -19,8 +19,9 @@ is evidence a reviewer will want.
    `session: {type: dynamodb}` while AWS Terraform injects only the table name. GCP's Terraform does
    inject `AK_SESSION__TYPE`, but redundantly (its example declares the type too), so it is not a
    precedent. Thread was the only place Terraform was the sole source of the type.
-   The reversal removed the injection from six Terraform sites (4 AWS env blocks, 2 GCP), added
-   `thread: {type: dynamodb}` to the AWS example, and re-pointed the docs. It does **not** eliminate the
+   The reversal removed the injection from six Terraform sites (4 AWS env blocks, 2 GCP) and re-pointed
+   the docs. (It also added `thread: {type: dynamodb}` to the AWS example, since reverted with the rest
+   of the example — see "Docs".) It does **not** eliminate the
    silent in-memory hazard — it moves it from "Terraform forgot `TYPE`" to "config forgot the block" —
    so the warnings in `threads.md` and the deployment READMEs were rewritten rather than deleted.
 
@@ -30,20 +31,34 @@ is evidence a reviewer will want.
    `"${product_alias}-${env_alias}-${module_name}-${table_name}"`
    (`ak-deployment/ak-aws/common/modules/dynamodb/main.tf:6`) and its `table_name` output returns that
    composed name (`common/modules/dynamodb/outputs.tf:1-3`), which Terraform then injects into the env
-   var. So the Python-side default (`config.py:226-229`) never applies on a deployed stack. Session
-   passes the suffix `"session_store"` (`ak-aws/serverless/state.tf:316`,
-   `ak-aws/containerized/state.tf:128`), not its Python default — and
+   var. So the Python-side default (`config.py:230-234`) never applies on a deployed stack. Session
+   passes the suffix `"session_store"` (`ak-aws/serverless/state.tf:312`,
+   `ak-aws/containerized/state.tf:136`), not its Python default — and
    `examples/memory/dynamodb/config.yaml` independently confirms the composed result by hardcoding
    `table_name: "ak-oai-ddb-dev-examples-session_store"`.
    The suffix `"thread_store"` is therefore used throughout, consistent with session; the deployed table
    is `<product>-<env>-<module>-thread_store`. A literal `ak-agent-threads` table was considered and
    rejected — it would break the naming convention every other table in the stack follows.
-2. **`AKConfig.thread` is at `config.py:609`, not `config.py:580`.** ✅ **Resolved — `design.md` corrected.**
+2. **`AKConfig.thread` is at `config.py:615`, not `config.py:580`.** ✅ **Resolved — `design.md` corrected.**
    Its "Env-var contract" bullet cited `580`, which is inside the sandbox provider mapping. Pre-existing
    citation error, unrelated to any code change.
+3. **The serverless `request_handler` thread pass-through *is* zeroed under `queue_mode`.** ✅
+   **Resolved — gated, matching the memory flags.** This spec originally exempted thread from the
+   `queue_mode` gate, on the grounds that "the agent-runner and request-handler both read/write threads
+   regardless of queue mode". That is false: in queue mode the request handler's chat route is
+   `enqueue_and_wait` (`deployment/common/rest_handler.py:142`), which puts the request on SQS and never
+   reaches `ChatService`, so `_thread_pre_run` (`core/chat_service.py:507`) never runs there — every
+   thread write happens in the agent runner. Ungated, the Lambda received an unused
+   `AK_THREAD__DYNAMODB__TABLE_NAME` plus an IAM policy allowing `PutItem`/`UpdateItem`/`DeleteItem` on
+   the thread table. Now gated, so it matches the memory lines directly above it and needs no comment.
+   The one future case that wants the ungated form — serving the thread **read** routes from the request
+   handler — is deferred with the read routes themselves (out of scope, see `design.md` Non-goals); it
+   needs Lambda path-parameter routing regardless, since the auto-mount at `api/http.py:105` only runs
+   under FastAPI and the serverless handler uses `AKLambda`. Containerized is unaffected: its
+   `rest_service` receives the memory flags ungated too, so thread already mirrors it.
 
 One asymmetry worth recording (no design change needed): the containerized session IAM policy grants
-on both the table ARN **and** `"${arn}/index/*"` (`ak-aws/containerized/modules/rest-service/main.tf:55-58`),
+on both the table ARN **and** `"${arn}/index/*"` (`ak-aws/containerized/modules/rest-service/main.tf:64-67`),
 whereas serverless grants on the table ARN only (`ak-aws/serverless/modules/request-handler/main.tf:49`).
 The thread table has no GSI, so this spec follows the serverless (table-only) form on **both** clouds
 and deliberately does not copy containerized's `/index/*` grant.
@@ -52,7 +67,7 @@ and deliberately does not copy containerized's `/index/*` grant.
 
 ### Core: Valkey thread store
 
-`RedisThreadStore` (`ak-py/src/agentkernel/core/thread/store/redis.py:25-199`) and the new
+`RedisThreadStore` (`ak-py/src/agentkernel/core/thread/store/redis.py:8-19`) and the new
 `ValkeyThreadStore` differ only in which driver they construct and which config block they read —
 exactly how `ValkeySessionStore` (`core/session/valkey.py:10-95`) twins `RedisSessionStore`. Redis and
 Valkey share one command surface via `_RedisLikeDriver` (`core/util/driver/redis_like.py:16-298`);
@@ -144,10 +159,10 @@ In `ak-py/src/agentkernel/core/config.py`:
   ```
 
   Inherited from `_ValkeyConfig` (`config.py:31-37`): `url` (default `valkey://localhost:6379`).
-- New field on `_ThreadStoreConfig` (`config.py:251-262`): `valkey: Optional[_ThreadValkeyConfig] = None`,
+- New field on `_ThreadStoreConfig` (`config.py:256-268`): `valkey: Optional[_ThreadValkeyConfig] = None`,
   placed after `redis` to match the existing ordering.
 - Add `valkey` to the built-in short-name list in `_ThreadStoreConfig.type`'s **description**
-  (`config.py:254-257`). Post-#541 `type` is a description-only field with no regex `pattern`, so
+  (`config.py:259-262`). Post-#541 `type` is a description-only field with no regex `pattern`, so
   adding a backend means editing the description text, not a validator.
 
 Compatibility: all three changes are additive. `thread.valkey` is absent (`None`) in every existing
@@ -201,11 +216,12 @@ Mirror the session-memory table wiring end to end.
   `list_threads` is a full-table `Scan` filtered on `sk = "meta"` (`dynamodb.py:225-238`), never an
   indexed query.
 - **Pass-through** into both module blocks, following the memory-table pattern:
-  - `request_handler` (`state.tf:487-494`): the memory flags are zeroed under `queue_mode`
-    (`:487`, `:491`); **thread is not** — pass `var.create_dynamodb_thread_table` and the locals
-    through unchanged, since the agent-runner and request-handler both read/write threads regardless of
-    queue mode.
-  - `agent_runner` (`state.tf:542-545`): pass through unchanged, same as memory.
+  - `request_handler` (`state.tf:503-513`): zeroed under `queue_mode`, exactly like the memory flags
+    (`:503`, `:507`). In queue mode this Lambda only enqueues — its chat route becomes
+    `enqueue_and_wait` (`deployment/common/rest_handler.py:142`), which never reaches `ChatService`, so
+    `_thread_pre_run` never fires and no thread write happens there. Granting it the table would be
+    unused permission. (Reversed during review — see Deviations.)
+  - `agent_runner` (`state.tf:567-569`): pass through unchanged, same as memory.
 - **Module variables** — add to `modules/request-handler/variables.tf` and
   `modules/agent-runner/variables.tf`, matching the memory-table shape
   (`request-handler/variables.tf:163-167`, `:175-185`): `create_dynamodb_thread_table` (bool, default
@@ -240,18 +256,18 @@ Same shape, against the ECS modules.
 - **Variable**: `create_dynamodb_thread_table` (bool, default `false`) in
   `ak-deployment/ak-aws/containerized/variables.tf`.
 - **Locals + module** in `containerized/state.tf`: `dynamodb_thread_table_arn`/`_name` beside `:12-13`,
-  and a `module dynamodb_thread` cloned from `module dynamodb_memory` (`:112-127`) with the same key
+  and a `module dynamodb_thread` cloned from `module dynamodb_memory` (`:122-137`) with the same key
   schema / TTL / no-GSI / `table_name = "thread_store"` as serverless.
 - **Pass-through** into both the `rest_service` and `agent_runner` module blocks, plus matching
   variables in `modules/rest-service/variables.tf` and `modules/agent-runner/variables.tf`.
-- **Env vars** in both modules' environment locals — `modules/rest-service/main.tf:2-20` (the
+- **Env vars** in both modules' environment locals — `modules/rest-service/main.tf:2-16` (the
   `rest_service_environment` merge) and the agent-runner equivalent — gated on
   `var.dynamodb_thread_table_arn != null`, injecting `AK_THREAD__DYNAMODB__TABLE_NAME` only,
   mirroring the session entry at `rest-service/main.tf:10-12`.
 - **IAM** on **both** task roles: a `dynamodb_thread_policy` cloned from `dynamodb_policy`
-  (`rest-service/main.tf:36-64`) but scoped to the thread table ARN **only** (dropping the
-  `"${arn}/index/*"` element at `:54` — no GSI exists), attached through the
-  `tasks_iam_role_policies` map (`:187-189`), which must merge the new policy alongside the existing
+  (`rest-service/main.tf:45-73`) but scoped to the thread table ARN **only** (dropping the
+  `"${arn}/index/*"` element at `:66` — no GSI exists), attached through the
+  `tasks_iam_role_policies` map (`:284-291`), which must merge the new policy alongside the existing
   `DynamoDB` entry rather than replacing it:
 
   ```hcl
@@ -297,7 +313,7 @@ collections are created implicitly on first write, so no new database or collect
   single `var.collection_name` (default `"sessions"`,
   `ak-gcp/common/modules/firestore/variables.tf:27-31`), i.e. the *session* collection. Thread needs a
   distinct collection name, so it is supplied literally. **Use `"ak-agent-threads"`, matching the Python
-  default exactly** (`config.py:234-237`) — unlike DynamoDB there is no name composition for Firestore
+  default exactly** (`config.py:239-242`) — unlike DynamoDB there is no name composition for Firestore
   collections, so injecting the same value the code would have defaulted to keeps behaviour identical
   whether or not the var is set, and avoids inventing a second name for one collection. Note GCP's
   Terraform *does* inject `AK_SESSION__TYPE` (`cloud_function.tf:160`), but redundantly — its example
@@ -354,7 +370,7 @@ follow-up needs:
    (`core/util/factory.py:50-64`). Intentional — mirrors `SessionStoreBuilder`'s Valkey path; fail-fast
    beats an opaque `ModuleNotFoundError`.
 3. **`thread.type: valkey` with no `thread.valkey` block raises `ValueError`.** Intentional — mirrors
-   `RedisThreadStore`'s guard (`redis.py:33-34`) and `ValkeySessionStore`'s (`session/valkey.py:24-25`).
+   `RedisThreadStore`'s guard (`redis.py:16-17`) and `ValkeySessionStore`'s (`session/valkey.py:24-25`).
 4. **`RedisThreadStore` gains a base class.** Behaviour-preserving refactor: no key schema, TTL, or
    return-value change. `RedisThreadStore` remains importable from
    `agentkernel.core.thread.store.redis` — its module path and name do not move.
