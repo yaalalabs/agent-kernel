@@ -87,7 +87,7 @@ provider "docker" {
 
 module "containerized_agents" {
   source    = "yaalalabs/ak-containerized/aws"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { aws = aws, docker = docker }
 
   # ... other configuration
@@ -321,7 +321,7 @@ endpoint; the container never reads it from config, so renaming it needs no Pyth
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
   # ... product_alias / env_alias / module_name / region / vpc_id / private_subnet_ids ...
 

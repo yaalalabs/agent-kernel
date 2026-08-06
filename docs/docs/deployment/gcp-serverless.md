@@ -62,10 +62,10 @@ if __name__ == "__main__":
 ```toml
 # pyproject.toml
 dependencies = [
-  "agentkernel[openai,api]>=0.4.0",      # base
+  "agentkernel[openai,api]>=0.8.1",      # base
   # plus one of:
-  "agentkernel[openai,api,redis]>=0.4.0",    # for Redis sessions
-  "agentkernel[openai,api,gcp]>=0.4.0",      # for Firestore sessions
+  "agentkernel[openai,api,redis]>=0.8.1",    # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.8.1",      # for Firestore sessions
 ]
 ```
 
@@ -105,7 +105,7 @@ Pass them into every `module "serverless_agent"` block below via `providers = { 
 ```hcl
 module "serverless_agent" {
   source    = "yaalalabs/ak-serverless/google"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
@@ -135,7 +135,7 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source    = "yaalalabs/ak-serverless/google"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
@@ -164,7 +164,7 @@ When `create_firestore_db = true`, the module automatically injects:
 ```hcl
 module "serverless_agent" {
   source    = "yaalalabs/ak-serverless/google"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
