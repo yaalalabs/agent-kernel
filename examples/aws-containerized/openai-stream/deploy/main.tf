@@ -1,5 +1,4 @@
-# OpenAI Agents in ECS over a WebSocket API (stream, no queue) — agent runs inline, each token
-# delta pushed over the connection as its own STREAM_CHUNK message.
+# OpenAI Agents over WebSocket, stream mode, no queue — agent runs inline
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
   version = "0.8.1"

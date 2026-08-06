@@ -1,4 +1,4 @@
-# OpenAI Agents in ECS over a WebSocket API with queue-based, token-streaming processing — see ../README.md.
+# OpenAI Agents over WebSocket, queue-based token streaming — see ../README.md
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
   version = "0.8.1"
@@ -16,7 +16,7 @@ module "containerized_agents" {
 
   create_dynamodb_memory_table = true
 
-  # REST/IO service: authenticates $connect, enqueues chat, and pushes streamed chunks back over the connection (ECSIOHandler).
+  # REST/IO service (ECSIOHandler): auth, enqueue chat, push chunks over the connection
   rest_service = {
     package_path = "../dist-rest-service"
     command      = ["python", "app_rest_service.py"]
@@ -42,9 +42,7 @@ module "containerized_agents" {
     output_queue_create_dlq                = true
   }
 
-  # Agent Runner: separate ECS service that polls the Input Queue, runs the agent, and fans out
-  # each streamed chunk as its own message on the Output Queue (agentkernel.aws.ECSAgentRunner.run()
-  # dispatches to ECSStreamAgentRunner because config.yaml sets execution.mode: stream).
+  # Agent Runner: polls the Input Queue, fans out each streamed chunk to the Output Queue
   agent_runner = {
     cpu           = 1024
     memory        = 2048
