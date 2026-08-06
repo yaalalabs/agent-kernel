@@ -129,6 +129,25 @@
       ]
     },
     {
+      "id": "deploy-aws-containerized-websocket",
+      "name": "Deploy to AWS ECS Fargate over WebSocket",
+      "input": "Deploy my agent to AWS ECS Fargate with a WebSocket API for real-time chat",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/aws",
+        "from agentkernel.aws import AWSWebsocketAPI",
+        "execution_mode = \"async\"",
+        "ws_chat_route",
+        "ws_routes",
+        "AWSWebsocketAPI.register",
+        "AWSWebsocketAPI.set_auth_handler"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm",
+        "execution_mode = \"stream\""
+      ]
+    },
+    {
       "id": "deploy-azure-serverless",
       "name": "Deploy to Azure Functions",
       "input": "Deploy my agent to Azure Functions",

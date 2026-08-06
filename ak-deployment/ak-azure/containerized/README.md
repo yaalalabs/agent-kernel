@@ -36,7 +36,7 @@ provider "azurerm" {
 
 module "container_app" {
   source    = "yaalalabs/ak-containerized/azurerm"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { azurerm = azurerm }
 
   # ... other inputs, see below

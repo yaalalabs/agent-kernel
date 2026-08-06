@@ -148,7 +148,7 @@ Add all required frameworks to your `pyproject.toml`:
 ```toml
 [project]
 dependencies = [
-    "agentkernel[cli,crewai,openai,langgraph]>=0.1.0",
+    "agentkernel[cli,crewai,openai,langgraph]>=0.8.1",
 ]
 ```
 

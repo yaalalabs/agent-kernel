@@ -55,7 +55,7 @@ provider "docker" {
 
 module "container_app" {
   source    = "yaalalabs/ak-containerized/google"
-  version   = "0.8.0"
+  version   = "0.8.1"
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   # ... other inputs, see below

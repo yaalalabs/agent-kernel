@@ -54,7 +54,7 @@ def test_broadcast_stream_chunk_raises_when_user_id_missing():
 
 
 def test_broadcast_stream_chunk_wraps_with_type_and_broadcasts():
-    from agentkernel.deployment.aws.serverless.core.router.ws_lambda import BaseWSHandler
+    from agentkernel.deployment.aws.serverless.core.router.ws_lambda import LambdaWSHandler
 
     record = {
         "body": json.dumps({"delta": "hello", "done": False, "session_id": "s1"}),
@@ -66,17 +66,17 @@ def test_broadcast_stream_chunk_wraps_with_type_and_broadcasts():
 
     mock_ws_handler = MagicMock()
     with patch.object(ResponseHandler, "_get_base_ws_handler", return_value=mock_ws_handler):
-        ResponseHandler._broadcast_via_websocket(record, message_type=BaseWSHandler.MessageType.STREAM_CHUNK)
+        ResponseHandler._broadcast_via_websocket(record, message_type=LambdaWSHandler.MessageType.STREAM_CHUNK)
 
-    mock_ws_handler.broadcast_message.assert_called_once()
-    call_kwargs = mock_ws_handler.broadcast_message.call_args
-    endpoint_url = call_kwargs.args[0]
-    user_id = call_kwargs.args[1]
+    mock_ws_handler.broadcast.assert_called_once()
+    call_kwargs = mock_ws_handler.broadcast.call_args
+    endpoint_url = call_kwargs.kwargs["endpoint_url"]
+    user_id = call_kwargs.kwargs["user_id"]
     message_type = call_kwargs.kwargs["message_type"]
     broadcasted_message = call_kwargs.kwargs["message"]
     assert endpoint_url == "https://example.execute-api.us-east-1.amazonaws.com/prod"
     assert user_id == "user-1"
-    assert message_type == BaseWSHandler.MessageType.STREAM_CHUNK
+    assert message_type == LambdaWSHandler.MessageType.STREAM_CHUNK
     assert broadcasted_message["delta"] == "hello"
     assert broadcasted_message["done"] is False
 
@@ -84,7 +84,7 @@ def test_broadcast_stream_chunk_wraps_with_type_and_broadcasts():
 @patch("agentkernel.deployment.aws.serverless.akresponsehandler.AKConfig")
 def test_process_message_stream_mode_calls_broadcast_stream_chunk(mock_config_cls):
     from agentkernel.core.model import ExecutionMode
-    from agentkernel.deployment.aws.serverless.core.router.ws_lambda import BaseWSHandler
+    from agentkernel.deployment.aws.serverless.core.router.ws_lambda import LambdaWSHandler
 
     mock_config = MagicMock()
     mock_config.execution.mode = ExecutionMode.STREAM
@@ -105,9 +105,9 @@ def test_process_message_stream_mode_calls_broadcast_stream_chunk(mock_config_cl
     with patch.object(ResponseHandler, "_get_base_ws_handler", return_value=mock_ws_handler):
         ResponseHandler.process_message(record)
 
-    mock_ws_handler.broadcast_message.assert_called_once()
-    call_kwargs = mock_ws_handler.broadcast_message.call_args
+    mock_ws_handler.broadcast.assert_called_once()
+    call_kwargs = mock_ws_handler.broadcast.call_args
     message_type = call_kwargs.kwargs["message_type"]
     broadcasted = call_kwargs.kwargs["message"]
-    assert message_type == BaseWSHandler.MessageType.STREAM_CHUNK
+    assert message_type == LambdaWSHandler.MessageType.STREAM_CHUNK
     assert broadcasted["delta"] == "token"

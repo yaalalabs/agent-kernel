@@ -30,7 +30,7 @@ The deployment provisions supporting infrastructure (SQS, API Gateway, and a Red
 
 Project dependencies are declared in `pyproject.toml`:
 
-- `agentkernel[aws,openai,redis]>=0.3.3`
+- `agentkernel[aws,openai,redis]>=0.8.1`
 
 ### Agent Kernel runtime config
 
