@@ -908,7 +908,7 @@ the agent's instructions about *what* to do; the sandbox usage is injected.
 
 For per-user identity (running sandboxed code under the invoking user's identity), set
 `principal_resolver` to a dotted path and a profile's `identity.mode: user`; see the
-[Sandbox guide](https://kernel.yaala.ai/docs/next/advanced/sandbox) and the
+[Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox) and the
 `examples/sandbox/identity` example.
 
 ---

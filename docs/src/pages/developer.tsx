@@ -50,7 +50,7 @@ const DEV_FEATURE_GROUPS = [
       {
         icon: MdAutoAwesome,
         title: "Multi-Framework Support",
-        body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit side-by-side. Keep one runtime across teams while using the best framework per use case.",
+        body: "Run OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, LiveKit side-by-side. Keep one runtime across teams while using the best framework per use case.",
       },
     ],
   },
@@ -113,7 +113,7 @@ const DEV_FEATURE_GROUPS = [
       {
         icon: MdVisibility,
         title: "Observability",
-        body: "Langfuse and OpenLLMetry tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
+        body: "Langfuse, OpenLLMetry, and Pydantic Logfire tracing with one config line. No manual instrumentation. Trace requests, latency, tool calls, and token behavior.",
       },
     ],
   },
@@ -461,7 +461,7 @@ export default function DeveloperPage() {
                   {
                     num: "05",
                     label: "Observability",
-                    items: ["LangFuse", "OpenLLMetry"],
+                    items: ["Langfuse", "OpenLLMetry", "Pydantic Logfire"],
                   },
                   {
                     num: "06",

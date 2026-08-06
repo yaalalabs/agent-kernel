@@ -1028,7 +1028,7 @@ Key fields:
   user's identity.
 - **`broker.flavor`** — `thread` (default, for CLI/REST) or `embedded` (inline/synchronous).
 
-See the [Sandbox guide](https://kernel.yaala.ai/docs/next/advanced/sandbox) for the full
+See the [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox) for the full
 reference and the `examples/sandbox` and `examples/sandbox/identity` examples.
 
 #### Messaging Platform Integrations

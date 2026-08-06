@@ -357,5 +357,5 @@ The compounding effect is real. The first agent that writes back to the KB makes
 
 That's the shift. Build it today.
 
-**[→ Knowledge Bases Documentation](/docs/next/advanced/knowledge-bases)**  
+**[→ Knowledge Bases Documentation](/docs/advanced/knowledge-bases)**  
 **[→ Example: OpenAI KB Router](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/knowledgebase/openai)**

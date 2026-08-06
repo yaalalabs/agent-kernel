@@ -137,7 +137,7 @@ Reference pattern:
 ### 8. Add/Update Documentation
 
 Document the backend in:
-- `docs/docs/architecture/knowledge-bases.md`
+- `docs/docs/advanced/knowledge-bases.md`
 - `docs/docs/core-concepts/overview.md` (if backend list appears there)
 
 Include:

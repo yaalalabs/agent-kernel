@@ -89,7 +89,7 @@ function WhatsNewBanner() {
           to plug in any backend.
         </span>
         <Link
-          to="/docs/next/advanced/knowledge-bases"
+          to="/docs/advanced/knowledge-bases"
           className={styles.whatsNewLink}
           ref={linkRef}
         >
@@ -360,6 +360,11 @@ function FrameworksStrip() {
       name: "Smolagents",
       logo: "/img/integrations/smolagents.png",
       link: "https://huggingface.co/docs/smolagents/index",
+    },
+    {
+      name: "Pydantic AI",
+      logo: "/img/integrations/pydantic-ai.png",
+      link: "/docs/frameworks/pydantic-ai",
     },
     {
       name: "LiveKit",
@@ -1547,7 +1552,7 @@ export default function Home() {
   return (
     <Layout
       title={`${siteConfig.title} - ${siteConfig.tagline}`}
-      description="Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, or Google ADK to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, and observability."
+      description="Agent Kernel is the open-source operating system for scalable, compliant enterprise AI agents. Build, test, and deploy with OpenAI, LangGraph, CrewAI, Google ADK, Smolagents, or Pydantic AI to AWS, Azure, or GCP, with built-in messaging, memory, knowledge bases, guardrails, and observability (Langfuse, OpenLLMetry, Pydantic Logfire)."
     >
       {/* <PlantParticlesBackground ref={backgroundRef} /> */}
       <WhatsNewBanner />

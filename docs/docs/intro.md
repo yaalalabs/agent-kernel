@@ -8,11 +8,11 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
-📦 **Sandbox** - Let agents execute code and shell commands in an isolated, permission-bounded environment, with pluggable providers, workload profiles, and per-user identity. [Learn more →](/docs/next/advanced/sandbox)
+📦 **Sandbox** - Let agents execute code and shell commands in an isolated, permission-bounded environment, with pluggable providers, workload profiles, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 
-🧵 **Conversation Threads** - Persistent, named conversation threads with auto-naming and REST APIs for listing threads and reading history. [Learn more →](/docs/next/advanced/threads)
+🧵 **Conversation Threads** - Persistent, named conversation threads with auto-naming and REST APIs for listing threads and reading history. [Learn more →](/docs/advanced/threads)
 
-🧠 **Knowledge Base Support** - Backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph) and Starburst Galaxy (SQL/analytics). [Learn more →](/docs/next/advanced/knowledge-bases)
+🧠 **Knowledge Base Support** - Backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph) and Starburst Galaxy (SQL/analytics). [Learn more →](/docs/advanced/knowledge-bases)
 :::
 
 ## What is Agent Kernel?
@@ -105,7 +105,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools
   - `semantic_map` keeps agent prompts portable across deployments
   - You can also build your own backend by implementing a `KnowledgeBase` adapter and registering it with `KnowledgeBuilder`
-  [Learn more about knowledge bases →](/docs/next/advanced/knowledge-bases)
+  [Learn more about knowledge bases →](/docs/advanced/knowledge-bases)
 - **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching
   - In-memory (development)
@@ -132,7 +132,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - OpenLLMetry
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
 - **Multimodal Attachments**: Image and file support with pluggable attachment storage and on-demand vision analysis
-- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/next/advanced/sandbox)
+- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 - **Conversation Threads**: Persistent, named threads with auto-naming and REST read APIs
 - **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, and Smolagents
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily

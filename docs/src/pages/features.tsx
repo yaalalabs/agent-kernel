@@ -512,7 +512,7 @@ function ProblemTable() {
     {
       problem: "Observability",
       without: "Manual instrumentation",
-      with: "LangFuse/OpenLLMetry with one config line",
+      with: "Langfuse/OpenLLMetry/Pydantic Logfire with one config line",
     },
     {
       problem: "Guardrails & Safety",
@@ -784,8 +784,15 @@ function CoreFeatures() {
       icon: <MdSwapHoriz />,
       title: "Framework-Neutral Runtime",
       description:
-        "OpenAI Agents, LangGraph, CrewAI, and Google ADK, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.",
-      highlights: ["OpenAI Agents SDK", "LangGraph", "CrewAI", "Google ADK"],
+        "OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, and Pydantic AI, run them all simultaneously in one runtime. Switch frameworks by changing 2 import lines.",
+      highlights: [
+        "OpenAI Agents SDK",
+        "LangGraph",
+        "CrewAI",
+        "Google ADK",
+        "Smolagents",
+        "Pydantic AI",
+      ],
       link: "/docs/frameworks/overview",
     },
     {
@@ -825,7 +832,7 @@ function CoreFeatures() {
         "Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL",
         "semantic_map keeps agent prompts portable",
       ],
-      link: "/docs/architecture/knowledge-bases",
+      link: "/docs/advanced/knowledge-bases",
     },
     {
       icon: <MdCloud />,
@@ -861,8 +868,9 @@ function CoreFeatures() {
       description:
         "Full visibility into agent execution, LLM calls, and tool invocations. One config line to enable.",
       highlights: [
-        "LangFuse integration",
+        "Langfuse integration",
         "OpenLLMetry (OpenTelemetry-based)",
+        "Pydantic Logfire integration",
         "Multi-level verbosity",
         "Cost and latency tracking",
       ],
@@ -1111,6 +1119,22 @@ function FrameworkSupport() {
       logo: (
         <img
           src="/img/integrations/smolagents.png"
+          alt=""
+          className={styles.frameworkLogoImg}
+          width={150}
+          height={50}
+        />
+      ),
+    },
+    {
+      key: "pydantic-ai",
+      name: "Pydantic AI",
+      description:
+        "Pydantic-team framework with native multi-provider models, FallbackModel failover, and typed structured output.",
+      link: "/docs/frameworks/pydantic-ai",
+      logo: (
+        <img
+          src="/img/integrations/pydantic-ai.png"
           alt=""
           className={styles.frameworkLogoImg}
           width={150}
@@ -1553,7 +1577,7 @@ const MESSAGING_PLATFORMS = [
     name: "Microsoft Teams",
     icon: <img src="/img/integrations/teams-logo.png" alt="" width={28} height={24} />,
     color: "#A8B2FF",
-    link: "/docs/next/integrations/teams",
+    link: "/docs/integrations/teams",
   },
   {
     name: "WhatsApp",

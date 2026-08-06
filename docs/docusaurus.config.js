@@ -369,7 +369,7 @@ const config = {
                   return false;
                 }
                 // Exclude versioned/preview docs routes from sitemap to reduce noise.
-                if (url.includes('/docs/next/') || url.match(/\/docs\/0\.[0-9]+\.[0-9]+/)) {
+                if (url.includes('/docs/') || url.match(/\/docs\/0\.[0-9]+\.[0-9]+/)) {
                   return false;
                 }
                 return true;

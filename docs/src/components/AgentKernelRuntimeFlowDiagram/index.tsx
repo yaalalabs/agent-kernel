@@ -7,6 +7,7 @@ const FRAMEWORKS = [
   'CrewAI',
   'Google ADK',
   'Smolagents',
+  'Pydantic AI',
   'LiveKit',
 ];
 

@@ -13,7 +13,7 @@ const FAQ_ITEMS: FAQItem[] = [
     id: "what-is",
     question: "What is Agent Kernel?",
     answer:
-      "Agent Kernel is an open-source operating system that makes it straightforward to build, test, and deploy AI agents at scale. It works with the AI frameworks you already know (OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit) and gives you a single runtime with messaging, memory, knowledge bases, guardrails, and observability baked in. Write your agent code once and deploy it to AWS, Google Cloud, Azure, or on-prem without any rewrites.",
+      "Agent Kernel is an open-source operating system that makes it straightforward to build, test, and deploy AI agents at scale. It works with the AI frameworks you already know (OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, LiveKit) and gives you a single runtime with messaging, memory, knowledge bases, guardrails, and observability baked in. Write your agent code once and deploy it to AWS, Google Cloud, Azure, or on-prem without any rewrites.",
   },
   {
     id: "do-i-need-team",
@@ -49,7 +49,7 @@ const FAQ_ITEMS: FAQItem[] = [
     id: "frameworks-support",
     question: "Does Agent Kernel work with my favorite AI framework?",
     answer:
-      "Yes. Agent Kernel works with OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, and LiveKit out of the box. You can even mix frameworks in a single runtime. Our docs have integration guides and examples for each one.",
+      "Yes. Agent Kernel works with OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, Pydantic AI, and LiveKit out of the box. You can even mix frameworks in a single runtime. Our docs have integration guides and examples for each one.",
   },
   {
     id: "how-long-deploy",
@@ -61,7 +61,7 @@ const FAQ_ITEMS: FAQItem[] = [
     id: "observability",
     question: "How can I monitor and debug my agents in production?",
     answer:
-      "Agent Kernel comes with built-in observability through LangFuse and OpenLLMetry. You get detailed logs, trace tracking, and metrics without any extra setup. Need something more custom? You can wire up hooks for your own analytics, monitoring, and alerting too.",
+      "Agent Kernel comes with built-in observability through Langfuse, OpenLLMetry, and Pydantic Logfire. You get detailed logs, trace tracking, and metrics without any extra setup. Need something more custom? You can wire up hooks for your own analytics, monitoring, and alerting too.",
   },
   {
     id: "mcp-support",

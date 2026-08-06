@@ -14,6 +14,7 @@ const FRAMEWORKS = [
   { id: "langgraph", label: "LangGraph" },
   { id: "adk", label: "Google ADK" },
   { id: "smolagents", label: "Smolagents" },
+  { id: "pydanticai", label: "Pydantic AI" },
 ];
 
 const FRAMEWORK_DATA = {
@@ -41,6 +42,11 @@ const FRAMEWORK_DATA = {
     installation: `# 1. Install the CLI\npip install agentkernel[smolagents]`,
     usage: `from smolagents import LiteLLMModel, ToolCallingAgent\nfrom agentkernel.cli import CLI\nfrom agentkernel.smolagents import SmolagentsModule\n\nmodel = LiteLLMModel(model_id="openai/gpt-4o")\n\nassistant = ToolCallingAgent(\n    tools=[],\n    model=model,\n    name="assistant",\n    description="You are a helpful AI assistant",\n)\n\nSmolagentsModule([assistant])\n\nif __name__ == "__main__":\n    CLI.main()`,
     docLink: "/docs/frameworks/smolagents",
+  },
+  pydanticai: {
+    installation: `# 1. Install the CLI (provider-agnostic core)\npip install agentkernel[pydanticai]\n\n# 2. Install the model provider you want\npip install "pydantic-ai-slim[openai]"`,
+    usage: `from pydantic_ai import Agent\nfrom agentkernel.cli import CLI\nfrom agentkernel.pydanticai import PydanticAIModule\n\nagent = Agent(\n    model="openai:gpt-4o-mini",\n    name="assistant",\n    description="A helpful assistant.",\n    instructions="You are a helpful assistant.",\n)\n\nPydanticAIModule([agent])\n\nif __name__ == "__main__":\n    CLI.main()`,
+    docLink: "/docs/frameworks/pydantic-ai",
   },
 };
 

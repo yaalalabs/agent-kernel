@@ -107,7 +107,7 @@ export default function AgentKernelArchDiagram({ accentColor }: AgentKernelArchD
             <div className={styles.topBoxContent}>
               <span className={styles.topBoxLabel}>Your Agent Logic</span>
               <div className={styles.topBoxChips}>
-                {['OpenAI', 'LangGraph', 'CrewAI', 'Google ADK', 'Smolagents', 'LiveKit'].map((item) => (
+                {['OpenAI', 'LangGraph', 'CrewAI', 'Google ADK', 'Smolagents', 'Pydantic AI', 'LiveKit'].map((item) => (
                   <span key={item} className={styles.topBoxChip}>{item}</span>
                 ))}
               </div>
