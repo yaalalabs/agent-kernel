@@ -130,11 +130,12 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 - **Traceability**: Track and audit all agent operations
   - LangFuse
   - OpenLLMetry
+  - Pydantic Logfire
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
 - **Multimodal Attachments**: Image and file support with pluggable attachment storage and on-demand vision analysis
-- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)
+- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 - **Conversation Threads**: Persistent, named threads with auto-naming and REST read APIs
-- **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, and Smolagents
+- **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, and Pydantic AI
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
 - **Governance**: Input/output guardrails with OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI (including PII redaction)
 

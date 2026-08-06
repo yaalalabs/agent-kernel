@@ -368,8 +368,9 @@ const config = {
                 if (url.endsWith('/search') || url.includes('/search/')) {
                   return false;
                 }
-                // Exclude versioned/preview docs routes from sitemap to reduce noise.
-                if (url.includes('/docs/') || url.match(/\/docs\/0\.[0-9]+\.[0-9]+/)) {
+                // Keep only the latest docs (the /docs/next routes) in the sitemap;
+                // drop versioned docs routes to avoid duplicate/stale entries.
+                if ((url.endsWith('/docs') || url.includes('/docs/')) && !url.includes('/docs/next')) {
                   return false;
                 }
                 return true;
@@ -377,9 +378,9 @@ const config = {
               .map((item) => {
               // Set highest priority for key landing pages
               if (item.url === 'https://kernel.yaala.ai/' ||
-                item.url === 'https://kernel.yaala.ai/docs' ||
-                item.url === 'https://kernel.yaala.ai/docs/quick-start' ||
-                item.url === 'https://kernel.yaala.ai/docs/installation' ||
+                item.url === 'https://kernel.yaala.ai/docs/next' ||
+                item.url === 'https://kernel.yaala.ai/docs/next/quick-start' ||
+                item.url === 'https://kernel.yaala.ai/docs/next/installation' ||
                 item.url === 'https://kernel.yaala.ai/features' ||
                 item.url === 'https://kernel.yaala.ai/use-cases' ||
                 item.url === 'https://kernel.yaala.ai/blog') {
