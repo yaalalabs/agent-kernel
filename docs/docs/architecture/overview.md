@@ -226,7 +226,7 @@ sequenceDiagram
 
 - Each `StreamChunk` carries `delta`, `done`, `error`, and `session_id` fields.
 - Post-hooks can filter or redact individual tokens via `on_stream_chunk()`; returning `None` drops the token.
-- Delivery depends on the surface: the REST API serves chunks as **Server-Sent Events** (`text/event-stream`); AWS serverless WebSocket mode pushes each chunk as a separate `STREAM_CHUNK` WebSocket message (optionally through SQS queues).
+- Delivery depends on the surface: the REST API serves chunks as **Server-Sent Events** (`text/event-stream`); AWS serverless and AWS ECS containerized WebSocket modes push each chunk as a separate `STREAM_CHUNK` WebSocket message (optionally through SQS queues).
 - OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents do not support token streaming (their runners raise `NotImplementedError` in stream mode).
 
 See [Execution Flow](./execution-flow) for the full request lifecycle including the queue-based and WebSocket paths.
@@ -253,7 +253,7 @@ graph LR
 
 - On **AWS Lambda**, the three roles are three Lambda functions wired by SQS event source mappings; see [AWS Serverless](../deployment/aws-serverless).
 - On **AWS ECS Fargate**, the request handler and response handler run as threads inside one IO container, and the agent runner is a separate auto-scaling ECS service with a pool of consumer threads; see [AWS Containerized](../deployment/aws-containerized) and the [Queue Mode Guide](../advanced/queue-mode-guide).
-- The client receives the reply either by **polling** the response store (`rest_sync` waits server-side, `rest_async` polls with a `request_id`) or, on AWS serverless, by **WebSocket push** (`async` for full responses, `stream` for token-level chunks). ECS queue mode delivers replies via the response store only.
+- The client receives the reply either by **polling** the response store (`rest_sync` waits server-side, `rest_async` polls with a `request_id`) or by **WebSocket push** (`async` for full responses, `stream` for token-level chunks) on both AWS serverless and AWS ECS containerized.
 
 ## Next Steps
 
