@@ -16,7 +16,7 @@ variable "module_name" {
     # ALB/NLB names are "${product_alias}-${env_alias}-${module_name}-alb|-nlb", capped at 32
     # chars by AWS (the "-alb"/"-nlb" suffix plus its 2 joining hyphens account for the "+ 6").
     condition     = length(var.product_alias) + length(var.env_alias) + length(var.module_name) + 6 <= 32
-    error_message = "product_alias + env_alias + module_name must be at most 26 characters combined, so that the \"${product_alias}-${env_alias}-${module_name}-alb\"/\"-nlb\" load balancer name stays within AWS's 32-character limit."
+    error_message = "product_alias + env_alias + module_name must be at most 26 characters combined, so that the \"${var.product_alias}-${var.env_alias}-${var.module_name}-alb\"/\"-nlb\" load balancer name stays within AWS's 32-character limit."
   }
 }
 
