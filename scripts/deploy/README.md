@@ -119,7 +119,7 @@ terraform {
 ```hcl
 module "serverless_agents" {
   source = "yaalalabs/ak-serverless/aws"
-  version = "0.7.0"
+  version = "0.8.1"
   ...
 }
 ```
@@ -128,7 +128,7 @@ module "serverless_agents" {
 ```hcl
 module "serverless_agents" {
   source = "../../../../ak-deployment/ak-aws/serverless"
-  # version = "0.7.0"  # Commented for local development
+  # version = "0.8.1"  # Commented for local development
   ...
 }
 ```

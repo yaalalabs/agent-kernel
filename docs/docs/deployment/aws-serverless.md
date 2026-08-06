@@ -181,6 +181,36 @@ uv pip install --force-reinstall --no-deps agentkernel[api,aws] --target=auth_di
 
 Refer to [Terraform modules](https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws) for configuration details.
 
+The module is provider-agnostic — it does not configure the `aws`/`docker` providers itself, so your root `main.tf` must configure them and pass them into the module explicitly:
+
+```hcl
+provider "aws" {
+  region = var.region
+}
+
+# Docker authenticates against ECR to push the images this module builds
+data "aws_caller_identity" "current" {}
+data "aws_ecr_authorization_token" "token" {}
+
+provider "docker" {
+  registry_auth {
+    address  = format("%v.dkr.ecr.%v.amazonaws.com", data.aws_caller_identity.current.account_id, var.region)
+    username = data.aws_ecr_authorization_token.token.user_name
+    password = data.aws_ecr_authorization_token.token.password
+  }
+}
+
+module "serverless_agents" {
+  source    = "yaalalabs/ak-serverless/aws"
+  version   = "0.8.1"
+  providers = { aws = aws, docker = docker }
+
+  # ... other configuration
+}
+```
+
+See the [ak-aws/serverless module docs](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-aws/serverless#-providers) for details.
+
 ### 3. Deploy
 
 ```bash

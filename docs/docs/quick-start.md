@@ -506,6 +506,16 @@ Create a deployment folder and add `deploy/main.tf`:
 ```hcl
 terraform {
     required_version = ">= 1.9.5"
+    required_providers {
+        aws = {
+            source  = "hashicorp/aws"
+            version = ">= 6.11.0"
+        }
+        docker = {
+            source  = "kreuzwerker/docker"
+            version = "3.6.2"
+        }
+    }
 }
 
 variable "region" {
@@ -518,9 +528,26 @@ variable "openai_api_key" {
     sensitive = true
 }
 
+provider "aws" {
+    region = var.region
+}
+
+# Docker authenticates against ECR to push the image this module builds
+data "aws_caller_identity" "current" {}
+data "aws_ecr_authorization_token" "token" {}
+
+provider "docker" {
+    registry_auth {
+        address  = format("%v.dkr.ecr.%v.amazonaws.com", data.aws_caller_identity.current.account_id, var.region)
+        username = data.aws_ecr_authorization_token.token.user_name
+        password = data.aws_ecr_authorization_token.token.password
+    }
+}
+
 module "serverless_agents" {
-    source  = "yaalalabs/ak-serverless/aws"
-    version = "0.7.0"
+    source    = "yaalalabs/ak-serverless/aws"
+    version   = "0.8.1"
+    providers = { aws = aws, docker = docker }
 
     product_alias        = "ak"
     env_alias            = "dev"

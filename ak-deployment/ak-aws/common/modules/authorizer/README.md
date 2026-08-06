@@ -16,7 +16,7 @@ This Terraform module creates a Lambda-based API Gateway authorizer for custom a
 ```hcl
 module "authorizer" {
   source = "yaalalabs/ak-common/aws//modules/authorizer"
-  version = "0.7.0"
+  version = "0.8.1"
   
   region        = "us-west-2"
   product_alias = "myapp"

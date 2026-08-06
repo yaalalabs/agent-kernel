@@ -1,13 +1,3 @@
-provider "google" {
-  project = var.project_id
-  region  = var.region
-}
-
-provider "google-beta" {
-  project = var.project_id
-  region  = var.region
-}
-
 terraform {
   required_providers {
     google = {
@@ -25,14 +15,3 @@ terraform {
   }
   required_version = ">= 1.9.5"
 }
-
-# Authenticate Docker to push images to Artifact Registry
-provider "docker" {
-  registry_auth {
-    address  = "${var.region}-docker.pkg.dev"
-    username = "oauth2accesstoken"
-    password = data.google_client_config.current.access_token
-  }
-}
-
-data "google_client_config" "current" {}

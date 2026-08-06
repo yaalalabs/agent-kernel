@@ -1,7 +1,7 @@
 {
   "skill": "ak-add-capabilities",
   "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, hooks, multimodal, conversation threads, sandbox) skill",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "evals": [
     {
       "id": "cap-guardrail-openai",

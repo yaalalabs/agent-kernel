@@ -1,7 +1,8 @@
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
+  providers = { aws = aws, docker = docker }
   # Basic configuration
   product_alias        = var.product_alias
   env_alias            = var.env_alias

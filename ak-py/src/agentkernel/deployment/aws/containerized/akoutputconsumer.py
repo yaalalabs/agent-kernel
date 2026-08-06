@@ -62,13 +62,14 @@ class ECSOutputConsumer(ECSSQSConsumer):
         message_id = record.get("MessageId")
         cls._log.info(f"[OUTPUT START] Processing output message {message_id}")
 
+        exec_mode = cls._config.execution.mode
         message_type = None
-        if cls._config.execution.mode == ExecutionMode.ASYNC:
+        if exec_mode == ExecutionMode.ASYNC:
             message_type = AWSWebSocketHandler.MessageType.CHAT_RESPONSE
-        elif cls._config.execution.mode == ExecutionMode.STREAM:
+        elif exec_mode == ExecutionMode.STREAM:
             message_type = AWSWebSocketHandler.MessageType.STREAM_CHUNK
 
-        if message_type is not None:
+        if exec_mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
             cls._broadcast_via_websocket(record, message_type=message_type)
             cls._log.info(f"[OUTPUT DONE] Broadcasted {message_type.value} {message_id} via WebSocket")
             return
@@ -96,26 +97,28 @@ class ECSOutputConsumer(ECSSQSConsumer):
         try:
             message_attributes = SQSHandler.get_message_custom_attributes(record)
             request_id = message_attributes.get("request_id")
+            session_id = SQSHandler.get_message_system_attributes(record).get("MessageGroupId")
             error_payload = {
                 "error": f"Failed to process message after {max_retries} retries",
                 "request_id": request_id,
             }
+            if session_id:
+                error_payload["session_id"] = session_id
 
-            if cls._config.execution.mode == ExecutionMode.ASYNC:
+            exec_mode = cls._config.execution.mode
+            message_type = None
+            if exec_mode == ExecutionMode.ASYNC:
                 message_type = AWSWebSocketHandler.MessageType.SYSTEM_RESPONSE
-            elif cls._config.execution.mode == ExecutionMode.STREAM:
+            elif exec_mode == ExecutionMode.STREAM:
                 message_type = AWSWebSocketHandler.MessageType.STREAM_CHUNK
-            else:
-                message_type = None
 
-            if message_type is not None:
-                session_id = SQSHandler.get_message_system_attributes(record).get("MessageGroupId")
+            if exec_mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
                 if message_type == AWSWebSocketHandler.MessageType.STREAM_CHUNK:
                     error_message = StreamChunk(error=error_payload["error"], done=True).model_dump(exclude_none=True)
+                    if session_id:
+                        error_message["session_id"] = session_id
                 else:
                     error_message = error_payload
-                if session_id:
-                    error_message["session_id"] = session_id
 
                 endpoint_url = message_attributes.get("endpoint_url")
                 user_id = message_attributes.get("user_id")

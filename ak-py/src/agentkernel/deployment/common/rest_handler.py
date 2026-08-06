@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uuid
 from abc import abstractmethod
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
@@ -94,7 +95,7 @@ class RestHandler(AgentRESTRequestHandler):
             self._log.error(f"Error processing request: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail={"error": str(e), "session_id": body.session_id if body else None})
 
-    async def poll_response(self, request_id: str = None, session_id: str = None):
+    async def poll_response(self, request_id: Optional[str] = None, session_id: Optional[str] = None):
         """
         Poll for response (REST_ASYNC mode only).
 

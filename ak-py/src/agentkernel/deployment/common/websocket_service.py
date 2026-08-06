@@ -207,8 +207,7 @@ class WebSocketHandlerABC(ABC):
         message_type: Optional["WebSocketHandlerABC.MessageType"] = None,
     ) -> None:
         """
-        Broadcast a message to multiple connections; when message_type is set it wraps as {...message, "type": ...},
-        so message_type always wins over any caller-provided message["type"].
+        Broadcast a message to multiple connections
 
         :param endpoint_url: WebSocket management endpoint URL
         :param message: Message dictionary to broadcast

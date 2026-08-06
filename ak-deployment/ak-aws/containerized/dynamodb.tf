@@ -25,7 +25,7 @@ resource "aws_dynamodb_table" "response_store" {
 
 module "websocket_connections" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.7.0"
+  version = "0.8.1"
   count   = local.is_websocket_mode ? 1 : 0
 
   attributes = [

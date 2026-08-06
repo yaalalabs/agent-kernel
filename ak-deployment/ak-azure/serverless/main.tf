@@ -5,10 +5,6 @@ terraform {
       source  = "hashicorp/azurerm"
       version = ">= 4.57.0, < 5.0.0"
     }
-    docker = {
-      source  = "kreuzwerker/docker"
-      version = "3.6.2"
-    }
 
     null = {
       source  = "hashicorp/null"
@@ -16,9 +12,4 @@ terraform {
     }
 
   }
-}
-
-provider "azurerm" {
-  features {}
-  resource_provider_registrations = "none"
 }

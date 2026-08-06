@@ -59,6 +59,10 @@ Independently of *where* you deploy, `execution.mode` selects *how* requests are
 | `async` | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Optional | Not used | AWS Lambda, AWS ECS |
 | `stream` | SSE or WebSocket | Token-level `StreamChunk`s as they are generated | Optional (WebSocket path) | Not used | REST API surfaces (SSE); AWS Lambda (WebSocket); AWS ECS (WebSocket) |
 
+:::note
+AWS ECS accepts `execution_mode = "stream"` for WebSocket mode (Terraform/config validation passes), but token-by-token delivery is not implemented: in direct (non-queue) mode it still sends one full `CHAT_RESPONSE`, but in queue mode it silently fails instead (the response store it falls back to is never provisioned in WebSocket mode, so the request retries until it hits `max_receive_count` and is dropped with no reply to the client). Use `async` on ECS until containerized WebSocket streaming lands; `stream` over WebSocket is fully implemented on Lambda only.
+:::
+
 **Protocol support by flavor:**
 
 | Flavor | JSON REST | SSE streaming | WebSocket (async + streaming) | Queue mode |

@@ -1,7 +1,8 @@
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.8.0"
+  version = "0.8.1"
 
+  providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration
   project_id           = var.project_id
   product_alias        = var.product_alias
@@ -43,8 +44,8 @@ module "serverless_agents" {
   # API Gateway (ESPv2) validates Google Identity Tokens before forwarding to Cloud Run.
   # Clients must pass: Authorization: Bearer $(gcloud auth print-identity-token --audiences=<service_url>)
   authorizer = {
-    issuer    = "https://accounts.google.com"
-    jwks_uri  = "https://www.googleapis.com/oauth2/v3/certs"
+    issuer   = "https://accounts.google.com"
+    jwks_uri = "https://www.googleapis.com/oauth2/v3/certs"
     # User identity tokens from `gcloud auth print-identity-token` use the gcloud SDK client ID as audience.
     # For service-to-service auth (service account tokens), use the Cloud Run service URL instead.
     audiences = ["32555940559.apps.googleusercontent.com"]

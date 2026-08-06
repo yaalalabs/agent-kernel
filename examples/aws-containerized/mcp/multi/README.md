@@ -34,8 +34,9 @@ This automatically creates an MCP endpoint at:
 ```hcl
 # Containerized module configuration for deploying MCP in ECS
 module "containered_agents" {
-  source  = "yaalalabs/ak-containerized/aws"
-  version = "0.7.0"
+  source    = "yaalalabs/ak-containerized/aws"
+  version   = "0.8.1"
+  providers = { aws = aws, docker = docker }
 
   # Basic ECS configuration
   product_alias        = var.product_alias

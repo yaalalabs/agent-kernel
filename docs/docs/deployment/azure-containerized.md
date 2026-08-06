@@ -41,6 +41,25 @@ graph TB
 
 Refer to [example Azure Container Apps implementation](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/azure-containerized/crewai) which leverages Agent Kernel's [terraform module](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) for Container Apps deployment.
 
+The module is provider-agnostic — it does not configure the `azurerm` provider itself, so your root `main.tf` must configure it and pass it into the module explicitly:
+
+```hcl
+provider "azurerm" {
+  features {}
+  resource_provider_registrations = "none"
+}
+
+module "container_app" {
+  source    = "yaalalabs/ak-containerized/azurerm"
+  version   = "0.8.1"
+  providers = { azurerm = azurerm }
+
+  # ... other configuration
+}
+```
+
+See the [ak-azure/containerized module docs](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-azure/containerized#-providers) for details.
+
 ## Advantages
 
 - **No cold starts** - containers always warm

@@ -39,7 +39,7 @@ The deployment exposes:
 
 Project dependencies are declared in `pyproject.toml`:
 
-- `agentkernel[aws,openai,redis]>=0.5.1`
+- `agentkernel[aws,openai,redis]>=0.8.1`
 
 ### Agent Kernel runtime config
 

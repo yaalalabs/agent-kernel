@@ -42,6 +42,25 @@ pip install agentkernel[azure,openai]
 
 Refer to [Terraform modules](https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm) for configuration details.
 
+The module is provider-agnostic — it does not configure the `azurerm` provider itself, so your root `main.tf` must configure it and pass it into the module explicitly:
+
+```hcl
+provider "azurerm" {
+  features {}
+  resource_provider_registrations = "none"
+}
+
+module "FlexFunction" {
+  source    = "yaalalabs/ak-serverless/azurerm"
+  version   = "0.8.1"
+  providers = { azurerm = azurerm }
+
+  # ... other configuration
+}
+```
+
+See the [ak-azure/serverless module docs](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-azure/serverless#-providers) for details.
+
 ### 3. Deploy
 
 ```bash

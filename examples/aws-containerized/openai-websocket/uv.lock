@@ -18,7 +18,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.7.0"
+version = "0.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -27,9 +27,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a4/4d/de669ab63a38c1237f9116d7cee43487a090ede57b398298988d03ba97c2/agentkernel-0.7.0.tar.gz", hash = "sha256:8b50eb3b0bd625b0c2019d66874fe0c43a0c4cbc747ded798f85668bb257d3df", size = 298327, upload-time = "2026-07-28T06:44:49.335Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dd/90/7313ae5b04001b18844012ec4276dedaeb241aa6c0005e4eb64ded2e8491/agentkernel-0.8.1.tar.gz", hash = "sha256:9a28ea5dad43dcd39829d6cb2165eae1c042ac3a658900e588980d4735f64db0", size = 312414, upload-time = "2026-08-05T09:28:29.804Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/76/c1/6dee86b227094f5adde17e611988e4a4305f0daf83b868de2a469ef7a152/agentkernel-0.7.0-py3-none-any.whl", hash = "sha256:f6cf96ec5c52bac516a1eb6c3f32516a1ce61a6fda0be8759d3ab39b75611f4f", size = 419333, upload-time = "2026-07-28T06:44:47.72Z" },
+    { url = "https://files.pythonhosted.org/packages/18/ce/c51ae35a01e6d1ee251eac1a8b143eb905e853a369d16065eff8305249f3/agentkernel-0.8.1-py3-none-any.whl", hash = "sha256:74348ca1823800bd97cb023f7157653cad0d27cf601da90ee66168a773eaba8a", size = 437690, upload-time = "2026-08-05T09:28:28.326Z" },
 ]
 
 [package.optional-dependencies]
@@ -293,11 +293,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["openai", "api", "aws", "auth"], specifier = ">=0.7.0" }]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "api", "aws", "auth"], specifier = ">=0.8.1" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.7.0" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.8.1" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },

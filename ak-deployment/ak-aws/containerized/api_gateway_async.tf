@@ -1,6 +1,6 @@
 # API Gateway Async Mode Integration
-# rest_async only: adds GET /api/v1/chat (polls with request_id in the JSON body, not a query
-# string — see RestHandler.poll_response); only the path is rewritten, the body passes through.
+# rest_async only: adds GET /api/v1/chat (polls with request_id as a query parameter — see
+# RestHandler.poll_response); only the path is rewritten, the query string passes through.
 
 resource "aws_apigatewayv2_integration" "async_get" {
   count                = var.queue_mode && var.execution_mode == "rest_async" ? 1 : 0

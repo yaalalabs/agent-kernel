@@ -9,7 +9,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.8.0"
+  version: "0.8.1"
   category: user
 ---
 
@@ -56,7 +56,9 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.8.0`) unless user requests another.
+Use current module version (`0.8.1`) unless user requests another.
+
+All modules are provider-agnostic: they declare `required_providers` but do not configure them internally. Configure each provider (`aws`/`docker`, `azurerm`, or `google`/`google-beta`/`docker`) in the root module and pass it explicitly via the module's `providers = { ... }` argument, as shown in the examples below. Azure's containerized module builds and pushes its image via a nested submodule with its own internal `docker` provider, so no `docker` provider needs to be configured or passed by the caller there.
 
 AWS-only features in this skill:
 - `execution_mode`
@@ -78,7 +80,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.8.0"
+  "agentkernel[openai,api,redis]>=0.8.1"
 ]
 ```
 
@@ -105,7 +107,7 @@ OSS engine. Agent Kernel treats it as a first-class session and response store b
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,valkey]>=0.8.0"
+  "agentkernel[openai,api,aws,valkey]>=0.8.1"
 ]
 ```
 
@@ -133,7 +135,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.8.0"
+  "agentkernel[openai,api,aws]>=0.8.1"
 ]
 ```
 
@@ -154,7 +156,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.8.0"
+  "agentkernel[openai,api,azure]>=0.8.1"
 ]
 ```
 
@@ -176,7 +178,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.8.0"
+  "agentkernel[openai,api,gcp]>=0.8.1"
 ]
 ```
 
@@ -221,7 +223,7 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -275,7 +277,7 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
   product_alias      = var.product_alias
   env_alias          = var.env_alias
@@ -299,7 +301,7 @@ module "serverless_agents" {
     timeout              = 45
     memory_size          = 256
     environment_variables = {
-      OPENAI_API_KEY = var.openai_api_key
+    OPENAI_API_KEY = var.openai_api_key
     }
   }
 
@@ -414,7 +416,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.8.0"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
+  "agentkernel[openai,api,aws]>=0.8.1"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -427,7 +429,7 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -571,7 +573,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis,auth]>=0.8.0"
+  "agentkernel[openai,api,aws,redis,auth]>=0.8.1"
 ]
 ```
 
@@ -584,7 +586,7 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -669,7 +671,7 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -744,7 +746,7 @@ session:
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.8.0"
+  version = "0.8.1"
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -802,7 +804,7 @@ module "containerized_agents" {
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.5.1"
+  "agentkernel[openai,api,aws]>=0.8.1"
 ]
 ```
 
@@ -863,7 +865,9 @@ registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunne
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.7.0"
+  version = "0.8.1"
+
+  providers = { aws = aws, docker = docker }
 
   product_alias = var.product_alias
   env_alias     = var.env_alias
@@ -923,7 +927,7 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.8.0"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -967,7 +971,7 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.8.0"
+  version = "0.8.1"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -1011,7 +1015,9 @@ def main() -> None:
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.7.0"
+  version = "0.8.1"
+
+  providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region
@@ -1040,7 +1046,9 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.7.0"
+  version = "0.8.1"
+
+  providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region
@@ -1065,8 +1073,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.8.0"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.8.0"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.8.1"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.8.1"  # for Redis sessions
 ]
 ```
 
@@ -1091,7 +1099,9 @@ def main() -> None:
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.7.0"
+  version = "0.8.1"
+
+  providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region

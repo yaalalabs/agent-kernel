@@ -22,8 +22,26 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 |------|---------|
 | Terraform | >= 1.9.5 |
 | Azure Provider | >= 4.57.0, < 5.0.0 |
-| Docker Provider | 3.6.2 |
 | Null Provider | 3.2.4 |
+
+## 🔌 Providers
+
+This module is provider-agnostic: it declares `azurerm` in `required_providers` but does **not** configure it internally. Configure the provider in your root module and pass it explicitly via the `providers` argument. This is what lets you use `count`, `for_each`, or `depends_on` on the module block, and lets a minimal/standalone config destroy the resources it created.
+
+```hcl
+provider "azurerm" {
+  features {}
+  resource_provider_registrations = "none"
+}
+
+module "python_api" {
+  source    = "yaalalabs/ak-serverless/azurerm"
+  version   = "0.8.1"
+  providers = { azurerm = azurerm }
+
+  # ... other inputs, see below
+}
+```
 
 ## 🚀 Usage
 
@@ -31,7 +49,8 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 
 ```hcl
 module "python_api" {
-  source = "yaalalabs/ak-serverless/azurerm"
+  source    = "yaalalabs/ak-serverless/azurerm"
+  providers = { azurerm = azurerm }
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
