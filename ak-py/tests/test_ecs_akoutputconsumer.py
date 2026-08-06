@@ -39,20 +39,13 @@ def _reset_websocket_handler():
 
 
 @pytest.fixture
-def _stream_mode():
-    """Temporarily set STREAM mode on the shared config singleton, restoring the original value after."""
-    original = ECSOutputConsumer._config.execution.mode
-    ECSOutputConsumer._config.execution.mode = ExecutionMode.STREAM
-    yield
-    ECSOutputConsumer._config.execution.mode = original
+def _stream_mode(monkeypatch):
+    monkeypatch.setattr(ECSOutputConsumer._config.execution, "mode", ExecutionMode.STREAM)
 
 
 @pytest.fixture
-def _async_mode():
-    original = ECSOutputConsumer._config.execution.mode
-    ECSOutputConsumer._config.execution.mode = ExecutionMode.ASYNC
-    yield
-    ECSOutputConsumer._config.execution.mode = original
+def _async_mode(monkeypatch):
+    monkeypatch.setattr(ECSOutputConsumer._config.execution, "mode", ExecutionMode.ASYNC)
 
 
 def test_broadcast_via_websocket_raises_when_endpoint_url_missing():
