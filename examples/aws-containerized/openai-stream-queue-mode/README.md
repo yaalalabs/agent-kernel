@@ -18,8 +18,9 @@ of `STREAM_CHUNK` messages, one per token delta, instead of a single `CHAT_RESPO
 agent finishes.
 
 No application code changes are needed to go from `async` to `stream` — both `app_rest_service.py`
-and `app_agent_runner.py` are identical to `openai-websocket-scalable`'s; only `config.yaml` and
-`deploy/main.tf` differ.
+and `app_agent_runner.py` are identical apart from the custom echo route (`openai-websocket-scalable`'s
+`app_rest_service.py` registers one via `@AWSWebsocketAPI.register`; this one registers none); only
+`config.yaml` and `deploy/main.tf` differ.
 
 ## Architecture Overview
 
