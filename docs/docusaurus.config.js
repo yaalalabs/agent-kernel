@@ -22,6 +22,7 @@ const config = {
   clientModules: [
     './src/clientModules/ensureGtagGlobal.ts',
     './src/clientModules/scrollReveal.ts',
+    './src/clientModules/registerMermaidElkLayout.ts',
   ],
 
   onBrokenLinks: 'throw',
@@ -516,9 +517,56 @@ const config = {
         respectPrefersColorScheme: false,
       },
       mermaid: {
+        // The site is dark-only; both entries point at the customized base theme.
+        theme: { light: 'base', dark: 'base' },
         options: {
-          look: "handDrawn",
-          handDrawnSeed: 300
+          fontFamily: 'Archivo, sans-serif',
+          fontSize: 15,
+          // ELK gives compact, orthogonal edge routing on graph/flowchart
+          // diagrams. Registered in src/clientModules/registerMermaidElkLayout.ts;
+          // mermaid falls back to dagre if it is ever unavailable.
+          layout: 'elk',
+          elk: { nodePlacementStrategy: 'NETWORK_SIMPLEX' },
+          flowchart: { curve: 'basis' },
+          sequence: { mirrorActors: false },
+          themeVariables: {
+            darkMode: true,
+            background: '#010002',
+            fontFamily: 'Archivo, sans-serif',
+            fontSize: '15px',
+            // nodes
+            primaryColor: '#0d1f3c',
+            primaryTextColor: '#eaf6ff',
+            primaryBorderColor: '#2e6f8f',
+            // edges + labels
+            lineColor: '#6db8cc',
+            edgeLabelBackground: '#081226',
+            // subgraphs / clusters
+            clusterBkg: '#05101f',
+            clusterBorder: '#1d3a5f',
+            titleColor: '#9fdcec',
+            // secondary/tertiary (misc fills)
+            secondaryColor: '#12294a',
+            tertiaryColor: '#081226',
+            tertiaryTextColor: '#cfe8f2',
+            // sequence diagrams
+            actorBkg: '#0d1f3c',
+            actorBorder: '#2e6f8f',
+            actorTextColor: '#eaf6ff',
+            actorLineColor: '#3a5a7a',
+            signalColor: '#8fd4e6',
+            signalTextColor: '#d7eef7',
+            labelBoxBkgColor: '#12294a',
+            labelBoxBorderColor: '#2e6f8f',
+            labelTextColor: '#eaf6ff',
+            loopTextColor: '#9fdcec',
+            noteBkgColor: '#1a2b4a',
+            noteBorderColor: '#31527f',
+            noteTextColor: '#dcecf7',
+            activationBkgColor: '#12294a',
+            activationBorderColor: '#2e6f8f',
+            sequenceNumberColor: '#010002',
+          },
         },
       }
     }),

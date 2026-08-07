@@ -1,0 +1,162 @@
+/* In-page diagram wrapper: anchors the expand button over the diagram. */
+.wrapper {
+  position: relative;
+  margin: 1.25rem 0;
+}
+
+.wrapper :global(.docusaurus-mermaid-container) {
+  margin: 0;
+}
+
+.expandButton {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 0.5rem;
+  background: rgba(10, 10, 14, 0.75);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.75rem;
+  font-family: inherit;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 150ms ease, background 150ms ease;
+  backdrop-filter: blur(4px);
+  z-index: 2;
+}
+
+.wrapper:hover .expandButton,
+.expandButton:focus-visible {
+  opacity: 1;
+}
+
+.expandButton:hover {
+  background: rgba(30, 30, 40, 0.9);
+  color: #fff;
+}
+
+/* Touch devices have no hover: keep the button visible. */
+@media (hover: none) {
+  .expandButton {
+    opacity: 1;
+  }
+
+  .expandLabel {
+    display: none;
+  }
+}
+
+/* Fullscreen viewer */
+/* Above the cookie banner (10050) and floating chatbot (10060). */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: flex;
+  flex-direction: column;
+  background: rgba(4, 4, 8, 0.94);
+  backdrop-filter: blur(6px);
+}
+
+.toolbar {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.625rem;
+  background: rgba(15, 15, 22, 0.9);
+}
+
+.toolbarButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  border: none;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 1rem;
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.toolbarButton:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.resetButton {
+  font-size: 0.8rem;
+}
+
+.zoomLevel {
+  min-width: 3.25rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+.stage:active {
+  cursor: grabbing;
+}
+
+.canvas {
+  flex-shrink: 0;
+  transition: transform 80ms ease-out;
+  will-change: transform;
+}
+
+/* Strip the in-page card styling from the re-rendered diagram and let it
+   render at its natural size inside the viewer. */
+.canvas :global(.docusaurus-mermaid-container) {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  overflow: visible;
+}
+
+.canvas :global(.docusaurus-mermaid-container) svg {
+  display: block;
+  height: auto;
+}
+
+.hint {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(15, 15, 22, 0.85);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.75rem;
+  pointer-events: none;
+  user-select: none;
+}
