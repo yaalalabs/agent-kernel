@@ -1,0 +1,40 @@
+.container {
+  max-width: 728px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.hero {
+  padding: 1.5rem 0 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.heroTitle {
+  font-family: 'Archivo', sans-serif;
+  font-size: 2.25rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--ak-text);
+  margin-bottom: 0.5rem;
+}
+
+.heroSubtitle {
+  font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, Georgia,
+    serif;
+  font-size: 1.1rem;
+  color: var(--ak-text-secondary);
+  margin: 0 0 0.75rem;
+}
+
+.backLink {
+  font-family: 'Archivo', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ak-text-secondary);
+  text-decoration: none;
+}
+
+.backLink:hover {
+  color: var(--ak-text);
+  text-decoration: none;
+}

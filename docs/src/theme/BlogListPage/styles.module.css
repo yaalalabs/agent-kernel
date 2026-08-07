@@ -1,0 +1,92 @@
+.container {
+  max-width: 728px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.hero {
+  padding: 1.5rem 0 0.5rem;
+}
+
+.heroTitle {
+  font-family: 'Archivo', sans-serif;
+  font-size: 2.75rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--ak-text);
+  margin-bottom: 0.5rem;
+}
+
+.heroSubtitle {
+  font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, Georgia,
+    serif;
+  font-size: 1.15rem;
+  line-height: 1.5;
+  color: var(--ak-text-secondary);
+  margin: 0;
+}
+
+.topicBar {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 1.25rem 0 1rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: sticky;
+  top: var(--ifm-navbar-height);
+  background: var(--ak-bg);
+  z-index: 10;
+}
+
+.topicBar::-webkit-scrollbar {
+  display: none;
+}
+
+.topic {
+  font-family: 'Archivo', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--ak-text-secondary);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid transparent;
+  border-radius: 100px;
+  padding: 0.4rem 1rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.topic:hover {
+  color: var(--ak-text);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.topicActive,
+.topicActive:hover {
+  color: #010002;
+  background: var(--ak-text);
+}
+
+.postList {
+  min-height: 12rem;
+}
+
+.empty {
+  font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, Georgia,
+    serif;
+  color: var(--ak-text-secondary);
+  padding: 3rem 0;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .heroTitle {
+    font-size: 2rem;
+  }
+
+  .heroSubtitle {
+    font-size: 1rem;
+  }
+}
