@@ -49,15 +49,22 @@ jobs:
         run: |
           python scripts/update_examples_version.py --force-lock
 
+      - name: Update e2e messaging harness lock file
+        run: |
+          # Decoupled from publish.yaml (which bumps the pin but --skip-lock's the lock,
+          # since the new version may not be on PyPI yet at publish time). Regenerating
+          # here picks up the newly-published agentkernel version for the e2e harness.
+          python scripts/update_examples_version.py --force-lock --examples-dir e2e/app
+
       - name: Commit and push changes
         run: |
           git config --local user.email "agent-kernel-ci[bot]@users.noreply.github.com"
           git config --local user.name "agent-kernel-ci[bot]"
-          git add examples/**/uv.lock
+          git add examples/**/uv.lock e2e/app/uv.lock
           if git diff --staged --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "chore: update example lock files [skip ci]"
+            git commit -m "chore: update example and e2e harness lock files [skip ci]"
             git push
           fi
 

@@ -39,43 +39,62 @@ def _maybe_start_gmail():
     from agentkernel.core import Config
     from agentkernel.gmail import AgentGmailRequestHandler
 
-    token_file = Config.get().gmail.token_file
-    with open(token_file, "wb") as f:
-        f.write(base64.b64decode(token_b64))
+    try:
+        token_file = Config.get().gmail.token_file
+        with open(token_file, "wb") as f:
+            f.write(base64.b64decode(token_b64))
 
-    handler = AgentGmailRequestHandler()
-    handler.authenticate()
+        handler = AgentGmailRequestHandler()
+        handler.authenticate()
 
-    def _run():
-        asyncio.run(handler.start_polling())
+        def _run():
+            asyncio.run(handler.start_polling())
 
-    threading.Thread(target=_run, name="gmail-polling", daemon=True).start()
-    _log.info("Gmail polling started in background thread")
+        threading.Thread(target=_run, name="gmail-polling", daemon=True).start()
+        _log.info("Gmail polling started in background thread")
+    except Exception:
+        _log.exception("Gmail integration failed to start - continuing without Gmail")
+
+
+def _append_optional(handlers, name, env_var, construct):
+    """Append an optional messaging handler.
+
+    Skip it (with a log) when the credentials are absent, and degrade gracefully
+    when they are only *partially* set: these handlers raise at construction time
+    unless every required credential (e.g. access_token + phone_number_id +
+    verify_token) is present, so a partial config must not crash the whole app and
+    take the always-on Slack + Telegram handlers down with it.
+    """
+    if not os.environ.get(env_var):
+        _log.info("%s credentials not configured - %s integration disabled", name, name)
+        return
+    try:
+        handlers.append(construct())
+    except Exception:
+        _log.exception("%s integration failed to construct - continuing without it", name)
 
 
 def _handlers():
     handlers = [AgentSlackRequestHandler(), AgentTelegramRequestHandler()]
-    # WhatsApp is optional: the handler refuses to construct without credentials.
-    if os.environ.get("AK_WHATSAPP__ACCESS_TOKEN"):
+
+    def _whatsapp():
         from agentkernel.whatsapp import AgentWhatsAppRequestHandler
 
-        handlers.append(AgentWhatsAppRequestHandler())
-    else:
-        _log.info("WhatsApp credentials not configured - WhatsApp integration disabled")
-    # Messenger is optional: the handler refuses to construct without credentials.
-    if os.environ.get("AK_MESSENGER__ACCESS_TOKEN"):
+        return AgentWhatsAppRequestHandler()
+
+    def _messenger():
         from agentkernel.messenger import AgentMessengerRequestHandler
 
-        handlers.append(AgentMessengerRequestHandler())
-    else:
-        _log.info("Messenger credentials not configured - Messenger integration disabled")
-    # Instagram is optional: the handler refuses to construct without credentials.
-    if os.environ.get("AK_INSTAGRAM__ACCESS_TOKEN"):
+        return AgentMessengerRequestHandler()
+
+    def _instagram():
         from agentkernel.instagram import AgentInstagramRequestHandler
 
-        handlers.append(AgentInstagramRequestHandler())
-    else:
-        _log.info("Instagram credentials not configured - Instagram integration disabled")
+        return AgentInstagramRequestHandler()
+
+    _append_optional(handlers, "WhatsApp", "AK_WHATSAPP__ACCESS_TOKEN", _whatsapp)
+    _append_optional(handlers, "Messenger", "AK_MESSENGER__ACCESS_TOKEN", _messenger)
+    _append_optional(handlers, "Instagram", "AK_INSTAGRAM__ACCESS_TOKEN", _instagram)
     return handlers
 
 

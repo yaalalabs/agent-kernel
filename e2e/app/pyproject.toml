@@ -5,7 +5,7 @@ description = "Agent Kernel end-to-end test deployment: one OpenAI agent exposed
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,slack,telegram,gmail,whatsapp,messenger,instagram]>=0.8.0",
+    "agentkernel[api,openai,slack,telegram,gmail,whatsapp,messenger,instagram]>=0.8.1",
     "aiohttp>=3.14.1",
 ]
 

@@ -40,12 +40,12 @@ create_deployment_package() {
     pushd ../
     rm -rf dist
     mkdir -p dist/data
-    uv export --no-hashes > requirements.txt
+    uv export --no-hashes --no-dev > requirements.txt
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist/data
     else
       uv pip install -r requirements.txt --target=dist/data --find-links ../../ak-py/dist
-      uv pip install --force-reinstall --no-deps --no-index --target=dist/data --find-links ../../ak-py/dist agentkernel[api,openai,slack,telegram,gmail,whatsapp,messenger,instagram] || true
+      uv pip install --force-reinstall --no-deps --no-index --target=dist/data --find-links ../../ak-py/dist agentkernel[api,openai,slack,telegram,gmail,whatsapp,messenger,instagram]
     fi
     cp -r app.py config.yaml dist/data
     popd || exit 1

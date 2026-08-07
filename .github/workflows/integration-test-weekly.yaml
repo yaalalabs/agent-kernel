@@ -364,7 +364,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
-          terraform_version: 1.15.8
+          terraform_version: 1.14.3
           terraform_wrapper: false
 
       - name: Build deployment package
@@ -373,7 +373,7 @@ jobs:
           rm -rf dist
           mkdir -p dist/data
           uv venv
-          uv export --no-hashes > requirements.txt
+          uv export --no-hashes --no-dev > requirements.txt
           uv pip install -r requirements.txt --target=dist/data
           cp app.py config.yaml dist/data
           cp deploy/Dockerfile dist/
@@ -406,10 +406,17 @@ jobs:
           terraform apply -input=false -auto-approve
 
       - name: Wait for ECS service to stabilize
+        working-directory: e2e/app/deploy
         run: |
-          cluster="ak-e2e-dev-messaging"
-          services=$(aws ecs list-services --cluster "$cluster" --region us-east-2 --query 'serviceArns' --output text)
-          aws ecs wait services-stable --cluster "$cluster" --services $services --region us-east-2
+          # Derive cluster name and region from terraform.tfvars so this stays in sync
+          # if the aliases/region are edited there (mirrors deploy.sh's read_tfvar).
+          read_tfvar() { awk -F'=' -v k="$1" '$1 ~ "^[[:space:]]*"k"[[:space:]]*$" {gsub(/[" ]/, "", $2); print $2; exit}' terraform.tfvars; }
+          region=$(read_tfvar region)
+          cluster="$(read_tfvar product_alias)-$(read_tfvar env_alias)-$(read_tfvar module_name)"
+          echo "Waiting for ECS services in cluster '$cluster' (region $region)..."
+          services=$(aws ecs list-services --cluster "$cluster" --region "$region" --query 'serviceArns' --output text)
+          # Word-splitting on $services is intentional: one --services arg per ARN.
+          aws ecs wait services-stable --cluster "$cluster" --services $services --region "$region"
   e2e-messaging-test:
     needs: [e2e-messaging-deploy]
     if: always() && (needs.e2e-messaging-deploy.result == 'success' || needs.e2e-messaging-deploy.result == 'skipped')
@@ -439,7 +446,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v4
         with:
-          terraform_version: 1.15.8
+          terraform_version: 1.14.3
           terraform_wrapper: false
 
       - name: Read webhook URL and probe endpoint

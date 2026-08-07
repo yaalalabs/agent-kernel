@@ -42,6 +42,7 @@ ak-py/                  The agentkernel PyPI package (core framework, all Python
 ak-deployment/           Terraform modules per cloud (aws / azure / gcp) x (serverless / containerized)
 examples/                Runnable sample apps per framework/deployment combo
 use-cases/               End-to-end agents built from a SPEC.md using the bundled skills
+e2e/                     Messaging integration e2e harness: deployable app + Terraform + pytest suite driven against real platform accounts (see e2e/README.md)
 docs/                    Docusaurus site (kernel.yaala.ai/docs) — versioned_docs/ are frozen, don't edit old versions
 .agents/skills/          Dev skills (see table above)
 ```
