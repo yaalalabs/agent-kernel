@@ -85,12 +85,12 @@ function WhatsNewBanner() {
           </svg>
         </span>
         <span ref={textRef} className={styles.whatsNewText}>
-          <strong>Knowledge Base Support</strong> - ChromaDB, Neo4j &amp;
-          Starburst Galaxy built-in, plus a custom adapter API{" "}
-          to plug in any backend.
+          <strong>Agent Kernel Execution Broker</strong> - sandboxed code
+          execution for any agent: Docker, E2B, Daytona, your own EC2,{" "}
+          or bring your own provider.
         </span>
         <Link
-          to="/docs/advanced/knowledge-bases"
+          to="/blog/agent-kernel-execution-broker"
           className={styles.whatsNewLink}
           ref={linkRef}
         >
