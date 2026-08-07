@@ -9,7 +9,6 @@ import { ScrollTrigger } from "gsap/dist/ScrollTrigger";
 import { StepTimeline } from "../components/StepTimeline";
 import PlantParticlesBackground from "../components/PlantParticlesBackground";
 import FAQ from "../components/FAQ";
-import SandboxFlowDiagram from "../components/SandboxFlowDiagram";
 import {
   MdRocketLaunch,
   MdBugReport,
@@ -1176,10 +1175,6 @@ function SandboxSection() {
             Each execution flows through the Agent Kernel Execution Broker to
             a pluggable provider, governed by fail-closed policies.
           </p>
-        </div>
-
-        <div className={styles.sandboxDiagramWrap}>
-          <SandboxFlowDiagram />
         </div>
 
         {/* Provider logo cards */}
