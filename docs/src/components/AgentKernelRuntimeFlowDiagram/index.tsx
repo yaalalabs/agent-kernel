@@ -223,7 +223,7 @@ export default function AgentKernelRuntimeFlowDiagram() {
             <FlowHubIcon className={styles.flowHubLogo} />
             <p className={styles.flowHubTitle}>Agent Kernel</p>
             <p className={styles.flowHubSubtitle}>AK Runtime</p>
-            <p className={styles.flowHubMeta}>Sessions | Hooks | Observability</p>
+            <p className={styles.flowHubMeta}>Sessions | Hooks | Observability | Sandbox</p>
           </div>
 
           <FlowArrow variant="purple" visible={visible} animate={animate} />
