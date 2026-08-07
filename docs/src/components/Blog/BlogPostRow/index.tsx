@@ -8,10 +8,13 @@ import styles from './styles.module.css';
 type PostContent = BlogPostItemsProps['items'][number]['content'];
 
 function formatDate(isoDate: string): string {
+  // Filename-derived post dates are UTC midnight; format in UTC so viewers
+  // west of UTC don't see the previous day (and SSR/client output matches).
   return new Date(isoDate).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    timeZone: 'UTC',
   });
 }
 
@@ -40,10 +43,14 @@ export default function BlogPostRow({
               loading="lazy"
             />
           )}
-          {author?.name && <span className={styles.author}>{author.name}</span>}
-          <span className={styles.dot} aria-hidden="true">
-            ·
-          </span>
+          {author?.name && (
+            <>
+              <span className={styles.author}>{author.name}</span>
+              <span className={styles.dot} aria-hidden="true">
+                ·
+              </span>
+            </>
+          )}
           <time dateTime={date}>{formatDate(date)}</time>
         </div>
         <Link to={permalink} className={styles.titleLink}>

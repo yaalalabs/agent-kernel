@@ -160,3 +160,11 @@
   pointer-events: none;
   user-select: none;
 }
+
+/* The hint describes wheel/drag interactions; hide it on touch-only devices
+   where pinch is disabled (touch-action: none) and the toolbar covers zoom. */
+@media (hover: none) and (pointer: coarse) {
+  .hint {
+    display: none;
+  }
+}

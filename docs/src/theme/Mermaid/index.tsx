@@ -6,10 +6,24 @@ import React, {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
+import ExecutionEnvironment from '@docusaurus/ExecutionEnvironment';
+import mermaid from 'mermaid';
+import elkLayouts from '@mermaid-js/layout-elk';
 import MermaidOriginal from '@theme-original/Mermaid';
 import type MermaidType from '@theme/Mermaid';
 import type { WrapperProps } from '@docusaurus/types';
 import styles from './styles.module.css';
+
+/**
+ * @docusaurus/theme-mermaid initializes mermaid but never registers extra
+ * layout engines, so the `layout: 'elk'` option in docusaurus.config.js would
+ * silently fall back to dagre without this. Module evaluation runs before any
+ * render of this chunk (the same mermaid singleton), which keeps elkjs inside
+ * the code-split mermaid chunk instead of the main bundle.
+ */
+if (ExecutionEnvironment.canUseDOM) {
+  mermaid.registerLayoutLoaders(elkLayouts);
+}
 
 type Props = WrapperProps<typeof MermaidType>;
 
@@ -48,6 +62,7 @@ function MermaidLightbox({
 }: Props & { onClose: () => void }): ReactElement {
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [fitScale, setFitScale] = useState(1);
@@ -60,6 +75,14 @@ function MermaidLightbox({
     baseY: number;
     moved: boolean;
   } | null>(null);
+
+  // aria-modal promises modal semantics: move focus into the dialog on open
+  // and hand it back to the opener (the Expand button) on close.
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+    return () => previouslyFocused?.focus();
+  }, []);
 
   // Close on Escape and lock body scroll while open.
   useEffect(() => {
@@ -217,6 +240,7 @@ function MermaidLightbox({
           Reset
         </button>
         <button
+          ref={closeButtonRef}
           type="button"
           className={styles.toolbarButton}
           onClick={onClose}

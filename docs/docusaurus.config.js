@@ -22,7 +22,6 @@ const config = {
   clientModules: [
     './src/clientModules/ensureGtagGlobal.ts',
     './src/clientModules/scrollReveal.ts',
-    './src/clientModules/registerMermaidElkLayout.ts',
   ],
 
   onBrokenLinks: 'throw',
@@ -523,8 +522,9 @@ const config = {
           fontFamily: 'Archivo, sans-serif',
           fontSize: 15,
           // ELK gives compact, orthogonal edge routing on graph/flowchart
-          // diagrams. Registered in src/clientModules/registerMermaidElkLayout.ts;
-          // mermaid falls back to dagre if it is ever unavailable.
+          // diagrams. Registered at module scope of src/theme/Mermaid/index.tsx
+          // (keeping elkjs out of the main bundle); mermaid falls back to dagre
+          // if it is ever unavailable.
           layout: 'elk',
           elk: { nodePlacementStrategy: 'NETWORK_SIMPLEX' },
           flowchart: { curve: 'basis' },

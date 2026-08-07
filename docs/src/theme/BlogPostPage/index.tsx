@@ -52,9 +52,7 @@ function BlogPostPageContent({
             <ArrowLeftIcon />
           </Link>
         </div>
-        <div className="blog-post-content-wrapper">
-          <BlogPostItem>{children}</BlogPostItem>
-        </div>
+        <BlogPostItem>{children}</BlogPostItem>
 
         {(nextItem || prevItem) && (
           <BlogPostPaginator nextItem={nextItem} prevItem={prevItem} />
