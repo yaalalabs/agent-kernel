@@ -4,6 +4,7 @@ title: "Agent Kernel Now Runs on GCP - AWS, Azure, GCP, On-Prem. One Platform."
 authors: [yaala]
 tags: [agent-kernel, gcp, google-cloud, multi-cloud, cloud-agnostic, cloud-run, terraform, enterprise-ai]
 image: /img/blog/gcp-announcement-banner.png
+description: Agent Kernel now ships full Google Cloud Platform support, completing the trifecta of major public clouds. Same agents, same observability, zero code changes.
 ---
 
 # Agent Kernel Now Runs on GCP

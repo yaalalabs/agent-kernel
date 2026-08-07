@@ -324,6 +324,12 @@ const config = {
         },
         blog: {
           routeBasePath: 'blog',
+          blogTitle: 'Agent Kernel Blog',
+          blogDescription:
+            'Product announcements, engineering deep dives, and stories from the Agent Kernel team.',
+          // All posts render on one landing page so topic filtering works client-side.
+          postsPerPage: 'ALL',
+          blogSidebarCount: 0,
           showReadingTime: true,
           authorsMapPath: 'authors.json',
           feedOptions: {
@@ -337,7 +343,7 @@ const config = {
           onUntruncatedBlogPosts: 'warn',
         },
         theme: {
-          customCss: './src/css/custom.css',
+          customCss: ['./src/css/custom.css', './src/css/blog-medium.css'],
         },
         gtag: {
           trackingID: 'G-TFXXDHX2H5',
