@@ -40,7 +40,7 @@ module "containerized_agents" {
   # ---- Queue Mode ----
   # Enable queue-based execution for scalable, async processing
   queue_mode     = true
-  execution_mode = "sync" # "async" | "sync"
+  execution_mode = "rest_sync" # "rest_sync" | "rest_async"
 
   # ---- Queue Configuration ----
   # SQS queues for request/response handling

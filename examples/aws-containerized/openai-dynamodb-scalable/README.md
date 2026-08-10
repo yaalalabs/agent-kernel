@@ -31,14 +31,14 @@ This example supports two queue modes configured via `execution_mode` in `deploy
 
 ### REST_SYNC Mode (default)
 ```hcl
-execution_mode = "sync"
+execution_mode = "rest_sync"
 ```
 
 Client request blocks until agent completes. Response returned on same HTTP connection.
 
 ### REST_ASYNC Mode (optional)
 ```hcl
-execution_mode = "async"
+execution_mode = "rest_async"
 ```
 
 Client request returns immediately with `request_id`. Client polls separate GET endpoint for result.
@@ -364,4 +364,4 @@ curl -X GET <agent_invoke_url>/api/v1/chat/test-1?request_id=9fce843f-f8bb-4818-
 
 Returns `{"status": "PENDING", ...}` while processing, then the agent response.
 
-**To enable REST_ASYNC mode:** Set `AK_EXECUTION__MODE=rest_async` in `deploy/main.tf` environment variables.
+**To enable REST_ASYNC mode:** Set `execution_mode = "rest_async"` in `deploy/main.tf` (the module injects `AK_EXECUTION__MODE` automatically).
