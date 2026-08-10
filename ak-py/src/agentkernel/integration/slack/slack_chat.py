@@ -9,8 +9,17 @@ from slack_bolt.async_app import AsyncApp
 from slack_sdk.errors import SlackApiError
 
 from ...api import RESTRequestHandler
-from ...core import AgentService, Config
-from ...core.model import AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequestAny, AgentRequestFile, AgentRequestImage, AgentRequestText
+from ...core import ChatService, Config
+from ...core.model import (
+    AgentReplyAny,
+    AgentReplyImage,
+    AgentReplyText,
+    AgentRequestAny,
+    AgentRequestFile,
+    AgentRequestImage,
+    AgentRequestText,
+    BaseChatRequest,
+)
 
 
 class AgentSlackRequestHandler(RESTRequestHandler):
@@ -28,6 +37,7 @@ class AgentSlackRequestHandler(RESTRequestHandler):
         self._slack_agent_acknowledgement = Config.get().slack.agent_acknowledgement if Config.get().slack.agent_acknowledgement != "" else None
         self._max_file_size = Config.get().api.max_file_size
         self._bot_id = None
+        self._chat_service = ChatService()
 
         # Initialize the Slack app
         self._slack_app = AsyncApp()
@@ -81,7 +91,6 @@ class AgentSlackRequestHandler(RESTRequestHandler):
 
         self._log.debug(f"Received request from user {user} in channel {channel}: {question}")
 
-        service = AgentService()
         try:
             # Check for audio/video files and reject them
             rejected_files = []
@@ -122,11 +131,6 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                     thread_ts=thread_ts,
                     text=f"Hi <@{user}>, {self._slack_agent_acknowledgement} :rolling-loader:",
                 )
-            service.select(session_id=thread_ts, name=self._slack_agent)
-            if not service.agent:
-                await say(channel=channel, text="No agent available to handle your request.")
-                return
-
             # Build requests list with text, files, and images
             requests = []
             if question:
@@ -146,10 +150,21 @@ class AgentSlackRequestHandler(RESTRequestHandler):
                 )
                 return
 
-            # Use run_multi
             if len(requests) > 0:
                 requests.append(AgentRequestAny(name="body", content=body))
-                result = await service.run_multi(requests=requests)
+                req = BaseChatRequest(
+                    prompt=question,
+                    agent=self._slack_agent,
+                    session_id=thread_ts,
+                    user_id=user,
+                    group_id=channel,
+                )
+                try:
+                    result, _ = await self._chat_service.execute(req, requests=requests)
+                except ValueError as ve:
+                    self._log.warning(f"Agent execution rejected: {ve}")
+                    await say(channel=channel, text="No agent available to handle your request.")
+                    return
             else:
                 await say(channel=channel, thread_ts=thread_ts, text="Please provide a message or attachment.")
                 return
