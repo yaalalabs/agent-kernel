@@ -614,7 +614,7 @@ class AKConfig(YamlBaseSettingsModified):
     multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
     thread: Optional[_ThreadStoreConfig] = Field(
         default=None,
-        description="Conversation Thread Support configurations. Feature is enabled only when this block is present.",
+        description="Conversation Thread Support configurations (store backend, naming). The feature is served by mounting AgentThreadRequestHandler; this block only parameterizes it.",
     )
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
