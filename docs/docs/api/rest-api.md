@@ -72,7 +72,7 @@ Health check endpoint.
 
 ### Conversation Thread Endpoints
 
-When [conversation threads](../advanced/threads.md) are enabled (a `thread:` block is present in `config.yaml`), two read-only routes are mounted automatically:
+When [conversation threads](../advanced/threads.md) are enabled by mounting `AgentThreadRequestHandler` (which serves the standard chat routes with thread recording), it also serves two read-only routes:
 
 **`GET /api/v1/threads`** lists threads, filterable by `user_id`/`group_id`, cursor-paginated (`limit`, `cursor`):
 
@@ -85,7 +85,7 @@ When [conversation threads](../advanced/threads.md) are enabled (a `thread:` blo
 
 **`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`).
 
-With thread support enabled, `user_id` becomes **required** on every chat request. An optional `Authoriser` can protect these routes by resolving the Bearer token to a `user_id`; requests for another user's thread then return 403. Without an `Authoriser`, the routes are open.
+On the thread handler's chat routes, `user_id` is **required**; the default handler's routes are unaffected. An optional `Authoriser` can protect the read routes by resolving the Bearer token to a `user_id`; requests for another user's thread then return 403. Without an `Authoriser`, the routes are open.
 
 ## Error Handling
 

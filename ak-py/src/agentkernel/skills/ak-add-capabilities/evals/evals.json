@@ -275,6 +275,7 @@
       "name": "Enable conversation thread support",
       "input": "Add conversation thread support to my project",
       "expected_outputs": [
+        "AgentThreadRequestHandler",
         "thread:",
         "type: memory",
         "user_id",

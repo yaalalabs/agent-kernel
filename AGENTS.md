@@ -20,8 +20,9 @@ change end-user-facing scaffolding behavior — read the description in each `SK
 editing either.
 
 **Before non-trivial changes to core**, load `.agents/skills/ak-dev-architecture` — it covers
-`Session`, `Agent`, `Runner`, `Module`, `Runtime`, `AgentService`, `AKConfig`, hooks, tools,
-multimodal, and the ECS containerized deployment classes in depth. Don't re-derive this from
+`Session`, `Agent`, `Runner`, `Module`, `Runtime`, `AgentService`, `ChatService` (and which layer
+each surface calls), `AKConfig`, hooks, tools, multimodal, conversation threads, and the ECS
+containerized deployment classes in depth. Don't re-derive this from
 scratch by grepping; the skill is maintained precisely so agents don't have to.
 
 ## Repo map

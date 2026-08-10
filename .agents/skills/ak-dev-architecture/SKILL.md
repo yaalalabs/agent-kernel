@@ -4,8 +4,9 @@ description: >
   Agent Kernel architectural principles, core abstractions, and design patterns.
   Use this skill when you need to understand the codebase structure, how components
   interact, or before making changes to core functionality. Covers Session, Agent,
-  Runner, Module, Runtime, AgentService, AKConfig, tools, hooks, multimodal, conversation
-  threads, the adapter pattern, and the AWS ECS containerized deployment classes
+  Runner, Module, Runtime, AgentService, ChatService (execution core + presentation wrappers,
+  and which layer each surface calls), AKConfig, tools, hooks, multimodal, conversation
+  threads (the integration/thread package), the adapter pattern, and the AWS ECS containerized deployment classes
   (ECSIOHandler, ECSOutputConsumer, ECSAgentRunner, ECSStreamAgentRunner, ECSSQSConsumer, QueueConsumer, ThreadRunner).
 license: Apache-2.0
 metadata:
@@ -99,7 +100,71 @@ High-level utility encapsulating a conversation:
 - **`run(prompt) -> str`**: Wraps prompt in `AgentRequestText`, calls `runtime.run()`, returns text
 - **`run_multi(requests) -> AgentReply`**: For multi-modal requests
 - **`stream_multi(requests) -> AsyncGenerator[StreamChunk, None]`**: Calls `runtime.stream()`, yielding `StreamChunk` objects for token-level streaming
-- Used by CLI, API handlers, and integration handlers
+- Used directly by stateful clients that own agent/session lifecycle: the CLI, A2A, and MCP. Chat surfaces go through `ChatService`, which sits on top of it
+
+### ChatService (`ak-py/src/agentkernel/core/chat_service.py`)
+
+The chat request layer on top of `AgentService`, split into two sub-layers. `ChatService` has no
+knowledge of conversation threads (that lives in `integration/thread/`).
+
+- **Execution core** — transport-neutral, typed results, exceptions propagate:
+  - `execute(req, requests=None) -> tuple[AgentReply, session_id]` (async) and `execute_sync(...)`
+  - `execute_stream(req, requests=None) -> AsyncGenerator[StreamChunk, None]` (raw chunks, no framing) and `execute_stream_sync(...)`
+  - `requests=None`: `RequestBuilder` builds the list from the pydantic request (prompt required).
+    `requests` supplied: the caller-built list is used as-is (prompt optional, list must be non-empty) — this
+    is how messaging integrations pass platform-downloaded attachments and extra `AgentRequestAny` context
+  - Each call selects the agent/session through a fresh `AgentHandler` (raises `ValueError("No agent available")`)
+- **Presentation wrappers** — `process_chat_request`, `process_async_chat_request`,
+  `process_stream_chat_async`, `process_stream_chat_sync`: thin shells over the core adding the HTTP shapes
+  (`ResponseBuilder` JSON dicts / `HTTPException` per `rest_api_mode`, SSE frames). Used by the REST handler
+  and every deployment adapter
+- Companion classes in the same module: `RequestBuilder` (pydantic request → `AgentRequest` list, extra
+  fields → `AgentRequestAny`), `AgentHandler` (AgentService lifecycle + sync/async bridging),
+  `ResponseBuilder` (response dicts, SSE frames)
+
+#### Chat execution layering — which layer does a surface call?
+
+```mermaid
+graph TD
+    subgraph Entry["Entry surfaces"]
+        REST["REST API handler +<br/>deployment adapters<br/>(Lambda, ECS, Azure)"]
+        TH["Thread handler<br/>(AgentThreadRequestHandler)"]
+        MSG["Messaging integrations<br/>(Slack, WhatsApp, Messenger,<br/>Instagram, Telegram, Teams, Gmail)"]
+        CLI["CLI"]
+        PROTO["A2A / MCP"]
+    end
+
+    subgraph CS["ChatService"]
+        PRES["Presentation wrappers<br/>process_*: JSON, SSE, HTTPException"]
+        CORE["Execution core<br/>execute / execute_stream:<br/>typed AgentReply, raw StreamChunks"]
+    end
+
+    REC["ThreadRecorder"]
+    CTM["ConversationThreadManager<br/>+ ThreadStore"]
+    AS["AgentService<br/>(agent selection, session)"]
+    RT["Runtime<br/>pre-hooks, Runner,<br/>post-hooks, session store"]
+
+    REST --> PRES --> CORE
+    TH --> REC --> CTM
+    TH --> CORE
+    MSG -->|"prebuilt AgentRequest list"| CORE
+    CORE --> AS
+    CLI --> AS
+    PROTO --> AS
+    AS --> RT
+```
+
+Rubric for new code:
+
+- A new HTTP-shaped surface that returns JSON/SSE with the standard error shapes calls the presentation
+  wrappers (`process_*`).
+- A new channel or integration that owns its own transport, reply formatting, and error UX calls the core
+  (`execute`/`execute_stream`), passing a prebuilt request list when it builds its own attachments.
+- An interactive or stateful client that manages agent and session lifecycle itself (REPL-like) uses
+  `AgentService`.
+- Cross-cutting behavior that must apply to every run regardless of surface goes in a `Runtime` pre/post
+  hook, not in a service layer.
+- Entry surfaces never call `Runtime` directly.
 
 ### AKConfig (`ak-py/src/agentkernel/core/config.py`)
 
@@ -190,19 +255,28 @@ multimodal:
     ttl: 604800
 ```
 
-## Conversation Threads (`ak-py/src/agentkernel/core/thread/`)
+## Conversation Threads (`ak-py/src/agentkernel/integration/thread/`)
 
-Provides persistent, named conversation threads keyed by `session_id`, gated behind a `thread` config block and independent of session persistence (`session:`). When enabled, `user_id` becomes required on every chat request, a thread is auto-created on a session's first request, and history becomes readable over REST.
+Persistent, named conversation threads keyed by `session_id`, independent of session persistence
+(`session:`). Threads are packaged as an **integration** (like Slack): the whole capability — handler,
+recording logic, manager, models, naming, and store backends — lives under `integration/thread/`
+(public alias `agentkernel.thread`), and **mounting `AgentThreadRequestHandler` is what enables it**.
+The `thread` config block only parameterizes the store backend and naming. `core/` and `api/` contain
+no thread code, and `ChatService` has no thread knowledge. Threads are the history mechanism for
+clients that connect to the agent directly; messaging integrations never record threads (their
+platforms own the history), and thread recording does not apply to queue-mode/deployment adapters.
 
 ### Key Components
 
-- **`ConversationThreadManager`** (`manager.py`): Service façade owning thread lifecycle (create/load/append/history) and, when multimodal is enabled, saving attachment bytes into the shared `AttachmentStore` before the agent runs. A single process-wide instance (`ConversationThreadManager.get()` / class-level singleton, guarded by an `RLock`) is shared by `ChatService` and `ThreadRESTRequestHandler` — `None` when thread support is disabled
+- **`AgentThreadRequestHandler`** (`thread_chat.py`): extends `AgentRESTRequestHandler`, serving the same chat routes with thread recording wrapped around the ChatService execution core (build requests via `RequestBuilder` → `ThreadRecorder.pre_run` → `execute`/`execute_stream` with the prebuilt list → `ThreadRecorder.post_run`), plus the read routes. Fails fast in `__init__` when no `thread` config block exists; prechecks agent availability before any thread write (no phantom threads); `user_id` is required on its chat routes (and only there). Streaming accumulates deltas and skips recording on an error chunk or empty stream
+- **`ThreadRecorder`** (`recorder.py`): the recording logic as a reusable class over `ConversationThreadManager` — `pre_run` (enforce `user_id`, store attachment bytes and rewrite to `AgentRequestAttachmentRef`, get-or-create thread, append user message; `store_attachments` runs first so config rejections leave no phantom thread) and `post_run` (append assistant message)
+- **`ConversationThreadManager`** (`manager.py`): Service façade owning thread lifecycle (create/load/append/history) and, when multimodal is enabled, saving attachment bytes into the shared `AttachmentStore` before the agent runs. A single process-wide instance (`ConversationThreadManager.get()` / class-level singleton, guarded by an `RLock`) is used by `ThreadRecorder` and `ThreadRESTRequestHandler` — `None` when no `thread` config block is present
 - **`ThreadStore`** (`store/base.py`): Abstract base with backend persistence methods (create/get/append/list); pluggable per backend
 - **`ThreadStoreBuilder`** (`store/base.py`): Factory that constructs the configured `ThreadStore` from `AKConfig`'s `thread.type`
 - **`Thread` / `ThreadMessage` / `ThreadAttachment` / `ThreadPage` / `MessagePage`** (`model.py`): Pydantic models for thread metadata, individual messages, attachment references, and cursor-paginated listings
 - **`ThreadNamingStrategy`** (`naming.py`): Overridable strategy that names auto-created threads — default implementation makes a single LiteLLM call (`thread.naming.model`, requires the `thread` extra) to derive a concise title from the first prompt, falling back to a truncated prompt prefix when `litellm`/an API key is unavailable. Explicit `thread_name` on a chat request always wins and locks the thread against further automatic naming
 - **`Authoriser`** (`authoriser.py`): Pluggable base class (`authorise(token) -> Optional[user_id]`) that `ThreadRESTRequestHandler` calls to protect the read routes; routes are open when no `Authoriser` is configured
-- **`ThreadRESTRequestHandler`** (`api/thread.py`): Mounts `GET /api/v1/threads` (list, filterable by `user_id`/`group_id`, cursor-paginated) and `GET /api/v1/threads/{session_id}` (thread + paginated message history); raises 404 when thread support is disabled and 403 when a resolved `user_id` doesn't own the requested thread
+- **`ThreadRESTRequestHandler`** (`thread_chat.py`): Serves `GET /api/v1/threads` (list, filterable by `user_id`/`group_id`, cursor-paginated) and `GET /api/v1/threads/{session_id}` (thread + paginated message history); raises 404 when thread support is disabled and 403 when a resolved `user_id` doesn't own the requested thread. Composed into `AgentThreadRequestHandler`'s router; also mountable standalone for read-only access
 
 ### Store Backends
 
@@ -215,7 +289,7 @@ Provides persistent, named conversation threads keyed by `session_id`, gated beh
 | Firestore | `FirestoreThreadStore` | `store/firestore.py` | Serverless/GCP, one document per `session_id` |
 | Cosmos DB | `CosmosDBThreadStore` | `store/cosmosdb.py` | Azure Table API, partitioned by `session_id`, no TTL support |
 
-### Configuration (`_ThreadConfig` in `config.py`)
+### Configuration (`_ThreadStoreConfig` in `config.py`)
 
 ```yaml
 thread:
@@ -236,14 +310,14 @@ thread:
     ttl: 0
 ```
 
-Deployment splits the same way session does: the **application** declares `thread.type` in its
-committed `config.yaml`, and **Terraform** provisions the backend and injects only the connection
-detail — `create_dynamodb_thread_table` (AWS serverless + containerized) injects
-`AK_THREAD__DYNAMODB__TABLE_NAME`; `create_firestore_thread_collection` (GCP) injects the
-`AK_THREAD__FIRESTORE__*` vars. Terraform never sets `AK_THREAD__TYPE`. Note the failure mode this
-leaves: because `AKConfig.thread` is `Optional` and any `AK_THREAD__*` var materialises it while
-`type` defaults to `memory`, setting a flag *without* declaring `thread.type` enables the feature on
-the non-durable in-memory backend, with no error.
+Deployment splits the same way session does: the **application** mounts `AgentThreadRequestHandler`
+and declares `thread.type` in its committed `config.yaml`, and **Terraform** provisions the backend
+and injects only the connection detail — `create_dynamodb_thread_table` (AWS serverless +
+containerized) injects `AK_THREAD__DYNAMODB__TABLE_NAME`; `create_firestore_thread_collection` (GCP)
+injects the `AK_THREAD__FIRESTORE__*` vars. Terraform never sets `AK_THREAD__TYPE`. Note the failure
+mode this leaves: because `AKConfig.thread` is `Optional` and any `AK_THREAD__*` var materialises it
+while `type` defaults to `memory`, a mounted handler plus a flag but *without* a declared
+`thread.type` runs against the non-durable in-memory backend, with no error.
 
 Attachments in thread mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or `dynamodb` — `session_cache` is rejected, since threads need durable, cross-request-scoped attachment storage that a session-local cache can't provide).
 
@@ -367,7 +441,9 @@ ak-py/src/agentkernel/
 │   │   │   └── ecs_io_handler.py        # ECSIOHandler — entrypoint: wires both threads
 │   │   └── core/            # Shared AWS-only: SQSHandler, ResponseStore, websocket_service.py (WebSocketConnectionStore — DynamoDB, AWSWebSocketHandler — API Gateway Management API push, extends WebSocketHandlerABC)
 │   └── azure/               # Azure Functions handler
-├── integration/             # Messaging integrations
+├── integration/             # Integrations (messaging platforms + conversation threads)
+│   ├── thread/              # Conversation Thread Support: AgentThreadRequestHandler, ThreadRecorder,
+│   │                        #   ConversationThreadManager, models, naming, store/ backends (alias: agentkernel.thread)
 │   ├── slack/
 │   ├── whatsapp/
 │   ├── messenger/
@@ -607,9 +683,14 @@ from agentkernel.deployment.common import ThreadRunner
 
 ## Execution Flow
 
+Chat surfaces enter through their layer first (see the chat execution layering diagram above): REST and
+deployment adapters via the ChatService presentation wrappers, messaging integrations and the thread
+handler via the ChatService execution core with prebuilt request lists, and the CLI/A2A/MCP via
+AgentService directly. From AgentService down, the pipeline is identical everywhere:
+
 ```
 User Input
-    → AgentService.run(prompt)
+    → AgentService.run(prompt) / run_multi(requests)
         → AgentRequestText(prompt=prompt)
         → Runtime.run(agent, session, requests)
             → async with session:                    # acquire lock, set context

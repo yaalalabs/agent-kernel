@@ -23,7 +23,8 @@ graph TB
         F[Runtime<br/>orchestrator]
         E[Session<br/>state]
         HK[Hooks<br/>pre / post]
-        SVC[AgentService / ChatService]
+        AS[AgentService<br/>agent + session lifecycle]
+        SVC[ChatService<br/>execution core + presentation]
     end
 
     subgraph FW["Framework Adapters"]
@@ -67,7 +68,8 @@ graph TB
     D --> E
     E --> F
     HK --> F
-    F --> SVC
+    F --> AS
+    AS --> SVC
 
     C --- G
     C --- H
@@ -87,17 +89,18 @@ graph TB
     E --> N
     E --> FS
 
-    SVC --> O
+    AS --> O
     SVC --> P
     SVC --> WS
-    SVC --> Q
-    SVC --> R
+    AS --> Q
+    AS --> R
     SVC --> MSG
     SVC --> DEP
 
     style A fill:#4e85c5,stroke:#fff,stroke-width:2px,color:#fff
     style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style SVC fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style AS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
     style KB fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
     style GR fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
     style MM fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
@@ -110,7 +113,7 @@ graph TB
 | Layer | Components | Responsibility |
 |-------|-----------|----------------|
 | Application | Your agents and tools | Domain logic, written with any supported framework |
-| Core | `Module`, `Agent`, `Runner`, `Session`, `Runtime`, hooks, `AgentService`/`ChatService` | Framework-agnostic orchestration, state, and the run/stream pipeline |
+| Core | `Module`, `Agent`, `Runner`, `Session`, `Runtime`, hooks, `AgentService` (agent/session lifecycle for stateful clients), `ChatService` (execution core `execute`/`execute_stream` plus HTTP presentation wrappers `process_*`) | Framework-agnostic orchestration, state, and the run/stream pipeline |
 | Framework adapters | OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents | Wrap native agents behind the core abstractions |
 | System plugins | Guardrails, multimodal, conversation threads, knowledge bases, tracing | Cross-cutting features implemented as hooks, tools, and services |
 | State stores | In-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore | Pluggable persistence for sessions, threads, attachments, and responses |
@@ -155,7 +158,7 @@ Pluggable via well-defined interfaces:
 
 ```mermaid
 sequenceDiagram
-    participant U as Caller (CLI / REST / Queue / WS)
+    participant U as Caller (ChatService core / CLI / A2A / MCP)
     participant SVC as AgentService
     participant R as Runtime
     participant PH as PreHooks

@@ -26,6 +26,11 @@ Two sub-modes are supported:
 | **REST Sync** | POST → wait | Same HTTP response (polls DB internally) |
 | **REST Async** | POST → get a job ID | Later GET to a separate endpoint |
 
+:::note
+[Conversation-thread](./threads) recording does not apply in queue mode: threads are served by
+`AgentThreadRequestHandler` on the self-hosted REST API.
+:::
+
 ---
 
 ## How It Works in Lambda (Serverless)

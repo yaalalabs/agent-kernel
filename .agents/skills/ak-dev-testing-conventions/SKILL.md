@@ -61,7 +61,13 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
+| `test_chat_service_core.py` | ChatService execution core (`execute`/`execute_stream`): typed replies, prebuilt request lists, validation, error propagation, wrapper wire shapes |
 | `test_chat_service_streaming.py` | ChatService SSE/stream chunk formatting |
+| `test_slack_integration.py` | Slack handler on the ChatService core: request/identity mapping, attachment-only, error paths, chunking (pattern for integration handler tests) |
+| `test_whatsapp_integration.py` | WhatsApp handler on the ChatService core: text/media paths, rejections before execute |
+| `test_gmail_integration.py` | Gmail handler on the ChatService core: prompt assembly, session fallback, attachments, error paths |
+| `test_thread_integration.py` | Thread integration: `ThreadRecorder` ordering/enforcement, `AgentThreadRequestHandler` recording + no-phantom-thread prechecks, stream accumulation, end-to-end read-back |
+| `test_thread_router.py` | Thread read routes (`ThreadRESTRequestHandler`): pagination, `Authoriser` 401/403 semantics |
 | `test_akagentrunner_stream.py` | Serverless `ServerlessStreamAgentRunner` (SQS streaming) |
 | `test_akresponsehandler.py` | Serverless response handler (`CHAT_RESPONSE` / `STREAM_CHUNK` broadcast) |
 | `test_ws_lambda_stream.py` | WebSocket Lambda router in `stream` mode |

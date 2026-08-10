@@ -21,9 +21,14 @@ Messaging integrations follow a consistent pattern:
 
 1. A **request handler** class that extends `RESTRequestHandler`
 2. The handler exposes FastAPI **routes** for webhooks
-3. Incoming messages are parsed into `AgentRequest` models
-4. `AgentService` is used to select an agent, run the request, and get a reply
-5. The reply is formatted and sent back via the platform's API
+3. Incoming messages are parsed into `AgentRequest` models (platform attachments downloaded and base64-encoded by the handler)
+4. The **ChatService execution core** runs the agent: build a `BaseChatRequest` and call
+   `execute(req, requests=<prebuilt list>)`, which returns the typed reply. Integrations own their
+   transport and reply formatting, so they call the core, never the HTTP-shaped `process_*`
+   wrappers and never `AgentService` directly (see the chat execution layering rubric in
+   `ak-dev-architecture`)
+5. The reply is formatted and sent back via the platform's API; a `ValueError` from `execute` maps to
+   the platform's "no agent available" message
 6. Configuration is added to `AKConfig` (accessed via the `Config.get()` alias) for platform-specific settings
 
 > **Exception**: Gmail does not follow the webhook pattern. `AgentGmailRequestHandler`
@@ -47,8 +52,8 @@ ak-py/src/agentkernel/integration/<platform>/
 # ak-py/src/agentkernel/integration/<platform>/<platform>_chat.py
 import logging
 from agentkernel.api.handler import RESTRequestHandler
-from agentkernel.core import AgentService, Config
-from agentkernel.core.model import AgentRequestText, AgentRequestImage, AgentRequestFile
+from agentkernel.core import ChatService, Config
+from agentkernel.core.model import AgentRequestText, AgentRequestImage, AgentRequestFile, BaseChatRequest
 from fastapi import APIRouter, Request
 
 logger = logging.getLogger("ak.integration.<platform>")
@@ -60,6 +65,7 @@ class Agent<Platform>RequestHandler(RESTRequestHandler):
     def __init__(self):
         config = Config.get().<platform>
         self._agent_name = config.agent if config else None
+        self._chat_service = ChatService()
         # Initialize platform-specific client/SDK here
         # e.g., self._client = PlatformClient(token=config.bot_token)
 
@@ -111,14 +117,19 @@ class Agent<Platform>RequestHandler(RESTRequestHandler):
         if not requests:
             return
 
-        # 3. Create service, select agent, run
-        service = AgentService()
-        service.select(session_id=user_id, name=self._agent_name)
-
-        reply = await service.run_multi(requests)
+        # 3. Run through the ChatService execution core with the prebuilt request list
+        #    (prompt may be empty for attachment-only messages; user_id/group_id are
+        #    best-effort platform identity)
+        req = BaseChatRequest(prompt=text, agent=self._agent_name, session_id=user_id, user_id=user_id)
+        try:
+            reply, _ = await self._chat_service.execute(req, requests=requests)
+        except ValueError as ve:
+            logger.warning(f"Agent execution rejected: {ve}")
+            await self._send_reply(user_id, "Sorry, no agent is available to handle your request.")
+            return
 
         # 4. Send reply back via platform API
-        await self._send_reply(user_id, reply.response)
+        await self._send_reply(user_id, str(reply))
 
     async def _download_file(self, url: str) -> str:
         """Download a file and return base64-encoded content."""
@@ -271,7 +282,9 @@ Create `examples/api/<platform>/` with:
 
 ### 11. Add Tests
 
-Create `ak-py/tests/test_<platform>.py` with:
+Create `ak-py/tests/test_<platform>_integration.py` following the pattern of `test_slack_integration.py` /
+`test_whatsapp_integration.py`: build the handler via `object.__new__` with injected attributes (no config,
+no platform SDK), replace `handler._chat_service` with a fake recording `execute()` calls, and cover:
 - Unit tests for message parsing
 - Unit tests for reply formatting/chunking
 - Mock tests for webhook handling

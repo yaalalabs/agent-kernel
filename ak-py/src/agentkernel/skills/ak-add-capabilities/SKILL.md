@@ -729,16 +729,26 @@ dependencies = [
 ]
 ```
 
-2. Update `config.yaml`:
+2. Mount the thread handler in the app; this is what enables the feature (it serves the standard chat
+   routes with thread recording, plus the thread read routes):
+```python
+from agentkernel.api import RESTAPI
+from agentkernel.thread import AgentThreadRequestHandler
+
+RESTAPI.run(handlers=[AgentThreadRequestHandler()])
+```
+
+3. Update `config.yaml` (selects the store backend; constructing the handler without this block fails
+   fast at startup):
 ```yaml
 thread:
   type: memory  # other supported backends: redis | valkey | dynamodb | firestore | cosmosdb
 ```
 
-3. No further code changes needed. When enabled:
-   - `user_id` becomes required on every chat request
+4. When enabled:
+   - `user_id` becomes required on the thread handler's chat requests (other surfaces are unaffected)
    - A thread is auto-created on a session's first request
-   - `GET /api/v1/threads` and `GET /api/v1/threads/{session_id}` become available for reading thread history (open by default, or protected by a pluggable `Authoriser`)
+   - `GET /api/v1/threads` and `GET /api/v1/threads/{session_id}` are served by the same handler for reading thread history (open by default, or protected by a pluggable `Authoriser`)
    - Threads are auto-named by an LLM call deriving a concise title from the first prompt (falls back to a truncated prompt prefix without `litellm`/an API key)
    - Sending `thread_name` on any chat request sets/renames the thread and locks it against automatic naming
 
@@ -827,20 +837,19 @@ thread:
 
 ```python
 from typing import Optional
-from agentkernel.api import RESTAPI, AgentRESTRequestHandler, ThreadRESTRequestHandler
-from agentkernel.core.thread import Authoriser
+from agentkernel.api import RESTAPI
+from agentkernel.thread import AgentThreadRequestHandler, Authoriser
 
 class DemoAuthoriser(Authoriser):
     def authorise(self, token: str) -> Optional[str]:
         # Validate the ****** against your own auth provider, return the user_id or None.
         return {"alice-token": "alice", "bob-token": "bob"}.get(token)
 
-RESTAPI.run(handlers=[AgentRESTRequestHandler(), ThreadRESTRequestHandler(authoriser=DemoAuthoriser())])
+RESTAPI.run(handlers=[AgentThreadRequestHandler(authoriser=DemoAuthoriser())])
 ```
 
-Passing an explicit `ThreadRESTRequestHandler` replaces the default open thread routes that are mounted
-automatically when a `thread` block is present in `config.yaml`. With an Authoriser configured, thread listings
-are scoped to the resolved `user_id` and reading another user's thread is rejected (403).
+With an Authoriser configured, thread listings are scoped to the resolved `user_id` and reading another
+user's thread is rejected (403). Without one, the read routes are open.
 
 **Attachments in thread mode:** require `multimodal.enabled: true` with a shared attachment store —
 `in_memory`, `redis`, or `dynamodb` (`session_cache` is rejected).

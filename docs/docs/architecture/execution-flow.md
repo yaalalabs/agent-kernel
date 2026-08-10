@@ -8,28 +8,39 @@ How requests flow through Agent Kernel from user input to agent response: synchr
 
 ## Request Lifecycle
 
-Every execution surface converges on the same core pipeline: `ChatService`/`AgentService` → `Runtime.run()` (or `Runtime.stream()`) → pre-hooks → `Runner` → framework → post-hooks → session persistence.
+Every execution surface converges on the same runtime pipeline, but they enter through distinct service layers: HTTP-shaped surfaces call the **ChatService presentation wrappers** (`process_*`), channels that own their transport (messaging integrations, the thread handler) call the **ChatService execution core** (`execute`/`execute_stream`) with prebuilt request lists, and stateful clients (CLI, A2A, MCP) use **AgentService** directly. Everything then flows through `Runtime.run()` (or `Runtime.stream()`) → pre-hooks → `Runner` → framework → post-hooks → session persistence.
 
 ```mermaid
 graph TD
     A[User Request] --> B{Entry Surface}
     B -->|Terminal| C[CLI]
     B -->|HTTP| D[REST API<br/>POST /api/v1/chat]
+    B -->|HTTP + threads| TH[Thread handler<br/>AgentThreadRequestHandler]
     B -->|Lambda event| E[AWS Lambda handler]
     B -->|SQS message| Q[Queue consumer<br/>Lambda / ECS]
     B -->|WebSocket message| F[WebSocket route<br/>AWS API Gateway]
     B -->|Protocol| P[MCP / A2A]
     B -->|Webhook| MSG[Messaging<br/>Slack / WhatsApp / ...]
 
-    C --> G[ChatService / AgentService]
-    D --> G
-    E --> G
-    Q --> G
-    F --> G
-    P --> G
-    MSG --> G
+    subgraph CS[ChatService]
+        PRES["Presentation wrappers<br/>process_*: JSON, SSE, HTTPException"]
+        CORE["Execution core<br/>execute / execute_stream:<br/>typed AgentReply, raw StreamChunks"]
+    end
 
-    G --> H["Runtime.run() / Runtime.stream()"]
+    D --> PRES
+    E --> PRES
+    Q --> PRES
+    F --> PRES
+    PRES --> CORE
+    TH -->|"prebuilt requests +<br/>thread recording"| CORE
+    MSG -->|"prebuilt AgentRequest list"| CORE
+
+    AS["AgentService<br/>agent selection, session"]
+    CORE --> AS
+    C --> AS
+    P --> AS
+
+    AS --> H["Runtime.run() / Runtime.stream()"]
     H --> I[Pre-hooks<br/>guardrails · multimodal · RAG]
     I --> J["Runner.run() / Runner.stream()"]
     J --> K[Framework execution]
@@ -40,7 +51,21 @@ graph TD
     style H fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style I fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
     style L fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
+    style CORE fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
 ```
+
+### Which layer does new code call?
+
+- A new HTTP-shaped surface that returns JSON/SSE with the standard error shapes calls the
+  presentation wrappers (`process_*`).
+- A new channel or integration that owns its own transport, reply formatting, and error UX calls the
+  core (`execute`/`execute_stream`), passing a prebuilt request list when it builds its own
+  attachments.
+- An interactive or stateful client that manages agent and session lifecycle itself (REPL-like)
+  uses `AgentService`.
+- Cross-cutting behavior that must apply to every run regardless of surface goes in a `Runtime`
+  pre/post hook, not in a service layer.
+- Entry surfaces never call `Runtime` directly.
 
 ## Detailed Flow
 
@@ -50,6 +75,7 @@ The request enters through one of the execution surfaces:
 
 - **CLI**: interactive terminal input
 - **REST API**: HTTP `POST /api/v1/chat` (JSON) or `POST /api/v1/chat-multipart` (file uploads)
+- **Thread handler**: the same REST routes served by `AgentThreadRequestHandler` with conversation-thread recording, plus the thread read routes
 - **AWS Lambda**: API Gateway event routed by the `Lambda` handler
 - **SQS queue**: in queue mode, a request message consumed by the agent-runner Lambda or ECS consumer threads
 - **WebSocket**: a message on the configured chat route via AWS API Gateway WebSocket (async/stream modes)
@@ -58,7 +84,7 @@ The request enters through one of the execution surfaces:
 
 ### 2. Request Building and Agent Resolution
 
-`ChatService` validates the payload and builds a list of typed requests (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`, plus `AgentRequestAny` entries for any additional context fields). It then selects the agent and session through `AgentService`:
+The `ChatService` execution core validates the payload and builds a list of typed requests (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`, plus `AgentRequestAny` entries for any additional context fields). Callers that construct their own request lists (messaging integrations downloading platform attachments, the thread handler) pass them in and the builder is skipped. The core then selects the agent and session through `AgentService`:
 
 ```python
 from agentkernel.core.service import AgentService
@@ -77,7 +103,7 @@ agent = runtime.agents().get("assistant")
 session = runtime.sessions().get("user-123") or runtime.sessions().new("user-123")
 ```
 
-If [conversation threads](../advanced/threads) are enabled, `user_id` is required and the thread manager records the user message (and stores any attachments) before the run.
+When chat is served by the thread handler (`AgentThreadRequestHandler`), `user_id` is required and the user message (with any attachments) is recorded to the [conversation thread](../advanced/threads) before the run. Other surfaces do not record threads.
 
 ### 3. Agent Execution
 
@@ -95,7 +121,7 @@ reply = await runtime.run(agent, session, requests)
 
 ### 4. Response Return
 
-The reply travels back through the surface it arrived on: JSON body for REST, Lambda response for API Gateway, a message on the output queue in queue mode, or a WebSocket push. Thread-enabled deployments also append the assistant reply to the conversation thread.
+The reply travels back through the surface it arrived on: JSON body for REST, Lambda response for API Gateway, a message on the output queue in queue mode, or a WebSocket push. The thread handler also appends the assistant reply to the conversation thread.
 
 ## Synchronous Flow (Sequence)
 
@@ -199,6 +225,7 @@ sequenceDiagram
 ```
 
 - `rest_sync` holds the HTTP connection and polls the response store server-side; `rest_async` returns a `request_id` immediately for the client to poll.
+- Conversation-thread recording does not apply in queue mode; threads are a feature of the thread handler on the self-hosted REST API (see [Conversation Threads](../advanced/threads)).
 - FIFO queues use `MessageGroupId = session_id` (per-session ordering) and deduplication IDs; failed messages are retried after the visibility timeout, and dead-letter queues catch messages exceeding `max_receive_count`.
 - See the [Queue Mode Guide](../advanced/queue-mode-guide) for retry/DLQ details and ECS threading internals.
 
