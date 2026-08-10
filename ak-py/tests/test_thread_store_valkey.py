@@ -13,9 +13,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig, _ThreadValkeyConfig
-from agentkernel.core.thread.model import Thread, ThreadMessage
-from agentkernel.core.thread.store.valkey import ValkeyThreadStore
 from agentkernel.core.util.driver.valkey import ValkeyDriver
+from agentkernel.integration.thread.model import Thread, ThreadMessage
+from agentkernel.integration.thread.store.valkey import ValkeyThreadStore
 
 PREFIX = "ak:thread:"
 

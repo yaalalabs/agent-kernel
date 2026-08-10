@@ -5,9 +5,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.core.thread import Authoriser, ConversationThreadManager, ThreadNamingStrategy
-from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
-from agentkernel.integration.thread import ThreadRESTRequestHandler
+from agentkernel.integration.thread import Authoriser, ConversationThreadManager, ThreadNamingStrategy, ThreadRESTRequestHandler
+from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 
 
 class EchoNaming(ThreadNamingStrategy):

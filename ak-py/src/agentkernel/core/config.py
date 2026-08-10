@@ -254,7 +254,8 @@ class _ThreadNamingConfig(BaseModel):
 
 
 class _ThreadStoreConfig(BaseModel):
-    """Configuration for Conversation Thread Support. Presence of this block enables the feature."""
+    """Configuration for Conversation Thread Support (store backend, naming). The feature is
+    enabled by mounting AgentThreadRequestHandler; this block only parameterizes it."""
 
     type: str = Field(
         default="memory",

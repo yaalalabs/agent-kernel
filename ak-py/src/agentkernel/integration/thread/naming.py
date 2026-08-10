@@ -26,7 +26,7 @@ explicitly supplied (name_locked) — see docs/specs/348-conversation-thread-sup
 import importlib.util
 import logging
 
-from ..config import AKConfig
+from ...core.config import AKConfig
 
 # Fallback when thread support is not configured (naming config unavailable).
 _DEFAULT_MAX_NAME_LENGTH = 80

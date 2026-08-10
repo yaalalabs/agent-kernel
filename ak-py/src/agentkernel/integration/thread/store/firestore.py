@@ -18,8 +18,8 @@ import time
 import uuid
 from typing import List, Optional, Tuple
 
-from ...config import AKConfig
-from ...util.driver.firestore import FirestoreDriver
+from ....core.config import AKConfig
+from ....core.util.driver.firestore import FirestoreDriver
 from ..model import Thread, ThreadMessage, _utc_now
 from .base import ThreadStore, paginate
 

@@ -123,11 +123,23 @@ New package, following the messaging-integration layout (`ak-dev-new-messaging-i
 
 ```
 integration/thread/
-├── __init__.py        # exports AgentThreadRequestHandler, ThreadRESTRequestHandler, ThreadRecorder
+├── __init__.py        # exports the full thread surface (handlers, recorder, manager, models, stores)
 ├── recorder.py        # ThreadRecorder
-└── thread_chat.py     # AgentThreadRequestHandler; ThreadRESTRequestHandler moved verbatim from api/thread.py
+├── thread_chat.py     # AgentThreadRequestHandler; ThreadRESTRequestHandler moved verbatim from api/thread.py
+├── authoriser.py      # moved verbatim from core/thread/
+├── manager.py         # ConversationThreadManager, moved verbatim from core/thread/
+├── model.py           # Thread/ThreadMessage/... models, moved verbatim from core/thread/
+├── naming.py          # ThreadNamingStrategy, moved verbatim from core/thread/
+└── store/             # ThreadStore ABC + builder + backends, moved verbatim from core/thread/store/
 ak-py/src/agentkernel/thread.py   # top-level alias: wildcard import, same shape as slack.py
 ```
+
+The whole former `core/thread/` module relocates here (decided during implementation review): thread
+support leaves no residue under `core/`, and `core/`/`api/` import nothing thread-related afterwards.
+Only import paths change inside the moved files (`..config` becomes `...core.config`, `..model`
+becomes `...core.model`, `...util.*` becomes `....core.util.*`, and the lazy multimodal import in
+`manager.py` becomes `...core.multimodal.storage`); behavior, key schemas, and data layouts are
+untouched.
 
 The top-level name `agentkernel/thread.py` is currently unused (no collision; `agentkernel.core.thread`
 is a different module path). Loggers use the existing hierarchy: `ak.integration.thread.*` for the new
@@ -330,7 +342,12 @@ Agent Runner" description remains true and stays.
   enabled only when this block is present." to wording that reflects the new semantics, e.g.
   "Conversation Thread Support configurations (store backend, naming). The feature is served by
   mounting AgentThreadRequestHandler; this block only parameterizes it." (Descriptions surface in
-  generated docs.)
+  generated docs.) The `_ThreadStoreConfig` class docstring loses the same stale "presence enables"
+  claim.
+- Config redundancy audit (requested during implementation review): every field of the thread config
+  classes (`type`, `naming.model`/`max_length`, and the per-backend `redis`/`valkey`/`dynamodb`/
+  `firestore`/`cosmosdb` blocks) is consumed by `ThreadStoreBuilder`, the store backends, or the
+  naming strategy. No fields are added or removed.
 - Existing YAML files and `AK_THREAD__*` env vars keep parsing identically. Behavior of "block present
   but handler not mounted" changes from "read routes auto-mounted + recording on every ChatService
   path + user_id enforced everywhere" to "inert". The known footgun where any stray `AK_THREAD__*`
@@ -386,6 +403,11 @@ All intentional; each with its justification:
     `session_id is None` while the async paths checked falsiness (`chat_service.py:488` vs `:366`
     pre-change), so `session_id=""` ran on the sync path and 400'd on the async path. The unified
     core validates falsiness on both; the degenerate `""` now gets a 400 everywhere.
+11. **`agentkernel.core.thread` no longer exists.** The whole module relocates to
+    `integration/thread/`; every public name (`ConversationThreadManager`, `Authoriser`,
+    `ThreadNamingStrategy`, `ThreadStore`, `ThreadStoreBuilder`, the models, the store backends) is
+    importable from `agentkernel.thread` (and `agentkernel.integration.thread`). Breaking
+    import-path change, release-noted alongside item 4.
 
 **Non-changes** (verified fixed points):
 
@@ -399,8 +421,9 @@ All intentional; each with its justification:
   multimodal), session persistence.
 - All platform-facing behavior of the integrations except items 7-9: webhook verification, ack/typing
   flows, size checks, chunking limits (3000/4096/2000), error messages, Gmail signature handling.
-- Thread read-route semantics (401/403/404 behavior, pagination, `Authoriser` contract) and
-  `core/thread/` in its entirety.
+- Thread read-route semantics (401/403/404 behavior, pagination, `Authoriser` contract) and the
+  thread domain (manager, stores, naming, models) in behavior and data layout; the module itself
+  relocates (see Behavioural changes, item 11).
 - Public exports other than `agentkernel.api.ThreadRESTRequestHandler`; `agentkernel.core` exports
   are untouched.
 

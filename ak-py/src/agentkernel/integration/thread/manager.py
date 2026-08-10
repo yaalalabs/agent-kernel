@@ -12,8 +12,8 @@ import sys
 from threading import RLock
 from typing import List, Optional
 
-from ..config import AKConfig
-from ..model import AgentRequest, AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage
+from ...core.config import AKConfig
+from ...core.model import AgentRequest, AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage
 from .model import MessagePage, Thread, ThreadAttachment, ThreadMessage, ThreadPage
 from .naming import ThreadNamingStrategy
 from .store import ThreadStore, ThreadStoreBuilder
@@ -210,7 +210,7 @@ class ConversationThreadManager:
                 "use a shared attachment store (in_memory, redis, or dynamodb) in config.yaml"
             )
 
-        from ..multimodal.storage import AttachmentStorageManager
+        from ...core.multimodal.storage import AttachmentStorageManager
 
         manager = AttachmentStorageManager(session_id=session_id)
         rebuilt: List[AgentRequest] = []

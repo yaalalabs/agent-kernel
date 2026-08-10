@@ -16,7 +16,7 @@ import datetime
 import logging
 from typing import List, Optional, Tuple
 
-from ...util.driver.redis_like import _RedisLikeDriver
+from ....core.util.driver.redis_like import _RedisLikeDriver
 from ..model import Thread, ThreadMessage, _utc_now
 from .base import ThreadStore
 

@@ -7,7 +7,8 @@ import logging
 from typing import Any, List
 
 from ...core.model import AgentRequest, BaseChatRequest
-from ...core.thread import ConversationThreadManager, ThreadAttachment
+from .manager import ConversationThreadManager
+from .model import ThreadAttachment
 
 
 class ThreadRecorder:

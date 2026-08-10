@@ -70,7 +70,7 @@ flowchart LR
     MSG -->|"prebuilt AgentRequest list"| CORE
     TH -->|"prebuilt AgentRequest list"| CORE
     TH --> TR[ThreadRecorder]
-    TR --> CTM[ConversationThreadManager<br/>core/thread]
+    TR --> CTM[ConversationThreadManager<br/>integration/thread]
     CORE --> AS[AgentService]
     AS --> RT[Runtime]
     CLI[CLI] --> AS
@@ -90,7 +90,8 @@ thread handler package, mirroring how Slack's handler owns everything Slack-spec
     execution paths.
   - After this change no `core.thread` import remains anywhere in `chat_service.py`, and iteration 3
     does not reintroduce one.
-  - `core/thread/` (stores, `ConversationThreadManager`, naming, models) stays untouched.
+  - The thread domain module (stores, `ConversationThreadManager`, naming, models) is not touched by
+    this iteration; iteration 3 relocates it wholesale into the thread integration package.
 - Add a transport-neutral execution core to ChatService
   - `execute(req: BaseChatRequest, requests: list[AgentRequest] | None = None) -> tuple[AgentReply, str]`
     (async): returns the typed reply and the response session id; exceptions propagate (no
@@ -161,6 +162,9 @@ thread handler package, mirroring how Slack's handler owns everything Slack-spec
   keep their own native history. Thread support is therefore packaged, mounted, and enabled exactly
   like a messaging integration.
 - New thread integration package at `integration/thread/`:
+  - The entire former `core/thread/` module (manager, models, naming, authoriser, store backends)
+    relocates into this package, unchanged in behavior and data layout, so thread support leaves no
+    residue under `core/`; `core/` and `api/` import nothing thread-related afterwards.
   - `ThreadRecorder`: recording logic as a reusable class over `ConversationThreadManager`:
     pre-run (enforce `user_id`, store attachment bytes and rewrite to `AgentRequestAttachmentRef`,
     get-or-create thread, append user message, preserving the no-phantom-thread ordering of current
@@ -234,8 +238,9 @@ thread handler package, mirroring how Slack's handler owns everything Slack-spec
   Lambda/Azure adapters, or ECS direct-mode WebSocket (see coverage scoping in iteration 3).
 - Hook-based thread recording in `Runtime` (system PreHook/PostHook pair). Not foreclosed:
   `ThreadRecorder` would become the hook body if a universal transcript is ever pursued.
-- Any change to thread stores, thread naming, `ConversationThreadManager`, or thread data layouts
-  (`core/thread/` stays where it is; only the REST-facing handler relocates).
+- Any behavioral change to thread stores, thread naming, `ConversationThreadManager`, or thread data
+  layouts (the module relocates verbatim to `integration/thread/`; data written before the change
+  reads back identically).
 
 ## Decisions from design review
 
@@ -251,6 +256,10 @@ thread handler package, mirroring how Slack's handler owns everything Slack-spec
   on it.
 - Documentation: the architecture docs and skills carry the layering diagram and call rubric
   (added during review) so developers pick the right layer for future surfaces.
+- Thread domain relocation (decided during implementation review): the whole former `core/thread/`
+  module moves into `integration/thread/` so no thread code remains under `core/`. The config audit
+  found no removable fields; only the stale "presence of this block enables the feature" wording was
+  removed from the config class and field descriptions.
 
 ## Open questions
 

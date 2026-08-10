@@ -19,7 +19,8 @@ from ...core import Config
 from ...core.chat_service import RequestBuilder, ResponseBuilder
 from ...core.model import BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
 from ...core.runtime import Runtime
-from ...core.thread import Authoriser, ConversationThreadManager
+from .authoriser import Authoriser
+from .manager import ConversationThreadManager
 from .recorder import ThreadRecorder
 
 

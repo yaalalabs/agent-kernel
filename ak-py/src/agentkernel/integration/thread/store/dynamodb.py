@@ -25,8 +25,8 @@ from typing import List, Optional, Tuple
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 
-from ...config import AKConfig
-from ...util.driver.dynamodb import DynamoDBDriver
+from ....core.config import AKConfig
+from ....core.util.driver.dynamodb import DynamoDBDriver
 from ..model import Thread, ThreadMessage, _utc_now
 from .base import ThreadStore
 

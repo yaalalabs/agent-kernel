@@ -6,8 +6,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 
-from ...config import AKConfig
-from ...util.factory import AKConfigError, require_extra, resolve_dotted
+from ....core.config import AKConfig
+from ....core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ..model import Thread, ThreadMessage
 
 _BUILTIN_THREAD_STORES = ["memory", "redis", "valkey", "dynamodb", "cosmosdb", "firestore"]

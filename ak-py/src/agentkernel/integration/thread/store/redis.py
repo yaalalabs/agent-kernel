@@ -1,7 +1,7 @@
 import logging
 
-from ...config import AKConfig
-from ...util.driver.redis import RedisDriver
+from ....core.config import AKConfig
+from ....core.util.driver.redis import RedisDriver
 from .redis_like import _RedisLikeThreadStore
 
 

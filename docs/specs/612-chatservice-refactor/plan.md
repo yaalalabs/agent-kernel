@@ -55,12 +55,16 @@ the branch working and tested. Detail lives in [spec.md](spec.md); this plan onl
 
 - **Goal:** thread support is a mountable integration; no thread code remains under `api/`.
 - **Files:** add `ak-py/src/agentkernel/integration/thread/{__init__.py,recorder.py,thread_chat.py}`
-  and `ak-py/src/agentkernel/thread.py`; delete `ak-py/src/agentkernel/api/thread.py`; edit
-  `ak-py/src/agentkernel/api/__init__.py` (drop the export) and `api/http.py` (drop the auto-mount
-  block); edit `core/config.py` (thread field description only); update
+  and `ak-py/src/agentkernel/thread.py`; relocate the whole `core/thread/` module (authoriser,
+  manager, model, naming, store/) into `integration/thread/` with import-path fixes only; delete
+  `ak-py/src/agentkernel/api/thread.py`; edit `ak-py/src/agentkernel/api/__init__.py` (drop the
+  export) and `api/http.py` (drop the auto-mount block); edit `core/config.py` (thread field
+  description and class docstring only); update
   `examples/api/thread-openai/{app.py,app_test.py,README.md,config.yaml if needed}` and
   `examples/api/multimodal/thread-openai/{app.py,app_test.py,README.md}`; add
-  `ak-py/tests/test_thread_integration.py`.
+  `ak-py/tests/test_thread_integration.py`; re-point the thread-related test suites
+  (`test_thread_router.py`, `test_thread_manager.py`, `test_thread_store*.py`,
+  `test_store_builders.py`, `test_thread_multimodal_hook.py` if needed) to the new import paths.
 - **Steps:**
   1. `ThreadRecorder` (spec: "Thread integration package"), preserving message strings and the
      no-phantom-thread ordering.

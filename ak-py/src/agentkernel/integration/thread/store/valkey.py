@@ -1,7 +1,7 @@
 import logging
 
-from ...config import AKConfig
-from ...util.driver.valkey import ValkeyDriver
+from ....core.config import AKConfig
+from ....core.util.driver.valkey import ValkeyDriver
 from .redis_like import _RedisLikeThreadStore
 
 

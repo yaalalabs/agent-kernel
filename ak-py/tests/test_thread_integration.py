@@ -8,9 +8,8 @@ from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, StreamChunk
 from agentkernel.core.runtime import Runtime
-from agentkernel.core.thread import ConversationThreadManager, ThreadNamingStrategy
-from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
-from agentkernel.integration.thread import AgentThreadRequestHandler, ThreadRecorder
+from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy, ThreadRecorder
+from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 
 
 class EchoNaming(ThreadNamingStrategy):

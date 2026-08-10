@@ -19,8 +19,8 @@ from typing import List, Optional, Tuple
 
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 
-from ...config import AKConfig
-from ...util.driver.cosmosdb import CosmosDBDriver
+from ....core.config import AKConfig
+from ....core.util.driver.cosmosdb import CosmosDBDriver
 from ..model import Thread, ThreadMessage, _utc_now
 from .base import ThreadStore, paginate
 

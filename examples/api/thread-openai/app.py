@@ -1,7 +1,7 @@
 from typing import Optional
 
 from agentkernel.api import RESTAPI
-from agentkernel.core.thread import Authoriser
+from agentkernel.thread import Authoriser
 from agentkernel.thread import AgentThreadRequestHandler
 from agentkernel.openai import OpenAIModule
 from agents import Agent

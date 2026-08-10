@@ -5,8 +5,8 @@ import pytest
 
 from agentkernel.core.config import AKConfig, _ThreadNamingConfig, _ThreadStoreConfig
 from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage, AgentRequestText
-from agentkernel.core.thread import ConversationThreadManager, ThreadNamingStrategy
-from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
+from agentkernel.integration.thread import ConversationThreadManager, ThreadNamingStrategy
+from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 
 
 class EchoNaming(ThreadNamingStrategy):
