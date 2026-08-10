@@ -7,8 +7,6 @@ import logging
 import re
 from typing import Any, Callable, ClassVar, Optional
 
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ......api.handler import RESTRequestHandler
@@ -86,6 +84,8 @@ class ECSWebSocketHandlerBase(RESTRequestHandler):
         return body
 
     def _response(self, status_code: int, msg: str, success: bool, user_id: Optional[str] = None) -> JSONResponse:
+        from fastapi.responses import JSONResponse
+
         return JSONResponse(status_code=status_code, content=self._body(msg, success, user_id))
 
     def build_success_http_response(self, msg: str, user_id: Optional[str] = None, status_code: int = 200) -> JSONResponse:
@@ -122,6 +122,8 @@ class ECSWebSocketSystemRequestHandler(ECSWebSocketHandlerBase):
 
     def get_router(self) -> APIRouter:
         """Return an APIRouter with one POST endpoint per protocol route."""
+        from fastapi import APIRouter
+
         router = APIRouter()
         router.add_api_route(self.CONNECT_PATH, self._handle_connect, methods=["POST"])
         router.add_api_route(self.DISCONNECT_PATH, self._handle_disconnect, methods=["POST"])
@@ -247,6 +249,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
     def get_router(self) -> APIRouter:
         """Return an APIRouter: chat at ``POST /ws/chat`` plus each registered custom route at ``POST /ws/<route>``."""
+        from fastapi import APIRouter
+
         router = APIRouter()
         router.add_api_route(self.CHAT_PATH, self._handle_chat, methods=["POST"])
         for route_name, func in self._custom_routes.items():
@@ -334,6 +338,8 @@ class ECSWebSocketRequestHandler(ECSWebSocketHandlerBase):
 
     async def _enqueue_chat(self, body: BaseRunRequest, user_id: str, request_id: Optional[str], session_id: str, endpoint_url: str) -> JSONResponse:
         """Queue mode: send to the input queue; ECSOutputConsumer pushes the reply."""
+        from fastapi.responses import JSONResponse
+
         self._log.info(f"Enqueuing WS chat request: request_id={request_id}, session_id={session_id}, user_id={user_id}")
 
         await self._offload(
