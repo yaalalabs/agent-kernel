@@ -8,8 +8,8 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from ...api import RESTRequestHandler
-from ...core import AgentService, Config
-from ...core.model import AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
+from ...core import ChatService, Config
+from ...core.model import AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText, BaseChatRequest
 
 
 class AgentTelegramRequestHandler(RESTRequestHandler):
@@ -32,6 +32,7 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         self._base_url = f"https://api.telegram.org/{self._api_version}{self._bot_token}"
         self._http_timeout = 30.0  # Timeout for file downloads and API calls
         self._max_file_size = Config.get().api.max_file_size
+        self._chat_service = ChatService()
 
         if not self._bot_token:
             self._log.error("Telegram bot token is not configured. Please set bot_token.")
@@ -179,19 +180,12 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
         :param message_text: Message text
         :param message: Full message dict from Telegram (for accessing files/images)
         """
-        service = AgentService()
         session_id = str(chat_id)  # Use chat_id as session_id
+        sender_id = (message or {}).get("from", {}).get("id")
 
         try:
             # Send typing action
             await self._send_chat_action(chat_id, "typing")
-
-            # Select and run agent
-            service.select(session_id=session_id, name=self._telegram_agent)
-            if not service.agent:
-                self._log.warning(f"No agent available for name: {self._telegram_agent} (session_id: {session_id})")
-                await self._send_message(chat_id, "Sorry, no agent is available to handle your request.")
-                return
 
             # Build requests list with text and files/images
             requests = []
@@ -213,12 +207,20 @@ class AgentTelegramRequestHandler(RESTRequestHandler):
                 return
 
             # Run the agent with all requests (text + files/images)
-            result = await service.run_multi(requests=requests)
+            req = BaseChatRequest(
+                prompt=message_text,
+                agent=self._telegram_agent,
+                session_id=session_id,
+                user_id=str(sender_id) if sender_id is not None else None,
+            )
+            try:
+                result, _ = await self._chat_service.execute(req, requests=requests)
+            except ValueError as ve:
+                self._log.warning(f"Agent execution rejected: {ve} (session_id: {session_id})")
+                await self._send_message(chat_id, "Sorry, no agent is available to handle your request.")
+                return
 
-            if hasattr(result, "raw"):
-                response_text = str(result.raw)
-            else:
-                response_text = str(result)
+            response_text = str(result)
 
             self._log.debug(f"Agent response: {response_text}")
 
