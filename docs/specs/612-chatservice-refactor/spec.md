@@ -382,6 +382,10 @@ All intentional; each with its justification:
    which is what these handlers' own multi-request path already delivers today.
 9. **Dead `result.raw` branches removed** (Telegram, Messenger, Instagram, Gmail). No observable
    change: no `AgentReply` type has a `raw` attribute (`core/model.py:90-160`).
+10. **Empty-string `session_id` is rejected on the sync path.** The old sync `_validate` checked
+    `session_id is None` while the async paths checked falsiness (`chat_service.py:488` vs `:366`
+    pre-change), so `session_id=""` ran on the sync path and 400'd on the async path. The unified
+    core validates falsiness on both; the degenerate `""` now gets a 400 everywhere.
 
 **Non-changes** (verified fixed points):
 
