@@ -15,9 +15,10 @@ from ...core import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
-    AgentService,
+    ChatService,
     Config,
 )
+from ...core.model import BaseChatRequest
 
 
 class AgentGmailRequestHandler:
@@ -72,6 +73,7 @@ class AgentGmailRequestHandler:
         self._service = None
         self._is_running = False
         self._processed_emails = set()  # Track processed email IDs (prevents processing same email twice)
+        self._chat_service = ChatService()
 
     def authenticate(self):
         """
@@ -407,7 +409,6 @@ class AgentGmailRequestHandler:
         if attachments is None:
             attachments = []
 
-        service = AgentService()
         session_id = session_id or sender
 
         try:
@@ -417,12 +418,6 @@ class AgentGmailRequestHandler:
             else:
                 email_content = f"From: {sender}\nSubject: {subject}\n\n{body}"
 
-            # Select agent
-            service.select(session_id=session_id, name=self._gmail_agent)
-            if not service.agent:
-                self._log.warning(f"No agent available for name: {self._gmail_agent}")
-                return None
-
             # Build request list: text first, then attachments
             requests = [AgentRequestText(prompt=email_content)]
             requests.extend(attachments)
@@ -431,22 +426,20 @@ class AgentGmailRequestHandler:
             self._log.info(f"[AGENT_INPUT] Total requests: {len(requests)}")
 
             # Run the agent with all requests
-            if len(requests) > 1:
-                # Multiple requests (text + attachments) - use run_multi
-                self._log.info(f"[AGENT_CALL] Running agent with {len(requests)} request(s) (text + {len(attachments)} attachment(s))")
-                result = await service.run_multi(requests)
-            else:
-                # Only text - use standard run
-                self._log.info(f"[AGENT_CALL] Running agent with text only")
-                result = await service.run(email_content)
+            self._log.info(f"[AGENT_CALL] Running agent with {len(requests)} request(s) (text + {len(attachments)} attachment(s))")
+            req = BaseChatRequest(
+                prompt=email_content,
+                agent=self._gmail_agent,
+                session_id=session_id,
+                user_id=sender,
+            )
+            try:
+                result, _ = await self._chat_service.execute(req, requests=requests)
+            except ValueError as ve:
+                self._log.warning(f"Agent execution rejected: {ve} (session_id: {session_id})")
+                return None
 
-            # Extract response text
-            if hasattr(result, "raw"):
-                response_text = str(result.raw)
-            else:
-                response_text = str(result)
-
-            return response_text
+            return str(result)
 
         except Exception as e:
             self._log.error(f"Error processing with agent: {e}\n{traceback.format_exc()}")
