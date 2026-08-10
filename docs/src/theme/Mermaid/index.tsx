@@ -23,6 +23,22 @@ import styles from './styles.module.css';
  */
 if (ExecutionEnvironment.canUseDOM) {
   mermaid.registerLayoutLoaders(elkLayouts);
+
+  // layout-elk deep-clones subgraph nodes with JSON.parse(JSON.stringify(node))
+  // (render chunk, drawNodes; still present in 0.2.2), and those nodes carry DOM
+  // references (labelData.labelNode, the domId d3 selection whose _parents
+  // includes <html>). A bare DOM element stringifies as "{}", but once GSAP has
+  // animated an element it attaches an enumerable `_gsap` cache whose `target`
+  // points back at the element, so the clone throws "Converting circular
+  // structure to JSON" on every subgraph diagram reached by client-side
+  // navigation. Serializing a DOM element is never meaningful; make it inert.
+  if (!Object.getOwnPropertyDescriptor(Element.prototype, 'toJSON')) {
+    Object.defineProperty(Element.prototype, 'toJSON', {
+      value: () => undefined,
+      writable: true,
+      configurable: true,
+    });
+  }
 }
 
 type Props = WrapperProps<typeof MermaidType>;
