@@ -281,7 +281,11 @@ Placement (executed in the docs-sync iteration): the Request Lifecycle section o
 `docs/docs/architecture/execution-flow.md` (replace the lumped node with the layered flow), the
 component diagram and layer table of `docs/docs/architecture/overview.md` (`:13-26`, `:113`),
 `.agents/skills/ak-dev-architecture/SKILL.md` (ChatService section), and the recipe of
-`.agents/skills/ak-dev-new-messaging-integration/SKILL.md`. The docs site renders mermaid natively
+`.agents/skills/ak-dev-new-messaging-integration/SKILL.md`. Additionally (requested during review), a
+"ChatService vs AgentService" comparison section (stateful conversation object vs stateless request
+processor, comparison table, when to use which, layers-not-alternatives note) goes in
+`docs/docs/architecture/overview.md` and the `ak-dev-architecture` skill, cross-linked from the
+execution-flow rubric. The docs site renders mermaid natively
 (`docs/docusaurus.config.js:294`).
 
 **Terminology sweep.** Beyond the two diagrams, every docs/skills mention that treats the two

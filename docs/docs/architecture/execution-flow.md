@@ -67,6 +67,9 @@ graph TD
   pre/post hook, not in a service layer.
 - Entry surfaces never call `Runtime` directly.
 
+For the underlying distinction between the two services (stateful conversation object vs stateless
+request processor), see [ChatService vs AgentService](./overview#chatservice-vs-agentservice).
+
 ## Detailed Flow
 
 ### 1. Request Reception

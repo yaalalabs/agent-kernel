@@ -166,6 +166,25 @@ Rubric for new code:
   hook, not in a service layer.
 - Entry surfaces never call `Runtime` directly.
 
+#### ChatService vs AgentService: when to use which
+
+The rubric above routes by surface type; the underlying distinction is **statefulness**:
+
+- **`AgentService` is a stateful conversation object**: it holds one selected agent and one session
+  across calls (`select()`/`new()`/`clear()`/`load()`), takes caller-prepared inputs (prompt string or
+  `AgentRequest` list), returns typed replies/chunks, and lets exceptions propagate; the caller owns
+  validation and error handling. Use it for clients that own a *running conversation* (the CLI's
+  `!select`/`!new`/`!clear` is the canonical example; A2A and MCP also use it).
+- **`ChatService` is a stateless chat-request processor**: every call carries a `BaseChatRequest`
+  envelope and resolves the agent/session fresh per request (via a new `AgentHandler`). It validates the
+  envelope, builds the request list (or accepts a prebuilt one), and offers two output contracts: the
+  execution core returns typed results with exceptions propagating; the presentation wrappers add HTTP
+  shapes and the `ValueError` → 400 / `Exception` → 500 mapping. Use it for chat traffic where each
+  request arrives self-contained with its `session_id`.
+- **They are layers, not alternatives**: the ChatService core drives `AgentService` internally, so going
+  through `ChatService` never bypasses `AgentService` semantics. Do not re-implement one in terms of
+  `Runtime` to avoid the other.
+
 ### AKConfig (`ak-py/src/agentkernel/core/config.py`)
 
 Pydantic-based configuration:

@@ -96,7 +96,8 @@ below are the known-invalidated set to check off.
 
 The layering diagram and call rubric (spec: "Documentation: chat execution layering diagram") are
 the anchor deliverable of this iteration; they land in `execution-flow.md`, `overview.md`, and the
-two skills named below, copied verbatim from the spec.
+two skills named below, copied verbatim from the spec. The "ChatService vs AgentService" comparison
+section (same spec section) lands in `overview.md` and the `ak-dev-architecture` skill.
 
 Dev skills (`.agents/skills/`):
 
