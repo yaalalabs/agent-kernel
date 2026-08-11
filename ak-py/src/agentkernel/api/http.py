@@ -1,6 +1,9 @@
-from __future__ import annotations
-
 import logging
+
+import uvicorn
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 
 from ..auth import AuthValidator, ValidationContext
 from ..core.config import AKConfig
@@ -16,16 +19,6 @@ class RESTAPI:
     _log = logging.getLogger("ak.api.http")
     _custom_routers = []
     _auth_token_validators = []
-
-    @classmethod
-    def _lazy_load_deps(cls):
-        """Import fastapi lazily so it isn't required until the REST API is actually started."""
-        global APIRouter, Depends, FastAPI, HTTPException, Request, CORSMiddleware, get_openapi, uvicorn
-        from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
-        from fastapi.middleware.cors import CORSMiddleware
-        from fastapi.openapi.utils import get_openapi
-
-        import uvicorn
 
     @classmethod
     def get_default_handlers(cls) -> list[RESTRequestHandler]:
@@ -53,7 +46,6 @@ class RESTAPI:
         - GET /health: Health check
         - GET /openapi.json: OpenAPI specification
         """
-        cls._lazy_load_deps()
         app = FastAPI(title="Agent Kernel REST API", debug=True, lifespan=lifespan)
 
         app.add_middleware(
@@ -99,7 +91,6 @@ class RESTAPI:
         """Start the REST API server.
         :param handlers: List of REST request handlers to use (default: AgentRESTRequestHandler)
         """
-        cls._lazy_load_deps()
         if handlers is None:
             handlers = cls.get_default_handlers()
         host = AKConfig.get().api.host
@@ -143,7 +134,6 @@ class RESTAPI:
         """Add authentication validators to the REST API.
         :param auth_validators: List of auth validators to add for token validation
         """
-        cls._lazy_load_deps()
 
         def get_auth_function(token_validator: AuthValidator):
             def verify_token(request: Request):
