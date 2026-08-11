@@ -11,11 +11,7 @@ def test_all_lazy_exports_resolve():
 
 
 def test_importing_serverless_target_does_not_load_containerized():
-    saved_modules = {
-        name: module
-        for name, module in sys.modules.items()
-        if name == "agentkernel" or name.startswith("agentkernel.")
-    }
+    saved_modules = {name: module for name, module in sys.modules.items() if name == "agentkernel" or name.startswith("agentkernel.")}
     for name in saved_modules:
         del sys.modules[name]
 
