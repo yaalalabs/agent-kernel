@@ -2,10 +2,10 @@
 REST request handler exposing Conversation Thread Support read endpoints.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Optional
-
-from fastapi import APIRouter, HTTPException, Request
 
 from ..core.thread import Authoriser, ConversationThreadManager
 from .handler import RESTRequestHandler
@@ -25,11 +25,18 @@ class ThreadRESTRequestHandler(RESTRequestHandler):
     routes are open.
     """
 
+    @classmethod
+    def _lazy_load_deps(cls):
+        """Import fastapi lazily so it isn't required until a handler is actually constructed."""
+        global APIRouter, HTTPException, Request
+        from fastapi import APIRouter, HTTPException, Request
+
     def __init__(self, authoriser: Optional[Authoriser] = None):
         """
         Initializes a ThreadRESTRequestHandler instance.
         :param authoriser: Optional user-supplied Authoriser protecting the thread routes.
         """
+        self._lazy_load_deps()
         self._log = logging.getLogger("ak.api.thread")
         self._authoriser = authoriser
 

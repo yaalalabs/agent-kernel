@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import logging
 
-import uvicorn
-
 from ..auth import AuthValidator, ValidationContext
 from ..core.config import AKConfig
 from .handler import AgentRESTRequestHandler, RESTRequestHandler
@@ -22,10 +20,12 @@ class RESTAPI:
     @classmethod
     def _lazy_load_deps(cls):
         """Import fastapi lazily so it isn't required until the REST API is actually started."""
-        global APIRouter, Depends, FastAPI, HTTPException, Request, CORSMiddleware, get_openapi
+        global APIRouter, Depends, FastAPI, HTTPException, Request, CORSMiddleware, get_openapi, uvicorn
         from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
         from fastapi.middleware.cors import CORSMiddleware
         from fastapi.openapi.utils import get_openapi
+
+        import uvicorn
 
     @classmethod
     def get_default_handlers(cls) -> list[RESTRequestHandler]:
@@ -53,6 +53,7 @@ class RESTAPI:
         - GET /health: Health check
         - GET /openapi.json: OpenAPI specification
         """
+        cls._lazy_load_deps()
         app = FastAPI(title="Agent Kernel REST API", debug=True, lifespan=lifespan)
 
         app.add_middleware(

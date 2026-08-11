@@ -1,9 +1,9 @@
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
 from pydantic import ConfigDict
 
 from ..core import Config
@@ -54,7 +54,22 @@ class AgentRESTRequestHandler(RESTRequestHandler):
         images: Optional[List[UploadFile]] = None
         model_config = ConfigDict(extra="allow")
 
+    @classmethod
+    def _lazy_load_deps(cls):
+        """Import fastapi lazily so it isn't required until a handler is actually constructed.
+
+        ``BaseMultimodalRunRequest``'s ``UploadFile`` fields are left unresolved at class-definition
+        time (forward refs, thanks to ``from __future__ import annotations``); ``model_rebuild()``
+        here resolves them now that the real ``UploadFile`` is in the module's globals.
+        """
+        global APIRouter, File, Form, HTTPException, StreamingResponse, UploadFile
+        from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+        from fastapi.responses import StreamingResponse
+
+        cls.BaseMultimodalRunRequest.model_rebuild()
+
     def __init__(self):
+        self._lazy_load_deps()
         self._log = logging.getLogger("ak.api.agent")
         self._max_file_size = Config.get().api.max_file_size
         self.chat_service = ChatService(rest_api_mode=True)
@@ -75,14 +90,17 @@ class AgentRESTRequestHandler(RESTRequestHandler):
 
     async def run_multipart(
         self,
-        prompt: str = Form(...),
-        agent: Optional[str] = Form(None),
-        session_id: Optional[str] = Form(None),
-        user_id: Optional[str] = Form(None),
-        group_id: Optional[str] = Form(None),
-        thread_name: Optional[str] = Form(None),
-        files: Optional[List[UploadFile]] = File(None),
-        images: Optional[List[UploadFile]] = File(None),
+        # Form(...)/File(...) live inside Annotated (the annotation), not as the plain default value —
+        # with `from __future__ import annotations` that annotation is a lazy string, only resolved by
+        # FastAPI when get_router() registers the route, by which point __init__ has already imported them.
+        prompt: Annotated[str, Form()],
+        agent: Annotated[Optional[str], Form()] = None,
+        session_id: Annotated[Optional[str], Form()] = None,
+        user_id: Annotated[Optional[str], Form()] = None,
+        group_id: Annotated[Optional[str], Form()] = None,
+        thread_name: Annotated[Optional[str], Form()] = None,
+        files: Annotated[Optional[List[UploadFile]], File()] = None,
+        images: Annotated[Optional[List[UploadFile]], File()] = None,
     ):
         req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
             prompt=prompt,
