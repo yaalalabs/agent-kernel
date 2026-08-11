@@ -170,3 +170,4 @@ Follow conventional commit format:
 - [Documentation Setup](docs/SETUP.md) - Setting up the documentation site
 - [Examples](examples/) - Sample implementations
 - [Use Cases](use-cases/) - End-to-end agents built from `SPEC.md` using Agent Kernel skills
+- [e2e](e2e/README.md) - Messaging integration e2e harness (deployable app + Terraform + pytest suite) driven against real Slack, Telegram, WhatsApp, Messenger, Instagram, and Gmail accounts
