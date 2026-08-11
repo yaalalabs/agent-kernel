@@ -115,7 +115,9 @@ Per-handler specifics (each names its AgentService block to delete and its ident
 The dead `result.raw` branches are safe to delete: no `AgentReply` type defines a `raw` attribute
 (`core/model.py:90-160`), so `hasattr(result, "raw")` is always False today.
 
-Rollout is three PRs (Slack pilot; the five webhook handlers; Gmail), per design.md.
+Rollout was planned as three PRs (Slack pilot; the five webhook handlers; Gmail), per design.md; in
+practice the whole change shipped as a single PR (#613) in one release, preserving the same internal
+ordering as commits.
 
 ### Thread integration package (iteration 3)
 
@@ -201,7 +203,8 @@ Chat-route behavior (both `run` and `run_multipart`):
    `core/service.py:49-78`) and raise the same `ValueError("No agent available")` mapped to 400. This
    unifies the two paths that today disagree (see Behavioural changes, item 6).
 2. Non-stream mode: `requests = await RequestBuilder.from_base_request_async(body)` (this is where
-   prompt-required and extra-field mapping run for the thread channel) →
+   extra-field mapping runs for the thread channel; prompt-required is enforced by the handler's own
+   `_validate_chat_request`, which runs before any thread write) →
    `requests, attachments = self._recorder.pre_run(body, requests)` →
    `reply, sid = await self.chat_service.execute(body, requests=requests)` →
    `self._recorder.post_run(body, reply)` →

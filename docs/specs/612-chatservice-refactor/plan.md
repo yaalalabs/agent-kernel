@@ -4,6 +4,10 @@ Five code PRs land on `develop` in strict order, all within one release (design 
 recording-dormant window between iterations 1 and 5 never ships in a release). Every iteration leaves
 the branch working and tested. Detail lives in [spec.md](spec.md); this plan only orders it.
 
+Delivery note (post-merge): the iterations shipped as a single PR (#613) in one release, with the
+iteration ordering below preserved as the commit sequence; it remains the logical structure of the
+change.
+
 ## Iteration 1: ChatService execution core, thread linkage removed (PR 1, `refactor:`)
 
 - **Goal:** ChatService exposes `execute` / `execute_sync` / `execute_stream` / `execute_stream_sync`,
@@ -139,6 +143,12 @@ Docs site (`docs/docs/`):
   the solo-ChatService pages the spec lists, updating only where behavior moved.
 - `docs/docs/integrations/*.md`: expected to need **no** update (platform setup and config are
   unchanged); verify per page during the sync.
+
+Package README (`ak-py/README.md`, shown on PyPI):
+
+- The Conversation Thread Support section and the config example's `thread:` comment move from
+  config-presence enablement to the mounting model (mount `AgentThreadRequestHandler`; `user_id`
+  scoped to the thread handler's routes; read routes served by the handler).
 
 Also: the root `AGENTS.md`/`README.md` and deployment READMEs are expected to need no update
 (no renamed public entry points besides the thread handler); verify during the sync run.

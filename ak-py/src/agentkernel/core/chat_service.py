@@ -11,6 +11,7 @@ from .model import (
     AgentReplyAny,
     AgentReplyImage,
     AgentReplyText,
+    AgentRequest,
     AgentRequestAny,
     AgentRequestFile,
     AgentRequestImage,
@@ -327,7 +328,7 @@ class ChatService:
         self._log = logging.getLogger("ak.chatservice")
         self.rest_api_mode = rest_api_mode
 
-    async def execute(self, req: BaseChatRequest, requests: Optional[List[Any]] = None) -> tuple[AgentReply, Optional[str]]:
+    async def execute(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
         """Validate, build (unless prebuilt), select the agent, and run the request.
 
         Transport-neutral execution core: returns the typed reply and lets exceptions
@@ -345,7 +346,7 @@ class ChatService:
         result = await handler.run_async(requests)
         return result, handler.get_response_session_id(req.session_id)
 
-    def execute_sync(self, req: BaseRunRequest, requests: Optional[List[Any]] = None) -> tuple[AgentReply, Optional[str]]:
+    def execute_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
         """Synchronous counterpart of execute().
 
         :param req: Run request carrying prompt, agent, and session_id
@@ -359,7 +360,7 @@ class ChatService:
         result = handler.run_sync(requests)
         return result, handler.get_response_session_id(req.session_id)
 
-    async def execute_stream(self, req: BaseChatRequest, requests: Optional[List[Any]] = None) -> AsyncGenerator[StreamChunk, None]:
+    async def execute_stream(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> AsyncGenerator[StreamChunk, None]:
         """Streaming counterpart of execute(): yields raw StreamChunk objects, no framing.
 
         Validates and selects the agent eagerly, so invalid input raises at call time,
@@ -384,7 +385,7 @@ class ChatService:
 
         return _stream()
 
-    def execute_stream_sync(self, req: BaseRunRequest, requests: Optional[List[Any]] = None) -> Generator[StreamChunk, None, None]:
+    def execute_stream_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> Generator[StreamChunk, None, None]:
         """Synchronous counterpart of execute_stream().
 
         Preserves the sync path's buffering semantics: AgentHandler.run_stream_sync collects
@@ -408,7 +409,7 @@ class ChatService:
 
         return _stream()
 
-    async def _prepare_async(self, req: BaseChatRequest, requests: Optional[List[Any]]) -> List[Any]:
+    async def _prepare_async(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]]) -> List[AgentRequest]:
         """Validate the request and return the effective request list (built or prebuilt).
 
         :param req: Chat request to validate
@@ -419,7 +420,7 @@ class ChatService:
         self._validate(req, requests)
         return await RequestBuilder.from_base_request_async(req) if requests is None else requests
 
-    def _prepare_sync(self, req: BaseRunRequest, requests: Optional[List[Any]]) -> List[Any]:
+    def _prepare_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]]) -> List[AgentRequest]:
         """Synchronous counterpart of _prepare_async().
 
         :param req: Run request to validate
@@ -524,7 +525,7 @@ class ChatService:
         return _stream()
 
     @staticmethod
-    def _validate(req: BaseChatRequest, requests: Optional[List[Any]]) -> None:
+    def _validate(req: BaseChatRequest, requests: Optional[List[AgentRequest]]) -> None:
         """Validate that required fields are present in the request.
 
         :param req: Chat request to validate

@@ -3,10 +3,12 @@
 Demonstrates Agent Kernel's Conversation Thread Support combined with multimodal (image/file) support, using the
 native OpenAI Agent SDK.
 
-With both a `thread` block and `multimodal.enabled: true` in `config.yaml`, every chat request must carry a
-`user_id`, a thread is auto-created per `session_id`, and uploaded attachments are saved to the multimodal
-`AttachmentStore` with only an `attachment_id` reference kept on the thread message — the thread never stores
-the raw bytes. The full conversation history, including attachment references, is readable over REST.
+The app mounts `AgentThreadRequestHandler` (see `app.py`), which is what enables threads; the `thread` block
+in `config.yaml` selects the store backend, and `multimodal.enabled: true` turns on attachment support. Every
+chat request must carry a `user_id` (all chat routes here are the thread handler's), a thread is auto-created
+per `session_id`, and uploaded attachments are saved to the multimodal `AttachmentStore` with only an
+`attachment_id` reference kept on the thread message — the thread never stores the raw bytes. The full
+conversation history, including attachment references, is readable over REST.
 
 Thread read endpoints are protected by the pluggable `Authoriser` (`DemoAuthoriser` maps `alice-token` → `alice`
 and `bob-token` → `bob`; a real subclass would validate the Bearer token against your own authentication provider).

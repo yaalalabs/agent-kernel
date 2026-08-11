@@ -399,10 +399,12 @@ available on AWS ElastiCache at a lower price point than the Redis OSS engine:
 
 #### Conversation Thread Support
 
-Adding a `thread` block to the configuration turns on persistent, named conversation threads keyed by
-`session_id`. Once enabled, `user_id` becomes required on every chat request, a thread is auto-created on a
-session's first request, and history becomes readable over REST (`GET /api/v1/threads` and
-`GET /api/v1/threads/{session_id}` — optionally protected by a pluggable `Authoriser`). Sending
+Mounting `AgentThreadRequestHandler` (from `agentkernel.thread`) instead of the default REST handler
+enables persistent, named conversation threads keyed by `session_id`: it serves the standard chat routes
+with thread recording, plus the read routes (`GET /api/v1/threads` and
+`GET /api/v1/threads/{session_id}`, optionally protected by a pluggable `Authoriser`). The `thread`
+block in the configuration only selects the store backend and naming. On the thread handler's chat
+routes `user_id` is required, and a thread is auto-created on a session's first request. Sending
 `thread_name` on any chat request sets or renames the thread's display name and locks it against automatic
 naming. Threads created without an explicit `thread_name` are
 named by a pluggable naming strategy — by default an LLM call derives a concise title from the first prompt
@@ -1217,7 +1219,7 @@ session:
     url: redis://localhost:6379
     ttl: 604800
     prefix: "ak:sessions:"
-thread: # optional — enables Conversation Thread Support (user_id becomes required on chat requests)
+thread: # optional; configures Conversation Thread Support (enabled by mounting AgentThreadRequestHandler)
   type: redis
   redis:
     url: redis://localhost:6379
