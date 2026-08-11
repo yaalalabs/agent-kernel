@@ -1,2 +1,2 @@
 thread:
-  type: memory # other supported backends: redis | valkey | dynamodb | firestore | cosmosdb
+  type: in_memory # other supported backends: redis | valkey | dynamodb | firestore | cosmosdb

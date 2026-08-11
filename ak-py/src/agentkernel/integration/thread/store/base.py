@@ -10,7 +10,7 @@ from ....core.config import AKConfig
 from ....core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ..model import Thread, ThreadMessage
 
-_BUILTIN_THREAD_STORES = ["memory", "redis", "valkey", "dynamodb", "cosmosdb", "firestore"]
+_BUILTIN_THREAD_STORES = ["in_memory", "redis", "valkey", "dynamodb", "cosmosdb", "firestore"]
 
 
 def paginate(items: list, limit: int, offset: int) -> tuple[list, Optional[int]]:
@@ -140,7 +140,7 @@ class ThreadStoreBuilder:
         """
         Build and return a ThreadStore instance based on the configured ``thread.type``.
 
-        ``type`` is a built-in short name (memory, redis, valkey, dynamodb, cosmosdb, firestore) or a
+        ``type`` is a built-in short name (in_memory, redis, valkey, dynamodb, cosmosdb, firestore) or a
         dotted path to a user-supplied ``ThreadStore`` subclass (bring-your-own). An unknown,
         non-dotted value raises ``AKConfigError``.
 
@@ -153,7 +153,7 @@ class ThreadStoreBuilder:
         store_type = thread_config.type
         ThreadStoreBuilder._log.info(f"Building '{store_type}' thread store")
         key = store_type.lower()
-        if key == "memory":
+        if key == "in_memory":
             from .in_memory import InMemoryThreadStore
 
             return InMemoryThreadStore()

@@ -117,10 +117,10 @@ def test_session_builder_byo_dotted_path_gets_cache(monkeypatch):
 # --- ThreadStoreBuilder ----------------------------------------------------- #
 
 
-def test_thread_builder_default_memory():
+def test_thread_builder_in_memory():
     with patch.object(AKConfig, "get") as mock_get:
         cfg = Mock()
-        cfg.thread.type = "memory"
+        cfg.thread.type = "in_memory"
         mock_get.return_value = cfg
         assert isinstance(ThreadStoreBuilder.build(), InMemoryThreadStore)
 

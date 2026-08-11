@@ -69,7 +69,7 @@ fast at startup):
 
 ```yaml
 thread:
-  type: memory        # memory | redis | valkey | dynamodb | firestore | cosmosdb
+  type: in_memory     # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
 ```
 
 ## Chat Request Fields
@@ -104,7 +104,7 @@ about once at startup with the install hint, and every failed naming call logs a
 
 ```yaml
 thread:
-  type: memory
+  type: in_memory
   naming:
     model: gpt-4o-mini  # LiteLLM model used to generate thread names
     max_length: 80      # max auto-generated name length
@@ -251,7 +251,7 @@ You do not need to set the table or collection name yourself — Terraform gener
 
 :::warning Setting the flag without declaring `thread.type` runs threads in-memory
 `AKConfig.thread` is absent until something populates it, and any `AK_THREAD__*` variable is enough to
-populate it — but `thread.type` then falls back to its `memory` default. So a mounted
+populate it — but `thread.type` then falls back to its `in_memory` default. So a mounted
 `AgentThreadRequestHandler` combined with the Terraform flag but *without* a `thread:` block in
 `config.yaml` runs against the **in-memory** backend: the provisioned table sits unused and history is
 lost on every cold start, with no error. Declare `thread.type` and this cannot happen.
@@ -281,7 +281,7 @@ multimodal:
   storage_type: in_memory
 
 thread:
-  type: memory
+  type: in_memory
 ```
 
 ## Examples

@@ -277,7 +277,7 @@
       "expected_outputs": [
         "AgentThreadRequestHandler",
         "thread:",
-        "type: memory",
+        "type: in_memory",
         "user_id",
         "session_id",
         "GET /api/v1/threads"

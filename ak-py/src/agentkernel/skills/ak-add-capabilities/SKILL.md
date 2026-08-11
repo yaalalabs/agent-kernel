@@ -742,7 +742,7 @@ RESTAPI.run(handlers=[AgentThreadRequestHandler()])
    fast at startup):
 ```yaml
 thread:
-  type: memory  # other supported backends: redis | valkey | dynamodb | firestore | cosmosdb
+  type: in_memory  # other supported backends: redis | valkey | dynamodb | firestore | cosmosdb
 ```
 
 4. When enabled:
@@ -760,7 +760,7 @@ dependencies = [
 ```
 ```yaml
 thread:
-  type: memory
+  type: in_memory
   naming:
     model: "gpt-4o-mini"   # LiteLLM model used to name threads
     max_length: 80

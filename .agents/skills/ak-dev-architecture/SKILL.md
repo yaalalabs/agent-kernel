@@ -312,7 +312,7 @@ platforms own the history), and thread recording does not apply to queue-mode/de
 
 ```yaml
 thread:
-  type: memory       # memory | redis | valkey | dynamodb | firestore | cosmosdb
+  type: in_memory    # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
   naming:
     model: gpt-4o-mini
     max_length: 80
@@ -335,7 +335,7 @@ and injects only the connection detail — `create_dynamodb_thread_table` (AWS s
 containerized) injects `AK_THREAD__DYNAMODB__TABLE_NAME`; `create_firestore_thread_collection` (GCP)
 injects the `AK_THREAD__FIRESTORE__*` vars. Terraform never sets `AK_THREAD__TYPE`. Note the failure
 mode this leaves: because `AKConfig.thread` is `Optional` and any `AK_THREAD__*` var materialises it
-while `type` defaults to `memory`, a mounted handler plus a flag but *without* a declared
+while `type` defaults to `in_memory`, a mounted handler plus a flag but *without* a declared
 `thread.type` runs against the non-durable in-memory backend, with no error.
 
 Attachments in thread mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or `dynamodb` — `session_cache` is rejected, since threads need durable, cross-request-scoped attachment storage that a session-local cache can't provide).

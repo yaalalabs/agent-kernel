@@ -23,7 +23,7 @@ def thread_enabled():
     An offline naming stub is registered so no test ever reaches LiteLLM; the
     LLM naming tests drop the stub and mock the LiteLLM call instead.
     """
-    AKConfig.get().thread = _ThreadStoreConfig(type="memory")
+    AKConfig.get().thread = _ThreadStoreConfig(type="in_memory")
     ConversationThreadManager.reset()
     ConversationThreadManager.set_naming_strategy(EchoNaming())
     InMemoryThreadStore._threads.clear()

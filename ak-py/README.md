@@ -415,8 +415,8 @@ mode additionally require `multimodal.enabled: true` with a shared attachment st
 
 - **Field**: `thread.type`
 - **Type**: string
-- **Options**: `memory`, `redis`, `valkey`, `dynamodb` (AWS), `firestore` (GCP), `cosmosdb` (Azure)
-- **Default**: `memory`
+- **Options**: `in_memory`, `redis`, `valkey`, `dynamodb` (AWS), `firestore` (GCP), `cosmosdb` (Azure)
+- **Default**: `in_memory`
 - **Environment Variable**: `AK_THREAD__TYPE`
 
 - **Naming Model**

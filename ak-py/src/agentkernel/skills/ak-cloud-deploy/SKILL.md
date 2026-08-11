@@ -219,7 +219,7 @@ connection detail. Terraform never sets `AK_THREAD__TYPE` itself.
 
 Setting the Terraform flag *without* declaring `thread.type` in `config.yaml` silently leaves
 threads on the non-durable in-memory backend (any `AK_THREAD__*` var materialises `AKConfig.thread`,
-but `type` still defaults to `memory`) — always pair the flag with the matching `thread.type`.
+but `type` still defaults to `in_memory`) — always pair the flag with the matching `thread.type`.
 
 ## AWS Serverless (Lambda + API Gateway)
 

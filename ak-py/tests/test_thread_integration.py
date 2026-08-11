@@ -71,7 +71,7 @@ class FakeChatService:
 @pytest.fixture
 def thread_enabled():
     """Enable thread support with the in-memory store for the duration of a test."""
-    AKConfig.get().thread = _ThreadStoreConfig(type="memory")
+    AKConfig.get().thread = _ThreadStoreConfig(type="in_memory")
     ConversationThreadManager.reset()
     ConversationThreadManager.set_naming_strategy(EchoNaming())
     InMemoryThreadStore._threads.clear()
