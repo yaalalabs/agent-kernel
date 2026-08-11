@@ -700,6 +700,16 @@ from agentkernel.deployment.aws.containerized.core import ECSSQSConsumer
 from agentkernel.deployment.common import ThreadRunner
 ```
 
+`deployment/aws/__init__.py` (and the thin `agentkernel/aws.py` re-export shim above it) resolves
+these names **lazily** via a module-level `_LAZY_EXPORTS` map + PEP 562 `__getattr__`/`__dir__`,
+not eager `from .containerized import ...` / `from .serverless import ...`. This keeps `from
+agentkernel.aws import Lambda` (serverless, `api` extra not required) from pulling in
+`containerized`'s `fastapi`/`uvicorn` dependency (the `api` extra), and vice versa. A
+`TYPE_CHECKING`-only re-import block mirrors `_LAZY_EXPORTS` so mypy/IDEs still resolve the real
+types instead of falling back to `Any`. See `ak-py/tests/test_aws_lazy_exports.py` for the
+regression coverage (every name in `__all__` must resolve; importing `agentkernel.aws` and
+touching `Lambda` must never import `agentkernel.deployment.aws.containerized`).
+
 ## Execution Flow
 
 Chat surfaces enter through their layer first (see the chat execution layering diagram above): REST and
