@@ -89,8 +89,22 @@ class RESTAPI:
     @classmethod
     def run(cls, handlers: list[RESTRequestHandler] = None):
         """Start the REST API server.
+
+        With no explicit handlers on RESTAPI itself, an in_memory queue transport boots the
+        single-process pipeline topology (#495) — subclasses (AWSRestAPI, AWSWebsocketAPI) and
+        explicit-handler callers keep their own paths.
+
         :param handlers: List of REST request handlers to use (default: AgentRESTRequestHandler)
         """
+        if cls is RESTAPI and handlers is None:
+            from ..pipeline.transport.base import QueueTransportFactory
+
+            if QueueTransportFactory.resolve_type() == "in_memory":
+                from ..pipeline.io_handler import IOHandler
+
+                cls._log.info("in_memory queue transport resolved — starting the single-process pipeline topology")
+                return IOHandler.run()
+
         if handlers is None:
             handlers = cls.get_default_handlers()
         host = AKConfig.get().api.host

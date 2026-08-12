@@ -71,6 +71,12 @@ Spec section references are to `spec.md`.
 ### Iteration 5: Phase A documentation
 
 - **Goal:** the shipped local behavior is documented before broker work starts.
+- **Note:** during the iteration 4 wrap-up, `examples/api/openai` gained explicit queue
+  configurability (commented `execution`/`queues.type: in_memory` config block, README
+  walkthroughs for rest_sync/rest_async/stream) — since every bare-`RESTAPI.run()` example runs
+  the pipeline, a separate "queue-mode" example would have been misleading. Verified live against
+  OpenAI in all three modes plus the example's own test suite (incl. multipart image/PDF through
+  the queue); the docs below should reference it.
 - **Files:** `docs/docs/advanced/queue-mode-guide.md` (pipeline framing + `in_memory` section;
   transport matrix marked "SQS via ECS today, kafka/nats upcoming"),
   `docs/docs/deployment/local.md`, `docs/docs/deployment/overview.md`,
@@ -157,3 +163,13 @@ Spec section references are to `spec.md`.
   over the full branch diff; confirm surfaces that need **no** update (serverless docs, Azure/GCP
   pages) and state so in the PR.
 - **Verify:** docs build; `ak-dev-review-pr` spec-vs-implementation pass on the final PR.
+
+## Deferred follow-ups (post-#495, separate issues)
+
+- **Examples restructure and update pass** — bring the whole examples tree in line with the
+  pipeline era (which examples demonstrate what, cloud direct-mode examples' posture toward the
+  in-process pipeline, naming, shared README conventions). Decided 2026-08-13: not part of this
+  issue; start only after the #495 implementation (all iterations above) is complete.
+- **A2A/MCP uniformity over the pipeline** — A2A and MCP currently execute via `AgentService`
+  inline even when their host process runs the pipeline; making them uniform is a separate
+  design/issue (decided 2026-08-13).

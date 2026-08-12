@@ -287,12 +287,18 @@ Client `nats-py` (new `nats` extra). Per `research/nats-jetstream.md`:
 - Permanent-failure mirror of `akoutputconsumer.py:85-142` (error entry to store / error frame
   over WS so clients never hang).
 
-**`RequestHandler`** (`request_handler.py`) — extends `RestHandler`
-(`deployment/common/rest_handler.py:16`), which stays unchanged except for one new seam:
+**`RequestHandler`** (`request_handler.py`) — extends `RestHandler`, which moves into
+`pipeline/request_handler.py` (shim left at `deployment/common/rest_handler.py`, which also keeps
+an `AKConfig` name so existing patch targets resolve; the `QueueHandler` return type becomes a
+TYPE_CHECKING-only import so the pipeline never imports `deployment/` at runtime). `RestHandler`
+stays behavior-identical except for three overridable seams (defaults preserve today's ECS
+behavior exactly):
 
-- `RestHandler` gets `_build_sync_response(record) -> Any` (default: today's
-  `response.get("body", response)`, `rest_handler.py:83,127`) so subclasses can honor
-  `status_code`. No other change; `ECSQueueRequestHandler` behavior identical.
+- `_build_sync_response(record) -> Any` (default: today's `response.get("body", response)`) so
+  subclasses can honor `status_code`;
+- `_await_response_record(request_id)` (default: today's `get_message_with_retry(...)` call with
+  its original keyword style) so subclasses can retrieve full records;
+- `_effective_mode()` (default: `execution.mode` as-is) so the pipeline can map unset → REST_SYNC.
 - `RequestHandler.get_queue_handler()` returns an adapter exposing
   `send_message_to_input_queue(...)` over `QueueTransport.send` (keeps `enqueue_and_wait`
   verbatim); `get_response_store()` uses the relocated `ResponseDBHandler`.
@@ -455,6 +461,13 @@ class _QueuesConfig(BaseModel):             # config.py:356 — extended
    runs in a WS mode (ASYNC/STREAM outside AWS API Gateway deployments).
 9. The thread surface (`AgentThreadRequestHandler`) stays inline (IO-side) in v1: mounting it
    explicitly bypasses pipeline delegation (§8), so thread recording semantics are unchanged.
+10. Bug fix exposed by the pipeline's thread-based execution:
+    `AgentHandler._run_async_sync` (`core/chat_service.py`) previously wrapped
+    `run_until_complete(coro)` in `except RuntimeError: asyncio.run(coro)`, so an agent's own
+    `RuntimeError` could re-await the consumed coroutine and surface as "cannot reuse already
+    awaited coroutine". The fallback now applies only to `get_event_loop()` failing; agent
+    exceptions propagate as-is. (The ECS runner shares this code path — strictly an error-fidelity
+    improvement.)
 
 **Non-changes**: ECS and Lambda wire behavior, entry points, and exports
 (`deployment/aws/__init__.py` lazy-export table unchanged); `SQSHandler` and `QueueHandler`
@@ -592,8 +605,13 @@ surface directly (`tests/test_ecs_sqs_consumer_parallel.py:5`, classmethod seams
 `process_message`, `delete_message`, `_get_client`), which the shim preserves. `test_sqs_handler.py`,
 `test_akagentrunner_stream.py`, `test_akresponsehandler.py`, `test_thread_runner.py` (import path
 via the `deployment/common` shim), and `test_api_http.py` (explicit-handler instantiation)
-must pass unmodified; `test_api_http.py` gains one case asserting `RESTAPI.run()` delegates to
-`IOHandler` when unconfigured (mocked, no server start).
+must pass unmodified; `test_api_http.py` gains a delegation test class (delegates when
+unconfigured + in_memory; never for explicit handlers, subclasses, or broker transports), and its
+two pre-existing bare-`RESTAPI.run()` tests pin a broker transport via
+`QueueTransportFactory.resolve_type` — the only sanctioned test edits, required by behavioural
+change 1 (the bare-run default now genuinely boots the pipeline). `test_rest_handler_poll.py`
+passes unmodified (the relocation shim keeps its `AKConfig` patch target and the seam preserves
+the store-call keyword style it asserts).
 
 Run: `cd ak-py && uv run pytest`. Chart CI: `ct lint` + kind install smoke per flavor values
 file with one end-to-end chat request through the NATS transport.

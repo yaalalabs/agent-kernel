@@ -317,7 +317,12 @@ flowchart LR
 ## Non-goals
 
 - Routing stateful `AgentService` clients (CLI REPL, A2A, MCP) through the pipeline — they stay
-  direct (decided).
+  direct (decided). Review note 2026-08-13: making A2A/MCP uniform over the pipeline will be
+  taken up as a separate follow-up issue.
+- Restructuring or broadly updating the examples tree for the pipeline era (beyond
+  `examples/api/openai`'s queue-configurability walkthrough and the new k8s example of R10) —
+  deferred until after this design's implementation completes (review note 2026-08-13; see
+  plan.md "Deferred follow-ups").
 - Converting messaging integrations (Slack, WhatsApp, …) into Request/Response Handler pairs —
   a natural later phase (webhook-ack timeouts make it attractive), not v1.
 - Changing `Runtime`/`AgentService`/`ChatService`-core semantics — the pipeline sits above the
