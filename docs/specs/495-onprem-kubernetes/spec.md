@@ -70,6 +70,7 @@ class QueueMessage(BaseModel):
     group_id: Optional[str] = None     # session_id — per-group FIFO key
     dedup_id: Optional[str] = None
     receive_count: int = 1             # 1-based, like SQS ApproximateReceiveCount
+    message_id: Optional[str] = None   # broker message identity, logging only (SQS MessageId, NATS seq, …)
     native: Any = None                 # transport-native handle; excluded from model_dump
 
 class QueueName(StrEnum):
@@ -78,6 +79,9 @@ class QueueName(StrEnum):
 class QueueTransport(ABC):             # send side — process-wide, thread-safe
     @abstractmethod
     def send(self, queue: QueueName, message: QueueMessage) -> Any: ...
+    def create_consumer(self, queue: QueueName) -> "TransportConsumer": ...
+    # ^ consumer creation hook — built-ins and BYO subclasses override; base raises
+    #   NotImplementedError so a send-only transport fails loudly on the receive side
 
 class TransportConsumer(ABC):          # receive side — ONE INSTANCE PER CONSUMER THREAD
     @abstractmethod
@@ -114,10 +118,15 @@ class QueueTransportFactory:
 
 ```python
 class ConsumerLoop:
-    def __init__(self, queue: QueueName, process: Callable[[QueueMessage], None],
+    def __init__(self, *, process: Callable[[QueueMessage], None],
                  on_permanent_failure: Callable[[QueueMessage], None],
                  max_receive_count: int, num_consumers: int, batch_size: int,
-                 consumer_factory: Callable[[], TransportConsumer], thread_name_prefix: str): ...
+                 consumer_factory: Callable[[], TransportConsumer], thread_name_prefix: str,
+                 queue: Optional[QueueName] = None,     # logging label only
+                 wait_seconds: float = 20.0,
+                 logger: Optional[logging.Logger] = None): ...
+                 # logger override keeps legacy consumers' logger names (ak.ecs.*) and their
+                 # exact log-message texts intact through the delegation
     def run(self) -> None: ...          # blocking; ThreadRunner tasks, graceful=True
     def _consumer_loop(self) -> None: ...
     def _process_single(self, consumer, msg) -> None: ...

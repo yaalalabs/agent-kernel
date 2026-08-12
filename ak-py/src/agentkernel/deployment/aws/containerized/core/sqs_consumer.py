@@ -1,14 +1,39 @@
 import asyncio
 import inspect
 import logging
-import time
+
+# Kept so existing patch targets like "….sqs_consumer.time.sleep" still resolve — time is a single
+# module object shared with agentkernel.pipeline.consumer, where the poll back-off now lives.
+import time  # noqa: F401
 from abc import abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import boto3
 
 from .....core.config import AKConfig
-from ....common import QueueConsumer, ThreadRunner
+from .....pipeline.consumer import ConsumerLoop
+from .....pipeline.envelope import QueueMessage
+from .....pipeline.transport.base import TransportConsumer
+from ....common import QueueConsumer
+
+
+class _ECSRecordConsumer(TransportConsumer):
+    """Adapts an ECSSQSConsumer subclass's classmethod SQS surface to the TransportConsumer interface.
+
+    ``fetch`` delegates to ``cls.poll()`` (raw boto3 records, wrapped into envelopes with
+    ``native=record``); ``ack`` delegates to ``cls.delete_message(record)`` — so subclass
+    overrides keep receiving raw boto3 records, exactly as before #495.
+    """
+
+    def __init__(self, consumer_cls: "type[ECSSQSConsumer]"):
+        self._consumer_cls = consumer_cls
+
+    def fetch(self, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
+        # batch size and wait time are governed by cls.poll() itself (execution.queues.batch_size).
+        return [self._consumer_cls._to_envelope(record) for record in self._consumer_cls.poll()]
+
+    def ack(self, message: QueueMessage) -> None:
+        self._consumer_cls.delete_message(message.native)
 
 
 class ECSSQSConsumer(QueueConsumer):
@@ -30,6 +55,10 @@ class ECSSQSConsumer(QueueConsumer):
     defensive (catch their own exceptions). If on_permanent_failure raises, the
     message is NOT deleted and will re-enter the permanent-failure path on the
     next visibility-timeout cycle.
+
+    Since #495 the batch/retry/permanent-failure machinery lives in
+    agentkernel.pipeline.consumer.ConsumerLoop; this class binds it to the SQS
+    classmethod surface, which is unchanged.
     """
 
     max_receive_count: int = 3  # overridden by classes that inherit this
@@ -105,44 +134,48 @@ class ECSSQSConsumer(QueueConsumer):
         )
 
     @classmethod
+    def _to_envelope(cls, record: Dict[str, Any]) -> QueueMessage:
+        """Wrap a raw boto3 record into the pipeline envelope (native keeps the raw record)."""
+        attributes = record.get("Attributes") or {}
+        return QueueMessage(
+            body=record.get("Body", ""),
+            group_id=attributes.get("MessageGroupId"),
+            receive_count=int(attributes.get("ApproximateReceiveCount", "1")),
+            message_id=record.get("MessageId"),
+            native=record,
+        )
+
+    @classmethod
+    def _dispatch_process_message(cls, message: QueueMessage) -> None:
+        """Invoke cls.process_message with the raw record, preserving the original sync/async dispatch."""
+        record = message.native
+        underlying_fn = getattr(cls.process_message, "__func__", cls.process_message)
+        if inspect.iscoroutinefunction(underlying_fn):
+            asyncio.run(cls.process_message(record))
+        else:
+            cls.process_message(record)
+
+    @classmethod
+    def _build_consumer_loop(cls) -> ConsumerLoop:
+        """Bind a ConsumerLoop to this class's SQS surface; built per call so subclass overrides apply."""
+        return ConsumerLoop(
+            process=cls._dispatch_process_message,
+            on_permanent_failure=lambda message: cls.on_permanent_failure(message.native),
+            max_receive_count=cls.max_receive_count,
+            num_consumers=cls.num_consumers,
+            batch_size=1,  # unused — _ECSRecordConsumer.fetch delegates batching to cls.poll()
+            consumer_factory=lambda: _ECSRecordConsumer(cls),
+            thread_name_prefix="sqs-consumer",
+            logger=cls._log,
+        )
+
+    @classmethod
     def _process_single(cls, msg: dict) -> None:
-        message_id = msg.get("MessageId", "<unknown>")
-        receive_count = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", "1"))
-        cls._log.debug(f"Processing message {message_id} (receive_count={receive_count})")
-        try:
-            if receive_count > cls.max_receive_count:
-                cls._log.warning(f"Message {message_id} exceeded max_receive_count " f"({receive_count} > {cls.max_receive_count})")
-                cls.on_permanent_failure(msg)
-                cls.delete_message(msg)
-                return
-
-            underlying_fn = getattr(cls.process_message, "__func__", cls.process_message)
-            if inspect.iscoroutinefunction(underlying_fn):
-                asyncio.run(cls.process_message(msg))
-            else:
-                cls.process_message(msg)
-
-            cls.delete_message(msg)
-            cls._log.debug(f"Processed and deleted message {message_id}")
-
-        except Exception:
-            cls._log.exception(f"Failed to process message {message_id} — leaving in queue for visibility-timeout retry")
-            # Do NOT delete — visibility timeout returns it for retry
+        cls._build_consumer_loop()._process_single(_ECSRecordConsumer(cls), cls._to_envelope(msg))
 
     @classmethod
     def _consumer_loop(cls) -> None:
-        while not ThreadRunner.shutdown_event.is_set():
-            try:
-                messages = cls.poll()
-            except Exception:
-                cls._log.exception("Unexpected error in poll loop — retrying in 5 s")
-                time.sleep(5)
-                continue
-
-            if messages:
-                cls._log.debug(f"Processing batch of {len(messages)} message(s)")
-                for msg in messages:
-                    cls._process_single(msg)
+        cls._build_consumer_loop()._consumer_loop()
 
     @classmethod
     def run(cls) -> None:
@@ -161,15 +194,4 @@ class ECSSQSConsumer(QueueConsumer):
             raise ValueError(f"{cls.__name__}: num_consumers must be >= 1, got {num_consumers}")
         cls._log.info(f"{cls.__name__} starting — queue: {queue_url}, consumers: {num_consumers}")
 
-        ThreadRunner.run(
-            tasks=[
-                ThreadRunner.Task(
-                    execution_function=cls._consumer_loop,
-                    thread_name=f"sqs-consumer-{i}",
-                    stop_all_on_failure=True,
-                    graceful=True,
-                )
-                for i in range(num_consumers)
-            ],
-            max_workers=num_consumers,
-        )
+        cls._build_consumer_loop().run()
