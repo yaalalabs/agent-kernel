@@ -311,7 +311,7 @@ class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
 
 
 class _ResponseStoreConfig(BaseModel):
-    type: str = Field(default=None, pattern="^(redis|valkey|dynamodb)$")
+    type: str = Field(default=None, pattern="^(in_memory|redis|valkey|dynamodb)$")
     retry_count: int = Field(default=5, description="Number of retry attempts for response store reads")
     delay: float = Field(default=5, description="Delay in seconds between response store reads retry attempts")
     redis: Optional[_ResponseStoreRedisConfig] = None
@@ -320,7 +320,7 @@ class _ResponseStoreConfig(BaseModel):
 
 
 class _InputQueueConfig(BaseModel):
-    url: str = Field(default=None, description="Input SQS queue URL for async execution mode")
+    url: str = Field(default=None, description="Input queue URL (sqs transport only)")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
     )
@@ -337,7 +337,7 @@ class _InputQueueConfig(BaseModel):
 
 
 class _OutputQueueConfig(BaseModel):
-    url: str = Field(default=None, description="Output SQS queue URL for async execution mode")
+    url: str = Field(default=None, description="Output queue URL (sqs transport only)")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
@@ -353,9 +353,23 @@ class _OutputQueueConfig(BaseModel):
     )
 
 
+class _InMemoryQueueConfig(BaseModel):
+    ack_wait: float = Field(default=30.0, description="Seconds an unacknowledged in-memory message stays invisible before redelivery")
+    dedup_window: float = Field(default=300.0, description="Seconds within which a repeated message_deduplication_id is dropped")
+
+
 class _QueuesConfig(BaseModel):
-    input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input SQS queue configuration for async execution mode")
-    output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output SQS queue configuration for async execution mode")
+    type: Optional[str] = Field(
+        default=None,
+        description=(
+            "Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport "
+            "subclass. When unset, a configured input.url implies sqs (pre-#495 compatibility); "
+            "otherwise in_memory."
+        ),
+    )
+    input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input queue configuration for queue execution mode")
+    output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output queue configuration for queue execution mode")
+    in_memory: Optional[_InMemoryQueueConfig] = Field(default=None, description="in_memory transport settings")
     batch_size: Optional[int] = Field(
         default=None,
         description=(

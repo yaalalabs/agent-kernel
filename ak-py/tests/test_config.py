@@ -255,3 +255,48 @@ def test_import_does_not_load_config(tmp_path):
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=tmp_path)
     assert result.returncode == 0, result.stderr
     assert "Could not open yaml settings file" not in result.stdout
+
+
+def test_queues_transport_defaults(monkeypatch):
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    cfg = AKConfig.get()
+    assert cfg.execution.queues.type is None
+    assert cfg.execution.queues.in_memory is None
+
+
+def test_queues_transport_yaml_and_env(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  queues:\n" "    type: in_memory\n" "    in_memory:\n" "      ack_wait: 1.5\n" "      dedup_window: 60\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    AKConfig._reset()
+    cfg = AKConfig.get()
+    assert cfg.execution.queues.type == "in_memory"
+    assert cfg.execution.queues.in_memory.ack_wait == 1.5
+    assert cfg.execution.queues.in_memory.dedup_window == 60
+
+    # Env var override uses the AK_ double-underscore nesting for the new field
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__TYPE", "kafka")
+    AKConfig._reset()
+    assert AKConfig.get().execution.queues.type == "kafka"
+
+
+def test_response_store_accepts_in_memory_type(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  response_store:\n" "    type: in_memory\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    AKConfig._reset()
+    cfg = AKConfig.get()
+    assert cfg.execution.response_store.type == "in_memory"
+
+
+def test_response_store_rejects_unknown_type():
+    import pydantic
+
+    from agentkernel.core.config import _ResponseStoreConfig
+
+    with pytest.raises(pydantic.ValidationError):
+        _ResponseStoreConfig(type="bogus")

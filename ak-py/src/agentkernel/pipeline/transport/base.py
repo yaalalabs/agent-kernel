@@ -61,15 +61,13 @@ class TransportConsumer(ABC):
 class QueueTransportFactory:
     """Resolves ``execution.queues.type`` to a transport (#541 house pattern).
 
-    Built-in short names arrive over iterations 3-8 of #495; until a built-in lands, selecting it
-    raises :class:`AKConfigError`. Any other value is treated as a dotted path to a
-    :class:`QueueTransport` subclass (bring-your-own), which must also implement
-    ``create_consumer``.
+    ``in_memory`` is available; the remaining built-ins (``sqs``, ``kafka``, ``nats``) arrive
+    over later #495 iterations, and selecting one before it lands raises :class:`AKConfigError`.
+    Any other value is treated as a dotted path to a :class:`QueueTransport` subclass
+    (bring-your-own), which must also implement ``create_consumer``.
     """
 
     _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats")
-    # Populated as built-ins are implemented: short name -> available (documentation only).
-    _AVAILABLE_BUILTINS: tuple[str, ...] = ()
 
     @staticmethod
     def resolve_type() -> str:
@@ -92,8 +90,15 @@ class QueueTransportFactory:
     def create(cls) -> QueueTransport:
         """Create the configured transport (send side)."""
         transport_type = cls.resolve_type()
-        if transport_type in cls._AVAILABLE_BUILTINS:  # pragma: no cover — no built-ins shipped yet
-            raise AKConfigError(f"built-in transport '{transport_type}' resolution not wired")
+        if transport_type == "in_memory":
+            from .in_memory import DEFAULT_ACK_WAIT_SECONDS, DEFAULT_DEDUP_WINDOW_SECONDS, InMemoryTransport
+
+            queues = AKConfig.get().execution.queues
+            in_memory_cfg = getattr(queues, "in_memory", None) if queues is not None else None
+            return InMemoryTransport(
+                ack_wait=in_memory_cfg.ack_wait if in_memory_cfg is not None else DEFAULT_ACK_WAIT_SECONDS,
+                dedup_window=in_memory_cfg.dedup_window if in_memory_cfg is not None else DEFAULT_DEDUP_WINDOW_SECONDS,
+            )
         if transport_type in cls._BUILTIN_TYPES:
             raise AKConfigError(f"queue transport '{transport_type}' is not available yet (ships in a later #495 iteration)")
         return resolve_dotted(transport_type, base=QueueTransport)()

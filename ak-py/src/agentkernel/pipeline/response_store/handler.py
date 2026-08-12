@@ -18,6 +18,7 @@ class ResponseDBHandler:
         Enumeration of supported response store types.
         """
 
+        IN_MEMORY = "IN_MEMORY"
         REDIS = "REDIS"
         VALKEY = "VALKEY"
         DYNAMODB = "DYNAMODB"
@@ -53,8 +54,14 @@ class ResponseDBHandler:
         response_store_config = config.execution.response_store
         response_store_type: ResponseDBHandler.Type = ResponseDBHandler.Type.from_str(response_store_config.type)
 
+        # In-memory needs no backend sub-block (single-process topologies only)
+        if response_store_type == ResponseDBHandler.Type.IN_MEMORY:
+            from .in_memory import InMemoryResponseStore
+
+            self.store = InMemoryResponseStore()
+
         # Check for Redis configuration
-        if response_store_type == ResponseDBHandler.Type.REDIS and response_store_config.redis is not None:
+        elif response_store_type == ResponseDBHandler.Type.REDIS and response_store_config.redis is not None:
             from .redis import RedisResponseStore
 
             redis_config = response_store_config.redis
@@ -95,7 +102,9 @@ class ResponseDBHandler:
             )
 
         else:
-            raise ValueError("No valid response store configured. Please configure either Redis, Valkey or DynamoDB in execution.response_store")
+            raise ValueError(
+                "No valid response store configured. Please configure one of in_memory, redis, valkey or dynamodb in execution.response_store"
+            )
 
     def get_store(self) -> ResponseStore:
         """

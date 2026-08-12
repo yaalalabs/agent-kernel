@@ -190,8 +190,22 @@ class TestTransportFactory:
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._FakeCfgNoTypeWithUrl))
         assert QueueTransportFactory.resolve_type() == "sqs"
 
-    def test_builtin_not_yet_available_raises(self, monkeypatch):
+    def test_default_type_creates_in_memory_transport(self, monkeypatch):
+        from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._FakeCfgNoTypeNoUrl))
+        assert isinstance(QueueTransportFactory.create(), InMemoryTransport)
+
+    def test_builtin_not_yet_available_raises(self, monkeypatch):
+        class _Cfg:
+            class execution:
+                class queues:
+                    type = "kafka"
+
+                    class input:
+                        url = None
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
         with pytest.raises(AKConfigError, match="not available yet"):
             QueueTransportFactory.create()
 
