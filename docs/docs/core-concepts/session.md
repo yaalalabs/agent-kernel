@@ -417,6 +417,7 @@ edits are still persisted (post-hooks run before the session is stored).
 ```python
 class SeedContext(PreHook):
     async def on_run(self, session, agent, requests):
+        session = Session.current()
         if session.get_framework_context() is None:
             session.set_framework_context({"cart": []})
         return requests
@@ -521,13 +522,17 @@ session = Session(id=session_id)
 
 ### Execution Hooks and Sessions
 
-[Execution hooks](/docs/integrations/hooks) have full access to session state:
+[Execution hooks](/docs/integrations/hooks) have full access to session state via
+`Session.current()` — the hook's first parameter, `session`, actually carries the
+framework-native session object instead (see
+[Hooks → What `session` actually is](../integrations/hooks.md#what-session-actually-is)):
 
 ```python
-from agentkernel import PreHook
+from agentkernel import PreHook, Session
 
 class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
+        session = Session.current()
         # Access session data
         user_prefs = session.get("user_preferences")
         

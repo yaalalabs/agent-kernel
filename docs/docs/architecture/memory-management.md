@@ -169,8 +169,10 @@ from agentkernel import PreHook, Session
 from agentkernel.core.memory import KeyValueCache
 
 class MyHook(PreHook):
-    async def on_run(self, session: Session, agent, requests):
-        # Get caches from session
+    async def on_run(self, session, agent, requests):
+        # The `session` parameter here is the framework-native session/state object,
+        # not the AK Session. AK-level facilities are reached via Session.current().
+        session = Session.current()
         v_cache: KeyValueCache = session.get_volatile_cache()
         nv_cache: KeyValueCache = session.get_non_volatile_cache()
         
@@ -248,7 +250,7 @@ This example demonstrates:
 Use volatile cache to inject retrieved context without bloating prompts:
 
 ```python
-from agentkernel import PreHook
+from agentkernel import PreHook, Session
 from agentkernel.core.model import AgentRequestText
 
 class RAGHook(PreHook):
@@ -265,7 +267,7 @@ class RAGHook(PreHook):
         context = self.knowledge_base.search(prompt)
         
         # Store in volatile cache (not in LLM context)
-        v_cache = session.get_volatile_cache()
+        v_cache = Session.current().get_volatile_cache()
         v_cache.set("rag_context", context)
         v_cache.set("search_query", prompt)
         
@@ -293,11 +295,11 @@ Use the context from the knowledge base to answer."""
 Store user settings persistently across requests:
 
 ```python
-from agentkernel import PreHook
+from agentkernel import PreHook, Session
 
 class UserPreferencesHook(PreHook):
     async def on_run(self, session, agent, requests):
-        nv_cache = session.get_non_volatile_cache()
+        nv_cache = Session.current().get_non_volatile_cache()
         
         # Check for existing preferences
         if not nv_cache.has("user_initialized"):
@@ -324,7 +326,7 @@ Share intermediate results between hooks and tools:
 # In pre-hook: Process and cache data
 class DataPreprocessorHook(PreHook):
     async def on_run(self, session, agent, requests):
-        v_cache = session.get_volatile_cache()
+        v_cache = Session.current().get_volatile_cache()
         
         # Expensive preprocessing
         processed_data = self.preprocess(requests)
@@ -354,7 +356,7 @@ Track session metadata without affecting LLM context:
 ```python
 class AnalyticsHook(PreHook):
     async def on_run(self, session, agent, requests):
-        nv_cache = session.get_non_volatile_cache()
+        nv_cache = Session.current().get_non_volatile_cache()
         
         # Track interaction count
         count = nv_cache.get("interaction_count", default=0)
@@ -500,6 +502,7 @@ export AK_SESSION__CACHE__SIZE=256
 ```python
 class DebugHook(PreHook):
     async def on_run(self, session, agent, requests):
+        session = Session.current()
         v_cache = session.get_volatile_cache()
         nv_cache = session.get_non_volatile_cache()
         

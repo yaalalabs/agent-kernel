@@ -216,6 +216,22 @@ Pydantic-based configuration:
 - **`PostHook`**: `on_run(session, requests, agent, agent_reply) -> AgentReply` — return modified or unmodified reply
 - **`PostHook.on_stream_chunk(session, requests, agent, delta) -> str | None`**: Optional override called for each streaming token delta before it reaches the client. Default implementation passes the delta through unchanged; return `None` to drop the token
 - Use cases: RAG injection, input/output guardrails, logging, disclaimers, prompt modification, multimodal preprocessing, streaming token filtering/redaction
+- **`session`** (first parameter on all three methods, typed `Any | None`) — despite the name, this is
+  **not** the AK `Session`; it's the framework-native session/state object for `agent`'s framework
+  (`OpenAISession`, `LangGraphSession`, `CrewAISession`, `GoogleADKSession`, `SmolagentsSession`, or
+  `PydanticAISession`) — the same object each `Runner` already stored under `session.get(runner.name)`,
+  now surfaced directly via the base `Runner.get_framework_session(session)`
+  (a thin `session.get(self.name)` wrapper, no per-adapter override needed). `None` on a session's first
+  turn, or when no session store is configured. Typed `Any` rather than a `Union` of the six wrapper
+  classes because `core/` cannot import framework-adapter types (rule 1) and an empty marker base class
+  would add nothing real — the concrete API per framework is documented instead, in
+  `docs/docs/integrations/hooks.md`. Timing: pre-hooks see **last turn's** object (runner hasn't run
+  yet); `on_run` post-hooks see **this turn's** fully-updated object (every adapter writes back before
+  returning to `Runtime`); `on_stream_chunk` sees last turn's object for the **whole stream** (computed
+  once before iterating, since write-back only happens after the generator drains). AK-level session
+  facilities (caches, `framework_context`, session id) are reached via `Session.current()` from inside
+  the hook body instead — `Runtime.run()`/`stream()` run the whole pre/post-hook pipeline inside
+  `async with session:`, so it always resolves.
 
 ## Multimodal (`ak-py/src/agentkernel/core/multimodal/`)
 

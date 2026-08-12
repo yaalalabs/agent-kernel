@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .base import Agent, Session
+    from .base import Agent
 
 from .model import AgentReply, AgentRequest
 
 """
 PreHook and PostHook classes define the interface for hooks that can be executed before and after an agent's execution respectively.
-These hooks allow for modification of prompts before execution and replies after execution, enabling functionalities such as context injection, validation, moderation, logging, and analytics. 
+These hooks allow for modification of prompts before execution and replies after execution, enabling functionalities such as context injection, validation, moderation, logging, and analytics.
 
 Currently, they will get only called for the initial execution of an agent when a user prompt is provided. It's unable to hook into agent-to-agent calls within a workflow. This will be a future enhancement.
 """
@@ -18,7 +18,7 @@ Currently, they will get only called for the initial execution of an agent when 
 
 class PreHook(ABC):
     @abstractmethod
-    async def on_run(self, session: "Session", agent: "Agent", requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
+    async def on_run(self, session: Any | None, agent: "Agent", requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
         """
         Hook method called before an agent starts executing a prompt. These hooks can modify the prompt or halt execution.
         Some use cases:
@@ -26,7 +26,12 @@ class PreHook(ABC):
           - Prompt validation like input guardrails
           - Logging or analytics
 
-        :param: session (Session): The session instance.
+        :param: session: The framework-native session/state object for `agent`'s framework
+            (OpenAISession, LangGraphSession, CrewAISession, GoogleADKSession, SmolagentsSession, or
+            PydanticAISession) — not the AK `Session` — or None on a session's first turn, or when no
+            session store is configured. Its concrete type and full API depend on `agent`'s framework —
+            see docs/docs/integrations/hooks.md for the per-framework reference. AK-level session
+            facilities (caches, framework_context, session id) are available via `Session.current()`.
         :param: agent (Agent): The agent that will execute the prompt.
         :param: requests (list[AgentRequest]): The list of requests provided to the agent.
         :return:
@@ -48,7 +53,7 @@ class PreHook(ABC):
 
 class PostHook(ABC):
     @abstractmethod
-    async def on_run(self, session: "Session", requests: list[AgentRequest], agent: "Agent", agent_reply: AgentReply) -> AgentReply:
+    async def on_run(self, session: Any | None, requests: list[AgentRequest], agent: "Agent", agent_reply: AgentReply) -> AgentReply:
         """
         Hook method called after an agent finishes executing a prompt. These hooks can modify the agent's reply. Some use cases:
           - Moderation of agent replies. e.g. output guardrails
@@ -58,7 +63,13 @@ class PostHook(ABC):
         Note: if the hook changes the reply, the modified reply will be sent to the next hook for processing.
               The agent_reply parameter contains the unmodified reply from the agent for the first posthook, and the reply modified by previous posthooks for subsequent hooks.
 
-        :param:  session (Session): The session instance.
+        :param:  session: The framework-native session/state object for `agent`'s framework
+            (OpenAISession, LangGraphSession, CrewAISession, GoogleADKSession, SmolagentsSession, or
+            PydanticAISession) — not the AK `Session` — reflecting this turn's fully-updated state, or
+            None when no session store is configured. Its concrete type and full API depend on
+            `agent`'s framework — see docs/docs/integrations/hooks.md for the per-framework reference.
+            AK-level session facilities (caches, framework_context, session id) are available via
+            `Session.current()`.
         :param:  requests (list[AgentRequest]): The original requests provided to the agent after any pre-execution hooks have been applied.
         :param:  agent (Agent): The agent that executed the prompt.
         :param:  agent_reply (AgentReply): The reply to process. For the first posthook, this is the unmodified
@@ -72,7 +83,7 @@ class PostHook(ABC):
 
     async def on_stream_chunk(
         self,
-        session: "Session",
+        session: Any | None,
         requests: list[AgentRequest],
         agent: "Agent",
         delta: str,
@@ -81,6 +92,11 @@ class PostHook(ABC):
         Called for each streaming token delta before it is sent to the client.
         Return the (optionally modified) delta string, or None to drop the token.
         Default implementation passes the delta through unchanged.
+
+        :param session: The framework-native session/state object for `agent`'s framework — not the
+            AK `Session` — computed once before streaming begins, so it reflects last turn's state (or
+            None on turn 1) for the entire stream, since write-back only happens after the generator
+            drains. See docs/docs/integrations/hooks.md for details and the per-framework reference.
         """
         return delta
 

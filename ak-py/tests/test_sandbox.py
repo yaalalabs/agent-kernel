@@ -1127,7 +1127,7 @@ async def test_hook_passthrough_without_completion(monkeypatch):
     requests = [AgentRequestText(prompt="hello")]
     session = InMemorySessionStore().new("ak-1")
     async with session:
-        assert await SandboxPreHook().on_run(session, None, requests) is requests
+        assert await SandboxPreHook().on_run(None, None, requests) is requests
 
 
 @pytest.mark.asyncio
@@ -1136,7 +1136,7 @@ async def test_hook_unknown_task_halts(monkeypatch):
     session = InMemorySessionStore().new("ak-1")
     requests = [AgentRequestAny(name="sandbox_task_completion", content=_completion("no-such-task").model_dump())]
     async with session:
-        reply = await SandboxPreHook().on_run(session, None, requests)
+        reply = await SandboxPreHook().on_run(None, None, requests)
     assert isinstance(reply, AgentReplyText)
     assert "Duplicate or unknown" in reply.response
 
@@ -1148,7 +1148,7 @@ async def test_hook_consumed_duplicate_halts(monkeypatch):
     requests = [AgentRequestAny(name="sandbox_task_completion", content=_completion("t-1").model_dump())]
     async with session:
         _seed_task(session, "t-1", consumed=True)
-        reply = await SandboxPreHook().on_run(session, None, requests)
+        reply = await SandboxPreHook().on_run(None, None, requests)
     assert isinstance(reply, AgentReplyText)
     assert "Duplicate or unknown" in reply.response
 
@@ -1159,7 +1159,7 @@ async def test_hook_malformed_completion_halts(monkeypatch):
     session = InMemorySessionStore().new("ak-1")
     requests = [AgentRequestAny(name="sandbox_task_completion", content={"not": "a completion"})]
     async with session:
-        reply = await SandboxPreHook().on_run(session, None, requests)
+        reply = await SandboxPreHook().on_run(None, None, requests)
     assert isinstance(reply, AgentReplyText)
 
 
@@ -1174,7 +1174,7 @@ async def test_hook_ingests_completion_and_injects_summary(monkeypatch):
     ]
     async with session:
         _seed_task(session, "t-1")
-        result = await SandboxPreHook().on_run(session, None, requests)
+        result = await SandboxPreHook().on_run(None, None, requests)
         registry = session.get_non_volatile_cache().get("sandbox")
     # The completion request is stripped; the summary lands in the last text request.
     assert len(result) == 1 and isinstance(result[0], AgentRequestText)
@@ -1195,8 +1195,8 @@ async def test_hook_second_delivery_is_deduped(monkeypatch):
     completion = _completion("t-1")
     async with session:
         _seed_task(session, "t-1")
-        first = await SandboxPreHook().on_run(session, None, [AgentRequestAny(name="sandbox_task_completion", content=completion.model_dump())])
-        second = await SandboxPreHook().on_run(session, None, [AgentRequestAny(name="sandbox_task_completion", content=completion.model_dump())])
+        first = await SandboxPreHook().on_run(None, None, [AgentRequestAny(name="sandbox_task_completion", content=completion.model_dump())])
+        second = await SandboxPreHook().on_run(None, None, [AgentRequestAny(name="sandbox_task_completion", content=completion.model_dump())])
     assert isinstance(first, list)  # first delivery proceeds into the agent turn
     assert isinstance(second, AgentReplyText)  # re-delivery halts as a no-op
 
@@ -1207,9 +1207,7 @@ async def test_hook_completion_without_text_appends_text(monkeypatch):
     session = InMemorySessionStore().new("ak-1")
     async with session:
         _seed_task(session, "t-1")
-        result = await SandboxPreHook().on_run(
-            session, None, [AgentRequestAny(name="sandbox_task_completion", content=_completion("t-1").model_dump())]
-        )
+        result = await SandboxPreHook().on_run(None, None, [AgentRequestAny(name="sandbox_task_completion", content=_completion("t-1").model_dump())])
     assert len(result) == 1 and isinstance(result[0], AgentRequestText)
     assert "task output" in result[0].prompt
 
@@ -1221,7 +1219,7 @@ async def test_hook_summary_truncates_output(monkeypatch):
     async with session:
         _seed_task(session, "t-1")
         result = await SandboxPreHook().on_run(
-            session, None, [AgentRequestAny(name="sandbox_task_completion", content=_completion("t-1", stdout="0123456789").model_dump())]
+            None, None, [AgentRequestAny(name="sandbox_task_completion", content=_completion("t-1", stdout="0123456789").model_dump())]
         )
     assert "01234" in result[0].prompt
     assert "0123456789" not in result[0].prompt
@@ -1234,7 +1232,7 @@ async def test_hook_result_ref_reported_when_offloaded(monkeypatch):
     completion = _completion("t-1", stdout="", result_ref={"bucket": "b", "key": "sandbox/t-1/result"})
     async with session:
         _seed_task(session, "t-1")
-        result = await SandboxPreHook().on_run(session, None, [AgentRequestAny(name="sandbox_task_completion", content=completion.model_dump())])
+        result = await SandboxPreHook().on_run(None, None, [AgentRequestAny(name="sandbox_task_completion", content=completion.model_dump())])
     assert "sandbox/t-1/result" in result[0].prompt
 
 

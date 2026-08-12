@@ -11,7 +11,7 @@ Post-execution hooks:
 
 from typing import Any
 
-from agentkernel import Agent, PostHook, PreHook, Session
+from agentkernel import Agent, PostHook, PreHook
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
 
 
@@ -34,12 +34,13 @@ class GuardRailHook(PreHook):
     ]
 
     async def on_run(
-        self, session: Session, agent: Agent, requests: list[AgentRequest]
+        self, session: Any | None, agent: Agent, requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
         """
         Validates the prompt for inappropriate content.
 
-        :param session: The session instance
+        :param session: The framework-native session/state object for agent's framework, or
+            None on a session's first turn.
         :param agent: The agent that will execute the prompt
         :param requests: requests to agent
 
@@ -108,12 +109,13 @@ class RAGHook(PreHook):
     }
 
     async def on_run(
-        self, session: Session, agent: Agent, requests: list[AgentRequest]
+        self, session: Any | None, agent: Agent, requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
         """
         Simulates RAG by searching the knowledge base and injecting relevant context
 
-        :param session: The session instance
+        :param session: The framework-native session/state object for agent's framework, or
+            None on a session's first turn.
         :param agent: The agent that will execute the prompt
         :param requests: requests to agent
 
@@ -173,11 +175,12 @@ class DisclaimerHook(PostHook):
     )
 
     async def on_run(
-        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+        self, session: Any | None, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
     ) -> AgentReply:
         """
         Adds a disclaimer to the agent's response.
-        :param:  session (Session): The session instance.
+        :param:  session: The framework-native session/state object for agent's framework,
+            reflecting this turn's fully-updated state.
         :param:  requests (list[AgentRequest]): The original requests provided to the agent after any pre-execution hooks have been applied.
         :param:  agent (Agent): The agent that executed the prompt.
         :param:  agent_reply (AgentReply): The reply to process. For the first posthook, this is the unmodified

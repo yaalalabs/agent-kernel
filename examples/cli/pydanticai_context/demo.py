@@ -1,7 +1,7 @@
 import logging
 
 from agentkernel.cli import CLI
-from agentkernel.core import AgentReplyText, PostHook, PreHook, ToolContext
+from agentkernel.core import AgentReplyText, PostHook, PreHook, Session, ToolContext
 from agentkernel.pydanticai import PydanticAIModule, PydanticAIToolBuilder
 from pydantic_ai import Agent, RunContext
 
@@ -58,6 +58,7 @@ class SeedCartContextPreHook(PreHook):
     """Seed an empty framework_context on the first turn so the tools have a dict to populate."""
 
     async def on_run(self, session, agent, requests):
+        session = Session.current()
         if session is not None and session.get_framework_context() is None:
             session.set_framework_context({"cart": []})
         return requests
@@ -70,6 +71,7 @@ class AppendCartPostHook(PostHook):
     """Append the current cart to every reply, read from the session rather than the run context."""
 
     async def on_run(self, session, requests, agent, agent_reply):
+        session = Session.current()
         if session is None or not isinstance(agent_reply, AgentReplyText):
             return agent_reply
         context = session.get_framework_context() or {}

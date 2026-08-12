@@ -2,6 +2,7 @@ import logging
 import os
 from asyncio import to_thread
 from contextlib import redirect_stderr, redirect_stdout
+from typing import Any
 
 from walledai import WalledProtect, WalledRedact
 
@@ -82,16 +83,18 @@ class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase):
     mapping is stored in session state for later unmasking on output.
     """
 
-    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
+    async def on_run(self, session: Any | None, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
         """
         Validate and redact incoming requests before agent execution.
 
-        :param session: Session object containing interaction state.
+        :param session: The framework-native session object (unused; this guardrail
+            uses the AK-level session's non-volatile cache instead, via Session.current()).
         :param agent: Agent that will process the sanitized request.
         :param requests: Incoming requests to validate and redact.
         :return: Redacted request list, original requests, or blocked reply.
         :rtype: list[AgentRequest] | AgentReply
         """
+        session = Session.current()
         pii_enabled = AKConfig.get().guardrail.input.pii
         if not pii_enabled:
             log.debug("WalledAI PII redaction is disabled for input guardrail.")
@@ -180,11 +183,12 @@ class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
     placeholders in the agent reply with original values.
     """
 
-    async def on_run(self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
+    async def on_run(self, session: Any | None, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
         """
         Unmask placeholders in the outgoing agent reply.
 
-        :param session: Session object containing stored PII mappings.
+        :param session: The framework-native session object (unused; this guardrail
+            uses the AK-level session's non-volatile cache instead, via Session.current()).
         :param requests: Original requests associated with this reply.
         :param agent: Agent that generated the reply.
         :param agent_reply: Reply potentially containing masked placeholders.
@@ -195,7 +199,7 @@ class WalledAIOutputGuardrail(OutputGuardrail, WalledAIGuardrailBase):
             log.debug("WalledAI PII unmasking is disabled for output guardrail.")
             return agent_reply
 
-        mapping = self._get_pii_mapping(session)
+        mapping = self._get_pii_mapping(Session.current())
 
         if not mapping:
             return agent_reply

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from ..core.base import Agent, Session
+from typing import Any
+
+from ..core.base import Agent
 from ..core.config import AKConfig
 from ..core.hooks import PostHook, PreHook
 from ..core.model import AgentReply, AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequest, AgentRequestText
@@ -10,7 +12,7 @@ _BUILTIN_GUARDRAILS = ["openai", "bedrock", "walledai"]
 
 
 class InputGuardrail(PreHook):
-    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
+    async def on_run(self, session: Any | None, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
         return requests
 
     def name(self) -> str:
@@ -18,7 +20,7 @@ class InputGuardrail(PreHook):
 
 
 class OutputGuardrail(PostHook):
-    async def on_run(self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
+    async def on_run(self, session: Any | None, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
         return agent_reply
 
     def name(self) -> str:

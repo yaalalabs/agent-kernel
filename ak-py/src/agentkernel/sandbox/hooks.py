@@ -15,7 +15,7 @@ import json
 import logging
 from typing import Any, Optional
 
-from ..core.base import Agent, Session
+from ..core.base import Agent
 from ..core.config import AKConfig
 from ..core.hooks import PreHook
 from ..core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
@@ -29,7 +29,7 @@ COMPLETION_REQUEST_NAME = "sandbox_task_completion"
 class NoOpSandboxPreHook(PreHook):
     """No-op pre-hook when the sandbox capability is disabled."""
 
-    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest]:
+    async def on_run(self, session: Any | None, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest]:
         """Pass the requests through unchanged."""
         return requests
 
@@ -45,7 +45,7 @@ class SandboxPreHook(PreHook):
         """Initialize the hook (logger only; all state lives in the session registry)."""
         self._log = logging.getLogger("ak.sandbox.hooks")
 
-    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
+    async def on_run(self, session: Any | None, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
         """Ingest any ``sandbox_task_completion`` requests before the agent's turn.
 
         No completion present: pass through. Fresh completion: mark the task consumed and

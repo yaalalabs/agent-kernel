@@ -165,7 +165,7 @@ class Runtime:
 
         pre_hooks = agent.pre_hooks + self._get_system_pre_hooks()  # system pre-hooks are always executed last
         for hook in pre_hooks:
-            reply = await hook.on_run(session, agent, requests)
+            reply = await hook.on_run(agent.runner.get_framework_session(session), agent, requests)
             if isinstance(reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
                 return reply
 
@@ -209,8 +209,9 @@ class Runtime:
                 reply = await agent.runner.run(agent, session, requests)
 
                 post_hooks = self._get_system_post_hooks() + agent.post_hooks  # system post-hooks are always executed first
+                framework_session = agent.runner.get_framework_session(session)
                 for hook in post_hooks:
-                    reply = await hook.on_run(session, requests, agent, reply)
+                    reply = await hook.on_run(framework_session, requests, agent, reply)
                     if not isinstance(reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
                         raise TypeError(f"PostHook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}")
                     self._log.debug(f"PostHook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
@@ -245,9 +246,10 @@ class Runtime:
                 self._log.debug(f"Streaming agent '{agent.name}' with requests: {requests}")
 
                 post_hooks = self._get_system_post_hooks() + agent.post_hooks
+                framework_session = agent.runner.get_framework_session(session)
                 async for delta in agent.runner.stream(agent, session, requests):
                     for hook in post_hooks:
-                        delta = await hook.on_stream_chunk(session, requests, agent, delta)
+                        delta = await hook.on_stream_chunk(framework_session, requests, agent, delta)
                         if delta is None:
                             break
                     if delta is not None:

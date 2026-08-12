@@ -9,7 +9,7 @@ This module provides a PreHook that:
 """
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import litellm
 
@@ -123,15 +123,17 @@ class MultimodalPreHook(PreHook):
             self._log.error(f"Error describing attachment: {e}")
             return "Attachment (description failed)"
 
-    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest]:
+    async def on_run(self, session: Any | None, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest]:
         """
         Process current attachments and inject descriptions into requests.
 
-        :param session: The current session.
+        :param session: The framework-native session object (unused; this hook uses the AK-level
+            session instead, via Session.current()).
         :param agent: The agent instance.
         :param requests: List of current agent requests.
         :return: Modified requests with attachment descriptions injected.
         """
+        session = Session.current()
         config = getattr(AKConfig.get(), "multimodal", None)
         if not session or not config or not config.enabled:
             return requests
