@@ -67,7 +67,7 @@ class InMemoryResponseStore(ResponseStore):
             if response_store_config is not None:
                 chunk_timeout = response_store_config.retry_count * response_store_config.delay
             else:
-                chunk_timeout = 25.0
+                chunk_timeout = 60.0  # matches the request handler's default local wait budget (60 x 1s)
         with self._lock:
             chunk_queue = self._chunks.setdefault(request_id, queue.Queue())
         try:

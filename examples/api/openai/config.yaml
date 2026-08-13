@@ -17,7 +17,9 @@ execution:
     output:
       no_of_consumers: 1
     in_memory:
-      ack_wait: 30 # seconds before an unacknowledged message is redelivered
+      # Redelivery rescues stuck worker threads; keep this above your longest expected agent
+      # run, or a slow run will be executed a second time.
+      ack_wait: 300 # seconds before an unacknowledged message is redelivered
       dedup_window: 300 # seconds within which duplicate request ids are dropped
   response_store:
     # With the in_memory transport this resolves to the in-process response store; these two

@@ -21,9 +21,10 @@ from .transport.base import QueueTransport, QueueTransportFactory
 if TYPE_CHECKING:  # QueueHandler stays in deployment.common: typing-only, no runtime coupling
     from ..deployment.common.queue_handler import QueueHandler
 
-# Retry budget for awaiting a response when no execution.response_store block is configured;
-# mirrors _ResponseStoreConfig's defaults (retry_count=5, delay=5).
-_DEFAULT_RESPONSE_RETRY = (5, 5.0)
+# Retry budget for awaiting a response when no execution.response_store block is configured:
+# 60 x 1s. Local agent runs are frequently LLM-bound and slow; direct mode waited indefinitely,
+# so the local default errs generous. Set execution.response_store.{retry_count,delay} to tune.
+_DEFAULT_RESPONSE_RETRY = (60, 1.0)
 
 
 class RestHandler(AgentRESTRequestHandler):
@@ -321,9 +322,19 @@ class RequestHandler(RestHandler):
                 if chunk is None:
                     return
                 yield f"data: {json.dumps(chunk)}\n\n"
-        except Exception as e:  # TimeoutError from the store, or anything unexpected
+        except TimeoutError as e:
+            # The store's own timeout text: contains only the request_id and the wait budget.
             error_chunk = {"error": str(e), "done": True, "session_id": session_id}
             yield f"data: {json.dumps(error_chunk)}\n\n"
+        except Exception:
+            # Never surface internal exception details to the client; the traceback goes to the log.
+            self._log.exception(f"SSE stream delivery failed for request_id={request_id}")
+            error_chunk = {"error": "Stream delivery failed", "done": True, "session_id": session_id}
+            yield f"data: {json.dumps(error_chunk)}\n\n"
+        finally:
+            # Deterministically run the store generator's cleanup (it releases the per-request
+            # chunk state in its finally), including when the client disconnects mid-stream.
+            await asyncio.to_thread(chunk_iterator.close)
 
     async def run_multipart_chat(
         self,

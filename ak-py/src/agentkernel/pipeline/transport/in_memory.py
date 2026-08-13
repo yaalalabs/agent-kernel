@@ -8,7 +8,10 @@ from typing import Any, ClassVar, Deque, Dict, List, Optional, Tuple
 from ..envelope import QueueMessage, QueueName
 from .base import QueueTransport, TransportConsumer
 
-DEFAULT_ACK_WAIT_SECONDS = 30.0
+# In-process redelivery exists to rescue a stuck/crashed worker *thread*; a process death loses
+# the queues entirely. A tight timeout therefore buys nothing locally and risks double-running
+# long LLM-bound agent turns, so the default is deliberately generous (vs SQS's 30 s).
+DEFAULT_ACK_WAIT_SECONDS = 300.0
 DEFAULT_DEDUP_WINDOW_SECONDS = 300.0
 
 
@@ -97,15 +100,17 @@ class _InMemoryQueue:
             self._ready_cond.notify_all()
 
     def nack(self, message: QueueMessage) -> None:
-        """Return the message to its group head immediately, with receive_count incremented."""
+        """Return the message to its group head immediately, with receive_count incremented.
+
+        A stale handle (the message expired via ack_wait and was redelivered to another consumer)
+        is a silent no-op, mirroring SQS rejecting an expired receipt handle.
+        """
         with self._ready_cond:
             group = self._message_group.pop(id(message), None)
             if group is None:
                 return
             self._in_flight.pop(group, None)
-            message.receive_count += 1
-            self._groups.setdefault(group, deque()).appendleft(message)
-            self._mark_ready(group)
+            self._requeue_at_head(group, message)
             self._ready_cond.notify_all()
 
     def _requeue_expired(self, now: float) -> None:
@@ -113,9 +118,22 @@ class _InMemoryQueue:
         for group in [g for g, (_, dl) in self._in_flight.items() if dl <= now]:
             message, _ = self._in_flight.pop(group)
             self._message_group.pop(id(message), None)
-            message.receive_count += 1
-            self._groups.setdefault(group, deque()).appendleft(message)
-            self._mark_ready(group)
+            self._requeue_at_head(group, message)
+
+    def _requeue_at_head(self, group: str, message: QueueMessage) -> None:
+        """Requeue a fresh copy at the group head with receive_count incremented.
+
+        Requeuing a copy (not the original object) invalidates the previous delivery's handle:
+        the consumer that still holds the original can no longer ack/nack it (its id() is gone
+        from the registry), so a late ack after an ack_wait redelivery cannot release the group
+        while the redelivery is still in flight, and a late nack cannot duplicate it. This
+        preserves the one-in-flight-per-group guarantee (SQS FIFO parity: stale receipt handles
+        are rejected).
+        """
+        requeued = message.model_copy()
+        requeued.receive_count += 1
+        self._groups.setdefault(group, deque()).appendleft(requeued)
+        self._mark_ready(group)
 
     def _release_group(self, group: str) -> None:
         """After an ack: drop an emptied group or mark it deliverable again."""

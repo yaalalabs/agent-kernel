@@ -209,7 +209,7 @@ class AgentHandler:
         """Run an async coroutine from sync code, handling event loop state.
 
         Only a RuntimeError from get_event_loop() itself (no loop in this thread) falls back to
-        asyncio.run — a RuntimeError raised by the coroutine must propagate as-is, not trigger a
+        asyncio.run: a RuntimeError raised by the coroutine must propagate as-is, not trigger a
         second await of the already-consumed coroutine.
 
         :param coro: Coroutine to execute

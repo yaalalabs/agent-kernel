@@ -74,7 +74,7 @@ class ResponseStore(ABC):
         return None
 
     @staticmethod
-    def _get_retry_config() -> tuple[int, int]:
+    def _get_retry_config() -> tuple[int, float]:
         """Read (retry_count, delay) for get_message_with_retry from config."""
         response_store_config = AKConfig.get().execution.response_store
         return response_store_config.retry_count, response_store_config.delay

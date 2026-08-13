@@ -74,12 +74,23 @@ execution:
     output:
       no_of_consumers: 1
     in_memory:
-      ack_wait: 30         # seconds before an unacknowledged message is redelivered
+      ack_wait: 300        # seconds before an unacknowledged message is redelivered
       dedup_window: 300    # seconds within which duplicate request ids are dropped
   response_store:
     retry_count: 60        # with delay: how long a rest_sync caller waits (60 × 1s)
     delay: 1
 ```
+
+:::caution Long agent runs and the local wait budgets
+Unlike the old inline path (which waited indefinitely), the pipeline bounds its waits, so two
+knobs matter for slow, LLM-bound agent turns:
+
+- **`response_store.retry_count × delay`** is how long a `rest_sync` caller (or the SSE bridge
+  between chunks) waits before returning a 504/error frame. The local default is 60 × 1 s.
+- **`queues.in_memory.ack_wait`** (default 300 s) is when an unacknowledged message is
+  redelivered and the run executed again, up to `max_receive_count`. Redelivery exists to rescue
+  stuck worker threads: keep it above your longest expected agent run.
+:::
 
 On startup:
 

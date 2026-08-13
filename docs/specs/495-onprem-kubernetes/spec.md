@@ -23,6 +23,7 @@ ak-py/src/agentkernel/pipeline/
 ├── request_handler.py     # RequestHandler (REST enqueue/poll/SSE surface)
 ├── io_handler.py          # IOHandler: single-process and two-process topologies
 ├── thread_runner.py       # ThreadRunner (moved; shim left behind)
+├── testing.py             # QueueTransportContract: reusable transport conformance suite
 ├── response_store/
 │   ├── __init__.py
 │   ├── base.py            # ResponseStore ABC (moved from deployment/common/response_store.py)
@@ -166,7 +167,9 @@ Process-wide singleton state (one `_InMemoryQueue` per `QueueName`), `threading.
   `fetch` hands out the head of up to `batch_size` distinct groups; `ack` releases the group.
   This reproduces SQS FIFO `perMessageGroupId` semantics (one session in order, sessions in
   parallel).
-- **Redelivery**: a fetched message carries a deadline `now + ack_wait` (config, default 30 s); a
+- **Redelivery**: a fetched message carries a deadline `now + ack_wait` (config, default 300 s:
+  in-process redelivery rescues stuck worker threads, and process death loses the queues anyway,
+  so the default sits above typical long agent runs rather than at SQS's 30 s); a
   background sweep (piggybacked on `fetch` calls: no dedicated timer thread) returns expired
   in-flight messages to their group head with `receive_count += 1`. Explicit `nack` returns it
   immediately.
@@ -376,7 +379,7 @@ preserves today's inline path unchanged.
 ### 10. Response store changes (`pipeline/response_store/`)
 
 - `ResponseStore` ABC, `ResponseDBHandler`, and the Redis/Valkey/DynamoDB stores move unchanged
-  (shims at old paths, §1 rule 3). `ResponseDBHandler.Type` (`handler.py:16`) gains `MEMORY`;
+  (shims at old paths, §1 rule 3). `ResponseDBHandler.Type` (`handler.py:16`) gains `IN_MEMORY`;
   `_ResponseStoreConfig.type` pattern (`config.py:314`) becomes
   `^(in_memory|redis|valkey|dynamodb)$`.
 - **Resolution default**: `execution.response_store is None` + transport `in_memory` → in_memory store
@@ -397,7 +400,8 @@ preserves today's inline path unchanged.
 
 ```python
 class _InMemoryQueueConfig(BaseModel):
-    ack_wait: float = 30.0
+    ack_wait: float = 300.0    # generous by design: in-process redelivery rescues stuck threads,
+                               # and a tight timeout only risks double-running long agent turns
     dedup_window: float = 300.0
 
 class _KafkaQueueConfig(BaseModel):
@@ -420,7 +424,7 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
     input: _InputQueueConfig = ...          # unchanged (url stays SQS-specific)
     output: _OutputQueueConfig = ...        # unchanged
     batch_size: Optional[int] = ...         # unchanged
-    memory: Optional[_InMemoryQueueConfig] = None
+    in_memory: Optional[_InMemoryQueueConfig] = None
     kafka: Optional[_KafkaQueueConfig] = None
     nats: Optional[_NatsQueueConfig] = None
 ```
@@ -444,7 +448,21 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
    `await`. Wire parity is preserved: success `{"result", "session_id"}` and
    `HTTPException(status, detail={"error", "session_id"})` exactly as `ResponseBuilder`
    produces today; SSE framing unchanged (`stream_chunk`, `chat_service.py:306-318`). Added
-   latency is in-process queue hops.
+   latency is in-process queue hops. **The pipeline additionally introduces bounded-wait
+   semantics that the inline path never had** (review finding on #621; defaults chosen to make
+   these rare locally):
+   - a `rest_sync` request whose agent run exceeds the response wait budget returns 504 while
+     the run continues (budget: `response_store.retry_count × delay` when configured; 60 × 1 s
+     by default when no `response_store` block exists);
+   - the SSE bridge applies the same budget between consecutive chunks and emits an error frame
+     on expiry;
+   - a run longer than `queues.in_memory.ack_wait` (default 300 s) is redelivered and executed
+     again, up to `max_receive_count`, after which a permanent-failure error is delivered even
+     though the original run may still complete;
+   - stale delivery handles after an `ack_wait` redelivery are inert no-ops (SQS
+     receipt-handle parity), so a late ack/nack cannot break per-session FIFO.
+   The queue-mode guide's local section carries a prominent caution on tuning both knobs for
+   long agent runs.
 2. `execution.queues.type` exists; untyped configs resolve exactly as today (`url` ⇒ `sqs`).
 3. `/api/v1/chat` GET (`rest_async` poll) becomes available on the local pipeline (was
    ECS-queue-mode-only).

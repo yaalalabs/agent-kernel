@@ -123,3 +123,43 @@ class TestConsumerLoopIntegration:
         assert sorted(processed) == ["m1", "m2"]
         # Both messages acked: nothing left even after a redelivery window.
         assert transport.create_consumer(QueueName.INPUT).fetch(10, 0.05) == []
+
+
+class TestStaleHandles:
+    """A handle that expired via ack_wait must become inert once the message is redelivered
+    (SQS FIFO parity: stale receipt handles are rejected)."""
+
+    def test_stale_ack_after_redelivery_does_not_release_group(self):
+        # ack_wait must comfortably outlive the assertions below so the redelivery itself
+        # stays in flight; only the FIRST delivery is meant to expire (via the sleep).
+        transport = InMemoryTransport(ack_wait=0.3)
+        consumer = transport.create_consumer(QueueName.INPUT)
+        transport.send(QueueName.INPUT, _msg(body="m1", group_id="s1"))
+        transport.send(QueueName.INPUT, _msg(body="m2", group_id="s1"))
+
+        [stale] = consumer.fetch(10, 0.5)  # worker A's delivery
+        time.sleep(0.35)  # ack_wait expires while A is still "processing"
+        [redelivered] = consumer.fetch(10, 0.5)  # worker B picks up the redelivery
+        assert redelivered.receive_count == 2
+        assert redelivered is not stale
+
+        consumer.ack(stale)  # A finishes late: its handle must be a no-op
+        assert consumer.fetch(10, 0.05) == [], "m2 must stay blocked behind B's in-flight redelivery"
+
+        consumer.ack(redelivered)  # only the live handle releases the group
+        [next_message] = consumer.fetch(10, 0.5)
+        assert next_message.body == "m2"
+
+    def test_stale_nack_does_not_duplicate_in_flight_message(self):
+        transport = InMemoryTransport(ack_wait=0.3)
+        consumer = transport.create_consumer(QueueName.INPUT)
+        transport.send(QueueName.INPUT, _msg(body="m1", group_id="s1"))
+
+        [stale] = consumer.fetch(10, 0.5)
+        time.sleep(0.35)
+        [redelivered] = consumer.fetch(10, 0.5)
+        assert redelivered.receive_count == 2
+
+        consumer.nack(stale)  # late nack from the expired delivery: must be a no-op
+        assert consumer.fetch(10, 0.05) == [], "the message must not be duplicated while in flight"
+        assert redelivered.receive_count == 2, "the live delivery's receive_count must be untouched"

@@ -54,9 +54,12 @@ research: `research/README.md`.
     `rest_async` returns `request_id` for polling.
   - **Input Queue**: transport-backed; per-session FIFO ordering, dedup, at-least-once with
     bounded redelivery.
-  - **Agent Runner**: consumes the Input Queue, executes via the `ChatService` execution core
-    (`execute`/`execute_stream`: never `Runtime` directly), emits reply/chunks to the Output
-    Queue. STREAM mode fans out one message per chunk.
+  - **Agent Runner**: consumes the Input Queue, executes via `ChatService` (the presentation
+    wrappers `process_chat_request`/`process_stream_chat_sync`, matching ECS: that layer supplies
+    the status-code and error mapping the reply envelope carries; never `Runtime` directly),
+    emits reply/chunks to the Output Queue. STREAM mode fans out one message per chunk.
+    *(Back-edited 2026-08-13: originally said the execution core; spec §8 and the shipped runner
+    use the wrappers, per #621 review.)*
   - **Output Queue**: transport-backed, same guarantees as input.
   - **Response Handler**: consumes the Output Queue; delivers via the Response Store (REST
     modes) or the WS push transport (ASYNC/STREAM modes); surfaces permanent failures as error
@@ -98,7 +101,7 @@ flowchart LR
         RESP[Response Handler]
     end
     RH --> IN[(Input Queue<br/>in_memory / sqs / kafka / nats)]
-    IN --> AR[Agent Runner<br/>ChatService execution core]
+    IN --> AR[Agent Runner<br/>ChatService]
     AR --> OUT[(Output Queue)]
     OUT --> RESP
     RESP --> RS[(Response Store<br/>in_memory / redis / valkey / dynamodb)]
@@ -113,7 +116,10 @@ flowchart LR
 - New `agentkernel/pipeline/` package holding: component contracts
   (Request Handler base, Agent Runner, Response Handler), the queue-transport interface, the
   normalized message envelope, and the transport factory. Coupling: `pipeline` imports `core`
-  only; `api/` and `deployment/` import `pipeline` (core stays clean per the architecture rules).
+  and `api` (the pipeline request handler extends the base REST handler; `api`'s own pipeline
+  imports stay lazy inside `run()` so no cycle exists); `deployment/` imports `pipeline` (core
+  stays clean per the architecture rules). *(Back-edited 2026-08-13 to match spec §1 rule 1 and
+  the shipped code, per #621 review.)*
 - Consumer machinery written once: batch loop, receive-count check, permanent-failure-then-ack
   flow, `ThreadRunner` wiring (extracted from `ECSSQSConsumer._process_single/_consumer_loop/run`)
  : parameterized by a transport with per-thread consumer instances (Kafka needs one consumer

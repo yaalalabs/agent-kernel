@@ -327,11 +327,10 @@ class _InputQueueConfig(BaseModel):
     no_of_consumers: int = Field(
         default=5,
         description=(
-            "Only used in Containerized deployments "
-            "Number of independent consumer threads that each poll the input queue "
-            "in a continuous loop. Only used by ECS containerized deployments, it is not used for "
-            "serverless (Lambda) mode, which has no consumer threads. "
-            "Override via env var AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS."
+            "Number of independent consumer threads that each poll the input queue in a continuous "
+            "loop. Used by the in-process pipeline (agent-runner worker threads) and by ECS "
+            "containerized deployments; not used in serverless (Lambda) mode, which has no consumer "
+            "threads. Override via env var AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS."
         ),
     )
 
@@ -344,17 +343,23 @@ class _OutputQueueConfig(BaseModel):
     no_of_consumers: int = Field(
         default=2,
         description=(
-            "Only used in Containerized deployments "
-            "Number of independent consumer threads that each poll the output queue "
-            "in a continuous loop. Only used by ECS containerized deployments, it is not used for "
-            "serverless (Lambda) mode, which has no consumer threads. "
-            "Override via env var AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS."
+            "Number of independent consumer threads that each poll the output queue in a continuous "
+            "loop. Used by the in-process pipeline (response-handler worker threads) and by ECS "
+            "containerized deployments; not used in serverless (Lambda) mode, which has no consumer "
+            "threads. Override via env var AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS."
         ),
     )
 
 
 class _InMemoryQueueConfig(BaseModel):
-    ack_wait: float = Field(default=30.0, description="Seconds an unacknowledged in-memory message stays invisible before redelivery")
+    ack_wait: float = Field(
+        default=300.0,
+        description=(
+            "Seconds an unacknowledged in-memory message stays invisible before redelivery. "
+            "Redelivery rescues stuck worker threads; keep this above your longest expected agent run "
+            "or a slow run will be executed again."
+        ),
+    )
     dedup_window: float = Field(default=300.0, description="Seconds within which a repeated message_deduplication_id is dropped")
 
 
