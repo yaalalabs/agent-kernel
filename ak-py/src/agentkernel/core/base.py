@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import contextvars
 import copy
 import logging
@@ -161,6 +162,25 @@ class Session:
         :return: The non-volatile KeyValueCache instance.
         """
         return cast(KeyValueCache, self.get(Session.Keys.NON_VOLATILE_CACHE.value))
+
+    def get_framework_session(self) -> Any:
+        """
+        Returns this session's framework-native session data for the currently running agent,
+        keyed by that agent's runner name (e.g. "openai", "langgraph") — the same key each
+        framework adapter uses to store its own session data via set()/get().
+        :return: The stored framework session object, or None if nothing has been stored yet.
+        :raises RuntimeError: If called with no agent currently running (Agent.current() is
+        None) — this can only be resolved from within a running agent's execution (e.g. a
+        hook or tool), since the framework key comes from the current agent's runner.
+        """
+        agent = Agent.current()
+        if agent is None:
+            raise RuntimeError(
+                "Session.get_framework_session() requires a currently running agent "
+                "(Agent.current() is None); call it only from within an agent's execution, "
+                "e.g. a hook or tool."
+            )
+        return self.get(agent.runner.name)
 
     def get_framework_context(self) -> dict | None:
         """
@@ -373,6 +393,17 @@ class Agent(ABC):
     framework.
     """
 
+    current_agent: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("current_agent", default=None)
+
+    @classmethod
+    def current(cls) -> Self | None:
+        """
+        Returns the agent currently executing in this context (set for the duration of a
+        Runtime.run()/Runtime.stream() call), or None if no agent is currently running.
+        :return: The current Agent instance, or None.
+        """
+        return cls.current_agent.get()
+
     def __init__(self, name: str, runner: Runner):
         """
         Initializes an Agent instance.
@@ -418,6 +449,20 @@ class Agent(ABC):
         Returns the list of post-execution hooks registered for the agent.
         """
         return self._post_hooks
+
+    @contextlib.contextmanager
+    def _activate(self) -> Iterator[Self]:
+        """
+        Sets this agent as the current agent (Agent.current()) for the duration of the context.
+        Token-based set/reset, so nested activations within the same context (e.g. a future
+        agent-as-tool/handoff calling back into Runtime.run()/stream() for another agent) restore
+        the previous value on exit rather than clobbering it.
+        """
+        token = Agent.current_agent.set(self)
+        try:
+            yield self
+        finally:
+            Agent.current_agent.reset(token)
 
     @abstractmethod
     def get_description(self) -> str:
