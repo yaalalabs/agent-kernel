@@ -195,6 +195,10 @@ async def run(self, agent, session, requests):
     return result
 ```
 
+From inside a hook or a tool (i.e. while the agent is executing), read the currently-running
+agent's framework state without naming its runner key explicitly via
+[`session.get_framework_session()`](./session.md#framework-session-access).
+
 ### Per-run framework context {#per-run-framework-context}
 
 In addition to their own internal state, runners honour one reserved session value, the

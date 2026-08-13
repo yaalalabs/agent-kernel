@@ -53,7 +53,7 @@ class <Name>Session:
         self._history.clear()
 ```
 
-The session data is stored in the Agent Kernel `Session` via `session.set("<name>", <Name>Session())` and retrieved via `session.get("<name>")`.
+The session data is stored in the Agent Kernel `Session` via `session.set("<name>", <Name>Session())` and retrieved via `session.get("<name>")`. This key **must** be the same string passed as your Runner's `name` (see Step 3) — hook authors reach it via `Session.get_framework_session()`, which resolves `Agent.current().runner.name` under the hood.
 
 ### 3. Implement the Runner
 
@@ -68,14 +68,15 @@ class <Name>Runner(Runner):
     FRAMEWORK = "<name>"
 
     def __init__(self):
-        super().__init__("<Name>Runner")
+        super().__init__(FRAMEWORK)  # must match the session key below — Session.get_framework_session()
+                                      # resolves it via Agent.current().runner.name
 
     def _session(self, session: Session) -> <Name>Session:
         """Get or create framework-specific session data."""
-        data = session.get("<name>")
+        data = session.get(FRAMEWORK)
         if data is None:
             data = <Name>Session()
-            session.set("<name>", data)
+            session.set(FRAMEWORK, data)
         return data
 
     async def run(self, agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
@@ -374,6 +375,7 @@ Create at minimum:
 - [ ] `ak-py/src/agentkernel/framework/<name>/` directory with `__init__.py` and `<name>.py`
 - [ ] `<Name>Session` (if needed), `<Name>Runner`, `<Name>Agent`, `<Name>Module`, `<Name>ToolBuilder`
 - [ ] `<Name>Runner.stream()` implemented — either real token streaming or a `NotImplementedError` stub
+- [ ] `<Name>Runner`'s `name` (passed to `super().__init__()`) matches the session key used in `session.get/set(...)` — required for `Session.get_framework_session()` to resolve it
 - [ ] Public alias at `ak-py/src/agentkernel/<name>.py`
 - [ ] Optional dependency group in `ak-py/pyproject.toml`
 - [ ] Trace runners in `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py` (optional)

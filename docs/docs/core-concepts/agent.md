@@ -260,6 +260,25 @@ runner = agent.runner
 result = await runner.run(agent, session, prompt)
 ```
 
+#### Currently Executing Agent {#currently-executing-agent}
+
+`Agent.current()` returns whichever `Agent` is currently executing in this async context, or
+`None` if no agent is running right now:
+
+```python
+from agentkernel.core import Agent
+
+current = Agent.current()
+if current is not None:
+    print(current.name, current.runner.name)
+```
+
+`Runtime.run()` / `Runtime.stream()` set it for the duration of the call (nested activations —
+e.g. a future agent-as-tool/handoff calling back into the Runtime for another agent — restore the
+previous value on exit rather than clobbering it), so it resolves correctly from inside a hook or
+a tool. This is what [`Session.get_framework_session()`](./session.md#framework-session-access)
+uses internally to know which framework's session key to read.
+
 ### Agent Registration
 
 Agents are automatically registered with the Runtime when a Module is instantiated:

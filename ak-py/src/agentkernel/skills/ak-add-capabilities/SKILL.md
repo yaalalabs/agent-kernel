@@ -580,6 +580,31 @@ the run is carrying. Round-trip fidelity is framework-dependent (full for OpenAI
 ADK/smolagents/LangGraph, unsupported for CrewAI) — see the framework's page under `docs/docs/frameworks/`
 for specifics.
 
+**Accessing the framework-native session (optional):** unlike `framework_context` above (an app-defined
+dict you seed yourself), `session.get_framework_session()` reaches the framework adapter's **own** session
+object directly — the same live object each runner stores under its runner-name key (e.g. `"openai"`),
+without you needing to name that key. It only works from inside a hook or a tool (an agent must currently
+be running — it raises `RuntimeError` otherwise), and mutating the returned object through its own methods
+is visible immediately, no `session.set(...)` needed:
+
+```python
+class HistoryTrimHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        openai_session = session.get_framework_session()
+        if openai_session is not None:
+            items = await openai_session.get_items()
+            if len(items) > 20:
+                await openai_session.clear_session()
+                await openai_session.add_items(items[10:])
+        return agent_reply
+
+    def name(self):
+        return "HistoryTrimHook"
+```
+
+See `examples/api/hooks/hooks.py` (`HistoryTrimHook`) for a complete example that caps the OpenAI Agents
+SDK's raw conversation history after every turn.
+
 ---
 
 #### Multimodal Support

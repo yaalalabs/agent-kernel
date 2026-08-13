@@ -222,6 +222,16 @@
       ]
     },
     {
+      "id": "cap-hooks-framework-session",
+      "name": "Trim framework-native session history via a post-hook",
+      "input": "I want a post-hook that caps the OpenAI Agents SDK's own conversation history once it grows too large",
+      "expected_outputs": [
+        "get_framework_session(",
+        "PostHook",
+        "async def on_run("
+      ]
+    },
+    {
       "id": "cap-multimodal",
       "name": "Enable multimodal support",
       "input": "Enable image and file processing",

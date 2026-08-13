@@ -92,6 +92,7 @@ Post-execution hooks run **after** an agent generates a response. They can:
 - Sentiment analysis
 - Response logging and analytics
 - Reading (or editing) the per-run [framework context](#per-run-framework-context) after the run wrote it back
+- Trimming or inspecting the [framework-native session](#framework-native-session) (e.g. capping raw conversation history) via `session.get_framework_session()`
 
 ### Per-run framework context {#per-run-framework-context}
 
@@ -141,6 +142,39 @@ native handle instead. See
 [Session → Framework context / per-run state](../core-concepts/session.md#framework-context--per-run-state)
 for the handle to use per framework and why.
 :::
+
+### Accessing the framework-native session {#framework-native-session}
+
+Unlike `framework_context` above (an app-defined dict you seed yourself), `get_framework_session()`
+reaches the framework adapter's **own** session object directly — the same one each runner stores
+under its runner-name key (e.g. `"openai"`) — without you needing to know that key:
+
+```python
+from agentkernel import PostHook
+
+class HistoryTrimHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        openai_session = session.get_framework_session()
+        if openai_session is not None:
+            items = await openai_session.get_items()
+            if len(items) > 20:
+                await openai_session.clear_session()
+                await openai_session.add_items(items[10:])
+        return agent_reply
+
+    def name(self):
+        return "HistoryTrimHook"
+```
+
+It resolves the key via [`Agent.current()`](../core-concepts/agent.md#currently-executing-agent), so
+it only works from inside a hook or a tool — where an agent is actually executing — and returns the
+**live** stored object, so mutating it through its own methods (as above) is visible immediately with
+no `session.set(...)` call needed. See
+[Session → Accessing the current framework session](../core-concepts/session.md#framework-session-access)
+for the full contract, and
+[`examples/api/hooks`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hooks) for
+the complete `HistoryTrimHook` example, which caps the OpenAI Agents SDK's raw conversation history
+after every turn.
 
 ### Structured Replies in Hooks
 
@@ -746,17 +780,19 @@ See the complete hooks demonstration in the repository:
 📁 **[examples/api/hooks/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hooks)**
 
 This example includes:
-- `hooks.py` - Guardrail and RAG hook implementations
+- `hooks.py` - GuardRailHook, RAGHook, DisclaimerHook, and HistoryTrimHook implementations
 - `app.py` - Agent setup with hook registration
-- `app_test.py` - Comprehensive test suite with 7 tests
-- `example_usage.py` - Direct execution example
+- `app_test.py` - Automated end-to-end test suite (drives the real OpenAI Agents SDK over HTTP)
+- `hooks_test.py` - Network-free unit test for `HistoryTrimHook` / `get_framework_session()`
+- `demonstration.py` - Direct execution example
 - `README.md` - Detailed documentation
 
 **Key Features Demonstrated:**
 - ✅ Guardrail blocking inappropriate requests
 - ✅ RAG context injection from knowledge base
-- ✅ Hook chaining (RAG → GuardRail)
+- ✅ Hook chaining (RAG → GuardRail pre-hooks, Disclaimer → HistoryTrim post-hooks)
 - ✅ Input validation (length limits, keyword filtering)
+- ✅ Capping framework-native session history via `session.get_framework_session()`
 - ✅ Automated testing of hook behavior
 
 ### Running the Example

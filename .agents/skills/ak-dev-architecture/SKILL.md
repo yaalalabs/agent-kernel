@@ -32,7 +32,7 @@ metadata:
 Tracks state across related interactions. Key properties:
 
 - **`id`**: Unique session identifier
-- **Framework-specific data**: Stored via `get(key)` / `set(key, value)` — each framework stores its own state under a unique key (e.g., `"openai"`, `"langgraph"`)
+- **Framework-specific data**: Stored via `get(key)` / `set(key, value)` — each framework stores its own state under a unique key (e.g., `"openai"`, `"langgraph"`). `session.get_framework_session()` is a convenience accessor that resolves that key for you via `Agent.current().runner.name` — returns the **live** stored object (mutate it in place, no `set()` needed) or `None` if nothing's stored yet; raises `RuntimeError` if called with no agent currently running (`Agent.current()` is `None`), so it only works from inside a hook or a tool
 - **Volatile cache** (`v_cache`): Cleared after every `Runtime.run()` invocation — use for transient per-request data
 - **Non-volatile cache** (`nv_cache`): Persisted across requests within the session — use for data that should survive multiple interactions
 - **Reserved keys** (`Session.Keys` enum): `VOLATILE_CACHE`/`NON_VOLATILE_CACHE` back the two caches; `FRAMEWORK_CONTEXT` (`"framework_context"`) holds a per-run, framework-agnostic caller context/state **dict** (must be picklable) that runners inject into the native framework call and write back on success. Unlike the caches it is **not** pre-initialized — an unset key reads back as `None` (absent ⇒ no injection, no behaviour change). The key is fronted by dedicated accessors — `session.get_framework_context()` (live dict, never auto-creates), `set_framework_context(dict)` (rejects non-dicts), `clear_framework_context()` — the way `get_volatile_cache()` fronts `v_cache`; nothing outside `Session` (runners included) spells the raw key. Scope is **pre-hooks and post-hooks**; tools use their framework-native handle (`RunContextWrapper.context`, `RunContext.deps`, ADK `tool_context.state`, …) instead
@@ -48,6 +48,7 @@ Wraps a framework-specific agent. Key properties:
 - **`pre_hooks` / `post_hooks`**: Lists of `PreHook` / `PostHook` instances applied during execution
 - **`get_description()`**: Abstract method — returns the agent's description/instructions
 - **`get_a2a_card()`**: Abstract method — returns an A2A agent card for inter-agent communication
+- **`Agent.current()`**: Class method returning whichever `Agent` is currently executing in this async context (or `None`). Backed by a `contextvars.ContextVar` (`current_agent`) set via the private `_activate()` context manager, which `Runtime.run()`/`Runtime.stream()` wrap the whole hook+runner+hook span in (token-based set/reset, so nested activations — e.g. a future agent-as-tool/handoff calling back into the Runtime — restore rather than clobber). This is how `Session.get_framework_session()` resolves which runner key to read
 
 ### Runner (`ak-py/src/agentkernel/core/base.py`)
 
