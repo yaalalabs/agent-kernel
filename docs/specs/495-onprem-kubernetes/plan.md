@@ -1,13 +1,13 @@
-# #495: Unified queue execution pipeline + on-prem Kubernetes deployment — Implementation Plan
+# #495: Unified queue execution pipeline + on-prem Kubernetes deployment (Implementation Plan)
 
 Ordering follows the review directive: Phase A (iterations 1-5) delivers the spec's refactoring
-and a runnable `in_memory` local setup — with the AWS/ECS path protected by an invariant that
-**the existing test suite passes unmodified at the end of every Phase A iteration** — and includes
+and a runnable `in_memory` local setup: with the AWS/ECS path protected by an invariant that
+**the existing test suite passes unmodified at the end of every Phase A iteration**: and includes
 the first documentation updates. Phase B (6-8) adds the broker transports, Phase C (9-10) the
 WebSocket delivery and the Helm chart, then cross-cutting tests and the final docs/skills sync.
 Spec section references are to `spec.md`.
 
-## Phase A — pipeline refactor + local `in_memory` (AWS untouched)
+## Phase A: pipeline refactor + local `in_memory` (AWS untouched)
 
 ### Iteration 1: Package skeleton and relocations (shims only)
 
@@ -19,7 +19,7 @@ Spec section references are to `spec.md`.
   and `deployment/aws/core/response_store/` (spec §1 rule 3).
 - **Steps:** 1) move modules verbatim; 2) leave re-export shims; 3) keep
   `deployment/common/__init__.py` exports intact.
-- **Verify:** `cd ak-py && uv run pytest` — full suite green with **no test edits**
+- **Verify:** `cd ak-py && uv run pytest`: full suite green with **no test edits**
   (`test_thread_runner.py`, `test_akresponsehandler.py` import through the shims).
 
 ### Iteration 2: Envelope, transport ABCs, `ConsumerLoop`, ECS shim
@@ -31,7 +31,7 @@ Spec section references are to `spec.md`.
   `deployment/aws/containerized/core/sqs_consumer.py` internals (§3).
 - **Steps:** 1) `QueueMessage` + attribute constants; 2) `QueueTransport`/`TransportConsumer`
   ABCs + `QueueTransportFactory` skeleton (`resolve_type`, error paths; only dotted-path/`sqs`
-  resolution stubs — no concrete transports yet); 3) `ConsumerLoop` with the four semantics rules
+  resolution stubs: no concrete transports yet); 3) `ConsumerLoop` with the four semantics rules
   of §3; 4) ECSSQSConsumer classmethods delegate to a `ConsumerLoop` via the raw-record adapter.
 - **Verify:** new `test_pipeline_consumer_loop.py`;
   `test_ecs_sqs_consumer_parallel.py` passes **unmodified** (the AWS-protection gate).
@@ -53,11 +53,11 @@ Spec section references are to `spec.md`.
 ### Iteration 4: Pipeline components + single-process topology (local runnable)
 
 - **Goal:** `RESTAPI.run()` on a laptop boots the five-component pipeline over `in_memory`
-  queues — `rest_sync` (and `mode=None`), `rest_async` poll, SSE streaming, and multipart all
+  queues: `rest_sync` (and `mode=None`), `rest_async` poll, SSE streaming, and multipart all
   behave wire-identically to today's direct mode.
 - **Files:** `pipeline/{agent_runner,response_handler,request_handler,io_handler}.py` (§8);
   `deployment/common/rest_handler.py` (only the `_build_sync_response` seam);
-  `api/http.py` (the three-condition delegation guard — `cls is RESTAPI`, no handlers,
+  `api/http.py` (the three-condition delegation guard: `cls is RESTAPI`, no handlers,
   resolved `in_memory`).
 - **Steps:** 1) `AgentRunner`/`StreamAgentRunner` incl. `STATUS_CODE` attribute;
   2) `ResponseHandler` incl. the in_memory STREAM chunk path; 3) `RequestHandler` (enqueue/poll/
@@ -73,7 +73,7 @@ Spec section references are to `spec.md`.
 - **Goal:** the shipped local behavior is documented before broker work starts.
 - **Note:** during the iteration 4 wrap-up, `examples/api/openai` gained explicit queue
   configurability (commented `execution`/`queues.type: in_memory` config block, README
-  walkthroughs for rest_sync/rest_async/stream) — since every bare-`RESTAPI.run()` example runs
+  walkthroughs for rest_sync/rest_async/stream): since every bare-`RESTAPI.run()` example runs
   the pipeline, a separate "queue-mode" example would have been misleading. Verified live against
   OpenAI in all three modes plus the example's own test suite (incl. multipart image/PDF through
   the queue); the docs below should reference it.
@@ -86,7 +86,7 @@ Spec section references are to `spec.md`.
   scoped to the Phase A diff.
 - **Verify:** docs build; skill/doc claims spot-checked against the merged code.
 
-## Phase B — broker transports
+## Phase B: broker transports
 
 ### Iteration 6: SQS transport
 
@@ -118,11 +118,11 @@ Spec section references are to `spec.md`.
 - **Verify:** `test_pipeline_nats_transport.py`; contract suite behind a local `nats-server`
   container (integration).
 
-## Phase C — WebSocket delivery and Kubernetes
+## Phase C: WebSocket delivery and Kubernetes
 
 ### Iteration 9: Pod-direct WebSocket delivery
 
-- **Goal:** ASYNC/STREAM modes work on the pipeline — in-process locally, pod-to-pod on
+- **Goal:** ASYNC/STREAM modes work on the pipeline: in-process locally, pod-to-pod on
   multi-pod deployments.
 - **Files:** `pipeline/ws/{registry,handler,endpoint,push}.py` (§9), `core/config.py`
   (`push_auth_token`, `push_port`), `io_handler.py` (WS-mode mounting + auth fail-fast).
@@ -166,10 +166,10 @@ Spec section references are to `spec.md`.
 
 ## Deferred follow-ups (post-#495, separate issues)
 
-- **Examples restructure and update pass** — bring the whole examples tree in line with the
+- **Examples restructure and update pass**: bring the whole examples tree in line with the
   pipeline era (which examples demonstrate what, cloud direct-mode examples' posture toward the
   in-process pipeline, naming, shared README conventions). Decided 2026-08-13: not part of this
   issue; start only after the #495 implementation (all iterations above) is complete.
-- **A2A/MCP uniformity over the pipeline** — A2A and MCP currently execute via `AgentService`
+- **A2A/MCP uniformity over the pipeline**: A2A and MCP currently execute via `AgentService`
   inline even when their host process runs the pipeline; making them uniform is a separate
   design/issue (decided 2026-08-13).

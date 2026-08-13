@@ -1,7 +1,7 @@
 """Unified queue execution pipeline (#495).
 
-Hosts the five-component chat execution pipeline — Request Handler, Input Queue, Agent Runner,
-Output Queue, Response Handler — and its supporting pieces (queue transports, response stores,
+Hosts the five-component chat execution pipeline: Request Handler, Input Queue, Agent Runner,
+Output Queue, Response Handler: and its supporting pieces (queue transports, response stores,
 WebSocket delivery, ThreadRunner). See docs/specs/495-onprem-kubernetes/ for the design.
 
 Exports are lazy (same pattern as agentkernel.deployment.aws) so that importing one pipeline
@@ -31,7 +31,7 @@ _LAZY_EXPORTS = {
 
 __all__ = sorted(_LAZY_EXPORTS)
 
-if TYPE_CHECKING:  # pragma: no cover — static resolution only, preserves laziness at runtime
+if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves laziness at runtime
     from .agent_runner import AgentRunner, StreamAgentRunner
     from .consumer import ConsumerLoop
     from .envelope import QueueMessage, QueueName

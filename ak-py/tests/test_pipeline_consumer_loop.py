@@ -13,7 +13,7 @@ from agentkernel.pipeline.transport.base import QueueTransport, QueueTransportFa
 
 @pytest.fixture(autouse=True)
 def _clear_shutdown_event():
-    """shutdown_event is a process-wide singleton — reset between tests (see test_thread_runner.py)."""
+    """shutdown_event is a process-wide singleton: reset between tests (see test_thread_runner.py)."""
     ThreadRunner.shutdown_event.clear()
     yield
     ThreadRunner.shutdown_event.clear()

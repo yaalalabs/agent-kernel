@@ -19,7 +19,7 @@ class QueueName(StrEnum):
 
 
 class QueueMessage(BaseModel):
-    """Normalized queue message envelope — the only message shape pipeline components speak.
+    """Normalized queue message envelope: the only message shape pipeline components speak.
 
     ``native`` carries the transport-native handle (e.g. a raw boto3 record) for the transport's
     own ack/nack bookkeeping and for legacy consumers that still expect raw records; it is

@@ -2,7 +2,7 @@ import asyncio
 import inspect
 import logging
 
-# Kept so existing patch targets like "….sqs_consumer.time.sleep" still resolve — time is a single
+# Kept so existing patch targets like "….sqs_consumer.time.sleep" still resolve: time is a single
 # module object shared with agentkernel.pipeline.consumer, where the poll back-off now lives.
 import time  # noqa: F401
 from abc import abstractmethod
@@ -21,7 +21,7 @@ class _ECSRecordConsumer(TransportConsumer):
     """Adapts an ECSSQSConsumer subclass's classmethod SQS surface to the TransportConsumer interface.
 
     ``fetch`` delegates to ``cls.poll()`` (raw boto3 records, wrapped into envelopes with
-    ``native=record``); ``ack`` delegates to ``cls.delete_message(record)`` — so subclass
+    ``native=record``); ``ack`` delegates to ``cls.delete_message(record)``: so subclass
     overrides keep receiving raw boto3 records, exactly as before #495.
     """
 
@@ -45,7 +45,7 @@ class ECSSQSConsumer(QueueConsumer):
     entry-point.
 
     Unlike Lambda (push-triggered), ECS actively polls SQS. The poll() template
-    method represents one SQS receive cycle — analogous to one Lambda invocation
+    method represents one SQS receive cycle: analogous to one Lambda invocation
     calling handle(). Override poll() to customise WaitTimeSeconds or
     MessageAttributeNames; override process_message and on_permanent_failure
     for business logic. MaxNumberOfMessages comes from
@@ -72,7 +72,7 @@ class ECSSQSConsumer(QueueConsumer):
         """
         Return the SQS queue URL to poll.
 
-        Required because ECS must fetch messages actively — there is no ESM to
+        Required because ECS must fetch messages actively: there is no ESM to
         configure the queue externally as in Lambda.
         """
         raise NotImplementedError
@@ -163,7 +163,7 @@ class ECSSQSConsumer(QueueConsumer):
             on_permanent_failure=lambda message: cls.on_permanent_failure(message.native),
             max_receive_count=cls.max_receive_count,
             num_consumers=cls.num_consumers,
-            batch_size=1,  # unused — _ECSRecordConsumer.fetch delegates batching to cls.poll()
+            batch_size=1,  # unused: _ECSRecordConsumer.fetch delegates batching to cls.poll()
             consumer_factory=lambda: _ECSRecordConsumer(cls),
             thread_name_prefix="sqs-consumer",
             logger=cls._log,

@@ -1,4 +1,4 @@
-# Kubernetes Deployment Landscape — Baremetal + EKS Flavors, Charts, Autoscaling, Testability
+# Kubernetes Deployment Landscape: Baremetal + EKS Flavors, Charts, Autoscaling, Testability
 
 Status: web research, 2026-08-07. Versions verified via web search unless marked otherwise.
 Target workload: two first-party Deployments (IO/API container: FastAPI/uvicorn + output-queue
@@ -17,13 +17,13 @@ consumer, WebSocket-capable; agent-runner container: input-queue consumer) plus 
   as a documented option. One `LoadBalancer` Service for the gateway only; everything else ClusterIP.
 - **Charts: single umbrella chart + per-flavor values files** (`values-baremetal.yaml`,
   `values-eks.yaml`); backing services as optional, condition-gated dependencies. **Bitnami charts
-  are no longer viable** (catalog paywalled/frozen behind Broadcom subscription since Sep 2025) —
+  are no longer viable** (catalog paywalled/frozen behind Broadcom subscription since Sep 2025):
   use the official `valkey-helm`, official NATS chart (`nats-io/k8s`), Strimzi operator for Kafka.
 - **KEDA** (v2.20.x) for queue-depth autoscaling of the agent runner (first-party Kafka-lag and
   NATS-JetStream-pending scalers); plain HPA for the IO Deployment.
 - **Local/CI testing: k3s (or k3d) is the closest-to-prod baremetal simulation; kind for CI.**
   microk8s works on native Ubuntu but on macOS requires a Multipass VM **and its MetalLB addon
-  does not work under Multipass on macOS** — a hard limitation for Mac-based dev.
+  does not work under Multipass on macOS**: a hard limitation for Mac-based dev.
 
 ## 1. Baremetal flavor
 
@@ -32,7 +32,7 @@ consumer, WebSocket-capable; agent-runner container: input-queue consumer) plus 
 - Current: v0.16.1 (2026-05-27).
 - **L2 mode** (default recommendation): one node answers ARP/NDP per service IP; failover on node
   loss; no requirements on the customer network. Throughput of one service IP capped at one node's
-  NIC — acceptable because only the gateway gets a LoadBalancer IP.
+  NIC: acceptable because only the gateway gets a LoadBalancer IP.
 - **BGP mode**: true ECMP across nodes, requires BGP-capable routers + network-team coordination.
   FRR-based implementation in modern MetalLB. Values-file switch; document for high-throughput sites.
 
@@ -42,7 +42,7 @@ consumer, WebSocket-capable; agent-runner container: input-queue consumer) plus 
 - 2026-01-29 (kubernetes.io official statement): after retirement, **no bug fixes, no security
   patches, no updates of any kind**. Endorsed migration paths: Gateway API or a third-party
   Ingress controller; none are drop-in.
-- Gateway API current: **v1.6.0** (2026-06-30) — HTTPRoute, GRPCRoute, TLSRoute, TCPRoute, UDPRoute
+- Gateway API current: **v1.6.0** (2026-06-30): HTTPRoute, GRPCRoute, TLSRoute, TCPRoute, UDPRoute
   all Standard channel.
 - Implementations (Aug 2026): Envoy Gateway v1.8.3 (bundles Gateway API v1.5.1 CRDs; policy CRDs:
   ClientTrafficPolicy, BackendTrafficPolicy, SecurityPolicy); Traefik v3.7.10 (Gateway API v1.6.1,
@@ -58,7 +58,7 @@ consumer, WebSocket-capable; agent-runner container: input-queue consumer) plus 
 - The operational issue is **idle timeouts on long-lived agent streams**: Envoy Gateway
   `ClientTrafficPolicy.spec.timeout.http.idleTimeout`/`streamIdleTimeout` (listener-scoped);
   `BackendTrafficPolicy` for upstream timeouts. Known bug: `requestBuffer` + WebSocket upgrade
-  deadlocks connections (envoyproxy/gateway #8578) — never enable request buffering on WS routes.
+  deadlocks connections (envoyproxy/gateway #8578): never enable request buffering on WS routes.
   Prefer a dedicated listener/route for WS with a raised stream idle timeout, plus app-level
   ping/pong keepalives in the FastAPI layer.
 - **No sticky sessions**: connection state is externalized (connection store), any IO pod serves any
@@ -75,7 +75,7 @@ consumer, WebSocket-capable; agent-runner container: input-queue consumer) plus 
 
 - **AWS Load Balancer Controller v3.x** (v3.2.0 current): Gateway API GA since v3.0.0. L7 routes
   (HTTPRoute/GRPCRoute) → ALB; L4 routes → NLB. Builds against Gateway API v1.5.0, aligning with
-  Envoy Gateway 1.8's bundled CRDs — a shared v1.5 Standard-channel baseline works across flavors.
+  Envoy Gateway 1.8's bundled CRDs: a shared v1.5 Standard-channel baseline works across flavors.
 - **Flavor switch is values-only** because both flavors consume identical Gateway + HTTPRoute
   resources: baremetal = `gatewayClassName: envoy-gateway` + MetalLB + cert-manager; EKS =
   ALB/NLB gateway class + ACM cert ARNs + subnet/scheme annotations. Keep a legacy
@@ -83,8 +83,8 @@ consumer, WebSocket-capable; agent-runner container: input-queue consumer) plus 
 - WebSockets on EKS: ALB supports WS natively; `idle_timeout.timeout_seconds` (default 60s, max
   4000s) via LB-attributes annotation. NLB TCP idle timeout default 350s, configurable 60-6000s
   (prior knowledge, unverified this session).
-- **Storage**: EKS — EBS CSI (gp3) for RWO (Kafka, Postgres, ClickHouse); EFS only if RWX genuinely
-  needed (it isn't, for this stack). Baremetal — OpenEBS LocalPV (better product default) or
+- **Storage**: EKS: EBS CSI (gp3) for RWO (Kafka, Postgres, ClickHouse); EFS only if RWX genuinely
+  needed (it isn't, for this stack). Baremetal: OpenEBS LocalPV (better product default) or
   Rancher local-path-provisioner (fine for micro-clusters). Both pin pods to nodes; replicate at
   the application layer (Kafka replication), not the storage layer. Always abstract via
   `storageClassName` in values.
@@ -96,7 +96,7 @@ consumer, WebSocket-capable; agent-runner container: input-queue consumer) plus 
 
 - **Helm 4.0** (Nov 2025): OCI registries are the default distribution model; install-by-digest.
   Target Helm 4, keep charts Helm 3-installable during transition.
-- **Recommended shape — hybrid umbrella**:
+- **Recommended shape: hybrid umbrella**:
   - One umbrella chart whose first-party templates cover only the two Deployments, the
     Gateway/HTTPRoute objects, ConfigMaps/Secrets, and the KEDA ScaledObject.
   - Backing services as optional dependency subcharts gated by `condition:` flags
@@ -112,7 +112,7 @@ consumer, WebSocket-capable; agent-runner container: input-queue consumer) plus 
     KRaft-only.
   - NATS: official charts at `nats-io/k8s`, chart line ~2.14.x (Synadia-maintained).
 - **Operator vs chart**: operators buy day-2 ops at the cost of cluster-scoped CRDs + an extra
-  controller to mirror in air-gapped installs. Rule of thumb: **operator for Kafka** (Strimzi —
+  controller to mirror in air-gapped installs. Rule of thumb: **operator for Kafka** (Strimzi:
   plain-chart Kafka is what customers get wrong), **plain chart for Valkey and NATS** (simple
   StatefulSets), CloudNativePG or plain chart for optional Postgres.
 - Footprint note: choosing NATS over Kafka removes the operator requirement entirely and shrinks
@@ -123,7 +123,7 @@ consumer, WebSocket-capable; agent-runner container: input-queue consumer) plus 
 - KEDA v2.20.2 current. Plain HPA is CPU/memory only; queue depth is the correct signal for the
   agent runner (LLM-bound work idles the CPU while requests back up).
 - First-party KEDA scalers exist for Kafka consumer lag, NATS JetStream pending messages, and
-  Redis lists/streams — the scaler choice tracks the queue backend selected in values.
+  Redis lists/streams: the scaler choice tracks the queue backend selected in values.
 - Scale-to-zero: KEDA drives 0↔1, HPA 1..N. Caveats for this workload: cold start (image pull +
   Python import) argues for `minReplicaCount: 1` in production; set `cooldownPeriod` long enough
   to ride out gaps between conversation turns; long-running agent executions need graceful drain
@@ -139,7 +139,7 @@ Versions: k3s v1.36.2+k3s1 (2026-05-27), kind v0.32.0, microk8s tracks upstream 
 |---|---|---|
 | **k3s / k3d** | Single <100 MB binary, production-grade, multi-node; disable bundled ServiceLB (Klipper) + Traefik to run MetalLB + Envoy Gateway for true flavor parity; k3d wraps it in Docker for macOS/CI | Bundled defaults must be disabled for parity |
 | **microk8s** | One-command addons: `metallb`, `hostpath-storage`, `registry`, `observability` | macOS requires a Multipass VM, and **the MetalLB addon does not work under Multipass on macOS** (macOS network filtering); legacy `ingress` addon is EOL ingress-nginx |
-| **kind** | CI standard (`helm/kind-action` + `helm/chart-testing-action`), deterministic, boots in seconds | No LoadBalancer out of the box (add cloud-provider-kind or MetalLB-over-Docker — works on Linux CI, not macOS Docker Desktop) |
+| **kind** | CI standard (`helm/kind-action` + `helm/chart-testing-action`), deterministic, boots in seconds | No LoadBalancer out of the box (add cloud-provider-kind or MetalLB-over-Docker: works on Linux CI, not macOS Docker Desktop) |
 | **minikube** | Best tutorials/addons | Heavier, single-node bias, not for CI |
 
 Recommendation:
@@ -150,14 +150,14 @@ Recommendation:
   values file; MetalLB in L2 over the Docker network when a test genuinely needs a LB IP.
 - (c) **Closest-to-production baremetal simulation**: k3s on a Linux VM or small metal box, with
   ServiceLB/Traefik disabled and MetalLB + Envoy Gateway + OpenEBS LocalPV installed from our own
-  chart — i.e. `values-baremetal.yaml` runs unmodified. microk8s on native Ubuntu is a close
+  chart: i.e. `values-baremetal.yaml` runs unmodified. microk8s on native Ubuntu is a close
   second (better only for snap/Ubuntu-centric teams).
 
 ## 6. Observability stack (on-prem profile)
 
 - Metrics: **kube-prometheus-stack** chart 88.x (Prometheus operator + Prometheus + Grafana +
-  node-exporter + kube-state-metrics) — still the default answer.
-- Logs: Grafana Loki 3.7.x vs **VictoriaLogs v1.50.0** — VictoriaLogs is GA, substantially lighter
+  node-exporter + kube-state-metrics): still the default answer.
+- Logs: Grafana Loki 3.7.x vs **VictoriaLogs v1.50.0**: VictoriaLogs is GA, substantially lighter
   (single small binary + cluster mode), Grafana datasource plugin available; the pragmatic pick
   when footprint matters. Loki if the customer standardizes on the Grafana ecosystem.
 - Traces: Tempo 2.9/2.10 (3.0 line emerging, GA status unverified); S3-compatible backend pairs
@@ -177,7 +177,7 @@ Recommendation:
   into the customer registry (Harbor; zot as lighter pure-OCI alternative). Ship a
   machine-readable image manifest per release; every subchart must expose
   `global.imageRegistry`-style overrides.
-- Publish charts as **OCI artifacts** in the same registry (ChartMuseum is legacy — Harbor removed
+- Publish charts as **OCI artifacts** in the same registry (ChartMuseum is legacy: Harbor removed
   it in 2.8); pin by digest.
 - Plan for: offline Gateway API CRD installation (versioned independently of controllers),
   bootstrap CA for cert-manager, disabling phone-home/telemetry defaults in third-party charts.

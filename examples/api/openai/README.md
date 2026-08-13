@@ -15,10 +15,10 @@ Chat execution runs on Agent Kernel's **queue-mode pipeline**
 REST API (Request Handler) → Input Queue → Agent Runner → Output Queue → Response Handler
 ```
 
-with the `in_memory` queue transport, so all five components run as threads in this one process —
+with the `in_memory` queue transport, so all five components run as threads in this one process:
 no broker, no cloud services. You get per-session FIFO ordering (parallel sessions across
 `no_of_consumers` worker threads), bounded retry with a permanent-failure path, and request
-deduplication — the same semantics as the production broker transports, minus durability. The
+deduplication: the same semantics as the production broker transports, minus durability. The
 same application code scales out by switching `execution.queues.type` to a broker transport
 (`sqs` today; `kafka`/`nats` upcoming): the agent runner then moves to its own container with no
 code changes. See the comments in [config.yaml](config.yaml) for the knobs.
@@ -41,8 +41,8 @@ Run REST API:
 On startup you'll see the pipeline boot:
 
 ```
-ak.api.http - INFO - in_memory queue transport resolved — starting the single-process pipeline topology
-ak.pipeline.io_handler - INFO - IOHandler starting — mode=rest_sync, transport=in_memory, topology=single-process
+ak.api.http - INFO - in_memory queue transport resolved: starting the single-process pipeline topology
+ak.pipeline.io_handler - INFO - IOHandler starting: mode=rest_sync, transport=in_memory, topology=single-process
 ```
 
 ## 1. Synchronous REST (`mode: rest_sync`, the default)
@@ -61,7 +61,7 @@ different sessions run in parallel.
 
 ## 2. Asynchronous REST (`mode: rest_async`)
 
-Accept-then-poll — previously only available on the AWS ECS deployment, now identical locally.
+Accept-then-poll: previously only available on the AWS ECS deployment, now identical locally.
 
 ```bash
 AK_EXECUTION__MODE=rest_async uv run app.py
@@ -74,7 +74,7 @@ curl -s -X POST http://localhost:8000/api/v1/chat \
 # {"status": "ACCEPTED", "request_id": "<id>", "session_id": "s2"}
 
 curl -s "http://localhost:8000/api/v1/chat?request_id=<id>&session_id=s2"
-# {"result": "4", "session_id": "s2"}     (a second poll returns 404 — replies are read once)
+# {"result": "4", "session_id": "s2"}     (a second poll returns 404: replies are read once)
 ```
 
 ## 3. Token streaming over SSE (`mode: stream`)

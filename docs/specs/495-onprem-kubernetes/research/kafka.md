@@ -15,14 +15,14 @@ synchronous consumer threads. The semantics contract being mapped is in
   anyway.
 - Kafka 4.2+ **share groups** (KIP-932, GA broker-side) give almost exactly SQS semantics
   (per-record ack, lock duration = visibility timeout, delivery-attempt limit), but provide **no
-  ordering guarantees** and the Python `ShareConsumer` is preview-only — unusable for the
+  ordering guarantees** and the Python `ShareConsumer` is preview-only: unusable for the
   FIFO-per-session requirement today. Watch, don't build on.
-- Client: **confluent-kafka** (librdkafka binding) — the only first-tier synchronous Python
+- Client: **confluent-kafka** (librdkafka binding): the only first-tier synchronous Python
   client; Apache-2.0; wheels incl. Linux/macOS ARM64.
 - Deployment: **Strimzi operator** (1.1.0, KRaft-only) is the standard on k8s; the Bitnami Kafka
   chart is a dead end (catalog frozen Aug/Sep 2025).
 - A single-broker dev cluster runs on a laptop micro-cluster (~1-1.5 GiB RAM total). Production
-  3-broker is a real stateful system — meaningfully heavier to operate than NATS or SQS.
+  3-broker is a real stateful system: meaningfully heavier to operate than NATS or SQS.
 
 ## Versions (verified 2026-08-07)
 
@@ -40,11 +40,11 @@ synchronous consumer threads. The semantics contract being mapped is in
 **Recommendation: confluent-kafka.**
 
 - Consumer model fits AK's design directly: N threads per container, each owning one `Consumer`,
-  blocking `poll(timeout)` / `consume(num_messages=batch_size, timeout=...)` — librdkafka runs its
+  blocking `poll(timeout)` / `consume(num_messages=batch_size, timeout=...)`: librdkafka runs its
   own background I/O threads; synchronous classmethod-based loops are the intended usage.
 - Fastest KIP uptake among Python options (ships preview KIP-932 `ShareConsumer`, KIP-848
   next-gen rebalance via `group.protocol=consumer`).
-- kafka-python is **no longer abandoned** (revived, 3.0.x, Production/Stable) — a viable
+- kafka-python is **no longer abandoned** (revived, 3.0.x, Production/Stable): a viable
   pure-Python fallback but lags librdkafka. aiokafka is asyncio-only, contradicting the
   thread-based consumer architecture.
 
@@ -72,16 +72,16 @@ synchronous consumer threads. The semantics contract being mapped is in
 - **Parallelism is capped by partition count** (one partition ↔ at most one group member; each
   consumer thread is a member). With R replicas × N threads, need `partitions >= R*N`. Partitions
   can be added but never removed, and **adding partitions changes key→partition mapping** (briefly
-  breaks in-flight session ordering) — size generously up front (e.g. 24-48 for the input topic).
+  breaks in-flight session ordering): size generously up front (e.g. 24-48 for the input topic).
 - Rebalancing on scale-in/out: use `partition.assignment.strategy=cooperative-sticky` or KIP-848
   (`group.protocol=consumer`) for incremental rebalances; either way an uncommitted batch can be
   redelivered (at-least-once).
 
 ### Retry / redelivery (the big gap)
 
-Recommended pattern — blocking in-process retry + DLQ topic:
+Recommended pattern: blocking in-process retry + DLQ topic:
 
-1. `enable.auto.commit=false`; process, then commit — crash-safety comes free (uncommitted work is
+1. `enable.auto.commit=false`; process, then commit: crash-safety comes free (uncommitted work is
    redelivered on rebalance).
 2. On processing failure: retry in place with backoff up to `max_receive_count`, then run the
    permanent-failure hook, produce the record (+error metadata headers) to a `*.dlq` topic,
@@ -91,7 +91,7 @@ Recommended pattern — blocking in-process retry + DLQ topic:
      consumer is evicted; `pause()` the partition and keep polling while backing off, then
      `resume()` (what Spring Kafka does).
    - **Head-of-line blocking**: a retrying message blocks the whole partition (all sessions hashed
-     there), not just its own session — worse than SQS FIFO, which blocks one message group.
+     there), not just its own session: worse than SQS FIFO, which blocks one message group.
      Mitigate with many partitions and a small retry budget. Unavoidable if per-session order is
      to be kept.
    - **Receive-count durability**: an in-memory attempt counter resets if the pod crashes
@@ -99,7 +99,7 @@ Recommended pattern — blocking in-process retry + DLQ topic:
      forever. Persist the count keyed by `(topic, partition, offset)` in Redis/Valkey (already in
      the stack) to reproduce SQS's crash-surviving `ApproximateReceiveCount`.
 4. Non-blocking tiered retry topics (Spring `@RetryableTopic` style) remove head-of-line blocking
-   **but sacrifice per-key ordering** — unsuitable for the session-ordered input topic.
+   **but sacrifice per-key ordering**: unsuitable for the session-ordered input topic.
 5. Prior art for max-retries + DLQ: Spring Kafka `DefaultErrorHandler` +
    `DeadLetterPublishingRecoverer` (`<topic>.DLT`); Kafka Connect KIP-298
    (`errors.retry.timeout`, `errors.deadletterqueue.topic.name`, context headers). The DLQ is
@@ -113,17 +113,17 @@ Recommended pattern — blocking in-process retry + DLQ topic:
 ### Deduplication
 
 - No broker equivalent of SQS's 5-minute content dedup. The idempotent producer only dedups
-  broker-side retries of the same produce request within one producer session — not an app calling
+  broker-side retries of the same produce request within one producer session: not an app calling
   `produce()` twice with the same request_id.
 - Transactions (EOS) cover Kafka-in→Kafka-out only, not external side effects (LLM calls, WS
-  pushes) — not a substitute.
+  pushes): not a substitute.
 - **Practical pattern**: consumer-side dedup keyed by `request_id` (and chunk suffix), via Redis
-  `SET key NX EX 300` — reproduces the SQS window; robust across rebalances/restarts.
+  `SET key NX EX 300`: reproduces the SQS window; robust across rebalances/restarts.
 
 ### Attributes and delay
 
-- Headers carry `request_id`, `user_id`, `endpoint_url` (byte-valued, not broker-filterable —
-  same as SQS attributes in practice). Default max record size ~1 MB — ample.
+- Headers carry `request_id`, `user_id`, `endpoint_url` (byte-valued, not broker-filterable:
+  same as SQS attributes in practice). Default max record size ~1 MB: ample.
 - No native per-message delay; in-process backoff with `pause()`/`resume()` suffices for retry
   backoff needs.
 
@@ -137,8 +137,8 @@ Recommended pattern — blocking in-process retry + DLQ topic:
 - **Production**: 3 brokers + 3 controllers (or 3 dual-role nodes for small installs), RF=3,
   `min.insync.replicas=2`. Modest profile for this workload: 4-8 GiB RAM, 1-2 CPU per broker with
   fast local disks (published sizing guidance targets far heavier workloads; treat 6 GB heap /
-  32 GB hosts as growth ceiling, not entry price — needs a load test to pin down).
-- **Bitnami Kafka chart: avoid** — catalog frozen since 2025-09-29; charts at
+  32 GB hosts as growth ceiling, not entry price: needs a load test to pin down).
+- **Bitnami Kafka chart: avoid**: catalog frozen since 2025-09-29; charts at
   `docker.io/bitnamicharts` no longer receive updates.
 
 ## Autoscaling (KEDA)
@@ -147,7 +147,7 @@ Recommended pattern — blocking in-process retry + DLQ topic:
   `activationLagThreshold` for scale-from-zero.
 - **Partition count caps scaling**: KEDA won't exceed partition count by default
   (`allowIdleConsumers: true` overrides). With N threads/pod, effective parallelism saturates at
-  `partitions / N` pods — set `maxReplicaCount` accordingly or size partitions `>= maxReplicas*N`.
+  `partitions / N` pods: set `maxReplicaCount` accordingly or size partitions `>= maxReplicas*N`.
 - Gotchas: fresh consumer groups with `offsetResetPolicy: latest` report invalid lag until one
   poll+commit happens; `excludePersistentLag` off by default (a stuck partition inflates the
   signal); known near-max-replica stall issue (kedacore/keda #4791, fix status unverified).

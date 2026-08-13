@@ -20,7 +20,7 @@ class ConsumerLoop:
        and loops until ``ThreadRunner.shutdown_event`` is set.
     2. Per message: ``receive_count > max_receive_count`` runs ``on_permanent_failure`` (which
        must catch its own exceptions) then acks; otherwise ``process`` then ack. A raising
-       ``process`` logs and nacks — redelivery is the transport's timeout mechanics.
+       ``process`` logs and nacks: redelivery is the transport's timeout mechanics.
     3. A raising ``fetch`` logs and retries after a fixed back-off.
     4. ``process`` may be an async callable; it is detected and driven via ``asyncio.run``.
     """
@@ -44,7 +44,7 @@ class ConsumerLoop:
         """
         :param process: Handles one message; raising leaves the message for redelivery.
         :param on_permanent_failure: Runs when a message exceeds ``max_receive_count``; must be
-            internally defensive — if it raises, the message is not acked and loops back.
+            internally defensive: if it raises, the message is not acked and loops back.
         :param max_receive_count: Deliveries after which a message is permanently failed.
         :param num_consumers: Number of consumer threads.
         :param batch_size: Messages requested per fetch.
@@ -71,7 +71,7 @@ class ConsumerLoop:
         if self._num_consumers < 1:
             raise ValueError(f"num_consumers must be >= 1, got {self._num_consumers}")
         queue_label = f"{self._queue.value} queue, " if self._queue else ""
-        self._log.debug(f"ConsumerLoop starting — {queue_label}consumers: {self._num_consumers}")
+        self._log.debug(f"ConsumerLoop starting: {queue_label}consumers: {self._num_consumers}")
         ThreadRunner.run(
             tasks=[
                 ThreadRunner.Task(

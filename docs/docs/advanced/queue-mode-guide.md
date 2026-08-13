@@ -4,32 +4,100 @@ sidebar_position: 10
 
 # Queue Mode Guide
 
-This document explains the queue mode architecture for both Lambda (serverless) and
-ECS (containerized) deployments.
+Queue mode is Agent Kernel's chat execution pipeline
+([#495](https://github.com/yaalalabs/agent-kernel/issues/495)): every chat request travels
+
+```
+Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler
+```
+
+with the queue transport and the process topology selected by configuration. This guide covers
+the pipeline itself, [running it locally](#running-queue-mode-locally-in_memory) with the default
+`in_memory` transport, and the AWS deployments: Lambda (serverless) and ECS (containerized):
+where the queues are durable SQS FIFO queues.
 
 ---
 
 ## What Is Queue Mode?
 
-Queue mode decouples the HTTP request from the agent processing by placing an SQS FIFO
-queue between the caller and the Agent Runner. This gives you:
+Queue mode decouples the HTTP request from the agent processing by placing a queue between the
+caller and the Agent Runner. This gives you:
 
 - **Backpressure control**: the queue absorbs burst traffic.
-- **Ordered processing per session**: `MessageGroupId = SessionID` keeps chat turns in order.
-- **Automatic retries**: failed messages reappear after the visibility timeout expires.
-- **Deduplication**: `MessageDeduplicationId` prevents the same message being processed twice.
+- **Ordered processing per session**: the message group (`session_id`) keeps chat turns in order
+  while different sessions run in parallel.
+- **Automatic retries**: unacknowledged messages are redelivered, up to `max_receive_count`;
+  after that a permanent-failure error is delivered so the caller never hangs.
+- **Deduplication**: a per-request deduplication ID prevents the same message being processed twice.
 
-Two sub-modes are supported:
+The queue transport is pluggable via `execution.queues.type`:
+
+| Transport | Status | Where the components run |
+|-----------|--------|--------------------------|
+| `in_memory` | ✅ the default | All five components as threads in one process (local, single-container) |
+| SQS | ✅ AWS Lambda and ECS (via the deployment adapters below) | Split across Lambda functions or ECS containers |
+| `kafka`, `nats` | Upcoming (#495) | Kubernetes / on-prem two-process topology |
+
+Delivery sub-modes (`execution.mode`):
 
 | Mode | What the caller does | How they get the response |
 |------|---------------------|---------------------------|
-| **REST Sync** | POST → wait | Same HTTP response (polls DB internally) |
-| **REST Async** | POST → get a job ID | Later GET to a separate endpoint |
+| **REST Sync** (also when unset) | POST → wait | Same HTTP response (server awaits the response store) |
+| **REST Async** | POST → get a `request_id` | Later GET with the `request_id` |
+| **Stream** | POST | SSE token chunks (REST surface); WebSocket `STREAM_CHUNK`s (AWS) |
+| **Async** | WebSocket frame | WebSocket `CHAT_RESPONSE` push (AWS) |
 
 :::note
 [Conversation-thread](./threads) recording does not apply in queue mode: threads are served by
-`AgentThreadRequestHandler` on the self-hosted REST API.
+`AgentThreadRequestHandler`, which is mounted as an explicit handler and therefore executes
+inline, outside the pipeline.
 :::
+
+---
+
+## Running Queue Mode Locally (`in_memory`)
+
+A bare `RESTAPI.run()` (no explicit handlers) boots the whole pipeline in one process: that is
+the default for every REST example. The `in_memory` transport reproduces the full queue
+semantics (per-session FIFO, bounded retry with the permanent-failure path, deduplication,
+batch fetch) without any backing service; what it does not provide is durability, so broker
+transports remain the production choice for multi-process deployments.
+
+```yaml
+execution:
+  mode: rest_sync          # rest_sync (default when unset) | rest_async | stream
+  queues:
+    type: in_memory        # the default; spelled out for clarity
+    input:
+      max_receive_count: 3 # deliveries before a message is permanently failed
+      no_of_consumers: 2   # agent-runner worker threads (parallel sessions)
+    output:
+      no_of_consumers: 1
+    in_memory:
+      ack_wait: 30         # seconds before an unacknowledged message is redelivered
+      dedup_window: 300    # seconds within which duplicate request ids are dropped
+  response_store:
+    retry_count: 60        # with delay: how long a rest_sync caller waits (60 × 1s)
+    delay: 1
+```
+
+On startup:
+
+```
+ak.api.http - INFO - in_memory queue transport resolved: starting the single-process pipeline topology
+ak.pipeline.io_handler - INFO - IOHandler starting: mode=rest_sync, transport=in_memory, topology=single-process
+```
+
+All three REST delivery modes work locally: `rest_sync`, `rest_async` accept-then-poll, and
+`stream` over SSE: switchable per run with `AK_EXECUTION__MODE`. See
+[`examples/api/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
+for curl walkthroughs of each, and [Local Deployment](../deployment/local) for the local flow
+diagram.
+
+**Activation rule**: only a bare `RESTAPI.run()` on the base class runs the pipeline. Surfaces
+constructed with explicit handlers (`RESTAPI.run([MyHandler()])`, the thread handler, messaging
+integrations) and subclasses (`AWSRestAPI`, `AWSWebsocketAPI`) keep their existing execution
+paths unchanged.
 
 ---
 
@@ -95,7 +163,7 @@ Same as REST Sync except:
 2. The client polls `GET /api/v1/chat?request_id=...&session_id=...` (query params, no path
    segment) to retrieve the result. Same path as the `POST`, differentiated by HTTP method.
 3. `request_id` is the only lookup key. `session_id` is optional and used only for
-   logging/error messages — it is not validated against the stored reply.
+   logging/error messages: it is not validated against the stored reply.
 
 ### WebSocket (Async) Mode
 
@@ -168,7 +236,7 @@ graph TB
 ```
 
 :::note
-**WebSocket delivery is available on ECS in both `async` and `stream` modes** — see
+**WebSocket delivery is available on ECS in both `async` and `stream` modes**: see
 [WebSocket (Async/Stream) Mode in ECS](#websocket-asyncstream-mode-in-ecs) below. `rest_sync` and
 `rest_async` always deliver replies through the response store; `async`/`stream` always push over
 the WebSocket connection instead.
@@ -180,10 +248,11 @@ the WebSocket connection instead.
 |-------|-----------|------|
 | `ECSIOHandler` | IO container | Entrypoint: starts Thread 1 + Thread 2 via `ThreadRunner`; Thread 1 is `AWSRestAPI` (`rest_sync`/`rest_async`) or `AWSWebsocketAPI` (`async`/`stream`), selected by `execution.mode` |
 | `ECSQueueRequestHandler` | IO container / Thread 1 (REST modes) | FastAPI: `POST /api/v1/chat` enqueues; `GET /api/v1/chat?request_id=...&session_id=...` polls (query params only, no path segment) |
-| `ECSWebSocketRequestHandler` / `ECSWebSocketSystemRequestHandler` | IO container / Thread 1 (WebSocket modes) | Chat + custom routes, and `$connect`/`$disconnect`/`$default` respectively — see [WebSocket (Async) Mode in ECS](#websocket-async-mode-in-ecs) |
+| `ECSWebSocketRequestHandler` / `ECSWebSocketSystemRequestHandler` | IO container / Thread 1 (WebSocket modes) | Chat + custom routes, and `$connect`/`$disconnect`/`$default` respectively: see [WebSocket (Async/Stream) Mode in ECS](#websocket-asyncstream-mode-in-ecs) |
 | `ECSOutputConsumer` | IO container / Thread 2 | Extends `ECSSQSConsumer`; runs `output.no_of_consumers` (default 2) threads polling Output Queue → response store |
 | `ECSAgentRunner` | Agent Runner container | Extends `ECSSQSConsumer`; runs `input.no_of_consumers` (default 5) threads polling Input Queue, running the agent, sending to Output Queue |
-| `ECSSQSConsumer` | both | Extends `QueueConsumer`; spins up `num_consumers` poll-loop threads via `ThreadRunner`; each thread does its own long-poll/retry/permanent-failure handling |
+| `ECSSQSConsumer` | both | Extends `QueueConsumer`; spins up `num_consumers` poll-loop threads via `ThreadRunner`. Since #495 its batch/retry/permanent-failure machinery is the shared `ConsumerLoop` (`agentkernel.pipeline.consumer`) bound to the SQS classmethod surface: public behavior unchanged |
+| `ConsumerLoop` | shared (pipeline) | The generic consumer machinery every transport uses: batch fetch, receive-count check, permanent-failure-then-ack flow, `ThreadRunner` wiring |
 | `QueueConsumer` | shared (Lambda + ECS) | Abstract base declaring `poll`, `process_message`, `on_permanent_failure`, `delete_message`; also the base of `LambdaSQSConsumer` (the Lambda-side equivalent, which leaves `poll`/`delete_message` unimplemented since the SQS Event Source Mapping handles those for Lambda) |
 | `ThreadRunner` | both | Runs N callables as peer threads; on a crash it either exits immediately or, if the failing task opts into `graceful=True` (the SQS consumer pools do), sets a shared `shutdown_event` and waits for sibling tasks in that same `run()` call to finish before calling `os._exit(1)` |
 
@@ -233,7 +302,7 @@ pipeline above with a WebSocket API Gateway instead of an HTTP API:
    instead of `AWSRestAPI`; `$connect` authenticates via the registered `AuthValidator`
    (mandatory) and stores `user_id` ↔ `connection_id` in a DynamoDB connections table.
 2. A `chat` frame (`{"route": "chat", "body": {...}}`) is enqueued to the Input Queue exactly
-   like REST Async — the framework never runs the agent inline in this mode.
+   like REST Async: the framework never runs the agent inline in this mode.
 3. `ECSAgentRunner` processes it in `async` mode exactly as in REST modes, then forwards the
    connection's `endpoint_url` as a custom SQS attribute to the Output Queue. In `stream` mode,
    `ECSAgentRunner.run()` dispatches to `ECSStreamAgentRunner` instead (re-checking
@@ -244,9 +313,9 @@ pipeline above with a WebSocket API Gateway instead of an HTTP API:
 4. `ECSOutputConsumer` branches on `execution.mode`: `async` pushes a `CHAT_RESPONSE` over the
    WebSocket connection via `PostToConnection`; `stream` pushes each Output Queue message as its
    own `STREAM_CHUNK` (using the forwarded `endpoint_url` + `user_id`), terminated by a chunk with
-   `"done": true`. Neither mode falls back to the response store — that path only runs for
+   `"done": true`. Neither mode falls back to the response store: that path only runs for
    `rest_sync`/`rest_async`.
-5. Custom routes (registered with `AWSWebsocketAPI.register`) bypass the queue entirely — they
+5. Custom routes (registered with `AWSWebsocketAPI.register`) bypass the queue entirely: they
    are answered directly by Thread 1, the same as chat frames in direct (non-queue) WebSocket
    mode.
 
@@ -356,6 +425,18 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 ---
 
 ## Summary: Implementation Status
+
+**Queue transports (the #495 pipeline):**
+
+| Transport | Status | Notes |
+|-----------|--------|-------|
+| `in_memory` | ✅ | The default: single-process pipeline, full semantics minus durability |
+| SQS | ✅ (via the Lambda/ECS deployment adapters below) | Pipeline-native `sqs` transport for the two-process topology: upcoming |
+| `kafka` | Upcoming | Confluent client, DLQ topics, Strimzi-provisioned clusters |
+| `nats` (recommended on-prem) | Upcoming | JetStream work-queue streams, partitioned per-session ordering |
+| Kubernetes Helm chart (baremetal + EKS) | Upcoming | Two-Deployment topology, KEDA autoscaling |
+
+**AWS deployment components:**
 
 | Component | Lambda | ECS |
 |-----------|--------|-----|

@@ -18,9 +18,9 @@ class IOHandler:
 
     Topology by transport:
 
-    - ``in_memory`` — single-process: all five pipeline components in one process. This is what
+    - ``in_memory``: single-process: all five pipeline components in one process. This is what
       a plain ``RESTAPI.run()`` boots on a laptop.
-    - broker transports — two-process: this process serves the API and delivers responses;
+    - broker transports: two-process: this process serves the API and delivers responses;
       ``AgentRunner.run()`` is the second container.
     """
 
@@ -35,13 +35,13 @@ class IOHandler:
 
         single_process = transport_type == "in_memory"
         cls._log.info(
-            f"IOHandler starting — mode={mode}, transport={transport_type}, " f"topology={'single-process' if single_process else 'two-process'}"
+            f"IOHandler starting: mode={mode}, transport={transport_type}, " f"topology={'single-process' if single_process else 'two-process'}"
         )
 
         from ..api.http import RESTAPI  # local import: RESTAPI.run() lazily imports this module
 
         def run_api() -> None:
-            RESTAPI.run(handlers=[RequestHandler()])  # explicit handlers — never re-delegates here
+            RESTAPI.run(handlers=[RequestHandler()])  # explicit handlers: never re-delegates here
 
         tasks = [
             ThreadRunner.Task(
@@ -65,11 +65,11 @@ class IOHandler:
         if mode == ExecutionMode.ASYNC:
             raise AKConfigError("ASYNC (WebSocket) mode over the pipeline ships in a later #495 iteration")
         if mode == ExecutionMode.STREAM and transport_type != "in_memory":
-            raise AKConfigError("STREAM mode over a broker transport needs WebSocket delivery — ships in a later #495 iteration")
+            raise AKConfigError("STREAM mode over a broker transport needs WebSocket delivery: ships in a later #495 iteration")
         if transport_type != "in_memory":
             response_store_config = config.execution.response_store
             if response_store_config is None or response_store_config.type in (None, "in_memory"):
                 raise AKConfigError(
-                    "multi-process queue modes need a shared response store (redis, valkey or dynamodb) — "
+                    "multi-process queue modes need a shared response store (redis, valkey or dynamodb): "
                     "the in_memory store is single-process only"
                 )

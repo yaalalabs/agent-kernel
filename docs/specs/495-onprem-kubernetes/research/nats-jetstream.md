@@ -37,7 +37,7 @@ contract being mapped is in `current-queue-mode.md`.
 - `nats-py` 2.15.0: official CNCF client, actively maintained, **asyncio-only** (no sync API; no
   third-party sync client with JetStream support found).
 - JetStream pull API (verified in source): `js.pull_subscribe(subject, durable=...)` then
-  `fetch(batch, timeout=...)` — a direct equivalent of long-poll receive with batch size.
+  `fetch(batch, timeout=...)`: a direct equivalent of long-poll receive with batch size.
   `ConsumerConfig`: `durable_name`, `ack_wait`, `max_deliver`, `backoff` (per-retry delays),
   `filter_subject(s)`, `max_ack_pending`. `Msg`: `ack()`, `nak(delay=...)`, `in_progress()`
   (extends the ack timer, like ChangeMessageVisibility), `term()`, `msg.metadata.num_delivered`.
@@ -60,13 +60,13 @@ contract being mapped is in `current-queue-mode.md`.
 | Permanent-failure delete | `term()` (stops redelivery; removes from work-queue stream; emits advisory) | Yes |
 | DLQ | Via `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES` advisory (~50 LoC pattern) | Partly |
 | MessageDeduplicationId | `Nats-Msg-Id` header + stream `duplicate_window` (default 2 min; set 5 for SQS parity) | Yes |
-| MessageGroupId ordering | **No direct equivalent** — partition-per-subject pattern | DIY |
+| MessageGroupId ordering | **No direct equivalent**: partition-per-subject pattern | DIY |
 | Message attributes | Arbitrary headers; subject also carries routing tokens | Yes |
 
 ### Streams and horizontal scaling
 
 - Two streams, e.g. `AGENT_REQUESTS` (`chat.req.>`) / `AGENT_REPLIES` (`chat.out.>`), retention
-  `WorkQueuePolicy` (message removed on terminal ack — closest to SQS delete-on-success), file
+  `WorkQueuePolicy` (message removed on terminal ack: closest to SQS delete-on-success), file
   storage. Constraints: consumers on a work-queue stream must have **non-overlapping filter
   subjects** (server-rejected otherwise); an unconsumed message stays forever → set `max_age` as
   a safety net.
@@ -77,17 +77,17 @@ contract being mapped is in `current-queue-mode.md`.
 
 - ADR-42 priority groups (server 2.11+) give `pinned_client` exclusive consumption with
   server-orchestrated failover, but Kafka-style multi-group partitioning is explicitly future
-  work — **server-side consumer groups do not exist yet**.
+  work: **server-side consumer groups do not exist yet**.
 - Deterministic subject mapping (server 2.10+): stream ingest transform
   `chat.req.*` → `chat.req.{{partition(N,1)}}.{{wildcard(1)}}` hashes the session token to a
   fixed partition number.
-- Synadia's Orbit **pcgroups** library (elastic partitioned consumer groups) is **Go-only** — no
+- Synadia's Orbit **pcgroups** library (elastic partitioned consumer groups) is **Go-only**: no
   Python port found.
 - **Practical Python recipe**: publish to `chat.req.<session_id>`; transform adds partition
   token; create N durable consumers with non-overlapping filters (`chat.req.0.>` …
-  `chat.req.N-1.>` — legal on a work-queue stream); one active processor per partition via
+  `chat.req.N-1.>`: legal on a work-queue stream); one active processor per partition via
   `max_ack_pending=1` per partition consumer (works from stable nats-py; multiple replicas can
-  pull the same partition consumer for failover — the server serializes them). Parallelism =
+  pull the same partition consumer for failover: the server serializes them). Parallelism =
   partition count, same as Kafka; idle partitions cost ~nothing, so choose N generously (e.g. 32).
 - Ordered consumers (`ordered_consumer=True`) are the wrong tool (ephemeral, ack-less,
   single-instance readers).
@@ -101,7 +101,7 @@ contract being mapped is in `current-queue-mode.md`.
   `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.<stream>.<consumer>`; the documented DLQ pattern
   captures the advisory into a small stream, direct-gets the original by sequence, republishes to
   a `dlq.>` stream, and deletes from the source (a max-delivered message on a work-queue stream is
-  NOT auto-removed — it just stops being delivered). Since AK runs its own permanent-failure
+  NOT auto-removed: it just stops being delivered). Since AK runs its own permanent-failure
   handler before deletion, the advisory-based DLQ may be unnecessary.
 - Note: rare `NumDelivered` anomalies reported in clustered setups (nats-server #5171); server's
   `max_deliver` enforcement is authoritative regardless.
@@ -112,11 +112,11 @@ contract being mapped is in `current-queue-mode.md`.
   `config.jetstream.enabled=true` + `fileStore.pvc.size`; `config.cluster.enabled=true`,
   `replicas=3` for production; config-reloader sidecar by default; `promExporter.enabled` adds a
   prometheus-nats-exporter sidecar + optional `podMonitor`.
-- Dev: single-pod single-server with a small file-store PVC is the chart's default topology —
+- Dev: single-pod single-server with a small file-store PVC is the chart's default topology:
   runs on any micro-cluster with a default StorageClass (microk8s `hostpath-storage` addon).
   (microk8s not explicitly documented by NATS; standard k8s mechanics, expected to work.)
 - Production: 3-node cluster, streams/consumers at `replicas: 3` (Raft). Manage declaratively via
-  NACK CRDs (control-loop mode) — fits GitOps for customer installs.
+  NACK CRDs (control-loop mode): fits GitOps for customer installs.
 - Footprint: single static Go binary <20 MB; core server idles at 15-30 MB RAM; JetStream adds
   memory with load (hundreds of MB sustained). Chart README recommends 2 CPU / 8 Gi as production
   JS minimum; a modest 3 × (1 CPU / 1-2 Gi) cluster handles chat-scale workloads. Dramatically
@@ -128,7 +128,7 @@ contract being mapped is in `current-queue-mode.md`.
   service), `account`, `stream`, `consumer`, `lagThreshold`, `activationLagThreshold`. Scales on
   pending (not-yet-delivered) messages; consumer must be a pull consumer.
 - Gotchas (KEDA tracker; open/closed status unverified): messages awaiting **redelivery are not
-  counted** as lag (#3787); clustered NATS — only the consumer's Raft leader reports accurate
+  counted** as lag (#3787); clustered NATS: only the consumer's Raft leader reports accurate
   counts (#3860); a non-existent consumer name can scale to `maxReplicaCount` (#7657) → create
   consumers via NACK before the ScaledObject.
 - With partitioned ordering, partition count caps useful parallelism → `maxReplicaCount` ≤
@@ -147,7 +147,7 @@ contract being mapped is in `current-queue-mode.md`.
 ## NATS core pub/sub for WebSocket push routing
 
 Core (non-JetStream) NATS is at-most-once, in-memory, interest-based pub/sub on the same server
-and client library — a natural fit for routing reply chunks to whichever IO pod holds the client's
+and client library: a natural fit for routing reply chunks to whichever IO pod holds the client's
 WebSocket: each pod makes a cheap ephemeral subscription per connected session
 (`push.session.<session_id>`) or per pod (`push.pod.<pod_id>`); workers publish chunks; only the
 interested pod receives; subscriptions die with the connection (no store cleanup). Keep durability

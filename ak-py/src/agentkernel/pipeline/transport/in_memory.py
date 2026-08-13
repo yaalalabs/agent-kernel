@@ -16,7 +16,7 @@ class _InMemoryQueue:
     """One in-process queue with SQS-FIFO-parity semantics (spec #495 §4).
 
     Per-group FIFO: messages are held in one deque per ``group_id`` (a message without a group
-    gets a per-message synthetic group), and at most one message per group is in flight — one
+    gets a per-message synthetic group), and at most one message per group is in flight: one
     session in order, sessions in parallel. Unacked messages return to their group head after
     ``ack_wait`` with ``receive_count`` incremented; ``nack`` returns them immediately. ``send``
     drops messages whose ``dedup_id`` was seen within ``dedup_window``. No durability and no size
@@ -91,7 +91,7 @@ class _InMemoryQueue:
         with self._ready_cond:
             group = self._message_group.pop(id(message), None)
             if group is None:
-                return  # already expired and requeued — at-least-once, the redelivery owns it now
+                return  # already expired and requeued: at-least-once, the redelivery owns it now
             self._in_flight.pop(group, None)
             self._release_group(group)
             self._ready_cond.notify_all()
@@ -154,8 +154,8 @@ class InMemoryTransportConsumer(TransportConsumer):
 class InMemoryTransport(QueueTransport):
     """The default queue transport: full queue-mode semantics in-process, zero backing services.
 
-    Queues are process-wide (class-level) so every component in the single-process topology —
-    request handler, agent runner, response handler — sees the same two queues regardless of
+    Queues are process-wide (class-level) so every component in the single-process topology:
+    request handler, agent runner, response handler: sees the same two queues regardless of
     which factory call created its transport instance. The first construction fixes each queue's
     ``ack_wait``/``dedup_window``; later instances reuse the existing queues.
     """

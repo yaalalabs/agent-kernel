@@ -60,7 +60,7 @@ class ResponseStore(ABC):
 
     async def _get_message_with_retry_async(self, request_id: str, get_and_delete: bool = False) -> Dict | None:
         """
-        Async counterpart of get_message_with_retry — yields the event loop via
+        Async counterpart of get_message_with_retry: yields the event loop via
         asyncio.sleep between attempts instead of blocking a thread for the full wait.
         """
         retry_count, delay = self._get_retry_config()

@@ -19,7 +19,7 @@ class QueueTransportContract:
     """Transport conformance tests. Subclass per transport and implement ``make_transport``.
 
     Timing knobs (``ack_wait``, ``fetch_wait``) and the ``force_redelivery`` hook may be tuned
-    per backend — e.g. a mocked-broker subclass can trigger redelivery without sleeping.
+    per backend: e.g. a mocked-broker subclass can trigger redelivery without sleeping.
     """
 
     ack_wait: float = 0.2

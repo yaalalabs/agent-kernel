@@ -10,12 +10,12 @@ _log = logging.getLogger("ak.thread_runner")
 
 class ThreadRunner:
     """
-    Runs Task instances concurrently — each as task.execution_function(task.item) — and reacts to
+    Runs Task instances concurrently, each as task.execution_function(task.item), and reacts to
     each completion in turn.
 
     Each Task gets its own threading.Thread (instead of a ThreadPoolExecutor worker), so a
     finished task's OS thread is torn down and reclaimed immediately rather than lingering
-    idle until every task in the batch — including any that never finish — has completed.
+    idle until every task in the batch, including any that never finish, has completed.
     """
 
     shutdown_event: threading.Event = threading.Event()

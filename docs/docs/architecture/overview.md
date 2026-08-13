@@ -169,7 +169,7 @@ All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAM
 Built-in support for:
 - Multi-cloud session persistence (AWS, Azure, GCP)
 - Token-level streaming (SSE over REST, WebSocket on AWS serverless)
-- Queue-based scalable execution (SQS-backed, on Lambda and ECS)
+- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS (Kafka, NATS, and Kubernetes deployment upcoming)
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
 - Observability and tracing (Langfuse, OpenLLMetry, Logfire)
@@ -265,29 +265,70 @@ sequenceDiagram
 
 See [Execution Flow](./execution-flow) for the full request lifecycle including the queue-based and WebSocket paths.
 
-## Scalable Execution Topologies
+## The Queue Execution Pipeline
 
-Beyond the in-process pipeline above, Agent Kernel ships deployment adapters that decouple request ingestion from agent execution using SQS queues. The same `execution` config block drives both:
+Chat execution is built on one logical pipeline
+([#495](https://github.com/yaalalabs/agent-kernel/issues/495)): every chat request travels five
+components, with the queue transport and the process topology selected purely by configuration.
 
 ```mermaid
 graph LR
-    CL[Client] --> RH[Request Handler<br/>Lambda / IO container]
-    RH --> IQ[/Input Queue SQS FIFO/]
-    IQ --> AR[Agent Runner<br/>Lambda / ECS service]
-    AR --> OQ[/Output Queue SQS FIFO/]
-    OQ --> RSH[Response Handler<br/>Lambda / output-consumer thread]
-    RSH --> RS[(Response Store<br/>DynamoDB / Redis / Valkey)]
+    CL[Client] --> RH[Request Handler<br/>REST / WebSocket surface]
+    RH --> IQ[/Input Queue/]
+    IQ --> AR[Agent Runner<br/>ChatService → Runtime.run]
+    AR --> OQ[/Output Queue/]
+    OQ --> RSH[Response Handler]
+    RSH --> RS[(Response Store<br/>in-memory / Redis / Valkey / DynamoDB)]
     RSH -. WebSocket push .-> CL
-    RS -. poll .-> RH
+    RS -. rest_sync wait / rest_async poll .-> RH
 
     style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style RSH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-- On **AWS Lambda**, the three roles are three Lambda functions wired by SQS event source mappings; see [AWS Serverless](../deployment/aws-serverless).
-- On **AWS ECS Fargate**, the request handler and response handler run as threads inside one IO container, and the agent runner is a separate auto-scaling ECS service with a pool of consumer threads; see [AWS Containerized](../deployment/aws-containerized) and the [Queue Mode Guide](../advanced/queue-mode-guide).
-- The client receives the reply either by **polling** the response store (`rest_sync` waits server-side, `rest_async` polls with a `request_id`) or by **WebSocket push** (`async` for full responses, `stream` for token-level chunks) on both AWS serverless and AWS ECS containerized.
+The queue transport is a pluggable backend (`execution.queues.type`):
+
+| Transport | Status | Durability | Typical use |
+|-----------|--------|------------|-------------|
+| `in_memory` | ✅ the default | In-process only | Local development, single-container deployments: full queue semantics (per-session FIFO, bounded retry, deduplication) with zero backing services |
+| SQS | ✅ on AWS Lambda and ECS (via the deployment adapters) | Durable, FIFO | Production on AWS |
+| `kafka`, `nats` | Upcoming (#495) | Durable | Production on-prem / Kubernetes |
+
+**One pipeline, three topologies.** The logical components map onto processes per deployment:
+
+```mermaid
+graph TB
+    subgraph SP["Single-process (in_memory: the default)"]
+        direction LR
+        SP1[REST API thread] --> SP2[agent-runner threads] --> SP3[response-handler threads]
+    end
+    subgraph TP["Two-process (broker transport: AWS ECS today)"]
+        direction LR
+        TP1["IO container<br/>Request Handler + Response Handler"] <--> TPQ[/broker queues/] <--> TP2["Agent Runner container<br/>auto-scaled consumer pool"]
+    end
+    subgraph LM["Three-way (AWS Lambda)"]
+        direction LR
+        LM1[Request Handler λ] --> LMQ1[/SQS/] --> LM2[Agent Runner λ] --> LMQ2[/SQS/] --> LM3[Response Handler λ]
+    end
+```
+
+- **Single-process**: a bare `RESTAPI.run()` boots all five components as threads in one process:
+  this is what local REST and single-container cloud deployments run. Sessions are processed in
+  order and in parallel across worker threads, failed messages retry up to `max_receive_count`,
+  and duplicates are dropped: the same semantics as the broker transports, minus durability.
+- **Two-process**: the IO process (request handler + response handler) and the agent-runner
+  process scale independently over a durable broker. Today this is AWS ECS Fargate with SQS; see
+  [AWS Containerized](../deployment/aws-containerized).
+- **Three-way**: on AWS Lambda the three roles are three functions wired by SQS event source
+  mappings; see [AWS Serverless](../deployment/aws-serverless).
+
+The activation rule: a bare `RESTAPI.run()` (no explicit handlers) runs the pipeline; surfaces
+constructed with explicit handlers (the thread handler, messaging integrations, custom handlers)
+and the `AgentService` clients (CLI, A2A, MCP) keep their direct execution paths. The client
+receives the reply either by **polling** the response store (`rest_sync` waits server-side,
+`rest_async` polls with a `request_id`), by **SSE** (`stream` on the REST surface), or by
+**WebSocket push** (`async`/`stream` on AWS today).
 
 ## Next Steps
 

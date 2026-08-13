@@ -1,6 +1,6 @@
 # Chat execution runs on Agent Kernel's queue-mode pipeline (#495): REST API -> input queue ->
 # agent runner -> output queue -> response handler, all five components in this one process.
-# This block is optional — these are the defaults — but is spelled out here to show the knobs.
+# This block is optional, these are the defaults, but is spelled out here to show the knobs.
 execution:
   # rest_sync: POST /api/v1/chat waits for the reply (also the behavior when mode is unset).
   # rest_async: POST returns a request_id immediately; poll GET /api/v1/chat?request_id=...

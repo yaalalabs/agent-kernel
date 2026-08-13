@@ -18,7 +18,7 @@ class AgentRunner:
     """Pipeline Agent Runner (spec #495 §8): consumes the input queue, executes via the
     ChatService execution layer, and forwards the reply to the output queue.
 
-    The generalization of ECSAgentRunner — transport-agnostic and instance-based. The
+    The generalization of ECSAgentRunner: transport-agnostic and instance-based. The
     ``run()`` classmethod is the two-process container entry point; ``start()`` runs the
     blocking consumer loop on an already-constructed instance.
     """
@@ -72,7 +72,7 @@ class AgentRunner:
     def run(cls) -> None:
         """Two-process container entry point. Dispatches to StreamAgentRunner in STREAM mode."""
         if QueueTransportFactory.resolve_type() == "in_memory":
-            raise AKConfigError("the in_memory transport runs in-process — start IOHandler (single-process topology) instead of AgentRunner")
+            raise AKConfigError("the in_memory transport runs in-process: start IOHandler (single-process topology) instead of AgentRunner")
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
         if cls is AgentRunner and AKConfig.get().execution.mode == ExecutionMode.STREAM:
             return StreamAgentRunner.run()

@@ -17,7 +17,7 @@ LOCAL_ENDPOINT = "local"
 
 
 class ResponseHandler:
-    """Pipeline Response Handler (spec #495 §8): consumes the output queue and delivers replies —
+    """Pipeline Response Handler (spec #495 §8): consumes the output queue and delivers replies:
     response store in REST modes, local chunk stream for in-process STREAM, WebSocket push for
     multi-process ASYNC/STREAM (ships with the WS delivery iteration).
 
@@ -90,7 +90,7 @@ class ResponseHandler:
             if message.group_id:
                 error_payload["session_id"] = message.group_id
             self._get_store().add_message({"session_id": message.group_id, "request_id": request_id, "status_code": 500, "body": error_payload})
-            self._log.info(f"Stored permanent-failure error — request_id={request_id}")
+            self._log.info(f"Stored permanent-failure error: request_id={request_id}")
         except Exception:
             self._log.exception("Failed to handle permanent-failure output message")
 
@@ -125,7 +125,7 @@ class ResponseHandler:
             "body": body,
         }
         self._get_store().add_message(record)
-        self._log.info(f"[OUTPUT DONE] Stored response — request_id={request_id}, status_code={record['status_code']}")
+        self._log.info(f"[OUTPUT DONE] Stored response: request_id={request_id}, status_code={record['status_code']}")
 
     def _store_chunk(self, message: QueueMessage) -> None:
         request_id = message.attributes.get(ATTR_REQUEST_ID)

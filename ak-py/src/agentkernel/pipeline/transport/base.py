@@ -29,7 +29,7 @@ class QueueTransport(ABC):
 
 
 class TransportConsumer(ABC):
-    """Receive side of a queue transport. One instance per consumer thread — implementations
+    """Receive side of a queue transport. One instance per consumer thread: implementations
     need not be thread-safe across instances, only self-contained."""
 
     @abstractmethod

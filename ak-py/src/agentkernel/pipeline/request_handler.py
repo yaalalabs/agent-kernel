@@ -18,7 +18,7 @@ from .response_store.handler import ResponseDBHandler
 from .response_store.in_memory import InMemoryResponseStore
 from .transport.base import QueueTransport, QueueTransportFactory
 
-if TYPE_CHECKING:  # QueueHandler stays in deployment.common — typing-only, no runtime coupling
+if TYPE_CHECKING:  # QueueHandler stays in deployment.common: typing-only, no runtime coupling
     from ..deployment.common.queue_handler import QueueHandler
 
 # Retry budget for awaiting a response when no execution.response_store block is configured;
@@ -289,7 +289,7 @@ class RequestHandler(RestHandler):
         return router
 
     async def run_chat(self, body: BaseRunRequest):
-        """POST /api/v1/chat — enqueue; SSE stream in STREAM mode, JSON otherwise."""
+        """POST /api/v1/chat: enqueue; SSE stream in STREAM mode, JSON otherwise."""
         # Direct-mode parity: same validation messages and error shape as ChatService._validate
         # (ValueError -> HTTPException(400, detail={"error": ...})).
         if not body.session_id:
@@ -313,7 +313,7 @@ class RequestHandler(RestHandler):
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")
 
     async def _sse_stream(self, request_id: str, session_id: Optional[str]) -> AsyncGenerator[str, None]:
-        store = self.get_response_store()  # InMemoryResponseStore — validated at IOHandler startup
+        store = self.get_response_store()  # InMemoryResponseStore: validated at IOHandler startup
         chunk_iterator = store.stream(request_id)
         try:
             while True:
@@ -336,7 +336,7 @@ class RequestHandler(RestHandler):
         files: Optional[List[UploadFile]] = File(None),
         images: Optional[List[UploadFile]] = File(None),
     ):
-        """POST /api/v1/chat-multipart — uploads become base64 FileData/ImageData and flow as JSON."""
+        """POST /api/v1/chat-multipart: uploads become base64 FileData/ImageData and flow as JSON."""
         try:
             file_data = [
                 FileData(file_data=await self._read_upload(upload), name=upload.filename or "unknown", mime_type=upload.content_type)

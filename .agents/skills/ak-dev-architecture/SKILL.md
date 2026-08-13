@@ -6,7 +6,10 @@ description: >
   interact, or before making changes to core functionality. Covers Session, Agent,
   Runner, Module, Runtime, AgentService, ChatService (execution core + presentation wrappers,
   and which layer each surface calls), AKConfig, tools, hooks, multimodal, conversation
-  threads (the integration/thread package), the adapter pattern, and the AWS ECS containerized deployment classes
+  threads (the integration/thread package), the adapter pattern, the queue execution pipeline
+  (agentkernel.pipeline: QueueMessage/QueueTransport/ConsumerLoop, the in_memory transport,
+  AgentRunner/ResponseHandler/RequestHandler/IOHandler, the RESTAPI.run delegation rule, and the
+  relocation shims), and the AWS ECS containerized deployment classes
   (ECSIOHandler, ECSOutputConsumer, ECSAgentRunner, ECSStreamAgentRunner, ECSSQSConsumer, QueueConsumer, ThreadRunner).
 license: Apache-2.0
 metadata:
@@ -23,7 +26,8 @@ metadata:
 3. **Config-driven behavior**: All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAML/JSON files and environment variables (`AK_` prefix, `__` for nesting).
 4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore).
 5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
-6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them.
+6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core` and `api`; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
+7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default; `sqs`/`kafka`/`nats` arriving over #495 iterations) and process topology selected by configuration.
 
 ## Core Abstractions
 
@@ -32,10 +36,10 @@ metadata:
 Tracks state across related interactions. Key properties:
 
 - **`id`**: Unique session identifier
-- **Framework-specific data**: Stored via `get(key)` / `set(key, value)` — each framework stores its own state under a unique key (e.g., `"openai"`, `"langgraph"`)
-- **Volatile cache** (`v_cache`): Cleared after every `Runtime.run()` invocation — use for transient per-request data
-- **Non-volatile cache** (`nv_cache`): Persisted across requests within the session — use for data that should survive multiple interactions
-- **Reserved keys** (`Session.Keys` enum): `VOLATILE_CACHE`/`NON_VOLATILE_CACHE` back the two caches; `FRAMEWORK_CONTEXT` (`"framework_context"`) holds a per-run, framework-agnostic caller context/state **dict** (must be picklable) that runners inject into the native framework call and write back on success. Unlike the caches it is **not** pre-initialized — an unset key reads back as `None` (absent ⇒ no injection, no behaviour change). The key is fronted by dedicated accessors — `session.get_framework_context()` (live dict, never auto-creates), `set_framework_context(dict)` (rejects non-dicts), `clear_framework_context()` — the way `get_volatile_cache()` fronts `v_cache`; nothing outside `Session` (runners included) spells the raw key. Scope is **pre-hooks and post-hooks**; tools use their framework-native handle (`RunContextWrapper.context`, `RunContext.deps`, ADK `tool_context.state`, …) instead
+- **Framework-specific data**: Stored via `get(key)` / `set(key, value)`: each framework stores its own state under a unique key (e.g., `"openai"`, `"langgraph"`)
+- **Volatile cache** (`v_cache`): Cleared after every `Runtime.run()` invocation: use for transient per-request data
+- **Non-volatile cache** (`nv_cache`): Persisted across requests within the session: use for data that should survive multiple interactions
+- **Reserved keys** (`Session.Keys` enum): `VOLATILE_CACHE`/`NON_VOLATILE_CACHE` back the two caches; `FRAMEWORK_CONTEXT` (`"framework_context"`) holds a per-run, framework-agnostic caller context/state **dict** (must be picklable) that runners inject into the native framework call and write back on success. Unlike the caches it is **not** pre-initialized: an unset key reads back as `None` (absent ⇒ no injection, no behaviour change). The key is fronted by dedicated accessors: `session.get_framework_context()` (live dict, never auto-creates), `set_framework_context(dict)` (rejects non-dicts), `clear_framework_context()`: the way `get_volatile_cache()` fronts `v_cache`; nothing outside `Session` (runners included) spells the raw key. Scope is **pre-hooks and post-hooks**; tools use their framework-native handle (`RunContextWrapper.context`, `RunContext.deps`, ADK `tool_context.state`, …) instead
 - **Async context manager**: `async with session:` acquires a lock and sets the session as the current context via `contextvars`
 - **`Session.current()`**: Class method to retrieve the active session from any code running within the session context
 
@@ -46,8 +50,8 @@ Wraps a framework-specific agent. Key properties:
 - **`name`**: Derived from the native agent (e.g., OpenAI `agent.name`, CrewAI `agent.role`)
 - **`runner`**: The `Runner` instance that executes this agent
 - **`pre_hooks` / `post_hooks`**: Lists of `PreHook` / `PostHook` instances applied during execution
-- **`get_description()`**: Abstract method — returns the agent's description/instructions
-- **`get_a2a_card()`**: Abstract method — returns an A2A agent card for inter-agent communication
+- **`get_description()`**: Abstract method: returns the agent's description/instructions
+- **`get_a2a_card()`**: Abstract method: returns an A2A agent card for inter-agent communication
 
 ### Runner (`ak-py/src/agentkernel/core/base.py`)
 
@@ -57,14 +61,14 @@ Encapsulates framework-specific execution logic:
 - **`stream(agent, session, requests) -> AsyncGenerator[str, None]`**: Abstract async generator that yields token deltas for streaming execution (`execution.mode: stream`). Frameworks without native token streaming (CrewAI, smolagents) implement it by raising `NotImplementedError`
 - Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`, `PydanticAIRunner`)
 - Runners handle: creating `ToolContext`, converting request models to framework-native formats, invoking the framework's execution API, converting responses back to `AgentReply`
-- **Per-run framework context**: the base `Runner` provides `_load_framework_context(session)` (returns a **deep copy** of the reserved `framework_context` key, or `None` when absent) and `_store_framework_context(session, incoming, produced)` (shallow-merges `produced` over `incoming` — framework-touched top-level keys win, untouched caller keys preserved — with a fail-fast picklability check). Each adapter's `run`/`stream` calls load before the native call, injects `incoming` via its native mechanism, and calls store **only after a successful native call** (inside the `try`, before the `except`; after the `async for` loop for streams, never in `finally`) so a crash/disconnect leaves the stored context intact. Both helpers go through the `Session` accessors, so the raw key name stays inside `Session`. Round-trip fidelity is per-framework (OpenAI and Pydantic AI full — injected as `context=` / `deps=`, mutated in place by tools; ADK all-but-internal-and-scope-prefixed keys, accumulate-only; smolagents pre-seeded keys only, and the context is also appended to the task prompt; LangGraph declared channels only; CrewAI unsupported — warns once per runner and skips). When an adapter seeds caller keys into a native state dict, write AK-internal keys **last** so a caller key cannot displace them (`ak_tool_context` in ADK, `messages` in LangGraph)
+- **Per-run framework context**: the base `Runner` provides `_load_framework_context(session)` (returns a **deep copy** of the reserved `framework_context` key, or `None` when absent) and `_store_framework_context(session, incoming, produced)` (shallow-merges `produced` over `incoming`: framework-touched top-level keys win, untouched caller keys preserved: with a fail-fast picklability check). Each adapter's `run`/`stream` calls load before the native call, injects `incoming` via its native mechanism, and calls store **only after a successful native call** (inside the `try`, before the `except`; after the `async for` loop for streams, never in `finally`) so a crash/disconnect leaves the stored context intact. Both helpers go through the `Session` accessors, so the raw key name stays inside `Session`. Round-trip fidelity is per-framework (OpenAI and Pydantic AI full: injected as `context=` / `deps=`, mutated in place by tools; ADK all-but-internal-and-scope-prefixed keys, accumulate-only; smolagents pre-seeded keys only, and the context is also appended to the task prompt; LangGraph declared channels only; CrewAI unsupported: warns once per runner and skips). When an adapter seeds caller keys into a native state dict, write AK-internal keys **last** so a caller key cannot displace them (`ak_tool_context` in ADK, `messages` in LangGraph)
 
 ### Module (`ak-py/src/agentkernel/core/module.py`)
 
 Container that wraps framework agents and registers them with Runtime:
 
 - **`load(agents)`**: Takes a list of native framework agents, wraps each via `_wrap()`, registers with `Runtime.current()`
-- **`_wrap(agent, agents) -> Agent`**: Abstract method — framework adapters implement this to create their `Agent` subclass
+- **`_wrap(agent, agents) -> Agent`**: Abstract method: framework adapters implement this to create their `Agent` subclass
 - **`pre_hook(agent, hooks)` / `post_hook(agent, hooks)`**: Attach hooks to a specific agent
 - **`unload()`**: Deregisters all agents from the Runtime
 - Constructed with native framework agents: e.g., `OpenAIModule([triage_agent, math_agent])`
@@ -107,14 +111,14 @@ High-level utility encapsulating a conversation:
 The chat request layer on top of `AgentService`, split into two sub-layers. `ChatService` has no
 knowledge of conversation threads (that lives in `integration/thread/`).
 
-- **Execution core** — transport-neutral, typed results, exceptions propagate:
+- **Execution core**: transport-neutral, typed results, exceptions propagate:
   - `execute(req, requests=None) -> tuple[AgentReply, session_id]` (async) and `execute_sync(...)`
   - `execute_stream(req, requests=None) -> AsyncGenerator[StreamChunk, None]` (raw chunks, no framing) and `execute_stream_sync(...)`
   - `requests=None`: `RequestBuilder` builds the list from the pydantic request (prompt required).
-    `requests` supplied: the caller-built list is used as-is (prompt optional, list must be non-empty) — this
+    `requests` supplied: the caller-built list is used as-is (prompt optional, list must be non-empty): this
     is how messaging integrations pass platform-downloaded attachments and extra `AgentRequestAny` context
   - Each call selects the agent/session through a fresh `AgentHandler` (raises `ValueError("No agent available")`)
-- **Presentation wrappers** — `process_chat_request`, `process_async_chat_request`,
+- **Presentation wrappers**: `process_chat_request`, `process_async_chat_request`,
   `process_stream_chat_async`, `process_stream_chat_sync`: thin shells over the core adding the HTTP shapes
   (`ResponseBuilder` JSON dicts / `HTTPException` per `rest_api_mode`, SSE frames). Used by the REST handler
   and every deployment adapter
@@ -122,7 +126,7 @@ knowledge of conversation threads (that lives in `integration/thread/`).
   fields → `AgentRequestAny`), `AgentHandler` (AgentService lifecycle + sync/async bridging),
   `ResponseBuilder` (response dicts, SSE frames)
 
-#### Chat execution layering — which layer does a surface call?
+#### Chat execution layering: which layer does a surface call?
 
 ```mermaid
 graph TD
@@ -200,8 +204,8 @@ Pydantic-based configuration:
 - **Reply types**: 
   - `AgentReplyText`, 
   - `AgentReplyImage`
-  - `AgentReplyAny`: `content: dict` — returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`, Pydantic AI `output_type`); `str(reply)` returns the JSON-serialized content. Non-streaming only.
-  - `StreamChunk`: `delta: str | None`, `done: bool`, `error: str | None`, `session_id: str | None` — yielded by `Runtime.stream()` / `AgentService.stream_multi()` for token-level streaming
+  - `AgentReplyAny`: `content: dict`: returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`, Pydantic AI `output_type`); `str(reply)` returns the JSON-serialized content. Non-streaming only.
+  - `StreamChunk`: `delta: str | None`, `done: bool`, `error: str | None`, `session_id: str | None`: yielded by `Runtime.stream()` / `AgentService.stream_multi()` for token-level streaming
 - Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
@@ -212,8 +216,8 @@ Pydantic-based configuration:
 
 ## Hooks (`ak-py/src/agentkernel/core/hooks.py`)
 
-- **`PreHook`**: `on_run(session, agent, requests) -> list[AgentRequest] | AgentReply` — return modified requests to continue, or an `AgentReply` to halt execution
-- **`PostHook`**: `on_run(session, requests, agent, agent_reply) -> AgentReply` — return modified or unmodified reply
+- **`PreHook`**: `on_run(session, agent, requests) -> list[AgentRequest] | AgentReply`: return modified requests to continue, or an `AgentReply` to halt execution
+- **`PostHook`**: `on_run(session, requests, agent, agent_reply) -> AgentReply`: return modified or unmodified reply
 - **`PostHook.on_stream_chunk(session, requests, agent, delta) -> str | None`**: Optional override called for each streaming token delta before it reaches the client. Default implementation passes the delta through unchanged; return `None` to drop the token
 - Use cases: RAG injection, input/output guardrails, logging, disclaimers, prompt modification, multimodal preprocessing, streaming token filtering/redaction
 
@@ -277,8 +281,8 @@ multimodal:
 ## Conversation Threads (`ak-py/src/agentkernel/integration/thread/`)
 
 Persistent, named conversation threads keyed by `session_id`, independent of session persistence
-(`session:`). Threads are packaged as an **integration** (like Slack): the whole capability — handler,
-recording logic, manager, models, naming, and store backends — lives under `integration/thread/`
+(`session:`). Threads are packaged as an **integration** (like Slack): the whole capability: handler,
+recording logic, manager, models, naming, and store backends: lives under `integration/thread/`
 (public alias `agentkernel.thread`), and **mounting `AgentThreadRequestHandler` is what enables it**.
 The `thread` config block only parameterizes the store backend and naming. `core/` and `api/` contain
 no thread code, and `ChatService` has no thread knowledge. Threads are the history mechanism for
@@ -288,12 +292,12 @@ platforms own the history), and thread recording does not apply to queue-mode/de
 ### Key Components
 
 - **`AgentThreadRequestHandler`** (`thread_chat.py`): extends `AgentRESTRequestHandler`, serving the same chat routes with thread recording wrapped around the ChatService execution core (build requests via `RequestBuilder` → `ThreadRecorder.pre_run` → `execute`/`execute_stream` with the prebuilt list → `ThreadRecorder.post_run`), plus the read routes. Fails fast in `__init__` when no `thread` config block exists; prechecks agent availability before any thread write (no phantom threads); `user_id` is required on its chat routes (and only there). Streaming accumulates deltas and skips recording on an error chunk or empty stream
-- **`ThreadRecorder`** (`recorder.py`): the recording logic as a reusable class over `ConversationThreadManager` — `pre_run` (enforce `user_id`, store attachment bytes and rewrite to `AgentRequestAttachmentRef`, get-or-create thread, append user message; `store_attachments` runs first so config rejections leave no phantom thread) and `post_run` (append assistant message)
-- **`ConversationThreadManager`** (`manager.py`): Service façade owning thread lifecycle (create/load/append/history) and, when multimodal is enabled, saving attachment bytes into the shared `AttachmentStore` before the agent runs. A single process-wide instance (`ConversationThreadManager.get()` / class-level singleton, guarded by an `RLock`) is used by `ThreadRecorder` and `ThreadRESTRequestHandler` — `None` when no `thread` config block is present
+- **`ThreadRecorder`** (`recorder.py`): the recording logic as a reusable class over `ConversationThreadManager`: `pre_run` (enforce `user_id`, store attachment bytes and rewrite to `AgentRequestAttachmentRef`, get-or-create thread, append user message; `store_attachments` runs first so config rejections leave no phantom thread) and `post_run` (append assistant message)
+- **`ConversationThreadManager`** (`manager.py`): Service façade owning thread lifecycle (create/load/append/history) and, when multimodal is enabled, saving attachment bytes into the shared `AttachmentStore` before the agent runs. A single process-wide instance (`ConversationThreadManager.get()` / class-level singleton, guarded by an `RLock`) is used by `ThreadRecorder` and `ThreadRESTRequestHandler`: `None` when no `thread` config block is present
 - **`ThreadStore`** (`store/base.py`): Abstract base with backend persistence methods (create/get/append/list); pluggable per backend
 - **`ThreadStoreBuilder`** (`store/base.py`): Factory that constructs the configured `ThreadStore` from `AKConfig`'s `thread.type`
 - **`Thread` / `ThreadMessage` / `ThreadAttachment` / `ThreadPage` / `MessagePage`** (`model.py`): Pydantic models for thread metadata, individual messages, attachment references, and cursor-paginated listings
-- **`ThreadNamingStrategy`** (`naming.py`): Overridable strategy that names auto-created threads — default implementation makes a single LiteLLM call (`thread.naming.model`, requires the `thread` extra) to derive a concise title from the first prompt, falling back to a truncated prompt prefix when `litellm`/an API key is unavailable. Explicit `thread_name` on a chat request always wins and locks the thread against further automatic naming
+- **`ThreadNamingStrategy`** (`naming.py`): Overridable strategy that names auto-created threads: default implementation makes a single LiteLLM call (`thread.naming.model`, requires the `thread` extra) to derive a concise title from the first prompt, falling back to a truncated prompt prefix when `litellm`/an API key is unavailable. Explicit `thread_name` on a chat request always wins and locks the thread against further automatic naming
 - **`Authoriser`** (`authoriser.py`): Pluggable base class (`authorise(token) -> Optional[user_id]`) that `ThreadRESTRequestHandler` calls to protect the read routes; routes are open when no `Authoriser` is configured
 - **`ThreadRESTRequestHandler`** (`thread_chat.py`): Serves `GET /api/v1/threads` (list, filterable by `user_id`/`group_id`, cursor-paginated) and `GET /api/v1/threads/{session_id}` (thread + paginated message history); raises 404 when thread support is disabled and 403 when a resolved `user_id` doesn't own the requested thread. Composed into `AgentThreadRequestHandler`'s router; also mountable standalone for read-only access
 
@@ -331,22 +335,22 @@ thread:
 
 Deployment splits the same way session does: the **application** mounts `AgentThreadRequestHandler`
 and declares `thread.type` in its committed `config.yaml`, and **Terraform** provisions the backend
-and injects only the connection detail — `create_dynamodb_thread_table` (AWS serverless +
+and injects only the connection detail: `create_dynamodb_thread_table` (AWS serverless +
 containerized) injects `AK_THREAD__DYNAMODB__TABLE_NAME`; `create_firestore_thread_collection` (GCP)
 injects the `AK_THREAD__FIRESTORE__*` vars. Terraform never sets `AK_THREAD__TYPE`. Note the failure
 mode this leaves: because `AKConfig.thread` is `Optional` and any `AK_THREAD__*` var materialises it
 while `type` defaults to `in_memory`, a mounted handler plus a flag but *without* a declared
 `thread.type` runs against the non-durable in-memory backend, with no error.
 
-Attachments in thread mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or `dynamodb` — `session_cache` is rejected, since threads need durable, cross-request-scoped attachment storage that a session-local cache can't provide).
+Attachments in thread mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or `dynamodb`: `session_cache` is rejected, since threads need durable, cross-request-scoped attachment storage that a session-local cache can't provide).
 
 ## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
 
 Pluggable storage backends agents can read from and write to as tools:
 
-- **`KnowledgeBase`** (`base.py`): ABC — backends implement `connect()`, `write()`, `read()`, `backend_name`, `get_description()`; `schema()`, `add_schema()`, `format_results()`, `close()` are provided by the base
+- **`KnowledgeBase`** (`base.py`): ABC: backends implement `connect()`, `write()`, `read()`, `backend_name`, `get_description()`; `schema()`, `add_schema()`, `format_results()`, `close()` are provided by the base
 - **`KnowledgeBuilder`** (`knowledgebuilder.py`): Wraps one or more `KnowledgeBase` instances and `build()`s plain-function tools (`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`) for binding via a framework's `ToolBuilder`
-- **Backends**: `ChromaManager` (vector, `chroma.py`), `Neo4jManager` (graph, `neo4j.py`), `StarburstManager` (read-only SQL via Trino, `starburst.py`) — each behind an optional dependency extra (`chromadb`, `neo4j`, `trino`)
+- **Backends**: `ChromaManager` (vector, `chroma.py`), `Neo4jManager` (graph, `neo4j.py`), `StarburstManager` (read-only SQL via Trino, `starburst.py`): each behind an optional dependency extra (`chromadb`, `neo4j`, `trino`)
 
 ## Sandbox (`ak-py/src/agentkernel/sandbox/`)
 
@@ -368,7 +372,7 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
   Resolves the workload **profile** → provider, owns sandbox **sessions** (nv_cache registry,
   namespace-isolated per AK session; `per_call`/`per_session`/`per_runtime` scopes), and records
   promoted tasks. `ExecutionManager.get()` returns `None` when disabled.
-- **`SandboxProviderFactory` / `ExecutionBrokerFactory`** (`factory.py`): the #541 house pattern —
+- **`SandboxProviderFactory` / `ExecutionBrokerFactory`** (`factory.py`): the #541 house pattern:
   built-in short names are `if/elif` real-import branches listed in `_BUILTIN_PROVIDER_NAMES`; a
   dotted-path `type` resolves via `resolve_dotted` (bring-your-own). Providers: `local_subprocess`
   (no isolation), `docker` (container). Broker flavors: `thread` (default, dedicated loop thread),
@@ -379,13 +383,56 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
   `SandboxPrincipal` (`principal_resolver` config for user identity). `testing.py` ships
   `FakeSandboxProvider` and the reusable `SandboxProviderContract`.
 
+## Queue Execution Pipeline (`ak-py/src/agentkernel/pipeline/`)
+
+The #495 pipeline: every chat request on a server surface travels Request Handler → Input Queue →
+Agent Runner → Output Queue → Response Handler. Spec set: `docs/specs/495-onprem-kubernetes/`.
+Phase A (shipped): the package, the `in_memory` transport, and the single-process topology.
+Upcoming iterations: `sqs`/`kafka`/`nats` transports, pod-direct WebSocket delivery, the
+`ak-deployment/ak-k8s` Helm chart.
+
+| Module | Contents |
+|---|---|
+| `envelope.py` | `QueueMessage` (`body`, `attributes`, `group_id`, `dedup_id`, `receive_count`, `message_id`, `native` excluded from serialization) + attribute constants `ATTR_REQUEST_ID`/`ATTR_USER_ID`/`ATTR_ENDPOINT_URL`/`ATTR_STATUS_CODE`; `QueueName` (INPUT/OUTPUT) |
+| `transport/base.py` | `QueueTransport` (`send` + `create_consumer` hook), `TransportConsumer` (`fetch`/`ack`/`nack`/`close`: **one instance per consumer thread**), `QueueTransportFactory` (#541 house pattern; `resolve_type()`: explicit `type` wins, else `input.url` implies `sqs`, else `in_memory`; not-yet-shipped built-ins raise `AKConfigError`; dotted-path BYO supported) |
+| `transport/in_memory.py` | `InMemoryTransport`: process-wide class-level queues; per-group FIFO with at most one in-flight message per group (groupless messages get synthetic groups); `ack_wait` redelivery with exact `receive_count`; `dedup_window`; blocking fetch; `reset()` for test isolation |
+| `consumer.py` | `ConsumerLoop`: the generic batch/retry/permanent-failure machinery extracted from `ECSSQSConsumer` (exact log-message parity; `logger` param keeps legacy `ak.ecs.*` logger names) |
+| `agent_runner.py` | `AgentRunner`/`StreamAgentRunner`: run via `ChatService.process_chat_request`/`process_stream_chat_sync`; forward replies with a `STATUS_CODE` attribute (the ECS path drops the status); per-chunk dedup suffixes `{dedup}-{receive_count}-{i}`; `run()` rejects `in_memory` (single-process runs via `IOHandler`) |
+| `response_handler.py` | `ResponseHandler`: REST modes write records `{session_id, request_id, status_code, body}`; STREAM + local endpoint routes chunks to `InMemoryResponseStore.add_chunk`; WS push raises until the WS iteration lands |
+| `request_handler.py` | `RestHandler` (relocated; shim at `deployment/common/rest_handler.py` keeps the `AKConfig` patch target) with three default-preserving seams (`_effective_mode`, `_await_response_record`, `_build_sync_response`); pipeline `RequestHandler`: always queue mode, unset mode → REST_SYNC, SSE bridging from `store.stream`, multipart route only on `in_memory`, stored `status_code >= 400` → `HTTPException` (direct-mode error parity) |
+| `response_store/` | Relocated family (`base`/`handler`/`redis`/`valkey`/`dynamodb`; shims left at `deployment/common/response_store.py` and `deployment/aws/core/response_store/`) plus `InMemoryResponseStore` (`get_record` exposes `status_code`; `add_chunk`/`stream` for local SSE) |
+| `io_handler.py` | `IOHandler.run(auth_validator=None)`: single-process topology (`in_memory`: rest-api + response-handler + agent-runner threads via `ThreadRunner`) vs two-process (broker: rest-api + response-handler only); startup fail-fasts (ASYNC / STREAM-over-broker → not until the WS iteration; broker transport + in_memory/absent response store → `AKConfigError`) |
+| `ws/base.py` | Relocated `WebSocketConnectionStoreABC`/`WebSocketHandlerABC` (shim at `deployment/common/websocket_service.py`); registry/push/native-WS handler arrive with the WS iteration |
+| `thread_runner.py` | Relocated `ThreadRunner` (shim at `deployment/common/thread_runner.py` keeps `import os` for the `os._exit` patch target) |
+| `testing.py` | `QueueTransportContract`: reusable transport conformance suite (the `SandboxProviderContract` pattern); subclass it per transport |
+
+Rules that govern the package:
+
+1. **Activation**: `RESTAPI.run()` delegates to `IOHandler` only when **all three** hold: `cls is
+   RESTAPI` exactly, no explicit `handlers`, and `resolve_type() == "in_memory"`. Subclasses
+   (`AWSRestAPI`, `AWSWebsocketAPI`) and explicit-handler surfaces (thread handler, messaging
+   integrations, custom handlers) never delegate; CLI/A2A/MCP use `AgentService` directly.
+2. **Coupling**: `pipeline` imports `core` and `api` only (api's pipeline imports are lazy inside
+   `run()`); `deployment` imports `pipeline`; nothing in `pipeline` imports `deployment` at
+   runtime (typing-only imports allowed under `TYPE_CHECKING`).
+3. **Shims preserve patch targets, not just names**: tests patch through old module paths
+   (`…thread_runner.os._exit`, `…sqs_consumer.time.sleep`, `…rest_handler.AKConfig.get`): a shim
+   must keep those names resolvable (shared module/class objects make the patch reach the moved
+   implementation).
+4. **Transports never read `AKConfig` in methods**: the factory reads config once and passes
+   explicit constructor parameters (same rule as the shared DB drivers).
+5. **In-memory parity, honestly**: the `in_memory` transport reproduces queue *semantics*
+   (per-session FIFO, bounded retry + permanent-failure hook, dedup, batch fetch) but not
+   durability; multi-process REST modes require a shared response store (enforced at `IOHandler`
+   startup).
+
 ## Shared Database Drivers (`ak-py/src/agentkernel/core/util/driver/`)
 
 The Session, Multimodal attachment, Response Store, and Thread backends share one set of
 connection drivers: `RedisDriver`, `ValkeyDriver` (both subclassing `_RedisLikeDriver`),
 `DynamoDBDriver`, `CosmosDBDriver`, and `FirestoreDriver`. Three rules govern the package:
 
-1. **Drivers never read `AKConfig`** — all connection parameters are explicit constructor
+1. **Drivers never read `AKConfig`**: all connection parameters are explicit constructor
    arguments; config reading and validation stay in the stores and factories
 2. **Drivers own the connection lifecycle** (lazy connect, 3-retry/2s back-off, Redis/Valkey
    ping health-check with reconnect, `socket_connect_timeout=5`, TTL plumbing) plus a generic
@@ -394,7 +441,7 @@ connection drivers: `RedisDriver`, `ValkeyDriver` (both subclassing `_RedisLikeD
    for consumers whose data operations exceed the generic surface (e.g. the DynamoDB/Cosmos/
    Firestore thread stores)
 
-`driver/__init__.py` has no eager imports — `redis`, `valkey`, `azure`, and `gcp` extras stay
+`driver/__init__.py` has no eager imports: `redis`, `valkey`, `azure`, and `gcp` extras stay
 optional; consumers import the concrete module (`from agentkernel.core.util.driver.redis import
 RedisDriver`). Connect/reconnect is serialized by a per-instance `threading.Lock`, so drivers
 are safe to share across threads (e.g. response stores under `ECSOutputConsumer`).
@@ -436,29 +483,41 @@ ak-py/src/agentkernel/
 │   └── pydanticai/          # Pydantic AI adapter
 ├── api/                     # API layers
 │   ├── handler.py           # REST API handler
-│   ├── http.py              # RESTAPI class
+│   ├── http.py              # RESTAPI class (run() delegates to pipeline IOHandler: see activation rule)
 │   ├── a2a/                 # Agent-to-Agent server
 │   └── mcp/                 # MCP server
+├── pipeline/                # Queue execution pipeline (#495): see its section
+│   ├── envelope.py           # QueueMessage + attribute constants, QueueName
+│   ├── consumer.py           # ConsumerLoop: generic batch/retry/permanent-failure machinery
+│   ├── agent_runner.py       # AgentRunner, StreamAgentRunner
+│   ├── response_handler.py   # ResponseHandler
+│   ├── request_handler.py    # RestHandler (relocated) + pipeline RequestHandler
+│   ├── io_handler.py         # IOHandler: single-/two-process topologies + fail-fasts
+│   ├── thread_runner.py      # ThreadRunner (relocated)
+│   ├── testing.py            # QueueTransportContract (BYO/conformance test suite)
+│   ├── transport/            # base.py (ABCs + factory), in_memory.py (+ sqs/kafka/nats upcoming)
+│   ├── response_store/       # base, handler (factory), in_memory, redis, valkey, dynamodb
+│   └── ws/                   # base.py (WS ABCs; registry/push/handler arrive with the WS iteration)
 ├── deployment/              # Cloud deployment adapters
 │   ├── common/              # Shared across Lambda + ECS
-│   │   ├── thread_runner.py     # ThreadRunner — run N callables as peer threads
-│   │   ├── queue_consumer.py    # QueueConsumer — ABC shared by ECSSQSConsumer + LambdaSQSConsumer
-│   │   ├── response_store.py    # ResponseStore
-│   │   ├── rest_handler.py      # RestHandler — queue-aware AgentRESTRequestHandler subclass (enqueue_and_wait/poll_response), shared by ECS's ECSQueueRequestHandler
-│   │   └── websocket_service.py # WebSocketConnectionStoreABC + WebSocketHandlerABC — shared WS connection-store contract and MessageType/broadcast lifecycle, used by both serverless and containerized AWS handlers
+│   │   ├── thread_runner.py     # SHIM → pipeline/thread_runner.py (keeps os._exit patch target)
+│   │   ├── queue_consumer.py    # QueueConsumer: ABC shared by ECSSQSConsumer + LambdaSQSConsumer
+│   │   ├── response_store.py    # SHIM → pipeline/response_store/base.py
+│   │   ├── rest_handler.py      # SHIM → pipeline/request_handler.py (keeps AKConfig patch target)
+│   │   └── websocket_service.py # SHIM → pipeline/ws/base.py
 │   ├── aws/
 │   │   ├── serverless/      # Lambda handlers: Lambda, ResponseHandler, ServerlessAgentRunner, etc.
-│   │   │   └── core/router/ws_lambda.py  # LambdaWSHandler (renamed from BaseWSHandler) — subclasses AWSWebSocketHandler, adds Lambda-event parsing only
+│   │   │   └── core/router/ws_lambda.py  # LambdaWSHandler (renamed from BaseWSHandler): subclasses AWSWebSocketHandler, adds Lambda-event parsing only
 │   │   ├── containerized/   # ECS Fargate handlers
 │   │   │   ├── core/
-│   │   │   │   ├── sqs_consumer.py      # ECSSQSConsumer — extends QueueConsumer: SQS poll loop
+│   │   │   │   ├── sqs_consumer.py      # ECSSQSConsumer: extends QueueConsumer: SQS poll loop
 │   │   │   │   └── api/
 │   │   │   │       ├── rest_api.py      # ECSQueueRequestHandler (extends RestHandler), AWSRestAPI (extends RESTAPI)
 │   │   │   │       └── websocket_api.py # ECSWebSocketHandlerBase, ECSWebSocketSystemRequestHandler, ECSWebSocketRequestHandler, AWSWebsocketAPI (extends RESTAPI)
-│   │   │   ├── akagentrunner.py         # ECSAgentRunner — polls Input Queue, runs agent
-│   │   │   ├── akoutputconsumer.py      # ECSOutputConsumer — polls Output Queue, writes to DB/WS
-│   │   │   └── ecs_io_handler.py        # ECSIOHandler — entrypoint: wires both threads
-│   │   └── core/            # Shared AWS-only: SQSHandler, ResponseStore, websocket_service.py (WebSocketConnectionStore — DynamoDB, AWSWebSocketHandler — API Gateway Management API push, extends WebSocketHandlerABC)
+│   │   │   ├── akagentrunner.py         # ECSAgentRunner: polls Input Queue, runs agent
+│   │   │   ├── akoutputconsumer.py      # ECSOutputConsumer: polls Output Queue, writes to DB/WS
+│   │   │   └── ecs_io_handler.py        # ECSIOHandler: entrypoint: wires both threads
+│   │   └── core/            # Shared AWS-only: SQSHandler, ResponseStore, websocket_service.py (WebSocketConnectionStore, DynamoDB, AWSWebSocketHandler, API Gateway Management API push, extends WebSocketHandlerABC)
 │   └── azure/               # Azure Functions handler
 ├── integration/             # Integrations (messaging platforms + conversation threads)
 │   ├── thread/              # Conversation Thread Support: AgentThreadRequestHandler, ThreadRecorder,
@@ -525,19 +584,19 @@ The containerized deployment runs on ECS Fargate and uses a two-container archit
 | Class | File | Role |
 |---|---|---|
 | `QueueConsumer` | `deployment/common/queue_consumer.py` | Abstract base shared by `ECSSQSConsumer` and `LambdaSQSConsumer`: declares `poll`, `process_message`, `on_permanent_failure`, `delete_message` |
-| `ECSSQSConsumer` | `containerized/core/sqs_consumer.py` | Extends `QueueConsumer`: SQS long-poll loop, retry/DLQ logic |
-| `ThreadRunner` | `deployment/common/thread_runner.py` | Runs N callables as peer threads (one `threading.Thread` per `Task`, gated by a `Semaphore`) |
-| `ECSOutputConsumer` | `containerized/akoutputconsumer.py` | Extends `ECSSQSConsumer` — polls Output Queue, writes to DynamoDB or broadcasts via WebSocket |
-| `ECSAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSSQSConsumer` — polls Input Queue, runs the agent, sends to Output Queue. `run()` dispatches to `ECSStreamAgentRunner.run()` when `execution.mode == stream`, re-checked on every call (mirroring `ECSIOHandler.run` and the serverless `ServerlessAgentRunner.handle()`/`ServerlessStreamAgentRunner.handle()` dispatch) |
-| `ECSStreamAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSAgentRunner` — STREAM-mode sibling: fans out each streamed chunk as its own Output Queue message instead of sending one full response |
+| `ECSSQSConsumer` | `containerized/core/sqs_consumer.py` | Extends `QueueConsumer`: SQS long-poll loop, retry/DLQ logic. Since #495 the machinery is the pipeline's `ConsumerLoop` bound to the SQS classmethod surface: public classmethods, raw-record subclass contract, log messages, and patch targets (`…sqs_consumer.time.sleep`) unchanged |
+| `ThreadRunner` | `pipeline/thread_runner.py` (shim at `deployment/common/thread_runner.py`) | Runs N callables as peer threads (one `threading.Thread` per `Task`, gated by a `Semaphore`) |
+| `ECSOutputConsumer` | `containerized/akoutputconsumer.py` | Extends `ECSSQSConsumer`: polls Output Queue, writes to DynamoDB or broadcasts via WebSocket |
+| `ECSAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSSQSConsumer`: polls Input Queue, runs the agent, sends to Output Queue. `run()` dispatches to `ECSStreamAgentRunner.run()` when `execution.mode == stream`, re-checked on every call (mirroring `ECSIOHandler.run` and the serverless `ServerlessAgentRunner.handle()`/`ServerlessStreamAgentRunner.handle()` dispatch) |
+| `ECSStreamAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSAgentRunner`: STREAM-mode sibling: fans out each streamed chunk as its own Output Queue message instead of sending one full response |
 | `ECSIOHandler` | `containerized/ecs_io_handler.py` | Entrypoint for the IO container: wires REST/WebSocket API + output consumer as peer threads |
-| `RestHandler` | `deployment/common/rest_handler.py` | Queue-aware `AgentRESTRequestHandler` subclass used by ECS's `ECSQueueRequestHandler` (Lambda's poll path is the separate `rest_lambda.py` router, which uses a JSON body, not query params): `enqueue_and_wait` (`POST /api/v1/chat`, `REST_SYNC` waits on the response store / `REST_ASYNC` returns a `request_id`) and `poll_response` (`GET /api/v1/chat?request_id=...&session_id=...`, query params only — `session_id` is for logging, not validated against the stored reply) |
+| `RestHandler` | `pipeline/request_handler.py` (shim at `deployment/common/rest_handler.py`) | Queue-aware `AgentRESTRequestHandler` subclass used by ECS's `ECSQueueRequestHandler` (Lambda's poll path is the separate `rest_lambda.py` router, which uses a JSON body, not query params): `enqueue_and_wait` (`POST /api/v1/chat`, `REST_SYNC` waits on the response store / `REST_ASYNC` returns a `request_id`) and `poll_response` (`GET /api/v1/chat?request_id=...&session_id=...`, query params only: `session_id` is for logging, not validated against the stored reply) |
 | `ECSQueueRequestHandler` | `containerized/core/api/rest_api.py` | Thin `RestHandler` subclass wiring SQS (`QueueHandler`) + `ResponseDBHandler`; routes inherited from `RestHandler.get_router()` |
 | `AWSRestAPI` | `containerized/core/api/rest_api.py` | Extends `RESTAPI`; overrides `get_default_handlers()` to default to `ECSQueueRequestHandler`, safe to construct without config |
 | `ECSWebSocketHandlerBase` | `containerized/core/api/websocket_api.py` | Abstract shared base for the two WS handlers: connection store, push-endpoint construction, response envelope, `x-ws-*` headers |
 | `ECSWebSocketSystemRequestHandler` | `containerized/core/api/websocket_api.py` | Framework-managed protocol routes `$connect`/`$disconnect`/`$default`; owns the `AuthValidator` (only `$connect` authenticates). Not an extension point |
-| `ECSWebSocketRequestHandler` | `containerized/core/api/websocket_api.py` | Application routes: built-in chat route + custom routes. Framework-managed (not a subclassing extension point) and **not publicly exported** — `AWSWebsocketAPI` constructs it; custom routes are added via `AWSWebsocketAPI.register(route)` and passed in as `custom_routes`. Needs **no** `AuthValidator` (user resolved from the connection store) |
-| `AWSWebsocketAPI` | `containerized/core/api/websocket_api.py` | Extends `RESTAPI`; `run()` (no params) **always builds** exactly two handlers — the system handler (built lazily from the validator registered via `set_auth_handler`) plus one `ECSWebSocketRequestHandler` carrying every route registered via the `register(route)` decorator. Lazy build keeps importing the module safe when WebSocket mode isn't configured |
+| `ECSWebSocketRequestHandler` | `containerized/core/api/websocket_api.py` | Application routes: built-in chat route + custom routes. Framework-managed (not a subclassing extension point) and **not publicly exported**: `AWSWebsocketAPI` constructs it; custom routes are added via `AWSWebsocketAPI.register(route)` and passed in as `custom_routes`. Needs **no** `AuthValidator` (user resolved from the connection store) |
+| `AWSWebsocketAPI` | `containerized/core/api/websocket_api.py` | Extends `RESTAPI`; `run()` (no params) **always builds** exactly two handlers: the system handler (built lazily from the validator registered via `set_auth_handler`) plus one `ECSWebSocketRequestHandler` carrying every route registered via the `register(route)` decorator. Lazy build keeps importing the module safe when WebSocket mode isn't configured |
 
 ### Shared WebSocket Transport (Serverless + Containerized)
 
@@ -553,40 +612,40 @@ not just a similar shape:
   (pruning stale connections on `GoneException`).
 - **Containerized** `ECSWebSocketHandlerBase` and **serverless** `LambdaWSHandler`
   (`aws/serverless/core/router/ws_lambda.py`, renamed from `BaseWSHandler`) both build on
-  `AWSWebSocketHandler` — the serverless side adds only Lambda-event parsing on top. This is a
+  `AWSWebSocketHandler`: the serverless side adds only Lambda-event parsing on top. This is a
   pure reuse refactor: serverless WebSocket runtime behavior is unchanged.
 
 `api/handler.py`'s `AgentRESTRequestHandler` was refactored to expose path constants
 (`AGENTS_PATH`, `CHAT_PATH`, `CHAT_MULTIPART_PATH`) and named methods (`list_agents`, `run`,
 `run_multipart`) instead of inline route closures, and `RESTAPI.get_default_handlers()`
-(`api/http.py`) is a new overridable classmethod `run()` calls when no handlers are passed —
+(`api/http.py`) is a new overridable classmethod `run()` calls when no handlers are passed:
 this is what lets `RestHandler`/`AWSWebsocketAPI` reuse the base routes/paths instead of
 redefining them.
 
 ### Two-Container Layout
 
 ```
-Container 1 — ECSIOHandler
+Container 1: ECSIOHandler
   Thread 1 (ThreadRunner):  AWSRestAPI.run(handlers=[ECSQueueRequestHandler()])
                             (or AWSWebsocketAPI.set_auth_handler(validator).run() in
-                            ASYNC/STREAM mode — system + custom-route handlers built automatically)
-                            — FastAPI/uvicorn, handles POST /chat and GET /chat?request_id=...
+                            ASYNC/STREAM mode: system + custom-route handlers built automatically)
+                           : FastAPI/uvicorn, handles POST /chat and GET /chat?request_id=...
   Thread 2 (ThreadRunner):  ECSOutputConsumer.run()
-                            — polls Output Queue, writes to DynamoDB / broadcasts via WebSocket
+                           : polls Output Queue, writes to DynamoDB / broadcasts via WebSocket
 
-Container 2 — ECSAgentRunner
+Container 2: ECSAgentRunner
   N threads (ThreadRunner):  ECSSQSConsumer._consumer_loop, one per
                              execution.queues.input.no_of_consumers (default 5)
-                             — each polls Input Queue, runs agent, sends result to Output Queue
+                            : each polls Input Queue, runs agent, sends result to Output Queue
 ```
 
 ### ECSSQSConsumer Contract
 
 - **`get_queue_url(cls) → str`** *(abstract)*: return the SQS queue URL to poll.
 - **`process_message(cls, record)`** *(abstract, from `QueueConsumer`)*: handle one message; called on every successful receive.
-- **`on_permanent_failure(cls, record)`** *(abstract, from `QueueConsumer`)*: called when `ApproximateReceiveCount > max_receive_count`; **must catch its own exceptions** — if it raises, the message is not deleted and loops back.
+- **`on_permanent_failure(cls, record)`** *(abstract, from `QueueConsumer`)*: called when `ApproximateReceiveCount > max_receive_count`; **must catch its own exceptions**: if it raises, the message is not deleted and loops back.
 - **`delete_message(cls, msg: dict)`** *(public)*: subclasses may call this directly when manual deletion is needed.
-- **`run(cls)`**: blocking poll loop — the container entry-point.
+- **`run(cls)`**: blocking poll loop: the container entry-point.
 
 ### ThreadRunner Contract
 
@@ -597,18 +656,18 @@ every task in that call has reported in. It returns a dict keyed by the exact `T
 populated only for tasks that completed without raising.
 
 Each `ThreadRunner.Task` has:
-- `stop_task_on_failure` (default `True`) — log and ignore vs. log only, on that task's own exception.
-- `stop_all_on_failure` (default `False`) — also bring down the whole `run()` call on that task's failure. Requires `stop_task_on_failure=True`.
-- `graceful` (default `False`) — only meaningful with `stop_all_on_failure=True`. Requires it, or raises `ValueError`.
-- `awaited_on_shutdown` (default `True`) — whether `run()`'s drain loop waits for this task to report a completion before proceeding. Set `False` for a task that can never observe `shutdown_event` and has no other way to be told to stop (e.g. a blocking call like `uvicorn.run()`) — otherwise a `graceful=True` failure elsewhere in the same `run()` call hangs forever waiting for it. Every thread's completion still lands on the shared queue regardless of this flag; `run()` just doesn't count that task toward "everyone's reported in."
+- `stop_task_on_failure` (default `True`): log and ignore vs. log only, on that task's own exception.
+- `stop_all_on_failure` (default `False`): also bring down the whole `run()` call on that task's failure. Requires `stop_task_on_failure=True`.
+- `graceful` (default `False`): only meaningful with `stop_all_on_failure=True`. Requires it, or raises `ValueError`.
+- `awaited_on_shutdown` (default `True`): whether `run()`'s drain loop waits for this task to report a completion before proceeding. Set `False` for a task that can never observe `shutdown_event` and has no other way to be told to stop (e.g. a blocking call like `uvicorn.run()`): otherwise a `graceful=True` failure elsewhere in the same `run()` call hangs forever waiting for it. Every thread's completion still lands on the shared queue regardless of this flag; `run()` just doesn't count that task toward "everyone's reported in."
 
 On a task raising with `stop_all_on_failure=True`:
 - `graceful=False` → logs the exception, `logging.shutdown()` + `os._exit(1)` **immediately**, without waiting on other tasks.
-- `graceful=True` → logs the exception, sets a **class-level singleton** `ThreadRunner.shutdown_event` (a `threading.Event`), and keeps draining the *other tasks started by this same `run()` call*. Cooperating tasks (e.g. `ECSSQSConsumer._consumer_loop`) check `ThreadRunner.shutdown_event.is_set()` in their loop condition and return once set. Only after every task from this call has reported completion does it check `shutdown_event` and call `os._exit(1)` — so it never waits on tasks it didn't itself start (e.g. the IO container's `rest-api` thread, which doesn't check the event at all and is simply killed when `os._exit(1)` fires).
+- `graceful=True` → logs the exception, sets a **class-level singleton** `ThreadRunner.shutdown_event` (a `threading.Event`), and keeps draining the *other tasks started by this same `run()` call*. Cooperating tasks (e.g. `ECSSQSConsumer._consumer_loop`) check `ThreadRunner.shutdown_event.is_set()` in their loop condition and return once set. Only after every task from this call has reported completion does it check `shutdown_event` and call `os._exit(1)`: so it never waits on tasks it didn't itself start (e.g. the IO container's `rest-api` thread, which doesn't check the event at all and is simply killed when `os._exit(1)` fires).
 
 #### How to Use ThreadRunner
 
-`ThreadRunner` is internal-only — not part of the public API, never imported by user application
+`ThreadRunner` is internal-only: not part of the public API, never imported by user application
 code. Reach for it when adding a new internal component that needs several peer threads with
 uniform failure handling (as opposed to a raw `threading.Thread`, which gives you none of the
 crash/result/shutdown plumbing below for free).
@@ -630,7 +689,7 @@ results = ThreadRunner.run(
             thread_name="poller",
             stop_all_on_failure=True,
             graceful=True,  # opt in only if this task's execution_function actually checks
-                             # shutdown_event in its loop — otherwise "graceful" drain never ends
+                             # shutdown_event in its loop: otherwise "graceful" drain never ends
         ),
         ThreadRunner.Task(execution_function=compute, thread_name="compute-1", item=5),
     ],
@@ -640,18 +699,18 @@ results = ThreadRunner.run(
 Guidance:
 - A task with a `while` loop that should participate in a graceful shutdown **must** check
   `ThreadRunner.shutdown_event.is_set()` (or `.wait(timeout)` for a sleep/backoff) once per
-  iteration before setting `graceful=True` on it — `graceful=True` on a task that never checks the
+  iteration before setting `graceful=True` on it: `graceful=True` on a task that never checks the
   event just makes that `run()` call hang forever waiting for it to return, *unless* that task is
   also marked `awaited_on_shutdown=False` (see below).
 - `stop_all_on_failure=True` always requires `stop_task_on_failure=True` (the default), and
-  `graceful=True` always requires `stop_all_on_failure=True` — both raise `ValueError` in
+  `graceful=True` always requires `stop_all_on_failure=True`: both raise `ValueError` in
   `Task.__post_init__` if violated.
 - Only set `graceful=True` on tasks in a `run()` call where every *other* task in that same call is
-  either similarly cooperative, or marked `awaited_on_shutdown=False` — e.g. `ECSIOHandler`
+  either similarly cooperative, or marked `awaited_on_shutdown=False`: e.g. `ECSIOHandler`
   deliberately marks its `rest-api` task (`uvicorn.run()`, which never checks `shutdown_event` and
   can only be stopped by an OS signal) as `awaited_on_shutdown=False`, so the drain loop doesn't
   wait on it and it's simply cut off whenever `os._exit(1)` eventually fires.
-- `ThreadRunner.shutdown_event` is a **process-wide singleton**, not scoped to one `run()` call —
+- `ThreadRunner.shutdown_event` is a **process-wide singleton**, not scoped to one `run()` call:
   once any call sets it, every other `run()` call in the process sees it set too, and will
   `os._exit(1)` once its own tasks finish draining. This is deliberate (a fatal failure anywhere
   should bring the whole process down), but it also means **tests must reset it between cases**
@@ -660,13 +719,13 @@ Guidance:
   `ak-py/tests/test_thread_runner.py`.
 - No hard timeout on graceful drain: if a task in the *same batch* as the failure is
   `awaited_on_shutdown=True` (the default) but never checks `shutdown_event` and never naturally
-  returns, that `run()` call's drain loop — and therefore its `os._exit(1)` — never fires. Mark such
+  returns, that `run()` call's drain loop, and therefore its `os._exit(1)`, never fires. Mark such
   a task `awaited_on_shutdown=False` to opt it out of the drain instead.
 
 ### Entry Point Pattern
 
 ```python
-# Container 1 — app_rest_service.py
+# Container 1: app_rest_service.py
 from agentkernel.deployment.aws.containerized import ECSIOHandler
 
 runner = ECSIOHandler.run
@@ -674,7 +733,7 @@ runner = ECSIOHandler.run
 if __name__ == "__main__":
     runner()
 
-# Container 2 — app_agent_runner.py
+# Container 2: app_agent_runner.py
 from agentkernel.deployment.aws import ECSAgentRunner
 from agentkernel.openai import OpenAIModule
 
@@ -738,8 +797,8 @@ User Input
             → clear volatile cache                   # cleanup
     → REST: SSE (`text/event-stream`) when execution.mode=stream
     → AWS Lambda serverless: each StreamChunk sent as a separate SQS/WebSocket `STREAM_CHUNK` message
-    → AWS ECS containerized: queue mode — `ECSStreamAgentRunner` fans out one SQS output message per
-      chunk, `ECSOutputConsumer` broadcasts each as `STREAM_CHUNK`; direct mode — `ECSWebSocketRequestHandler`
+    → AWS ECS containerized: queue mode: `ECSStreamAgentRunner` fans out one SQS output message per
+      chunk, `ECSOutputConsumer` broadcasts each as `STREAM_CHUNK`; direct mode: `ECSWebSocketRequestHandler`
       broadcasts chunks inline via `ChatService.process_stream_chat_async`
 ```
 

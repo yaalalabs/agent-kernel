@@ -15,7 +15,7 @@ class InMemoryResponseStore(ResponseStore):
     additionally exposes the full record (``status_code`` included) for the pipeline request
     handler. ``add_chunk``/``stream`` carry STREAM-mode chunks to the local SSE generator.
 
-    Not durable and not shared across processes — multi-process queue modes must use a shared
+    Not durable and not shared across processes: multi-process queue modes must use a shared
     backend (enforced at IOHandler startup). Records are expected to be consumed with
     ``get_and_delete=True``; unconsumed records live until process exit.
     """
