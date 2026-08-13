@@ -401,7 +401,7 @@ Upcoming iterations: `sqs`/`kafka`/`nats` transports, pod-direct WebSocket deliv
 | `response_handler.py` | `ResponseHandler`: REST modes write records `{session_id, request_id, status_code, body}`; STREAM + local endpoint routes chunks to `InMemoryResponseStore.add_chunk`; WS push raises until the WS iteration lands |
 | `request_handler.py` | `RestHandler` (relocated; shim at `deployment/common/rest_handler.py` keeps the `AKConfig` patch target) with three default-preserving seams (`_effective_mode`, `_await_response_record`, `_build_sync_response`); pipeline `RequestHandler`: always queue mode, unset mode → REST_SYNC, SSE bridging from `store.stream`, multipart route only on `in_memory`, stored `status_code >= 400` → `HTTPException` (direct-mode error parity) |
 | `response_store/` | Relocated family (`base`/`handler`/`redis`/`valkey`/`dynamodb`; shims left at `deployment/common/response_store.py` and `deployment/aws/core/response_store/`) plus `InMemoryResponseStore` (`get_record` exposes `status_code`; `add_chunk`/`stream` for local SSE) |
-| `io_handler.py` | `IOHandler.run(auth_validator=None)`: single-process topology (`in_memory`: rest-api + response-handler + agent-runner threads via `ThreadRunner`) vs two-process (broker: rest-api + response-handler only); startup fail-fasts (ASYNC / STREAM-over-broker → not until the WS iteration; broker transport + in_memory/absent response store → `AKConfigError`) |
+| `io_handler.py` | `IOHandler.run(auth_validator=None)`: single-process topology (`in_memory`: rest-api + response-handler + agent-runner threads via `ThreadRunner`) vs two-process (broker: rest-api + response-handler only); startup fail-fasts (ASYNC / STREAM-over-broker → not until the WS iteration; broker transport + in_memory/absent response store → `AKConfigError`). Serves via its own `uvicorn.Server` (`RESTAPI.build_app()` seam) and installs SIGTERM/SIGINT handlers on the main thread: set `shutdown_event`, `server.should_exit`, and `ThreadRunner.shutdown_exit_code = 0` (uvicorn only installs handlers on the main thread, and a container PID 1 with no handler never receives SIGTERM: the containerized e2e hang). `ConsumerLoop` slices fetch waits to ≤1 s so drains are prompt |
 | `ws/base.py` | Relocated `WebSocketConnectionStoreABC`/`WebSocketHandlerABC` (shim at `deployment/common/websocket_service.py`); registry/push/native-WS handler arrive with the WS iteration |
 | `thread_runner.py` | Relocated `ThreadRunner` (shim at `deployment/common/thread_runner.py` keeps `import os` for the `os._exit` patch target) |
 | `testing.py` | `QueueTransportContract`: reusable transport conformance suite (the `SandboxProviderContract` pattern); subclass it per transport |
@@ -710,6 +710,10 @@ Guidance:
   deliberately marks its `rest-api` task (`uvicorn.run()`, which never checks `shutdown_event` and
   can only be stopped by an OS signal) as `awaited_on_shutdown=False`, so the drain loop doesn't
   wait on it and it's simply cut off whenever `os._exit(1)` eventually fires.
+- The drain-complete exit uses `ThreadRunner.shutdown_exit_code` (default 1). The pipeline
+  IOHandler's SIGTERM/SIGINT handler sets it to 0 before setting `shutdown_event`, so an
+  orchestrated stop exits cleanly while failure-initiated drains keep exiting 1. Tests that
+  touch it must reset it (like the event itself).
 - `ThreadRunner.shutdown_event` is a **process-wide singleton**, not scoped to one `run()` call:
   once any call sets it, every other `run()` call in the process sees it set too, and will
   `os._exit(1)` once its own tasks finish draining. This is deliberate (a fatal failure anywhere

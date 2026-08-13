@@ -146,6 +146,9 @@ Behavior, byte-equivalent to the ECS semantics:
 3. `fetch` raising → log + `time.sleep(5)` + continue (matches `sqs_consumer.py:135-140`).
 4. `async def process` callables are supported via the same `inspect.iscoroutinefunction` +
    `asyncio.run` dispatch as `sqs_consumer.py:119-123`.
+5. Long fetch waits are sliced to ≤1 s per call so `shutdown_event` is observed promptly (a
+   signal-initiated drain must not stall for a full long-poll interval); revisit per-transport
+   when the `sqs` transport lands, since SQS long-poll economics favor a single 20 s wait.
 
 `ECSSQSConsumer` is rebuilt as a thin shim over `ConsumerLoop` with its public surface unchanged:
 `max_receive_count`/`num_consumers` class attrs, `get_queue_url`, `poll`, `process_message`,
@@ -331,6 +334,14 @@ behavior exactly):
 - WS modes (`ASYNC`/`STREAM` over WS): `auth_validator` mandatory (fail-fast as
   `ecs_io_handler.py:32-36`); the REST app additionally mounts `PipelineWebSocketHandler` (§9)
   and the internal push endpoint router.
+- **Signal contract**: `IOHandler.run()` serves the app through its own `uvicorn.Server` (via
+  the new `RESTAPI.build_app()` seam) and installs SIGTERM/SIGINT handlers on the main thread
+  that set `ThreadRunner.shutdown_event`, flag `server.should_exit`, and mark the drain exit
+  code 0 (`ThreadRunner.shutdown_exit_code`, default 1 for failure-initiated drains). Required
+  because uvicorn installs its own handlers only on the main thread, and a container PID 1 with
+  no handler never receives SIGTERM at all (kernel drops default-disposition signals to PID 1) —
+  found when the pipeline flip hung the `examples/containerized/openai` e2e job. Handler
+  installation is skipped off the main thread (tests).
 
 **`RESTAPI` default wiring** (`api/http.py`): `run()` gains a pipeline delegation guard ahead of
 its current body: it lazily imports and delegates to `IOHandler.run()` **only when all three
@@ -479,7 +490,13 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
    runs in a WS mode (ASYNC/STREAM outside AWS API Gateway deployments).
 9. The thread surface (`AgentThreadRequestHandler`) stays inline (IO-side) in v1: mounting it
    explicitly bypasses pipeline delegation (§8), so thread recording semantics are unchanged.
-10. Bug fix exposed by the pipeline's thread-based execution:
+10. SIGTERM/SIGINT now shut the single-process pipeline down gracefully with exit code 0:
+    consumer loops drain (within the ≤1 s fetch-wait slice plus any in-flight agent run),
+    uvicorn stops, the process exits. Pre-pipeline this worked implicitly because uvicorn ran on
+    the main thread; the pipeline flip had regressed container stop to a hang on PID-1 runtimes
+    with no SIGKILL escalation (the `examples/containerized/openai` harness) and to ungraceful
+    SIGKILL-after-grace on orchestrators. Ctrl+C on a local run also now exits cleanly.
+11. Bug fix exposed by the pipeline's thread-based execution:
     `AgentHandler._run_async_sync` (`core/chat_service.py`) previously wrapped
     `run_until_complete(coro)` in `except RuntimeError: asyncio.run(coro)`, so an agent's own
     `RuntimeError` could re-await the consumed coroutine and surface as "cannot reuse already

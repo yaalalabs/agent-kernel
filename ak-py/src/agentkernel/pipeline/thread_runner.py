@@ -19,6 +19,9 @@ class ThreadRunner:
     """
 
     shutdown_event: threading.Event = threading.Event()
+    # Exit code used when a graceful drain completes. Failure-initiated shutdowns leave it at 1;
+    # an orchestrated stop (the pipeline IOHandler's SIGTERM/SIGINT handler) sets it to 0 first.
+    shutdown_exit_code: int = 1
 
     @dataclass(eq=False)
     class Task:
@@ -85,6 +88,6 @@ class ThreadRunner:
 
         if ThreadRunner.shutdown_event.is_set():
             logging.shutdown()
-            os._exit(1)
+            os._exit(ThreadRunner.shutdown_exit_code)
 
         return results

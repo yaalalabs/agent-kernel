@@ -85,13 +85,19 @@ class ConsumerLoop:
             max_workers=self._num_consumers,
         )
 
+    # Long fetch waits are sliced so the loop re-checks shutdown_event about once a second: a
+    # signal-initiated drain must not stall for a full long-poll interval. Revisit per-transport
+    # when the sqs transport lands (SQS long-poll economics favor a single 20 s wait).
+    _MAX_FETCH_WAIT_SLICE_SECONDS = 1.0
+
     def _consumer_loop(self) -> None:
         """One consumer thread: fetch batches and process them until shutdown."""
         consumer = self._consumer_factory()
+        fetch_wait = min(self._wait_seconds, self._MAX_FETCH_WAIT_SLICE_SECONDS)
         try:
             while not ThreadRunner.shutdown_event.is_set():
                 try:
-                    messages = consumer.fetch(self._batch_size, self._wait_seconds)
+                    messages = consumer.fetch(self._batch_size, fetch_wait)
                 except Exception:
                     self._log.exception(f"Unexpected error in poll loop — retrying in {self._POLL_ERROR_BACKOFF_SECONDS} s")
                     time.sleep(self._POLL_ERROR_BACKOFF_SECONDS)

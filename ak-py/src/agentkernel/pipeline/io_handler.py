@@ -1,5 +1,9 @@
 import logging
+import signal
+import threading
 from typing import Optional
+
+import uvicorn
 
 from ..auth.handler import AuthValidator
 from ..core.config import AKConfig
@@ -40,16 +44,21 @@ class IOHandler:
 
         from ..api.http import RESTAPI  # local import: RESTAPI.run() lazily imports this module
 
-        def run_api() -> None:
-            RESTAPI.run(handlers=[RequestHandler()])  # explicit handlers: never re-delegates here
+        # Serve through our own uvicorn.Server (not RESTAPI.run/uvicorn.run) so the main-thread
+        # signal handlers below can stop it: uvicorn only installs its own handlers when it runs
+        # on the main thread, and here it runs on the rest-api worker thread.
+        host, port = config.api.host, config.api.port
+        cls._log.info(f"Agent Kernel REST API listening on http://{host}:{port}")
+        server = uvicorn.Server(uvicorn.Config(app=RESTAPI.build_app(handlers=[RequestHandler()]), host=host, port=port))
+        cls._install_signal_handlers(server)
 
         tasks = [
             ThreadRunner.Task(
-                execution_function=run_api,
+                execution_function=server.run,
                 thread_name="rest-api",
                 stop_all_on_failure=True,
                 graceful=True,
-                awaited_on_shutdown=False,  # uvicorn.run() never observes shutdown_event (see ECSIOHandler)
+                awaited_on_shutdown=False,  # exits via server.should_exit on signals, not shutdown_event (see ECSIOHandler)
             ),
             ThreadRunner.Task(execution_function=ResponseHandler().start, thread_name="response-handler", stop_all_on_failure=True),
         ]
@@ -58,6 +67,30 @@ class IOHandler:
             tasks.append(ThreadRunner.Task(execution_function=runner.start, thread_name="agent-runner", stop_all_on_failure=True))
 
         ThreadRunner.run(tasks=tasks, max_workers=len(tasks))
+
+    @classmethod
+    def _install_signal_handlers(cls, server: uvicorn.Server) -> None:
+        """Restore container-grade shutdown for the pipeline topology (spec §8).
+
+        As a container's PID 1, a process with no SIGTERM handler never dies (the kernel drops
+        default-disposition signals to PID 1), so `docker stop`/pod termination would hang until
+        SIGKILL, and runtimes that never escalate would hang forever. The handler drains the
+        pipeline gracefully: consumer loops observe `ThreadRunner.shutdown_event`, uvicorn stops
+        via `should_exit`, and the ThreadRunner drain exits with code 0 (an orchestrated stop is
+        not a failure).
+        """
+        if threading.current_thread() is not threading.main_thread():
+            cls._log.warning("IOHandler is not running on the main thread; skipping signal handlers")
+            return
+
+        def _handle_shutdown_signal(signum: int, frame) -> None:
+            cls._log.info(f"Received signal {signum}: shutting down the pipeline gracefully")
+            ThreadRunner.shutdown_exit_code = 0
+            ThreadRunner.shutdown_event.set()
+            server.should_exit = True
+
+        for shutdown_signal in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(shutdown_signal, _handle_shutdown_signal)
 
     @classmethod
     def _validate_topology(cls, mode: Optional[ExecutionMode], transport_type: str, config) -> None:
