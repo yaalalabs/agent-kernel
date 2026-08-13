@@ -69,8 +69,7 @@ class Base<Provider>Guardrail(ABC):
 If you are modifying an input request with the guardrail, then you should make sure to return the modified request and all the other unmodified requests. For example, if you have 3 requests and the guardrail modifies the first one, then you should return a list of 3 requests with the first one modified and the other two unmodified.
 
 ```python
-from typing import Any
-from agentkernel.core.base import Agent
+from agentkernel.core.base import Agent, Session
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest
 from agentkernel.guardrail.guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
@@ -79,7 +78,7 @@ class <Provider>InputGuardrail(BaseGuardrailUtil, Base<Provider>Guardrail, Input
     """Validates input requests using <Provider> guardrail service."""
 
     async def on_run(
-        self, session: Any | None, agent: Agent, requests: list[AgentRequest]
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
         # 1. Extract text content from requests
         text = BaseGuardrailUtil._extract_text_from_requests(requests)
@@ -127,7 +126,7 @@ class <Provider>OutputGuardrail(BaseGuardrailUtil, Base<Provider>Guardrail, Outp
     """Validates agent output using <Provider> guardrail service."""
 
     async def on_run(
-        self, session: Any | None, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
     ) -> AgentReply:
         # 1. Extract text from the reply
         text = BaseGuardrailUtil._extract_text_from_reply(agent_reply)

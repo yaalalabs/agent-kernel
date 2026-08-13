@@ -30,13 +30,6 @@ def _pii_config(enabled: bool = True):
     return mock_config
 
 
-async def _run_on_run(guardrail, session, requests, agent, reply):
-    """WalledAIOutputGuardrail.on_run reads the AK session via Session.current(), so the call
-    must happen inside an active `async with session:` context."""
-    async with session:
-        return await guardrail.on_run(None, requests, agent, reply)
-
-
 class TestWalledAIOutputGuardrail:
     """Tests for WalledAIOutputGuardrail unmasking behavior."""
 
@@ -47,7 +40,7 @@ class TestWalledAIOutputGuardrail:
         reply = AgentReplyAny(content={"name": "[NAME_1]", "nested": {"note": "contact [NAME_1] today"}}, prompt="who?")
 
         with patch.object(AKConfig, "get", return_value=_pii_config()):
-            result = await _run_on_run(guardrail, mock_session, [], Mock(), reply)
+            result = await guardrail.on_run(mock_session, [], Mock(), reply)
 
         assert isinstance(result, AgentReplyAny)
         assert result.type == "other"
@@ -64,7 +57,7 @@ class TestWalledAIOutputGuardrail:
         reply = AgentReplyAny(content={"name": "[NAME_1]", "home": "[PATH_1]"})
 
         with patch.object(AKConfig, "get", return_value=_pii_config()):
-            result = await _run_on_run(guardrail, mock_session, [], Mock(), reply)
+            result = await guardrail.on_run(mock_session, [], Mock(), reply)
 
         assert isinstance(result, AgentReplyAny)
         assert result.content == {"name": 'O"Brien', "home": "C:\\Users\\obrien"}
@@ -77,7 +70,7 @@ class TestWalledAIOutputGuardrail:
         reply = AgentReplyAny(content={"name": "[NAME_1]", "ts": ts, "counts": {1: 2}, "active": True})
 
         with patch.object(AKConfig, "get", return_value=_pii_config()):
-            result = await _run_on_run(guardrail, mock_session, [], Mock(), reply)
+            result = await guardrail.on_run(mock_session, [], Mock(), reply)
 
         assert isinstance(result, AgentReplyAny)
         assert result.content == {"name": "John Doe", "ts": ts, "counts": {1: 2}, "active": True}
@@ -89,7 +82,7 @@ class TestWalledAIOutputGuardrail:
         reply = AgentReplyText(response="Hello [NAME_1]!", prompt="greet")
 
         with patch.object(AKConfig, "get", return_value=_pii_config()):
-            result = await _run_on_run(guardrail, mock_session, [], Mock(), reply)
+            result = await guardrail.on_run(mock_session, [], Mock(), reply)
 
         assert isinstance(result, AgentReplyText)
         assert result.response == "Hello John Doe!"
@@ -101,7 +94,7 @@ class TestWalledAIOutputGuardrail:
         reply = AgentReplyAny(content={"name": "[NAME_1]"})
 
         with patch.object(AKConfig, "get", return_value=_pii_config()):
-            result = await _run_on_run(guardrail, mock_session, [], Mock(), reply)
+            result = await guardrail.on_run(mock_session, [], Mock(), reply)
 
         assert result is reply
 
@@ -112,7 +105,7 @@ class TestWalledAIOutputGuardrail:
         reply = AgentReplyAny(content={"name": "[NAME_1]"})
 
         with patch.object(AKConfig, "get", return_value=_pii_config(enabled=False)):
-            result = await _run_on_run(guardrail, mock_session, [], Mock(), reply)
+            result = await guardrail.on_run(mock_session, [], Mock(), reply)
 
         assert result is reply
 
@@ -129,7 +122,7 @@ class TestWalledAIOutputGuardrail:
         )
 
         with patch.object(AKConfig, "get", return_value=_pii_config()):
-            result = await _run_on_run(guardrail, mock_session, [], Mock(), reply)
+            result = await guardrail.on_run(mock_session, [], Mock(), reply)
 
         assert isinstance(result, AgentReplyImage)
         assert result.response == "badge of John Doe"

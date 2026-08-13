@@ -471,23 +471,16 @@ a2a:
 
 Add custom pre/post processing to your agents.
 
-Hooks receive the framework-native session/state object as their first parameter, named `session` —
-despite the name, this is **not** the AK `Session`. It's `None` on a session's first turn or when
-nothing has been stored yet. For AK-level facilities (caches, `framework_context`, session id), use
-`Session.current()` from inside the hook body. See "What `session` actually is" below for the
-concrete type and API per framework.
-
 **Pre-hook example (RAG injection):**
 
 ```python
-from agentkernel.core import Agent, PreHook
+from agentkernel.core import Agent, PreHook, Session
 from agentkernel.core.model import AgentReply, AgentRequest, AgentRequestText
-from typing import Any
 
 
 class RAGPreHook(PreHook):
     async def on_run(
-        self, session: Any | None, agent: Agent, requests: list[AgentRequest]
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
         # Extract the user's prompt
         prompt = ""
@@ -517,14 +510,13 @@ class RAGPreHook(PreHook):
 **Post-hook example (disclaimer):**
 
 ```python
-from agentkernel.core import Agent, PostHook
+from agentkernel.core import Agent, PostHook, Session
 from agentkernel.core.model import AgentReply, AgentRequest
-from typing import Any
 
 
 class DisclaimerPostHook(PostHook):
     async def on_run(
-        self, session: Any | None, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
     ) -> AgentReply:
         agent_reply.response += "\n\n_Disclaimer: This is AI-generated content._"
         return agent_reply
@@ -553,9 +545,6 @@ class RedactingPostHook(DisclaimerPostHook):
         return delta.replace("SECRET", "***")
 ```
 
-Note: `on_stream_chunk`'s `session` is computed once before streaming starts, so it stays last
-turn's object (or `None` on turn 1) for the whole stream — it never reflects the in-progress turn.
-
 **Per-run framework context (optional):** hooks are the supported surface for the reserved
 `framework_context` session key — a framework-agnostic, picklable context/state dict that the runner
 injects into the native framework call (`context=`, `deps=`, session state, ...) and writes back after a
@@ -563,14 +552,8 @@ successful run. It is never auto-created; seed it explicitly from a pre-hook, an
 post-hook once the run has written its results:
 
 ```python
-from agentkernel.core import Session
-
-
 class SeedCart(PreHook):
     async def on_run(self, session, agent, requests):
-        # `session` above is the framework-native object, unused here; framework_context
-        # lives on the AK Session, reached via Session.current().
-        session = Session.current()
         if session.get_framework_context() is None:
             session.set_framework_context({"cart": []})
         return requests
@@ -581,7 +564,7 @@ class SeedCart(PreHook):
 
 class AppendCart(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
-        cart = (Session.current().get_framework_context() or {}).get("cart", [])
+        cart = (session.get_framework_context() or {}).get("cart", [])
         agent_reply.response += f"\n\nCurrent cart: {', '.join(cart) or '(empty)'}"
         return agent_reply
 
@@ -589,41 +572,13 @@ class AppendCart(PostHook):
         return "AppendCart"
 ```
 
-Use `Session.current().get_framework_context()` / `set_framework_context(dict)` /
-`clear_framework_context()` — these accessors are for hooks only, and `Session.current()` always
-resolves inside a hook body since `Runtime.run()`/`stream()` run the whole pre/post-hook pipeline
-inside `async with session:`. Tools must use their framework's native handle instead
+Use `session.get_framework_context()` / `set_framework_context(dict)` / `clear_framework_context()` —
+these accessors are for hooks only. Tools must use their framework's native handle instead
 (`RunContextWrapper.context` on OpenAI, `RunContext.deps` on Pydantic AI, `tool_context.state` on ADK,
 ...) since a tool writing through `ToolContext.get().session` writes to a different object than the one
 the run is carrying. Round-trip fidelity is framework-dependent (full for OpenAI/Pydantic AI, partial for
 ADK/smolagents/LangGraph, unsupported for CrewAI) — see the framework's page under `docs/docs/frameworks/`
 for specifics.
-
-**What `session` actually is:** the concrete class and API depend on `agent`'s framework —
-
-- **OpenAI** (`OpenAISession`): wraps the OpenAI Agents SDK `Session` protocol / item list —
-  `get_items(limit=None)`, `add_items(items)`, `pop_item()`, `clear_session()`.
-- **LangGraph** (`LangGraphSession`): wraps a pickle-serializable checkpointer + graph state —
-  `.checkpointer` (a `BaseCheckpointSaver`: `get_tuple`/`list`/`put`/`put_writes`/`delete_thread` +
-  async variants). Not a directly-readable message list.
-- **CrewAI** (`CrewAISession`): implements CrewAI's `StorageBackend` ABC (backs `Memory`) —
-  `save(records)`, `search(...)`, `reset(scope_prefix=None)`, `list_scopes(parent="/")`,
-  `list_categories(scope_prefix=None)`, `get_scope_info(scope)`,
-  `list_records(scope_prefix=None, limit=200, offset=0)`, `count(scope_prefix=None)`,
-  `delete(...)`, `update(record)`, `get_record(record_id)`. Not a chat-history list.
-- **Google ADK** (`GoogleADKSession`): wraps a `SessionService` + native ADK `Session` —
-  `session_service`, `create_session(app_name, user_id, session_id)`,
-  `update_session_state(invocation_id, author, state)`, `get_state()` (caller-visible state dict,
-  accumulate-only).
-- **Smolagents** (`SmolagentsSession`): mirrors the agent's `memory.steps` list —
-  `get_items()`, `add_items(items)`, `clear()`.
-- **Pydantic AI** (`PydanticAISession`): wraps the running message history, jsonable
-  (`list[dict]`, not live `ModelMessage` objects) — `.messages` getter/setter.
-
-Timing: pre-hooks see last turn's `session` (`None` on turn 1); `on_run` post-hooks see
-this turn's fully-updated object; `on_stream_chunk` sees last turn's object for the whole stream.
-Mutating any of these from a hook takes effect on the *next* turn's framework run, not the current
-one. Full per-framework docs: `docs/docs/integrations/hooks.md`.
 
 ---
 

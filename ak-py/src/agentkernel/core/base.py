@@ -254,19 +254,6 @@ class Runner(ABC):
         """
         return self._name
 
-    def get_framework_session(self, session: Session | None) -> Any | None:
-        """
-        Returns this runner's framework-native session/state wrapper (OpenAISession, LangGraphSession,
-        CrewAISession, GoogleADKSession, SmolagentsSession, or PydanticAISession, depending on the agent's
-        framework), or None if session is None or nothing has been stored yet. See the per-framework
-        reference in docs/docs/integrations/hooks.md for the concrete type and its API for a given framework.
-        :param session: The session to read the framework-native wrapper from, or None.
-        :return: The framework-native session/state object, or None.
-        """
-        if session is None:
-            return None
-        return session.get(self.name)
-
     def _load_framework_context(self, session: Session | None) -> dict | None:
         """
         Loads the per-run framework context to inject into this run.

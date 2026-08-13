@@ -43,7 +43,6 @@ class SeedingPreHook(PreHook):
         self._seed = seed
 
     async def on_run(self, session, agent, requests):
-        session = Session.current()
         if session.get_framework_context() is None:
             session.set_framework_context(dict(self._seed))
         return requests
@@ -59,7 +58,7 @@ class ObservingPostHook(PostHook):
         self.observed: dict | None = None
 
     async def on_run(self, session, requests, agent, agent_reply):
-        self.observed = Session.current().get_framework_context()
+        self.observed = session.get_framework_context()
         return agent_reply
 
     def name(self) -> str:
@@ -139,10 +138,9 @@ class TestSessionFrameworkContextAccessors:
         post_hook = ObservingPostHook()
         runner = CountingRunner()
 
-        async with session:
-            await pre_hook.on_run(None, None, [])
-            reply = await runner.run(None, session, [])
-            await post_hook.on_run(None, [], None, reply)
+        await pre_hook.on_run(session, None, [])
+        reply = await runner.run(None, session, [])
+        await post_hook.on_run(session, [], None, reply)
 
         assert post_hook.observed == {"count": 1}
 

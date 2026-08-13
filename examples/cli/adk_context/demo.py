@@ -2,7 +2,7 @@ import logging
 
 from agentkernel.adk import GoogleADKModule, GoogleADKToolBuilder
 from agentkernel.cli import CLI
-from agentkernel.core import AgentReplyText, PostHook, PreHook, Session
+from agentkernel.core import AgentReplyText, PostHook, PreHook
 from google.adk.agents import Agent
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import ToolContext
@@ -70,7 +70,6 @@ class SeedCartContextPreHook(PreHook):
     """Seed an empty framework_context on the first turn so the tools have state to populate."""
 
     async def on_run(self, session, agent, requests):
-        session = Session.current()
         if session is not None and session.get_framework_context() is None:
             session.set_framework_context({"cart": []})
         return requests
@@ -83,7 +82,6 @@ class AppendCartPostHook(PostHook):
     """Append the stored framework_context to every reply, showing that the ADK state round-tripped."""
 
     async def on_run(self, session, requests, agent, agent_reply):
-        session = Session.current()
         if session is None or not isinstance(agent_reply, AgentReplyText):
             return agent_reply
         context = session.get_framework_context() or {}

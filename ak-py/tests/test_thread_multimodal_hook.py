@@ -29,13 +29,8 @@ def multimodal_enabled():
 
 def _run_hook(session: Session, requests):
     hook = MultimodalPreHook()
-
-    async def _run():
-        async with session:
-            return await hook.on_run(None, agent=None, requests=requests)
-
     with patch.object(hook, "_describe_attachment_briefly", new=AsyncMock(return_value="a small test image")):
-        return asyncio.run(_run())
+        return asyncio.run(hook.on_run(session, agent=None, requests=requests))
 
 
 class TestMultimodalPreHookThreadMode:

@@ -2,7 +2,7 @@ import logging
 from typing import Annotated
 
 from agentkernel.cli import CLI
-from agentkernel.core import AgentReplyText, PostHook, PreHook, Session, ToolContext
+from agentkernel.core import AgentReplyText, PostHook, PreHook, ToolContext
 from agentkernel.langgraph import LangGraphModule, LangGraphToolBuilder
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import InjectedToolCallId, tool
@@ -77,7 +77,6 @@ class SeedCartContextPreHook(PreHook):
     """Seed an empty framework_context on the first turn so the graph has a cart channel to fill."""
 
     async def on_run(self, session, agent, requests):
-        session = Session.current()
         if session is not None and session.get_framework_context() is None:
             session.set_framework_context({"cart": []})
         return requests
@@ -90,7 +89,6 @@ class AppendCartPostHook(PostHook):
     """Append the current cart to every reply, read from the session rather than the graph state."""
 
     async def on_run(self, session, requests, agent, agent_reply):
-        session = Session.current()
         if session is None or not isinstance(agent_reply, AgentReplyText):
             return agent_reply
         context = session.get_framework_context() or {}

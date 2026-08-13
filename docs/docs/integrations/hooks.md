@@ -2,19 +2,9 @@
 
 Execution hooks provide powerful extension points to customize and enhance agent behavior at runtime. Agent Kernel supports **pre-execution hooks** and **post-execution hooks** that allow you to modify prompts, inject context, validate inputs, and transform responses.
 
-:::tip The first parameter is the framework-native session, not the AK Session
-`PreHook.on_run`, `PostHook.on_run`, and `PostHook.on_stream_chunk` all receive `session` as
-their first parameter — the framework-native session/state object for the agent's framework
-(`OpenAISession`, `LangGraphSession`, `CrewAISession`, `GoogleADKSession`, `SmolagentsSession`, or
-`PydanticAISession`), or `None` when nothing has been stored yet. See
-[What `session` actually is](#what-session-actually-is) below for the concrete
-type and API per framework.
-
-For AK-level facilities — session state, volatile/non-volatile caches, [framework
-context](#per-run-framework-context) — use `Session.current()` from inside the hook body. This
-always resolves inside a hook, since `Runtime.run()`/`stream()` run the whole pre/post-hook pipeline
-inside `async with session:`. This enables:
-- Accessing and modifying AK session state via `Session.current()`
+:::tip Session & Memory Access
+Hooks have full access to the session object and auxiliary memory (volatile and non-volatile caches). This enables:
+- Accessing and modifying session state
 - Storing temporary data in volatile cache (RAG context, files)
 - Persisting preferences in non-volatile cache (user settings, metadata)
 
@@ -119,14 +109,11 @@ The ordering around a run is what makes each hook type useful:
   run's mutations **and** its own edits are persisted.
 
 ```python
-from agentkernel import PostHook, PreHook, Session
+from agentkernel import PostHook, PreHook
 from agentkernel.core.model import AgentReplyText
 
 class SeedCart(PreHook):
     async def on_run(self, session, agent, requests):
-        # framework_context lives on the AK Session, reached via Session.current() —
-        # not the session parameter, which carries the framework-native object.
-        session = Session.current()
         # Never auto-created, so seed it explicitly on the first turn.
         if session.get_framework_context() is None:
             session.set_framework_context({"cart": []})
@@ -138,7 +125,7 @@ class SeedCart(PreHook):
 class AppendCart(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         # The runner has already written back, so this is the completed run's context.
-        cart = (Session.current().get_framework_context() or {}).get("cart", [])
+        cart = (session.get_framework_context() or {}).get("cart", [])
         if isinstance(agent_reply, AgentReplyText):
             agent_reply.response += f"\n\nCurrent cart: {', '.join(cart) or '(empty)'}"
         return agent_reply
@@ -154,103 +141,6 @@ native handle instead. See
 [Session → Framework context / per-run state](../core-concepts/session.md#framework-context--per-run-state)
 for the handle to use per framework and why.
 :::
-
-### What `session` actually is {#what-session-actually-is}
-
-`session` is typed as `Any | None` in the `PreHook`/`PostHook` interfaces — the concrete
-class depends on which framework the agent belongs to. It's the exact object each framework `Runner`
-stores under `session.get(runner.name)` internally; hooks now receive it directly instead of having
-to look it up.
-
-#### OpenAI — `OpenAISession`
-
-Source: `agentkernel/framework/openai/openai.py`. Wraps the OpenAI Agents SDK `Session` protocol —
-an ordered list of conversation items.
-
-| Method | Description |
-|---|---|
-| `get_items(limit=None)` | Returns the stored items, optionally truncated to the last `limit`. |
-| `add_items(items)` | Appends items to the stored history. |
-| `pop_item()` | Removes and returns the most recent item, or `None` if empty. |
-| `clear_session()` | Clears all stored items. |
-
-#### LangGraph — `LangGraphSession`
-
-Source: `agentkernel/framework/langgraph/langgraph.py`. Wraps a pickle-serializable checkpointer plus
-graph state — **not** a directly-readable message list.
-
-| Member | Description |
-|---|---|
-| `.checkpointer` | A `CheckPointer` (`BaseCheckpointSaver`) exposing `get_tuple(config)`, `list(config, ...)`, `put(config, checkpoint, metadata, new_versions)`, `put_writes(config, writes, task_id, task_path="")`, `delete_thread(thread_id)`, and async equivalents (`aget_tuple`, `alist`, `aput`, `aput_writes`, `adelete_thread`). |
-
-To inspect conversation state, read checkpoint data via `checkpointer.get_tuple(...)` — the checkpoint
-payload is LangGraph's own graph-state representation, not a plain message list.
-
-#### CrewAI — `CrewAISession`
-
-Source: `agentkernel/framework/crewai/crewai.py`. Implements CrewAI's own `StorageBackend` ABC (which
-backs CrewAI's `Memory`) — **not** a chat-history list.
-
-| Method | Description |
-|---|---|
-| `save(records)` | Saves a list of `MemoryRecord`s, upserting by id. |
-| `search(query_embedding, scope_prefix=None, categories=None, metadata_filter=None, limit=10, min_score=0.0)` | Returns `(record, score)` tuples ranked by cosine similarity. |
-| `reset(scope_prefix=None)` | Clears all records, or only those under a scope prefix. |
-| `list_scopes(parent="/")` | Lists immediate child scopes under `parent`. |
-| `list_categories(scope_prefix=None)` | Returns `{category: count}` within a scope. |
-| `get_scope_info(scope)` | Returns a `ScopeInfo` summary (record count, categories, oldest/newest, child scopes) for a scope. |
-| `list_records(scope_prefix=None, limit=200, offset=0)` | Returns matching records, paginated. |
-| `count(scope_prefix=None)` | Returns the number of matching records. |
-| `delete(scope_prefix=None, categories=None, record_ids=None, older_than=None, metadata_filter=None)` | Deletes matching records; returns the count deleted. |
-| `update(record)` | Updates (or inserts) a single `MemoryRecord` by id. |
-| `get_record(record_id)` | Returns a single record by id, or `None`. |
-
-#### Google ADK — `GoogleADKSession`
-
-Source: `agentkernel/framework/adk/adk.py`. Wraps ADK's `SessionService` plus its native ADK
-`Session`.
-
-| Method / Property | Description |
-|---|---|
-| `session_service` | The underlying `InMemorySessionService` (`BaseSessionService`). |
-| `create_session(app_name, user_id, session_id)` | Creates the native ADK session if one doesn't already exist. |
-| `update_session_state(invocation_id, author, state)` | Appends a state-delta `Event` to the native session. |
-| `get_state()` | Returns the caller-visible state dict — strips the AK-internal `ak_tool_context` key and any `app:`/`user:`/`temp:`-prefixed keys. Accumulate-only: state only ever grows via appended events. |
-
-#### Smolagents — `SmolagentsSession`
-
-Source: `agentkernel/framework/smolagents/smolagents.py`. Mirrors the wrapped agent's
-`agent.memory.steps` list — the runner copies `memory.steps` into this session after each run, and
-restores it from here before the next run.
-
-| Method | Description |
-|---|---|
-| `get_items()` | Returns the stored step items. |
-| `add_items(items)` | Appends items. |
-| `clear()` | Clears all stored items. |
-
-#### Pydantic AI — `PydanticAISession`
-
-Source: `agentkernel/framework/pydanticai/pydanticai.py`. Wraps the running message history in
-**jsonable** form (`list[dict]`, produced via `to_jsonable_python`) rather than live `ModelMessage`
-objects, so a pickled session survives Pydantic AI version changes.
-
-| Member | Description |
-|---|---|
-| `.messages` (getter/setter) | The stored message history as `list[dict]`. Convert with Pydantic AI's `ModelMessagesTypeAdapter` before feeding it back into the SDK's native message types. |
-
-#### Timing recap
-
-- **Pre-hooks** (`_prepare_requests`, before `agent.runner.run`/`stream`) see **last turn's**
-  `session`, or `None` on a session's first turn.
-- **`on_run` post-hooks** (after `agent.runner.run` returns) see **this turn's fully-updated**
-  `session` — every adapter writes its native session back before returning to `Runtime`.
-- **`on_stream_chunk`** sees **last turn's** `session` (or `None` on turn 1) for the
-  *entire* stream — it's computed once before iterating, since write-back only happens after the
-  generator drains. There is currently no hook that observes the in-progress turn's framework
-  session mid-stream.
-- Mutating any of these objects from a hook takes effect on the **next** turn's framework run, not
-  the one currently executing.
 
 ### Structured Replies in Hooks
 
@@ -307,7 +197,6 @@ class TokenRedactionHook(PostHook):
 - Returning `None` drops the token; returning a modified string replaces it.
 - Pre-execution hooks run **before** streaming starts; if one halts, the client receives a single error chunk (`done: true`) and the agent never runs.
 - `on_run` post-hooks are **not** called for streamed runs (there is no single final reply to transform); token-level filtering via `on_stream_chunk` is the streaming counterpart.
-- `on_stream_chunk`'s `session` is computed **once**, before streaming starts, so it reflects last turn's object (or `None` on turn 1) for the entire stream — see [What `session` actually is](#what-session-actually-is) below.
 
 **Use Cases:** token-level redaction/PII masking, profanity filtering, stop-sequence enforcement, streaming analytics.
 
@@ -318,23 +207,20 @@ class TokenRedactionHook(PostHook):
 Create a class that inherits from `PreHook` and implements the required methods:
 
 ```python
-from typing import Any
-from agentkernel import PreHook, Agent
+from agentkernel import PreHook, Agent, Session
 from agentkernel.core.model import AgentRequest, AgentReply, AgentRequestText, AgentReplyText
 
 class MyPreHook(PreHook):
     async def on_run(
         self, 
-        session: Any | None, 
+        session: Session, 
         agent: Agent, 
         requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
         """
         Process the requests before agent execution.
         
-        :param session: The framework-native session/state object for agent's
-            framework, or None on a session's first turn. See "What session
-            actually is" above.
+        :param session: The current session instance
         :param agent: The agent that will execute the requests
         :param requests: List of requests to the agent (can include text, files, images, etc.)
         :return: AgentReply: If the hook decides to halt execution, return an AgentReply
@@ -354,14 +240,13 @@ class MyPreHook(PreHook):
 Create a class that inherits from `PostHook`:
 
 ```python
-from typing import Any
-from agentkernel import PostHook, Agent
+from agentkernel import PostHook, Agent, Session
 from agentkernel.core.model import AgentRequest, AgentReply, AgentReplyText
 
 class MyPostHook(PostHook):
     async def on_run(
         self,
-        session: Any | None,
+        session: Session,
         requests: list[AgentRequest],
         agent: Agent,
         agent_reply: AgentReply
@@ -369,9 +254,7 @@ class MyPostHook(PostHook):
         """
         Process the agent's reply after execution.
         
-        :param session: The framework-native session/state object for agent's
-            framework, reflecting this turn's fully-updated state. See "What session
-            actually is" above.
+        :param session: The current session instance
         :param requests: The original requests provided to the agent after pre-hooks
         :param agent: The agent that executed the requests
         :param agent_reply: The reply from the agent. For the first posthook, this is 
@@ -563,7 +446,7 @@ class DisclaimerHook(PostHook):
 Track user interactions and agent performance:
 
 ```python
-from agentkernel import PreHook, Session
+from agentkernel import PreHook
 from agentkernel.core.model import AgentRequestText
 from datetime import datetime
 
@@ -579,7 +462,7 @@ class AnalyticsHook(PreHook):
         
         # Log the interaction
         self.logger.log({
-            "session_id": Session.current().id,
+            "session_id": session.id,
             "agent": agent.name,
             "prompt": prompt_text,
             "timestamp": datetime.now(),
@@ -923,13 +806,12 @@ async def test_chaining():
 ### PreHook Interface
 
 ```python
-from typing import Any
 from agentkernel.core.model import AgentRequest, AgentReply
 
 class PreHook(ABC):
     @abstractmethod
     async def on_run(
-        self, session: Any | None, agent: Agent, requests: list[AgentRequest]
+        self, session: Session, agent: Agent, requests: list[AgentRequest]
     ) -> list[AgentRequest] | AgentReply:
         """
         Hook method called before an agent starts executing a request. These hooks can modify 
@@ -940,9 +822,7 @@ class PreHook(ABC):
           - Prompt validation like input guardrails
           - Logging or analytics
 
-        :param session: The framework-native session/state object for agent's
-            framework, or None on a session's first turn. See "What session actually
-            is" above. For AK-level session facilities, use Session.current().
+        :param session: The session instance
         :param agent: The agent that will execute the requests
         :param requests: List of requests to the agent (can include text, files, images, etc.)
         
@@ -966,13 +846,12 @@ class PreHook(ABC):
 ### PostHook Interface
 
 ```python
-from typing import Any
 from agentkernel.core.model import AgentRequest, AgentReply
 
 class PostHook(ABC):
     @abstractmethod
     async def on_run(
-        self, session: Any | None, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
     ) -> AgentReply:
         """
         Hook method called after an agent finishes executing a request. These hooks can modify 
@@ -986,9 +865,7 @@ class PostHook(ABC):
         Note: If the hook changes the reply, the modified reply will be sent to the next hook 
               for processing.
 
-        :param session: The framework-native session/state object for agent's
-            framework, reflecting this turn's fully-updated state. See "What session
-            actually is" above. For AK-level session facilities, use Session.current().
+        :param session: The session instance
         :param requests: The original requests provided to the agent after any pre-execution 
                         hooks have been applied
         :param agent: The agent that executed the requests
@@ -1116,11 +993,10 @@ OpenAIModule([agent]).pre_hook(agent, [GuardRailHook(), RAGHook()])
 
 ```python
 class AsyncRAGHook(PreHook):
-    async def on_run(self, session, agent, requests):
+    async def on_run(self, session, agent, original_prompt, prompt, additional_context=None):
         # Can now use async operations
-        prompt = requests[0].prompt if requests and isinstance(requests[0], AgentRequestText) else ""
         context = await self.vector_db.search(prompt)
-        return [AgentRequestText(prompt=self._enrich(prompt, context))]
+        return True, self._enrich(prompt, context)
 ```
 
 ### Planned Enhancements

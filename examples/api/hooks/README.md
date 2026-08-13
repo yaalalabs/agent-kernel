@@ -173,12 +173,11 @@ Hooks that run **after** the agent generates a response:
 
 #### Pre-hook Interface
 ```python
-from typing import Any
 from agentkernel import PreHook
 
 class MyPreHook(PreHook):
     async def on_run(
-      self, session: Any | None, agent: Agent, requests: list[AgentRequest])->list[AgentRequest]|AgentReply:
+      self, session: Session, agent: Agent, requests: list[AgentRequest])->list[AgentRequest]|AgentReply:
         return requests # modify as required or send AgentReply to stop execution
     
     def name(self):
@@ -187,24 +186,17 @@ class MyPreHook(PreHook):
 
 #### Post-hook Interface
 ```python
-from typing import Any
 from agentkernel import PostHook
 
 class MyPostHook(PostHook):
     async def on_run(
-        self, session: Any | None, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
+        self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
     ) -> AgentReply:
       return agent_reply # modify as required
 
     def name(self):
       return "MyPostHook"
 ```
-
-`session` is the framework-native session/state object for the agent's framework (e.g.
-`OpenAISession` for this example), or `None` on a session's first turn. For AK-level session
-facilities (caches, `framework_context`), use `Session.current()` from inside the hook body. See
-[docs/docs/integrations/hooks.md](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/integrations/hooks.md)
-for the per-framework reference.
 
 **Note:** Hook methods are async, allowing you to perform asynchronous operations like database queries, API calls, or vector searches.
 

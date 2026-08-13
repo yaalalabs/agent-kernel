@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 from ...core.hooks import PreHook
 from ...core.model import AgentRequest
@@ -9,7 +8,7 @@ from ..config import AKConfig
 class NoOpPreHook(PreHook):
     """No-op pre-hook when multimodal is disabled."""
 
-    async def on_run(self, session: Any | None, agent: "Agent", requests: list[AgentRequest]) -> list[AgentRequest]:
+    async def on_run(self, session: "Session", agent: "Agent", requests: list[AgentRequest]) -> list[AgentRequest]:
         return requests
 
     def name(self) -> str:

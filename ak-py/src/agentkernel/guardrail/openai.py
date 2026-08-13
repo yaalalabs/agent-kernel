@@ -4,11 +4,10 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
 
 from guardrails import GuardrailsOpenAI, GuardrailTripwireTriggered
 
-from ..core.base import Agent
+from ..core.base import Agent, Session
 from ..core.config import AKConfig
 from ..core.model import AgentReply, AgentReplyText, AgentRequest
 from .guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
@@ -75,11 +74,11 @@ class OpenAIInputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, InputGuardrai
         """Get the guardrail type name for logging."""
         return "Input"
 
-    async def on_run(self, session: Any | None, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
+    async def on_run(self, session: Session, agent: Agent, requests: list[AgentRequest]) -> list[AgentRequest] | AgentReply:
         """
         Validate input requests using OpenAI guardrails.
 
-        :param session: The framework-native session object (unused by this guardrail)
+        :param session: Session object containing interaction state
         :param agent: Agent object that will process the requests
         :param requests: List of AgentRequest objects to validate
 
@@ -157,11 +156,11 @@ class OpenAIOutputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, OutputGuardr
         """
         return "Output"
 
-    async def on_run(self, session: Any | None, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
+    async def on_run(self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply) -> AgentReply:
         """
         Validate output responses using OpenAI guardrails.
 
-        :param session: The framework-native session object (unused by this guardrail)
+        :param session: Session object containing interaction state
         :param requests: List of agent requests being processed
         :param agent: Agent instance that generated the reply
         :param agent_reply: Agent reply to validate
