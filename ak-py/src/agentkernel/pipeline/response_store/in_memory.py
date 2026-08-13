@@ -23,6 +23,8 @@ class InMemoryResponseStore(ResponseStore):
     _lock: ClassVar[threading.Lock] = threading.Lock()
     _records: ClassVar[Dict[str, dict]] = {}
     _chunks: ClassVar[Dict[str, "queue.Queue[dict]"]] = {}
+    # Sentinel put by close_stream to unblock and terminate a pending stream() consumer.
+    _CLOSE_SENTINEL: ClassVar[Dict[str, Any]] = {}
 
     def add_message(self, message: Dict) -> None:
         self._log.debug("Adding in-memory response message for request_id=%s", message.get("request_id"))
@@ -76,12 +78,26 @@ class InMemoryResponseStore(ResponseStore):
                     chunk = chunk_queue.get(timeout=chunk_timeout)
                 except queue.Empty:
                     raise TimeoutError(f"No stream chunk received for request_id '{request_id}' within {chunk_timeout} s")
+                if chunk is self._CLOSE_SENTINEL:
+                    return
                 yield chunk
                 if chunk.get("done"):
                     return
         finally:
             with self._lock:
                 self._chunks.pop(request_id, None)
+
+    def close_stream(self, request_id: str) -> None:
+        """Terminate a pending ``stream()`` for the request and drop its chunk state.
+
+        Safe to call while the stream generator is blocked in a worker thread (where
+        ``generator.close()`` would raise "generator already executing"): the sentinel unblocks
+        the pending ``get`` and the generator returns on its own.
+        """
+        with self._lock:
+            chunk_queue = self._chunks.pop(request_id, None)
+        if chunk_queue is not None:
+            chunk_queue.put(self._CLOSE_SENTINEL)
 
     @classmethod
     def reset(cls) -> None:

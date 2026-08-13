@@ -53,8 +53,13 @@ class AgentRunner:
         except Exception:
             self._log.exception("Failed to send permanent-failure error to output queue")
 
-    def start(self) -> None:
-        """Run the blocking input-queue consumer loop (the container main loop)."""
+    def start(self, exit_on_shutdown: bool = True) -> None:
+        """Run the blocking input-queue consumer loop (the container main loop).
+
+        :param exit_on_shutdown: True for a standalone container main (drain then exit the
+            process); IOHandler passes False so its outer runner coordinates the exit after
+            every pipeline loop has finished its in-flight work.
+        """
         queues = AKConfig.get().execution.queues
         ConsumerLoop(
             process=self.process,
@@ -66,6 +71,7 @@ class AgentRunner:
             thread_name_prefix="agent-runner",
             queue=QueueName.INPUT,
             logger=self._log,
+            exit_on_shutdown=exit_on_shutdown,
         ).run()
 
     @classmethod

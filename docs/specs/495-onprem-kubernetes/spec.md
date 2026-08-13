@@ -339,9 +339,12 @@ behavior exactly):
   that set `ThreadRunner.shutdown_event`, flag `server.should_exit`, and mark the drain exit
   code 0 (`ThreadRunner.shutdown_exit_code`, default 1 for failure-initiated drains). Required
   because uvicorn installs its own handlers only on the main thread, and a container PID 1 with
-  no handler never receives SIGTERM at all (kernel drops default-disposition signals to PID 1) —
-  found when the pipeline flip hung the `examples/containerized/openai` e2e job. Handler
-  installation is skipped off the main thread (tests).
+  no handler never receives SIGTERM at all (kernel drops default-disposition signals to PID 1;
+  found when the pipeline flip hung the `examples/containerized/openai` e2e job). Handler
+  installation is skipped off the main thread (tests). The nested `ConsumerLoop`s run with
+  `exit_on_shutdown=False`, so each returns after finishing its in-flight work and only
+  IOHandler's outer `ThreadRunner.run` exits the process, once every loop has reported in;
+  standalone container mains (`AgentRunner.run()`, the ECS classes) keep the exiting default.
 
 **`RESTAPI` default wiring** (`api/http.py`): `run()` gains a pipeline delegation guard ahead of
 its current body: it lazily imports and delegates to `IOHandler.run()` **only when all three

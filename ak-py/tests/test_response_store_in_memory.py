@@ -1,4 +1,5 @@
 import threading
+import time
 
 import pytest
 
@@ -96,3 +97,38 @@ class TestHandlerSelection:
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
         assert isinstance(ResponseDBHandler().get_store(), InMemoryResponseStore)
+
+
+class TestCloseStream:
+    def test_close_stream_unblocks_a_pending_consumer_and_drops_state(self):
+        store = InMemoryResponseStore()
+        received = []
+
+        def consume():
+            received.extend(store.stream("r1", chunk_timeout=5.0))
+
+        consumer = threading.Thread(target=consume)
+        consumer.start()
+        time.sleep(0.1)  # let the consumer block on the empty chunk queue
+
+        store.close_stream("r1")
+        consumer.join(timeout=2)
+
+        assert not consumer.is_alive(), "close_stream must unblock the pending stream()"
+        assert received == []
+        assert "r1" not in InMemoryResponseStore._chunks
+
+    def test_close_stream_without_pending_stream_is_a_noop(self):
+        InMemoryResponseStore().close_stream("never-streamed")
+
+
+class TestRetryConfigFallback:
+    def test_retry_config_defaults_when_no_response_store_block(self, monkeypatch):
+        class _Cfg:
+            class execution:
+                response_store = None
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        from agentkernel.pipeline.response_store.base import ResponseStore
+
+        assert ResponseStore._get_retry_config() == (5, 5.0)

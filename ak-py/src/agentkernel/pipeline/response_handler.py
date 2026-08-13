@@ -94,8 +94,13 @@ class ResponseHandler:
         except Exception:
             self._log.exception("Failed to handle permanent-failure output message")
 
-    def start(self) -> None:
-        """Run the blocking output-queue consumer loop."""
+    def start(self, exit_on_shutdown: bool = True) -> None:
+        """Run the blocking output-queue consumer loop.
+
+        :param exit_on_shutdown: True for a standalone container main (drain then exit the
+            process); IOHandler passes False so its outer runner coordinates the exit after
+            every pipeline loop has finished its in-flight work.
+        """
         queues = AKConfig.get().execution.queues
         ConsumerLoop(
             process=self.process,
@@ -107,6 +112,7 @@ class ResponseHandler:
             thread_name_prefix="response-handler",
             queue=QueueName.OUTPUT,
             logger=self._log,
+            exit_on_shutdown=exit_on_shutdown,
         ).run()
 
     # -- delivery paths ----------------------------------------------------------------------

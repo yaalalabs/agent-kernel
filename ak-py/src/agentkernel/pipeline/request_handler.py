@@ -332,9 +332,13 @@ class RequestHandler(RestHandler):
             error_chunk = {"error": "Stream delivery failed", "done": True, "session_id": session_id}
             yield f"data: {json.dumps(error_chunk)}\n\n"
         finally:
-            # Deterministically run the store generator's cleanup (it releases the per-request
-            # chunk state in its finally), including when the client disconnects mid-stream.
-            await asyncio.to_thread(chunk_iterator.close)
+            # Deterministically release the per-request chunk state, including when the client
+            # disconnects mid-stream. close_stream is synchronous and non-blocking, so it runs
+            # even under task cancellation; a plain chunk_iterator.close() would raise
+            # "generator already executing" whenever the generator is mid-fetch in the worker
+            # thread (its sentinel unblocks that fetch and the generator returns on its own).
+            if isinstance(store, InMemoryResponseStore):
+                store.close_stream(request_id)
 
     async def run_multipart_chat(
         self,

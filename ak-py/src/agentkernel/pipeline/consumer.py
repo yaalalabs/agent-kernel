@@ -40,6 +40,7 @@ class ConsumerLoop:
         queue: Optional[QueueName] = None,
         wait_seconds: float = 20.0,
         logger: Optional[logging.Logger] = None,
+        exit_on_shutdown: bool = True,
     ):
         """
         :param process: Handles one message; raising leaves the message for redelivery.
@@ -54,6 +55,9 @@ class ConsumerLoop:
         :param wait_seconds: Long-poll wait passed to ``fetch``.
         :param logger: Logger to emit on; defaults to ``ak.pipeline.consumer``. Legacy consumers
             pass their own so operator log filters keep working.
+        :param exit_on_shutdown: Forwarded to ``ThreadRunner.run``. Loops nested inside an
+            IOHandler task pass False so the drain returns (letting every sibling loop finish
+            its in-flight work) and only the outermost runner exits the process.
         """
         self._process = process
         self._on_permanent_failure = on_permanent_failure
@@ -65,6 +69,7 @@ class ConsumerLoop:
         self._queue = queue
         self._wait_seconds = wait_seconds
         self._log = logger or logging.getLogger("ak.pipeline.consumer")
+        self._exit_on_shutdown = exit_on_shutdown
 
     def run(self) -> None:
         """Block forever, consuming the queue with ``num_consumers`` threads."""
@@ -83,6 +88,7 @@ class ConsumerLoop:
                 for i in range(self._num_consumers)
             ],
             max_workers=self._num_consumers,
+            exit_on_shutdown=self._exit_on_shutdown,
         )
 
     # Long fetch waits are sliced so the loop re-checks shutdown_event about once a second: a

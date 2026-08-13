@@ -60,11 +60,22 @@ class IOHandler:
                 graceful=True,
                 awaited_on_shutdown=False,  # exits via server.should_exit on signals, not shutdown_event (see ECSIOHandler)
             ),
-            ThreadRunner.Task(execution_function=ResponseHandler().start, thread_name="response-handler", stop_all_on_failure=True),
+            ThreadRunner.Task(
+                # exit_on_shutdown=False: the nested loop returns after draining (finishing its
+                # in-flight work); only this outer ThreadRunner.run ends the process, once every
+                # pipeline loop has reported in.
+                execution_function=lambda: ResponseHandler().start(exit_on_shutdown=False),
+                thread_name="response-handler",
+                stop_all_on_failure=True,
+            ),
         ]
         if single_process:
             runner = StreamAgentRunner() if mode == ExecutionMode.STREAM else AgentRunner()
-            tasks.append(ThreadRunner.Task(execution_function=runner.start, thread_name="agent-runner", stop_all_on_failure=True))
+            tasks.append(
+                ThreadRunner.Task(
+                    execution_function=lambda: runner.start(exit_on_shutdown=False), thread_name="agent-runner", stop_all_on_failure=True
+                )
+            )
 
         ThreadRunner.run(tasks=tasks, max_workers=len(tasks))
 

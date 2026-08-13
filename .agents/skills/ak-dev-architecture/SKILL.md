@@ -649,7 +649,7 @@ Container 2: ECSAgentRunner
 
 ### ThreadRunner Contract
 
-`ThreadRunner.run(tasks: list[ThreadRunner.Task], max_workers=None) -> dict[Task, Any]` starts one
+`ThreadRunner.run(tasks: list[ThreadRunner.Task], max_workers=None, exit_on_shutdown=True) -> dict[Task, Any]` starts one
 `threading.Thread` per `Task` (daemon, so a never-ending task can't block interpreter shutdown),
 gated by a `Semaphore(max_workers or len(tasks))`, and drains completions off a shared queue until
 every task in that call has reported in. It returns a dict keyed by the exact `Task` instance,

@@ -75,8 +75,14 @@ class ResponseStore(ABC):
 
     @staticmethod
     def _get_retry_config() -> tuple[int, float]:
-        """Read (retry_count, delay) for get_message_with_retry from config."""
+        """Read (retry_count, delay) for get_message_with_retry from config.
+
+        Falls back to _ResponseStoreConfig's defaults when no execution.response_store block is
+        configured (possible on the pipeline's local default path) instead of raising.
+        """
         response_store_config = AKConfig.get().execution.response_store
+        if response_store_config is None:
+            return 5, 5.0  # matches _ResponseStoreConfig's field defaults
         return response_store_config.retry_count, response_store_config.delay
 
     @abstractmethod

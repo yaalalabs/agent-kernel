@@ -142,3 +142,18 @@ class TestSigtermEndToEnd:
             if proc.poll() is None:
                 proc.kill()
                 proc.wait(timeout=10)
+
+
+class TestNestedDrainCoordination:
+    def test_thread_runner_returns_instead_of_exiting_when_exit_on_shutdown_false(self, monkeypatch):
+        exit_called = threading.Event()
+        monkeypatch.setattr("agentkernel.pipeline.thread_runner.os._exit", lambda code: exit_called.set())
+
+        ThreadRunner.shutdown_event.set()
+        results = ThreadRunner.run(
+            tasks=[ThreadRunner.Task(execution_function=lambda: "done", thread_name="noop")],
+            exit_on_shutdown=False,
+        )
+
+        assert not exit_called.is_set(), "a nested runner must return, not end the process"
+        assert list(results.values()) == ["done"]

@@ -1,3 +1,4 @@
+import threading
 import time
 from typing import List
 from unittest.mock import MagicMock
@@ -149,14 +150,15 @@ class TestRun:
     def test_run_builds_one_graceful_task_per_consumer(self, monkeypatch):
         captured = {}
 
-        def fake_run(tasks, max_workers=None):
-            captured["tasks"], captured["max_workers"] = tasks, max_workers
+        def fake_run(tasks, max_workers=None, exit_on_shutdown=True):
+            captured["tasks"], captured["max_workers"], captured["exit_on_shutdown"] = tasks, max_workers, exit_on_shutdown
             return {}
 
         monkeypatch.setattr(ThreadRunner, "run", staticmethod(fake_run))
         _loop(FakeConsumer(), MagicMock(), num_consumers=3).run()
 
         assert captured["max_workers"] == 3
+        assert captured["exit_on_shutdown"] is True  # standalone default: container mains exit on drain
         assert [t.thread_name for t in captured["tasks"]] == ["test-consumer-0", "test-consumer-1", "test-consumer-2"]
         assert all(t.stop_all_on_failure and t.graceful for t in captured["tasks"])
 
@@ -245,3 +247,37 @@ class ByoTransport(QueueTransport):
 
     def create_consumer(self, queue):
         return FakeConsumer()
+
+
+class TestDrainFinishesInFlightWork:
+    def test_shutdown_mid_message_lets_the_run_finish_and_returns(self, monkeypatch):
+        """The coordinated-drain guarantee: a loop with exit_on_shutdown=False completes its
+        in-flight message (process + ack) and then returns instead of exiting the process."""
+        exit_called = threading.Event()
+        monkeypatch.setattr("agentkernel.pipeline.thread_runner.os._exit", lambda code: exit_called.set())
+
+        consumer = FakeConsumer(batches=[[_msg()]])
+        processed = threading.Event()
+
+        def slow_process(message):
+            # Signal arrives mid-run: the drain must still let this finish.
+            ThreadRunner.shutdown_event.set()
+            time.sleep(0.2)
+            processed.set()
+
+        loop = ConsumerLoop(
+            process=slow_process,
+            on_permanent_failure=MagicMock(),
+            max_receive_count=3,
+            num_consumers=1,
+            batch_size=1,
+            consumer_factory=lambda: consumer,
+            thread_name_prefix="drain-test",
+            wait_seconds=0.05,
+            exit_on_shutdown=False,
+        )
+        loop.run()  # must return rather than block or exit
+
+        assert processed.is_set(), "the in-flight message must be fully processed"
+        assert len(consumer.acked) == 1, "the in-flight message must be acknowledged"
+        assert not exit_called.is_set(), "a nested loop must never end the process"

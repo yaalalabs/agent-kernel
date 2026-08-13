@@ -40,7 +40,14 @@ class ThreadRunner:
                 raise ValueError("graceful=True requires stop_all_on_failure=True")
 
     @staticmethod
-    def run(tasks: list[Task], max_workers: int | None = None) -> dict[Task, Any]:
+    def run(tasks: list[Task], max_workers: int | None = None, exit_on_shutdown: bool = True) -> dict[Task, Any]:
+        """
+        :param exit_on_shutdown: When True (default), a completed drain with shutdown_event set
+            exits the process (os._exit with shutdown_exit_code). Nested runners (a ConsumerLoop
+            running inside an IOHandler task) pass False so they return after draining and only
+            the outermost runner ends the process, once every nested loop has finished its
+            in-flight work.
+        """
         if not tasks:
             return {}
 
@@ -86,7 +93,7 @@ class ThreadRunner:
                 _log.debug(f"[{task.thread_name}] completed")
             pending.discard(task)
 
-        if ThreadRunner.shutdown_event.is_set():
+        if ThreadRunner.shutdown_event.is_set() and exit_on_shutdown:
             logging.shutdown()
             os._exit(ThreadRunner.shutdown_exit_code)
 
