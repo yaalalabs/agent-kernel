@@ -547,16 +547,25 @@ Configure queue-backed and serverless execution behavior.
 
 - **Queues**
   - **Field**: `execution.queues`
-  - **Description**: Queue settings used by serverless execution modes
+  - **Description**: Queue settings used by the queue execution pipeline (in-process by default, or serverless/containerized backends)
+
+  - **Transport Type**
+    - **Field**: `execution.queues.type`
+    - **Options**: `in_memory`, `sqs`, `kafka`, `nats`, or a dotted path to a `QueueTransport` subclass
+    - **Default**: `None`
+    - **Description**: Queue transport used by the pipeline. When unset, a configured `execution.queues.input.url` implies `sqs` (pre-#495 compatibility); otherwise defaults to `in_memory` — a zero-dependency, in-process transport for local development and single-process deployments.
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__TYPE`
 
   - **Input Queue URL**
     - **Field**: `execution.queues.input.url`
     - **Default**: `None`
+    - **Description**: Input queue URL (`sqs` transport only)
     - **Environment Variable**: `AK_EXECUTION__QUEUES__INPUT__URL`
 
   - **Output Queue URL**
     - **Field**: `execution.queues.output.url`
     - **Default**: `None`
+    - **Description**: Output queue URL (`sqs` transport only)
     - **Environment Variable**: `AK_EXECUTION__QUEUES__OUTPUT__URL`
 
   - **Input Queue Max Receive Count**
@@ -572,14 +581,24 @@ Configure queue-backed and serverless execution behavior.
   - **Input Queue Consumer Count**
     - **Field**: `execution.queues.input.no_of_consumers`
     - **Default**: `5`
-    - **Description**: Number of independent consumer threads that each poll the input queue in a continuous loop. Only used by containerized deployments — never set for serverless deployments, which have no consumer threads.
+    - **Description**: Number of independent consumer threads that each poll the input queue in a continuous loop. Used by the in-process pipeline (agent-runner worker threads) and by ECS containerized deployments; not used in serverless (Lambda) mode, which has no consumer threads.
     - **Environment Variable**: `AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS`
 
   - **Output Queue Consumer Count**
     - **Field**: `execution.queues.output.no_of_consumers`
     - **Default**: `5`
-    - **Description**: Number of independent consumer threads that each poll the output queue in a continuous loop. Only used by containerized deployments — never set for serverless deployments, which have no consumer threads.
+    - **Description**: Number of independent consumer threads that each poll the output queue in a continuous loop. Used by the in-process pipeline (response-handler worker threads) and by ECS containerized deployments; not used in serverless (Lambda) mode, which has no consumer threads.
     - **Environment Variable**: `AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS`
+
+  - **In-Memory Transport Ack Wait**
+    - **Field**: `execution.queues.in_memory.ack_wait`
+    - **Default**: `300.0`
+    - **Description**: Seconds an unacknowledged in-memory message stays invisible before redelivery. Redelivery rescues stuck worker threads; keep this above your longest expected agent run or a slow run will be executed again.
+
+  - **In-Memory Transport Dedup Window**
+    - **Field**: `execution.queues.in_memory.dedup_window`
+    - **Default**: `300.0`
+    - **Description**: Seconds within which a repeated `message_deduplication_id` is dropped
 
   - **Queue Batch Size**
     - **Field**: `execution.queues.batch_size`
@@ -593,7 +612,8 @@ Configure queue-backed and serverless execution behavior.
 
   - **Type**
     - **Field**: `execution.response_store.type`
-    - **Description**: Response store backend selector configured in `config.yaml`; this value is not exported as an environment variable
+    - **Options**: `in_memory`, `redis`, `valkey`, `dynamodb`
+    - **Description**: Response store backend selector configured in `config.yaml`; this value is not exported as an environment variable. Defaults to an in-process `in_memory` store when unset and no other backend is configured.
 
   - **Retry Count**
     - **Field**: `execution.response_store.retry_count`
@@ -621,7 +641,7 @@ Configure queue-backed and serverless execution behavior.
     - **Environment Variables**: `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`, `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL`
     - **Description**: DynamoDB-backed response storage with table name and TTL
 
-Use Redis, Valkey, or DynamoDB for the response store backend. The runtime accepts `BaseRunRequest` payloads directly, normalizes them internally when queueing is required, and uses `request_id` plus optional `user_id` as queue message attributes.
+Use the built-in `in_memory` response store for local development and single-process deployments (zero extra services required), or Redis, Valkey, or DynamoDB for distributed/serverless deployments. The runtime accepts `BaseRunRequest` payloads directly, normalizes them internally when queueing is required, and uses `request_id` plus optional `user_id` as queue message attributes.
 
 #### API Configuration
 
@@ -1228,17 +1248,19 @@ thread: # optional; configures Conversation Thread Support (enabled by mounting 
 execution:
   mode: rest_sync
   queues:
+    # type: in_memory | sqs | kafka | nats — omit to auto-detect (sqs if input.url is set, else in_memory)
     input:
-      url: https://queue.example.com/<accountno>/<queuename>
+      url: https://queue.example.com/<accountno>/<queuename> # sqs transport only
       max_receive_count: 3
-      no_of_consumers: 5 # Containerized deployments only, ignored by serverless deployments
+      no_of_consumers: 5 # in-process pipeline + containerized deployments, ignored by serverless deployments
     output:
-      url: https://queue.example.com/<accountno>/<queuename>
+      url: https://queue.example.com/<accountno>/<queuename> # sqs transport only
       max_receive_count: 3
-      no_of_consumers: 5 # Containerized deployments only, ignored by serverless deployments
+      no_of_consumers: 5 # in-process pipeline + containerized deployments, ignored by serverless deployments
+    # in_memory: {ack_wait: 300.0, dedup_window: 300.0}  # in_memory transport settings, unused otherwise
     # batch_size is set by the deployment tooling — set via AK_EXECUTION__QUEUES__BATCH_SIZE, never here
   response_store:
-    type: redis
+    type: redis # in_memory | redis | valkey | dynamodb — omit for the built-in in_memory store
     retry_count: 5
     delay: 5
     redis: # if this is given, then valkey/dynamodb response store parts cannot be given
