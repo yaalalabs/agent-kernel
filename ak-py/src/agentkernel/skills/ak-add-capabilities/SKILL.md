@@ -595,7 +595,7 @@ class HistoryTrimHook(PostHook):
             items = await openai_session.get_items()
             if len(items) > 20:
                 await openai_session.clear_session()
-                await openai_session.add_items(items[10:])
+                await openai_session.add_items(items[-20:])  # keep only the most recent 20
         return agent_reply
 
     def name(self):

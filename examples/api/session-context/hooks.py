@@ -11,8 +11,8 @@ from agentkernel.core.model import AgentReply, AgentRequest
 class HistoryTrimHook(PostHook):
     """
     Once the underlying OpenAI Agents SDK conversation history grows past THRESHOLD raw
-    items, drops the oldest TRIM_COUNT items after every turn, to bound token usage as a
-    session grows.
+    items, trims it back down to the most recent THRESHOLD items after every turn, to bound
+    token usage as a session grows.
 
     Demonstrates Session.get_framework_session(): it returns the SAME live object each
     framework adapter stores its native session state under (keyed by the current agent's
@@ -22,7 +22,6 @@ class HistoryTrimHook(PostHook):
     """
 
     THRESHOLD = 3
-    TRIM_COUNT = 2
 
     async def on_run(
         self, session: Session, requests: list[AgentRequest], agent: Agent, agent_reply: AgentReply
@@ -41,9 +40,9 @@ class HistoryTrimHook(PostHook):
 
         items = await openai_session.get_items()
         if len(items) > self.THRESHOLD:
-            trimmed = items[self.TRIM_COUNT :]
+            capped = items[-self.THRESHOLD :]  # keep only the most recent THRESHOLD items
             await openai_session.clear_session()
-            await openai_session.add_items(trimmed)
+            await openai_session.add_items(capped)
 
         return agent_reply
 

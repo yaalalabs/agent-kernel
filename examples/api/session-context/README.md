@@ -11,8 +11,8 @@ For general pre/post hook patterns (guardrails, RAG, disclaimers), see
 
 ### History Trim Hook (Post-hook)
 The history trim hook bounds the OpenAI Agents SDK's own raw conversation history (not the AK
-`Session` cache) as a session grows: once it exceeds `THRESHOLD` items, the oldest `TRIM_COUNT`
-items are dropped after every turn:
+`Session` cache) as a session grows: once it exceeds `THRESHOLD` items, it is trimmed back down to
+the most recent `THRESHOLD` items after every turn:
 - Calls `session.get_framework_session()` to reach the framework-native session object directly
 - Trims it via its own `get_items()` / `clear_session()` / `add_items()` methods
 - Needs no `session.set(...)` call afterward — see [Framework Session Access](#framework-session-access) below
@@ -33,7 +33,6 @@ from agentkernel import PostHook
 
 class HistoryTrimHook(PostHook):
     THRESHOLD = 3
-    TRIM_COUNT = 2
 
     async def on_run(self, session, requests, agent, agent_reply):
         openai_session = session.get_framework_session()
@@ -42,9 +41,9 @@ class HistoryTrimHook(PostHook):
 
         items = await openai_session.get_items()
         if len(items) > self.THRESHOLD:
-            trimmed = items[self.TRIM_COUNT:]
+            capped = items[-self.THRESHOLD:]  # keep only the most recent THRESHOLD items
             await openai_session.clear_session()
-            await openai_session.add_items(trimmed)
+            await openai_session.add_items(capped)
 
         return agent_reply
 
