@@ -394,13 +394,17 @@ class Agent(ABC):
     framework.
     """
 
-    current_agent: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("current_agent", default=None)
+    current_agent: ClassVar[contextvars.ContextVar["Agent | None"]] = contextvars.ContextVar("current_agent", default=None)
 
     @classmethod
-    def current(cls) -> Self | None:
+    def current(cls) -> "Agent | None":
         """
         Returns the agent currently executing in this context (set for the duration of a
         Runtime.run()/Runtime.stream() call), or None if no agent is currently running.
+
+        Note this is typed as Agent, not Self: the contextvar holds whichever agent is
+        currently active regardless of which subclass calls current(), so e.g.
+        SomeFrameworkAgent.current() may return a different framework's agent.
         :return: The current Agent instance, or None.
         """
         return cls.current_agent.get()
