@@ -4,7 +4,8 @@ import time
 import pytest
 
 from agentkernel.core.util.factory import AKConfigError
-from agentkernel.pipeline.response_store.handler import ResponseDBHandler
+from agentkernel.pipeline.response_store.base import ResponseStore
+from agentkernel.pipeline.response_store.factory import ResponseStoreFactory
 from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
 
 
@@ -90,8 +91,8 @@ class TestChunkStream:
         assert "r1" not in InMemoryResponseStore._chunks
 
 
-class TestHandlerSelection:
-    def test_handler_selects_in_memory_store(self, monkeypatch):
+class TestFactorySelection:
+    def test_factory_selects_in_memory_store(self, monkeypatch):
         class _Cfg:
             class execution:
                 class response_store:
@@ -101,7 +102,36 @@ class TestHandlerSelection:
                     dynamodb = None
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
-        assert isinstance(ResponseDBHandler().get_store(), InMemoryResponseStore)
+        assert isinstance(ResponseStoreFactory.create(), InMemoryResponseStore)
+
+    def test_unconfigured_store_defaults_to_in_memory_on_the_in_memory_transport(self, monkeypatch):
+        class _Cfg:
+            class execution:
+                response_store = None
+
+                class queues:
+                    type = "in_memory"
+
+                    class input:
+                        url = None
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        assert isinstance(ResponseStoreFactory.create(), InMemoryResponseStore)
+
+    def test_unconfigured_store_on_a_broker_transport_fails_fast(self, monkeypatch):
+        class _Cfg:
+            class execution:
+                response_store = None
+
+                class queues:
+                    type = "sqs"
+
+                    class input:
+                        url = "https://sqs.test/input"
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        with pytest.raises(AKConfigError, match="required on broker transports"):
+            ResponseStoreFactory.create()
 
     def test_dotted_path_resolves_byo_store(self, monkeypatch):
         class _Cfg:
@@ -110,7 +140,7 @@ class TestHandlerSelection:
                     type = f"{__name__}.ByoResponseStore"
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
-        assert isinstance(ResponseDBHandler().get_store(), ByoResponseStore)
+        assert isinstance(ResponseStoreFactory.create(), ByoResponseStore)
 
     def test_dotted_path_wrong_base_raises(self, monkeypatch):
         class _Cfg:
@@ -120,7 +150,7 @@ class TestHandlerSelection:
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
         with pytest.raises(AKConfigError, match="not a ResponseStore subclass"):
-            ResponseDBHandler()
+            ResponseStoreFactory.create()
 
     def test_unknown_short_name_fails_loudly(self, monkeypatch):
         """Unknown short names fail at store-build time (the config field also accepts dotted
@@ -135,8 +165,37 @@ class TestHandlerSelection:
                     dynamodb = None
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
-        with pytest.raises(ValueError, match="No valid response store"):
-            ResponseDBHandler()
+        with pytest.raises(AKConfigError, match="no valid response store"):
+            ResponseStoreFactory.create()
+
+
+class TestChunkStreamingCapability:
+    def test_in_memory_store_declares_the_capability(self):
+        assert InMemoryResponseStore().supports_chunk_streaming()
+
+    def test_base_default_is_unsupported(self):
+        """Stores without the capability say so, and the chunk methods fail loudly: the pipeline
+        checks the capability instead of concrete store types (BYO stores can opt in)."""
+
+        class MinimalStore(ResponseStore):
+            def add_message(self, message):
+                pass
+
+            def get_message(self, request_id, get_and_delete=False):
+                return None
+
+            def get_record(self, request_id, get_and_delete=False):
+                return None
+
+            def delete_message(self, request_id):
+                pass
+
+        store = MinimalStore()
+        assert not store.supports_chunk_streaming()
+        with pytest.raises(NotImplementedError, match="chunk streaming"):
+            store.add_chunk("r1", {})
+        with pytest.raises(NotImplementedError, match="chunk streaming"):
+            store.close_stream("r1")
 
 
 class TestCloseStream:

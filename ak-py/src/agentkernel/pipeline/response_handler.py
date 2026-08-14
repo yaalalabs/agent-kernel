@@ -8,8 +8,7 @@ from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
 from .envelope import ATTR_ENDPOINT_URL, ATTR_REQUEST_ID, ATTR_STATUS_CODE, QueueMessage, QueueName
 from .response_store.base import ResponseStore
-from .response_store.handler import ResponseDBHandler
-from .response_store.in_memory import InMemoryResponseStore
+from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
 
 # ENDPOINT_URL sentinel for in-process delivery (single-process topology).
@@ -33,12 +32,7 @@ class ResponseHandler:
 
     def _get_store(self) -> ResponseStore:
         if self._response_store is None:
-            response_store_config = AKConfig.get().execution.response_store
-            unset = response_store_config is None or response_store_config.type in (None, "in_memory")
-            if unset and QueueTransportFactory.resolve_type() == "in_memory":
-                self._response_store = InMemoryResponseStore()
-            else:
-                self._response_store = ResponseDBHandler().get_store()
+            self._response_store = ResponseStoreFactory.create()
         return self._response_store
 
     def process(self, message: QueueMessage) -> None:
@@ -74,8 +68,10 @@ class ResponseHandler:
                         if message.group_id:
                             error_chunk["session_id"] = message.group_id
                         store = self._get_store()
-                        if isinstance(store, InMemoryResponseStore):
+                        if store.supports_chunk_streaming():
                             store.add_chunk(request_id, error_chunk)
+                        else:
+                            self._log.warning("Cannot deliver permanent-failure stream chunk: response store does not support chunk streaming")
                     return
                 self._log.warning("Cannot deliver permanent-failure stream chunk: WebSocket delivery not wired yet")
                 return
@@ -138,8 +134,8 @@ class ResponseHandler:
         if not request_id:
             raise ValueError("request_id is required in queue message attributes")
         store = self._get_store()
-        if not isinstance(store, InMemoryResponseStore):
-            raise AKConfigError("local STREAM delivery requires the in_memory response store")
+        if not store.supports_chunk_streaming():
+            raise AKConfigError("local STREAM delivery requires a chunk-streaming response store (in_memory, or a BYO store with the capability)")
         store.add_chunk(request_id, json.loads(message.body))
 
     def _broadcast(self, message: QueueMessage) -> None:

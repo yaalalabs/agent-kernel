@@ -3,7 +3,6 @@ import base64
 import json
 import logging
 import uuid
-from abc import abstractmethod
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -14,8 +13,7 @@ from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, FileData, ImageData
 from .envelope import ATTR_REQUEST_ID, QueueMessage, QueueName
 from .response_store.base import ResponseStore
-from .response_store.handler import ResponseDBHandler
-from .response_store.in_memory import InMemoryResponseStore
+from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
 
 # Retry budget for awaiting a response when no execution.response_store block is configured:
@@ -30,17 +28,23 @@ class RestHandler(AgentRESTRequestHandler):
     # Poll route reuses the chat path (GET vs the enqueue POST).
     CHAT_POLL_PATH = AgentRESTRequestHandler.CHAT_PATH
 
-    def __init__(self, logger_name: str = "ak.deployment.queue_handler"):
+    def __init__(self, logger_name: str = "ak.pipeline.rest_handler"):
         super().__init__()
-        # Override base logger with the deployment-specific one.
+        # Override base logger with the component-specific one.
         self._log = logging.getLogger(logger_name)
         self._config = AKConfig.get()
         self._transport: Optional[QueueTransport] = None
+        self._response_store: Optional[ResponseStore] = None
 
-    @abstractmethod
     def get_response_store(self) -> ResponseStore:
-        """Return the ResponseStore implementation used to poll for responses."""
-        pass
+        """The response store used to await/poll responses.
+
+        Defaults to the configured store (``ResponseStoreFactory``, which owns the pipeline's
+        resolution defaults); subclasses may override to inject a specific store.
+        """
+        if self._response_store is None:
+            self._response_store = ResponseStoreFactory.create()
+        return self._response_store
 
     def get_transport(self) -> QueueTransport:
         """The queue transport used to enqueue requests.
@@ -192,19 +196,6 @@ class RequestHandler(RestHandler):
     def __init__(self):
         super().__init__(logger_name="ak.pipeline.request_handler")
         self._transport_type = QueueTransportFactory.resolve_type()
-        self._response_store: Optional[ResponseStore] = None
-
-    # -- wiring ---------------------------------------------------------------------------
-
-    def get_response_store(self) -> ResponseStore:
-        if self._response_store is None:
-            response_store_config = self._config.execution.response_store
-            unset = response_store_config is None or response_store_config.type in (None, "in_memory")
-            if unset and self._transport_type == "in_memory":
-                self._response_store = InMemoryResponseStore()
-            else:
-                self._response_store = ResponseDBHandler().get_store()
-        return self._response_store
 
     def _is_queue_mode(self) -> bool:
         return True
@@ -222,17 +213,17 @@ class RequestHandler(RestHandler):
         return response_store_config.retry_count, response_store_config.delay
 
     async def _await_response_record(self, request_id: str):
+        # Poll full records (get_record) rather than bodies (get_message) on every store, so
+        # the stored status_code reaches _build_sync_response on shared stores too.
         store = self.get_response_store()
-        if isinstance(store, InMemoryResponseStore):
-            retry_count, delay = self._response_retry_config()
-            for attempt in range(retry_count):
-                record = await asyncio.to_thread(store.get_record, request_id, True)
-                if record is not None:
-                    return record
-                if attempt < retry_count - 1:
-                    await asyncio.sleep(delay)
-            return None
-        return await super()._await_response_record(request_id)
+        retry_count, delay = self._response_retry_config()
+        for attempt in range(retry_count):
+            record = await asyncio.to_thread(store.get_record, request_id, True)
+            if record is not None:
+                return record
+            if attempt < retry_count - 1:
+                await asyncio.sleep(delay)
+        return None
 
     def _build_sync_response(self, record: Any) -> Any:
         if isinstance(record, dict) and "body" in record:
@@ -277,7 +268,7 @@ class RequestHandler(RestHandler):
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")
 
     async def _sse_stream(self, request_id: str, session_id: Optional[str]) -> AsyncGenerator[str, None]:
-        store = self.get_response_store()  # InMemoryResponseStore: validated at IOHandler startup
+        store = self.get_response_store()  # chunk-streaming capable: validated at IOHandler startup
         chunk_iterator = store.stream(request_id)
         try:
             while True:
@@ -300,7 +291,7 @@ class RequestHandler(RestHandler):
             # even under task cancellation; a plain chunk_iterator.close() would raise
             # "generator already executing" whenever the generator is mid-fetch in the worker
             # thread (its sentinel unblocks that fetch and the generator returns on its own).
-            if isinstance(store, InMemoryResponseStore):
+            if store.supports_chunk_streaming():
                 store.close_stream(request_id)
 
     async def run_multipart_chat(

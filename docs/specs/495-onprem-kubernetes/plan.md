@@ -173,3 +173,10 @@ Spec section references are to `spec.md`.
 - **A2A/MCP uniformity over the pipeline**: A2A and MCP currently execute via `AgentService`
   inline even when their host process runs the pipeline; making them uniform is a separate
   design/issue (decided 2026-08-13).
+- **ECS runtime classes become pipeline instantiations**: `ECSAgentRunner`/
+  `ECSStreamAgentRunner`/`ECSOutputConsumer`/`ECSIOHandler` still parallel the pipeline's
+  `AgentRunner`/`ResponseHandler`/`IOHandler` instead of instantiating them. The wire formats
+  already interoperate (spec §5), but the migration carries behavioral decisions (ECS
+  error-body-with-200 vs the pipeline's status mapping, API Gateway WS delivery vs
+  pod-direct), so it is its own design + issue after #495 (decided 2026-08-14).
+  `ECSQueueRequestHandler` and `ECSSQSConsumer` are already thin instantiations.

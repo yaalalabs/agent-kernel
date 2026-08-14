@@ -27,7 +27,7 @@ ak-py/src/agentkernel/pipeline/
 ├── response_store/
 │   ├── __init__.py
 │   ├── base.py            # ResponseStore ABC (moved from deployment/common/response_store.py)
-│   ├── handler.py         # ResponseDBHandler factory (moved from deployment/aws/core/response_store/)
+│   ├── factory.py         # ResponseStoreFactory (#541 pattern; owns the pipeline resolution defaults)
 │   ├── in_memory.py       # InMemoryResponseStore (new)
 │   ├── redis.py / valkey.py / dynamodb.py   # moved unchanged
 ├── ws/
@@ -60,7 +60,7 @@ Coupling rules (numbered, enforced by import direction):
 3. Moved modules leave **re-export shims** at their old paths so every existing import keeps
    working: `deployment/common/thread_runner.py`, `deployment/common/response_store.py`,
    `deployment/common/websocket_service.py`, and `deployment/aws/core/response_store/`
-   (`__init__.py` re-exports `ResponseDBHandler`; `redis/valkey/dynamodb` modules re-export their
+   (`__init__.py` re-exports `ResponseStoreFactory`; `redis/valkey/dynamodb` modules re-export their
    store classes). `deployment/common/__init__.py` keeps exporting `ThreadRunner` (its
    `QueueConsumer` export is removed by the public-interface cleanup, §12 change 12).
 4. Transports never read `AKConfig` for connection details at method level: the factory reads
@@ -331,8 +331,11 @@ seams (defaults preserve today's ECS behavior exactly):
 - `_await_response_record(request_id)` (default: today's `get_message_with_retry(...)` call with
   its original keyword style) so subclasses can retrieve full records;
 - `_effective_mode()` (default: `execution.mode` as-is) so the pipeline can map unset → REST_SYNC.
-- `RequestHandler.get_response_store()` uses the relocated `ResponseDBHandler` (with the
-  in_memory default when unset on the in_memory transport).
+- `RestHandler.get_response_store()` defaults to `ResponseStoreFactory.create()` (the factory
+  owns the resolution defaults, so ECS and the pipeline share one implementation);
+  `RequestHandler._await_response_record` polls **full records** (`ResponseStore.get_record`)
+  with the pipeline retry budget, so the stored `status_code` is honored on every store,
+  shared backends included.
 - `_build_sync_response` override: stored `status_code >= 400` → `HTTPException(status_code,
   detail=body)`: restoring today's **direct-mode** error contract
   (`ResponseBuilder.build_response` raises in `rest_api_mode`, `chat_service.py:299-302`) on the
@@ -421,8 +424,15 @@ preserves today's inline path unchanged.
 
 ### 10. Response store changes (`pipeline/response_store/`)
 
-- `ResponseStore` ABC, `ResponseDBHandler`, and the Redis/Valkey/DynamoDB stores move unchanged
-  (shims at old paths, §1 rule 3). `ResponseDBHandler.Type` (`handler.py:16`) gains `IN_MEMORY`.
+- `ResponseStore` ABC and the Redis/Valkey/DynamoDB stores move (shims at old paths, §1
+  rule 3). The selection factory is `ResponseStoreFactory` (`factory.py`, renamed from
+  `ResponseDBHandler` with its `Type` enum dropped; #541 shape, `AKConfigError` on unknown
+  types): it owns the pipeline resolution defaults in one place (in_memory default on the
+  in_memory transport; broker transports require an explicit shared store). The ABC gains
+  `get_record` (the full stored record including `status_code`, implemented by every store)
+  and an optional chunk-streaming capability (`supports_chunk_streaming` +
+  `add_chunk`/`stream`/`close_stream` defaults that fail loudly): pipeline components check
+  the capability, never concrete store classes, so BYO stores can take part in SSE delivery.
   `_ResponseStoreConfig.type` (`config.py:314`) accepts a built-in short name
   (`in_memory|redis|valkey|dynamodb`) or a dotted path to a `ResponseStore` subclass (the #541
   BYO branch, `resolve_dotted(type, base=ResponseStore)()`); the old regex pattern is dropped,
@@ -518,7 +528,9 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
    path).
 6. Output messages and response-store records now carry `status_code`; the **pipeline** REST
    surface maps stored errors to `HTTPException` (the ECS path keeps returning error bodies with
-   HTTP 200: its today's behavior, unchanged).
+   HTTP 200: its today's behavior, unchanged). Since the interface cleanup this holds on
+   shared stores too: the pipeline polls full records via `ResponseStore.get_record` (§10),
+   where it previously saw only bodies outside the in-memory store.
 7. `ECSSQSConsumer` internals delegate to `ConsumerLoop`; its public classmethod surface,
    record shapes, log messages, and retry semantics are unchanged.
 8. New native `/ws` WebSocket endpoint + `/internal/push` endpoint exist only when `IOHandler`
@@ -553,7 +565,15 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
     `ECSQueueRequestHandler` enqueues through the SQS transport (wire format identical by
     construction; body JSON dumped with `exclude_none=True` as before). Only code importing the
     removed ABCs/paths breaks; `SQSHandler` callers and `ECSSQSConsumer`/`LambdaSQSConsumer`
-    subclasses are unaffected. Needs a changelog entry at release.
+    subclasses are unaffected. Same wave: `ResponseDBHandler` becomes `ResponseStoreFactory`
+    (`response_store/factory.py`, `Type` enum dropped, `AKConfigError` instead of
+    `ValueError`, owns the resolution defaults; the `deployment/aws/core/response_store/`
+    shim re-exports the new name), `ResponseStore` gains `get_record` + the chunk-streaming
+    capability (§10), and the relocated modules' logger names unify under `ak.pipeline.*`
+    (`ak.thread_runner` → `ak.pipeline.thread_runner`, `ak.deployment.response_store` and
+    `ak.response_db_handler` → `ak.pipeline.response_store`, the WS ABCs →
+    `ak.pipeline.ws.*`, RestHandler default → `ak.pipeline.rest_handler`; the ECS classes
+    keep their explicit `ak.ecs.*` names). Needs a changelog entry at release.
 
 **Non-changes**: ECS and Lambda wire behavior, entry points, and exports
 (`deployment/aws/__init__.py` lazy-export table unchanged); `SQSHandler`'s method surface;
@@ -688,8 +708,10 @@ New test files (patterns per `ak-dev-testing-conventions`: `DummyAgent`/`DummyRu
 - `test_pipeline_ws.py`: native `/ws` route (auth, registry lifecycle), `/internal/push`
   (token auth, 404 on unknown user, frame delivery), `PodPushWebSocketHandler` retry-on-404.
 - `test_response_store_in_memory.py`: record shape (`get_message` returns `body`), status_code
-  retention, chunk streaming, `get_message_with_retry` inheritance, and the handler's BYO
-  dotted-path resolution (wrong base and unknown short name fail loudly).
+  retention, chunk streaming, `get_message_with_retry` inheritance, `ResponseStoreFactory`
+  selection (in_memory default on the in_memory transport, broker fail-fast, BYO dotted path,
+  wrong base and unknown short name fail loudly), and the chunk-streaming capability defaults.
+  `test_response_store_valkey.py` additionally covers `get_record` round trips.
 
 Existing tests: the riskiest consumer is `ECSSQSConsumer` (its internals move):
 `test_ecs_sqs_consumer_parallel.py` must pass **unmodified**: it imports and patches the class

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from queue import Queue
 from typing import Any, Callable, Optional
 
-_log = logging.getLogger("ak.thread_runner")
+_log = logging.getLogger("ak.pipeline.thread_runner")
 
 
 class ThreadRunner:

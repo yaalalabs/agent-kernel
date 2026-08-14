@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, Optional
 from ......core.chat_service import ChatService
 from ......core.config import AKConfig
 from ......core.model import BaseRequest, ExecutionMode
-from ....core.response_store import ResponseDBHandler
+from ....core.response_store import ResponseStoreFactory
 from ....core.sqs_handler import SQSHandler
 from .common import BaseLambdaRouter
 
@@ -20,7 +20,7 @@ class DefaultEndpointsHandler:
         self._default_chat_path = "default_chat_path"
         self._default_chat_method = "POST"
         self._config = AKConfig.get()
-        self._response_store = ResponseDBHandler().get_store() if self._config.execution.response_store is not None else None
+        self._response_store = ResponseStoreFactory.create() if self._config.execution.response_store is not None else None
         self._chat_service = ChatService()
 
     def get_default_endpoint_info(self):

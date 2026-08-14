@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 class WebSocketConnectionStoreABC(ABC):
     """Abstract base for WebSocket connection storage across cloud providers."""
 
-    _log = logging.getLogger("ak.deployment.websocket_connection_store")
+    _log = logging.getLogger("ak.pipeline.ws.connection_store")
 
     @abstractmethod
     def add_connection(self, user_id: str, connection_id: str) -> None:
@@ -81,7 +81,7 @@ class WebSocketHandlerABC(ABC):
         """
         self._connection_store = connection_store
         self._clients: Dict[str, Any] = {}
-        self._log = logging.getLogger("ak.websocket.manager")
+        self._log = logging.getLogger("ak.pipeline.ws.handler")
 
     @abstractmethod
     def get_client(self, endpoint_url: str) -> Any:

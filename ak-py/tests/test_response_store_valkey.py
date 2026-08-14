@@ -1,7 +1,8 @@
 import pytest
 
 from agentkernel.core.util.driver import valkey as valkey_driver_module
-from agentkernel.deployment.aws.core.response_store.handler import ResponseDBHandler
+from agentkernel.core.util.factory import AKConfigError
+from agentkernel.deployment.aws.core.response_store.factory import ResponseStoreFactory
 from agentkernel.deployment.aws.core.response_store.valkey import ValkeyResponseStore
 
 
@@ -57,6 +58,18 @@ def test_client_is_created_lazily_on_first_operation(monkeypatch):
     assert calls["n"] == 1
 
 
+def test_get_record_returns_the_full_record(fake_client):
+    store = ValkeyResponseStore(url="valkey://localhost:6379")
+    store.add_message({"request_id": "r-1", "session_id": "s-1", "status_code": 500, "body": {"error": "boom"}})
+
+    record = store.get_record("r-1")
+    assert record["status_code"] == 500
+    assert record["body"] == {"error": "boom"}
+
+    assert store.get_record("r-1", get_and_delete=True) is not None
+    assert store.get_record("r-1") is None
+
+
 def test_add_message_stores_under_prefixed_key(fake_client):
     store = ValkeyResponseStore(url="valkey://localhost:6379", prefix="ak:resp:", ttl=0)
     store.add_message(_message("abc"))
@@ -108,13 +121,12 @@ class _ValkeyCfg:
     ttl = 0
 
 
-def test_handler_selects_valkey_store(fake_client, monkeypatch):
+def test_factory_selects_valkey_store(fake_client, monkeypatch):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _handler_cfg(_ValkeyCfg)))
-    handler = ResponseDBHandler()
-    assert isinstance(handler.get_store(), ValkeyResponseStore)
+    assert isinstance(ResponseStoreFactory.create(), ValkeyResponseStore)
 
 
-def test_handler_missing_valkey_block_raises(monkeypatch):
+def test_factory_missing_valkey_block_raises(monkeypatch):
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _handler_cfg(None)))
-    with pytest.raises(ValueError):
-        ResponseDBHandler()
+    with pytest.raises(AKConfigError, match="no valid response store"):
+        ResponseStoreFactory.create()
