@@ -93,6 +93,7 @@ class Session:
         """
         await self._lock.acquire()
         try:
+            # Same receipt pattern as Agent._activate, but stored on self since set/reset happen in two separate method calls, not one function.
             self._token = Session.current_session.set(self)
             return self
         except Exception:
@@ -113,7 +114,7 @@ class Session:
         :raises: Any exceptions that may occur during lock release or session resetting.
         """
         try:
-            if self._token:
+            if self._token:  # Use the stored receipt to undo exactly this session's set() call.
                 Session.current_session.reset(self._token)
         finally:
             self._token = None
@@ -458,10 +459,13 @@ class Agent(ABC):
         agent-as-tool/handoff calling back into Runtime.run()/stream() for another agent) restore
         the previous value on exit rather than clobbering it.
         """
+        # behaviour of below is same as Session __aenter__ __aexit__ code behaviour
+        # token is a receipt for this exact set() call, used below to undo precisely this change (not just "set back to old value").
         token = Agent.current_agent.set(self)
         try:
-            yield self
+            yield self  # From this point until reset below, Agent.current() returns self (the instace that called this _activate function) anywhere in this call chain (any file/module).
         finally:
+            # Restore the previous agent, even on error, so nested activations don't clobber it.
             Agent.current_agent.reset(token)
 
     @abstractmethod
