@@ -92,8 +92,9 @@ pytest hooks_test.py -v
 ```
 
 `hooks_test.py` is a network-free unit test: it fabricates the OpenAI framework session directly
-and proves that `Session.get_framework_session()` hands back a *live* reference that
-`HistoryTrimHook` mutates in place.
+and drives `HistoryTrimHook` through `Runtime.run()` (the same public path REST/CLI apps use),
+proving that `Session.get_framework_session()` hands back a *live* reference and that the hook
+caps history back down to `THRESHOLD` items.
 
 ## File Structure
 

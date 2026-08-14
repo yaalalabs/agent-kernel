@@ -1,5 +1,6 @@
 """
-Unit test for HistoryTrimHook, exercised directly against the core primitives.
+Unit test for HistoryTrimHook, exercised through Runtime.run() - the public path used by REST/CLI
+apps - rather than the framework internals it relies on.
 
 Unlike app_test.py (which drives the real OpenAI Agents SDK over HTTP), this test needs no
 network access or OPENAI_API_KEY: it fabricates the OpenAI framework session directly and
@@ -10,8 +11,9 @@ through its own methods is visible on the next call, with no session.set(...) ne
 import pytest
 from agentkernel.core.base import Agent as BaseAgent
 from agentkernel.core.base import Runner as BaseRunner
-from agentkernel.core.base import Session
 from agentkernel.core.model import AgentReplyText, AgentRequestText
+from agentkernel.core.runtime import Runtime
+from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.framework.openai.openai import FRAMEWORK, OpenAISession
 
 from hooks import HistoryTrimHook
@@ -24,7 +26,7 @@ class _StubRunner(BaseRunner):
         super().__init__(FRAMEWORK)
 
     async def run(self, agent, session, requests):
-        raise NotImplementedError()
+        return AgentReplyText(response="ok")
 
     async def stream(self, agent, session, requests):
         raise NotImplementedError()
@@ -45,31 +47,38 @@ class _StubAgent(BaseAgent):
         pass
 
 
-@pytest.mark.asyncio
-async def test_history_trim_hook_mutates_the_live_framework_session():
-    session = Session("hooks-unit-test-session")
+async def _run_with_history(num_items: int) -> tuple[AgentReplyText, list]:
+    """Runs the stub agent (with HistoryTrimHook registered as a post-hook) through
+    Runtime.run() against a session pre-seeded with num_items OpenAI-native history items."""
+    runtime = Runtime(InMemorySessionStore())
     agent = _StubAgent("qa_assistant", _StubRunner())
+    agent.post_hooks.append(HistoryTrimHook())
 
+    session = runtime.sessions().new("hooks-unit-test-session")
     openai_session = OpenAISession()
-    await openai_session.add_items([{"role": "user", "content": f"msg-{i}"} for i in range(30)])
+    await openai_session.add_items([{"role": "user", "content": f"msg-{i}"} for i in range(num_items)])
     session.set(FRAMEWORK, openai_session)
 
-    hook = HistoryTrimHook()
-    reply = AgentReplyText(response="ok")
+    # Runtime.run() is what REST/CLI apps call; it sets Agent.current() for the duration of the
+    # call (pre-hooks, the runner, and post-hooks), which is what makes
+    # session.get_framework_session() resolvable inside HistoryTrimHook. Driving the hook this
+    # way exercises the real pipeline instead of reproducing Runtime's internals.
+    reply = await runtime.run(agent, session, [AgentRequestText(prompt="hi")])
 
-    # _activate() is what Runtime.run()/stream() use internally to set Agent.current() for the
-    # duration of a hook/tool call - reproducing that scope here is what makes
-    # session.get_framework_session() resolvable in this test.
-    with agent._activate():
-        returned = await hook.on_run(session, [AgentRequestText(prompt="hi")], agent, reply)
+    # get_framework_session() only resolves while an agent is active, so re-fetch after run()
+    # returns via the plain key the OpenAI adapter stores it under - same live object either way.
+    stored = session.get(FRAMEWORK)
+    assert stored is openai_session
+    items = await stored.get_items()
+    return reply, items
 
-        # The hook never called session.set(...); get_framework_session() must still reflect
-        # the in-place mutation because it's the exact same object reference.
-        trimmed = session.get_framework_session()
 
-    assert returned is reply
-    assert trimmed is openai_session
-    items = await trimmed.get_items()
+@pytest.mark.asyncio
+async def test_history_trim_hook_caps_the_live_framework_session():
+    reply, items = await _run_with_history(30)
+
+    assert isinstance(reply, AgentReplyText)
+    assert reply.response == "ok"
     assert len(items) == HistoryTrimHook.THRESHOLD
     assert items[0]["content"] == f"msg-{30 - HistoryTrimHook.THRESHOLD}"  # oldest items dropped
     assert items[-1]["content"] == "msg-29"  # most recent item retained
@@ -77,17 +86,7 @@ async def test_history_trim_hook_mutates_the_live_framework_session():
 
 @pytest.mark.asyncio
 async def test_history_trim_hook_is_a_noop_under_the_limit():
-    session = Session("hooks-unit-test-session-2")
-    agent = _StubAgent("qa_assistant", _StubRunner())
-
-    openai_session = OpenAISession()
-    await openai_session.add_items([{"role": "user", "content": "only message"}])
-    session.set(FRAMEWORK, openai_session)
-
-    hook = HistoryTrimHook()
-    with agent._activate():
-        await hook.on_run(session, [AgentRequestText(prompt="hi")], agent, AgentReplyText(response="ok"))
-        items = await session.get_framework_session().get_items()
+    _, items = await _run_with_history(1)
 
     assert len(items) == 1
 
