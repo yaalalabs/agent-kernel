@@ -793,10 +793,22 @@ This example includes:
 - ✅ Input validation (length limits, keyword filtering)
 - ✅ Automated testing of hook behavior
 
-For capping framework-native session history via `session.get_framework_session()`, see
+### Session Context Example
+
+See the complete `Session.get_framework_session()` demonstration in the repository:
+
 📁 **[examples/cli/session-context/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/session-context)**
-(`hooks.py` - `HistoryTrimHook`; `hooks_test.py` - network-free unit test for
-`HistoryTrimHook` / `get_framework_session()`).
+
+This example includes:
+- `hooks.py` - `HistoryTrimHook` implementation
+- `demo.py` - Agent setup with hook registration
+- `hooks_test.py` - Network-free unit test for `HistoryTrimHook` / `get_framework_session()`
+- `README.md` - Detailed documentation
+
+**Key Features Demonstrated:**
+- ✅ Capping framework-native session history via `session.get_framework_session()`
+- ✅ Mutating the framework-native session's live reference in place (no `session.set(...)` needed)
+- ✅ Automated testing of the hook through `Runtime.run()`, with no network access required
 
 ### Running the Example
 
@@ -816,6 +828,21 @@ pytest app_test.py -v
 
 # Or run direct example
 python example_usage.py
+```
+
+### Running the Session Context Example
+
+```bash
+cd examples/cli/session-context
+
+# Build environment
+./build.sh
+
+# Run the demo
+python demo.py
+
+# Run tests (in another terminal)
+uv run pytest -s
 ```
 
 ### Testing Hooks
