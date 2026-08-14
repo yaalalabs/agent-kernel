@@ -61,8 +61,8 @@ Coupling rules (numbered, enforced by import direction):
    working: `deployment/common/thread_runner.py`, `deployment/common/response_store.py`,
    `deployment/common/websocket_service.py`, and `deployment/aws/core/response_store/`
    (`__init__.py` re-exports `ResponseDBHandler`; `redis/valkey/dynamodb` modules re-export their
-   store classes). `deployment/common/__init__.py` (`queue_consumer`/`thread_runner` exports,
-   currently 2 lines) keeps exporting `QueueConsumer` and `ThreadRunner`.
+   store classes). `deployment/common/__init__.py` keeps exporting `ThreadRunner` (its
+   `QueueConsumer` export is removed by the public-interface cleanup, §12 change 12).
 4. Transports never read `AKConfig` for connection details at method level: the factory reads
    config once and passes explicit constructor parameters (mirrors the shared-driver rule,
    `core/util/driver/`).
@@ -113,13 +113,14 @@ class QueueTransportFactory:
 - The concurrency contract: `QueueTransport.send` must be callable from any thread and the
   uvicorn event loop (always dispatched via `asyncio.to_thread` from async code, as
   `rest_handler.py:56` does today); each `TransportConsumer` instance is single-thread-owned.
-- The deployment-side contracts stay in `deployment/common/` but are renamed to state what they
-  carry (vs the pipeline's envelope-typed pair above): `QueueHandler` becomes
-  `ChatQueueHandler` (send side, chat-shaped bodies) and `QueueConsumer` becomes
-  `RawQueueConsumer` (receive side, provider-native records). The old names remain as
-  module-level aliases (same objects), so existing imports and subclasses
-  (`SQSHandler`, `LambdaSQSConsumer`, `ECSSQSConsumer`, user code) are unaffected. The pipeline
-  implements neither; the two stacks meet only at the SQS wire format (§5).
+- **This transport interface is the only public queue API** (public-interface cleanup, §12
+  change 12): producers name a logical queue (`QueueName`) and send an envelope; configuration
+  resolves the backend and physical queue. The old deployment-side contracts are removed or
+  internalized: the `QueueHandler` ABC is deleted (its `QueueMessageBody`/
+  `SendMessageAttributes` models fold into `SQSHandler`, which becomes AWS-adapter-internal
+  glue over the same wire format), and `QueueConsumer` is renamed `RawQueueConsumer` and moved
+  to `deployment/aws/core/raw_queue_consumer.py` as the internal raw-record base of
+  `LambdaSQSConsumer`/`ECSSQSConsumer`.
 
 ### 3. Generic consumer machinery (`consumer.py`)
 
@@ -317,19 +318,21 @@ Client `nats-py` (new `nats` extra). Per `research/nats-jetstream.md`:
 
 **`RequestHandler`** (`request_handler.py`): extends `RestHandler`, which moves into
 `pipeline/request_handler.py` (shim left at `deployment/common/rest_handler.py`, which also keeps
-an `AKConfig` name so existing patch targets resolve; the `QueueHandler` return type becomes a
-TYPE_CHECKING-only import so the pipeline never imports `deployment/` at runtime). `RestHandler`
-stays behavior-identical except for three overridable seams (defaults preserve today's ECS
-behavior exactly):
+an `AKConfig` name so existing patch targets resolve). `RestHandler` enqueues through
+`get_transport()` (default: the factory-configured transport) via an internal
+`_enqueue_request()` that builds the input-queue envelope (`request_id` attribute,
+`group_id=session_id`, `dedup_id=request_id`, body dumped with `exclude_none=True` for byte
+parity with the old SQSHandler path); `ECSQueueRequestHandler` inherits this, so ECS enqueues
+ride the SQS transport. `RestHandler` stays behavior-identical otherwise, with three overridable
+seams (defaults preserve today's ECS behavior exactly):
 
 - `_build_sync_response(record) -> Any` (default: today's `response.get("body", response)`) so
   subclasses can honor `status_code`;
 - `_await_response_record(request_id)` (default: today's `get_message_with_retry(...)` call with
   its original keyword style) so subclasses can retrieve full records;
 - `_effective_mode()` (default: `execution.mode` as-is) so the pipeline can map unset → REST_SYNC.
-- `RequestHandler.get_queue_handler()` returns an adapter exposing
-  `send_message_to_input_queue(...)` over `QueueTransport.send` (keeps `enqueue_and_wait`
-  verbatim); `get_response_store()` uses the relocated `ResponseDBHandler`.
+- `RequestHandler.get_response_store()` uses the relocated `ResponseDBHandler` (with the
+  in_memory default when unset on the in_memory transport).
 - `_build_sync_response` override: stored `status_code >= 400` → `HTTPException(status_code,
   detail=body)`: restoring today's **direct-mode** error contract
   (`ResponseBuilder.build_response` raises in `rest_api_mode`, `chat_service.py:299-302`) on the
@@ -538,11 +541,23 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
     awaited coroutine". The fallback now applies only to `get_event_loop()` failing; agent
     exceptions propagate as-is. (The ECS runner shares this code path: strictly an error-fidelity
     improvement.)
+12. **Public queue interface cleanup (breaking, decided 2026-08-14)**: the pipeline transport
+    (`QueueTransport`/`QueueName`/`QueueMessage` + `QueueTransportFactory`) is the single public
+    queue API; configuration resolves the backend and physical queue. Removals, without
+    deprecation aliases: the `QueueHandler` ABC (`deployment/common/queue_handler.py`) is
+    deleted, with `QueueMessageBody`/`SendMessageAttributes` folded into `SQSHandler` (now
+    AWS-internal glue with an unchanged method surface); `QueueConsumer` is renamed
+    `RawQueueConsumer` and relocated to `deployment/aws/core/raw_queue_consumer.py`;
+    `deployment/common/__init__.py` no longer exports `QueueConsumer`. The `RestHandler`
+    enqueue seam is retyped from `get_queue_handler()` to `get_transport()`, so
+    `ECSQueueRequestHandler` enqueues through the SQS transport (wire format identical by
+    construction; body JSON dumped with `exclude_none=True` as before). Only code importing the
+    removed ABCs/paths breaks; `SQSHandler` callers and `ECSSQSConsumer`/`LambdaSQSConsumer`
+    subclasses are unaffected. Needs a changelog entry at release.
 
 **Non-changes**: ECS and Lambda wire behavior, entry points, and exports
-(`deployment/aws/__init__.py` lazy-export table unchanged); `SQSHandler` and the
-`ChatQueueHandler`/`RawQueueConsumer` surfaces (renamed from `QueueHandler`/`QueueConsumer`,
-old names kept as aliases); SQS FIFO group/dedup mapping; session/thread/multimodal stores; CLI, A2A, MCP
+(`deployment/aws/__init__.py` lazy-export table unchanged); `SQSHandler`'s method surface;
+SQS FIFO group/dedup mapping; session/thread/multimodal stores; CLI, A2A, MCP
 (`AgentService` direct); Azure/GCP deployments; `AgentRESTRequestHandler` routes and shapes when
 explicitly instantiated.
 

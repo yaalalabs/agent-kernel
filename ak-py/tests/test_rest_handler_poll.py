@@ -21,7 +21,7 @@ class _FakeRestHandler(RestHandler):
     def get_response_store(self):
         return self._store
 
-    def get_queue_handler(self):
+    def get_transport(self):
         raise NotImplementedError
 
 

@@ -14,7 +14,7 @@ from .....core.config import AKConfig
 from .....pipeline.consumer import ConsumerLoop
 from .....pipeline.envelope import QueueMessage
 from .....pipeline.transport.base import TransportConsumer
-from ....common import RawQueueConsumer
+from ...core.raw_queue_consumer import RawQueueConsumer
 
 
 class _ECSRecordConsumer(TransportConsumer):

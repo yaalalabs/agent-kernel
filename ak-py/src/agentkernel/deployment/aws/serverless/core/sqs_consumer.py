@@ -3,7 +3,7 @@ import traceback
 from abc import abstractmethod
 from typing import Any, Dict, List
 
-from ....common import RawQueueConsumer
+from ...core.raw_queue_consumer import RawQueueConsumer
 
 
 class LambdaSQSConsumer(RawQueueConsumer):

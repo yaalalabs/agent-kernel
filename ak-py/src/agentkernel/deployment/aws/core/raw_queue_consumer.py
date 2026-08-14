@@ -9,11 +9,11 @@ class RawQueueConsumer(ABC):
     consumer (e.g. Lambda + SQS Event Source Mapping) or requires the consumer to actively
     pull them (e.g. ECS long-polling SQS).
 
-    This is the deployment adapters' receive-side contract: its defining trait is that
-    subclass overrides receive provider-native records unchanged. The pipeline's generic
-    receive abstraction is ``agentkernel.pipeline.transport.TransportConsumer`` driven by
-    ``agentkernel.pipeline.consumer.ConsumerLoop``, which speaks ``QueueMessage`` envelopes;
-    new transports implement that, not this.
+    This is the AWS adapters' internal receive-side base (LambdaSQSConsumer, ECSSQSConsumer):
+    its defining trait is that subclass overrides receive provider-native records unchanged.
+    The public receive abstraction is ``agentkernel.pipeline.transport.TransportConsumer``
+    driven by ``agentkernel.pipeline.consumer.ConsumerLoop``, which speaks ``QueueMessage``
+    envelopes; new transports implement that, not this.
 
     Subclasses implement the four primitives below in whatever way fits their delivery
     model; shared retry/failure semantics (max_receive_count) live on this base class.
@@ -60,8 +60,3 @@ class RawQueueConsumer(ABC):
         :return: None
         """
         raise NotImplementedError
-
-
-# Backwards-compatible alias: the pre-rename public name. Existing imports and subclasses
-# (`class MyConsumer(QueueConsumer)`) keep working; new code uses RawQueueConsumer.
-QueueConsumer = RawQueueConsumer

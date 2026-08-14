@@ -3,14 +3,17 @@ from __future__ import annotations
 from typing import Any, Dict, List, Mapping, Optional
 
 import boto3
+from pydantic import BaseModel, ConfigDict
 
 from ....core.config import AKConfig
 from ....pipeline.transport import sqs as sqs_wire
-from ...common.queue_handler import ChatQueueHandler
 
 
-class SQSHandler(ChatQueueHandler):
-    """Shared helper for building and sending SQS messages.
+class SQSHandler:
+    """AWS deployment glue for building and sending SQS messages (serverless Lambda routing,
+    WebSocket handlers, and external producers on the AWS queue mode). The public queue API is
+    ``agentkernel.pipeline.transport`` (``QueueTransport``/``QueueMessage``); this class is the
+    adapter-internal convenience surface on top of the same wire format.
 
     When used in a Non-Agent Kernel lambda/environment, the following environment variables
     must be exported:
@@ -19,8 +22,8 @@ class SQSHandler(ChatQueueHandler):
 
     Since #495 the SQS wire-format primitives live in ``agentkernel.pipeline.transport.sqs``
     and are shared with the pipeline's SQSTransport (one implementation, so the two paths stay
-    byte-identical on the wire). The nested classes below alias the relocated models, keeping
-    this class's public surface (user imports, isinstance checks, patch targets) intact.
+    byte-identical on the wire). The aliased nested classes below keep this class's surface
+    (user imports, isinstance checks, patch targets) intact.
     """
 
     _sqs_client = None
@@ -31,6 +34,30 @@ class SQSHandler(ChatQueueHandler):
     AttributeDataType = sqs_wire.AttributeDataType
     SQSQueueInputMessage = sqs_wire.SQSQueueInputMessage
     CustomAttribute = sqs_wire.CustomAttribute
+
+    class SendMessageAttributes(BaseModel):
+        """FIFO send attributes for the input/output queue convenience methods.
+
+        Unknown keys are rejected so that attribute typos fail fast instead of
+        silently sending the message without the intended FIFO ids.
+        """
+
+        message_group_id: Optional[str] = None
+        message_deduplication_id: Optional[str] = None
+
+        model_config = ConfigDict(extra="forbid")
+
+    class QueueMessageBody(BaseModel):
+        """Typed message body for the input queue. Extra fields are allowed and preserved.
+
+        agent is optional; when omitted, the runtime selects the first registered agent.
+        """
+
+        prompt: str
+        agent: Optional[str] = None
+        session_id: str
+
+        model_config = ConfigDict(extra="allow")
 
     @classmethod
     def _get_config(cls):

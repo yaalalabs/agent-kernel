@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
@@ -12,14 +12,11 @@ from fastapi.responses import StreamingResponse
 from ..api.handler import AgentRESTRequestHandler
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, FileData, ImageData
-from .envelope import ATTR_REQUEST_ID, ATTR_USER_ID, QueueMessage, QueueName
+from .envelope import ATTR_REQUEST_ID, QueueMessage, QueueName
 from .response_store.base import ResponseStore
 from .response_store.handler import ResponseDBHandler
 from .response_store.in_memory import InMemoryResponseStore
 from .transport.base import QueueTransport, QueueTransportFactory
-
-if TYPE_CHECKING:  # ChatQueueHandler stays in deployment.common: typing-only, no runtime coupling
-    from ..deployment.common.queue_handler import ChatQueueHandler
 
 # Retry budget for awaiting a response when no execution.response_store block is configured:
 # 60 x 1s. Local agent runs are frequently LLM-bound and slow; direct mode waited indefinitely,
@@ -38,16 +35,37 @@ class RestHandler(AgentRESTRequestHandler):
         # Override base logger with the deployment-specific one.
         self._log = logging.getLogger(logger_name)
         self._config = AKConfig.get()
+        self._transport: Optional[QueueTransport] = None
 
     @abstractmethod
     def get_response_store(self) -> ResponseStore:
         """Return the ResponseStore implementation used to poll for responses."""
         pass
 
-    @abstractmethod
-    def get_queue_handler(self) -> "ChatQueueHandler":
-        """Return the ChatQueueHandler implementation used to enqueue requests."""
-        pass
+    def get_transport(self) -> QueueTransport:
+        """The queue transport used to enqueue requests.
+
+        Defaults to the configured transport (``execution.queues``): callers name the logical
+        queue and configuration resolves the backend and physical queue. Subclasses may override
+        to inject a specific transport.
+        """
+        if self._transport is None:
+            self._transport = QueueTransportFactory.create()
+        return self._transport
+
+    def _enqueue_request(self, body: BaseRunRequest, request_id: str) -> Dict[str, Any]:
+        """Build the input-queue envelope for a chat request and send it.
+
+        ``exclude_none`` keeps the body JSON identical to the pre-#495 SQS path (which dumped
+        the validated body model with ``exclude_none=True``).
+        """
+        message = QueueMessage(
+            body=json.dumps(body.model_dump(exclude_none=True)),
+            attributes={ATTR_REQUEST_ID: request_id},
+            group_id=body.session_id,
+            dedup_id=request_id,
+        )
+        return self.get_transport().send(QueueName.INPUT, message) or {}
 
     def _is_queue_mode(self) -> bool:
         """True when an input queue is configured (enqueue mode); False for direct mode."""
@@ -80,12 +98,7 @@ class RestHandler(AgentRESTRequestHandler):
             self._log.info(f"[REQUEST START] session_id={body.session_id}, request_id={request_id}, agent={body.agent}, prompt={body.prompt[:50]}")
 
             # Offload the sync send so it doesn't block the event loop.
-            queue_result = await asyncio.to_thread(
-                self.get_queue_handler().send_message_to_input_queue,
-                message_body=body.model_dump(),
-                attributes={"message_group_id": body.session_id, "message_deduplication_id": request_id},
-                request_id=request_id,  # This becomes a custom message attribute
-            )
+            queue_result = await asyncio.to_thread(self._enqueue_request, body, request_id)
 
             self._log.info(f"[ENQUEUED] MessageId={queue_result.get('MessageId')}, request_id={request_id}")
 
@@ -172,39 +185,6 @@ class RestHandler(AgentRESTRequestHandler):
         return router
 
 
-class _TransportQueueHandler:
-    """Adapts ``QueueTransport.send`` to the ChatQueueHandler send-side signature RestHandler uses."""
-
-    def __init__(self, transport: QueueTransport):
-        self._transport = transport
-
-    def send_message_to_input_queue(
-        self,
-        message_body: Dict[str, Any],
-        attributes: Optional[Dict[str, Any]] = None,
-        request_id: Optional[str] = None,
-        user_id: Optional[str] = None,
-        custom_message_attributes: Optional[List[Any]] = None,
-        **extra_kwargs: Any,
-    ) -> Dict[str, Any]:
-        message_attributes: Dict[str, str] = {}
-        if request_id is not None:
-            message_attributes[ATTR_REQUEST_ID] = request_id
-        if user_id is not None:
-            message_attributes[ATTR_USER_ID] = user_id
-        for custom_attribute in custom_message_attributes or []:
-            message_attributes[custom_attribute.name] = str(custom_attribute.value)
-
-        send_attributes = attributes or {}
-        message = QueueMessage(
-            body=json.dumps(message_body),
-            attributes=message_attributes,
-            group_id=send_attributes.get("message_group_id") or message_body.get("session_id"),
-            dedup_id=send_attributes.get("message_deduplication_id"),
-        )
-        return self._transport.send(QueueName.INPUT, message) or {}
-
-
 class RequestHandler(RestHandler):
     """Pipeline REST surface (spec #495 §8): enqueues to the configured transport and serves
     the poll/SSE routes. Always queue mode; the transport decides the topology."""
@@ -212,21 +192,9 @@ class RequestHandler(RestHandler):
     def __init__(self):
         super().__init__(logger_name="ak.pipeline.request_handler")
         self._transport_type = QueueTransportFactory.resolve_type()
-        self._transport: Optional[QueueTransport] = None
-        self._queue_handler: Optional[_TransportQueueHandler] = None
         self._response_store: Optional[ResponseStore] = None
 
     # -- wiring ---------------------------------------------------------------------------
-
-    def _get_transport(self) -> QueueTransport:
-        if self._transport is None:
-            self._transport = QueueTransportFactory.create()
-        return self._transport
-
-    def get_queue_handler(self) -> _TransportQueueHandler:
-        if self._queue_handler is None:
-            self._queue_handler = _TransportQueueHandler(self._get_transport())
-        return self._queue_handler
 
     def get_response_store(self) -> ResponseStore:
         if self._response_store is None:
@@ -305,12 +273,7 @@ class RequestHandler(RestHandler):
     async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
         request_id = str(uuid.uuid4())
         self._log.info(f"[STREAM REQUEST] session_id={body.session_id}, request_id={request_id}")
-        await asyncio.to_thread(
-            self.get_queue_handler().send_message_to_input_queue,
-            message_body=body.model_dump(),
-            attributes={"message_group_id": body.session_id, "message_deduplication_id": request_id},
-            request_id=request_id,
-        )
+        await asyncio.to_thread(self._enqueue_request, body, request_id)
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")
 
     async def _sse_stream(self, request_id: str, session_id: Optional[str]) -> AsyncGenerator[str, None]:
