@@ -172,7 +172,7 @@ it only works from inside a hook or a tool — where an agent is actually execut
 no `session.set(...)` call needed. See
 [Session → Accessing the current framework session](../core-concepts/session.md#framework-session-access)
 for the full contract, and
-[`examples/api/session-context`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/session-context)
+[`examples/cli/session-context`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/session-context)
 for the complete `HistoryTrimHook` example, which caps the OpenAI Agents SDK's raw conversation history
 after every turn.
 
@@ -794,7 +794,7 @@ This example includes:
 - ✅ Automated testing of hook behavior
 
 For capping framework-native session history via `session.get_framework_session()`, see
-📁 **[examples/api/session-context/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/session-context)**
+📁 **[examples/cli/session-context/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/session-context)**
 (`hooks.py` - `HistoryTrimHook`; `hooks_test.py` - network-free unit test for
 `HistoryTrimHook` / `get_framework_session()`).
 

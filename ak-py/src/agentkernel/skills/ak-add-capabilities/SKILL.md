@@ -602,7 +602,7 @@ class HistoryTrimHook(PostHook):
         return "HistoryTrimHook"
 ```
 
-See `examples/api/session-context/hooks.py` (`HistoryTrimHook`) for a complete example that caps the
+See `examples/cli/session-context/hooks.py` (`HistoryTrimHook`) for a complete example that caps the
 OpenAI Agents SDK's raw conversation history after every turn.
 
 ---

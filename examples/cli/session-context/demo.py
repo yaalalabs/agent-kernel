@@ -1,4 +1,4 @@
-from agentkernel.api import RESTAPI
+from agentkernel.cli import CLI
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 
@@ -19,4 +19,4 @@ qa_agent = Agent(
 OpenAIModule([qa_agent]).post_hook(qa_agent, [HistoryTrimHook()])
 
 if __name__ == "__main__":
-    RESTAPI.run()
+    CLI.main()

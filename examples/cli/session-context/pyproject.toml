@@ -1,11 +1,11 @@
 [project]
-name = "openai-session-context-demo"
+name = "cli-openai-session-context"
 version = "0.1.0"
 description = "Demo of Session.get_framework_session() via a history-trimming post-hook with OpenAI Agents in Agent Kernel"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,api]>=0.8.1",
+    "agentkernel[openai,cli]>=0.8.1",
 ]
 
 [dependency-groups]

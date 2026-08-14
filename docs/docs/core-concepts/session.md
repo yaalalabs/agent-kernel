@@ -404,7 +404,7 @@ openai_session = session.get_framework_session()
   no agent running (`Agent.current()` is `None`) raises `RuntimeError`, since there'd be no
   framework key to resolve.
 
-See [`examples/api/session-context`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/session-context)
+See [`examples/cli/session-context`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/session-context)
 for a complete example (`HistoryTrimHook`) that uses it from a post-hook to cap the OpenAI Agents
 SDK's native conversation history as a session grows.
 

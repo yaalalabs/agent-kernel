@@ -5,7 +5,7 @@ framework adapter's own session object directly from a post-execution hook, in o
 growth over the life of a conversation.
 
 For general pre/post hook patterns (guardrails, RAG, disclaimers), see
-[`examples/api/hooks`](../hooks/README.md).
+[`examples/api/hooks`](../../api/hooks/README.md).
 
 ## Features
 
@@ -51,48 +51,29 @@ class HistoryTrimHook(PostHook):
         return "HistoryTrimHook"
 ```
 
-## Running the Example
+## Running
 
-### Setup
-```bash
-# Build the environment
-./build.sh
+Install dependencies:
 
-# Or for local development
-./build.sh local
-```
+    ./build.sh
 
-### Run the API Server
-```bash
-source .venv/bin/activate
-python app.py
-```
+Install local `agentkernel` in development mode:
 
-The server will start on `http://localhost:8000`.
+    ./build.sh local
 
-### Test History Trimming
-```bash
-curl -X POST http://localhost:8000/api/v1/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agent": "qa_assistant",
-    "session_id": "test-123",
-    "prompt": "What is the capital of France?"
-  }'
-```
+Run the demo:
 
-Send enough turns on the same `session_id` to push the OpenAI-native item count past
-`HistoryTrimHook.THRESHOLD`, then inspect the session store to confirm the history was trimmed.
+    python demo.py
 
-### Run Automated Tests
+Send enough turns in the same session to push the OpenAI-native item count past
+`HistoryTrimHook.THRESHOLD`, and the underlying history stays capped instead of growing forever.
 
-```bash
-source .venv/bin/activate
-pytest hooks_test.py -v
-```
+Run the tests:
+
+    uv run pytest -s
 
 `hooks_test.py` is a network-free unit test: it fabricates the OpenAI framework session directly
-and drives `HistoryTrimHook` through `Runtime.run()` (the same public path REST/CLI apps use),
+and drives `HistoryTrimHook` through `Runtime.run()` (the same public path CLI/API apps use),
 proving that `Session.get_framework_session()` hands back a *live* reference and that the hook
 caps history back down to `THRESHOLD` items.
 
@@ -100,7 +81,7 @@ caps history back down to `THRESHOLD` items.
 
 ```
 session-context/
-├── app.py           # Main application with agent and hook registration
+├── demo.py          # Main application with agent and hook registration
 ├── hooks.py         # HistoryTrimHook implementation
 ├── hooks_test.py    # Network-free unit test for HistoryTrimHook / get_framework_session()
 ├── pyproject.toml   # Project dependencies

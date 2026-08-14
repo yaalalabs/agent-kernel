@@ -7,7 +7,7 @@ This example demonstrates the use of **pre-execution hooks** and **post-executio
 3. **Disclaimer Hook** (Post-hook) - Adding disclaimers to agent responses
 
 For an example that reaches the framework-native session object via `Session.get_framework_session()`,
-see [`examples/api/session-context`](../session-context/README.md).
+see [`examples/cli/session-context`](../../cli/session-context/README.md).
 
 ## Features
 
