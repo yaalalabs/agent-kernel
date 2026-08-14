@@ -89,13 +89,39 @@ class RESTAPI:
     @classmethod
     def run(cls, handlers: list[RESTRequestHandler] = None):
         """Start the REST API server.
+
+        With no explicit handlers on RESTAPI itself, an in_memory queue transport boots the
+        single-process pipeline topology (#495): subclasses (AWSRestAPI, AWSWebsocketAPI) and
+        explicit-handler callers keep their own paths.
+
         :param handlers: List of REST request handlers to use (default: AgentRESTRequestHandler)
         """
-        if handlers is None:
-            handlers = cls.get_default_handlers()
+        if cls is RESTAPI and handlers is None:
+            from ..pipeline.transport.base import QueueTransportFactory
+
+            if QueueTransportFactory.resolve_type() == "in_memory":
+                from ..pipeline.io_handler import IOHandler
+
+                cls._log.info("in_memory queue transport resolved: starting the single-process pipeline topology")
+                return IOHandler.run()
+
         host = AKConfig.get().api.host
         port = AKConfig.get().api.port
         cls._log.info(f"Agent Kernel REST API listening on http://{host}:{port}")
+        uvicorn.run(app=cls.build_app(handlers), host=host, port=port, reload=False)
+
+    @classmethod
+    def build_app(cls, handlers: list[RESTRequestHandler] = None) -> FastAPI:
+        """Assemble the complete FastAPI app (handlers, A2A/MCP mounts, custom routers) without serving it.
+
+        Used by run(), and by the pipeline IOHandler, which serves the app through its own
+        uvicorn.Server so its main-thread signal handlers can stop it (SIGTERM/SIGINT).
+
+        :param handlers: List of REST request handlers to use (default: get_default_handlers())
+        :return: The assembled FastAPI application
+        """
+        if handlers is None:
+            handlers = cls.get_default_handlers()
 
         routers = []
         for handler in handlers:
@@ -118,7 +144,7 @@ class RESTAPI:
         # Add custom routers
         for router in cls._custom_routers:
             app.include_router(router, prefix=AKConfig.get().api.custom_router_prefix, dependencies=cls._get_router_dependencies())
-        uvicorn.run(app=app, host=host, port=port, reload=False)
+        return app
 
     @classmethod
     def add_auth_handlers(cls, auth_validators: list[AuthValidator]):

@@ -139,7 +139,12 @@ class TestRESTAPI:
         """Test run method with default handlers."""
         mock_config_class.get.return_value = mock_config
 
-        with patch("uvicorn.run") as mock_uvicorn:
+        # #495: with an in_memory transport a bare RESTAPI.run() boots the pipeline instead
+        # (see TestPipelineDelegation); pin a broker transport to exercise the inline default path.
+        with (
+            patch("agentkernel.pipeline.transport.base.QueueTransportFactory.resolve_type", return_value="sqs"),
+            patch("uvicorn.run") as mock_uvicorn,
+        ):
             RESTAPI.run()
 
             # Verify uvicorn.run was called
@@ -330,8 +335,11 @@ class TestRESTAPIIntegration:
         RESTAPI._auth_token_validators.clear()
         RESTAPI.add(custom_router)
 
-        # Run the RESTAPI (this won't start server due to mock)
-        RESTAPI.run()
+        # Run the RESTAPI (this won't start server due to mock).
+        # #495: pin a broker transport so the bare run() exercises the inline default path
+        # rather than delegating to the pipeline IOHandler (see TestPipelineDelegation).
+        with patch("agentkernel.pipeline.transport.base.QueueTransportFactory.resolve_type", return_value="sqs"):
+            RESTAPI.run()
 
         # Verify uvicorn.run was called
         mock_uvicorn.assert_called_once()
@@ -408,3 +416,68 @@ class TestResponseBuilderStructuredResult:
         response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyText(response="hello"))
 
         assert response["result"] == "hello"
+
+
+class TestPipelineDelegation:
+    """RESTAPI.run() boots the single-process pipeline only for plain RESTAPI + no handlers + in_memory."""
+
+    def test_run_delegates_to_io_handler_when_unconfigured(self, monkeypatch):
+        from agentkernel.pipeline.io_handler import IOHandler
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        called = {}
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: called.setdefault("delegated", True)))
+
+        with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            RESTAPI.run()
+
+        assert called.get("delegated") is True
+        mock_uvicorn.assert_not_called()
+
+    def test_run_with_explicit_handlers_does_not_delegate(self, monkeypatch):
+        from agentkernel.pipeline.io_handler import IOHandler
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: pytest.fail("must not delegate")))
+
+        handler = Mock()
+        handler.get_router.return_value = APIRouter()
+        with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            RESTAPI.run(handlers=[handler])
+        mock_uvicorn.assert_called_once()
+
+    def test_subclass_run_does_not_delegate(self, monkeypatch):
+        from agentkernel.pipeline.io_handler import IOHandler
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: pytest.fail("must not delegate")))
+
+        handler = Mock()
+        handler.get_router.return_value = APIRouter()
+
+        class _SubAPI(RESTAPI):
+            @classmethod
+            def get_default_handlers(cls):
+                return [handler]
+
+        with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            _SubAPI.run()
+        mock_uvicorn.assert_called_once()
+
+    def test_run_does_not_delegate_when_transport_is_not_in_memory(self, monkeypatch):
+        from agentkernel.pipeline.io_handler import IOHandler
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: pytest.fail("must not delegate")))
+
+        handler = Mock()
+        handler.get_router.return_value = APIRouter()
+        monkeypatch.setattr(RESTAPI, "get_default_handlers", classmethod(lambda cls: [handler]))
+
+        with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            RESTAPI.run()
+        mock_uvicorn.assert_called_once()

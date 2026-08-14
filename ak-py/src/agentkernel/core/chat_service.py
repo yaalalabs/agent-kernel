@@ -208,18 +208,21 @@ class AgentHandler:
     def _run_async_sync(coro) -> Any:
         """Run an async coroutine from sync code, handling event loop state.
 
+        Only a RuntimeError from get_event_loop() itself (no loop in this thread) falls back to
+        asyncio.run: a RuntimeError raised by the coroutine must propagate as-is, not trigger a
+        second await of the already-consumed coroutine.
+
         :param coro: Coroutine to execute
         :return: Result of the coroutine
         """
         try:
             loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                asyncio.set_event_loop(asyncio.new_event_loop())
-                return asyncio.run(coro)
-            else:
-                return loop.run_until_complete(coro)
         except RuntimeError:
             return asyncio.run(coro)
+        if loop.is_closed():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            return asyncio.run(coro)
+        return loop.run_until_complete(coro)
 
     def run_sync(self, requests: List[Any]) -> Any:
         """Run agent requests synchronously.

@@ -14,10 +14,10 @@ Every execution surface converges on the same runtime pipeline, but they enter t
 graph TD
     A[User Request] --> B{Entry Surface}
     B -->|Terminal| C[CLI]
-    B -->|HTTP| D[REST API<br/>POST /api/v1/chat]
+    B -->|HTTP| D[REST API<br/>POST /api/v1/chat<br/>enqueues to the pipeline]
     B -->|HTTP + threads| TH[Thread handler<br/>AgentThreadRequestHandler]
     B -->|Lambda event| E[AWS Lambda handler]
-    B -->|SQS message| Q[Queue consumer<br/>Lambda / ECS]
+    B -->|queue message| Q[Queue consumer<br/>pipeline Agent Runner / Lambda / ECS]
     B -->|WebSocket message| F[WebSocket route<br/>AWS API Gateway]
     B -->|Protocol| P[MCP / A2A]
     B -->|Webhook| MSG[Messaging<br/>Slack / WhatsApp / ...]
@@ -192,9 +192,113 @@ sequenceDiagram
 - **Framework support**: OpenAI Agents SDK, LangGraph, and Google ADK stream natively. CrewAI and Smolagents raise `NotImplementedError` in stream mode.
 - On AWS serverless and AWS ECS containerized, the same `StreamChunk`s are delivered as WebSocket `STREAM_CHUNK` messages instead of SSE; see below.
 
+## The Queue Pipeline Abstraction
+
+Chat execution is one fixed abstraction with pluggable edges
+([#495](https://github.com/yaalalabs/agent-kernel/issues/495)). The **five logical components
+and the message envelope between them never change**; what varies by configuration is the queue
+transport underneath, the reply delivery path, and how the components map onto processes:
+
+```mermaid
+graph TB
+    subgraph PIPE["The pipeline: fixed on every platform"]
+        direction LR
+        RH["Request Handler<br/>terminates REST / WS,<br/>validates, assigns request_id,<br/>enqueues the envelope"]
+        IQ[/"Input Queue<br/>FIFO per session_id,<br/>deduplication,<br/>bounded redelivery"/]
+        AR["Agent Runner<br/>ChatService → Runtime.run<br/>(hooks, framework, session),<br/>forwards reply + status_code"]
+        OQ[/"Output Queue<br/>same guarantees;<br/>one message per reply,<br/>or per chunk in stream mode"/]
+        RESP["Response Handler<br/>delivers the reply"]
+        RH --> IQ --> AR --> OQ --> RESP
+    end
+
+    subgraph TRANS["Pluggable: QueueTransport: execution.queues.type"]
+        direction LR
+        MEM["in_memory<br/>(default, in-process)"]
+        SQS["sqs<br/>(AWS, via the deployment adapters)"]
+        KN["kafka · nats<br/>(upcoming)"]
+    end
+
+    subgraph DELIV["Pluggable: reply delivery: execution.mode"]
+        direction LR
+        RS[("Response store<br/>in-memory · Redis · Valkey · DynamoDB<br/>rest_sync / rest_async")]
+        SSE["SSE bridge<br/>stream (REST surface)"]
+        WS["WebSocket push<br/>async / stream (AWS)"]
+    end
+
+    TRANS -.->|backs| IQ
+    TRANS -.->|backs| OQ
+    RESP --> RS
+    RESP --> SSE
+    RESP --> WS
+    RS -.->|"rest_sync await / rest_async poll"| RH
+
+    style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+    style RESP fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
+```
+
+What the abstraction fixes, and what it leaves open:
+
+- **Fixed**: the five components, the normalized message envelope (`body`, routing attributes
+  `request_id`/`user_id`/`endpoint_url`/`status_code`, `group_id`, dedup id, receive count), and
+  the failure contract: a message that exhausts `max_receive_count` triggers a permanent-failure
+  error reply, so the caller never hangs.
+- **Pluggable**: the queue transport (`in_memory` default; `sqs` on AWS via the deployment
+  adapters; `kafka`/`nats` upcoming), the response store backend, and the reply delivery path
+  per `execution.mode`.
+- **Shared machinery**: the Agent Runner and Response Handler are both driven by `ConsumerLoop`
+ : one implementation of batch fetch, receive-count checking, and the
+  permanent-failure-then-acknowledge flow, reused by every transport (the ECS `ECSSQSConsumer`
+  runs on it too).
+- **Topology is configuration**: single-process (all five components as threads: the local
+  default), two-process (IO + agent runner over a broker: AWS ECS today), or three-way (AWS
+  Lambda). See the [architecture overview](./overview#the-queue-execution-pipeline) for the
+  topology diagrams.
+
+## Queue Pipeline Flow (default, in-process)
+
+Chat requests on the REST surface run through the queue execution pipeline above. With the
+default `in_memory` transport, a bare `RESTAPI.run()` boots all five components as threads in one
+process: the flow below is identical to the AWS broker flow further down, with the queues living
+in process memory:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client
+    participant RH as RequestHandler<br/>(rest-api thread)
+    participant IQ as Input Queue (in_memory)
+    participant AR as AgentRunner<br/>(worker threads)
+    participant OQ as Output Queue (in_memory)
+    participant RSH as ResponseHandler<br/>(worker thread)
+    participant RS as InMemoryResponseStore
+
+    Client->>RH: POST /api/v1/chat
+    RH->>IQ: enqueue (group = session_id, dedup = request_id)
+    IQ->>AR: fetch (per-session FIFO)
+    AR->>AR: ChatService → Runtime.run(): full hook pipeline
+    AR->>OQ: reply + status_code (request_id attribute)
+    OQ->>RSH: fetch
+    RSH->>RS: store record {request_id, status_code, body}
+    RH->>RS: await record
+    RH-->>Client: 200 JSON (or the stored error status)
+```
+
+- `rest_sync` (and unset mode) waits server-side; `rest_async` returns `202 ACCEPTED` +
+  `request_id` for polling; `stream` fans each token out as its own output-queue message and the
+  request handler bridges them to the open SSE response.
+- Failed messages are redelivered up to `max_receive_count`, then a permanent-failure error is
+  delivered so the caller never hangs. Duplicate `request_id`s are dropped within the dedup window.
+- Surfaces mounted with explicit handlers (the thread handler, messaging integrations, custom
+  handlers) do not enqueue: they keep their direct inline execution.
+- Try it: [`examples/api/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
+  walks all three modes with curl.
+
 ## Queue-Based Flow (AWS)
 
-In queue mode (`execution.queues.*` configured), the HTTP request and the agent execution are decoupled by SQS FIFO queues. This is the recommended production topology on AWS for both Lambda and ECS:
+On AWS the same pipeline runs over durable SQS FIFO queues, with the components split across
+Lambda functions or ECS containers. This is the recommended production topology on AWS for both
+Lambda and ECS:
 
 ```mermaid
 sequenceDiagram
