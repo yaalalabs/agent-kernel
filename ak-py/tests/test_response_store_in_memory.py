@@ -3,8 +3,13 @@ import time
 
 import pytest
 
+from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.response_store.handler import ResponseDBHandler
 from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
+
+
+class ByoResponseStore(InMemoryResponseStore):
+    """Bring-your-own store used by the dotted-path factory tests."""
 
 
 @pytest.fixture(autouse=True)
@@ -97,6 +102,41 @@ class TestHandlerSelection:
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
         assert isinstance(ResponseDBHandler().get_store(), InMemoryResponseStore)
+
+    def test_dotted_path_resolves_byo_store(self, monkeypatch):
+        class _Cfg:
+            class execution:
+                class response_store:
+                    type = f"{__name__}.ByoResponseStore"
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        assert isinstance(ResponseDBHandler().get_store(), ByoResponseStore)
+
+    def test_dotted_path_wrong_base_raises(self, monkeypatch):
+        class _Cfg:
+            class execution:
+                class response_store:
+                    type = "agentkernel.pipeline.envelope.QueueMessage"
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        with pytest.raises(AKConfigError, match="not a ResponseStore subclass"):
+            ResponseDBHandler()
+
+    def test_unknown_short_name_fails_loudly(self, monkeypatch):
+        """Unknown short names fail at store-build time (the config field also accepts dotted
+        paths, so it no longer pattern-validates)."""
+
+        class _Cfg:
+            class execution:
+                class response_store:
+                    type = "bogus"
+                    redis = None
+                    valkey = None
+                    dynamodb = None
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        with pytest.raises(ValueError, match="No valid response store"):
+            ResponseDBHandler()
 
 
 class TestCloseStream:

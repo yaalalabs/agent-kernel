@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import json
-from enum import Enum
 from typing import Any, Dict, List, Mapping, Optional
 
 import boto3
-from pydantic import BaseModel, ConfigDict
 
 from ....core.config import AKConfig
+from ....pipeline.transport import sqs as sqs_wire
 from ...common.queue_handler import QueueHandler
 
 
@@ -18,6 +16,11 @@ class SQSHandler(QueueHandler):
     must be exported:
     - AK_EXECUTION__QUEUES__INPUT__URL
     - AK_EXECUTION__QUEUES__OUTPUT__URL
+
+    Since #495 the SQS wire-format primitives live in ``agentkernel.pipeline.transport.sqs``
+    and are shared with the pipeline's SQSTransport (one implementation, so the two paths stay
+    byte-identical on the wire). The nested classes below alias the relocated models, keeping
+    this class's public surface (user imports, isinstance checks, patch targets) intact.
     """
 
     _sqs_client = None
@@ -25,27 +28,9 @@ class SQSHandler(QueueHandler):
     _input_queue_url = None
     _output_queue_url = None
 
-    class AttributeDataType(str, Enum):
-        STRING = "String"
-        NUMBER = "Number"
-        BINARY = "Binary"
-
-    class SQSQueueInputMessage(BaseModel):
-        """Typed FIFO SQS send_message kwargs excluding QueueUrl."""
-
-        MessageBody: str  # a stringified JSON of the message content
-        MessageGroupId: Optional[str] = None
-        MessageDeduplicationId: Optional[str] = None
-        MessageAttributes: Optional[dict] = None
-
-        model_config = ConfigDict(extra="allow")
-
-    class CustomAttribute(BaseModel):
-        """User-facing SQS attribute definition."""
-
-        name: str
-        value: Any
-        datatype: "SQSHandler.AttributeDataType"
+    AttributeDataType = sqs_wire.AttributeDataType
+    SQSQueueInputMessage = sqs_wire.SQSQueueInputMessage
+    CustomAttribute = sqs_wire.CustomAttribute
 
     @classmethod
     def _get_config(cls):
@@ -89,108 +74,38 @@ class SQSHandler(QueueHandler):
 
     @classmethod
     def _serialize_message_body(cls, message_body: Any) -> str:
-        """Convert a message payload into the string body required by SQS.
-
-        Strings are passed through unchanged. Pydantic models are converted with
-        exclude_none=True before being JSON encoded, and all other values are
-        serialized with json.dumps.
-
-        :param message_body: The message payload to serialize.
-        :return: A string representation suitable for the SQS MessageBody field.
-        """
-        if isinstance(message_body, str):
-            return message_body
-
-        if hasattr(message_body, "model_dump"):
-            message_body = message_body.model_dump(exclude_none=True)
-
-        return json.dumps(message_body)
+        """Convert a message payload into the string body required by SQS
+        (delegates to the shared pipeline wire helpers)."""
+        return sqs_wire.serialize_message_body(message_body)
 
     @classmethod
     def _build_message_attribute(cls, custom_attribute: "SQSHandler.CustomAttribute") -> Dict[str, Any]:
-        """
-        Build a boto3-compatible SQS message attribute payload.
-
-        Binary attributes are mapped to BinaryValue. All other attribute types are
-        serialized as strings, which matches how SQS expects string and number
-        attributes to be sent.
-
-        :param custom_attribute: The custom attribute definition to convert
-        :return: A dictionary shaped for the SQS MessageAttributes field
-        """
-        message_attribute: Dict[str, Any] = {"DataType": custom_attribute.datatype.value}
-        if custom_attribute.datatype == cls.AttributeDataType.BINARY:
-            message_attribute["BinaryValue"] = custom_attribute.value
-        else:
-            message_attribute["StringValue"] = str(
-                custom_attribute.value
-            )  # In SQS, numbers also go as string values but with the datatype set to Number
-        return message_attribute
+        """Build a boto3-compatible SQS message attribute payload
+        (delegates to the shared pipeline wire helpers)."""
+        return sqs_wire.build_message_attribute(custom_attribute)
 
     @classmethod
     def _build_message_attributes(
         cls,
         message_attributes: list["SQSHandler.CustomAttribute"] | None,
     ) -> Optional[Dict[str, Any]]:
-        """
-        Convert a list of custom attributes into an SQS attributes map.
-
-        Duplicate attribute names are rejected because SQS requires each message
-        attribute key to be unique.
-
-        :param message_attributes: The custom attributes to convert, or None
-        :return: A dictionary of message attributes, or None when no attributes are provided
-        :raises ValueError: If duplicate attribute names are found
-        """
-        if message_attributes is None:
-            return None
-
-        built_message_attributes: Dict[str, Any] = {}
-        for custom_attribute in message_attributes:
-            if custom_attribute.name in built_message_attributes:
-                raise ValueError(f"Duplicate SQS message attribute name: {custom_attribute.name}")
-            built_message_attributes[custom_attribute.name] = cls._build_message_attribute(custom_attribute)
-        return built_message_attributes
+        """Convert a list of custom attributes into an SQS attributes map; rejects duplicate
+        names (delegates to the shared pipeline wire helpers)."""
+        return sqs_wire.build_message_attributes(message_attributes)
 
     @staticmethod
     def get_message_system_attributes(raw_queue_message_record: Mapping[str, Any]) -> Dict[str, Any]:
-        """
-        Return the SQS system attributes from a raw SQS message record.
-
-        Handles both Lambda event records (``attributes`` key, camelCase)
-        and boto3 receive_message records (``Attributes`` key, PascalCase).
-
-        :param raw_queue_message_record: Raw SQS record
-        :return: A shallow copy of the record's system attributes mapping
-        """
-        # Lambda uses "attributes", boto3 receive_message uses "Attributes"
-        attrs = raw_queue_message_record.get("Attributes") or raw_queue_message_record.get("attributes") or {}
-        return dict(attrs)
+        """Return the SQS system attributes from a raw SQS message record, handling both Lambda
+        event records and boto3 receive_message records (delegates to the shared pipeline wire
+        helpers)."""
+        return sqs_wire.get_message_system_attributes(raw_queue_message_record)
 
     @staticmethod
     def get_message_custom_attributes(raw_queue_message_record: Mapping[str, Any]) -> Dict[str, Any]:
-        """
-        Return the custom SQS message attributes from a raw SQS message record.
-
-        Handles both Lambda event records (``messageAttributes`` key, camelCase)
-        and boto3 receive_message records (``MessageAttributes`` key, PascalCase).
-
-        :param raw_queue_message_record: Raw SQS record
-        :return: A dictionary mapping custom attribute names to their scalar values
-        """
-        # Lambda uses "messageAttributes", boto3 receive_message uses "MessageAttributes"
-        message_attributes = raw_queue_message_record.get("MessageAttributes") or raw_queue_message_record.get("messageAttributes") or {}
-        flattened_attributes: Dict[str, Any] = {}
-        for attribute_name, attribute in message_attributes.items():
-            if isinstance(attribute, Mapping):
-                attribute_value = (
-                    attribute.get("StringValue") or attribute.get("stringValue") or attribute.get("BinaryValue") or attribute.get("binaryValue")
-                )
-            else:
-                attribute_value = attribute
-            if attribute_value is not None:
-                flattened_attributes[attribute_name] = attribute_value
-        return flattened_attributes
+        """Return the custom SQS message attributes from a raw SQS message record, handling both
+        Lambda event records and boto3 receive_message records (delegates to the shared pipeline
+        wire helpers)."""
+        return sqs_wire.get_message_custom_attributes(raw_queue_message_record)
 
     @classmethod
     def build_send_message_kwargs(
@@ -202,10 +117,8 @@ class SQSHandler(QueueHandler):
         **extra_kwargs: Any,
     ) -> Dict[str, Any]:
         """
-        Assemble the keyword arguments expected by boto3 send_message.
-
-        This helper normalizes the body, optional FIFO identifiers, and message
-        attributes into a single dictionary that can be passed directly to boto3.
+        Assemble the keyword arguments expected by boto3 send_message
+        (delegates to the shared pipeline wire helpers).
 
         :param message_body: The payload to place in the SQS message body
         :param message_group_id: The FIFO message group id, if required
@@ -214,14 +127,13 @@ class SQSHandler(QueueHandler):
         :param extra_kwargs: Additional send_message keyword arguments to include
         :return: A dictionary of boto3 send_message keyword arguments
         """
-        queue_input_message = cls.SQSQueueInputMessage(
-            MessageBody=cls._serialize_message_body(message_body),
-            MessageGroupId=message_group_id,
-            MessageDeduplicationId=message_deduplication_id,
-            MessageAttributes=cls._build_message_attributes(message_attributes),
+        return sqs_wire.build_send_message_kwargs(
+            message_body=message_body,
+            message_group_id=message_group_id,
+            message_deduplication_id=message_deduplication_id,
+            message_attributes=message_attributes,
             **extra_kwargs,
-        ).model_dump(exclude_none=True)
-        return queue_input_message
+        )
 
     @classmethod
     def send_message(
@@ -390,7 +302,3 @@ class SQSHandler(QueueHandler):
             message_attributes=cls._build_standard_message_attributes(request_id, user_id, custom_message_attributes),
             **extra_kwargs,
         )
-
-
-# Tell Pydantic to resolve the string annotation for CustomAttribute.datatype after the class is fully defined, which allows us to reference AttributeDataType before it's defined in the class body.
-SQSHandler.CustomAttribute.model_rebuild()

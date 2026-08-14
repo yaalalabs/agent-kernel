@@ -11,6 +11,7 @@ from agentkernel.core.util.factory import AKConfigError
 from agentkernel.deployment.aws.core.sqs_handler import SQSHandler
 from agentkernel.pipeline.envelope import QueueMessage, QueueName
 from agentkernel.pipeline.testing import QueueTransportContract
+from agentkernel.pipeline.transport import sqs as sqs_wire
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.sqs import SQS_MAX_WAIT_SECONDS, SQSTransport, SQSTransportConsumer
 
@@ -33,12 +34,13 @@ def _record(receipt_handle="rh-1"):
 
 class TestSendWireFormat:
     """The send side must be byte-identical to the ECS wire format (spec §5): what reaches the
-    boto3 client is exactly what SQSHandler.build_send_message_kwargs produces."""
+    boto3 client is exactly what SQSHandler.build_send_message_kwargs produces (both run the
+    same relocated wire helpers, so this pins the interop guarantee)."""
 
     @pytest.fixture
     def client(self, monkeypatch):
         mock_client = MagicMock()
-        monkeypatch.setattr(SQSHandler, "_sqs_client", mock_client)
+        monkeypatch.setattr("agentkernel.pipeline.transport.sqs.boto3.client", lambda service: mock_client)
         return mock_client
 
     def test_send_kwargs_equal_sqs_handler_build(self, client):
@@ -68,6 +70,33 @@ class TestSendWireFormat:
     def test_send_routes_to_the_output_queue_url(self, client):
         SQSTransport(input_url=INPUT_URL, output_url=OUTPUT_URL).send(QueueName.OUTPUT, QueueMessage(body="{}"))
         assert client.send_message.call_args.kwargs["QueueUrl"] == OUTPUT_URL
+
+
+class TestSQSHandlerDelegation:
+    """SQSHandler's wire-format surface is the relocated pipeline implementation: the nested
+    classes must stay the same objects (user imports, isinstance checks, patch targets), and
+    the kwargs builders must stay one implementation."""
+
+    def test_nested_classes_alias_the_pipeline_models(self):
+        assert SQSHandler.CustomAttribute is sqs_wire.CustomAttribute
+        assert SQSHandler.AttributeDataType is sqs_wire.AttributeDataType
+        assert SQSHandler.SQSQueueInputMessage is sqs_wire.SQSQueueInputMessage
+
+    def test_build_send_message_kwargs_is_the_shared_implementation(self):
+        attributes = [sqs_wire.CustomAttribute(name="request_id", value="r1", datatype=sqs_wire.AttributeDataType.STRING)]
+        assert SQSHandler.build_send_message_kwargs(
+            message_body={"a": 1}, message_group_id="g1", message_deduplication_id="d1", message_attributes=attributes
+        ) == sqs_wire.build_send_message_kwargs(
+            message_body={"a": 1}, message_group_id="g1", message_deduplication_id="d1", message_attributes=attributes
+        )
+
+    def test_duplicate_attribute_names_still_rejected_through_the_handler(self):
+        attributes = [
+            SQSHandler.CustomAttribute(name="dup", value="1", datatype=SQSHandler.AttributeDataType.STRING),
+            SQSHandler.CustomAttribute(name="dup", value="2", datatype=SQSHandler.AttributeDataType.STRING),
+        ]
+        with pytest.raises(ValueError, match="Duplicate SQS message attribute name"):
+            SQSHandler._build_message_attributes(attributes)
 
 
 class TestConsumer:
@@ -290,9 +319,10 @@ class TestSQSTransportContract(QueueTransportContract):
 
     @pytest.fixture(autouse=True)
     def _fake_sqs(self, monkeypatch):
+        # One patch covers both sides: the transport's lazy send client and the per-consumer
+        # receive clients are all built via the pipeline module's boto3.client.
         fake_client = FakeSQSClient(visibility_timeout=self.ack_wait)
         monkeypatch.setattr("agentkernel.pipeline.transport.sqs.boto3.client", lambda service: fake_client)
-        monkeypatch.setattr(SQSHandler, "_sqs_client", fake_client)
 
     def make_transport(self) -> SQSTransport:
         return SQSTransport(input_url=INPUT_URL, output_url=OUTPUT_URL)

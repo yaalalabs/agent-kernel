@@ -3,6 +3,7 @@ from enum import StrEnum
 from typing import Self
 
 from ...core.config import AKConfig
+from ...core.util.factory import resolve_dotted
 from .base import ResponseStore
 
 _logger = logging.getLogger("ak.response_db_handler")
@@ -52,7 +53,14 @@ class ResponseDBHandler:
             raise ValueError("Execution response_store configuration is required but not found in AKConfig")
 
         response_store_config = config.execution.response_store
-        response_store_type: ResponseDBHandler.Type = ResponseDBHandler.Type.from_str(response_store_config.type)
+        configured_type = response_store_config.type
+
+        # Bring-your-own store: a dotted path to a ResponseStore subclass (#541 factory pattern).
+        if configured_type and "." in configured_type:
+            self.store = resolve_dotted(configured_type, base=ResponseStore)()
+            return
+
+        response_store_type: ResponseDBHandler.Type = ResponseDBHandler.Type.from_str(configured_type)
 
         # In-memory needs no backend sub-block (single-process topologies only)
         if response_store_type == ResponseDBHandler.Type.IN_MEMORY:
@@ -103,7 +111,8 @@ class ResponseDBHandler:
 
         else:
             raise ValueError(
-                "No valid response store configured. Please configure one of in_memory, redis, valkey or dynamodb in execution.response_store"
+                "No valid response store configured. Please configure one of in_memory, redis, valkey or dynamodb "
+                "(or a dotted path to a ResponseStore subclass) in execution.response_store"
             )
 
     def get_store(self) -> ResponseStore:

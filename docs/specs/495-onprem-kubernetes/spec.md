@@ -51,11 +51,12 @@ Coupling rules (numbered, enforced by import direction):
 1. `pipeline` imports `core` and `api` only. `api/handler.py` imports nothing new;
    `api/http.py` imports `pipeline` **lazily inside methods** (same pattern as its existing lazy
    a2a/mcp imports, `api/http.py:105-115`), so no import cycle exists.
-2. `deployment/` imports `pipeline`; nothing in `pipeline` imports `deployment`. One sanctioned
-   exception: `transport/sqs.py` delegates its send side to `SQSHandler` for ECS wire-format
-   identity (§5). The module is only imported when the `sqs` transport is selected (the factory
-   imports transports lazily), so the coupling never activates for in_memory/kafka/nats
-   deployments and no import cycle exists (`sqs_handler.py` does not import `pipeline`).
+2. `deployment/` imports `pipeline`; nothing in `pipeline` imports `deployment`. The SQS
+   wire-format primitives (attribute models, `send_message` kwargs assembly, record-attribute
+   flatteners) live in `transport/sqs.py`; `SQSHandler` imports them and delegates, with its
+   nested classes (`CustomAttribute`, `AttributeDataType`, `SQSQueueInputMessage`) aliasing the
+   relocated models so its public surface, isinstance checks, and patch targets are unchanged
+   (the same relocation-with-delegation pattern as `ECSSQSConsumer` → `ConsumerLoop`).
 3. Moved modules leave **re-export shims** at their old paths so every existing import keeps
    working: `deployment/common/thread_runner.py`, `deployment/common/response_store.py`,
    `deployment/common/websocket_service.py`, and `deployment/aws/core/response_store/`
@@ -195,12 +196,18 @@ Process-wide singleton state (one `_InMemoryQueue` per `QueueName`), `threading.
 
 ### 5. SQS transport (`transport/sqs.py`)
 
-- `send`: delegates to `SQSHandler.send_message` (`aws/core/sqs_handler.py:227`) with
-  `message_group_id=group_id`, `message_deduplication_id=dedup_id`, and attributes via
-  `SQSHandler.CustomAttribute`: the wire format is **identical** to today's
-  `send_message_to_input_queue`/`send_message_to_output_queue` (`sqs_handler.py:309-392`)
-  including the standard `request_id`/`user_id` attributes (`:273-295`), so pipeline producers
-  and ECS consumers (or vice versa) interoperate during migration.
+- The SQS wire-format primitives are relocated **into** this module (§1 rule 2):
+  `AttributeDataType`, `CustomAttribute`, `SQSQueueInputMessage`, `serialize_message_body`,
+  `build_message_attribute(s)`, `build_send_message_kwargs`, and the
+  `get_message_system_attributes`/`get_message_custom_attributes` flatteners; `SQSHandler`
+  delegates to them with an unchanged public surface.
+- `send`: builds kwargs via the shared `build_send_message_kwargs` with
+  `message_group_id=group_id`, `message_deduplication_id=dedup_id`, and envelope attributes as
+  String `CustomAttribute`s, sent on the transport's own lazily created boto3 client: the wire
+  format is **identical by construction** to today's
+  `send_message_to_input_queue`/`send_message_to_output_queue` (`sqs_handler.py`) including the
+  standard `request_id`/`user_id` attributes, so pipeline producers and ECS consumers (or vice
+  versa) interoperate during migration.
 - `TransportConsumer`: one boto3 client per consumer instance; `fetch` = `receive_message` with
   `MaxNumberOfMessages=batch_size`, `WaitTimeSeconds=int(min(wait_seconds, 20))` (boto3 requires
   an integer; SQS caps long polls at 20 s), `AttributeNames=["All"]`,
@@ -408,9 +415,12 @@ preserves today's inline path unchanged.
 ### 10. Response store changes (`pipeline/response_store/`)
 
 - `ResponseStore` ABC, `ResponseDBHandler`, and the Redis/Valkey/DynamoDB stores move unchanged
-  (shims at old paths, §1 rule 3). `ResponseDBHandler.Type` (`handler.py:16`) gains `IN_MEMORY`;
-  `_ResponseStoreConfig.type` pattern (`config.py:314`) becomes
-  `^(in_memory|redis|valkey|dynamodb)$`.
+  (shims at old paths, §1 rule 3). `ResponseDBHandler.Type` (`handler.py:16`) gains `IN_MEMORY`.
+  `_ResponseStoreConfig.type` (`config.py:314`) accepts a built-in short name
+  (`in_memory|redis|valkey|dynamodb`) or a dotted path to a `ResponseStore` subclass (the #541
+  BYO branch, `resolve_dotted(type, base=ResponseStore)()`); the old regex pattern is dropped,
+  so unknown short names fail loudly at store-build time (`ValueError` listing the options)
+  rather than at config load, matching the session/thread/trace store factories.
 - **Resolution default**: `execution.response_store is None` + transport `in_memory` → in_memory store
   (today's constructor raises `ValueError`, `handler.py:50-51`; that error is preserved for
   broker transports without a configured store).
@@ -639,8 +649,9 @@ New test files (patterns per `ak-dev-testing-conventions`: `DummyAgent`/`DummyRu
   Kafka/NATS containers.
 - `test_pipeline_sqs_transport.py`: envelope mapping from boto3 records, send-side kwargs
   equality with `SQSHandler.build_send_message_kwargs` output, long-poll parameters
-  (integer `WaitTimeSeconds`, unsliced 20 s wait), factory URL resolution, plus the contract
-  suite over the mocked-boto3 FIFO fake.
+  (integer `WaitTimeSeconds`, unsliced 20 s wait), factory URL resolution, the SQSHandler
+  delegation pins (nested-class identity, shared kwargs builder, duplicate-attribute rejection),
+  plus the contract suite over the mocked-boto3 FIFO fake.
 - `test_pipeline_kafka_transport.py`: faked `confluent_kafka.Consumer/Producer`: header/key
   mapping, commit-after-ack, seek+pause on nack, DLQ produce on permanent failure, bookkeeping
   fallback WARNING when session type is in_memory.
@@ -657,7 +668,8 @@ New test files (patterns per `ak-dev-testing-conventions`: `DummyAgent`/`DummyRu
 - `test_pipeline_ws.py`: native `/ws` route (auth, registry lifecycle), `/internal/push`
   (token auth, 404 on unknown user, frame delivery), `PodPushWebSocketHandler` retry-on-404.
 - `test_response_store_in_memory.py`: record shape (`get_message` returns `body`), status_code
-  retention, chunk streaming, `get_message_with_retry` inheritance.
+  retention, chunk streaming, `get_message_with_retry` inheritance, and the handler's BYO
+  dotted-path resolution (wrong base and unknown short name fail loudly).
 
 Existing tests: the riskiest consumer is `ECSSQSConsumer` (its internals move):
 `test_ecs_sqs_consumer_parallel.py` must pass **unmodified**: it imports and patches the class
