@@ -227,7 +227,7 @@ class TestTransportFactory:
         class _Cfg:
             class execution:
                 class queues:
-                    type = "kafka"
+                    type = "nats"  # the last built-in still to land; kafka shipped in iteration 7
 
                     class input:
                         url = None

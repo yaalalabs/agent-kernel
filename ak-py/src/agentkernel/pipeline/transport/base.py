@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, List, Optional
 
 from ...core.config import AKConfig
-from ...core.util.factory import AKConfigError, resolve_dotted
+from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ..envelope import QueueMessage, QueueName
 
 
@@ -60,6 +60,17 @@ class TransportConsumer(ABC):
         """
         return None
 
+    def dead_letter(self, message: QueueMessage) -> None:
+        """Final disposition of a message that exhausted ``max_receive_count`` deliveries.
+
+        Called by :class:`~agentkernel.pipeline.consumer.ConsumerLoop` after the component's
+        permanent-failure hook has run, in place of :meth:`ack`. The default simply acks (the
+        SQS/in_memory behavior: the message is dropped once the hook has surfaced the error);
+        transports override to route the message somewhere first (a Kafka dead-letter topic) or
+        to use a different terminal operation (a NATS ``term()``).
+        """
+        self.ack(message)
+
     def close(self) -> None:
         """Release consumer-owned resources. Default no-op."""
         return None
@@ -116,6 +127,24 @@ class QueueTransportFactory:
             if not input_url or not output_url:
                 raise AKConfigError("the sqs transport requires both execution.queues.input.url and execution.queues.output.url")
             return SQSTransport(input_url=input_url, output_url=output_url)
+        if transport_type == "kafka":
+            with require_extra("kafka", "execution.queues.type: kafka"):
+                from .kafka import KafkaTransport
+
+            queues = AKConfig.get().execution.queues
+            kafka_config = getattr(queues, "kafka", None) if queues is not None else None
+            if kafka_config is None:
+                raise AKConfigError("the kafka transport requires an execution.queues.kafka configuration block")
+            return KafkaTransport(
+                bootstrap_servers=kafka_config.bootstrap_servers,
+                input_topic=kafka_config.input_topic,
+                output_topic=kafka_config.output_topic,
+                group_id=kafka_config.group_id,
+                dlq_suffix=kafka_config.dlq_suffix,
+                retry_backoff=kafka_config.retry_backoff,
+                delivery_timeout=kafka_config.delivery_timeout,
+                client_config=kafka_config.client_config,
+            )
         if transport_type in cls._BUILTIN_TYPES:
             raise AKConfigError(f"queue transport '{transport_type}' is not available yet (ships in a later #495 iteration)")
         return resolve_dotted(transport_type, base=QueueTransport)()

@@ -95,7 +95,11 @@ class TransportConsumer(ABC):          # receive side: ONE INSTANCE PER CONSUMER
     @abstractmethod
     def ack(self, message: QueueMessage) -> None: ...     # success or handled permanent failure
     def nack(self, message: QueueMessage) -> None: ...    # default no-op: redelivery via timeout
+    def dead_letter(self, message: QueueMessage) -> None: ...  # terminal disposition after the
+    #   permanent-failure hook; default acks (SQS/in_memory), Kafka routes to its DLQ topic first,
+    #   NATS will term(). Keeps DLQ routing out of ack, which cannot tell the two paths apart.
     def close(self) -> None: ...                          # default no-op
+    fetch_wait_slice_seconds: Optional[float] = None       # cap on one fetch's block (§3 rule 5)
 
 class QueueTransportFactory:
     _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats")
@@ -229,28 +233,50 @@ Process-wide singleton state (one `_InMemoryQueue` per `QueueName`), `threading.
 
 Client `confluent-kafka` (new `kafka` extra). Per `research/kafka.md`:
 
-- **Producer** (process-wide singleton): `enable.idempotence=true`; `send` maps `group_id` →
-  record key, `attributes` (+ `dedup_id` under key `ak-dedup-id`) → headers, topic from config
-  (`input_topic`/`output_topic`).
-- **Consumer** (one `confluent_kafka.Consumer` per thread): `group.id` from config,
-  `enable.auto.commit=false`, `partition.assignment.strategy=cooperative-sticky`. `fetch` =
-  `consume(num_messages=batch_size, timeout=wait_seconds)`.
+- **Producer** (process-wide, one per broker configuration; class-level cache keyed by the
+  resolved producer config, `reset()` for tests): `enable.idempotence=true`; `send` maps
+  `group_id` → record key, `attributes` (+ `dedup_id` under header `ak-dedup-id`) → headers,
+  topic from config (`input_topic`/`output_topic`). The send **waits for the broker
+  acknowledgement** (delivery callback polled up to `delivery_timeout`, default 30 s) and raises
+  on error or timeout, so an unreachable broker fails the request rather than silently dropping
+  the message (error table); it returns `{"MessageId": "topic:partition:offset"}` for the
+  Request Handler's enqueue log.
+- **Consumer** (one `confluent_kafka.Consumer` per thread): `group.id` =
+  `f"{group_id}-{queue}"` so input and output offsets/rebalances stay independent,
+  `enable.auto.commit=false`, `auto.offset.reset=earliest`,
+  `partition.assignment.strategy=cooperative-sticky`, and
+  **`max.poll.interval.ms=900000`** (an LLM-bound agent turn easily exceeds librdkafka's 5 min
+  default, which would evict the consumer mid-run); `client_config` merges over all of it for
+  SASL/TLS/tuning. `fetch` = `consume(num_messages=batch_size, timeout=wait_seconds)`.
+- **One record in flight per partition**: the consumer buffers a fetched batch per partition and
+  hands out at most one record per partition, releasing the next only on `ack`. Required because
+  a retry must be able to redeliver a record before any later offset in that partition is
+  committed. Consequence (accepted, documented): sessions hashed to the same partition serialize,
+  which is stricter than SQS FIFO's per-group lock, so partitions are provisioned generously.
 - **Receive count + dedup: `BookkeepingStore`** (design decision Q5: follows the session
-  storage configuration): resolved from `AKConfig.session.type`: `redis`/`valkey` use the shared
-  drivers (`core/util/driver/`) with the session block's connection settings and key prefixes
-  `ak:qattempts:` / `ak:qdedup:`; `in_memory` (or any other session type) falls back to an
-  in-process dict **with a one-time WARNING** that Kafka retry bookkeeping is process-local.
-  Surface: `incr_attempts(key) -> int` (TTL 1 h), `clear_attempts(key)`,
-  `seen_dedup(dedup_id) -> bool` (SET NX EX 300 semantics).
-- **Fetch path**: for each record: dedup header seen → `ack` (commit) and skip;
-  `receive_count = incr_attempts(f"{topic}:{partition}:{offset}")`.
-- **Ack** = commit offset (per-partition, after the batch's records complete in order) +
-  `clear_attempts`. **Nack** = `seek()` back to the record's offset + `pause()` the partition for
-  a backoff (default 2 s, config `retry_backoff`), calling `poll(0)` during the pause so the
-  consumer stays under `max.poll.interval.ms`; `resume()` then re-fetch: the blocking in-process
-  retry pattern. Head-of-line blocking per partition is accepted and documented.
-- **Permanent failure**: after the `ConsumerLoop` runs the hook, `ack` additionally produces the
-  original record (headers + `ak-error` header) to `f"{topic}{dlq_suffix}"` (default `.dlq`).
+  storage configuration) built by `BookkeepingStoreFactory`: `redis`/`valkey` session types use
+  the shared drivers (`core/util/driver/`) with the session block's connection settings and key
+  prefixes `ak:qattempts:` (TTL 1 h) / `ak:qdedup:` (TTL 300 s); every other session type falls
+  back to process-local dicts **with a one-time WARNING** naming the consequence (counts reset on
+  restart, so a message that crashes its worker can evade the permanent-failure path). Surface:
+  `incr_attempts(key) -> int`, `clear_attempts(key)`, and
+  **`claim_dedup(dedup_id, owner) -> bool`**: the claim is keyed by the claiming record's
+  `topic:partition:offset`, so the owner may reclaim it. A plain `seen_dedup` flag would make a
+  record's own retry look like a duplicate and silently drop it. The shared Redis/Valkey driver
+  gains `incr(key)` (applies the configured TTL on creation only, so a hot counter cannot live
+  forever).
+- **Fetch path**: for each record: another owner already claimed its `dedup_id` → commit and skip;
+  otherwise `receive_count = incr_attempts(f"{topic}:{partition}:{offset}")`.
+- **Ack** = commit the record's offset (synchronous) + `clear_attempts`, releasing its partition.
+  **Nack** = requeue the record at its partition's buffer head and sleep `retry_backoff`
+  (default 2 s): the offset is never committed, so a crash mid-retry leaves the record for
+  another group member, and no `seek`/`pause`/`resume` dance is needed (the buffer already holds
+  it, and the one-in-flight rule stops later offsets from overtaking it).
+- **Permanent failure**: `ConsumerLoop` calls the transport's `dead_letter` disposition after the
+  component hook (§2); Kafka's produces the original record (headers + `ak-error`) to
+  `f"{topic}{dlq_suffix}"` (default `.dlq`) and then commits. A failed DLQ write is logged and
+  the record still commits, since the hook has already answered the caller and an uncommitted
+  poison record would replay forever.
 - Topics are pre-provisioned (Strimzi CRs / chart); the transport does not create topics.
 
 ### 7. NATS JetStream transport (`transport/nats.py`)
@@ -463,8 +489,10 @@ class _InMemoryQueueConfig(BaseModel):
 class _KafkaQueueConfig(BaseModel):
     bootstrap_servers: str = "localhost:9092"
     input_topic: str = "agent-input"; output_topic: str = "agent-output"
-    group_id: str = "agent-kernel"; dlq_suffix: str = ".dlq"
+    group_id: str = "agent-kernel"        # consumers append "-input"/"-output"
+    dlq_suffix: str = ".dlq"
     retry_backoff: float = 2.0
+    delivery_timeout: float = 30.0        # bound on the synchronous send confirm (§6)
     client_config: dict[str, Any] = {}      # passthrough to confluent-kafka (SASL/TLS etc.)
 
 class _NatsQueueConfig(BaseModel):
@@ -692,9 +720,19 @@ New test files (patterns per `ak-dev-testing-conventions`: `DummyAgent`/`DummyRu
   (integer `WaitTimeSeconds`, unsliced 20 s wait), factory URL resolution, the SQSHandler
   delegation pins (nested-class identity, shared kwargs builder, duplicate-attribute rejection),
   plus the contract suite over the mocked-boto3 FIFO fake.
-- `test_pipeline_kafka_transport.py`: faked `confluent_kafka.Consumer/Producer`: header/key
-  mapping, commit-after-ack, seek+pause on nack, DLQ produce on permanent failure, bookkeeping
-  fallback WARNING when session type is in_memory.
+- `test_pipeline_kafka_transport.py`: a fake in-memory cluster (per-partition logs, fetch
+  positions independent of committed offsets, delivery callbacks) behind
+  `confluent_kafka.Consumer/Producer`: envelope/header/key mapping, synchronous send confirm
+  (delivery error and unconfirmed-delivery both raise), commit-after-ack, nack requeue without
+  commit, DLQ produce plus commit-on-DLQ-failure, partition-EOF skip vs fatal record error,
+  client/producer config (manual commit, cooperative-sticky, `max.poll.interval.ms`, per-queue
+  group ids, `client_config` passthrough, producer sharing), the head-of-line-blocking tradeoff
+  with a forced partition collision, factory resolution, plus the full `QueueTransportContract`
+  (with `timeout_redelivery = False`).
+- `test_pipeline_bookkeeping.py`: one shared assertion set run against both bookkeeping backends
+  (attempt counts, retry-safe dedup claims incl. owner reclaim, expiry), key prefixes and
+  create-only counter TTL on the driver-backed store, and factory selection from the session
+  config incl. the once-per-process fallback warning.
 - `test_pipeline_nats_transport.py`: faked `nats` client on a real `_NatsLoop`: subject
   construction, `Nats-Msg-Id`, `num_delivered` mapping, `term()` on permanent failure,
   `auto_provision=false` verification error.

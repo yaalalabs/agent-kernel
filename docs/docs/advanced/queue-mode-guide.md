@@ -35,8 +35,9 @@ The queue transport is pluggable via `execution.queues.type`:
 | Transport | Status | Where the components run |
 |-----------|--------|--------------------------|
 | `in_memory` | ✅ the default | All five components as threads in one process (local, single-container) |
-| SQS | ✅ AWS Lambda and ECS (via the deployment adapters below) | Split across Lambda functions or ECS containers |
-| `kafka`, `nats` | Upcoming (#495) | Kubernetes / on-prem two-process topology |
+| `sqs` | ✅ | Two-process topology on AWS; also the transport behind the Lambda and ECS deployment adapters below |
+| `kafka` | ✅ (`pip install agentkernel[kafka]`) | Kubernetes / on-prem two-process topology |
+| `nats` | Upcoming (#495) | Kubernetes / on-prem two-process topology |
 
 Delivery sub-modes (`execution.mode`):
 
@@ -109,6 +110,55 @@ diagram.
 constructed with explicit handlers (`RESTAPI.run([MyHandler()])`, the thread handler, messaging
 integrations) and subclasses (`AWSRestAPI`, `AWSWebsocketAPI`) keep their existing execution
 paths unchanged.
+
+---
+
+## Running Queue Mode on Kafka
+
+Install the extra (`pip install agentkernel[kafka]`) and configure the broker; topics are
+pre-provisioned by your cluster tooling (Strimzi CRs or the chart), never created by the app:
+
+```yaml
+execution:
+  mode: rest_sync
+  queues:
+    type: kafka
+    kafka:
+      bootstrap_servers: "kafka-bootstrap:9092"
+      input_topic: agent-input
+      output_topic: agent-output
+      group_id: agent-kernel        # consumers append "-input" / "-output"
+      dlq_suffix: ".dlq"            # permanently failed records are produced to <topic>.dlq
+      retry_backoff: 2.0            # seconds before an in-process retry
+      client_config:                # merged into both clients (SASL, TLS, tuning)
+        security.protocol: SASL_SSL
+        sasl.mechanism: SCRAM-SHA-512
+  response_store:                   # required: the two processes must share it
+    type: valkey
+    valkey:
+      url: "valkey://valkey:6379"
+```
+
+The IO process runs `IOHandler.run()` (REST API + Response Handler) and the runner process runs
+`AgentRunner.run()`, exactly as on SQS.
+
+Three Kafka-specific behaviors worth knowing, all consequences of Kafka having no per-message
+acknowledgement model:
+
+- **Ordering costs a partition.** The record key is the `session_id`, so a session's messages
+  stay ordered. Because a retry must be able to redeliver a record before later offsets in its
+  partition commit, the consumer keeps only one record per partition in flight, which means
+  sessions sharing a partition wait for each other. Provision partitions generously (32 is the
+  chart default) and remember that adding partitions later re-maps keys.
+- **Retry bookkeeping follows your session store.** Delivery counts and deduplication are
+  reconstructed by Agent Kernel, not the broker. With `session.type: redis` or `valkey` they are
+  stored there and survive a pod restart; with any other session type they are process-local and
+  Agent Kernel logs a warning at startup, because a message that crashes its worker would then
+  reset its own delivery count.
+- **No visibility timeout.** An unacknowledged record comes back through the in-process retry or,
+  if the pod dies, when its uncommitted offset is reassigned. Nothing redelivers a record while
+  the worker is alive but stuck, so `max.poll.interval.ms` defaults to 15 minutes here (rather
+  than librdkafka's 5) to keep a long agent turn from being mistaken for a dead consumer.
 
 ---
 
@@ -442,8 +492,8 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | Transport | Status | Notes |
 |-----------|--------|-------|
 | `in_memory` | ✅ | The default: single-process pipeline, full semantics minus durability |
-| SQS | ✅ (via the Lambda/ECS deployment adapters below) | Pipeline-native `sqs` transport for the two-process topology: upcoming |
-| `kafka` | Upcoming | Confluent client, DLQ topics, Strimzi-provisioned clusters |
+| `sqs` | ✅ | Two-process topology on AWS, wire-compatible with the Lambda/ECS adapters below |
+| `kafka` | ✅ | confluent-kafka client, per-session ordering by record key, DLQ topics, Strimzi-provisioned clusters. Needs the `kafka` extra and an `execution.queues.kafka` block; see the notes below |
 | `nats` (recommended on-prem) | Upcoming | JetStream work-queue streams, partitioned per-session ordering |
 | Kubernetes Helm chart (baremetal + EKS) | Upcoming | Two-Deployment topology, KEDA autoscaling |
 

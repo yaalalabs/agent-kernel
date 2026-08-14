@@ -11,6 +11,8 @@ queue isolation.
 
 import time
 
+import pytest
+
 from .envelope import QueueMessage, QueueName
 from .transport.base import QueueTransport
 
@@ -20,10 +22,19 @@ class QueueTransportContract:
 
     Timing knobs (``ack_wait``, ``fetch_wait``) and the ``force_redelivery`` hook may be tuned
     per backend: e.g. a mocked-broker subclass can trigger redelivery without sleeping.
+    Declared capabilities let a transport opt out of a guarantee its backend genuinely cannot
+    provide; each opt-out must be justified in the subclass, since it narrows what the pipeline
+    can promise on that backend.
     """
 
     ack_wait: float = 0.2
     fetch_wait: float = 0.5
+
+    # Whether an unacked message returns for redelivery on a timeout while the consumer is still
+    # alive (SQS visibility timeout, NATS ack_wait, the in_memory sweep). Kafka's classic
+    # consumer model has no equivalent: redelivery comes from an explicit nack or from an
+    # uncommitted offset being reassigned after a crash or rebalance.
+    timeout_redelivery: bool = True
 
     def make_transport(self) -> QueueTransport:
         raise NotImplementedError
@@ -102,6 +113,8 @@ class QueueTransportContract:
         assert redelivered.receive_count == 2
 
     def test_unacked_message_is_redelivered_after_ack_wait(self):
+        if not self.timeout_redelivery:
+            pytest.skip("transport has no timeout-based redelivery (see QueueTransportContract.timeout_redelivery)")
         transport, consumer = self._pair()
         transport.send(QueueName.INPUT, self._msg(body="m1", group_id="s1"))
         [message] = consumer.fetch(10, self.fetch_wait)

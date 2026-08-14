@@ -72,6 +72,10 @@ valkey = [
     "valkey>=6.0.0",
 ]
 
+kafka = [
+    "confluent-kafka>=2.15.0",
+]
+
 thread = [
     "litellm>=1.74.9",
 ]
