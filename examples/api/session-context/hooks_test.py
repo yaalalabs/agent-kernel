@@ -70,8 +70,8 @@ async def test_history_trim_hook_mutates_the_live_framework_session():
     assert returned is reply
     assert trimmed is openai_session
     items = await trimmed.get_items()
-    assert len(items) == 30 - HistoryTrimHook.TRIM_COUNT
-    assert items[0]["content"] == f"msg-{HistoryTrimHook.TRIM_COUNT}"  # oldest items dropped
+    assert len(items) == HistoryTrimHook.THRESHOLD
+    assert items[0]["content"] == f"msg-{30 - HistoryTrimHook.THRESHOLD}"  # oldest items dropped
     assert items[-1]["content"] == "msg-29"  # most recent item retained
 
 
