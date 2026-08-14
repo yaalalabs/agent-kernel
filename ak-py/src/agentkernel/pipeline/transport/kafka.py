@@ -10,14 +10,19 @@ counts and dedup claims.
 
 Two consequences worth knowing before choosing this transport:
 
-- **One record in flight per partition.** A retry has to be able to redeliver a record before
-  any later record from the same partition is processed (offsets commit in order), so the
-  consumer hands out at most one record per partition and buffers the rest. Since Kafka hashes
-  the key to a partition, sessions that share a partition serialize behind each other: stricter
-  than SQS FIFO's per-group blocking. Provision partitions generously (the chart defaults to 32).
+- **Partitions, not sessions, are the unit of parallelism.** Kafka gives each partition to at
+  most one member of a consumer group, and a consumer thread processes its messages one at a
+  time, so two sessions whose keys hash to the same partition are handled one after the other.
+  That is Kafka's model rather than a choice made here: SQS FIFO, by contrast, lets one queue's
+  distinct message groups run concurrently across threads. Concurrency therefore equals the
+  number of consumer threads holding partitions, capped by the partition count, which is why
+  ``check_consumer_capacity`` warns when a topic has fewer partitions than the configured
+  consumers. (The consumer additionally keeps only one record per partition in flight so a retry
+  can redeliver before later offsets commit. That costs no throughput, since the loop processes
+  a batch sequentially anyway; it only turns one batch into several buffer-served fetches.)
 - **No timeout-based redelivery.** An unacked record returns only via nack (in-process retry) or
-  when an uncommitted offset is reassigned after a crash or rebalance. There is no equivalent of
-  a visibility timeout expiring while a worker is alive but stuck.
+  when an uncommitted offset is reassigned after a crash, rebalance, or eviction. There is no
+  equivalent of a visibility timeout expiring while a worker is alive but stuck.
 """
 
 import json
@@ -65,11 +70,14 @@ class KafkaTransportConsumer(TransportConsumer):
         self._producer = producer
         self._retry_backoff = retry_backoff
         self._consumer = Consumer(consumer_config)
-        self._consumer.subscribe([topic])
         # Records fetched from the broker but not yet handed to the loop, per partition.
         self._pending: Dict[int, Deque[Any]] = {}
         # Partitions with a record currently in flight (one at a time: see the module docstring).
         self._in_flight: Dict[int, Any] = {}
+        # Rebalance callbacks run on this thread inside consume(), so they need no locking. They
+        # deliberately do not commit anything: work whose offset has not been committed is meant
+        # to be redelivered to the partition's new owner, which is the at-least-once contract.
+        self._consumer.subscribe([topic], on_revoke=self._on_partitions_gone, on_lost=self._on_partitions_gone)
 
     def fetch(self, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
         if not any(self._pending.values()):
@@ -78,9 +86,20 @@ class KafkaTransportConsumer(TransportConsumer):
 
     def ack(self, message: QueueMessage) -> None:
         record = message.native
-        self._consumer.commit(message=record, asynchronous=False)
-        self._bookkeeping.clear_attempts(self._record_key(record))
-        self._in_flight.pop(record.partition(), None)
+        try:
+            self._consumer.commit(message=record, asynchronous=False)
+        except Exception:
+            # The commit can fail because this consumer no longer owns the partition (a rebalance
+            # or an eviction during a long turn) or because the broker is briefly unreachable.
+            # Processing itself succeeded, so the record is not retried here: the uncommitted
+            # offset means it is redelivered later, by whoever owns the partition then.
+            _log.exception(
+                f"Failed to commit offset for message {message.message_id}: processing succeeded but the offset did not advance, "
+                "so the record will be redelivered after a rebalance or restart"
+            )
+        finally:
+            self._bookkeeping.clear_attempts(self._record_key(record))
+            self._in_flight.pop(record.partition(), None)
 
     def nack(self, message: QueueMessage) -> None:
         """Requeue the record for an in-process retry after a backoff.
@@ -117,6 +136,20 @@ class KafkaTransportConsumer(TransportConsumer):
         self._consumer.close()
 
     # -- internals ---------------------------------------------------------------------------
+
+    def _on_partitions_gone(self, consumer: Consumer, partitions: List[TopicPartition]) -> None:
+        """Drop buffered and in-flight work for partitions this consumer no longer owns.
+
+        Bound to both ``on_revoke`` (a cooperative rebalance) and ``on_lost`` (partitions taken
+        away, e.g. after an eviction). Without this, records fetched into the local buffer would
+        be processed here *and* by the partition's new owner: duplicate work that nothing asked
+        for. Neither callback reassigns partitions, so librdkafka's default handling applies.
+        """
+        for topic_partition in partitions:
+            dropped = len(self._pending.pop(topic_partition.partition, ()))
+            self._in_flight.pop(topic_partition.partition, None)
+            if dropped:
+                _log.info(f"Partition {topic_partition.partition} of {self._topic} revoked: dropped {dropped} buffered record(s)")
 
     def _consume(self, batch_size: int, wait_seconds: float) -> List[Any]:
         """One broker fetch, with Kafka's error records filtered out."""
@@ -198,6 +231,9 @@ class KafkaTransport(QueueTransport):
 
     _producers: Dict[Tuple, Producer] = {}
     _producers_lock = threading.Lock()
+    # Topics whose partition capacity has already been reported (once per process per topic).
+    _capacity_checked: set = set()
+    _capacity_lock = threading.Lock()
 
     def __init__(
         self,
@@ -208,6 +244,7 @@ class KafkaTransport(QueueTransport):
         dlq_suffix: str = ".dlq",
         retry_backoff: float = 2.0,
         delivery_timeout: float = 30.0,
+        metadata_timeout: float = 5.0,
         client_config: Optional[Dict[str, Any]] = None,
         bookkeeping: Optional[BookkeepingStore] = None,
     ):
@@ -217,6 +254,7 @@ class KafkaTransport(QueueTransport):
         self._dlq_suffix = dlq_suffix
         self._retry_backoff = retry_backoff
         self._delivery_timeout = delivery_timeout
+        self._metadata_timeout = metadata_timeout
         self._client_config = dict(client_config or {})
         self._bookkeeping = bookkeeping or BookkeepingStoreFactory.create()
 
@@ -256,6 +294,41 @@ class KafkaTransport(QueueTransport):
 
         record = delivery["record"]
         return {"MessageId": f"{record.topic()}:{record.partition()}:{record.offset()}"}
+
+    def check_consumer_capacity(self, queue: QueueName, num_consumers: int) -> None:
+        """Warn when a topic has fewer partitions than the consumers configured to read it.
+
+        Kafka assigns each partition to at most one group member, so members beyond the partition
+        count sit idle forever: a silent scaling ceiling. Reported once per process per topic;
+        any metadata failure is logged at debug and ignored, since a startup check must never
+        stop the pipeline from starting.
+        """
+        topic = self._topics[queue]
+        cache_key = (self._bootstrap_servers, topic)
+        with self._capacity_lock:
+            if cache_key in self._capacity_checked:
+                return
+            self._capacity_checked.add(cache_key)
+
+        try:
+            metadata = self._get_producer().list_topics(topic=topic, timeout=self._metadata_timeout)
+            topic_metadata = metadata.topics.get(topic)
+            partitions = 0 if topic_metadata is None or topic_metadata.error is not None else len(topic_metadata.partitions)
+        except Exception as e:
+            _log.debug(f"Could not read partition metadata for topic {topic}: {e}")
+            return
+
+        if partitions == 0:
+            _log.warning(f"Topic {topic} is unavailable or has no partitions: it must be provisioned before the pipeline can consume it")
+        elif partitions < num_consumers:
+            _log.warning(
+                f"Topic {topic} has {partitions} partition(s) but {num_consumers} consumer(s) are configured for it: "
+                f"{num_consumers - partitions} will stay idle, because Kafka assigns each partition to one group member. "
+                f"Reduce execution.queues.{queue.value}.no_of_consumers or add partitions (note that adding partitions "
+                "re-maps session keys, briefly disturbing per-session ordering)."
+            )
+        else:
+            _log.info(f"Topic {topic}: {partitions} partition(s) for {num_consumers} configured consumer(s) in this replica")
 
     def create_consumer(self, queue: QueueName) -> KafkaTransportConsumer:
         topic = self._topics[queue]
@@ -307,6 +380,8 @@ class KafkaTransport(QueueTransport):
 
     @classmethod
     def reset(cls) -> None:
-        """Drop the process-wide producer cache. Test isolation only."""
+        """Drop the process-wide producer cache and capacity-report latch. Test isolation only."""
         with cls._producers_lock:
             cls._producers.clear()
+        with cls._capacity_lock:
+            cls._capacity_checked.clear()

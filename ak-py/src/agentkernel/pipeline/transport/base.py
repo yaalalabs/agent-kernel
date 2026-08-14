@@ -27,6 +27,17 @@ class QueueTransport(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement create_consumer")
 
+    def check_consumer_capacity(self, queue: QueueName, num_consumers: int) -> None:
+        """Report, at startup, whether the backend can actually keep ``num_consumers`` busy.
+
+        Backends that bind work to a fixed number of partitions (Kafka, NATS) leave extra
+        consumer threads permanently idle, which is invisible without a check like this. Called
+        once per component start with the configured consumer count; implementations must never
+        raise or block startup on it. Default no-op: transports whose consumers all compete for
+        the same queue (in_memory, SQS) have no such ceiling.
+        """
+        return None
+
 
 class TransportConsumer(ABC):
     """Receive side of a queue transport. One instance per consumer thread: implementations
@@ -143,6 +154,7 @@ class QueueTransportFactory:
                 dlq_suffix=kafka_config.dlq_suffix,
                 retry_backoff=kafka_config.retry_backoff,
                 delivery_timeout=kafka_config.delivery_timeout,
+                metadata_timeout=kafka_config.metadata_timeout,
                 client_config=kafka_config.client_config,
             )
         if transport_type in cls._BUILTIN_TYPES:

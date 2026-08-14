@@ -248,11 +248,29 @@ Client `confluent-kafka` (new `kafka` extra). Per `research/kafka.md`:
   **`max.poll.interval.ms=900000`** (an LLM-bound agent turn easily exceeds librdkafka's 5 min
   default, which would evict the consumer mid-run); `client_config` merges over all of it for
   SASL/TLS/tuning. `fetch` = `consume(num_messages=batch_size, timeout=wait_seconds)`.
+- **Parallelism is per consumer thread, capped by partitions**: Kafka gives a partition to at
+  most one group member and a consumer thread processes messages one at a time, so sessions whose
+  keys hash to the same partition are handled one after another (SQS FIFO, by contrast, runs a
+  queue's distinct groups concurrently). Concurrency therefore equals the number of consumer
+  threads holding partitions: `no_of_consumers x replicas` must stay <= the partition count, and
+  `QueueTransport.check_consumer_capacity(queue, num_consumers)` (new optional hook, default
+  no-op; called from `AgentRunner.start`/`ResponseHandler.start`) reads topic metadata once per
+  process per topic and warns when partitions are fewer than the configured consumers, when the
+  topic is missing, and logs the ratio otherwise. Metadata failures are ignored: a startup check
+  never blocks startup.
 - **One record in flight per partition**: the consumer buffers a fetched batch per partition and
-  hands out at most one record per partition, releasing the next only on `ack`. Required because
-  a retry must be able to redeliver a record before any later offset in that partition is
-  committed. Consequence (accepted, documented): sessions hashed to the same partition serialize,
-  which is stricter than SQS FIFO's per-group lock, so partitions are provisioned generously.
+  hands out at most one record per partition, releasing the next only on `ack`. Required so a
+  retry can redeliver a record before any later offset in that partition is committed. This costs
+  no throughput (the `ConsumerLoop` processes a batch sequentially anyway); it only turns one
+  batch into several buffer-served fetches with no broker round trip.
+- **Rebalance handling**: `subscribe` registers `on_revoke`/`on_lost` callbacks that drop buffered
+  and in-flight records for partitions this consumer no longer owns; without them, locally
+  buffered records would be processed here *and* by the partition's new owner. The callbacks
+  commit nothing (uncommitted work is meant to be redelivered) and never reassign partitions, so
+  librdkafka's default cooperative handling applies. A **failed commit** (lost partition after a
+  rebalance or an eviction during a long turn, or a briefly unreachable broker) is logged and the
+  record is released rather than retried locally: processing already succeeded, and the
+  uncommitted offset means whoever owns the partition next redelivers it.
 - **Receive count + dedup: `BookkeepingStore`** (design decision Q5: follows the session
   storage configuration) built by `BookkeepingStoreFactory`: `redis`/`valkey` session types use
   the shared drivers (`core/util/driver/`) with the session block's connection settings and key

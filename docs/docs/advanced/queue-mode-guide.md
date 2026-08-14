@@ -145,11 +145,14 @@ The IO process runs `IOHandler.run()` (REST API + Response Handler) and the runn
 Three Kafka-specific behaviors worth knowing, all consequences of Kafka having no per-message
 acknowledgement model:
 
-- **Ordering costs a partition.** The record key is the `session_id`, so a session's messages
-  stay ordered. Because a retry must be able to redeliver a record before later offsets in its
-  partition commit, the consumer keeps only one record per partition in flight, which means
-  sessions sharing a partition wait for each other. Provision partitions generously (32 is the
-  chart default) and remember that adding partitions later re-maps keys.
+- **Partitions, not sessions, set your concurrency.** The record key is the `session_id`, so a
+  session's messages stay ordered. Kafka then gives each partition to one consumer thread, which
+  works through it one message at a time, so two sessions sharing a partition wait for each other
+  and threads beyond the partition count never receive work at all. Keep
+  `no_of_consumers x replicas` at or below the partition count (32 is the chart default); Agent
+  Kernel logs the ratio at startup and warns when a topic has too few partitions for the
+  consumers configured against it. Adding partitions later re-maps session keys, so size up
+  front.
 - **Retry bookkeeping follows your session store.** Delivery counts and deduplication are
   reconstructed by Agent Kernel, not the broker. With `session.type: redis` or `valkey` they are
   stored there and survive a pod restart; with any other session type they are process-local and
@@ -158,7 +161,16 @@ acknowledgement model:
 - **No visibility timeout.** An unacknowledged record comes back through the in-process retry or,
   if the pod dies, when its uncommitted offset is reassigned. Nothing redelivers a record while
   the worker is alive but stuck, so `max.poll.interval.ms` defaults to 15 minutes here (rather
-  than librdkafka's 5) to keep a long agent turn from being mistaken for a dead consumer.
+  than librdkafka's 5) to keep a long agent turn from being mistaken for a dead consumer. When a
+  rebalance does take a partition away, buffered work for it is dropped so the new owner is the
+  only one processing it.
+
+A note on offsets: consumers use `auto.offset.reset: earliest`, so a consumer group starting for
+the first time reads a topic from its oldest retained record rather than skipping ahead. That is
+what keeps a cold start from losing requests produced before the consumers were ready, but it
+also means pointing a **new** `group_id` at a topic with history replays that history. Use
+dedicated topics for the pipeline, keep retention short (24-72 hours is plenty), and treat a
+`group_id` change as a deliberate replay.
 
 ---
 

@@ -62,6 +62,7 @@ class AgentRunner:
             every pipeline loop has finished its in-flight work.
         """
         queues = AKConfig.get().execution.queues
+        self._transport.check_consumer_capacity(QueueName.INPUT, queues.input.no_of_consumers)
         ConsumerLoop(
             process=self.process,
             on_permanent_failure=self.on_permanent_failure,

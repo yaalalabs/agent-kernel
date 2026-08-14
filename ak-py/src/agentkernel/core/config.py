@@ -380,6 +380,10 @@ class _KafkaQueueConfig(BaseModel):
     )
     retry_backoff: float = Field(default=2.0, description="Seconds to wait before an in-process retry of a failed record")
     delivery_timeout: float = Field(default=30.0, description="Seconds to wait for the broker to confirm a produced message before failing the send")
+    metadata_timeout: float = Field(
+        default=5.0,
+        description="Seconds to wait for topic metadata during the startup partition-capacity check (the check is skipped on timeout)",
+    )
     client_config: Dict[str, Any] = Field(
         default_factory=dict,
         description="Passthrough settings merged into the confluent-kafka producer and consumer configs (SASL, TLS, tuning)",

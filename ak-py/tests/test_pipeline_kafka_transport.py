@@ -8,10 +8,11 @@ is what murmur2 hashing achieves in practice and keeps the semantics assertions 
 """
 
 import logging
+from collections import deque
 from typing import Any, Dict, List, Optional
 
 import pytest
-from confluent_kafka import KafkaError, KafkaException
+from confluent_kafka import KafkaError, KafkaException, TopicPartition
 
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.envelope import QueueMessage, QueueName
@@ -66,6 +67,17 @@ class FakeError:
         return f"FakeError({self._code})"
 
 
+class FakeTopicMetadata:
+    def __init__(self, partitions: int, error=None):
+        self.partitions = {index: object() for index in range(partitions)}
+        self.error = error
+
+
+class FakeClusterMetadata:
+    def __init__(self, topics: Dict[str, FakeTopicMetadata]):
+        self.topics = topics
+
+
 class FakeCluster:
     """Per-partition append-only logs, fetch positions, and committed offsets."""
 
@@ -76,6 +88,8 @@ class FakeCluster:
         self.partition_overrides: Dict[Optional[bytes], int] = {}
         self._key_partitions: Dict[tuple, int] = {}
         self.injected: List[FakeMessage] = []  # records handed to the next consume() verbatim
+        self.topic_partitions: Dict[str, int] = {}  # topic -> partition count reported by metadata
+        self.metadata_error: Optional[Exception] = None
 
     def partition_for(self, topic: str, key: Optional[bytes]) -> int:
         if key in self.partition_overrides:
@@ -116,6 +130,13 @@ class FakeProducer:
     def flush(self, timeout=None):
         return self.poll(0)
 
+    def list_topics(self, topic=None, timeout=None):
+        if self.cluster.metadata_error is not None:
+            raise self.cluster.metadata_error
+        partitions = self.cluster.topic_partitions.get(topic)
+        topics = {} if partitions is None else {topic: FakeTopicMetadata(partitions)}
+        return FakeClusterMetadata(topics)
+
 
 class FakeConsumer:
     def __init__(self, cluster: FakeCluster, config: Dict[str, Any]):
@@ -123,27 +144,35 @@ class FakeConsumer:
         self.group = config["group.id"]
         self.topics: List[str] = []
         self.closed = False
+        self.commit_error: Optional[Exception] = None
+        self.on_revoke = self.on_lost = None
         self._id = id(self)
 
-    def subscribe(self, topics):
+    def subscribe(self, topics, on_assign=None, on_revoke=None, on_lost=None):
         self.topics = list(topics)
+        self.on_revoke, self.on_lost = on_revoke, on_lost
 
     def consume(self, num_messages=1, timeout=None):
         if self.cluster.injected:
             injected, self.cluster.injected = self.cluster.injected, []
             return injected
 
+        # Like librdkafka, one call can return several records from the same partition: this is
+        # what makes the transport's per-partition buffering observable.
         batch: List[FakeMessage] = []
         for topic in self.topics:
             for partition, log in self.cluster.logs.get(topic, {}).items():
                 position_key = (self._id, topic, partition)
                 index = max(self.cluster.positions.get(position_key, 0), self.cluster.committed.get((self.group, topic, partition), 0))
-                if index < len(log) and len(batch) < num_messages:
+                while index < len(log) and len(batch) < num_messages:
                     batch.append(log[index])
-                    self.cluster.positions[position_key] = index + 1
+                    index += 1
+                    self.cluster.positions[position_key] = index
         return batch
 
     def commit(self, message=None, asynchronous=True):
+        if self.commit_error is not None:
+            raise self.commit_error
         self.cluster.committed[(self.group, message.topic(), message.partition())] = message.offset() + 1
 
     def close(self):
@@ -339,6 +368,119 @@ class TestHeadOfLineBlocking:
         assert next_message.body == "second"
 
 
+class TestRebalance:
+    """A revoked partition's work belongs to its new owner: keeping local copies would duplicate
+    processing that nothing asked for."""
+
+    def _fetched_consumer(self, transport, cluster, bodies=("a", "b")):
+        for body in bodies:
+            transport.send(QueueName.INPUT, QueueMessage(body=body, group_id="s1"))
+        consumer = transport.create_consumer(QueueName.INPUT)
+        [message] = consumer.fetch(10, 0.1)  # one in flight, the rest buffered on that partition
+        return consumer, message
+
+    def test_revocation_drops_buffered_and_in_flight_records(self, cluster):
+        transport = _transport()
+        consumer, message = self._fetched_consumer(transport, cluster)
+        partition = message.native.partition()
+        assert consumer._pending[partition], "the second record is buffered"
+
+        consumer._consumer.on_revoke(consumer._consumer, [TopicPartition(INPUT_TOPIC, partition)])
+
+        assert consumer._pending.get(partition, None) in (None, deque()), "buffered records for a revoked partition are dropped"
+        assert partition not in consumer._in_flight
+        assert consumer.fetch(10, 0.05) == [], "nothing is served from a partition we no longer own"
+
+    def test_lost_partitions_are_treated_the_same(self, cluster):
+        """on_lost fires when partitions are taken away involuntarily, e.g. after an eviction
+        caused by a turn outrunning max.poll.interval.ms."""
+        transport = _transport()
+        consumer, message = self._fetched_consumer(transport, cluster)
+        partition = message.native.partition()
+
+        consumer._consumer.on_lost(consumer._consumer, [TopicPartition(INPUT_TOPIC, partition)])
+
+        assert consumer.fetch(10, 0.05) == []
+
+    def test_other_partitions_are_untouched(self, cluster):
+        transport = _transport()
+        consumer, message = self._fetched_consumer(transport, cluster, bodies=("a", "b"))
+        revoked = message.native.partition()
+        transport.send(QueueName.INPUT, QueueMessage(body="keep", group_id="s2"))  # a different partition
+
+        consumer._consumer.on_revoke(consumer._consumer, [TopicPartition(INPUT_TOPIC, revoked)])
+
+        assert [served.body for served in consumer.fetch(10, 0.1)] == ["keep"]
+
+    def test_revocation_commits_nothing(self, cluster):
+        """Uncommitted work is meant to be redelivered; committing here would mask that."""
+        transport = _transport()
+        consumer, message = self._fetched_consumer(transport, cluster)
+        consumer._consumer.on_revoke(consumer._consumer, [TopicPartition(INPUT_TOPIC, message.native.partition())])
+        assert cluster.committed == {}
+
+
+class TestCommitFailure:
+    def test_failed_commit_releases_the_record_without_local_retry(self, cluster, caplog):
+        """Processing succeeded, so the record is not retried here: the uncommitted offset means
+        whoever owns the partition later redelivers it. Requeueing locally would double the work
+        and, after an eviction, race the partition's new owner."""
+        transport = _transport()
+        transport.send(QueueName.INPUT, QueueMessage(body="body", group_id="s1"))
+        consumer = transport.create_consumer(QueueName.INPUT)
+        [message] = consumer.fetch(10, 0.1)
+        # What a commit after losing the partition looks like (rebalance or eviction).
+        consumer._consumer.commit_error = KafkaException(FakeError(KafkaError.ILLEGAL_GENERATION))
+
+        with caplog.at_level(logging.ERROR, logger="ak.pipeline.transport.kafka"):
+            consumer.ack(message)
+
+        assert any("offset did not advance" in record.message for record in caplog.records)
+        assert message.native.partition() not in consumer._in_flight, "the partition is released either way"
+        assert consumer.fetch(10, 0.05) == [], "the record is not requeued for immediate reprocessing"
+
+
+class TestConsumerCapacity:
+    def test_warns_when_partitions_cannot_keep_consumers_busy(self, cluster, caplog):
+        cluster.topic_partitions = {INPUT_TOPIC: 2}
+        with caplog.at_level(logging.WARNING, logger="ak.pipeline.transport.kafka"):
+            _transport().check_consumer_capacity(QueueName.INPUT, num_consumers=5)
+
+        [warning] = [record for record in caplog.records if record.levelname == "WARNING"]
+        assert "2 partition(s) but 5 consumer(s)" in warning.message
+        assert "3 will stay idle" in warning.message
+
+    def test_no_warning_when_partitions_are_sufficient(self, cluster, caplog):
+        cluster.topic_partitions = {INPUT_TOPIC: 32}
+        with caplog.at_level(logging.INFO, logger="ak.pipeline.transport.kafka"):
+            _transport().check_consumer_capacity(QueueName.INPUT, num_consumers=5)
+        assert [record for record in caplog.records if record.levelname == "WARNING"] == []
+
+    def test_missing_topic_is_reported(self, cluster, caplog):
+        with caplog.at_level(logging.WARNING, logger="ak.pipeline.transport.kafka"):
+            _transport().check_consumer_capacity(QueueName.OUTPUT, num_consumers=1)
+        assert any("must be provisioned" in record.message for record in caplog.records)
+
+    def test_metadata_failure_never_blocks_startup(self, cluster, caplog):
+        cluster.metadata_error = RuntimeError("broker unreachable")
+        with caplog.at_level(logging.WARNING, logger="ak.pipeline.transport.kafka"):
+            _transport().check_consumer_capacity(QueueName.INPUT, num_consumers=5)
+        assert [record for record in caplog.records if record.levelname == "WARNING"] == []
+
+    def test_reported_once_per_topic(self, cluster, caplog):
+        cluster.topic_partitions = {INPUT_TOPIC: 1}
+        with caplog.at_level(logging.WARNING, logger="ak.pipeline.transport.kafka"):
+            _transport().check_consumer_capacity(QueueName.INPUT, num_consumers=5)
+            _transport().check_consumer_capacity(QueueName.INPUT, num_consumers=5)
+        assert len([record for record in caplog.records if record.levelname == "WARNING"]) == 1
+
+    def test_transports_without_a_partition_ceiling_do_nothing(self):
+        """The base hook is a no-op: in_memory and SQS consumers all compete for one queue."""
+        from agentkernel.pipeline.transport.in_memory import InMemoryTransport
+
+        assert InMemoryTransport().check_consumer_capacity(QueueName.INPUT, num_consumers=99) is None
+
+
 class TestClientConfiguration:
     def test_consumer_config_is_manual_commit_and_agent_turn_sized(self, cluster):
         consumer = _transport().create_consumer(QueueName.INPUT)
@@ -379,6 +521,7 @@ class TestFactory:
             dlq_suffix = ".dead"
             retry_backoff = 1.5
             delivery_timeout = 12.0
+            metadata_timeout = 3.0
             client_config = {"security.protocol": "SSL"}
 
         class _Cfg:
