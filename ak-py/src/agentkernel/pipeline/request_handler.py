@@ -18,8 +18,8 @@ from .response_store.handler import ResponseDBHandler
 from .response_store.in_memory import InMemoryResponseStore
 from .transport.base import QueueTransport, QueueTransportFactory
 
-if TYPE_CHECKING:  # QueueHandler stays in deployment.common: typing-only, no runtime coupling
-    from ..deployment.common.queue_handler import QueueHandler
+if TYPE_CHECKING:  # ChatQueueHandler stays in deployment.common: typing-only, no runtime coupling
+    from ..deployment.common.queue_handler import ChatQueueHandler
 
 # Retry budget for awaiting a response when no execution.response_store block is configured:
 # 60 x 1s. Local agent runs are frequently LLM-bound and slow; direct mode waited indefinitely,
@@ -45,8 +45,8 @@ class RestHandler(AgentRESTRequestHandler):
         pass
 
     @abstractmethod
-    def get_queue_handler(self) -> "QueueHandler":
-        """Return the QueueHandler implementation used to enqueue requests."""
+    def get_queue_handler(self) -> "ChatQueueHandler":
+        """Return the ChatQueueHandler implementation used to enqueue requests."""
         pass
 
     def _is_queue_mode(self) -> bool:
@@ -173,7 +173,7 @@ class RestHandler(AgentRESTRequestHandler):
 
 
 class _TransportQueueHandler:
-    """Adapts ``QueueTransport.send`` to the QueueHandler send-side signature RestHandler uses."""
+    """Adapts ``QueueTransport.send`` to the ChatQueueHandler send-side signature RestHandler uses."""
 
     def __init__(self, transport: QueueTransport):
         self._transport = transport

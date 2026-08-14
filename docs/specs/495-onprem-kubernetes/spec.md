@@ -113,9 +113,13 @@ class QueueTransportFactory:
 - The concurrency contract: `QueueTransport.send` must be callable from any thread and the
   uvicorn event loop (always dispatched via `asyncio.to_thread` from async code, as
   `rest_handler.py:56` does today); each `TransportConsumer` instance is single-thread-owned.
-- `QueueHandler` (`deployment/common/queue_handler.py:7`) is **unchanged**: it remains the
-  send-side ABC for the ECS/Lambda legacy path. The pipeline does not implement it; the two meet
-  only at the SQS wire format (§6).
+- The deployment-side contracts stay in `deployment/common/` but are renamed to state what they
+  carry (vs the pipeline's envelope-typed pair above): `QueueHandler` becomes
+  `ChatQueueHandler` (send side, chat-shaped bodies) and `QueueConsumer` becomes
+  `RawQueueConsumer` (receive side, provider-native records). The old names remain as
+  module-level aliases (same objects), so existing imports and subclasses
+  (`SQSHandler`, `LambdaSQSConsumer`, `ECSSQSConsumer`, user code) are unaffected. The pipeline
+  implements neither; the two stacks meet only at the SQS wire format (§5).
 
 ### 3. Generic consumer machinery (`consumer.py`)
 
@@ -536,8 +540,9 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
     improvement.)
 
 **Non-changes**: ECS and Lambda wire behavior, entry points, and exports
-(`deployment/aws/__init__.py` lazy-export table unchanged); `SQSHandler` and `QueueHandler`
-surfaces; SQS FIFO group/dedup mapping; session/thread/multimodal stores; CLI, A2A, MCP
+(`deployment/aws/__init__.py` lazy-export table unchanged); `SQSHandler` and the
+`ChatQueueHandler`/`RawQueueConsumer` surfaces (renamed from `QueueHandler`/`QueueConsumer`,
+old names kept as aliases); SQS FIFO group/dedup mapping; session/thread/multimodal stores; CLI, A2A, MCP
 (`AgentService` direct); Azure/GCP deployments; `AgentRESTRequestHandler` routes and shapes when
 explicitly instantiated.
 

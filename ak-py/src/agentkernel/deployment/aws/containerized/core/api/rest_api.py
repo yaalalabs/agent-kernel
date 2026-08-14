@@ -1,6 +1,6 @@
 from ......api.handler import RESTRequestHandler
 from ......api.http import RESTAPI
-from .....common.queue_handler import QueueHandler
+from .....common.queue_handler import ChatQueueHandler
 from .....common.rest_handler import RestHandler
 from ....core.response_store import ResponseDBHandler
 from ....core.sqs_handler import SQSHandler
@@ -20,7 +20,7 @@ class ECSQueueRequestHandler(RestHandler):
             self._response_store = ResponseDBHandler().get_store()
         return self._response_store
 
-    def get_queue_handler(self) -> QueueHandler:
+    def get_queue_handler(self) -> ChatQueueHandler:
         """Lazily resolve the queue handler."""
         if self._queue_handler is None:
             self._queue_handler = SQSHandler

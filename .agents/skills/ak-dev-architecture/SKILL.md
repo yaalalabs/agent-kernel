@@ -10,7 +10,7 @@ description: >
   (agentkernel.pipeline: QueueMessage/QueueTransport/ConsumerLoop, the in_memory transport,
   AgentRunner/ResponseHandler/RequestHandler/IOHandler, the RESTAPI.run delegation rule, and the
   relocation shims), and the AWS ECS containerized deployment classes
-  (ECSIOHandler, ECSOutputConsumer, ECSAgentRunner, ECSStreamAgentRunner, ECSSQSConsumer, QueueConsumer, ThreadRunner).
+  (ECSIOHandler, ECSOutputConsumer, ECSAgentRunner, ECSStreamAgentRunner, ECSSQSConsumer, RawQueueConsumer, ThreadRunner).
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -501,7 +501,7 @@ ak-py/src/agentkernel/
 ├── deployment/              # Cloud deployment adapters
 │   ├── common/              # Shared across Lambda + ECS
 │   │   ├── thread_runner.py     # SHIM → pipeline/thread_runner.py (keeps os._exit patch target)
-│   │   ├── queue_consumer.py    # QueueConsumer: ABC shared by ECSSQSConsumer + LambdaSQSConsumer
+│   │   ├── queue_consumer.py    # RawQueueConsumer (alias QueueConsumer): ABC shared by ECSSQSConsumer + LambdaSQSConsumer
 │   │   ├── response_store.py    # SHIM → pipeline/response_store/base.py
 │   │   ├── rest_handler.py      # SHIM → pipeline/request_handler.py (keeps AKConfig patch target)
 │   │   └── websocket_service.py # SHIM → pipeline/ws/base.py
@@ -510,7 +510,7 @@ ak-py/src/agentkernel/
 │   │   │   └── core/router/ws_lambda.py  # LambdaWSHandler (renamed from BaseWSHandler): subclasses AWSWebSocketHandler, adds Lambda-event parsing only
 │   │   ├── containerized/   # ECS Fargate handlers
 │   │   │   ├── core/
-│   │   │   │   ├── sqs_consumer.py      # ECSSQSConsumer: extends QueueConsumer: SQS poll loop
+│   │   │   │   ├── sqs_consumer.py      # ECSSQSConsumer: extends RawQueueConsumer: SQS poll loop
 │   │   │   │   └── api/
 │   │   │   │       ├── rest_api.py      # ECSQueueRequestHandler (extends RestHandler), AWSRestAPI (extends RESTAPI)
 │   │   │   │       └── websocket_api.py # ECSWebSocketHandlerBase, ECSWebSocketSystemRequestHandler, ECSWebSocketRequestHandler, AWSWebsocketAPI (extends RESTAPI)
@@ -583,15 +583,15 @@ The containerized deployment runs on ECS Fargate and uses a two-container archit
 
 | Class | File | Role |
 |---|---|---|
-| `QueueConsumer` | `deployment/common/queue_consumer.py` | Abstract base shared by `ECSSQSConsumer` and `LambdaSQSConsumer`: declares `poll`, `process_message`, `on_permanent_failure`, `delete_message` |
-| `ECSSQSConsumer` | `containerized/core/sqs_consumer.py` | Extends `QueueConsumer`: SQS long-poll loop, retry/DLQ logic. Since #495 the machinery is the pipeline's `ConsumerLoop` bound to the SQS classmethod surface: public classmethods, raw-record subclass contract, log messages, and patch targets (`…sqs_consumer.time.sleep`) unchanged |
+| `RawQueueConsumer` (alias `QueueConsumer`) | `deployment/common/queue_consumer.py` | Abstract base shared by `ECSSQSConsumer` and `LambdaSQSConsumer`: declares `poll`, `process_message`, `on_permanent_failure`, `delete_message` |
+| `ECSSQSConsumer` | `containerized/core/sqs_consumer.py` | Extends `RawQueueConsumer`: SQS long-poll loop, retry/DLQ logic. Since #495 the machinery is the pipeline's `ConsumerLoop` bound to the SQS classmethod surface: public classmethods, raw-record subclass contract, log messages, and patch targets (`…sqs_consumer.time.sleep`) unchanged |
 | `ThreadRunner` | `pipeline/thread_runner.py` (shim at `deployment/common/thread_runner.py`) | Runs N callables as peer threads (one `threading.Thread` per `Task`, gated by a `Semaphore`) |
 | `ECSOutputConsumer` | `containerized/akoutputconsumer.py` | Extends `ECSSQSConsumer`: polls Output Queue, writes to DynamoDB or broadcasts via WebSocket |
 | `ECSAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSSQSConsumer`: polls Input Queue, runs the agent, sends to Output Queue. `run()` dispatches to `ECSStreamAgentRunner.run()` when `execution.mode == stream`, re-checked on every call (mirroring `ECSIOHandler.run` and the serverless `ServerlessAgentRunner.handle()`/`ServerlessStreamAgentRunner.handle()` dispatch) |
 | `ECSStreamAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSAgentRunner`: STREAM-mode sibling: fans out each streamed chunk as its own Output Queue message instead of sending one full response |
 | `ECSIOHandler` | `containerized/ecs_io_handler.py` | Entrypoint for the IO container: wires REST/WebSocket API + output consumer as peer threads |
 | `RestHandler` | `pipeline/request_handler.py` (shim at `deployment/common/rest_handler.py`) | Queue-aware `AgentRESTRequestHandler` subclass used by ECS's `ECSQueueRequestHandler` (Lambda's poll path is the separate `rest_lambda.py` router, which uses a JSON body, not query params): `enqueue_and_wait` (`POST /api/v1/chat`, `REST_SYNC` waits on the response store / `REST_ASYNC` returns a `request_id`) and `poll_response` (`GET /api/v1/chat?request_id=...&session_id=...`, query params only: `session_id` is for logging, not validated against the stored reply) |
-| `ECSQueueRequestHandler` | `containerized/core/api/rest_api.py` | Thin `RestHandler` subclass wiring SQS (`QueueHandler`) + `ResponseDBHandler`; routes inherited from `RestHandler.get_router()` |
+| `ECSQueueRequestHandler` | `containerized/core/api/rest_api.py` | Thin `RestHandler` subclass wiring SQS (`ChatQueueHandler`, alias `QueueHandler`) + `ResponseDBHandler`; routes inherited from `RestHandler.get_router()` |
 | `AWSRestAPI` | `containerized/core/api/rest_api.py` | Extends `RESTAPI`; overrides `get_default_handlers()` to default to `ECSQueueRequestHandler`, safe to construct without config |
 | `ECSWebSocketHandlerBase` | `containerized/core/api/websocket_api.py` | Abstract shared base for the two WS handlers: connection store, push-endpoint construction, response envelope, `x-ws-*` headers |
 | `ECSWebSocketSystemRequestHandler` | `containerized/core/api/websocket_api.py` | Framework-managed protocol routes `$connect`/`$disconnect`/`$default`; owns the `AuthValidator` (only `$connect` authenticates). Not an extension point |
@@ -642,8 +642,8 @@ Container 2: ECSAgentRunner
 ### ECSSQSConsumer Contract
 
 - **`get_queue_url(cls) → str`** *(abstract)*: return the SQS queue URL to poll.
-- **`process_message(cls, record)`** *(abstract, from `QueueConsumer`)*: handle one message; called on every successful receive.
-- **`on_permanent_failure(cls, record)`** *(abstract, from `QueueConsumer`)*: called when `ApproximateReceiveCount > max_receive_count`; **must catch its own exceptions**: if it raises, the message is not deleted and loops back.
+- **`process_message(cls, record)`** *(abstract, from `RawQueueConsumer`)*: handle one message; called on every successful receive.
+- **`on_permanent_failure(cls, record)`** *(abstract, from `RawQueueConsumer`)*: called when `ApproximateReceiveCount > max_receive_count`; **must catch its own exceptions**: if it raises, the message is not deleted and loops back.
 - **`delete_message(cls, msg: dict)`** *(public)*: subclasses may call this directly when manual deletion is needed.
 - **`run(cls)`**: blocking poll loop: the container entry-point.
 

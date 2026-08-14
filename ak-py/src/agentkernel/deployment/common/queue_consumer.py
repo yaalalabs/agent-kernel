@@ -2,11 +2,18 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 
-class QueueConsumer(ABC):
+class RawQueueConsumer(ABC):
     """
-    Shared abstract interface for queue-backed consumers, regardless of whether the
-    underlying platform pushes messages to the consumer (e.g. Lambda + SQS Event Source
-    Mapping) or requires the consumer to actively pull them (e.g. ECS long-polling SQS).
+    Shared abstract interface for queue-backed consumers that process raw provider records
+    (e.g. boto3 dicts), regardless of whether the underlying platform pushes messages to the
+    consumer (e.g. Lambda + SQS Event Source Mapping) or requires the consumer to actively
+    pull them (e.g. ECS long-polling SQS).
+
+    This is the deployment adapters' receive-side contract: its defining trait is that
+    subclass overrides receive provider-native records unchanged. The pipeline's generic
+    receive abstraction is ``agentkernel.pipeline.transport.TransportConsumer`` driven by
+    ``agentkernel.pipeline.consumer.ConsumerLoop``, which speaks ``QueueMessage`` envelopes;
+    new transports implement that, not this.
 
     Subclasses implement the four primitives below in whatever way fits their delivery
     model; shared retry/failure semantics (max_receive_count) live on this base class.
@@ -53,3 +60,8 @@ class QueueConsumer(ABC):
         :return: None
         """
         raise NotImplementedError
+
+
+# Backwards-compatible alias: the pre-rename public name. Existing imports and subclasses
+# (`class MyConsumer(QueueConsumer)`) keep working; new code uses RawQueueConsumer.
+QueueConsumer = RawQueueConsumer

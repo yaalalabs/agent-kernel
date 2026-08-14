@@ -4,9 +4,15 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict
 
 
-class QueueHandler(ABC):
+class ChatQueueHandler(ABC):
     """
-    Abstract base class for input/output queue messaging handlers.
+    Abstract base class for the chat-shaped queue send surface: sending chat request/reply
+    bodies (prompt/session_id/agent) to the input and output queues.
+
+    This is the deployment adapters' send-side contract (implemented by SQSHandler, used by the
+    ECS/Lambda queue mode and external producers). The pipeline's generic send abstraction is
+    ``agentkernel.pipeline.transport.QueueTransport``, which speaks ``QueueMessage`` envelopes;
+    the pipeline adapts to this class's call signature without implementing it.
     """
 
     class SendMessageAttributes(BaseModel):
@@ -37,8 +43,8 @@ class QueueHandler(ABC):
     @abstractmethod
     def send_message_to_input_queue(
         cls,
-        message_body: "QueueHandler.QueueMessageBody | Dict[str, Any]",
-        attributes: "QueueHandler.SendMessageAttributes | Dict[str, Any] | None" = None,
+        message_body: "ChatQueueHandler.QueueMessageBody | Dict[str, Any]",
+        attributes: "ChatQueueHandler.SendMessageAttributes | Dict[str, Any] | None" = None,
         request_id: Optional[str] = None,
         user_id: Optional[str] = None,
         custom_message_attributes: Optional[List[Any]] = None,
@@ -63,7 +69,7 @@ class QueueHandler(ABC):
     def send_message_to_output_queue(
         cls,
         message_body: Any,
-        attributes: "QueueHandler.SendMessageAttributes | Dict[str, Any] | None" = None,
+        attributes: "ChatQueueHandler.SendMessageAttributes | Dict[str, Any] | None" = None,
         request_id: Optional[str] = None,
         user_id: Optional[str] = None,
         custom_message_attributes: Optional[List[Any]] = None,
@@ -82,3 +88,8 @@ class QueueHandler(ABC):
         :return: The underlying queue provider's send response
         """
         pass
+
+
+# Backwards-compatible alias: the pre-rename public name. Existing imports and subclasses
+# (`class MyHandler(QueueHandler)`) keep working; new code uses ChatQueueHandler.
+QueueHandler = ChatQueueHandler

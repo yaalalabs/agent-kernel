@@ -3,10 +3,10 @@ import traceback
 from abc import abstractmethod
 from typing import Any, Dict, List
 
-from ....common import QueueConsumer
+from ....common import RawQueueConsumer
 
 
-class LambdaSQSConsumer(QueueConsumer):
+class LambdaSQSConsumer(RawQueueConsumer):
     """
     Base class for AWS Lambda consumers triggered by an SQS Event Source Mapping.
 

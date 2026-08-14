@@ -6,10 +6,10 @@ import boto3
 
 from ....core.config import AKConfig
 from ....pipeline.transport import sqs as sqs_wire
-from ...common.queue_handler import QueueHandler
+from ...common.queue_handler import ChatQueueHandler
 
 
-class SQSHandler(QueueHandler):
+class SQSHandler(ChatQueueHandler):
     """Shared helper for building and sending SQS messages.
 
     When used in a Non-Agent Kernel lambda/environment, the following environment variables
