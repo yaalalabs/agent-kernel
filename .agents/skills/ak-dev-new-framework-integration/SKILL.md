@@ -64,12 +64,13 @@ from agentkernel.core.base import Runner, Session
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
 from agentkernel.core.tool import ToolContext
 
-class <Name>Runner(Runner):
-    FRAMEWORK = "<name>"
+FRAMEWORK = "<name>"
 
+class <Name>Runner(Runner):
     def __init__(self):
-        super().__init__(FRAMEWORK)  # must match the session key below — Session.get_framework_session()
-                                      # resolves it via Agent.current().runner.name
+        # must match the session key below — Session.get_framework_session() resolves it
+        # via Agent.current().runner.name
+        super().__init__(FRAMEWORK)
 
     def _session(self, session: Session) -> <Name>Session:
         """Get or create framework-specific session data."""
