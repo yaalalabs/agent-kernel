@@ -142,6 +142,31 @@ class TestConsumerLoopBody:
         assert consumer.acked == []
 
 
+class TestFetchWaitSlicing:
+    def _run_loop_recording_waits(self, consumer):
+        waits = []
+
+        def recording_fetch(batch_size, wait_seconds):
+            waits.append(wait_seconds)
+            ThreadRunner.shutdown_event.set()
+            return []
+
+        consumer.fetch = recording_fetch
+        _loop(consumer, MagicMock())._consumer_loop()
+        return waits
+
+    def test_default_slices_long_waits_to_one_second(self):
+        """The loop re-checks shutdown_event about once a second by default (spec §3 rule 5)."""
+        assert self._run_loop_recording_waits(FakeConsumer()) == [1.0]
+
+    def test_consumer_declared_slice_lifts_the_cap(self):
+        """A transport whose long polls are billed per call (SQS) declares its own slice and
+        gets the full-length fetch wait."""
+        consumer = FakeConsumer()
+        consumer.fetch_wait_slice_seconds = 20.0
+        assert self._run_loop_recording_waits(consumer) == [20.0]
+
+
 class TestRun:
     def test_run_validates_num_consumers(self):
         with pytest.raises(ValueError, match="num_consumers"):

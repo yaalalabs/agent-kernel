@@ -51,7 +51,11 @@ Coupling rules (numbered, enforced by import direction):
 1. `pipeline` imports `core` and `api` only. `api/handler.py` imports nothing new;
    `api/http.py` imports `pipeline` **lazily inside methods** (same pattern as its existing lazy
    a2a/mcp imports, `api/http.py:105-115`), so no import cycle exists.
-2. `deployment/` imports `pipeline`; nothing in `pipeline` imports `deployment`.
+2. `deployment/` imports `pipeline`; nothing in `pipeline` imports `deployment`. One sanctioned
+   exception: `transport/sqs.py` delegates its send side to `SQSHandler` for ECS wire-format
+   identity (§5). The module is only imported when the `sqs` transport is selected (the factory
+   imports transports lazily), so the coupling never activates for in_memory/kafka/nats
+   deployments and no import cycle exists (`sqs_handler.py` does not import `pipeline`).
 3. Moved modules leave **re-export shims** at their old paths so every existing import keeps
    working: `deployment/common/thread_runner.py`, `deployment/common/response_store.py`,
    `deployment/common/websocket_service.py`, and `deployment/aws/core/response_store/`
@@ -147,8 +151,12 @@ Behavior, byte-equivalent to the ECS semantics:
 4. `async def process` callables are supported via the same `inspect.iscoroutinefunction` +
    `asyncio.run` dispatch as `sqs_consumer.py:119-123`.
 5. Long fetch waits are sliced to ≤1 s per call so `shutdown_event` is observed promptly (a
-   signal-initiated drain must not stall for a full long-poll interval); revisit per-transport
-   when the `sqs` transport lands, since SQS long-poll economics favor a single 20 s wait.
+   signal-initiated drain must not stall for a full long-poll interval). A consumer whose long
+   polls are expensive to slice lifts the cap by declaring
+   `TransportConsumer.fetch_wait_slice_seconds` (default `None` = the loop's 1 s slicing): the
+   SQS consumer declares 20 s, since SQS bills every receive call and 1 s slices would multiply
+   the empty-poll API cost ~20x, accepting a drain that may wait one full poll (within the 30 s
+   default stop grace periods on ECS and Kubernetes).
 
 `ECSSQSConsumer` is rebuilt as a thin shim over `ConsumerLoop` with its public surface unchanged:
 `max_receive_count`/`num_consumers` class attrs, `get_queue_url`, `poll`, `process_message`,
@@ -194,13 +202,16 @@ Process-wide singleton state (one `_InMemoryQueue` per `QueueName`), `threading.
   including the standard `request_id`/`user_id` attributes (`:273-295`), so pipeline producers
   and ECS consumers (or vice versa) interoperate during migration.
 - `TransportConsumer`: one boto3 client per consumer instance; `fetch` = `receive_message` with
-  `MaxNumberOfMessages=batch_size`, `WaitTimeSeconds=wait_seconds`, `AttributeNames=["All"]`,
+  `MaxNumberOfMessages=batch_size`, `WaitTimeSeconds=int(min(wait_seconds, 20))` (boto3 requires
+  an integer; SQS caps long polls at 20 s), `AttributeNames=["All"]`,
   `MessageAttributeNames=["All"]` (as `sqs_consumer.py:66-71`); envelope mapping: `body` =
   `record["Body"]`, `attributes` via `SQSHandler.get_message_custom_attributes`
   (`sqs_handler.py:170`), `group_id` from `Attributes.MessageGroupId`, `receive_count` from
   `Attributes.ApproximateReceiveCount`, `native=record`; `ack` = `delete_message(ReceiptHandle)`;
-  `nack` = no-op (visibility timeout).
-- Queue URLs from the existing `execution.queues.input.url`/`output.url` (`config.py:323,340`).
+  `nack` = no-op (visibility timeout). Declares `fetch_wait_slice_seconds = 20` so the
+  `ConsumerLoop` issues one full-length long poll instead of 1 s slices (§3 rule 5).
+- Queue URLs from the existing `execution.queues.input.url`/`output.url` (`config.py:323,340`);
+  both are required: the factory raises `AKConfigError` when either is missing.
 
 ### 6. Kafka transport (`transport/kafka.py`, `transport/bookkeeping.py`)
 
@@ -345,6 +356,10 @@ behavior exactly):
   `exit_on_shutdown=False`, so each returns after finishing its in-flight work and only
   IOHandler's outer `ThreadRunner.run` exits the process, once every loop has reported in;
   standalone container mains (`AgentRunner.run()`, the ECS classes) keep the exiting default.
+  The handler body lives in `ThreadRunner.install_shutdown_signal_handlers` (shared);
+  `AgentRunner.run()` installs the same handlers (without the uvicorn step), since a standalone
+  runner container in the two-process topology is PID 1 too and must drain on SIGTERM rather
+  than hang until SIGKILL. The ECS classes are unchanged.
 
 **`RESTAPI` default wiring** (`api/http.py`): `run()` gains a pipeline delegation guard ahead of
 its current body: it lazily imports and delegates to `IOHandler.run()` **only when all three
@@ -498,7 +513,10 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
     uvicorn stops, the process exits. Pre-pipeline this worked implicitly because uvicorn ran on
     the main thread; the pipeline flip had regressed container stop to a hang on PID-1 runtimes
     with no SIGKILL escalation (the `examples/containerized/openai` harness) and to ungraceful
-    SIGKILL-after-grace on orchestrators. Ctrl+C on a local run also now exits cleanly.
+    SIGKILL-after-grace on orchestrators. Ctrl+C on a local run also now exits cleanly. The
+    standalone `AgentRunner.run()` container main installs the same handlers (drain in-flight
+    runs, exit 0). SQS consumers drain within one full long-poll interval (≤20 s, §3 rule 5)
+    rather than the ≤1 s slice of other transports.
 11. Bug fix exposed by the pipeline's thread-based execution:
     `AgentHandler._run_async_sync` (`core/chat_service.py`) previously wrapped
     `run_until_complete(coro)` in `except RuntimeError: asyncio.run(coro)`, so an agent's own
@@ -616,9 +634,13 @@ New test files (patterns per `ak-dev-testing-conventions`: `DummyAgent`/`DummyRu
 - `test_transport_contract.py`: a reusable `QueueTransportContract` (the
   `SandboxProviderContract` pattern, `sandbox/testing.py`) asserting the six queue-semantics
   requirements from `research/current-queue-mode.md`; run against `in_memory` in-repo; `sqs` via
-  mocked boto3; the same class is reused by integration CI against real Kafka/NATS containers.
+  mocked boto3 (the subclass lives in `test_pipeline_sqs_transport.py`, next to its in-memory
+  FIFO fake of the boto3 client); the same class is reused by integration CI against real
+  Kafka/NATS containers.
 - `test_pipeline_sqs_transport.py`: envelope mapping from boto3 records, send-side kwargs
-  equality with `SQSHandler.build_send_message_kwargs` output.
+  equality with `SQSHandler.build_send_message_kwargs` output, long-poll parameters
+  (integer `WaitTimeSeconds`, unsliced 20 s wait), factory URL resolution, plus the contract
+  suite over the mocked-boto3 FIFO fake.
 - `test_pipeline_kafka_transport.py`: faked `confluent_kafka.Consumer/Producer`: header/key
   mapping, commit-after-ack, seek+pause on nack, DLQ produce on permanent failure, bookkeeping
   fallback WARNING when session type is in_memory.

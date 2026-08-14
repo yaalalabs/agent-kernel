@@ -93,6 +93,10 @@ class QueueTransportContract:
         transport.send(QueueName.INPUT, self._msg(body="m1", group_id="s1"))
         [message] = consumer.fetch(10, self.fetch_wait)
         consumer.nack(message)
+        # The contract requires redelivery no later than the transport's own mechanism allows:
+        # in_memory requeues on nack immediately; SQS nack is a no-op and the visibility timeout
+        # (force_redelivery) does the requeue.
+        self.force_redelivery()
         [redelivered] = consumer.fetch(10, self.fetch_wait)
         assert redelivered.body == "m1"
         assert redelivered.receive_count == 2

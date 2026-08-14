@@ -1,6 +1,4 @@
 import logging
-import signal
-import threading
 from typing import Optional
 
 import uvicorn
@@ -83,25 +81,16 @@ class IOHandler:
     def _install_signal_handlers(cls, server: uvicorn.Server) -> None:
         """Restore container-grade shutdown for the pipeline topology (spec §8).
 
-        As a container's PID 1, a process with no SIGTERM handler never dies (the kernel drops
-        default-disposition signals to PID 1), so `docker stop`/pod termination would hang until
-        SIGKILL, and runtimes that never escalate would hang forever. The handler drains the
-        pipeline gracefully: consumer loops observe `ThreadRunner.shutdown_event`, uvicorn stops
-        via `should_exit`, and the ThreadRunner drain exits with code 0 (an orchestrated stop is
-        not a failure).
+        Delegates to the shared ThreadRunner handler (which covers the PID-1 rationale and the
+        exit-code-0 drain), adding the IOHandler-specific step: stopping the embedded uvicorn
+        server via ``should_exit``, since uvicorn installs its own handlers only when it runs on
+        the main thread and here it runs on the rest-api worker thread.
         """
-        if threading.current_thread() is not threading.main_thread():
-            cls._log.warning("IOHandler is not running on the main thread; skipping signal handlers")
-            return
 
-        def _handle_shutdown_signal(signum: int, frame) -> None:
-            cls._log.info(f"Received signal {signum}: shutting down the pipeline gracefully")
-            ThreadRunner.shutdown_exit_code = 0
-            ThreadRunner.shutdown_event.set()
+        def _stop_uvicorn() -> None:
             server.should_exit = True
 
-        for shutdown_signal in (signal.SIGTERM, signal.SIGINT):
-            signal.signal(shutdown_signal, _handle_shutdown_signal)
+        ThreadRunner.install_shutdown_signal_handlers(cls._log, on_shutdown_signal=_stop_uvicorn)
 
     @classmethod
     def _validate_topology(cls, mode: Optional[ExecutionMode], transport_type: str, config) -> None:

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, List
+from typing import Any, List, Optional
 
 from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError, resolve_dotted
@@ -32,6 +32,13 @@ class TransportConsumer(ABC):
     """Receive side of a queue transport. One instance per consumer thread: implementations
     need not be thread-safe across instances, only self-contained."""
 
+    # Cap on how long one ``fetch`` may block before the consumer loop re-checks the shutdown
+    # event. None accepts the loop's default slicing (about 1 s), which keeps graceful drains
+    # prompt. Transports whose long polls are expensive to slice (SQS bills every receive call)
+    # override this with their native long-poll ceiling, accepting a drain that may wait one
+    # full poll.
+    fetch_wait_slice_seconds: Optional[float] = None
+
     @abstractmethod
     def fetch(self, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
         """Fetch up to ``batch_size`` messages, blocking up to ``wait_seconds`` (long poll).
@@ -61,10 +68,11 @@ class TransportConsumer(ABC):
 class QueueTransportFactory:
     """Resolves ``execution.queues.type`` to a transport (#541 house pattern).
 
-    ``in_memory`` is available; the remaining built-ins (``sqs``, ``kafka``, ``nats``) arrive
-    over later #495 iterations, and selecting one before it lands raises :class:`AKConfigError`.
-    Any other value is treated as a dotted path to a :class:`QueueTransport` subclass
-    (bring-your-own), which must also implement ``create_consumer``.
+    ``in_memory`` and ``sqs`` are available; the remaining built-ins (``kafka``, ``nats``)
+    arrive over later #495 iterations, and selecting one before it lands raises
+    :class:`AKConfigError`. Any other value is treated as a dotted path to a
+    :class:`QueueTransport` subclass (bring-your-own), which must also implement
+    ``create_consumer``.
     """
 
     _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats")
@@ -99,6 +107,15 @@ class QueueTransportFactory:
                 ack_wait=in_memory_cfg.ack_wait if in_memory_cfg is not None else DEFAULT_ACK_WAIT_SECONDS,
                 dedup_window=in_memory_cfg.dedup_window if in_memory_cfg is not None else DEFAULT_DEDUP_WINDOW_SECONDS,
             )
+        if transport_type == "sqs":
+            from .sqs import SQSTransport
+
+            queues = AKConfig.get().execution.queues
+            input_url = queues.input.url if queues is not None else None
+            output_url = queues.output.url if queues is not None else None
+            if not input_url or not output_url:
+                raise AKConfigError("the sqs transport requires both execution.queues.input.url and execution.queues.output.url")
+            return SQSTransport(input_url=input_url, output_url=output_url)
         if transport_type in cls._BUILTIN_TYPES:
             raise AKConfigError(f"queue transport '{transport_type}' is not available yet (ships in a later #495 iteration)")
         return resolve_dotted(transport_type, base=QueueTransport)()

@@ -92,14 +92,19 @@ class ConsumerLoop:
         )
 
     # Long fetch waits are sliced so the loop re-checks shutdown_event about once a second: a
-    # signal-initiated drain must not stall for a full long-poll interval. Revisit per-transport
-    # when the sqs transport lands (SQS long-poll economics favor a single 20 s wait).
+    # signal-initiated drain must not stall for a full long-poll interval. A consumer whose long
+    # polls are expensive to slice raises its own cap via
+    # ``TransportConsumer.fetch_wait_slice_seconds`` (SQS bills every receive call, so it takes
+    # a single 20 s wait and the slower drain).
     _MAX_FETCH_WAIT_SLICE_SECONDS = 1.0
 
     def _consumer_loop(self) -> None:
         """One consumer thread: fetch batches and process them until shutdown."""
         consumer = self._consumer_factory()
-        fetch_wait = min(self._wait_seconds, self._MAX_FETCH_WAIT_SLICE_SECONDS)
+        slice_cap = consumer.fetch_wait_slice_seconds
+        if slice_cap is None:
+            slice_cap = self._MAX_FETCH_WAIT_SLICE_SECONDS
+        fetch_wait = min(self._wait_seconds, slice_cap)
         try:
             while not ThreadRunner.shutdown_event.is_set():
                 try:

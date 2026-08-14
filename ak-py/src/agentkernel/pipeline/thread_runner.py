@@ -1,9 +1,10 @@
 import logging
 import os
+import signal
 import threading
 from dataclasses import dataclass
 from queue import Queue
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 _log = logging.getLogger("ak.thread_runner")
 
@@ -20,8 +21,39 @@ class ThreadRunner:
 
     shutdown_event: threading.Event = threading.Event()
     # Exit code used when a graceful drain completes. Failure-initiated shutdowns leave it at 1;
-    # an orchestrated stop (the pipeline IOHandler's SIGTERM/SIGINT handler) sets it to 0 first.
+    # an orchestrated stop (the SIGTERM/SIGINT handler below) sets it to 0 first.
     shutdown_exit_code: int = 1
+
+    @classmethod
+    def install_shutdown_signal_handlers(cls, logger: logging.Logger, on_shutdown_signal: Optional[Callable[[], None]] = None) -> None:
+        """Install SIGTERM/SIGINT handlers that start a graceful drain with exit code 0.
+
+        Required for any pipeline process that runs as a container's PID 1: the kernel drops
+        default-disposition signals to PID 1, so without a handler the process never receives
+        SIGTERM at all and `docker stop`/pod termination hangs until SIGKILL. The handler sets
+        ``shutdown_event`` (consumer loops finish their in-flight work and return) and marks the
+        drain exit code 0: an orchestrated stop is not a failure.
+
+        :param logger: Logger the installing component owns; signals are logged on it.
+        :param on_shutdown_signal: Optional extra shutdown step run inside the handler (e.g.
+            stopping an embedded uvicorn server via ``should_exit``).
+
+        Installation is skipped (with a warning) off the main thread: Python only allows signal
+        handler registration on the main thread.
+        """
+        if threading.current_thread() is not threading.main_thread():
+            logger.warning("Not running on the main thread; skipping shutdown signal handlers")
+            return
+
+        def _handle_shutdown_signal(signum: int, frame) -> None:
+            logger.info(f"Received signal {signum}: shutting down gracefully")
+            cls.shutdown_exit_code = 0
+            cls.shutdown_event.set()
+            if on_shutdown_signal is not None:
+                on_shutdown_signal()
+
+        for shutdown_signal in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(shutdown_signal, _handle_shutdown_signal)
 
     @dataclass(eq=False)
     class Task:

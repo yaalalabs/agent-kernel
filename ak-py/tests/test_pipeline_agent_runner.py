@@ -1,4 +1,5 @@
 import json
+import signal
 from unittest.mock import MagicMock
 
 import pytest
@@ -88,6 +89,41 @@ class TestAgentRunner:
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
         with pytest.raises(AKConfigError, match="IOHandler"):
             AgentRunner.run()
+
+
+class TestRunSignalHandlers:
+    @pytest.fixture(autouse=True)
+    def _restore_signal_state(self):
+        previous = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGINT)}
+        yield
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+        ThreadRunner.shutdown_exit_code = 1
+
+    def test_run_installs_graceful_drain_handlers(self, monkeypatch):
+        """A standalone runner container is PID 1: run() must install the SIGTERM/SIGINT drain
+        handlers itself (IOHandler is not there to do it in the two-process topology)."""
+
+        class _Cfg:
+            class execution:
+                mode = None
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+        monkeypatch.setattr(QueueTransportFactory, "create", classmethod(lambda cls: MagicMock()))
+        started = []
+        monkeypatch.setattr(AgentRunner, "start", lambda self, exit_on_shutdown=True: started.append(exit_on_shutdown))
+
+        AgentRunner.run()
+
+        assert started == [True], "a standalone main keeps the drain-then-exit default"
+        handler = signal.getsignal(signal.SIGTERM)
+        assert callable(handler)
+        assert signal.getsignal(signal.SIGINT) is handler
+
+        handler(signal.SIGTERM, None)
+        assert ThreadRunner.shutdown_event.is_set()
+        assert ThreadRunner.shutdown_exit_code == 0
 
 
 class TestStreamAgentRunner:
