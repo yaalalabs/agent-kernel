@@ -1,11 +1,13 @@
 # OpenAI Hooks Demo
 
-This example demonstrates the use of **pre-execution hooks** and **post-execution hooks** in Agent Kernel with OpenAI agents. It showcases four important hook patterns:
+This example demonstrates the use of **pre-execution hooks** and **post-execution hooks** in Agent Kernel with OpenAI agents. It showcases three important hook patterns:
 
 1. **Guard Rail Hook** (Pre-hook) - Input validation and content filtering
 2. **RAG Hook** (Pre-hook) - Retrieval-Augmented Generation (context injection)
 3. **Disclaimer Hook** (Post-hook) - Adding disclaimers to agent responses
-4. **History Trim Hook** (Post-hook) - Capping the framework-native session history via `Session.get_framework_session()`
+
+For an example that reaches the framework-native session object via `Session.get_framework_session()`,
+see [`examples/api/session-context`](../session-context/README.md).
 
 ## Features
 
@@ -27,14 +29,6 @@ The disclaimer hook adds compliance messages to agent responses:
 - Reminds users that responses are AI-generated
 - Encourages verification for critical decisions
 
-### History Trim Hook (Post-hook)
-The history trim hook bounds the OpenAI Agents SDK's own raw conversation history (not the AK
-`Session` cache) as a session grows: once it exceeds `THRESHOLD` items, the oldest `TRIM_COUNT`
-items are dropped after every turn:
-- Calls `session.get_framework_session()` to reach the framework-native session object directly
-- Trims it via its own `get_items()` / `clear_session()` / `add_items()` methods
-- Needs no `session.set(...)` call afterward — see [Key Concepts](#framework-session-access) below
-
 ### Hook Chaining
 The example demonstrates **hook chaining** where multiple hooks are executed in sequence:
 
@@ -43,14 +37,12 @@ The example demonstrates **hook chaining** where multiple hooks are executed in 
 2. **Guard Rail Hook** runs second to validate the enriched prompt
 
 **Post-execution hooks:**
-3. **Disclaimer Hook** runs first to add a disclaimer to the reply
-4. **History Trim Hook** runs after to cap the framework-native session history
+3. **Disclaimer Hook** runs after the agent generates a response to add a disclaimer
 
 This order ensures that:
 - Context is added to all safe queries
 - Inappropriate content is blocked even after context injection
 - All successful responses include a disclaimer
-- The underlying OpenAI session history never grows unbounded
 
 ## How It Works
 
@@ -67,8 +59,8 @@ module.pre_hook(qa_assistant_agent, [RAGHook(), GuardRailHook()])
 
 ### Post-Execution Hooks
 ```python
-# Register post-execution hooks: add a disclaimer, then trim the framework session history
-module.post_hook(qa_assistant_agent, [DisclaimerHook(), HistoryTrimHook()])
+# Register post-execution hooks to add disclaimer
+module.post_hook(qa_assistant_agent, [DisclaimerHook()])
 ```
 
 ## Running the Example
@@ -156,9 +148,8 @@ The test suite validates:
 ```
 hooks/
 ├── app.py           # Main application with agent and hook registration
-├── hooks.py         # GuardRailHook, RAGHook, DisclaimerHook, and HistoryTrimHook implementations
-├── app_test.py      # Automated end-to-end test suite (drives the real OpenAI Agents SDK over HTTP)
-├── hooks_test.py     # Network-free unit test for HistoryTrimHook / get_framework_session()
+├── hooks.py         # GuardRailHook, RAGHook, and DisclaimerHook implementations
+├── app_test.py      # Automated test suite
 ├── demonstration.py # Demonstration script
 ├── pyproject.toml   # Project dependencies
 ├── build.sh         # Build script
@@ -211,19 +202,6 @@ class MyPostHook(PostHook):
 ```
 
 **Note:** Hook methods are async, allowing you to perform asynchronous operations like database queries, API calls, or vector searches.
-
-### Framework Session Access
-
-`Session.get_framework_session()` returns the framework-native session object for whichever
-agent is currently executing (it reads `Agent.current().runner.name`, e.g. `"openai"`, and looks
-that key up in the session). This is a **live reference**, not a copy: `Session.get()`/`set()`
-just read and write a plain `dict` of object references (`ak-py/src/agentkernel/core/base.py`), so
-mutating the returned object through its own methods (as `HistoryTrimHook` does with
-`clear_session()`/`add_items()`) updates what's stored immediately — no `session.set(...)`
-call is needed afterward.
-
-It can only be called while an agent is executing (inside a hook or a tool) — calling it with no
-agent running raises `RuntimeError`, since there'd be no framework key to resolve.
 
 ### Hook Execution Order
 Hooks execute in the order registered:

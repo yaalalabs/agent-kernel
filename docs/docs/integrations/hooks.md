@@ -172,8 +172,8 @@ it only works from inside a hook or a tool — where an agent is actually execut
 no `session.set(...)` call needed. See
 [Session → Accessing the current framework session](../core-concepts/session.md#framework-session-access)
 for the full contract, and
-[`examples/api/hooks`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hooks) for
-the complete `HistoryTrimHook` example, which caps the OpenAI Agents SDK's raw conversation history
+[`examples/api/session-context`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/session-context)
+for the complete `HistoryTrimHook` example, which caps the OpenAI Agents SDK's raw conversation history
 after every turn.
 
 ### Structured Replies in Hooks
@@ -780,20 +780,23 @@ See the complete hooks demonstration in the repository:
 📁 **[examples/api/hooks/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hooks)**
 
 This example includes:
-- `hooks.py` - GuardRailHook, RAGHook, DisclaimerHook, and HistoryTrimHook implementations
+- `hooks.py` - GuardRailHook, RAGHook, and DisclaimerHook implementations
 - `app.py` - Agent setup with hook registration
 - `app_test.py` - Automated end-to-end test suite (drives the real OpenAI Agents SDK over HTTP)
-- `hooks_test.py` - Network-free unit test for `HistoryTrimHook` / `get_framework_session()`
 - `demonstration.py` - Direct execution example
 - `README.md` - Detailed documentation
 
 **Key Features Demonstrated:**
 - ✅ Guardrail blocking inappropriate requests
 - ✅ RAG context injection from knowledge base
-- ✅ Hook chaining (RAG → GuardRail pre-hooks, Disclaimer → HistoryTrim post-hooks)
+- ✅ Hook chaining (RAG → GuardRail pre-hooks)
 - ✅ Input validation (length limits, keyword filtering)
-- ✅ Capping framework-native session history via `session.get_framework_session()`
 - ✅ Automated testing of hook behavior
+
+For capping framework-native session history via `session.get_framework_session()`, see
+📁 **[examples/api/session-context/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/session-context)**
+(`hooks.py` - `HistoryTrimHook`; `hooks_test.py` - network-free unit test for
+`HistoryTrimHook` / `get_framework_session()`).
 
 ### Running the Example
 
