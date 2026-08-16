@@ -303,7 +303,7 @@ graph TD
 
 #### Diagrams
 
-REST Sync, REST Async, and Streaming/SSE:
+REST Sync, REST Async
 
 ```mermaid
 graph TD
@@ -328,7 +328,7 @@ graph TD
     end
 ```
 
-Async (WebSocket):
+Async and Stream (WebSocket):
 
 ```mermaid
 graph TD

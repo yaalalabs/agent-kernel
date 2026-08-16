@@ -330,6 +330,9 @@ receives the reply either by **polling** the response store (`rest_sync` waits s
 `rest_async` polls with a `request_id`), by **SSE** (`stream` on the REST surface), or by
 **WebSocket push** (`async`/`stream` on AWS today).
 
+This decouples request ingestion from agent execution so each scales, fails, and recovers on its
+own terms.
+
 ## Next Steps
 
 - [Execution Flow](./execution-flow): request lifecycle across all execution modes

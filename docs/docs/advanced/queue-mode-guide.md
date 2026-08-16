@@ -23,12 +23,21 @@ where the queues are durable SQS FIFO queues.
 Queue mode decouples the HTTP request from the agent processing by placing a queue between the
 caller and the Agent Runner. This gives you:
 
+- **Independent scaling**: the request/response path and the Agent Runner pool scale separately,
+  instead of being sized as one unit for whichever workload is heavier.
 - **Backpressure control**: the queue absorbs burst traffic.
 - **Ordered processing per session**: the message group (`session_id`) keeps chat turns in order
-  while different sessions run in parallel.
-- **Automatic retries**: unacknowledged messages are redelivered, up to `max_receive_count`;
-  after that a permanent-failure error is delivered so the caller never hangs.
-- **Deduplication**: a per-request deduplication ID prevents the same message being processed twice.
+  while different sessions run fully in parallel.
+- **Crash resilience**: a message is only removed from the queue once fully processed, so a
+  worker crashing, restarting, or hanging mid-turn leaves the turn on the queue for another worker.
+- **Automatic retries**: unacknowledged messages are redelivered, up to `max_receive_count`,
+  absorbing provider rate limits and transient upstream failures without the caller having to
+  notice or retry; after that a permanent-failure error is delivered so the caller never hangs.
+- **Capped provider concurrency**: how hard the model provider gets hit is set by the number of
+  consumers draining the queue, not by request arrival rate: a spike lengthens the queue instead
+  of fanning out into simultaneous provider calls.
+- **Deduplication**: a per-request deduplication ID prevents the same message from being processed
+  (or appended to conversation history) twice, so retries are safe.
 
 The queue transport is pluggable via `execution.queues.type`:
 
