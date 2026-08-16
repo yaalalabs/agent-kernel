@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import contextvars
 import copy
 import logging
@@ -92,6 +93,7 @@ class Session:
         """
         await self._lock.acquire()
         try:
+            # Same receipt pattern as Agent._activate, but stored on self since set/reset happen in two separate method calls, not one function.
             self._token = Session.current_session.set(self)
             return self
         except Exception:
@@ -112,7 +114,7 @@ class Session:
         :raises: Any exceptions that may occur during lock release or session resetting.
         """
         try:
-            if self._token:
+            if self._token:  # Use the stored receipt to undo exactly this session's set() call.
                 Session.current_session.reset(self._token)
         finally:
             self._token = None
@@ -161,6 +163,25 @@ class Session:
         :return: The non-volatile KeyValueCache instance.
         """
         return cast(KeyValueCache, self.get(Session.Keys.NON_VOLATILE_CACHE.value))
+
+    def get_framework_session(self) -> Any:
+        """
+        Returns this session's framework-native session data for the currently running agent,
+        keyed by that agent's runner name (e.g. "openai", "langgraph") — the same key each
+        framework adapter uses to store its own session data via set()/get().
+        :return: The stored framework session object, or None if nothing has been stored yet.
+        :raises RuntimeError: If called with no agent currently running (Agent.current() is
+        None) — this can only be resolved from within a running agent's execution (e.g. a
+        hook or tool), since the framework key comes from the current agent's runner.
+        """
+        agent = Agent.current()
+        if agent is None:
+            raise RuntimeError(
+                "Session.get_framework_session() requires a currently running agent "
+                "(Agent.current() is None); call it only from within an agent's execution, "
+                "e.g. a hook or tool."
+            )
+        return self.get(agent.runner.name)
 
     def get_framework_context(self) -> dict | None:
         """
@@ -373,6 +394,17 @@ class Agent(ABC):
     framework.
     """
 
+    current_agent: ClassVar[contextvars.ContextVar["Agent | None"]] = contextvars.ContextVar("current_agent", default=None)
+
+    @classmethod
+    def current(cls) -> "Agent | None":
+        """
+        Returns the agent currently executing in this context (set for the duration of a
+        Runtime.run()/Runtime.stream() call), or None if no agent is currently running.
+        :return: The current Agent instance, or None.
+        """
+        return cls.current_agent.get()
+
     def __init__(self, name: str, runner: Runner):
         """
         Initializes an Agent instance.
@@ -418,6 +450,23 @@ class Agent(ABC):
         Returns the list of post-execution hooks registered for the agent.
         """
         return self._post_hooks
+
+    @contextlib.contextmanager
+    def _activate(self) -> Iterator[Self]:
+        """
+        Sets this agent as the current agent (Agent.current()) for the duration of the context.
+        Token-based set/reset, so nested activations within the same context (e.g. a future
+        agent-as-tool/handoff calling back into Runtime.run()/stream() for another agent) restore
+        the previous value on exit rather than clobbering it.
+        """
+        # behaviour of below is same as Session __aenter__ __aexit__ code behaviour
+        # token is a receipt for this exact set() call, used below to undo precisely this change (not just "set back to old value").
+        token = Agent.current_agent.set(self)
+        try:
+            yield self  # From this point until reset below, Agent.current() returns self (the instace that called this _activate function) anywhere in this call chain (any file/module).
+        finally:
+            # Restore the previous agent, even on error, so nested activations don't clobber it.
+            Agent.current_agent.reset(token)
 
     @abstractmethod
     def get_description(self) -> str:

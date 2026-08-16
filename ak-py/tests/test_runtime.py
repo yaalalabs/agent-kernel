@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -739,3 +740,126 @@ async def test_stream_pre_hook_halt_with_structured_reply(monkeypatch):
     assert chunks[0].done is True
     assert chunks[0].error == json.dumps({"blocked": "yes"})
     assert runner.was_called is False
+
+
+class CurrentAgentSpyRunner(Runner):
+    """Records what Agent.current() reports while run()/stream() are executing."""
+
+    def __init__(self, name):
+        super().__init__(name)
+        self.seen_during_run = "<not run>"
+
+    async def run(self, agent, session, requests):
+        self.seen_during_run = Agent.current()
+        return AgentReplyText(response="ok")
+
+    async def stream(self, agent, session, requests):
+        for token in ("a", "b", "c"):
+            self.seen_during_run = Agent.current()
+            yield token
+
+
+class FailingRunner(Runner):
+    async def run(self, agent, session, requests):
+        raise RuntimeError("boom")
+
+    async def stream(self, agent, session, requests):
+        raise RuntimeError("boom")
+        yield
+
+
+def test_agent_current_default_none():
+    assert Agent.current() is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_run_sets_and_resets_current_agent(monkeypatch):
+    runtime = _in_memory_runtime(monkeypatch)
+    runner = CurrentAgentSpyRunner("spy")
+    agent = StructuredDummyAgent("agent", runner)
+    runtime.register(agent)
+    session = runtime.sessions().new("s-current-1")
+
+    assert Agent.current() is None
+    await runtime.run(agent, session, [AgentRequestText(prompt="ping")])
+    assert runner.seen_during_run is agent
+    assert Agent.current() is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_run_resets_current_agent_on_exception(monkeypatch):
+    runtime = _in_memory_runtime(monkeypatch)
+    agent = StructuredDummyAgent("failing", FailingRunner("failing-runner"))
+    runtime.register(agent)
+    session = runtime.sessions().new("s-current-2")
+
+    with pytest.raises(RuntimeError):
+        await runtime.run(agent, session, [AgentRequestText(prompt="ping")])
+    assert Agent.current() is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_stream_sets_and_resets_current_agent(monkeypatch):
+    runtime = _in_memory_runtime(monkeypatch)
+    runner = CurrentAgentSpyRunner("spy-stream")
+    agent = StructuredDummyAgent("agent-stream", runner)
+    runtime.register(agent)
+    session = runtime.sessions().new("s-current-3")
+
+    assert Agent.current() is None
+    chunks = [chunk async for chunk in runtime.stream(agent, session, [AgentRequestText(prompt="anything")])]
+    assert any(c.delta is not None for c in chunks)
+    assert runner.seen_during_run is agent
+    assert Agent.current() is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_stream_resets_current_agent_on_exception(monkeypatch):
+    runtime = _in_memory_runtime(monkeypatch)
+    agent = StructuredDummyAgent("failing-stream", FailingRunner("failing-stream-runner"))
+    runtime.register(agent)
+    session = runtime.sessions().new("s-current-4")
+
+    with pytest.raises(RuntimeError):
+        async for _ in runtime.stream(agent, session, [AgentRequestText(prompt="anything")]):
+            pass
+    assert Agent.current() is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_runs_do_not_leak_current_agent_across_tasks(monkeypatch):
+    """Two agents run() concurrently in separate asyncio tasks must not see each other's Agent.current()."""
+    runtime = _in_memory_runtime(monkeypatch)
+
+    class InterleavedRunner(Runner):
+        def __init__(self, name):
+            super().__init__(name)
+            self.observed = []
+
+        async def run(self, agent, session, requests):
+            self.observed.append(Agent.current())
+            await asyncio.sleep(0)  # yield control so the other task can run interleaved
+            self.observed.append(Agent.current())
+            return AgentReplyText(response="ok")
+
+        async def stream(self, agent, session, requests):
+            raise NotImplementedError()
+            yield
+
+    runner_a = InterleavedRunner("runner-a")
+    runner_b = InterleavedRunner("runner-b")
+    agent_a = StructuredDummyAgent("agent-a", runner_a)
+    agent_b = StructuredDummyAgent("agent-b", runner_b)
+    runtime.register(agent_a)
+    runtime.register(agent_b)
+    session_a = runtime.sessions().new("s-current-5a")
+    session_b = runtime.sessions().new("s-current-5b")
+
+    await asyncio.gather(
+        runtime.run(agent_a, session_a, [AgentRequestText(prompt="a")]),
+        runtime.run(agent_b, session_b, [AgentRequestText(prompt="b")]),
+    )
+
+    assert runner_a.observed == [agent_a, agent_a]
+    assert runner_b.observed == [agent_b, agent_b]
+    assert Agent.current() is None

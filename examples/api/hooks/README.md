@@ -6,6 +6,9 @@ This example demonstrates the use of **pre-execution hooks** and **post-executio
 2. **RAG Hook** (Pre-hook) - Retrieval-Augmented Generation (context injection)
 3. **Disclaimer Hook** (Post-hook) - Adding disclaimers to agent responses
 
+For an example that reaches the framework-native session object via `Session.get_framework_session()`,
+see [`examples/cli/session-context`](../../cli/session-context/README.md).
+
 ## Features
 
 ### Guard Rail Hook (Pre-hook)

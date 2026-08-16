@@ -1,0 +1,20 @@
+
+logging:
+  ak:
+    level: DEBUG
+
+slack:
+  agent: "general"
+telegram:
+  agent: "general"
+  api_version: "bot"
+gmail:
+  agent: "general"
+  poll_interval: 15
+  label_filter: "INBOX"
+whatsapp:
+  agent: "general"
+messenger:
+  agent: "general"
+instagram:
+  agent: "general"

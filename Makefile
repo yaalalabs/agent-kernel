@@ -59,8 +59,8 @@ lint-examples:
 		echo "Processing $$dir..."; \
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
-			uvx isort --skip .venv --skip .terraform --skip dist --skip __pycache__ . || true; \
-			uvx black@$(BLACK_VERSION) --exclude '/\.venv/|/\.terraform/|/dist/|/__pycache__/' . || true; \
+			uvx isort --skip .venv --skip .terraform --skip-glob "dist*" --skip __pycache__ . || true; \
+			uvx black@$(BLACK_VERSION) --exclude '/\.venv/|/\.terraform/|/dist[^/]*/|/__pycache__/' . || true; \
 			cd - > /dev/null; \
 		fi; \
 	done
@@ -72,8 +72,8 @@ lint-examples-check:
 		echo "Checking $$dir..."; \
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			cd $$dir && \
-			uvx isort --check-only --skip .venv --skip .terraform --skip dist --skip __pycache__ . || EXIT_CODE=1; \
-			uvx black@$(BLACK_VERSION) --check --exclude '/\.venv/|/\.terraform/|/dist/|/__pycache__/' . || EXIT_CODE=1; \
+			uvx isort --check-only --skip .venv --skip .terraform --skip-glob "dist*" --skip __pycache__ . || EXIT_CODE=1; \
+			uvx black@$(BLACK_VERSION) --check --exclude '/\.venv/|/\.terraform/|/dist[^/]*/|/__pycache__/' . || EXIT_CODE=1; \
 			cd - > /dev/null; \
 		fi; \
 	done; \

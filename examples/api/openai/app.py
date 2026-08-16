@@ -86,5 +86,9 @@ class RAGPreHook(PreHook):
 # Initialize OpenAI module and attach RAG pre-hook to customer support agent
 OpenAIModule([triage_agent, general_agent, customer_support_agent]).pre_hook(customer_support_agent, [RAGPreHook()])
 
+# config.yaml selects the in_memory queue transport, so this single call boots the full
+# queue-mode pipeline in one process: REST API -> input queue -> agent runner -> output
+# queue -> response handler. The same app moves to a broker transport (SQS today; Kafka
+# and NATS upcoming) purely by configuration - no code changes.
 if __name__ == "__main__":
     RESTAPI.run()

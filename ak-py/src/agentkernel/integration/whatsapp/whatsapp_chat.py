@@ -9,8 +9,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 
 from ...api import RESTRequestHandler
-from ...core import AgentService, Config
-from ...core.model import AgentRequestFile, AgentRequestImage, AgentRequestText
+from ...core import ChatService, Config
+from ...core.model import AgentRequestFile, AgentRequestImage, AgentRequestText, BaseChatRequest
 
 
 class AgentWhatsAppRequestHandler(RESTRequestHandler):
@@ -38,6 +38,7 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         self._api_version = Config.get().whatsapp.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
         self._max_file_size = Config.get().api.max_file_size
+        self._chat_service = ChatService()
         if not all([self._access_token, self._phone_number_id, self._verify_token]):
             self._log.error("WhatsApp configuration is incomplete. Please set access_token, phone_number_id, and verify_token.")
             raise ValueError("Incomplete WhatsApp configuration.")
@@ -276,20 +277,24 @@ class AgentWhatsAppRequestHandler(RESTRequestHandler):
         # Use from_number as session_id to maintain conversation context
         session_id = from_number
 
-        service = AgentService()
         try:
             # Send acknowledgement if configured
             if self._whatsapp_agent_acknowledgement:
                 await self._send_message(from_number, self._whatsapp_agent_acknowledgement, message_id)
 
-            # Select and run agent
-            service.select(session_id=session_id, name=self._whatsapp_agent)
-            if not service.agent:
+            # Run the agent with all requests (text + media)
+            req = BaseChatRequest(
+                prompt=text,
+                agent=self._whatsapp_agent,
+                session_id=session_id,
+                user_id=from_number,
+            )
+            try:
+                result, _ = await self._chat_service.execute(req, requests=requests)
+            except ValueError as ve:
+                self._log.warning(f"Agent execution rejected: {ve} (session_id: {session_id})")
                 await self._send_message(from_number, "Sorry, no agent is available to handle your request.", message_id)
                 return
-
-            # Run the agent with all requests (text + media)
-            result = await service.run_multi(requests=requests)
 
             response_text = str(result)
 

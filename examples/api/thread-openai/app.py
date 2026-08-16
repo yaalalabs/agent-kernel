@@ -1,8 +1,8 @@
 from typing import Optional
 
-from agentkernel.api import RESTAPI, AgentRESTRequestHandler, ThreadRESTRequestHandler
-from agentkernel.core.thread import Authoriser
+from agentkernel.api import RESTAPI
 from agentkernel.openai import OpenAIModule
+from agentkernel.thread import AgentThreadRequestHandler, Authoriser
 from agents import Agent
 
 assistant_agent = Agent(
@@ -32,7 +32,8 @@ class DemoAuthoriser(Authoriser):
 OpenAIModule([assistant_agent])
 
 if __name__ == "__main__":
-    # Passing a ThreadRESTRequestHandler explicitly replaces the default open
-    # (unauthorised) thread routes that Agent Kernel would otherwise mount
-    # automatically when a `thread` block is present in config.yaml.
-    RESTAPI.run(handlers=[AgentRESTRequestHandler(), ThreadRESTRequestHandler(authoriser=DemoAuthoriser())])
+    # Mounting AgentThreadRequestHandler (instead of the default handler) is what
+    # enables Conversation Thread Support: it serves the standard chat routes with
+    # thread recording plus the thread read routes. The `thread` block in
+    # config.yaml only selects the store backend and naming.
+    RESTAPI.run(handlers=[AgentThreadRequestHandler(authoriser=DemoAuthoriser())])

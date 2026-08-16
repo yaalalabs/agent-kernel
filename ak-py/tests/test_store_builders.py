@@ -19,10 +19,10 @@ from agentkernel.core.multimodal.storage.in_memory import InMemoryAttachmentStor
 from agentkernel.core.multimodal.storage.storage_manager import AttachmentStorageManager
 from agentkernel.core.session.base import SessionStore
 from agentkernel.core.session.in_memory import InMemorySessionStore
-from agentkernel.core.thread.store.base import _BUILTIN_THREAD_STORES, ThreadStore, ThreadStoreBuilder
-from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
-from agentkernel.core.thread.store.valkey import ValkeyThreadStore
 from agentkernel.core.util.factory import AKConfigError
+from agentkernel.integration.thread.store.base import _BUILTIN_THREAD_STORES, ThreadStore, ThreadStoreBuilder
+from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
+from agentkernel.integration.thread.store.valkey import ValkeyThreadStore
 
 
 def _patch_import(monkeypatch, module_name, namespace):
@@ -117,10 +117,10 @@ def test_session_builder_byo_dotted_path_gets_cache(monkeypatch):
 # --- ThreadStoreBuilder ----------------------------------------------------- #
 
 
-def test_thread_builder_default_memory():
+def test_thread_builder_in_memory():
     with patch.object(AKConfig, "get") as mock_get:
         cfg = Mock()
-        cfg.thread.type = "memory"
+        cfg.thread.type = "in_memory"
         mock_get.return_value = cfg
         assert isinstance(ThreadStoreBuilder.build(), InMemoryThreadStore)
 
@@ -166,7 +166,7 @@ def test_thread_builder_valkey():
 def test_thread_builder_valkey_missing_extra_points_at_pip_extra(monkeypatch):
     # Poisoning sys.modules with None makes the branch's `from .valkey import ...`
     # raise ImportError, which require_extra should rewrite with an install hint.
-    monkeypatch.setitem(sys.modules, "agentkernel.core.thread.store.valkey", None)
+    monkeypatch.setitem(sys.modules, "agentkernel.integration.thread.store.valkey", None)
     with patch.object(AKConfig, "get") as mock_get:
         cfg = Mock()
         cfg.thread.type = "valkey"

@@ -11,7 +11,7 @@ from botbuilder.schema import Activity, ActivityTypes, Attachment
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from ...api import RESTRequestHandler
-from ...core import AgentService, Config
+from ...core import ChatService, Config
 from ...core.model import (
     AgentReply,
     AgentReplyAny,
@@ -20,6 +20,7 @@ from ...core.model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    BaseChatRequest,
 )
 
 
@@ -43,6 +44,7 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
         self._app_password = Config.get().teams.app_password
         self._tenant_id = Config.get().teams.tenant_id
         self._max_file_size = Config.get().api.max_file_size
+        self._chat_service = ChatService()
 
         if not self._app_id or not self._app_password:
             self._log.error("Teams configuration is incomplete. Please set app_id and app_password.")
@@ -131,17 +133,10 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
 
         self._log.info(f"Received Teams message from {user_name}: {text[:100]}")
 
-        service = AgentService()
         try:
             # Send acknowledgement if configured
             if self._teams_agent_acknowledgement:
                 await turn_context.send_activity(f"Hi {user_name}, {self._teams_agent_acknowledgement}")
-
-            # Select agent
-            service.select(session_id=conversation_id, name=self._teams_agent)
-            if not service.agent:
-                await turn_context.send_activity("No agent available to handle your request.")
-                return
 
             # Build requests list with text, files, and images
             requests = []
@@ -158,7 +153,18 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
                     return
 
             # Invoke agent
-            reply = await service.run_multi(requests)
+            req = BaseChatRequest(
+                prompt=text,
+                agent=self._teams_agent,
+                session_id=conversation_id,
+                user_id=activity.from_property.id if activity.from_property else None,
+            )
+            try:
+                reply, _ = await self._chat_service.execute(req, requests=requests)
+            except ValueError as ve:
+                self._log.warning(f"Agent execution rejected: {ve} (session_id: {conversation_id})")
+                await turn_context.send_activity("No agent available to handle your request.")
+                return
 
             # Send reply
             await self._send_reply(turn_context, reply, user_name)

@@ -23,7 +23,8 @@ graph TB
         F[Runtime<br/>orchestrator]
         E[Session<br/>state]
         HK[Hooks<br/>pre / post]
-        SVC[AgentService / ChatService]
+        AS[AgentService<br/>agent + session lifecycle]
+        SVC[ChatService<br/>execution core + presentation]
     end
 
     subgraph FW["Framework Adapters"]
@@ -67,7 +68,8 @@ graph TB
     D --> E
     E --> F
     HK --> F
-    F --> SVC
+    F --> AS
+    AS --> SVC
 
     C --- G
     C --- H
@@ -87,17 +89,18 @@ graph TB
     E --> N
     E --> FS
 
-    SVC --> O
+    AS --> O
     SVC --> P
     SVC --> WS
-    SVC --> Q
-    SVC --> R
+    AS --> Q
+    AS --> R
     SVC --> MSG
     SVC --> DEP
 
     style A fill:#4e85c5,stroke:#fff,stroke-width:2px,color:#fff
     style F fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style SVC fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
+    style AS fill:#25c2a0,stroke:#fff,stroke-width:2px,color:#fff
     style KB fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
     style GR fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
     style MM fill:#7d5ba6,stroke:#fff,stroke-width:2px,color:#fff
@@ -110,11 +113,42 @@ graph TB
 | Layer | Components | Responsibility |
 |-------|-----------|----------------|
 | Application | Your agents and tools | Domain logic, written with any supported framework |
-| Core | `Module`, `Agent`, `Runner`, `Session`, `Runtime`, hooks, `AgentService`/`ChatService` | Framework-agnostic orchestration, state, and the run/stream pipeline |
+| Core | `Module`, `Agent`, `Runner`, `Session`, `Runtime`, hooks, `AgentService` (agent/session lifecycle for stateful clients), `ChatService` (execution core `execute`/`execute_stream` plus HTTP presentation wrappers `process_*`) | Framework-agnostic orchestration, state, and the run/stream pipeline |
 | Framework adapters | OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents | Wrap native agents behind the core abstractions |
 | System plugins | Guardrails, multimodal, conversation threads, knowledge bases, tracing | Cross-cutting features implemented as hooks, tools, and services |
 | State stores | In-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore | Pluggable persistence for sessions, threads, attachments, and responses |
 | Execution surfaces | CLI, REST (JSON + SSE), WebSocket, MCP, A2A, messaging integrations, cloud deployments | How requests reach the runtime and how replies get back out |
+
+## ChatService vs AgentService
+
+Two services sit between the execution surfaces and the `Runtime`, and they solve different problems.
+`AgentService` is a **stateful conversation object**: it holds one selected agent and one session, and
+the caller drives its lifecycle. `ChatService` is a **stateless chat-request processor**: every call
+carries the full request envelope, and agent/session resolution happens fresh per request.
+
+| | `AgentService` | `ChatService` |
+|---|----------------|---------------|
+| Statefulness | Stateful: holds the selected agent and session across calls (`select()`, `new()`, `clear()`, `load()`) | Stateless: a fresh agent/session resolution on every call |
+| Input | A prompt string (`run`) or an `AgentRequest` list (`run_multi`/`stream_multi`) | A `BaseChatRequest` envelope (prompt, agent, session_id, user_id, ...), optionally with a prebuilt `AgentRequest` list |
+| Validation and building | None: the caller prepares everything | Validates the envelope; builds the request list from the payload, or accepts a prebuilt one |
+| Output | Typed `AgentReply` / raw `StreamChunk`s | Execution core: typed reply plus session id. Presentation wrappers: JSON dicts, SSE frames, `HTTPException` |
+| Error handling | Exceptions propagate | Core: exceptions propagate. Wrappers: `ValueError` maps to 400, anything else to 500 |
+| Callers today | CLI, A2A, MCP | REST handler and deployment adapters (wrappers); messaging integrations and the thread handler (core) |
+
+**Use `ChatService`** when handling chat traffic where each request arrives self-contained with its
+`session_id`: the presentation wrappers (`process_*`) if you want the standard HTTP shapes, or the
+execution core (`execute`/`execute_stream`) if your surface owns its own transport, reply formatting,
+and error UX.
+
+**Use `AgentService`** when building an interactive or stateful client that owns a running
+conversation: selecting agents, reusing one session across turns, clearing or recreating it. The CLI's
+`!select` / `!new` / `!clear` commands are the canonical example.
+
+They are layers, not alternatives: the ChatService core drives `AgentService` internally for agent
+selection and session loading, so going through `ChatService` never bypasses `AgentService` semantics.
+And neither layer should be skipped: entry surfaces never call `Runtime` directly, and behavior that
+must apply to every run regardless of surface belongs in a `Runtime` pre/post hook. See the
+[execution flow](./execution-flow) for the per-surface layering diagram and call rubric.
 
 ## Key Design Principles
 
@@ -135,7 +169,7 @@ All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAM
 Built-in support for:
 - Multi-cloud session persistence (AWS, Azure, GCP)
 - Token-level streaming (SSE over REST, WebSocket on AWS serverless)
-- Queue-based scalable execution (SQS-backed, on Lambda and ECS)
+- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS (Kafka, NATS, and Kubernetes deployment upcoming)
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
 - Observability and tracing (Langfuse, OpenLLMetry, Logfire)
@@ -155,7 +189,7 @@ Pluggable via well-defined interfaces:
 
 ```mermaid
 sequenceDiagram
-    participant U as Caller (CLI / REST / Queue / WS)
+    participant U as Caller (ChatService core / CLI / A2A / MCP)
     participant SVC as AgentService
     participant R as Runtime
     participant PH as PreHooks
@@ -231,29 +265,70 @@ sequenceDiagram
 
 See [Execution Flow](./execution-flow) for the full request lifecycle including the queue-based and WebSocket paths.
 
-## Scalable Execution Topologies
+## The Queue Execution Pipeline
 
-Beyond the in-process pipeline above, Agent Kernel ships deployment adapters that decouple request ingestion from agent execution using SQS queues. The same `execution` config block drives both:
+Chat execution is built on one logical pipeline
+([#495](https://github.com/yaalalabs/agent-kernel/issues/495)): every chat request travels five
+components, with the queue transport and the process topology selected purely by configuration.
 
 ```mermaid
 graph LR
-    CL[Client] --> RH[Request Handler<br/>Lambda / IO container]
-    RH --> IQ[/Input Queue SQS FIFO/]
-    IQ --> AR[Agent Runner<br/>Lambda / ECS service]
-    AR --> OQ[/Output Queue SQS FIFO/]
-    OQ --> RSH[Response Handler<br/>Lambda / output-consumer thread]
-    RSH --> RS[(Response Store<br/>DynamoDB / Redis / Valkey)]
+    CL[Client] --> RH[Request Handler<br/>REST / WebSocket surface]
+    RH --> IQ[/Input Queue/]
+    IQ --> AR[Agent Runner<br/>ChatService → Runtime.run]
+    AR --> OQ[/Output Queue/]
+    OQ --> RSH[Response Handler]
+    RSH --> RS[(Response Store<br/>in-memory / Redis / Valkey / DynamoDB)]
     RSH -. WebSocket push .-> CL
-    RS -. poll .-> RH
+    RS -. rest_sync wait / rest_async poll .-> RH
 
     style RH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style AR fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
     style RSH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-- On **AWS Lambda**, the three roles are three Lambda functions wired by SQS event source mappings; see [AWS Serverless](../deployment/aws-serverless).
-- On **AWS ECS Fargate**, the request handler and response handler run as threads inside one IO container, and the agent runner is a separate auto-scaling ECS service with a pool of consumer threads; see [AWS Containerized](../deployment/aws-containerized) and the [Queue Mode Guide](../advanced/queue-mode-guide).
-- The client receives the reply either by **polling** the response store (`rest_sync` waits server-side, `rest_async` polls with a `request_id`) or by **WebSocket push** (`async` for full responses, `stream` for token-level chunks) on both AWS serverless and AWS ECS containerized.
+The queue transport is a pluggable backend (`execution.queues.type`):
+
+| Transport | Status | Durability | Typical use |
+|-----------|--------|------------|-------------|
+| `in_memory` | ✅ the default | In-process only | Local development, single-container deployments: full queue semantics (per-session FIFO, bounded retry, deduplication) with zero backing services |
+| SQS | ✅ on AWS Lambda and ECS (via the deployment adapters) | Durable, FIFO | Production on AWS |
+| `kafka`, `nats` | Upcoming (#495) | Durable | Production on-prem / Kubernetes |
+
+**One pipeline, three topologies.** The logical components map onto processes per deployment:
+
+```mermaid
+graph TB
+    subgraph SP["Single-process (in_memory: the default)"]
+        direction LR
+        SP1[REST API thread] --> SP2[agent-runner threads] --> SP3[response-handler threads]
+    end
+    subgraph TP["Two-process (broker transport: AWS ECS today)"]
+        direction LR
+        TP1["IO container<br/>Request Handler + Response Handler"] <--> TPQ[/broker queues/] <--> TP2["Agent Runner container<br/>auto-scaled consumer pool"]
+    end
+    subgraph LM["Three-way (AWS Lambda)"]
+        direction LR
+        LM1[Request Handler λ] --> LMQ1[/SQS/] --> LM2[Agent Runner λ] --> LMQ2[/SQS/] --> LM3[Response Handler λ]
+    end
+```
+
+- **Single-process**: a bare `RESTAPI.run()` boots all five components as threads in one process:
+  this is what local REST and single-container cloud deployments run. Sessions are processed in
+  order and in parallel across worker threads, failed messages retry up to `max_receive_count`,
+  and duplicates are dropped: the same semantics as the broker transports, minus durability.
+- **Two-process**: the IO process (request handler + response handler) and the agent-runner
+  process scale independently over a durable broker. Today this is AWS ECS Fargate with SQS; see
+  [AWS Containerized](../deployment/aws-containerized).
+- **Three-way**: on AWS Lambda the three roles are three functions wired by SQS event source
+  mappings; see [AWS Serverless](../deployment/aws-serverless).
+
+The activation rule: a bare `RESTAPI.run()` (no explicit handlers) runs the pipeline; surfaces
+constructed with explicit handlers (the thread handler, messaging integrations, custom handlers)
+and the `AgentService` clients (CLI, A2A, MCP) keep their direct execution paths. The client
+receives the reply either by **polling** the response store (`rest_sync` waits server-side,
+`rest_async` polls with a `request_id`), by **SSE** (`stream` on the REST surface), or by
+**WebSocket push** (`async`/`stream` on AWS today).
 
 ## Next Steps
 

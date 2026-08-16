@@ -61,7 +61,13 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
+| `test_chat_service_core.py` | ChatService execution core (`execute`/`execute_stream`): typed replies, prebuilt request lists, validation, error propagation, wrapper wire shapes |
 | `test_chat_service_streaming.py` | ChatService SSE/stream chunk formatting |
+| `test_slack_integration.py` | Slack handler on the ChatService core: request/identity mapping, attachment-only, error paths, chunking (pattern for integration handler tests) |
+| `test_whatsapp_integration.py` | WhatsApp handler on the ChatService core: text/media paths, rejections before execute |
+| `test_gmail_integration.py` | Gmail handler on the ChatService core: prompt assembly, session fallback, attachments, error paths |
+| `test_thread_integration.py` | Thread integration: `ThreadRecorder` ordering/enforcement, `AgentThreadRequestHandler` recording + no-phantom-thread prechecks, stream accumulation, end-to-end read-back |
+| `test_thread_router.py` | Thread read routes (`ThreadRESTRequestHandler`): pagination, `Authoriser` 401/403 semantics |
 | `test_akagentrunner_stream.py` | Serverless `ServerlessStreamAgentRunner` (SQS streaming) |
 | `test_akresponsehandler.py` | Serverless response handler (`CHAT_RESPONSE` / `STREAM_CHUNK` broadcast) |
 | `test_ws_lambda_stream.py` | WebSocket Lambda router in `stream` mode |
@@ -300,8 +306,10 @@ async def http_client():
 - **`test-trusted-pr.yaml`**: Runs `test-reusable.yaml` with secrets for fork PRs that have been reviewed and labeled `safe-to-test` (`pull_request_target`)
 - **`test-github-app.yaml`**: Manual dispatch only; verifies the GitHub App secrets (`APP_ID`/`APP_PRIVATE_KEY`) are configured correctly
 - **`integration-test.yaml`**: "Nightly" (tier `nightly`) integration tests against deployed environments; scheduled weekly on Sundays at 5:30 PM UTC (`cron: '30 17 * * 0'`), plus manual dispatch
-- **`integration-test-weekly.yaml`**: Weekly integration tests against deployed environments (cron currently commented out; manual dispatch, with option to keep cloud resources on failure)
+- **`integration-test-weekly.yaml`**: Weekly integration tests against deployed environments (cron currently commented out; manual dispatch, with option to keep cloud resources on failure), plus two additional manual-dispatch-only jobs gated on `inputs.provision_e2e_messaging`: `e2e-messaging-deploy` (builds and Terraform-applies the `e2e/app` messaging harness to AWS ECS, then waits for the service to stabilize) and `e2e-messaging-test` (probes the deployed webhook, registers the Telegram webhook, then runs the `e2e/tests` pytest suite against Slack/Telegram/WhatsApp/Messenger/Instagram/Gmail). See `e2e/README.md` for the full harness design.
 - **`code-quality.yml`**: Runs linting checks (see `code-quality` skill)
+
+`scripts/update_examples_version.py` keeps the `agentkernel` pin in sync across both `examples/**` and `e2e/app` (via `--examples-dir e2e/app`): `publish.yaml`'s "Update e2e messaging harness with new version" step bumps the pin with `--skip-lock` right after a production publish (the just-published version isn't resolvable on PyPI yet, so the lock refresh is deferred), and `test.yaml`'s "Update e2e messaging harness lock file" step later runs `--force-lock --examples-dir e2e/app` to regenerate `e2e/app/uv.lock` and commits it alongside `examples/**/uv.lock`. If you add a new pinned dependency consumer under `e2e/app`, make sure it's covered by this same version-bump/lock-refresh pair instead of drifting out of sync with the published package.
 
 Both integration workflows restore the branch-built `agentkernel` wheel from the `ak-py-${{ github.sha }}` cache with `fail-on-cache-miss: true` — the job fails loudly instead of silently falling back to the published PyPI wheel if the build/cache step didn't run first. `.github/scripts/run_single_test.py`'s `test_aws_deployment()` then runs `./build.sh local` in the example directory (force-reinstalling the local wheel with `--no-cache-dir` before packaging/deploying) and invokes the test client with `uv run --no-sync pytest ...` so `uv` doesn't re-sync the venv from `uv.lock` and revert the local wheel back to the PyPI version. When adding a new example to `integration-test-config.yaml`, make sure its `build.sh`/`deploy.sh` `local` branch force-reinstalls `agentkernel` from `../../../ak-py/dist` with `--no-cache-dir`, matching this pattern — otherwise the test can silently exercise a stale published version instead of the branch's code.
 

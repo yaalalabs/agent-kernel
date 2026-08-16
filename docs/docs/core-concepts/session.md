@@ -384,6 +384,30 @@ openai_session = session.get("openai_assistant_session")
 - Multiple agents can share the same session
 - Session data is automatically persisted to the configured backend
 
+### Accessing the current framework session {#framework-session-access}
+
+`get_framework_session()` is a convenience accessor for the pattern above — it resolves the
+framework-specific key for you, using [`Agent.current()`](./agent.md#currently-executing-agent) to
+find out which agent (and therefore which framework) is running:
+
+```python
+# Equivalent to session.get(agent.runner.name) for whichever agent is currently executing
+openai_session = session.get_framework_session()
+```
+
+- Returns the **same live object** the framework adapter stores its native session state under —
+  `Session.get()`/`set()` just read and write a plain `dict` of object references, so mutating the
+  returned object through its own methods updates what's stored immediately; no `session.set(...)`
+  call is needed afterward.
+- Returns `None` if nothing has been stored yet for the current agent's framework.
+- Can only be called while an agent is executing (from inside a hook or a tool) — calling it with
+  no agent running (`Agent.current()` is `None`) raises `RuntimeError`, since there'd be no
+  framework key to resolve.
+
+See [`examples/cli/session-context`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/session-context)
+for a complete example (`HistoryTrimHook`) that uses it from a post-hook to cap the OpenAI Agents
+SDK's native conversation history as a session grows.
+
 ### Framework context / per-run state
 
 Beyond the framework-internal keys above, the session exposes **one reserved key** that lets your

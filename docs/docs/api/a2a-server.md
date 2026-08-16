@@ -73,7 +73,7 @@ Each agent is mounted under `/a2a/{agent}` with the standard A2A protocol routes
 | `GET /a2a/{agent}/v1/tasks/{id}:subscribe` | Subscribe to task updates |
 | `GET /a2a/{agent}/v1/card` | Get the agent card |
 
-Incoming A2A messages are executed through the same `AgentService` pipeline as REST requests: hooks, guardrails, and session persistence all apply.
+Incoming A2A messages are executed through the same `Runtime` pipeline as every other surface: hooks, guardrails, and session persistence all apply.
 
 ## Multi-Agent Network
 

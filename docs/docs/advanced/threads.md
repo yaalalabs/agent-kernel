@@ -13,26 +13,33 @@ restarts and devices.
 ```mermaid
 sequenceDiagram
     participant Client
-    participant ChatService
+    participant TH as AgentThreadRequestHandler
+    participant CS as ChatService core
     participant ThreadStore as Thread Store
     participant Agent
 
-    Client->>ChatService: POST /api/v1/chat (prompt, session_id, user_id)
-    ChatService->>ThreadStore: get_or_create_thread + append user message
-    ChatService->>Agent: run
-    Agent-->>ChatService: reply
-    ChatService->>ThreadStore: append assistant message
-    ChatService-->>Client: response
-    Client->>ChatService: GET /api/v1/threads/{session_id}
-    ChatService-->>Client: thread metadata + message history
+    Client->>TH: POST /api/v1/chat (prompt, session_id, user_id)
+    TH->>ThreadStore: get_or_create_thread + append user message
+    TH->>CS: execute(request, prebuilt requests)
+    CS->>Agent: run
+    Agent-->>CS: reply
+    CS-->>TH: typed reply
+    TH->>ThreadStore: append assistant message
+    TH-->>Client: response
+    Client->>TH: GET /api/v1/threads/{session_id}
+    TH-->>Client: thread metadata + message history
 ```
 
 ### Key Design Decisions
 
+- **Threads are an integration.** Mounting `AgentThreadRequestHandler` is what enables the feature: it
+  serves the standard chat routes with thread recording wrapped around the ChatService execution core,
+  plus the thread read routes. The `thread` block in `config.yaml` only selects the store backend and
+  naming model.
 - **A thread is keyed by `session_id`**, with no separate thread id. The thread is auto-created on a session's
   first chat request; every later request with the same `session_id` appends to it.
-- **`user_id` becomes required** on every chat request once threads are enabled; requests without it are
-  rejected with 400.
+- **`user_id` is required** on the thread handler's chat routes; requests without it are rejected with 400.
+  Other surfaces are unaffected.
 - **Pluggable storage**: in-memory, Redis, Valkey, DynamoDB, Firestore, or Cosmos DB.
 - **Optional, pluggable authorization**: you supply an `Authoriser` that validates a Bearer token against
   *your* authentication provider; Agent Kernel never authenticates users itself.
@@ -40,18 +47,29 @@ sequenceDiagram
   starts and the assistant message is assembled from the streamed deltas on completion.
 
 :::caution Platform scope
-Do not enable Conversation Thread Support for agents deployed on platforms with native thread management
-(Slack, Microsoft Teams). Those platforms own the conversation history; AK threads alongside them would create
-duplicate, divergent state.
+Conversation threads are the history mechanism for clients that connect to the agent directly (first-party
+chat UIs). Messaging integrations (Slack, WhatsApp, Teams, ...) never record AK threads: those platforms own
+their own conversation history, and AK threads alongside them would create duplicate, divergent state.
 :::
 
 ## Enabling Thread Support
 
-Add a `thread` block to `config.yaml`; its presence turns the feature on:
+Mount `AgentThreadRequestHandler` instead of the default handler; it serves `/api/v1/chat`,
+`/api/v1/chat-multipart`, and the thread read routes:
+
+```python
+from agentkernel.api import RESTAPI
+from agentkernel.thread import AgentThreadRequestHandler
+
+RESTAPI.run(handlers=[AgentThreadRequestHandler()])
+```
+
+Then select the store backend in `config.yaml` (constructing the handler without a `thread` block fails
+fast at startup):
 
 ```yaml
 thread:
-  type: memory        # memory | redis | valkey | dynamodb | firestore | cosmosdb
+  type: in_memory     # in_memory | redis | valkey | dynamodb | firestore | cosmosdb
 ```
 
 ## Chat Request Fields
@@ -59,7 +77,7 @@ thread:
 | Field | Required | Applied | Description |
 |---|---|---|---|
 | `session_id` | yes | every request | Identifies the thread |
-| `user_id` | yes (once threads are enabled) | at creation | Owning user; also enables user-scoped listing |
+| `user_id` | yes (on the thread handler's chat routes) | at creation | Owning user; also enables user-scoped listing |
 | `group_id` | no | at creation only | Caller-defined group/project scope for listing |
 | `thread_name` | no | any request | Sets (at creation) or renames (afterwards) the display name and locks it against automatic naming; blank values are ignored. When absent at creation, the name comes from the naming strategy (see below) |
 
@@ -86,7 +104,7 @@ about once at startup with the install hint, and every failed naming call logs a
 
 ```yaml
 thread:
-  type: memory
+  type: in_memory
   naming:
     model: gpt-4o-mini  # LiteLLM model used to generate thread names
     max_length: 80      # max auto-generated name length
@@ -97,7 +115,7 @@ Override the strategy by subclassing and registering your subclass once at start
 any other logic (optionally calling `self._complete(instruction)` to reuse the LLM call machinery):
 
 ```python
-from agentkernel.core.thread import ConversationThreadManager, ThreadNamingStrategy
+from agentkernel.thread import ConversationThreadManager, ThreadNamingStrategy
 
 
 class MyNaming(ThreadNamingStrategy):
@@ -113,7 +131,7 @@ Threads whose name was explicitly supplied (a `thread_name` on any chat request)
 
 ## Reading Threads
 
-Two read endpoints are mounted automatically when threads are enabled:
+The thread handler serves two read endpoints alongside the chat routes:
 
 ```bash
 # List threads (metadata only), filtered by user and/or group
@@ -146,8 +164,8 @@ Bearer token against your own authentication provider and resolve the caller's `
 
 ```python
 from typing import Optional
-from agentkernel.api import RESTAPI, AgentRESTRequestHandler, ThreadRESTRequestHandler
-from agentkernel.core.thread import Authoriser
+from agentkernel.api import RESTAPI
+from agentkernel.thread import AgentThreadRequestHandler, Authoriser
 
 
 class MyAuthoriser(Authoriser):
@@ -157,7 +175,7 @@ class MyAuthoriser(Authoriser):
         return my_auth_provider.resolve(token)
 
 
-RESTAPI.run(handlers=[AgentRESTRequestHandler(), ThreadRESTRequestHandler(authoriser=MyAuthoriser())])
+RESTAPI.run(handlers=[AgentThreadRequestHandler(authoriser=MyAuthoriser())])
 ```
 
 With an `Authoriser` configured:
@@ -220,8 +238,8 @@ thread:
 Deploying threads takes **two** steps, and they split the same way session does — your application
 declares *which* backend, Terraform provisions it and supplies *where* it lives:
 
-1. Declare the backend in `config.yaml`, e.g. `thread: {type: dynamodb}`. This is what enables the
-   feature.
+1. Mount `AgentThreadRequestHandler` in your application (this is what enables the feature) and declare
+   the backend in `config.yaml`, e.g. `thread: {type: dynamodb}`.
 2. Set the matching Terraform flag, which provisions the backend and injects its connection detail:
 
 | Cloud | Flag | Provisions | Injects |
@@ -233,10 +251,10 @@ You do not need to set the table or collection name yourself — Terraform gener
 
 :::warning Setting the flag without declaring `thread.type` runs threads in-memory
 `AKConfig.thread` is absent until something populates it, and any `AK_THREAD__*` variable is enough to
-populate it — but `thread.type` then falls back to its `memory` default. So enabling the Terraform flag
-*without* a `thread:` block in `config.yaml` switches the feature on against the **in-memory** backend:
-the provisioned table sits unused and history is lost on every cold start, with no error. Declare
-`thread.type` and this cannot happen.
+populate it — but `thread.type` then falls back to its `in_memory` default. So a mounted
+`AgentThreadRequestHandler` combined with the Terraform flag but *without* a `thread:` block in
+`config.yaml` runs against the **in-memory** backend: the provisioned table sits unused and history is
+lost on every cold start, with no error. Declare `thread.type` and this cannot happen.
 
 The reverse mistake is safe: declaring `thread.type` *without* setting the flag fails loudly at
 startup — `ValueError: AKConfig.thread.dynamodb.table_name must be set` — because no connection detail
@@ -263,7 +281,7 @@ multimodal:
   storage_type: in_memory
 
 thread:
-  type: memory
+  type: in_memory
 ```
 
 ## Examples

@@ -220,6 +220,28 @@ jobs:
           echo ""
           echo "Example update complete!"
 
+      - name: Update e2e messaging harness with new version
+        if: inputs.environment == 'production'
+        run: |
+          # Bump the agentkernel pin in the e2e harness the same way examples are bumped.
+          # --skip-lock on purpose: the freshly-published version may not be resolvable on
+          # PyPI yet, so uv.lock is regenerated later by test.yaml's update-lock-files job.
+          python scripts/update_examples_version.py \
+            --version ${{ steps.bump_version.outputs.new_version }} \
+            --examples-dir e2e/app \
+            --skip-lock
+
+          echo ""
+          echo "Committing changes..."
+          if git diff --quiet e2e/; then
+            echo "No e2e harness changes"
+          else
+            echo "e2e harness pyproject.toml updated"
+            git add e2e/
+            git commit -m "chore: update e2e harness to use agentkernel v${{ steps.bump_version.outputs.new_version }}"
+            git push origin ${{ github.ref_name }}
+          fi
+
       - name: Test PyPI Summary
         if: inputs.environment == 'test'
         run: |

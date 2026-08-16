@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: false
+      provision_e2e_messaging:
+        description: 'Provision Or Refresh e2e Messaging Deployment'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   setup:
@@ -28,18 +33,18 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
-      
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      
+
       - name: Install dependencies
         run: pip install pyyaml
-      
+
       - name: Validate integration test configuration
         run: python3 .github/scripts/validate_integration_config.py
-      
+
       - name: Generate test matrices
         id: set-matrix
         run: |
@@ -223,7 +228,7 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
-      
+
       - name: GCP login
         id: auth          # <-- add this
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
@@ -235,14 +240,14 @@ jobs:
           id_token_audience: "32555940559.apps.googleusercontent.com"
           id_token_include_email: true
 
-      - name: Export identity token  
+      - name: Export identity token
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         run: echo "IDENTITY_TOKEN=${{ steps.auth.outputs.id_token }}" >> $GITHUB_ENV
-      
+
       - name: Setup gcloud
         if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         uses: google-github-actions/setup-gcloud@v3
-     
+
       - name: Setup Terraform
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         uses: hashicorp/setup-terraform@v4
@@ -330,3 +335,163 @@ jobs:
             ${{ matrix.path }}/**/test-results/
             ${{ matrix.path }}/**/pytest-report.xml
           retention-days: 30
+
+  e2e-messaging-deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.provision_e2e_messaging
+    runs-on: ubuntu-latest
+    environment: ci-tests
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
+          aws-region: us-east-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.3
+          terraform_wrapper: false
+
+      - name: Build deployment package
+        working-directory: e2e/app
+        run: |
+          rm -rf dist
+          mkdir -p dist/data
+          uv venv
+          uv export --no-hashes --no-dev > requirements.txt
+          uv pip install -r requirements.txt --target=dist/data
+          cp app.py config.yaml dist/data
+          cp deploy/Dockerfile dist/
+
+      - name: Deploy e2e messaging app
+        working-directory: e2e/app/deploy
+        env:
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_slack_bot_token: ${{ secrets.E2E_SLACK_BOT_TOKEN }}
+          TF_VAR_slack_signing_secret: ${{ secrets.E2E_SLACK_SIGNING_SECRET }}
+          TF_VAR_telegram_bot_token: ${{ secrets.E2E_TELEGRAM_BOT_TOKEN }}
+          TF_VAR_telegram_webhook_secret: ${{ secrets.E2E_TELEGRAM_WEBHOOK_SECRET }}
+          TF_VAR_gmail_client_id: ${{ secrets.E2E_GMAIL_CLIENT_ID }}
+          TF_VAR_gmail_client_secret: ${{ secrets.E2E_GMAIL_CLIENT_SECRET }}
+          TF_VAR_gmail_token_b64: ${{ secrets.E2E_GMAIL_BOT_TOKEN_B64 }}
+          TF_VAR_gmail_sender_filter: ${{ vars.E2E_GMAIL_TESTER_ADDRESS }}
+          TF_VAR_whatsapp_access_token: ${{ secrets.E2E_WHATSAPP_BOT_ACCESS_TOKEN }}
+          TF_VAR_whatsapp_phone_number_id: ${{ vars.E2E_WHATSAPP_BOT_PHONE_NUMBER_ID }}
+          TF_VAR_whatsapp_verify_token: ${{ secrets.E2E_WHATSAPP_VERIFY_TOKEN }}
+          TF_VAR_whatsapp_app_secret: ${{ secrets.E2E_WHATSAPP_APP_SECRET }}
+          TF_VAR_messenger_access_token: ${{ secrets.E2E_MESSENGER_ACCESS_TOKEN }}
+          TF_VAR_messenger_verify_token: ${{ secrets.E2E_MESSENGER_VERIFY_TOKEN }}
+          TF_VAR_messenger_app_secret: ${{ secrets.E2E_MESSENGER_APP_SECRET }}
+          TF_VAR_instagram_access_token: ${{ secrets.E2E_INSTAGRAM_ACCESS_TOKEN }}
+          TF_VAR_instagram_verify_token: ${{ secrets.E2E_INSTAGRAM_VERIFY_TOKEN }}
+          TF_VAR_instagram_app_secret: ${{ secrets.E2E_INSTAGRAM_APP_SECRET }}
+          TF_VAR_instagram_account_id: ${{ vars.E2E_INSTAGRAM_ACCOUNT_ID }}
+        run: |
+          terraform init -input=false
+          terraform apply -input=false -auto-approve
+
+      - name: Wait for ECS service to stabilize
+        working-directory: e2e/app/deploy
+        run: |
+          # Derive cluster name and region from terraform.tfvars so this stays in sync
+          # if the aliases/region are edited there (mirrors deploy.sh's read_tfvar).
+          read_tfvar() { awk -F'=' -v k="$1" '$1 ~ "^[[:space:]]*"k"[[:space:]]*$" {gsub(/[" ]/, "", $2); print $2; exit}' terraform.tfvars; }
+          region=$(read_tfvar region)
+          cluster="$(read_tfvar product_alias)-$(read_tfvar env_alias)-$(read_tfvar module_name)"
+          echo "Waiting for ECS services in cluster '$cluster' (region $region)..."
+          services=$(aws ecs list-services --cluster "$cluster" --region "$region" --query 'serviceArns' --output text)
+          # Word-splitting on $services is intentional: one --services arg per ARN.
+          aws ecs wait services-stable --cluster "$cluster" --services $services --region "$region"
+  e2e-messaging-test:
+    needs: [e2e-messaging-deploy]
+    if: always() && (needs.e2e-messaging-deploy.result == 'success' || needs.e2e-messaging-deploy.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: ci-tests
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
+          aws-region: us-east-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.3
+          terraform_wrapper: false
+
+      - name: Read webhook URL and probe endpoint
+        id: webhook
+        working-directory: e2e/app/deploy
+        run: |
+          terraform init -input=false
+          url=$(terraform output -raw telegram_webhook_url)
+          echo "telegram_webhook_url=$url" >> "$GITHUB_OUTPUT"
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$url" -H "Content-Type: application/json" -d '{}')
+          echo "POST $url -> HTTP $code"
+          # 200 (no webhook secret) or 403 (secret enforced) both prove a healthy container;
+          # 503 means no healthy ECS task behind the ALB.
+          if [[ "$code" == "503" || "$code" == "500" ]]; then
+            echo "e2e messaging service is not healthy — dispatch this workflow with provision_e2e_messaging enabled to (re)deploy it" >&2
+            exit 1
+          fi
+
+      - name: Install e2e test dependencies
+        working-directory: e2e/tests
+        run: uv sync
+
+      - name: Register Telegram webhook
+        working-directory: e2e/tests
+        env:
+          E2E_TELEGRAM_BOT_TOKEN: ${{ secrets.E2E_TELEGRAM_BOT_TOKEN }}
+          E2E_TELEGRAM_WEBHOOK_SECRET: ${{ secrets.E2E_TELEGRAM_WEBHOOK_SECRET }}
+        run: |
+          uv run python scripts/set_telegram_webhook.py \
+            --url "${{ steps.webhook.outputs.telegram_webhook_url }}"
+
+      - name: Run e2e messaging tests
+        working-directory: e2e/tests
+        env:
+          E2E_SLACK_USER_TOKEN: ${{ secrets.E2E_SLACK_USER_TOKEN }}
+          E2E_SLACK_CHANNEL_ID: ${{ vars.E2E_SLACK_CHANNEL_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.E2E_SLACK_BOT_TOKEN }}
+          E2E_TELEGRAM_API_ID: ${{ secrets.E2E_TELEGRAM_API_ID }}
+          E2E_TELEGRAM_API_HASH: ${{ secrets.E2E_TELEGRAM_API_HASH }}
+          E2E_TELEGRAM_SESSION: ${{ secrets.E2E_TELEGRAM_SESSION }}
+          E2E_TELEGRAM_BOT_USERNAME: ${{ vars.E2E_TELEGRAM_BOT_USERNAME }}
+          E2E_GMAIL_TESTER_TOKEN_B64: ${{ secrets.E2E_GMAIL_TESTER_TOKEN_B64 }}
+          E2E_GMAIL_BOT_ADDRESS: ${{ vars.E2E_GMAIL_BOT_ADDRESS }}
+          E2E_WHATSAPP_SENDER_ACCESS_TOKEN: ${{ secrets.E2E_WHATSAPP_SENDER_ACCESS_TOKEN }}
+          E2E_WHATSAPP_SENDER_PHONE_NUMBER_ID: ${{ vars.E2E_WHATSAPP_SENDER_PHONE_NUMBER_ID }}
+          E2E_WHATSAPP_BOT_NUMBER: ${{ vars.E2E_WHATSAPP_BOT_NUMBER }}
+          E2E_WHATSAPP_SENDER_NUMBER: ${{ vars.E2E_WHATSAPP_SENDER_NUMBER }}
+        run: uv run pytest -v -rs

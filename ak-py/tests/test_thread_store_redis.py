@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from agentkernel.core.config import AKConfig, _ThreadRedisConfig, _ThreadStoreConfig
-from agentkernel.core.thread.model import Thread, ThreadMessage
-from agentkernel.core.thread.store.redis import RedisThreadStore
+from agentkernel.integration.thread.model import Thread, ThreadMessage
+from agentkernel.integration.thread.store.redis import RedisThreadStore
 
 PREFIX = "ak:thread:"
 

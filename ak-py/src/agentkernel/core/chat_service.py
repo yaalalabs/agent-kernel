@@ -7,9 +7,11 @@ from typing import Any, Dict, List, Optional, Union
 
 from .config import AKConfig
 from .model import (
+    AgentReply,
     AgentReplyAny,
     AgentReplyImage,
     AgentReplyText,
+    AgentRequest,
     AgentRequestAny,
     AgentRequestFile,
     AgentRequestImage,
@@ -19,7 +21,6 @@ from .model import (
     StreamChunk,
 )
 from .service import AgentService
-from .thread import ConversationThreadManager
 
 
 class RequestBuilder:
@@ -207,18 +208,21 @@ class AgentHandler:
     def _run_async_sync(coro) -> Any:
         """Run an async coroutine from sync code, handling event loop state.
 
+        Only a RuntimeError from get_event_loop() itself (no loop in this thread) falls back to
+        asyncio.run: a RuntimeError raised by the coroutine must propagate as-is, not trigger a
+        second await of the already-consumed coroutine.
+
         :param coro: Coroutine to execute
         :return: Result of the coroutine
         """
         try:
             loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                asyncio.set_event_loop(asyncio.new_event_loop())
-                return asyncio.run(coro)
-            else:
-                return loop.run_until_complete(coro)
         except RuntimeError:
             return asyncio.run(coro)
+        if loop.is_closed():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            return asyncio.run(coro)
+        return loop.run_until_complete(coro)
 
     def run_sync(self, requests: List[Any]) -> Any:
         """Run agent requests synchronously.
@@ -327,6 +331,109 @@ class ChatService:
         self._log = logging.getLogger("ak.chatservice")
         self.rest_api_mode = rest_api_mode
 
+    async def execute(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
+        """Validate, build (unless prebuilt), select the agent, and run the request.
+
+        Transport-neutral execution core: returns the typed reply and lets exceptions
+        propagate, so callers own their response shaping and error handling.
+
+        :param req: Chat request carrying prompt, agent, and session_id
+        :param requests: Optional prebuilt AgentRequest list. When given, RequestBuilder is
+                         skipped and prompt is optional; the list must be non-empty.
+        :return: Tuple of (typed agent reply, response session id)
+        :raises ValueError: If validation fails or no agent is available
+        """
+        requests = await self._prepare_async(req, requests)
+        handler = AgentHandler()
+        handler.initialize(req.session_id, req.agent)
+        result = await handler.run_async(requests)
+        return result, handler.get_response_session_id(req.session_id)
+
+    def execute_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
+        """Synchronous counterpart of execute().
+
+        :param req: Run request carrying prompt, agent, and session_id
+        :param requests: Optional prebuilt AgentRequest list (see execute())
+        :return: Tuple of (typed agent reply, response session id)
+        :raises ValueError: If validation fails or no agent is available
+        """
+        requests = self._prepare_sync(req, requests)
+        handler = AgentHandler()
+        handler.initialize(req.session_id, req.agent)
+        result = handler.run_sync(requests)
+        return result, handler.get_response_session_id(req.session_id)
+
+    async def execute_stream(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> AsyncGenerator[StreamChunk, None]:
+        """Streaming counterpart of execute(): yields raw StreamChunk objects, no framing.
+
+        Validates and selects the agent eagerly, so invalid input raises at call time,
+        before the generator is returned. A failure inside the stream is yielded as a
+        final StreamChunk carrying the error instead of raising.
+
+        :param req: Chat request carrying prompt, agent, and session_id
+        :param requests: Optional prebuilt AgentRequest list (see execute())
+        :return: Async generator yielding raw StreamChunk objects
+        :raises ValueError: If validation fails or no agent is available
+        """
+        requests = await self._prepare_async(req, requests)
+        handler = AgentHandler()
+        handler.initialize(req.session_id, req.agent)
+
+        async def _stream() -> AsyncGenerator[StreamChunk, None]:
+            try:
+                async for chunk in handler.run_stream_async(requests):
+                    yield chunk
+            except Exception as e:
+                yield StreamChunk(error=str(e), done=True)
+
+        return _stream()
+
+    def execute_stream_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> Generator[StreamChunk, None, None]:
+        """Synchronous counterpart of execute_stream().
+
+        Preserves the sync path's buffering semantics: AgentHandler.run_stream_sync collects
+        all chunks before this generator yields the first one.
+
+        :param req: Run request carrying prompt, agent, and session_id
+        :param requests: Optional prebuilt AgentRequest list (see execute())
+        :return: Generator yielding raw StreamChunk objects
+        :raises ValueError: If validation fails or no agent is available
+        """
+        requests = self._prepare_sync(req, requests)
+        handler = AgentHandler()
+        handler.initialize(req.session_id, req.agent)
+
+        def _stream() -> Generator[StreamChunk, None, None]:
+            try:
+                for chunk in handler.run_stream_sync(requests):
+                    yield chunk
+            except Exception as e:
+                yield StreamChunk(error=str(e), done=True)
+
+        return _stream()
+
+    async def _prepare_async(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]]) -> List[AgentRequest]:
+        """Validate the request and return the effective request list (built or prebuilt).
+
+        :param req: Chat request to validate
+        :param requests: Optional prebuilt AgentRequest list
+        :return: The request list to run the agent with
+        :raises ValueError: If validation fails
+        """
+        self._validate(req, requests)
+        return await RequestBuilder.from_base_request_async(req) if requests is None else requests
+
+    def _prepare_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]]) -> List[AgentRequest]:
+        """Synchronous counterpart of _prepare_async().
+
+        :param req: Run request to validate
+        :param requests: Optional prebuilt AgentRequest list
+        :return: The request list to run the agent with
+        :raises ValueError: If validation fails
+        """
+        self._validate(req, requests)
+        return RequestBuilder.from_base_request_sync(req) if requests is None else requests
+
     def process_chat_request(self, req: BaseRunRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request synchronously.
 
@@ -334,23 +441,15 @@ class ChatService:
         :return: When rest_api_mode=False: tuple of (status_code, response_dict).
                  When rest_api_mode=True: response_dict only.
         """
-        session_id = req.session_id
-        handler = AgentHandler()
         try:
-            self._validate(req)
-            thread_manager = self._validate_thread(req)
-            requests = RequestBuilder.from_base_request_sync(req)
-            handler.initialize(session_id, req.agent)
-            requests = self._thread_pre_run(thread_manager, req, requests)
-            result = handler.run_sync(requests)
-            self._thread_post_run(thread_manager, req, result)
-            return ResponseBuilder.build_response(200, handler.get_response_session_id(session_id), self.rest_api_mode, result=result)
+            result, session_id = self.execute_sync(req)
+            return ResponseBuilder.build_response(200, session_id, self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
-            return ResponseBuilder.build_response(400, handler.get_response_session_id(session_id), self.rest_api_mode, error=ve)
+            return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
-            return ResponseBuilder.build_response(500, handler.get_response_session_id(None), self.rest_api_mode, error=e)
+            return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
 
     async def process_async_chat_request(self, req: BaseChatRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request asynchronously.
@@ -360,26 +459,15 @@ class ChatService:
         :return: When rest_api_mode=False: tuple of (status_code, response_dict).
                  When rest_api_mode=True: response_dict only.
         """
-        session_id = req.session_id
-        handler = AgentHandler()
         try:
-            if not session_id:
-                raise ValueError("No session_id is provided in the request")
-            if not req.prompt:
-                raise ValueError("No prompt provided in the request")
-            thread_manager = self._validate_thread(req)
-            requests = await RequestBuilder.from_base_request_async(req)
-            handler.initialize(session_id, req.agent)
-            requests = self._thread_pre_run(thread_manager, req, requests)
-            result = await handler.run_async(requests)
-            self._thread_post_run(thread_manager, req, result)
-            return ResponseBuilder.build_response(200, handler.get_response_session_id(session_id), self.rest_api_mode, result=result)
+            result, session_id = await self.execute(req)
+            return ResponseBuilder.build_response(200, session_id, self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
-            return ResponseBuilder.build_response(400, handler.get_response_session_id(session_id), self.rest_api_mode, error=ve)
+            return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
         except Exception as e:
             self._log.error(f"Error processing request: {e}")
-            return ResponseBuilder.build_response(500, handler.get_response_session_id(session_id), self.rest_api_mode, error=e)
+            return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
 
     async def process_stream_chat_async(
         self,
@@ -394,34 +482,15 @@ class ChatService:
         :param sse_format: When True, yield Server-Sent Events formatted frames.
                            When False, yield raw StreamChunk JSON payloads.
         :return: Async generator yielding StreamChunk payloads as JSON or SSE-formatted strings
-        :raises ValueError: If session_id or prompt is missing, no agent is available,
-                            or user_id is missing while thread support is enabled
+        :raises ValueError: If session_id or prompt is missing, or no agent is available
         """
         session_id = req.session_id
-        if not session_id:
-            raise ValueError("No session_id is provided in the request")
-        if not req.prompt:
-            raise ValueError("No prompt provided in the request")
-        thread_manager = self._validate_thread(req)
-        requests = await RequestBuilder.from_base_request_async(req)
-        requests = self._thread_pre_run(thread_manager, req, requests)
-        handler = AgentHandler()
-        handler.initialize(session_id, req.agent)
+        chunks = await self.execute_stream(req)
 
         async def _stream() -> AsyncGenerator[str, None]:
-            deltas: List[str] = []
-            error_seen = False
             try:
-                async for chunk in handler.run_stream_async(requests):
-                    if chunk.error:
-                        error_seen = True
-                    if chunk.delta:
-                        deltas.append(chunk.delta)
+                async for chunk in chunks:
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
-                # A halted/errored stream (error chunk, no raise) or an empty one must
-                # not record a blank assistant message in the thread.
-                if not error_seen and deltas:
-                    self._thread_post_run(thread_manager, req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
@@ -443,34 +512,15 @@ class ChatService:
         :param sse_format: When True, yield Server-Sent Events formatted frames.
                            When False, yield raw StreamChunk JSON payloads.
         :return: Generator yielding StreamChunk payloads as JSON or SSE-formatted strings
-        :raises ValueError: If session_id or prompt is missing, no agent is available,
-                            or user_id is missing while thread support is enabled
+        :raises ValueError: If session_id or prompt is missing, or no agent is available
         """
         session_id = req.session_id
-        if not session_id:
-            raise ValueError("No session_id is provided in the request")
-        if not req.prompt:
-            raise ValueError("No prompt provided in the request")
-        thread_manager = self._validate_thread(req)
-        requests = RequestBuilder.from_base_request_sync(req)
-        requests = self._thread_pre_run(thread_manager, req, requests)
-        handler = AgentHandler()
-        handler.initialize(session_id, req.agent)
+        chunks = self.execute_stream_sync(req)
 
         def _stream() -> Generator[str, None, None]:
-            deltas: List[str] = []
-            error_seen = False
             try:
-                for chunk in handler.run_stream_sync(requests):
-                    if chunk.error:
-                        error_seen = True
-                    if chunk.delta:
-                        deltas.append(chunk.delta)
+                for chunk in chunks:
                     yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
-                # A halted/errored stream (error chunk, no raise) or an empty one must
-                # not record a blank assistant message in the thread.
-                if not error_seen and deltas:
-                    self._thread_post_run(thread_manager, req, "".join(deltas))
             except Exception as e:
                 error_chunk = StreamChunk(error=str(e), done=True)
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
@@ -478,78 +528,20 @@ class ChatService:
         return _stream()
 
     @staticmethod
-    def _validate(req: BaseRunRequest):
+    def _validate(req: BaseChatRequest, requests: Optional[List[AgentRequest]]) -> None:
         """Validate that required fields are present in the request.
 
-        :param req: Base run request to validate
-        :return: None
-        :raises ValueError: If session_id or prompt is missing
-        """
-        if req.session_id is None:
-            raise ValueError("No session_id is provided in the request")
-        if not req.prompt:
-            raise ValueError("No prompt provided in the request")
-
-    @staticmethod
-    def _validate_thread(req: BaseChatRequest) -> Optional["ConversationThreadManager"]:
-        """Return the shared ConversationThreadManager when thread support is
-        enabled, enforcing the user_id requirement. Returns None when disabled.
-
         :param req: Chat request to validate
-        :return: The shared manager, or None when thread support is disabled
-        :raises ValueError: If thread support is enabled and user_id is missing
-        """
-        manager = ConversationThreadManager.get()
-        if manager is not None and not req.user_id:
-            raise ValueError("No user_id is provided in the request — user_id is required when thread support is enabled")
-        return manager
-
-    def _thread_pre_run(
-        self,
-        manager: Optional["ConversationThreadManager"],
-        req: BaseChatRequest,
-        requests: List[Any],
-    ) -> List[Any]:
-        """Thread-mode work done before the agent runs: store attachment bytes,
-        create/load the thread, append the user message, and return the rebuilt
-        request list in which stored attachments are replaced by in-band
-        AgentRequestAttachmentRef entries for MultimodalPreHook to resolve.
-
-        store_attachments runs first — its config-validation rejections (raised
-        as ValueError) must fire before any thread state exists, so a rejected
-        request leaves no phantom thread behind.
-
-        No-op when thread support is disabled (manager is None) — returns the
-        requests unchanged.
-
-        :param manager: The shared ConversationThreadManager, or None
-        :param req: The originating chat request
-        :param requests: The built AgentRequest list (may carry attachments)
-        :return: The (possibly rebuilt) request list to run the agent with.
-        """
-        if manager is None:
-            return requests
-        requests, attachments = manager.store_attachments(session_id=req.session_id, requests=requests)
-        manager.get_or_create_thread(
-            session_id=req.session_id,
-            user_id=req.user_id,
-            group_id=req.group_id,
-            name=req.thread_name,
-            first_prompt=req.prompt,
-        )
-        manager.append_message(req.session_id, "user", req.prompt, attachments=attachments)
-        return requests
-
-    @staticmethod
-    def _thread_post_run(manager: Optional["ConversationThreadManager"], req: BaseChatRequest, result: Any) -> None:
-        """Thread-mode work done after a successful agent run: append the
-        assistant message. No-op when thread support is disabled.
-
-        :param manager: The shared ConversationThreadManager, or None
-        :param req: The originating chat request
-        :param result: The agent's reply
+        :param requests: Optional prebuilt AgentRequest list; when given, prompt is
+                         optional but the list must be non-empty
         :return: None
+        :raises ValueError: If session_id is missing, prompt is missing on the built path,
+                            or a prebuilt request list is empty
         """
-        if manager is None:
-            return
-        manager.append_message(req.session_id, "assistant", str(result))
+        if not req.session_id:
+            raise ValueError("No session_id is provided in the request")
+        if requests is None:
+            if not req.prompt:
+                raise ValueError("No prompt provided in the request")
+        elif not requests:
+            raise ValueError("No requests provided in the request")

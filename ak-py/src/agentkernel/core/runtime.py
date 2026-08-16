@@ -198,25 +198,26 @@ class Runtime:
         """
         async with session:
             try:
-                requests_or_reply = await self._prepare_requests(agent, session, requests)
-                if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
-                    self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
-                    return requests_or_reply
-                requests = requests_or_reply
+                with agent._activate():
+                    requests_or_reply = await self._prepare_requests(agent, session, requests)
+                    if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
+                        self._log.debug(f"PreHook halted execution for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
+                        return requests_or_reply
+                    requests = requests_or_reply
 
-                self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
+                    self._log.debug(f"Running agent '{agent.name}' with requests: {requests}")
 
-                reply = await agent.runner.run(agent, session, requests)
+                    reply = await agent.runner.run(agent, session, requests)
 
-                post_hooks = self._get_system_post_hooks() + agent.post_hooks  # system post-hooks are always executed first
-                for hook in post_hooks:
-                    reply = await hook.on_run(session, requests, agent, reply)
-                    if not isinstance(reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
-                        raise TypeError(f"PostHook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}")
-                    self._log.debug(f"PostHook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
+                    post_hooks = self._get_system_post_hooks() + agent.post_hooks  # system post-hooks are always executed first
+                    for hook in post_hooks:
+                        reply = await hook.on_run(session, requests, agent, reply)
+                        if not isinstance(reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
+                            raise TypeError(f"PostHook '{hook.name()}' returned an invalid type. Expected AgentReply, got {type(reply)}")
+                        self._log.debug(f"PostHook executed for agent '{agent.name}' by hook '{hook.name()}' reply: {reply}")
 
-                self.sessions().store(session)
-                return reply
+                    self.sessions().store(session)
+                    return reply
             finally:
                 session.get_volatile_cache().clear()
 
@@ -235,26 +236,27 @@ class Runtime:
         """
         async with session:
             try:
-                requests_or_reply = await self._prepare_requests(agent, session, requests)
-                if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
-                    self._log.debug(f"PreHook halted streaming for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
-                    yield StreamChunk(error=str(requests_or_reply), done=True)
-                    return
-                requests = requests_or_reply
+                with agent._activate():
+                    requests_or_reply = await self._prepare_requests(agent, session, requests)
+                    if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
+                        self._log.debug(f"PreHook halted streaming for agent '{agent.name}' by hook chain with reply: {requests_or_reply}")
+                        yield StreamChunk(error=str(requests_or_reply), done=True)
+                        return
+                    requests = requests_or_reply
 
-                self._log.debug(f"Streaming agent '{agent.name}' with requests: {requests}")
+                    self._log.debug(f"Streaming agent '{agent.name}' with requests: {requests}")
 
-                post_hooks = self._get_system_post_hooks() + agent.post_hooks
-                async for delta in agent.runner.stream(agent, session, requests):
-                    for hook in post_hooks:
-                        delta = await hook.on_stream_chunk(session, requests, agent, delta)
-                        if delta is None:
-                            break
-                    if delta is not None:
-                        yield StreamChunk(delta=delta)
+                    post_hooks = self._get_system_post_hooks() + agent.post_hooks
+                    async for delta in agent.runner.stream(agent, session, requests):
+                        for hook in post_hooks:
+                            delta = await hook.on_stream_chunk(session, requests, agent, delta)
+                            if delta is None:
+                                break
+                        if delta is not None:
+                            yield StreamChunk(delta=delta)
 
-                self.sessions().store(session)
-                yield StreamChunk(done=True, session_id=session.id)
+                    self.sessions().store(session)
+                    yield StreamChunk(done=True, session_id=session.id)
             finally:
                 session.get_volatile_cache().clear()
 

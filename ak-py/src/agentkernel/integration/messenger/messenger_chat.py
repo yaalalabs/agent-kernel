@@ -8,8 +8,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 
 from ...api import RESTRequestHandler
-from ...core import AgentService, Config
-from ...core.model import AgentRequestFile, AgentRequestImage, AgentRequestText
+from ...core import ChatService, Config
+from ...core.model import AgentRequestFile, AgentRequestImage, AgentRequestText, BaseChatRequest
 
 
 class AgentMessengerRequestHandler(RESTRequestHandler):
@@ -33,6 +33,7 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
         self._api_version = Config.get().messenger.api_version or "v24.0"
         self._base_url = f"https://graph.facebook.com/{self._api_version}"
         self._max_file_size = Config.get().api.max_file_size
+        self._chat_service = ChatService()
         if not all([self._access_token, self._verify_token]):
             self._log.error("Facebook Messenger configuration is incomplete. Please set access_token and verify_token.")
             raise ValueError("Incomplete Facebook Messenger configuration.")
@@ -189,7 +190,6 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
         await self._process_agent_message(sender_id, message_text)
 
     async def _process_agent_message(self, sender_id: str, message_text: str, attachments: list = None):
-        service = AgentService()
         session_id = sender_id  # Use sender_id as session_id to maintain conversation context
         try:
             # Mark message as seen
@@ -197,14 +197,6 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
 
             # Send typing indicator
             await self._send_typing_indicator(sender_id, True)
-
-            # Select and run agent
-            service.select(session_id=session_id, name=self._messenger_agent)
-            if not service.agent:
-                self._log.warning(f"No agent available for name: {self._messenger_agent} (session_id: {session_id})")
-                await self._send_message(sender_id, "Sorry, no agent is available to handle your request.")
-                await self._send_typing_indicator(sender_id, False)
-                return
 
             # Build requests list with text and attachments
             requests = []
@@ -219,20 +211,24 @@ class AgentMessengerRequestHandler(RESTRequestHandler):
                     await self._process_attachment(attachment, requests)
 
             # Run the agent
+            result = None
             if requests:
-                # Use run_multi for multimodal requests
-                if len(requests) > 1 or any(isinstance(r, (AgentRequestFile, AgentRequestImage)) for r in requests):
-                    result = await service.run_multi(requests=requests)
-                else:
-                    result = await service.run(message_text) if message_text else None
-            else:
-                result = None
+                req = BaseChatRequest(
+                    prompt=message_text,
+                    agent=self._messenger_agent,
+                    session_id=session_id,
+                    user_id=sender_id,
+                )
+                try:
+                    result, _ = await self._chat_service.execute(req, requests=requests)
+                except ValueError as ve:
+                    self._log.warning(f"Agent execution rejected: {ve} (session_id: {session_id})")
+                    await self._send_message(sender_id, "Sorry, no agent is available to handle your request.")
+                    await self._send_typing_indicator(sender_id, False)
+                    return
 
             if result:
-                if hasattr(result, "raw"):
-                    response_text = str(result.raw)
-                else:
-                    response_text = str(result)
+                response_text = str(result)
             else:
                 response_text = "Sorry, I could not process your message."
 

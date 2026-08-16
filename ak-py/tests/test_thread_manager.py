@@ -5,8 +5,8 @@ import pytest
 
 from agentkernel.core.config import AKConfig, _ThreadNamingConfig, _ThreadStoreConfig
 from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage, AgentRequestText
-from agentkernel.core.thread import ConversationThreadManager, ThreadNamingStrategy
-from agentkernel.core.thread.store.in_memory import InMemoryThreadStore
+from agentkernel.integration.thread import ConversationThreadManager, ThreadNamingStrategy
+from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 
 
 class EchoNaming(ThreadNamingStrategy):
@@ -23,7 +23,7 @@ def thread_enabled():
     An offline naming stub is registered so no test ever reaches LiteLLM; the
     LLM naming tests drop the stub and mock the LiteLLM call instead.
     """
-    AKConfig.get().thread = _ThreadStoreConfig(type="memory")
+    AKConfig.get().thread = _ThreadStoreConfig(type="in_memory")
     ConversationThreadManager.reset()
     ConversationThreadManager.set_naming_strategy(EchoNaming())
     InMemoryThreadStore._threads.clear()

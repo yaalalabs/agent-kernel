@@ -200,9 +200,11 @@ If the Terraform module creates the backing store (for example `create_redis_clu
 
 ### Deploying Conversation Thread Storage
 
-Conversation threads (`ak-add-capabilities`) deploy the same way sessions do: the app declares
-`thread.type` in `config.yaml` and Terraform provisions the backend, injecting only the connection
-detail. Terraform never sets `AK_THREAD__TYPE` itself.
+Conversation threads (`ak-add-capabilities`) deploy the same way sessions do: the app mounts
+`AgentThreadRequestHandler` (which is what enables the feature; the self-hosted REST API is the only
+surface that records threads — queue-mode runners and the other deployment adapters do not) and
+declares `thread.type` in `config.yaml`, and Terraform provisions the backend, injecting only the
+connection detail. Terraform never sets `AK_THREAD__TYPE` itself.
 
 - **AWS (serverless + containerized)**: `create_dynamodb_thread_table = true` provisions a DynamoDB
   table (partition `session_id`, sort `sk`, TTL on `expiry_time`) and injects
@@ -217,7 +219,7 @@ detail. Terraform never sets `AK_THREAD__TYPE` itself.
 
 Setting the Terraform flag *without* declaring `thread.type` in `config.yaml` silently leaves
 threads on the non-durable in-memory backend (any `AK_THREAD__*` var materialises `AKConfig.thread`,
-but `type` still defaults to `memory`) — always pair the flag with the matching `thread.type`.
+but `type` still defaults to `in_memory`) — always pair the flag with the matching `thread.type`.
 
 ## AWS Serverless (Lambda + API Gateway)
 

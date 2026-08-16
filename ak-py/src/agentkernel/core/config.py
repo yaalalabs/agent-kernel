@@ -254,11 +254,12 @@ class _ThreadNamingConfig(BaseModel):
 
 
 class _ThreadStoreConfig(BaseModel):
-    """Configuration for Conversation Thread Support. Presence of this block enables the feature."""
+    """Configuration for Conversation Thread Support (store backend, naming). The feature is
+    enabled by mounting AgentThreadRequestHandler; this block only parameterizes it."""
 
     type: str = Field(
-        default="memory",
-        description="Thread store backend: a built-in short name (memory, redis, valkey, dynamodb, cosmosdb, firestore) or a dotted path to a ThreadStore subclass",
+        default="in_memory",
+        description="Thread store backend: a built-in short name (in_memory, redis, valkey, dynamodb, cosmosdb, firestore) or a dotted path to a ThreadStore subclass",
     )
     naming: _ThreadNamingConfig = Field(default_factory=_ThreadNamingConfig, description="Auto-naming settings for the built-in naming strategies")
     redis: Optional[_ThreadRedisConfig] = None
@@ -310,7 +311,7 @@ class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
 
 
 class _ResponseStoreConfig(BaseModel):
-    type: str = Field(default=None, pattern="^(redis|valkey|dynamodb)$")
+    type: str = Field(default=None, pattern="^(in_memory|redis|valkey|dynamodb)$")
     retry_count: int = Field(default=5, description="Number of retry attempts for response store reads")
     delay: float = Field(default=5, description="Delay in seconds between response store reads retry attempts")
     redis: Optional[_ResponseStoreRedisConfig] = None
@@ -319,42 +320,61 @@ class _ResponseStoreConfig(BaseModel):
 
 
 class _InputQueueConfig(BaseModel):
-    url: str = Field(default=None, description="Input SQS queue URL for async execution mode")
+    url: str = Field(default=None, description="Input queue URL (sqs transport only)")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from input queue before being treated as permanently failed"
     )
     no_of_consumers: int = Field(
         default=5,
         description=(
-            "Only used in Containerized deployments "
-            "Number of independent consumer threads that each poll the input queue "
-            "in a continuous loop. Only used by ECS containerized deployments, it is not used for "
-            "serverless (Lambda) mode, which has no consumer threads. "
-            "Override via env var AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS."
+            "Number of independent consumer threads that each poll the input queue in a continuous "
+            "loop. Used by the in-process pipeline (agent-runner worker threads) and by ECS "
+            "containerized deployments; not used in serverless (Lambda) mode, which has no consumer "
+            "threads. Override via env var AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS."
         ),
     )
 
 
 class _OutputQueueConfig(BaseModel):
-    url: str = Field(default=None, description="Output SQS queue URL for async execution mode")
+    url: str = Field(default=None, description="Output queue URL (sqs transport only)")
     max_receive_count: int = Field(
         default=3, description="Maximum number of times a message can be received from output queue before being treated as permanently failed"
     )
     no_of_consumers: int = Field(
         default=2,
         description=(
-            "Only used in Containerized deployments "
-            "Number of independent consumer threads that each poll the output queue "
-            "in a continuous loop. Only used by ECS containerized deployments, it is not used for "
-            "serverless (Lambda) mode, which has no consumer threads. "
-            "Override via env var AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS."
+            "Number of independent consumer threads that each poll the output queue in a continuous "
+            "loop. Used by the in-process pipeline (response-handler worker threads) and by ECS "
+            "containerized deployments; not used in serverless (Lambda) mode, which has no consumer "
+            "threads. Override via env var AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS."
         ),
     )
 
 
+class _InMemoryQueueConfig(BaseModel):
+    ack_wait: float = Field(
+        default=300.0,
+        description=(
+            "Seconds an unacknowledged in-memory message stays invisible before redelivery. "
+            "Redelivery rescues stuck worker threads; keep this above your longest expected agent run "
+            "or a slow run will be executed again."
+        ),
+    )
+    dedup_window: float = Field(default=300.0, description="Seconds within which a repeated message_deduplication_id is dropped")
+
+
 class _QueuesConfig(BaseModel):
-    input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input SQS queue configuration for async execution mode")
-    output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output SQS queue configuration for async execution mode")
+    type: Optional[str] = Field(
+        default=None,
+        description=(
+            "Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport "
+            "subclass. When unset, a configured input.url implies sqs (pre-#495 compatibility); "
+            "otherwise in_memory."
+        ),
+    )
+    input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input queue configuration for queue execution mode")
+    output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output queue configuration for queue execution mode")
+    in_memory: Optional[_InMemoryQueueConfig] = Field(default=None, description="in_memory transport settings")
     batch_size: Optional[int] = Field(
         default=None,
         description=(
@@ -614,7 +634,7 @@ class AKConfig(YamlBaseSettingsModified):
     multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
     thread: Optional[_ThreadStoreConfig] = Field(
         default=None,
-        description="Conversation Thread Support configurations. Feature is enabled only when this block is present.",
+        description="Conversation Thread Support configurations (store backend, naming). The feature is served by mounting AgentThreadRequestHandler; this block only parameterizes it.",
     )
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)

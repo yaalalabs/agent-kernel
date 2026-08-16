@@ -49,15 +49,16 @@ graph TB
 
 ## Execution Modes
 
-Independently of *where* you deploy, `execution.mode` selects *how* requests are processed and replies delivered. Queue-backed and WebSocket modes are currently AWS features.
+Independently of *where* you deploy, `execution.mode` selects *how* requests are processed and replies delivered. Chat execution always runs on the [queue pipeline](../architecture/overview#the-queue-execution-pipeline): in-process with the default `in_memory` transport on every server flavor, over durable SQS queues on AWS Lambda/ECS (Kafka, NATS, and a Kubernetes chart are upcoming). WebSocket delivery is currently an AWS feature.
 
 | Mode | Transport | How the client gets the reply | Queues | Response store | Supported on |
 |------|-----------|-------------------------------|--------|----------------|--------------|
-| Default (direct) | HTTP | JSON on the same connection | - | - | All flavors |
-| `rest_sync` | HTTP | JSON on the same connection (server polls the store internally) | SQS FIFO | DynamoDB / Redis / Valkey | AWS Lambda, AWS ECS |
-| `rest_async` | HTTP | `202 ACCEPTED` + `request_id`, client polls | SQS FIFO | DynamoDB / Redis / Valkey | AWS Lambda, AWS ECS |
+| `rest_sync` (also when `mode` is unset) | HTTP | JSON on the same connection (server awaits the store internally) | `in_memory` / SQS FIFO | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS) |
+| `rest_async` | HTTP | `202 ACCEPTED` + `request_id`, client polls | `in_memory` / SQS FIFO | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS) |
 | `async` | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Optional | Not used | AWS Lambda, AWS ECS |
-| `stream` | SSE or WebSocket | Token-level `StreamChunk`s as they are generated | Optional (WebSocket path) | Not used | REST API surfaces (SSE); AWS Lambda (WebSocket); AWS ECS (WebSocket) |
+| `stream` | SSE or WebSocket | Token-level `StreamChunk`s as they are generated | `in_memory` (SSE path) / SQS (WebSocket path) | Not used | REST API surfaces (SSE); AWS Lambda (WebSocket); AWS ECS (WebSocket) |
+
+Surfaces mounted with explicit handlers (the thread handler, messaging integrations, custom handlers) execute inline rather than through the pipeline.
 
 :::note
 AWS ECS supports `execution_mode = "stream"` for WebSocket mode in both direct and queue-backed topologies: in direct mode the chat route broadcasts each chunk inline via `ChatService.process_stream_chat_async`; in queue mode `ECSAgentRunner.run()` dispatches to `ECSStreamAgentRunner`, which fans out one Output Queue message per chunk instead of one for the full reply. See [AWS Containerized](./aws-containerized) for details.
@@ -67,12 +68,12 @@ AWS ECS supports `execution_mode = "stream"` for WebSocket mode in both direct a
 
 | Flavor | JSON REST | SSE streaming | WebSocket (async + streaming) | Queue mode |
 |--------|-----------|---------------|-------------------------------|------------|
-| Local REST API / self-hosted | ✅ | ✅ | - | - |
-| AWS Lambda | ✅ | - (use WebSocket) | ✅ | ✅ |
-| AWS ECS Fargate | ✅ | - | ✅ (`async` and `stream`) | ✅ |
-| Azure Functions | ✅ | - | - | - |
-| Azure Container Apps | ✅ | ✅ | - | - |
-| GCP Cloud Run (both flavors) | ✅ | ✅ | - | - |
+| Local REST API / self-hosted | ✅ | ✅ | - | ✅ in-process (`in_memory`) |
+| AWS Lambda | ✅ | - (use WebSocket) | ✅ | ✅ SQS |
+| AWS ECS Fargate | ✅ | - | ✅ (`async` and `stream`) | ✅ SQS |
+| Azure Functions | ✅ | - | - | - (per-invocation, inline) |
+| Azure Container Apps | ✅ | ✅ | - | ✅ in-process (`in_memory`) |
+| GCP Cloud Run (both flavors) | ✅ | ✅ | - | ✅ in-process (`in_memory`) |
 
 :::info
 SSE streaming is served by the built-in FastAPI `RESTAPI` server, so it is available anywhere that server runs (local, ECS single-container REST, Azure Container Apps, GCP Cloud Run). AWS Lambda delivers streaming over **WebSocket** instead, since API Gateway REST endpoints don't support SSE responses from standard Lambda integrations. CrewAI and Smolagents don't support token streaming; use `rest_sync` with those frameworks.
@@ -97,9 +98,9 @@ SSE streaming is served by the built-in FastAPI `RESTAPI` server, so it is avail
 GCP "serverless" and "containerized" are both Cloud Run: the difference is `min_instance_count = 0` (scale-to-zero) vs `≥ 1` (always-on), not a different compute product.
 :::
 
-## Scalable Queue Topologies (AWS)
+## Scalable Queue Topologies
 
-For production workloads on AWS, queue mode decouples request ingestion from agent execution with SQS FIFO queues. The same pipeline runs on Lambda and ECS with different compute:
+Queue mode decouples request ingestion from agent execution. The same five-component pipeline runs everywhere: in-process on any server flavor (the `in_memory` default), and split across compute over SQS FIFO queues on AWS. Kafka/NATS transports and a Kubernetes Helm chart (baremetal + EKS) arrive with the upcoming [#495](https://github.com/yaalalabs/agent-kernel/issues/495) iterations.
 
 ```mermaid
 graph LR
@@ -118,13 +119,13 @@ graph LR
     style RSH fill:#2e8555,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
-| Role | AWS Lambda (serverless) | AWS ECS (containerized) |
-|------|------------------------|-------------------------|
-| Request handler | Request Handler Lambda | `ECSQueueRequestHandler` thread in the IO container |
-| Agent runner | Agent Runner Lambda (SQS event source mapping) | `ECSAgentRunner` service, a pool of long-poll consumer threads |
-| Response handler | Response Handler Lambda | `ECSOutputConsumer` thread pool in the IO container |
-| Reply delivery | Response store, or WebSocket push (`async`/`stream`) | Response store, or WebSocket push (`async`/`stream`) |
-| Scaling | Automatic per SQS batch | Backlog-per-task target tracking |
+| Role | Local / any server flavor (in-process) | AWS Lambda (serverless) | AWS ECS (containerized) |
+|------|----------------------------------------|------------------------|-------------------------|
+| Request handler | `RequestHandler` on the rest-api thread | Request Handler Lambda | `ECSQueueRequestHandler` thread in the IO container |
+| Agent runner | `AgentRunner` worker threads (same process) | Agent Runner Lambda (SQS event source mapping) | `ECSAgentRunner` service, a pool of long-poll consumer threads |
+| Response handler | `ResponseHandler` worker thread (same process) | Response Handler Lambda | `ECSOutputConsumer` thread pool in the IO container |
+| Reply delivery | Response store (in-memory), or SSE bridging (`stream`) | Response store, or WebSocket push (`async`/`stream`) | Response store, or WebSocket push (`async`/`stream`) |
+| Scaling | `no_of_consumers` threads | Automatic per SQS batch | Backlog-per-task target tracking |
 
 See [AWS Serverless](./aws-serverless), [AWS Containerized](./aws-containerized), and the [Queue Mode Guide](../advanced/queue-mode-guide) for full component walkthroughs.
 
@@ -242,7 +243,7 @@ terraform init && terraform apply
 - **Small web app** → **REST API**: simple, self-hosted
 - **Variable traffic on AWS** → **AWS Lambda**: auto-scales, pay per use; add queue mode for backpressure and retries
 - **High traffic / long-running agents on AWS** → **AWS ECS in queue mode**: consistent performance, backlog-based auto-scaling
-- **Real-time UX on AWS** → **WebSocket mode**: `async` for push delivery, `stream` for token streaming — both on Lambda or ECS
+- **Real-time UX on AWS** → **WebSocket mode**: `async` for push delivery, `stream` for token streaming: both on Lambda or ECS
 - **Variable traffic on Azure** → **Azure Functions**; **high traffic** → **Azure Container Apps** (KEDA scaling, SSE streaming)
 - **Variable traffic on GCP** → **Cloud Run scale-to-zero**; **high traffic** → **Cloud Run always-on**
 - **AI integration** → **MCP/A2A**: protocol-based integration
