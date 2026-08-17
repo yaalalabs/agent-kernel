@@ -6,7 +6,6 @@ enabled, saving attachment bytes into the existing AttachmentStore before the
 agent runs. A single shared instance is used by ChatService and ThreadRouter.
 """
 
-import base64
 import logging
 import sys
 from threading import RLock
@@ -14,44 +13,14 @@ from typing import List, Optional
 
 from ...core.config import AKConfig
 from ...core.model import AgentRequest, AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage
+from ...core.util.pagination import clamp_limit, decode_cursor, encode_cursor
 from .model import MessagePage, Thread, ThreadAttachment, ThreadMessage, ThreadPage
 from .naming import ThreadNamingStrategy
 from .store import ThreadStore, ThreadStoreBuilder
 
-# Pagination defaults and cap for message/thread listings.
+# Pagination defaults for message/thread listings (the cap lives in core.util.pagination).
 DEFAULT_MESSAGE_PAGE_SIZE = 50
 DEFAULT_THREAD_PAGE_SIZE = 50
-MAX_PAGE_SIZE = 200
-
-
-def _encode_cursor(offset: Optional[int]) -> Optional[str]:
-    """Encode a numeric page offset into an opaque cursor token, or None."""
-    if offset is None:
-        return None
-    return base64.urlsafe_b64encode(str(offset).encode()).decode()
-
-
-def _decode_cursor(cursor: Optional[str]) -> int:
-    """Decode an opaque cursor token back into a numeric offset (0 when absent).
-
-    :raises ValueError: If the cursor is present but malformed.
-    """
-    if not cursor:
-        return 0
-    try:
-        offset = int(base64.urlsafe_b64decode(cursor.encode()).decode())
-    except Exception:
-        raise ValueError("Invalid pagination cursor")
-    if offset < 0:
-        raise ValueError("Invalid pagination cursor")
-    return offset
-
-
-def _clamp_limit(limit: Optional[int], default: int) -> int:
-    """Clamp a requested page size into [1, MAX_PAGE_SIZE], defaulting when absent."""
-    if not limit or limit < 1:
-        return default
-    return min(limit, MAX_PAGE_SIZE)
 
 
 class ConversationThreadManager:
@@ -261,10 +230,10 @@ class ConversationThreadManager:
         :return: A MessagePage with the messages and the next opaque cursor.
         :raises ValueError: If the cursor is malformed.
         """
-        offset = _decode_cursor(cursor)
-        page_size = _clamp_limit(limit, DEFAULT_MESSAGE_PAGE_SIZE)
+        offset = decode_cursor(cursor)
+        page_size = clamp_limit(limit, DEFAULT_MESSAGE_PAGE_SIZE)
         messages, next_offset = self._store.get_messages(session_id, limit=page_size, offset=offset)
-        return MessagePage(messages=messages, next_cursor=_encode_cursor(next_offset))
+        return MessagePage(messages=messages, next_cursor=encode_cursor(next_offset))
 
     def list_threads(
         self,
@@ -282,7 +251,7 @@ class ConversationThreadManager:
         :return: A ThreadPage with the threads and the next opaque cursor.
         :raises ValueError: If the cursor is malformed.
         """
-        offset = _decode_cursor(cursor)
-        page_size = _clamp_limit(limit, DEFAULT_THREAD_PAGE_SIZE)
+        offset = decode_cursor(cursor)
+        page_size = clamp_limit(limit, DEFAULT_THREAD_PAGE_SIZE)
         threads, next_offset = self._store.list_threads(user_id=user_id, group_id=group_id, limit=page_size, offset=offset)
-        return ThreadPage(threads=threads, next_cursor=_encode_cursor(next_offset))
+        return ThreadPage(threads=threads, next_cursor=encode_cursor(next_offset))
