@@ -1,9 +1,10 @@
+"""Tools are plain Python functions here: Agent Kernel's ToolBuilder binds them to whichever
+framework the agent uses (see app.py), so the same function would work unchanged under CrewAI,
+LangGraph, ADK, and the rest."""
+
 from typing import Dict, List
 
-from agents import function_tool
 
-
-@function_tool
 def fetch_customer_activity(name: str, operations: List[str] | None = None) -> Dict[str, object]:
     """
     Returns recent banking activities for a given customer name.

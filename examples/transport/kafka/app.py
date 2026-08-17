@@ -11,7 +11,7 @@ Both read the same config.yaml. Start the infrastructure first with ``python kaf
 
 import sys
 
-from agentkernel.openai import OpenAIModule
+from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.pipeline import AgentRunner, IOHandler
 from agents import Agent
 
@@ -31,7 +31,9 @@ customer_support_agent = Agent(
     "When I provide the name and the work, you will assume you are having a conversation with this "
     "customer itself and mimic the conversation. Ask questions one by one and gather answers and show "
     "the summary once the conversation is over.",
-    tools=[fetch_customer_activity],
+    # Agent Kernel's builder turns plain functions into this framework's tool objects, which is
+    # what keeps tool.py free of any framework import.
+    tools=OpenAIToolBuilder.bind([fetch_customer_activity]),
 )
 
 triage_agent = Agent(
