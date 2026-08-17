@@ -108,8 +108,8 @@ A chat request gains an optional `schedule` block that defers its execution to a
 
 ### Ownership and shared authorization (issue req 8)
 
-- Refactor, preserving thread behavior exactly:
-  - Move `Authoriser` from `integration/thread/authoriser.py` to the `auth/` package; keep re-exports at the old locations (`integration/thread/__init__.py`, `agentkernel.thread`) so existing imports and patch targets survive.
+- Refactor, preserving thread runtime behavior exactly:
+  - Move `Authoriser` from `integration/thread/authoriser.py` to the `auth/` package, with `agentkernel.auth` as its single import path — the same place `AuthValidator` already lives, which is where users already look for auth primitives. No re-exports are left behind on the thread paths: `Authoriser` is shared auth infrastructure, not part of the thread package's surface. The trade-off is a one-line breaking import change for apps that subclass it; the in-repo consumers (two examples, the threads doc, the `ak-add-capabilities` skill, one test) migrate with the move.
   - Extract the bearer-token parsing + 401 mapping of `ThreadRESTRequestHandler._resolve_user` (`thread_chat.py:218-237`) into a shared base (e.g. `AuthorisedRESTRequestHandler(RESTRequestHandler)` beside `api/handler.py:15`); thread and schedule handlers both inherit it. The tested 401 detail strings move verbatim.
   - Provide an `AuthValidator -> Authoriser` adapter in `auth/` (`authorise(token) = result.subject if validate(token).is_valid else None`), so one user-supplied validator can serve global REST auth, WS `$connect`, threads, and schedules instead of adding a third identity path.
 - Enforcement (same trust model as threads):

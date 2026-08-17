@@ -18,16 +18,20 @@ class _StubValidator(AuthValidator):
         return self._result
 
 
-def test_all_import_paths_resolve_to_the_same_class():
+def test_the_package_export_matches_the_defining_module():
     from agentkernel.auth.authoriser import Authoriser as from_auth_module
-    from agentkernel.integration.thread import Authoriser as from_thread_package
-    from agentkernel.integration.thread.authoriser import Authoriser as from_thread_shim
-    from agentkernel.thread import Authoriser as from_thread_alias
 
     assert Authoriser is from_auth_module
-    assert Authoriser is from_thread_shim
-    assert Authoriser is from_thread_package
-    assert Authoriser is from_thread_alias
+
+
+def test_authoriser_is_no_longer_exported_from_the_thread_package():
+    """agentkernel.auth is the single import path (#629); the thread package owns
+    threads, not shared auth primitives."""
+    import agentkernel.integration.thread as thread_package
+    import agentkernel.thread as thread_alias
+
+    assert not hasattr(thread_package, "Authoriser")
+    assert not hasattr(thread_alias, "Authoriser")
 
 
 def test_thread_handler_inherits_the_shared_authorised_base():

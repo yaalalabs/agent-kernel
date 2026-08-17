@@ -14,17 +14,17 @@ Behavior-preserving. Spec sections: "Shared authorization refactor", the paginat
 
 ### Iteration 1.1: Relocate Authoriser + adapter
 
-- **Goal:** `Authoriser` importable from `agentkernel.auth`; old import paths still resolve; `AuthValidatorAuthoriser` available.
-- **Files:** `auth/authoriser.py` (new), `auth/__init__.py`, `integration/thread/authoriser.py` (becomes re-export shim).
-- **Steps:** move the class verbatim; generalize the docstring; add the adapter; shim the old module.
-- **Verify:** `from agentkernel.integration.thread.authoriser import Authoriser`, `from agentkernel.thread import Authoriser`, `from agentkernel.auth import Authoriser` resolve to the same class.
+- **Goal:** `agentkernel.auth` is the **single** import path for `Authoriser` (matching `AuthValidator`); `AuthValidatorAuthoriser` available. Breaking import change — call it out in the PR body.
+- **Files:** `auth/authoriser.py` (new), `auth/__init__.py`, `integration/thread/authoriser.py` (**deleted**), `integration/thread/__init__.py` (re-export **dropped**), `integration/thread/thread_chat.py` (imports from `...auth.authoriser`).
+- **Steps:** move the class verbatim; generalize the docstring; add the adapter; delete the old module; drop the thread package's re-export; migrate every consumer in this same PR — `examples/api/thread-openai/app.py`, `examples/api/multimodal/thread-openai/app.py`, `docs/docs/advanced/threads.md`, `skills/ak-add-capabilities/SKILL.md`, `tests/test_thread_router.py`. Leave `docs/versioned_docs/` (frozen release snapshot) alone.
+- **Verify:** `from agentkernel.auth import Authoriser` works; `agentkernel.thread` and `agentkernel.integration.thread` no longer expose an `Authoriser` attribute; both thread examples still import cleanly.
 
 ### Iteration 1.2: Shared AuthorisedRESTRequestHandler
 
 - **Goal:** bearer parsing + 401 mapping live once.
 - **Files:** `api/handler.py` (new base class), `integration/thread/thread_chat.py` (`ThreadRESTRequestHandler` subclasses it, drops its own `_resolve_user`).
 - **Steps:** move `_resolve_user` verbatim (the three 401 detail strings unchanged).
-- **Verify:** `tests/test_thread_router.py` passes **unchanged**.
+- **Verify:** `tests/test_thread_router.py` passes with its **assertions unchanged** (only its 1.1 import line differs).
 
 ### Iteration 1.3: Shared pagination helpers
 
@@ -35,8 +35,8 @@ Behavior-preserving. Spec sections: "Shared authorization refactor", the paginat
 
 ### Iteration 1.4: Tests and sync
 
-- **Files:** `tests/test_authoriser_shared.py` (new: adapter behavior, import-path preservation).
-- **Steps:** add tests; sync check: no skill/docs surface documents `Authoriser`'s module path except `.agents/skills/ak-dev-architecture/SKILL.md` (thread section): update its location note.
+- **Files:** `tests/test_authoriser_shared.py` (new: adapter behavior, `agentkernel.auth` export identity, plus a guard that the thread package no longer exposes `Authoriser`).
+- **Steps:** add tests; sync the surfaces the relocation invalidates — `.agents/skills/ak-dev-architecture/SKILL.md` (thread section's location note → `agentkernel.auth`), `skills/ak-add-capabilities/SKILL.md` and `docs/docs/advanced/threads.md` (import lines, done in 1.1). Add the breaking import change to the release notes.
 - **Verify:** `cd ak-py && uv run pytest` and `make lint-check`.
 
 ---

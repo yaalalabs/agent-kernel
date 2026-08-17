@@ -863,7 +863,8 @@ thread:
 ```python
 from typing import Optional
 from agentkernel.api import RESTAPI
-from agentkernel.thread import AgentThreadRequestHandler, Authoriser
+from agentkernel.auth import Authoriser
+from agentkernel.thread import AgentThreadRequestHandler
 
 class DemoAuthoriser(Authoriser):
     def authorise(self, token: str) -> Optional[str]:

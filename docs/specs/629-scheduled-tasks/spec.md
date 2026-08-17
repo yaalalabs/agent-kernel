@@ -337,7 +337,18 @@ Mounting:
 
 Preserving thread behavior exactly (requirement 8):
 
-1. **`Authoriser` moves** from `integration/thread/authoriser.py` to a new `auth/authoriser.py` (class body verbatim, `integration/thread/authoriser.py:14-28`; docstring generalized to "resource-management routes"). The old module becomes a re-export shim (`from ...auth.authoriser import Authoriser`), so `agentkernel.integration.thread.authoriser.Authoriser`, the package export (`integration/thread/__init__.py:12`), and the `agentkernel.thread` star-export keep resolving. `auth/__init__.py` (`:14`) adds `Authoriser` and `AuthValidatorAuthoriser` to its exports.
+1. **`Authoriser` moves** from `integration/thread/authoriser.py` to a new `auth/authoriser.py` (class body verbatim, `integration/thread/authoriser.py:14-28`; docstring generalized to "resource-management routes"). `auth/__init__.py` (`:14`) adds `Authoriser` and `AuthValidatorAuthoriser` to its exports.
+
+   The move is a **clean relocation, not a shim**: `agentkernel.auth` becomes the single import path, matching where `AuthValidator` already lives (every example and deployment doc already imports auth primitives from `agentkernel.auth`). The old module is deleted and the thread package's re-export (`integration/thread/__init__.py:12`) is dropped, so neither `agentkernel.integration.thread.Authoriser` nor `agentkernel.thread.Authoriser` resolves any more — the thread package owns threads, not shared auth primitives. `integration/thread/thread_chat.py` imports from `...auth.authoriser`. All consumers migrate in the same PR:
+
+   | Surface | New import |
+   |---|---|
+   | `examples/api/thread-openai/app.py`, `examples/api/multimodal/thread-openai/app.py` | `from agentkernel.auth import Authoriser` |
+   | `docs/docs/advanced/threads.md` (Authorization section) | same |
+   | `skills/ak-add-capabilities/SKILL.md` (thread authoriser snippet) | same |
+   | `tests/test_thread_router.py` | same |
+
+   `docs/versioned_docs/` is a frozen release snapshot and is left untouched. This is a **breaking import change** for applications that subclass `Authoriser` off the thread path; it belongs in the phase-1 `refactor:` PR body and the release notes.
 2. **`AuthValidatorAuthoriser`** (in `auth/authoriser.py`): adapter so one user-supplied `AuthValidator` serves REST global auth, WS `$connect`, threads, and schedules:
 
    ```python
@@ -432,7 +443,7 @@ All intentional; each traced to a design requirement:
 8. The thread handler does not create a thread or record messages for a request carrying `schedule` (checked before `ThreadRecorder.pre_run`, `thread_chat.py:120,146`).
 9. Runs whose request carries `user_id` now expose it in the session volatile cache under `ak.acting_user_id` for the duration of the run (visible to hooks/tools; cleared by the existing `Runtime` volatile-cache clearing).
 10. The Terraform input queue flips to `content_based_deduplication = true` when `enable_scheduling` (containerized `modules/queues/main.tf:17`, serverless equivalent). App senders are unaffected: an explicit `MessageDeduplicationId` (always sent today, `pipeline/request_handler.py:86`, `sqs_handler.py:343-350`) takes precedence over content-based dedup.
-11. `ThreadRESTRequestHandler` inherits `_resolve_user` from the new `AuthorisedRESTRequestHandler` and `Authoriser` moves to `auth/`: behavior and error strings identical, import paths preserved via shims.
+11. `ThreadRESTRequestHandler` inherits `_resolve_user` from the new `AuthorisedRESTRequestHandler` and `Authoriser` moves to `auth/`: runtime behavior and error strings identical, but **the import path changes** — `Authoriser` is now only importable from `agentkernel.auth`, no longer from `agentkernel.thread` or `agentkernel.integration.thread`. Apps that subclass it must update one import line.
 
 **Non-changes**: the three multipart route signatures (`api/handler.py:76-105`, `pipeline/request_handler.py:343-380`, `integration/thread/thread_chat.py:79-108`) gain no `schedule` form field, so multipart requests cannot carry a schedule block (design non-goal; the inherited model field simply stays `None` there); chat wire shapes for non-scheduled requests (200 bodies byte-identical); `ResponseBuilder.build_response` for status 200 and all error paths; messaging integrations, CLI, A2A, MCP; thread store layouts and thread routes; `RESTAPI.run()` delegation rule (`cls is RESTAPI`, no explicit handlers, `in_memory`); `QueueMessage` envelope shape; session store layouts; serverless WebSocket paths; `SQSHandler` send-side signatures; existing ECS record keys (`session_id`, `request_id`, `body`) all remain, `status_code` is additive.
 
@@ -472,9 +483,11 @@ New test files (patterns per `ak-dev-testing-conventions`: config monkeypatching
 - `tests/test_pipeline_agent_runner_schedule.py`: `request_id` body fallback (attribute precedence, body fallback, attribute injection for output forwarding, missing-both error), for `AgentRunner` and `StreamAgentRunner`.
 - `tests/test_ecs_agent_runner_schedule.py`: ECS `_get_record_attributes` fallback (with and without a pre-parsed body), status-code custom attribute on `_send_to_output_queue`, `on_permanent_failure` resilience.
 - `tests/test_ecs_output_consumer_status.py`: stored record gains `status_code` (present, absent → 200, permanent failure → 500).
-- `tests/test_authoriser_shared.py`: `AuthValidatorAuthoriser` (valid → subject, invalid → None); import-path preservation (`from agentkernel.integration.thread.authoriser import Authoriser`, `from agentkernel.thread import Authoriser`, `from agentkernel.auth import Authoriser` all resolve to the same class).
+- `tests/test_authoriser_shared.py`: `AuthValidatorAuthoriser` (valid → subject, invalid → None); `agentkernel.auth`'s export is the class defined in `auth/authoriser.py`; and the relocation is asserted complete — `agentkernel.integration.thread` and `agentkernel.thread` no longer expose an `Authoriser` attribute, so a re-export cannot creep back in unnoticed.
 
-Existing tests that must pass **unchanged** (they pin behavior this change refactors around): `tests/test_thread_router.py` (401/403 strings through the extracted base), `tests/test_thread_integration.py`, `tests/test_chat_service_core.py`, `tests/test_chat_service_streaming.py`, `tests/test_sqs_handler.py` (send-side wire shape), `tests/test_store_builders.py` (extended with `ScheduleStoreBuilder` unknown-type + BYO dotted cases), `tests/test_sandbox.py` (tool-factory independence). Existing patch targets that must keep resolving: `agentkernel.integration.thread.authoriser.Authoriser` (shim) and everything under `deployment/common/*` shims (untouched).
+Existing tests that must pass **unchanged** (they pin behavior this change refactors around): `tests/test_thread_integration.py`, `tests/test_chat_service_core.py`, `tests/test_chat_service_streaming.py`, `tests/test_sqs_handler.py` (send-side wire shape), `tests/test_store_builders.py` (extended with `ScheduleStoreBuilder` unknown-type + BYO dotted cases), `tests/test_sandbox.py` (tool-factory independence).
+
+`tests/test_thread_router.py` is the one exception: its **assertions** stay untouched (the 401/403 strings still pin the extracted `AuthorisedRESTRequestHandler` base), but its import line moves `Authoriser` to `agentkernel.auth`. Existing patch targets that must keep resolving: everything under `deployment/common/*` shims (untouched). Nothing patches `agentkernel.integration.thread.authoriser.Authoriser`, which is why that module could be deleted outright rather than shimmed.
 
 Changed existing files: `tests/test_thread_integration.py` gains a "schedule block skips recording" case; `tests/test_store_builders.py` gains the schedule-store cases; a `RestHandler._build_sync_response` status-honoring case is added where the pipeline request-handler tests live.
 

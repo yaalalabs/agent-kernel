@@ -15,11 +15,11 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
+from ...auth.authoriser import Authoriser
 from ...core import Config
 from ...core.chat_service import RequestBuilder, ResponseBuilder
 from ...core.model import BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
 from ...core.runtime import Runtime
-from .authoriser import Authoriser
 from .manager import ConversationThreadManager
 from .recorder import ThreadRecorder
 

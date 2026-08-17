@@ -4,8 +4,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from agentkernel.auth import Authoriser
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.integration.thread import Authoriser, ConversationThreadManager, ThreadNamingStrategy, ThreadRESTRequestHandler
+from agentkernel.integration.thread import ConversationThreadManager, ThreadNamingStrategy, ThreadRESTRequestHandler
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 
 
