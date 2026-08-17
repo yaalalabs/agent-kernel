@@ -128,8 +128,15 @@ Spec section references are to `spec.md`.
   computed client-side with a stable `crc32` (no server-side subject transform, so
   `auto_provision: false` operators need no transform in their NACK CRs), and `ack_wait` defaults
   to 300 s rather than 30 s because it is the visibility timeout and a turn that outlives it is
-  executed twice. A `nats-server` container run and an `examples/transport/nats` sibling to the
-  Kafka example are still outstanding.
+  executed twice.
+- **Also delivered:** `examples/transport/nats/` (two-process pipeline over a single-server
+  JetStream stack) with `nats_tester.py`, which brings up the stack, waits on a real JetStream
+  account lookup, and inspects streams with direct gets rather than a second consumer (a work-queue
+  stream rejects overlapping consumers, and a peeking consumer would steal work). Its `app_test.py`
+  covers rest_sync, a multi-turn session, stream and per-partition consumer provisioning, and the
+  retry-to-termination path. **Not yet run against a real `nats-server`** (no Docker at the time of
+  writing) and, like the Kafka example, not registered in CI: that is iteration 11, and it needs the
+  `nats` extra published.
 
 ## Phase C: WebSocket delivery and Kubernetes
 

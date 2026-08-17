@@ -209,6 +209,11 @@ execution:
 Process layout is identical to the other broker transports: `IOHandler.run()` in one process,
 `AgentRunner.run()` in the other.
 
+A runnable version, including a single-server JetStream stack and a harness that inspects the
+streams safely (a work-queue stream cannot be browsed with a second consumer, so it reads by
+sequence), is in
+[`examples/transport/nats`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/transport/nats).
+
 JetStream is the closest fit of any backend here, because the server provides most of what the
 pipeline needs rather than the client rebuilding it: `ack_wait` is the visibility timeout,
 `num_delivered` is an exact delivery count, `max_deliver` enforces the ceiling server-side,
