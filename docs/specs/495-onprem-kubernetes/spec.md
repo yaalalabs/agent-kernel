@@ -254,10 +254,13 @@ Client `confluent-kafka` (new `kafka` extra). Per `research/kafka.md`:
   queue's distinct groups concurrently). Concurrency therefore equals the number of consumer
   threads holding partitions: `no_of_consumers x replicas` must stay <= the partition count, and
   `QueueTransport.check_consumer_capacity(queue, num_consumers)` (new optional hook, default
-  no-op; called from `AgentRunner.start`/`ResponseHandler.start`) reads topic metadata once per
+  no-op; called from `AgentRunner.start`/`ResponseHandler.start`) reads cluster metadata once per
   process per topic and warns when partitions are fewer than the configured consumers, when the
-  topic is missing, and logs the ratio otherwise. Metadata failures are ignored: a startup check
-  never blocks startup.
+  queue topic is missing, and when the topic's **dead-letter topic** is missing (a permanently
+  failed record commits either way, so an absent DLQ silently discards the only surviving copy);
+  it logs the ratio otherwise. One unfiltered metadata call covers the queue and its DLQ, which
+  also avoids nudging a broker with auto-creation enabled into creating either. Metadata failures
+  are ignored: a startup check never blocks startup.
 - **One record in flight per partition**: the consumer buffers a fetched batch per partition and
   hands out at most one record per partition, releasing the next only on `ack`. Required so a
   retry can redeliver a record before any later offset in that partition is committed. This costs

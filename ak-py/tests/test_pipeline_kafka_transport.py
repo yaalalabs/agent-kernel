@@ -525,6 +525,19 @@ class TestConsumerCapacity:
         assert "2 partition(s) but 5 consumer(s)" in warning.message
         assert "3 will stay idle" in warning.message
 
+    def test_warns_when_the_dead_letter_topic_is_missing(self, cluster, caplog):
+        """The operational guard against silent dead-letter loss: a permanently failed record is
+        committed whether or not its DLQ copy lands, so an absent DLQ topic has to be reported at
+        startup rather than discovered when the first poison message is discarded."""
+        cluster.topic_partitions = {INPUT_TOPIC: 4}  # the queue topic exists, its DLQ does not
+
+        with caplog.at_level(logging.WARNING, logger="ak.pipeline.transport.kafka"):
+            _transport().check_consumer_capacity(QueueName.INPUT, num_consumers=2)
+
+        [warning] = [record for record in caplog.records if record.levelname == "WARNING"]
+        assert f"Dead-letter topic {INPUT_TOPIC}.dlq does not exist" in warning.message
+        assert "auto-creation" in warning.message, "the warning says how to fix it"
+
     def test_no_warning_when_partitions_are_sufficient(self, cluster, caplog):
         cluster.topic_partitions = {INPUT_TOPIC: 32, f"{INPUT_TOPIC}.dlq": 32}
         with caplog.at_level(logging.INFO, logger="ak.pipeline.transport.kafka"):
