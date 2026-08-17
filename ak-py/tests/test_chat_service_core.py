@@ -2,7 +2,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agentkernel.core.chat_service import ChatService
+from agentkernel.core.base import Agent, Runner
+from agentkernel.core.chat_service import ACTING_USER_CACHE_KEY, ChatService
+from agentkernel.core.config import AKConfig
 from agentkernel.core.model import (
     AgentReplyText,
     AgentRequestAny,
@@ -12,6 +14,9 @@ from agentkernel.core.model import (
     BaseRunRequest,
     StreamChunk,
 )
+from agentkernel.core.runtime import Runtime
+
+ACTING_USER_AGENT = "acting-user-agent"
 
 
 def _mock_handler(reply=None):
@@ -236,3 +241,88 @@ class TestProcessWrappers:
             status, body = await service.process_async_chat_request(BaseRunRequest(prompt="hi", session_id="s1"))
         assert status == 400
         assert body["error"] == "No agent available"
+
+
+class _ActingUserRunner(Runner):
+    """Records the acting user visible from inside the run, the way a hook or tool would read it."""
+
+    def __init__(self):
+        super().__init__("ActingUserRunner")
+        self.seen: list = []
+
+    async def run(self, agent, session, requests):
+        self.seen.append(session.get_volatile_cache().get(ACTING_USER_CACHE_KEY))
+        return AgentReplyText(response="ok")
+
+    async def stream(self, agent, session, requests):
+        self.seen.append(session.get_volatile_cache().get(ACTING_USER_CACHE_KEY))
+        yield "ok"
+
+
+class _ActingUserAgent(Agent):
+    def __init__(self, runner: _ActingUserRunner):
+        super().__init__(ACTING_USER_AGENT, runner)
+
+    def get_description(self) -> str:
+        return "Acting-user propagation test agent"
+
+    def get_a2a_card(self):
+        return None
+
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
+
+
+class TestActingUserPropagation:
+    """A run whose request carries user_id exposes it in the session volatile cache, so hooks and
+    tools can attribute work to the caller (#629 Phase 2)."""
+
+    @pytest.fixture
+    def runner(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+        capturing_runner = _ActingUserRunner()
+        agent = _ActingUserAgent(capturing_runner)
+        Runtime.current().register(agent)
+        yield capturing_runner
+        Runtime.current().deregister(agent)
+        AKConfig._reset()
+
+    def _request(self, session_id: str, user_id=None) -> BaseRunRequest:
+        return BaseRunRequest(prompt="hi", session_id=session_id, agent=ACTING_USER_AGENT, user_id=user_id)
+
+    @pytest.mark.asyncio
+    async def test_execute_exposes_the_acting_user(self, runner):
+        await ChatService().execute(self._request("s-acting-1", user_id="u-1"))
+        assert runner.seen == ["u-1"]
+
+    def test_execute_sync_exposes_the_acting_user(self, runner):
+        ChatService().execute_sync(self._request("s-acting-2", user_id="u-2"))
+        assert runner.seen == ["u-2"]
+
+    @pytest.mark.asyncio
+    async def test_execute_stream_exposes_the_acting_user(self, runner):
+        chunks = await ChatService().execute_stream(self._request("s-acting-3", user_id="u-3"))
+        [chunk async for chunk in chunks]
+        assert runner.seen == ["u-3"]
+
+    def test_execute_stream_sync_exposes_the_acting_user(self, runner):
+        list(ChatService().execute_stream_sync(self._request("s-acting-4", user_id="u-4")))
+        assert runner.seen == ["u-4"]
+
+    @pytest.mark.asyncio
+    async def test_request_without_a_user_id_publishes_nothing(self, runner):
+        await ChatService().execute(self._request("s-acting-5"))
+        assert runner.seen == [None]
+
+    @pytest.mark.asyncio
+    async def test_key_does_not_survive_into_the_next_run_of_the_same_session(self, runner):
+        """Runtime clears the volatile cache when a run ends, so the acting user is per-run and
+        never attributed to a later, unauthenticated request on the same session."""
+        service = ChatService()
+        await service.execute(self._request("s-acting-6", user_id="u-6"))
+        await service.execute(self._request("s-acting-6"))
+        assert runner.seen == ["u-6", None]

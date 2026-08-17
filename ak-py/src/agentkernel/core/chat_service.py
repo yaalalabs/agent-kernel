@@ -22,6 +22,10 @@ from .model import (
 )
 from .service import AgentService
 
+# Volatile-cache key under which the run's acting user is published, so hooks and tools can read
+# who the request was made on behalf of without threading user_id through every call.
+ACTING_USER_CACHE_KEY = "ak.acting_user_id"
+
 
 class RequestBuilder:
     """Constructs AgentRequest object lists from various input sources."""
@@ -346,6 +350,7 @@ class ChatService:
         requests = await self._prepare_async(req, requests)
         handler = AgentHandler()
         handler.initialize(req.session_id, req.agent)
+        self._propagate_acting_user(handler, req)
         result = await handler.run_async(requests)
         return result, handler.get_response_session_id(req.session_id)
 
@@ -360,6 +365,7 @@ class ChatService:
         requests = self._prepare_sync(req, requests)
         handler = AgentHandler()
         handler.initialize(req.session_id, req.agent)
+        self._propagate_acting_user(handler, req)
         result = handler.run_sync(requests)
         return result, handler.get_response_session_id(req.session_id)
 
@@ -378,6 +384,7 @@ class ChatService:
         requests = await self._prepare_async(req, requests)
         handler = AgentHandler()
         handler.initialize(req.session_id, req.agent)
+        self._propagate_acting_user(handler, req)
 
         async def _stream() -> AsyncGenerator[StreamChunk, None]:
             try:
@@ -402,6 +409,7 @@ class ChatService:
         requests = self._prepare_sync(req, requests)
         handler = AgentHandler()
         handler.initialize(req.session_id, req.agent)
+        self._propagate_acting_user(handler, req)
 
         def _stream() -> Generator[StreamChunk, None, None]:
             try:
@@ -411,6 +419,22 @@ class ChatService:
                 yield StreamChunk(error=str(e), done=True)
 
         return _stream()
+
+    @staticmethod
+    def _propagate_acting_user(handler: AgentHandler, req: BaseChatRequest) -> None:
+        """Publish the request's user as the run's acting user in the session volatile cache.
+
+        Called after the handler has selected its session, so hooks and tools running inside the
+        run can attribute work to the caller. The cache is volatile: ``Runtime.run``/``stream``
+        clear it when the run ends, so the key never leaks into the next run of the same session.
+
+        :param handler: The initialized agent handler owning the session
+        :param req: The request whose user_id is published (a request without one publishes nothing)
+        :return: None
+        """
+        if not req.user_id or not handler.service or not handler.service.session:
+            return
+        handler.service.session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, req.user_id)
 
     async def _prepare_async(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]]) -> List[AgentRequest]:
         """Validate the request and return the effective request list (built or prebuilt).

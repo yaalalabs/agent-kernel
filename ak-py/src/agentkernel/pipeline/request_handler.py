@@ -6,7 +6,7 @@ import uuid
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..api.handler import AgentRESTRequestHandler
 from ..core.config import AKConfig
@@ -17,8 +17,8 @@ from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
 
 # Retry budget for awaiting a response when no execution.response_store block is configured:
-# 60 x 1s. Local agent runs are frequently LLM-bound and slow; direct mode waited indefinitely,
-# so the local default errs generous. Set execution.response_store.{retry_count,delay} to tune.
+# 60 x 1s. Agent runs are frequently LLM-bound and slow; direct mode waited indefinitely, so the
+# unconfigured default errs generous. Set execution.response_store.{retry_count,delay} to tune.
 _DEFAULT_RESPONSE_RETRY = (60, 1.0)
 
 
@@ -79,14 +79,48 @@ class RestHandler(AgentRESTRequestHandler):
         """The execution mode governing the chat routes. Subclasses may map unset to a default."""
         return self._config.execution.mode
 
+    def _response_retry_config(self) -> tuple[int, float]:
+        """The (retry_count, delay) budget for awaiting a queued response."""
+        response_store_config = self._config.execution.response_store
+        if response_store_config is None:
+            return _DEFAULT_RESPONSE_RETRY
+        return response_store_config.retry_count, response_store_config.delay
+
     async def _await_response_record(self, request_id: str):
-        """Wait for the response for ``request_id`` and return it (or None on timeout)."""
-        return await self.get_response_store().get_message_with_retry(request_id=request_id, get_and_delete=True, async_mode=True)
+        """Wait for the response record for ``request_id`` and return it (or None on timeout).
+
+        Polls full records (``get_record``) rather than bodies (``get_message``) on every store,
+        so the stored status_code reaches ``_build_sync_response`` on shared stores too.
+        """
+        store = self.get_response_store()
+        retry_count, delay = self._response_retry_config()
+        for attempt in range(retry_count):
+            record = await asyncio.to_thread(store.get_record, request_id, True)
+            if record is not None:
+                return record
+            if attempt < retry_count - 1:
+                await asyncio.sleep(delay)
+        return None
 
     def _build_sync_response(self, record: Any) -> Any:
-        """Map a stored response record to the HTTP response body. Subclasses may override
-        (e.g. to honor a stored status code)."""
-        return record.get("body", record)
+        """Map a stored response record to the HTTP response, honoring its stored status.
+
+        Keeps the direct-mode contract on every queue-backed REST surface: an error status
+        raises (as ``ResponseBuilder`` does in rest_api_mode) instead of returning HTTP 200 with
+        an error body, and a 2xx-non-200 status (the 202 of a deferred chat) is preserved rather
+        than collapsing to 200. A record without a status_code defaults to 200, so records
+        written before the status was forwarded keep their behavior.
+        """
+        if not isinstance(record, dict) or "body" not in record:
+            return record
+
+        status_code = int(record.get("status_code") or 200)
+        body = record["body"]
+        if status_code >= 400:
+            raise HTTPException(status_code=status_code, detail=body)
+        if 200 < status_code < 400:
+            return JSONResponse(content=body, status_code=status_code)
+        return body
 
     async def enqueue_and_wait(self, body: BaseRunRequest):
         """Enqueue request; REST_SYNC waits for the response, REST_ASYNC returns request_id immediately."""
@@ -203,37 +237,6 @@ class RequestHandler(RestHandler):
     def _effective_mode(self) -> ExecutionMode:
         # Unset mode runs as REST_SYNC through the pipeline (spec §12 change 5).
         return self._config.execution.mode or ExecutionMode.REST_SYNC
-
-    # -- response mapping (direct-mode wire parity) ----------------------------------------
-
-    def _response_retry_config(self) -> tuple[int, float]:
-        response_store_config = self._config.execution.response_store
-        if response_store_config is None:
-            return _DEFAULT_RESPONSE_RETRY
-        return response_store_config.retry_count, response_store_config.delay
-
-    async def _await_response_record(self, request_id: str):
-        # Poll full records (get_record) rather than bodies (get_message) on every store, so
-        # the stored status_code reaches _build_sync_response on shared stores too.
-        store = self.get_response_store()
-        retry_count, delay = self._response_retry_config()
-        for attempt in range(retry_count):
-            record = await asyncio.to_thread(store.get_record, request_id, True)
-            if record is not None:
-                return record
-            if attempt < retry_count - 1:
-                await asyncio.sleep(delay)
-        return None
-
-    def _build_sync_response(self, record: Any) -> Any:
-        if isinstance(record, dict) and "body" in record:
-            status_code = int(record.get("status_code") or 200)
-            body = record["body"]
-            if status_code >= 400:
-                # Restore the direct-mode error contract (ResponseBuilder raises in rest_api_mode).
-                raise HTTPException(status_code=status_code, detail=body)
-            return body
-        return super()._build_sync_response(record)
 
     # -- routes ----------------------------------------------------------------------------
 
