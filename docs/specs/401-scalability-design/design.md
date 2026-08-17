@@ -297,9 +297,16 @@ graph TD
 
 ### Kafka + on-premise / local
 
-> This is the one processing method with no existing implementation (see Motivation) — treat the
-> component descriptions below as the target shape to build against, not a description of
-> existing code.
+> **Superseded by implementation.** At the time this section was written, this was the one
+> processing method with no existing implementation (see Motivation), and the component
+> descriptions below were the target shape to build against, not a description of existing code.
+> That target shape has since been superseded by [#495](../495-onprem-kubernetes/design.md), which
+> designs (and `feat: sqs and kafka queue transports with public queue interface cleanup (#495)`
+> implements) the actual Kafka transport as part of the unified `agentkernel.pipeline` package
+> (pluggable `QueueTransport`, shared `ConsumerLoop`), not the standalone three-container shape
+> below. The Kafka diagrams/flow/components/failure-scenarios that follow are kept for historical
+> context; for the as-built design and Kubernetes/Helm follow-on work, see
+> [#495](../495-onprem-kubernetes/design.md).
 
 #### Diagrams
 

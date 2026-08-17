@@ -88,7 +88,7 @@ The `yaalalabs/ak-containerized/aws` and `yaalalabs/ak-serverless/aws` Terraform
 
 ## What's Next
 
-SQS + Lambda and SQS + ECS validate a shape that generalizes: input queue, independently-scaling runner, output queue, pluggable response delivery. That same contract is being extended to a Kafka-backed on-premise and self-hosted mode, so the scaling model here isn't tied to one cloud, or to AWS at all, going forward.
+SQS + Lambda and SQS + ECS validate a shape that generalizes: input queue, independently-scaling runner, output queue, pluggable response delivery. That same contract now also ships as a **Kafka transport** (`pip install agentkernel[kafka]`) for on-premise and self-hosted deployments, with the identical per-session ordering, dedup, and bounded-retry semantics, just backed by partitions and consumer groups instead of SQS FIFO queues. A Kubernetes-native topology (Helm charts, plus NATS JetStream as another pluggable transport) is next, so the scaling model here isn't tied to one cloud, or to AWS at all.
 
 ## Get Started
 
