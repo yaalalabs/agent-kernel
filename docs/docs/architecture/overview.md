@@ -265,7 +265,46 @@ sequenceDiagram
 
 See [Execution Flow](./execution-flow) for the full request lifecycle including the queue-based and WebSocket paths.
 
-## The Queue Execution Pipeline
+## Scalability: The Queue Execution Pipeline
+
+Two facts shape how Agent Kernel is built to grow with demand:
+
+1. **Accepting a request and carrying it out are not the same kind of work.** Receiving a message
+   from a user is nearly instant. Actually producing a response can involve several rounds of
+   reasoning, tool use, or lookups in outside systems, and can take anywhere from under a second to
+   several minutes depending on what's asked. Treating these two things as one inseparable unit means
+   one is always sized for the other's load: either paying for idle capacity, or getting stuck behind
+   the workload that takes longer.
+2. **Real demand doesn't arrive at a steady pace.** Usage comes in bursts, quiet periods, and peaks
+   around business hours, campaigns, or events. A system built only for the average load either falls
+   over during a peak or stays over-provisioned the rest of the time.
+
+Agent Kernel's answer is to keep "receiving a request" and "producing the response" as two separate
+jobs, with a safe holding area in between. Incoming work lands in that holding area first and is
+then picked up and completed as capacity allows, rather than being handled the instant it arrives.
+This one design choice provides several guarantees at once:
+
+- **The two jobs scale independently.** The part that talks to users and the part that does the
+  underlying thinking can each be given more or less capacity on their own, based on what's actually
+  under pressure, instead of scaling both together.
+- **Traffic spikes are absorbed, not dropped.** A sudden surge in requests lengthens the queue of
+  pending work rather than overwhelming the system or the outside services it depends on (such as
+  the AI models themselves).
+- **Conversations stay in the right order.** Messages belonging to the same conversation are always
+  completed in the order they were sent, while unrelated conversations are free to proceed fully in
+  parallel.
+- **Nothing is lost, and nothing is done twice.** If a piece of work is interrupted partway through
+  (for example, by a temporary outage), it is safely retried until it succeeds, up to a sensible
+  limit, and it is never accidentally completed more than once.
+- **Capacity can shrink as well as grow.** When demand drops, processing capacity can scale back down
+  — in some deployments all the way to zero — so cost tracks actual usage rather than peak
+  provisioning.
+- **This behavior is consistent everywhere Agent Kernel runs.** The same guarantees apply whether
+  Agent Kernel is deployed as a single small service, across a large-scale cloud environment, or on
+  an organization's own private infrastructure. Moving between these is a deployment and
+  configuration decision — it never requires changing how an agent is built or behaves.
+
+### How it works under the hood
 
 Chat execution is built on one logical pipeline
 ([#495](https://github.com/yaalalabs/agent-kernel/issues/495)): every chat request travels five
