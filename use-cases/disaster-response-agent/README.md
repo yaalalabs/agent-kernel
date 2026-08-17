@@ -208,9 +208,29 @@ of `./build.sh`, since it's a bash script - see "Windows notes" below).
 
 ```bash
 ./build.sh
-export GEMINI_API_KEY=your_key_here          # from https://aistudio.google.com/apikey
-# export GEMINI_MODEL=gemini-3.1-flash-lite   # optional, this is already the default
+cp .env.example .env
+# edit .env and set GEMINI_API_KEY (from https://aistudio.google.com/apikey)
 ```
+
+### Keeping your environment variables in one place
+
+Rather than typing `$env:GEMINI_API_KEY = "..."` (or `export ...`) every terminal session, put
+everything in a **`.env`** file once - `agent.py` loads it automatically on startup via
+`python-dotenv`, so `python demo.py` / `python api.py` / `pytest` all just pick it up with no
+extra steps. Copy `.env.example` to `.env` and fill in your real values:
+
+```
+GEMINI_API_KEY=your_gemini_api_key_here
+# GEMINI_MODEL=gemini-3.1-flash-lite
+
+# WHATSAPP_ENABLED=true
+# AK_WHATSAPP__ACCESS_TOKEN=your_whatsapp_access_token_here
+# AK_WHATSAPP__PHONE_NUMBER_ID=your_phone_number_id_here
+```
+
+`.env` is already listed in `.gitignore`, so it's never committed - only `.env.example` (with
+no real values) is tracked in the repo. A real environment variable you've already set with
+`$env:`/`export` always takes priority over the same key in `.env`, if both are present.
 
 All agents run on Google's **Gemini API** via LiteLLM's native Gemini integration (the OpenAI
 Agents SDK's officially supported way to use non-OpenAI models) - nothing else in `tool.py`,
@@ -244,7 +264,10 @@ messages or check your quota/tier at https://aistudio.google.com/apikey.
 
 - `build.sh` is a bash script and won't run in PowerShell. Run its two commands directly instead:
   `uv venv --allow-existing` then `uv sync --all-extras`.
-- Set env vars with `$env:GEMINI_API_KEY = "..."` (PowerShell), not `export` (that's bash-only).
+- Easiest: use a `.env` file (see above) so you never need `$env:`/`export` at all. If you do
+  want to set a variable for just the current terminal session, PowerShell's syntax is
+  `$env:GEMINI_API_KEY = "..."`, not `export` (that's bash-only) - but it only lasts until you
+  close that terminal window, which is exactly what `.env` avoids.
 - After `uv sync`, activate the venv (`.venv\Scripts\activate`) before running `python demo.py`,
   or call `.venv\Scripts\python.exe demo.py` directly - otherwise Windows falls back to your
   system Python, which won't have the project's dependencies installed.

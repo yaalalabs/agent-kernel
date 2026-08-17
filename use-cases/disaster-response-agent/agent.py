@@ -22,6 +22,14 @@ import os
 
 from agentkernel.openai import OpenAIToolBuilder
 from agents import Agent
+from dotenv import load_dotenv
+
+# Load environment variables from a .env file in the project root, if one exists, before
+# anything below reads os.environ. This means GEMINI_API_KEY, WHATSAPP_ENABLED, etc. can all
+# live in one .env file instead of being set with $env:/export every terminal session - see
+# .env.example and the "Keeping your environment variables in one place" section in README.md.
+# Real environment variables (already set with $env:/export) still take priority over .env.
+load_dotenv()
 
 from tool import (
     check_pending_duplicates,
