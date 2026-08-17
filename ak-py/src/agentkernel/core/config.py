@@ -269,6 +269,68 @@ class _ThreadStoreConfig(BaseModel):
     cosmosdb: Optional[_ThreadCosmosDBConfig] = None
 
 
+class _ScheduleEventBridgeConfig(BaseModel):
+    group_name: Optional[str] = Field(default=None, description="EventBridge Scheduler schedule-group name the schedules are created in")
+    role_arn: Optional[str] = Field(
+        default=None, description="Execution role ARN EventBridge Scheduler assumes to deliver triggers to the input queue"
+    )
+    queue_arn: Optional[str] = Field(default=None, description="Input queue ARN used as the schedule target")
+
+
+class _ScheduleProviderConfig(BaseModel):
+    type: str = Field(
+        default="local",
+        description="Schedule provider: a built-in short name (local, eventbridge) or a dotted path to a ScheduleProvider subclass",
+    )
+    eventbridge: Optional[_ScheduleEventBridgeConfig] = None
+
+
+class _ScheduleStoreRedisConfig(_RedisConfig):
+    # Unlike threads, schedules carry no default expiry: a task that silently disappeared
+    # would stop firing with no audit trail.
+    ttl: int = Field(default=0, description="Scheduled task TTL in seconds (0 disables)")
+    prefix: str = Field(default="ak:schedule:", description="Key prefix for Redis scheduled-task storage")
+
+
+class _ScheduleStoreValkeyConfig(_ValkeyConfig):
+    ttl: int = Field(default=0, description="Scheduled task TTL in seconds (0 disables)")
+    prefix: str = Field(default="ak:schedule:", description="Key prefix for Valkey scheduled-task storage")
+
+
+class _ScheduleStoreDynamoDBConfig(_DynamoDBConfig):
+    table_name: str = Field(
+        default="ak-agent-schedules",
+        description="DynamoDB table name for scheduled-task storage. Table should have a partition key named 'task_id' (S) and no sort key",
+    )
+    ttl: int = Field(default=0, description="DynamoDB item TTL in seconds (0 disables)")
+
+
+class _ScheduleStoreConfig(BaseModel):
+    type: str = Field(
+        default="in_memory",
+        description="Scheduled task store backend: a built-in short name (in_memory, redis, valkey, dynamodb) "
+        "or a dotted path to a ScheduleStore subclass",
+    )
+    redis: Optional[_ScheduleStoreRedisConfig] = None
+    valkey: Optional[_ScheduleStoreValkeyConfig] = None
+    dynamodb: Optional[_ScheduleStoreDynamoDBConfig] = None
+
+
+class _ScheduleConfig(BaseModel):
+    """Configuration for the scheduling capability (trigger provider, task store, tool scoping).
+    The presence of the block is the enablement signal; its defaults (local provider,
+    in_memory store) make a bare 'schedule:' block work for local development."""
+
+    provider: _ScheduleProviderConfig = Field(
+        default_factory=_ScheduleProviderConfig, description="Backend that fires the triggers at their scheduled times"
+    )
+    store: _ScheduleStoreConfig = Field(default_factory=_ScheduleStoreConfig, description="Backend that persists the scheduled task records")
+    agents: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names the schedule tools and system-prompt guidance attach to; omitted = all agents",
+    )
+
+
 class _TraceConfig(BaseModel):
     enabled: bool = Field(default=False, description="Enable tracing")
     type: str = Field(
@@ -663,6 +725,11 @@ class AKConfig(YamlBaseSettingsModified):
     thread: Optional[_ThreadStoreConfig] = Field(
         default=None,
         description="Conversation Thread Support configurations (store backend, naming). The feature is served by mounting AgentThreadRequestHandler; this block only parameterizes it.",
+    )
+
+    schedule: Optional[_ScheduleConfig] = Field(
+        default=None,
+        description="Scheduling capability configurations (trigger provider, task store, tool scoping). Absent = the capability is disabled.",
     )
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)

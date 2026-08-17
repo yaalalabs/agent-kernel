@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-from agentkernel.core.config import AKConfig, _ThreadStoreConfig, _ThreadValkeyConfig
+from agentkernel.core.config import AKConfig, _ScheduleConfig, _ThreadStoreConfig, _ThreadValkeyConfig
 
 
 @pytest.fixture(autouse=True)
@@ -239,6 +239,68 @@ def test_thread_type_valkey_from_yaml(tmp_path, monkeypatch):
     assert cfg.thread.valkey.prefix == "ak:t:"
     # Sibling backends stay unset
     assert cfg.thread.redis is None
+
+
+def test_schedule_block_absent_by_default(monkeypatch):
+    # Absence of the block is the capability-disabled signal, so it must never default to a value.
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+
+    assert AKConfig.get().schedule is None
+
+
+def test_schedule_defaults_make_a_bare_block_usable():
+    # A bare 'schedule:' block must work for local development without naming any backend.
+    cfg = _ScheduleConfig()
+    assert cfg.provider.type == "local"
+    assert cfg.store.type == "in_memory"
+    assert cfg.agents is None
+    # Backend sub-blocks stay opt-in, and schedules never expire by default.
+    assert cfg.provider.eventbridge is None
+    assert cfg.store.dynamodb is None
+
+
+def test_schedule_from_yaml(tmp_path, monkeypatch):
+    yaml_text = (
+        "schedule:\n"
+        "  provider:\n"
+        "    type: eventbridge\n"
+        "    eventbridge:\n"
+        "      group_name: ak-schedules\n"
+        "      role_arn: arn:aws:iam::123456789012:role/ak-scheduler\n"
+        "      queue_arn: arn:aws:sqs:us-east-1:123456789012:ak-input.fifo\n"
+        "  store:\n"
+        "    type: dynamodb\n"
+        "    dynamodb:\n"
+        "      table_name: ak-schedules\n"
+        "  agents:\n"
+        "    - planner\n"
+    )
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    AKConfig._reset()
+
+    schedule = AKConfig.get().schedule
+    assert schedule is not None
+    assert schedule.provider.type == "eventbridge"
+    assert schedule.provider.eventbridge.group_name == "ak-schedules"
+    assert schedule.provider.eventbridge.queue_arn == "arn:aws:sqs:us-east-1:123456789012:ak-input.fifo"
+    assert schedule.store.type == "dynamodb"
+    assert schedule.store.dynamodb.table_name == "ak-schedules"
+    assert schedule.store.dynamodb.ttl == 0
+    assert schedule.agents == ["planner"]
+
+
+def test_schedule_env_var_materializes_the_block(monkeypatch):
+    # Same behavior threads have: any AK_SCHEDULE__* variable enables the capability with
+    # defaults for everything it does not name.
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    monkeypatch.setenv("AK_SCHEDULE__STORE__TYPE", "redis")
+
+    schedule = AKConfig.get().schedule
+    assert schedule is not None
+    assert schedule.store.type == "redis"
+    assert schedule.provider.type == "local"
 
 
 def test_import_does_not_load_config(tmp_path):

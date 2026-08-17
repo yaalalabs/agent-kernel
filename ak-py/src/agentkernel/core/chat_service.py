@@ -127,7 +127,22 @@ class RequestBuilder:
         :param requests: List to append context requests to
         :return: None
         """
-        known_fields = {"request_id", "user_id", "group_id", "thread_name", "prompt", "agent", "session_id", "images", "files"}
+        known_fields = {
+            "request_id",
+            "user_id",
+            "group_id",
+            "thread_name",
+            "prompt",
+            "agent",
+            "session_id",
+            "images",
+            "files",
+            # Scheduling envelope: the schedule block is consumed before the agent runs, and the
+            # trigger metadata describes the occurrence, not the user's request.
+            "schedule",
+            "scheduled_task_id",
+            "scheduled_time",
+        }
         for key, value in req.model_dump().items():
             if key in known_fields:
                 continue
@@ -283,7 +298,8 @@ class ResponseBuilder:
     """Formats agent results and errors into response dicts."""
 
     @staticmethod
-    def build_response(status_code: int, session_id: Optional[str], rest_api_mode: bool, result: Any = None, error: Optional[Exception] = None):
+    def build_response(status_code: int, session_id: Optional[str], rest_api_mode: bool, result: Any = None,
+                       error: Optional[Exception] = None):
         """Build response from agent result or error.
 
         :param status_code: HTTP status code
@@ -297,7 +313,8 @@ class ResponseBuilder:
             response_dict = {"error": str(error)}
         else:
             response_dict = {
-                "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
+                "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage,
+                                                             AgentReplyAny)) else "Non textual result received"
             }
 
         if session_id:
@@ -307,6 +324,13 @@ class ResponseBuilder:
             from fastapi import HTTPException
 
             raise HTTPException(status_code=status_code, detail=response_dict)
+
+        if rest_api_mode and status_code != 200:
+            # A success that is not a plain 200 — the 202 acknowledging a deferred request — has to
+            # reach the client with its status, which a returned dict cannot carry.
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(content=response_dict, status_code=status_code)
 
         return response_dict if rest_api_mode else (status_code, response_dict)
 
@@ -335,7 +359,8 @@ class ChatService:
         self._log = logging.getLogger("ak.chatservice")
         self.rest_api_mode = rest_api_mode
 
-    async def execute(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
+    async def execute(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[
+        AgentReply, Optional[str]]:
         """Validate, build (unless prebuilt), select the agent, and run the request.
 
         Transport-neutral execution core: returns the typed reply and lets exceptions
@@ -347,6 +372,10 @@ class ChatService:
         :return: Tuple of (typed agent reply, response session id)
         :raises ValueError: If validation fails or no agent is available
         """
+        scheduled = self._maybe_schedule(req)
+        if scheduled is not None:
+            return scheduled, req.session_id
+        self._record_trigger(req)
         requests = await self._prepare_async(req, requests)
         handler = AgentHandler()
         handler.initialize(req.session_id, req.agent)
@@ -354,7 +383,8 @@ class ChatService:
         result = await handler.run_async(requests)
         return result, handler.get_response_session_id(req.session_id)
 
-    def execute_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
+    def execute_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[
+        AgentReply, Optional[str]]:
         """Synchronous counterpart of execute().
 
         :param req: Run request carrying prompt, agent, and session_id
@@ -362,6 +392,10 @@ class ChatService:
         :return: Tuple of (typed agent reply, response session id)
         :raises ValueError: If validation fails or no agent is available
         """
+        scheduled = self._maybe_schedule(req)
+        if scheduled is not None:
+            return scheduled, req.session_id
+        self._record_trigger(req)
         requests = self._prepare_sync(req, requests)
         handler = AgentHandler()
         handler.initialize(req.session_id, req.agent)
@@ -369,7 +403,8 @@ class ChatService:
         result = handler.run_sync(requests)
         return result, handler.get_response_session_id(req.session_id)
 
-    async def execute_stream(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> AsyncGenerator[StreamChunk, None]:
+    async def execute_stream(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> \
+    AsyncGenerator[StreamChunk, None]:
         """Streaming counterpart of execute(): yields raw StreamChunk objects, no framing.
 
         Validates and selects the agent eagerly, so invalid input raises at call time,
@@ -381,6 +416,10 @@ class ChatService:
         :return: Async generator yielding raw StreamChunk objects
         :raises ValueError: If validation fails or no agent is available
         """
+        scheduled = self._maybe_schedule(req)
+        if scheduled is not None:
+            return self._acknowledgement_stream(scheduled)
+        self._record_trigger(req)
         requests = await self._prepare_async(req, requests)
         handler = AgentHandler()
         handler.initialize(req.session_id, req.agent)
@@ -395,7 +434,8 @@ class ChatService:
 
         return _stream()
 
-    def execute_stream_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> Generator[StreamChunk, None, None]:
+    def execute_stream_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> Generator[
+        StreamChunk, None, None]:
         """Synchronous counterpart of execute_stream().
 
         Preserves the sync path's buffering semantics: AgentHandler.run_stream_sync collects
@@ -406,6 +446,10 @@ class ChatService:
         :return: Generator yielding raw StreamChunk objects
         :raises ValueError: If validation fails or no agent is available
         """
+        scheduled = self._maybe_schedule(req)
+        if scheduled is not None:
+            return self._acknowledgement_stream_sync(scheduled)
+        self._record_trigger(req)
         requests = self._prepare_sync(req, requests)
         handler = AgentHandler()
         handler.initialize(req.session_id, req.agent)
@@ -419,6 +463,85 @@ class ChatService:
                 yield StreamChunk(error=str(e), done=True)
 
         return _stream()
+
+    def _maybe_schedule(self, req: BaseChatRequest) -> Optional[AgentReplyAny]:
+        """Register a request that carries a schedule block instead of running it.
+
+        The interception point for every chat surface: whatever transport delivered the request,
+        a schedule block means "not now", and the caller gets an acknowledgement carrying the
+        task id it can manage the schedule by.
+
+        :param req: The incoming chat request.
+        :return: The acknowledgement reply when the request was deferred, None when it must run now.
+        :raises ValueError: If the request carries a schedule block while the capability is disabled,
+                            or the schedule itself is unusable.
+        """
+        if req.schedule is None:
+            return None
+        # Imported inside the enabled-check: core must not load the capability (nor its optional
+        # dependencies) in processes that never schedule anything.
+        from ..schedule.manager import ScheduleManager
+
+        manager = ScheduleManager.get()
+        if manager is None:
+            raise ValueError("Scheduling is not configured. Add a 'schedule' block to config.yaml")
+        task = manager.create_from_request(req)
+        self._log.info(f"Deferred request as scheduled task {task.task_id}")
+        return AgentReplyAny(
+            content={"status": "SCHEDULED", "scheduled_task_id": task.task_id, "session_id": task.session_id})
+
+    def _record_trigger(self, req: BaseChatRequest) -> None:
+        """Record the occurrence a scheduled trigger is running, when this request is one.
+
+        Never raises: the occurrence bookkeeping is advisory, so a store that cannot take it must
+        not fail the run the trigger started.
+
+        :param req: The incoming chat request, carrying trigger metadata when it is an occurrence.
+        """
+        task_id = getattr(req, "scheduled_task_id", None)
+        if not task_id:
+            return
+        try:
+            from ..schedule.manager import ScheduleManager
+
+            manager = ScheduleManager.get()
+            if manager is None:
+                self._log.warning(f"Trigger of scheduled task {task_id} arrived while scheduling is not configured")
+                return
+            manager.record_trigger(task_id, request_id=getattr(req, "request_id", None),
+                                   occurred_at=getattr(req, "scheduled_time", None))
+        except Exception as e:
+            self._log.error(f"Failed to record trigger of scheduled task {task_id}: {e}")
+
+    @staticmethod
+    async def _acknowledgement_stream(ack: AgentReplyAny) -> AsyncGenerator[StreamChunk, None]:
+        """Stream a deferred request's acknowledgement as the single terminal chunk.
+
+        Deliberately not an error chunk: deferring the request is the requested outcome, so a
+        streaming client sees one final delta carrying the acknowledgement.
+
+        :param ack: The acknowledgement built by :meth:`_maybe_schedule`.
+        :return: Async generator yielding exactly one done chunk.
+        """
+        yield StreamChunk(delta=str(ack), done=True)
+
+    @staticmethod
+    def _acknowledgement_stream_sync(ack: AgentReplyAny) -> Generator[StreamChunk, None, None]:
+        """Synchronous counterpart of _acknowledgement_stream().
+
+        :param ack: The acknowledgement built by :meth:`_maybe_schedule`.
+        :return: Generator yielding exactly one done chunk.
+        """
+        yield StreamChunk(delta=str(ack), done=True)
+
+    @staticmethod
+    def _success_status(req: BaseChatRequest) -> int:
+        """Return the status a successful response carries: 202 when the request was deferred.
+
+        :param req: The processed chat request.
+        :return: 202 for a deferred request (accepted, not executed), 200 for one that ran.
+        """
+        return 202 if req.schedule is not None else 200
 
     @staticmethod
     def _propagate_acting_user(handler: AgentHandler, req: BaseChatRequest) -> None:
@@ -467,7 +590,8 @@ class ChatService:
         """
         try:
             result, session_id = self.execute_sync(req)
-            return ResponseBuilder.build_response(200, session_id, self.rest_api_mode, result=result)
+            return ResponseBuilder.build_response(self._success_status(req), session_id, self.rest_api_mode,
+                                                  result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
@@ -475,7 +599,8 @@ class ChatService:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
 
-    async def process_async_chat_request(self, req: BaseChatRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
+    async def process_async_chat_request(self, req: BaseChatRequest) -> Union[
+        tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request asynchronously.
 
         :param req: Base chat request (could be a BaseRunRequest or another subclass
@@ -485,7 +610,8 @@ class ChatService:
         """
         try:
             result, session_id = await self.execute(req)
-            return ResponseBuilder.build_response(200, session_id, self.rest_api_mode, result=result)
+            return ResponseBuilder.build_response(self._success_status(req), session_id, self.rest_api_mode,
+                                                  result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
@@ -494,9 +620,9 @@ class ChatService:
             return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
 
     async def process_stream_chat_async(
-        self,
-        req: BaseChatRequest,
-        sse_format: bool = False,
+            self,
+            req: BaseChatRequest,
+            sse_format: bool = False,
     ) -> AsyncGenerator[str, None]:
         """Process a streaming chat request asynchronously.
 
@@ -522,9 +648,9 @@ class ChatService:
         return _stream()
 
     def process_stream_chat_sync(
-        self,
-        req: BaseRunRequest,
-        sse_format: bool = False,
+            self,
+            req: BaseRunRequest,
+            sse_format: bool = False,
     ) -> Generator[str, None, None]:
         """Process a streaming chat request synchronously.
 

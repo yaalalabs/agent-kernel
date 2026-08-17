@@ -80,6 +80,10 @@ thread = [
     "litellm>=1.74.9",
 ]
 
+schedule = [
+    "croniter>=3.0",
+]
+
 neo4j = [
     "neo4j>=5.0.0",
 ]

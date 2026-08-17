@@ -91,6 +91,16 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_sandbox.py` | Sandbox core: model/capabilities, error hierarchy, config, provider contract, manager + factory + embedded broker, agent surface (system tools + task-completion pre-hook), `agents` scoping |
 | `test_sandbox_broker.py` | Broker flavors (embedded/thread) end-to-end, thread loop-identity contract, wait-policy promotion + late-completion recovery, suspend/resume completion ingestion |
 | `test_sandbox_providers.py` | `local_subprocess` (real subprocess) + `docker` (mocked SDK) providers, run against the reusable `SandboxProviderContract` |
+| `test_authoriser_shared.py` | Shared `Authoriser` in `agentkernel.auth`: `AuthValidatorAuthoriser` adaptation, export identity, and the guard that the thread package no longer re-exports it |
+| `test_schedule_model.py` | `ScheduleSpec` one-of/timezone/session_mode validation, chat-envelope parsing, `ScheduledTask` JSON round trip (JSON primitives only) |
+| `test_schedule_manager.py` | `ScheduleManager`: `get()` gating + singleton, provider/transport fail-fast, semantic validation matrix, create ordering + rollback, trigger-body freezing, ownership, amendment rules, cancellation, occurrence recording (never raises) |
+| `test_schedule_store.py` | `ScheduleStore` backends (in_memory today) + `ScheduleStoreBuilder` built-in/BYO/unknown-type resolution |
+| `test_schedule_provider_local.py` | `LocalScheduleProvider`: next-fire computation, one-time vs re-armed occurrences, token substitution, body-only delivery into `InMemoryTransport`, pause/delete disarm, `ScheduleProviderFactory` resolution |
+| `test_chat_service_schedule.py` | ChatService interception on all four entry points: 202 wire shapes, streaming terminal chunk, unconfigured 400, occurrence recording, no scheduling field leaking as `AgentRequestAny` |
+| `test_pipeline_agent_runner_schedule.py` | Pipeline runners' trigger contract: `request_id`/`user_id` body fallback, attribute precedence, attribute injection for output forwarding |
+| `test_ecs_agent_runner_schedule.py` | ECS runners' body fallback (`_get_record_attributes` with/without a parsed body) and `status_code` custom attribute |
+| `test_ecs_output_consumer_status.py` | `ECSOutputConsumer` stores `status_code` (present / absent → 200 / permanent failure → 500) |
+| `test_serverless_agent_runner_schedule.py` | Serverless runners' body fallback in both `_get_record_attributes` implementations |
 | `test_factory.py` | Shared pluggable-backend helpers (`resolve_dotted`, `require_extra`, `AKConfigError`) in `core/util/factory.py` |
 | `test_store_builders.py` | Session/thread/multimodal store builders: fail-loud on unknown type, BYO dotted-path subclass resolution |
 | `test_trace.py` | Trace factory built-in resolution, BYO dotted path, unknown-type error |

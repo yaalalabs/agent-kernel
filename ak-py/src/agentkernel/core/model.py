@@ -3,7 +3,7 @@ import uuid
 from enum import Enum
 from typing import Any, Callable, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class AgentRequestText(BaseModel):
@@ -198,12 +198,45 @@ class ImageData(BaseModel):
     mime_type: Optional[str] = None
 
 
+class ScheduleSpec(BaseModel):
+    """Schedule block on a chat request: defer the execution instead of running it now.
+
+    at: str | None : ISO-8601 local wall-clock timestamp for a one-time execution
+    cron: str | None : standard 5-field cron expression for a recurring execution
+    timezone: str : IANA timezone the expression is evaluated in
+    session_mode: Literal["reuse", "new"] : run each occurrence in the originating
+        session ("reuse") or in a fresh per-occurrence session ("new")
+
+    Exactly one of at/cron must be given. Only structural validation lives here — cron
+    syntax, timezone existence, and "at must be in the future" are checked by
+    ScheduleManager, because they need the optional 'schedule' extra and core models
+    must import without it.
+    """
+
+    at: Optional[str] = None
+    cron: Optional[str] = None
+    timezone: str = "UTC"
+    session_mode: Literal["reuse", "new"] = "reuse"
+
+    @model_validator(mode="after")
+    def _exactly_one_occurrence(self) -> "ScheduleSpec":
+        if bool(self.at) == bool(self.cron):
+            raise ValueError("schedule requires exactly one of 'at' (one-time) or 'cron' (recurring)")
+        if not self.timezone.strip():
+            raise ValueError("schedule timezone must not be empty")
+        return self
+
+
 class BaseChatRequest(BaseModel):
     """Base model for chat requests with common fields.
 
     user_id is required when Conversation Thread Support is enabled (a 'thread'
     block is present in config.yaml); group_id and thread_name are optional and
     applied only when the thread is auto-created on the session's first request.
+
+    A schedule block defers the request: instead of running the agent, the request
+    is registered as a scheduled task and acknowledged with HTTP 202. It requires
+    the scheduling capability (a 'schedule' block in config.yaml) and a user_id.
     """
 
     prompt: str
@@ -212,13 +245,22 @@ class BaseChatRequest(BaseModel):
     user_id: Optional[str] = None
     group_id: Optional[str] = None
     thread_name: Optional[str] = None
+    schedule: Optional[ScheduleSpec] = None
 
 
 class BaseRunRequest(BaseChatRequest):
-    """Chat request with file and image attachments (base64/URL format)."""
+    """Chat request with file and image attachments (base64/URL format).
+
+    scheduled_task_id and scheduled_time are set by a schedule provider on the trigger
+    it delivers, identifying the task and the occurrence this run belongs to. They are
+    typed fields (not extras) so an occurrence's metadata never reaches the agent as
+    additional context.
+    """
 
     files: Optional[List[FileData]] = None
     images: Optional[List[ImageData]] = None
+    scheduled_task_id: Optional[str] = None
+    scheduled_time: Optional[str] = None
     model_config = ConfigDict(extra="allow")
 
 

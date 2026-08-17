@@ -116,6 +116,11 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         try:
             self._validate_chat_request(req)
             self._check_agent_available(req.agent)
+            if req.schedule is not None:
+                # A deferred request produces no conversation: the thread and its messages are
+                # recorded when an occurrence actually runs, not when the schedule is created.
+                result, session_id = await self.chat_service.execute(req)
+                return ResponseBuilder.build_response(202, session_id, True, result=result)
             requests = await RequestBuilder.from_base_request_async(req)
             requests, _ = self._recorder.pre_run(req, requests)
             result, session_id = await self.chat_service.execute(req, requests=requests)
@@ -142,6 +147,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         """
         self._validate_chat_request(req)
         self._check_agent_available(req.agent)
+        if req.schedule is not None:
+            return self._acknowledgement_frames(await self.chat_service.execute_stream(req), req.session_id)
         requests = await RequestBuilder.from_base_request_async(req)
         requests, _ = self._recorder.pre_run(req, requests)
         chunks = await self.chat_service.execute_stream(req, requests=requests)
@@ -165,6 +172,17 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
                 yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=True)
 
         return _stream()
+
+    @staticmethod
+    async def _acknowledgement_frames(chunks, session_id: Optional[str]):
+        """Frame a deferred request's acknowledgement chunk as SSE, without any recording.
+
+        :param chunks: The single-chunk stream returned by the ChatService for a deferred request
+        :param session_id: Session identifier echoed on the frame
+        :return: Async generator yielding the acknowledgement as one SSE frame
+        """
+        async for chunk in chunks:
+            yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=True)
 
     @staticmethod
     def _validate_chat_request(req: BaseChatRequest) -> None:

@@ -2,11 +2,12 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ThreadStoreConfig
-from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest, StreamChunk
+from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText, BaseRunRequest, ScheduleSpec, StreamChunk
 from agentkernel.core.runtime import Runtime
 from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy, ThreadRecorder
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
@@ -205,6 +206,47 @@ class TestAgentThreadRequestHandler:
 
         messages = thread_enabled.get_messages("s1").messages
         assert [(m.role,) for m in messages] == [("user",)]
+
+    @pytest.mark.asyncio
+    async def test_scheduled_request_is_acknowledged_without_recording(self, thread_enabled, registered_agent):
+        # A deferred request is not a conversation turn: the thread and its messages belong to the
+        # occurrence that eventually runs, so nothing is recorded at creation time.
+        handler = AgentThreadRequestHandler()
+        handler.chat_service = FakeChatService(reply=AgentReplyAny(content={"status": "SCHEDULED", "scheduled_task_id": "t1", "session_id": "s1"}))
+        req = BaseRunRequest(
+            prompt="send the weekly report",
+            session_id="s1",
+            user_id="u1",
+            agent=registered_agent.name,
+            schedule=ScheduleSpec(at="2030-06-01T09:00:00"),
+        )
+
+        response = await handler._run_with_recording(req)
+
+        assert isinstance(response, JSONResponse)
+        assert response.status_code == 202
+        assert thread_enabled.get_thread("s1") is None
+        # Called without prebuilt requests: the recorder's pre_run never ran.
+        assert handler.chat_service.calls[0][1] is None
+
+    @pytest.mark.asyncio
+    async def test_scheduled_stream_frames_the_acknowledgement_without_recording(self, thread_enabled, registered_agent):
+        handler = AgentThreadRequestHandler()
+        ack = AgentReplyAny(content={"status": "SCHEDULED", "scheduled_task_id": "t1", "session_id": "s1"})
+        handler.chat_service = FakeChatService(chunks=[StreamChunk(delta=str(ack), done=True)])
+        req = BaseRunRequest(
+            prompt="send the weekly report",
+            session_id="s1",
+            user_id="u1",
+            agent=registered_agent.name,
+            schedule=ScheduleSpec(at="2030-06-01T09:00:00"),
+        )
+
+        frames = [frame async for frame in await handler._stream_with_recording(req)]
+
+        assert len(frames) == 1
+        assert "SCHEDULED" in frames[0]
+        assert thread_enabled.get_thread("s1") is None
 
     @pytest.mark.asyncio
     async def test_empty_stream_records_no_assistant_message(self, thread_enabled, registered_agent):

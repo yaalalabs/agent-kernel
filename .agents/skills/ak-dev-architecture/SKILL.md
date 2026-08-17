@@ -119,6 +119,10 @@ knowledge of conversation threads (that lives in `integration/thread/`).
     `requests` supplied: the caller-built list is used as-is (prompt optional, list must be non-empty): this
     is how messaging integrations pass platform-downloaded attachments and extra `AgentRequestAny` context
   - Each call selects the agent/session through a fresh `AgentHandler` (raises `ValueError("No agent available")`)
+  - Two scheduling checks run at the top of each entry point, before validation and agent selection:
+    `_maybe_schedule` defers a request carrying a `schedule` block (returning the 202 acknowledgement
+    instead of running it) and `_record_trigger` records the occurrence of a scheduled trigger. Both reach
+    `schedule/` through a lazy import inside the enabled-check — see the Scheduling section
 - **Presentation wrappers**: `process_chat_request`, `process_async_chat_request`,
   `process_stream_chat_async`, `process_stream_chat_sync`: thin shells over the core adding the HTTP shapes
   (`ResponseBuilder` JSON dicts / `HTTPException` per `rest_api_mode`, SSE frames). Used by the REST handler
@@ -197,7 +201,8 @@ Pydantic-based configuration:
 - **Auto-initialized** at import time via `AKConfig._set()`
 - **Config sources** (priority order): environment variables (`AK_` prefix) → config file (YAML/JSON, default `config.yaml`) → defaults
 - **Override path**: Set `AK_CONFIG_PATH_OVERRIDE` env var
-- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `gmail`, `multimodal`, `trace`, `guardrail`, `execution`, `logging`
+- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `gmail`, `multimodal`, `thread`, `schedule`, `trace`, `guardrail`, `sandbox`, `execution`, `logging`
+- **Optional (capability-gating) sections**: `thread` and `schedule` are `Optional` — the presence of the block is the enabled-check, so they have no default value
 
 ## Request/Reply Model (`ak-py/src/agentkernel/core/model.py`)
 
@@ -344,6 +349,65 @@ while `type` defaults to `in_memory`, a mounted handler plus a flag but *without
 `thread.type` runs against the non-durable in-memory backend, with no error.
 
 Attachments in thread mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or `dynamodb`: `session_cache` is rejected, since threads need durable, cross-request-scoped attachment storage that a session-local cache can't provide).
+
+## Scheduling (`ak-py/src/agentkernel/schedule/`)
+
+Deferred and recurring chat execution: a chat request carrying a `schedule` block is not run — it is
+registered as a scheduled task and acknowledged with **HTTP 202**. When an occurrence is due, the
+configured provider delivers a plain chat request into the **input queue**, where the normal execution
+path picks it up. A `schedule` block in `config.yaml` enables the capability; its absence disables it
+(`ScheduleManager.get()` returning `None` is the enabled-check, the thread pattern).
+
+Coupling rules: `core/` reaches `schedule/` only lazily, inside enabled-checks (the sandbox precedent);
+`schedule/manager.py`, `model.py`, `provider/` and `store/` import only `core` and `pipeline`; nothing in
+`core/` imports the FastAPI-dependent handler.
+
+### Key Components
+
+- **`ScheduleSpec`** (`core/model.py`, not `schedule/`): the chat-envelope block (`at` | `cron`, `timezone`, `session_mode`). It lives in core beside `BaseChatRequest` so core never imports the capability; structural validation only (exactly one of at/cron) — cron syntax, timezone and "at is in the future" are semantic checks the manager runs
+- **Interception point** (`ChatService._maybe_schedule`): all four execution-core entry points check `req.schedule` **before** validation and agent selection, and return an `AgentReplyAny` acknowledgement (`{"status": "SCHEDULED", "scheduled_task_id", "session_id"}`) instead of running. Streaming surfaces yield that acknowledgement as a single terminal `StreamChunk` (not an error chunk). `_record_trigger` (same class, also at the top) records the occurrence of a request that carries `scheduled_task_id`, then lets it run normally — it never raises into the run. The 202 travels through `ChatService._success_status` and, in `rest_api_mode`, a `JSONResponse`; `AgentThreadRequestHandler` checks `req.schedule` before `ThreadRecorder.pre_run`, so a deferred request creates no thread and records no messages
+- **`ScheduleManager`** (`manager.py`): process-wide singleton (`ScheduleManager.get()`, `RLock`-guarded, `reset()` for tests) owning semantic validation, ownership (`PermissionError`), the store-then-provider write order with rollback, the frozen trigger body, and occurrence recording. At construction it fails fast (`AKConfigError`) when the provider cannot deliver to the transport `QueueTransportFactory.resolve_type()` reports
+- **`ScheduledTask` / `ScheduledTaskPage` / `ScheduleStatus`** (`model.py`): the stored record (all JSON primitives, ISO-8601 UTC timestamp strings) and cursor-paginated listings, using the shared `core/util/pagination.py` helpers. Statuses: `active`, `paused`, `completed`, `cancelled`
+- **`OccurrenceCalculator`** (`timing.py`): shared interpretation of a spec's occurrence rule — `validate()` for the manager, `next_fire_time()` for the local provider. `croniter` (the `schedule` extra) is imported on demand, so `at`-only schedules work without it
+- **`ScheduleProvider`** (`provider/base.py`): ABC (`create`/`update`/`delete`/`get`) plus `ScheduleProviderFactory`. `supported_transports` (a `ClassVar`, `None` = transport-agnostic) is what the manager's fail-fast reads; `message_group_id(task)` is the shared FIFO-grouping rule (reused session → that session, per-occurrence session → the task)
+- **`LocalScheduleProvider`** (`provider/local.py`): the default. One daemon thread per process over a min-heap of armed occurrences guarded by a `threading.Condition`; substitutes the occurrence tokens at fire time and sends into `QueueName.INPUT`. Delivery failures skip the occurrence and leave the next one armed. Armed occurrences do not survive a process restart (documented boundary)
+- **`ScheduleStore`** (`store/base.py`): ABC (`create`/`get`/`update` full-record/`delete` rollback-only/`list`/`record_trigger`/`clear`) plus `ScheduleStoreBuilder`, the `ThreadStoreBuilder` shape (built-in short names, else a dotted path, else `AKConfigError`)
+
+### Trigger contract
+
+The manager freezes one JSON body per task at create/amend time; the provider substitutes the
+occurrence placeholders (`TOKEN_REQUEST_ID`, `TOKEN_OCCURRENCE_TIME` in `model.py`) when it fires:
+
+```json
+{"prompt": "...", "agent": null, "user_id": "u1",
+ "session_id": "s1",                          // or "ak-sched-<task_id>-{ak.schedule.occurrence_time}"
+ "scheduled_task_id": "<task_id>",
+ "request_id": "{ak.schedule.request_id}",
+ "scheduled_time": "{ak.schedule.occurrence_time}"}
+```
+
+- **No `schedule` key**: an occurrence executes as a plain chat request, otherwise firing a schedule
+  would register another one.
+- **Metadata travels in the body, never in message attributes**: EventBridge Scheduler cannot set queue
+  message attributes, and the local provider deliberately matches that, so both providers exercise the
+  runners' body-fallback path (`pipeline/agent_runner.py`, the ECS/serverless `_get_record_attributes`).
+- `schedule`, `scheduled_task_id` and `scheduled_time` are all in `RequestBuilder`'s `known_fields`, so no
+  scheduling field ever reaches an agent as `AgentRequestAny` context.
+
+### Configuration (`_ScheduleConfig` in `config.py`)
+
+```yaml
+schedule:                 # presence enables the capability; a bare block works for local dev
+  provider:
+    type: local           # local (default) | eventbridge, or a dotted path to a ScheduleProvider
+  store:
+    type: in_memory       # in_memory (default) | redis | valkey | dynamodb, or a dotted path
+  agents: [planner]       # agents the schedule tools attach to; omitted = all agents
+```
+
+Store backends default to `ttl: 0` (unlike threads: a schedule must not silently expire) and the
+redis/valkey prefix to `ak:schedule:`. Note the same env-var failure mode threads have: any
+`AK_SCHEDULE__*` variable materializes the block and enables the capability with default backends.
 
 ## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
 
@@ -559,6 +623,13 @@ ak-py/src/agentkernel/
 │   ├── testing.py           # FakeSandboxProvider + SandboxProviderContract (BYO test suite)
 │   ├── providers/           # local_subprocess, docker, e2b, daytona, ec2_ssm (+ planned: kubernetes, ...)
 │   └── broker/              # embedded, thread flavors + BrokerWorkerCore (+ planned: sqs)
+├── schedule/                # Scheduling capability (deferred + recurring chat execution)
+│   ├── model.py             # ScheduledTask, ScheduledTaskPage, ScheduleStatus, occurrence tokens
+│   ├── errors.py            # ScheduleError
+│   ├── manager.py           # ScheduleManager (validation, ownership, trigger bodies, recording)
+│   ├── timing.py            # OccurrenceCalculator (at/cron/timezone interpretation)
+│   ├── provider/            # ScheduleProvider ABC + factory; local (+ planned: eventbridge)
+│   └── store/               # ScheduleStore ABC + builder; in_memory (+ planned: redis, valkey, dynamodb)
 ├── cli/                     # CLI interface
 │   └── cli.py               # Interactive CLI
 ├── auth/                    # Authentication
