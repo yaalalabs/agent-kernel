@@ -489,12 +489,6 @@ class TestSQSHandler:
         with pytest.raises(ValidationError):
             SQSHandler.QueueMessageBody(prompt="hello")
 
-        # Both models are inherited from the QueueHandler contract
-        from agentkernel.deployment.common.queue_handler import QueueHandler
-
-        assert SQSHandler.QueueMessageBody is QueueHandler.QueueMessageBody
-        assert SQSHandler.SendMessageAttributes is QueueHandler.SendMessageAttributes
-
     def test_sqs_queue_input_message_model(self):
         """Test SQSQueueInputMessage model."""
         # Test with all fields

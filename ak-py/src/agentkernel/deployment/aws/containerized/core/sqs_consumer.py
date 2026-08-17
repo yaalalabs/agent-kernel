@@ -14,7 +14,7 @@ from .....core.config import AKConfig
 from .....pipeline.consumer import ConsumerLoop
 from .....pipeline.envelope import QueueMessage
 from .....pipeline.transport.base import TransportConsumer
-from ....common import QueueConsumer
+from ...core.raw_queue_consumer import RawQueueConsumer
 
 
 class _ECSRecordConsumer(TransportConsumer):
@@ -36,7 +36,7 @@ class _ECSRecordConsumer(TransportConsumer):
         self._consumer_cls.delete_message(message.native)
 
 
-class ECSSQSConsumer(QueueConsumer):
+class ECSSQSConsumer(RawQueueConsumer):
     """
     Base class for ECS services that consume SQS queues via manual long-polling.
 

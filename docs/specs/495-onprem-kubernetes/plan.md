@@ -105,8 +105,15 @@ Spec section references are to `spec.md`.
   (`_KafkaQueueConfig`), `ak-py/pyproject.toml` (`kafka` extra).
 - **Steps:** producer/consumer per §6; `BookkeepingStore` resolved from the `session:` config
   (in_memory fallback WARNING); seek+pause retry; DLQ produce on permanent failure.
-- **Verify:** `test_pipeline_kafka_transport.py` (faked clients); contract suite behind a local
-  Kafka container (marked integration).
+- **Verify:** `test_pipeline_kafka_transport.py` (fake in-memory cluster) +
+  `test_pipeline_bookkeeping.py`; the `QueueTransportContract` runs against the fake in-repo.
+- **Also delivered:** `examples/transport/kafka/` (two-process pipeline over a single-broker KRaft
+  stack) with `kafka_tester.py`, a lightweight harness that runs the compose stack, provisions the
+  topics Agent Kernel deliberately does not create, and inspects/produces to topics; its
+  `app_test.py` covers rest_sync, a multi-turn session, topic/header flow, and the retry-to-DLQ
+  path against a real broker. **Not yet wired into CI**: registering it in
+  `.github/test-config.yaml` belongs to iteration 11, and needs the `kafka` extra to be resolvable
+  (published release or the locally built wheel via `./build.sh local`).
 
 ### Iteration 8: NATS JetStream transport
 
@@ -173,3 +180,10 @@ Spec section references are to `spec.md`.
 - **A2A/MCP uniformity over the pipeline**: A2A and MCP currently execute via `AgentService`
   inline even when their host process runs the pipeline; making them uniform is a separate
   design/issue (decided 2026-08-13).
+- **ECS runtime classes become pipeline instantiations**: `ECSAgentRunner`/
+  `ECSStreamAgentRunner`/`ECSOutputConsumer`/`ECSIOHandler` still parallel the pipeline's
+  `AgentRunner`/`ResponseHandler`/`IOHandler` instead of instantiating them. The wire formats
+  already interoperate (spec §5), but the migration carries behavioral decisions (ECS
+  error-body-with-200 vs the pipeline's status mapping, API Gateway WS delivery vs
+  pod-direct), so it is its own design + issue after #495 (decided 2026-08-14).
+  `ECSQueueRequestHandler` and `ECSSQSConsumer` are already thin instantiations.

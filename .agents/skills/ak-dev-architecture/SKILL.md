@@ -10,7 +10,7 @@ description: >
   (agentkernel.pipeline: QueueMessage/QueueTransport/ConsumerLoop, the in_memory transport,
   AgentRunner/ResponseHandler/RequestHandler/IOHandler, the RESTAPI.run delegation rule, and the
   relocation shims), and the AWS ECS containerized deployment classes
-  (ECSIOHandler, ECSOutputConsumer, ECSAgentRunner, ECSStreamAgentRunner, ECSSQSConsumer, QueueConsumer, ThreadRunner).
+  (ECSIOHandler, ECSOutputConsumer, ECSAgentRunner, ECSStreamAgentRunner, ECSSQSConsumer, RawQueueConsumer, ThreadRunner).
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -27,7 +27,7 @@ metadata:
 4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore).
 5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
 6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core` and `api`; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
-7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default; `sqs`/`kafka`/`nats` arriving over #495 iterations) and process topology selected by configuration.
+7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default, `sqs`, `kafka`, plus `nats` arriving in a later #495 iteration) and process topology selected by configuration.
 
 ## Core Abstractions
 
@@ -389,19 +389,21 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
 The #495 pipeline: every chat request on a server surface travels Request Handler → Input Queue →
 Agent Runner → Output Queue → Response Handler. Spec set: `docs/specs/495-onprem-kubernetes/`.
 Phase A (shipped): the package, the `in_memory` transport, and the single-process topology.
-Upcoming iterations: `sqs`/`kafka`/`nats` transports, pod-direct WebSocket delivery, the
+Phase B (shipped): the `sqs` and `kafka` transports, the two-process topology, and the
+public-interface cleanup that makes `pipeline.transport` the only public queue API.
+Upcoming iterations: the `nats` transport, pod-direct WebSocket delivery, the
 `ak-deployment/ak-k8s` Helm chart.
 
 | Module | Contents |
 |---|---|
 | `envelope.py` | `QueueMessage` (`body`, `attributes`, `group_id`, `dedup_id`, `receive_count`, `message_id`, `native` excluded from serialization) + attribute constants `ATTR_REQUEST_ID`/`ATTR_USER_ID`/`ATTR_ENDPOINT_URL`/`ATTR_STATUS_CODE`; `QueueName` (INPUT/OUTPUT) |
-| `transport/base.py` | `QueueTransport` (`send` + `create_consumer` hook), `TransportConsumer` (`fetch`/`ack`/`nack`/`close`: **one instance per consumer thread**), `QueueTransportFactory` (#541 house pattern; `resolve_type()`: explicit `type` wins, else `input.url` implies `sqs`, else `in_memory`; not-yet-shipped built-ins raise `AKConfigError`; dotted-path BYO supported) |
+| `transport/base.py` | `QueueTransport` (`send`, `create_consumer` hook, `check_consumer_capacity` startup warning hook), `TransportConsumer` (`fetch`/`ack`/`nack`/`dead_letter`/`close` plus `fetch_wait_slice_seconds`: **one instance per consumer thread**), `QueueTransportFactory` (#541 house pattern; `resolve_type()`: explicit `type` wins, else `input.url` implies `sqs`, else `in_memory`; not-yet-shipped built-ins raise `AKConfigError`; dotted-path BYO supported) |
 | `transport/in_memory.py` | `InMemoryTransport`: process-wide class-level queues; per-group FIFO with at most one in-flight message per group (groupless messages get synthetic groups); `ack_wait` redelivery with exact `receive_count`; `dedup_window`; blocking fetch; `reset()` for test isolation |
 | `consumer.py` | `ConsumerLoop`: the generic batch/retry/permanent-failure machinery extracted from `ECSSQSConsumer` (exact log-message parity; `logger` param keeps legacy `ak.ecs.*` logger names) |
 | `agent_runner.py` | `AgentRunner`/`StreamAgentRunner`: run via `ChatService.process_chat_request`/`process_stream_chat_sync`; forward replies with a `STATUS_CODE` attribute (the ECS path drops the status); per-chunk dedup suffixes `{dedup}-{receive_count}-{i}`; `run()` rejects `in_memory` (single-process runs via `IOHandler`) |
 | `response_handler.py` | `ResponseHandler`: REST modes write records `{session_id, request_id, status_code, body}`; STREAM + local endpoint routes chunks to `InMemoryResponseStore.add_chunk`; WS push raises until the WS iteration lands |
 | `request_handler.py` | `RestHandler` (relocated; shim at `deployment/common/rest_handler.py` keeps the `AKConfig` patch target) with three default-preserving seams (`_effective_mode`, `_await_response_record`, `_build_sync_response`); pipeline `RequestHandler`: always queue mode, unset mode → REST_SYNC, SSE bridging from `store.stream`, multipart route only on `in_memory`, stored `status_code >= 400` → `HTTPException` (direct-mode error parity) |
-| `response_store/` | Relocated family (`base`/`handler`/`redis`/`valkey`/`dynamodb`; shims left at `deployment/common/response_store.py` and `deployment/aws/core/response_store/`) plus `InMemoryResponseStore` (`get_record` exposes `status_code`; `add_chunk`/`stream` for local SSE) |
+| `response_store/` | Relocated family (`base`/`factory`/`redis`/`valkey`/`dynamodb`; shims left at `deployment/common/response_store.py` and `deployment/aws/core/response_store/`) plus `InMemoryResponseStore` (`get_record` exposes `status_code`; `add_chunk`/`stream` for local SSE) |
 | `io_handler.py` | `IOHandler.run(auth_validator=None)`: single-process topology (`in_memory`: rest-api + response-handler + agent-runner threads via `ThreadRunner`) vs two-process (broker: rest-api + response-handler only); startup fail-fasts (ASYNC / STREAM-over-broker → not until the WS iteration; broker transport + in_memory/absent response store → `AKConfigError`). Serves via its own `uvicorn.Server` (`RESTAPI.build_app()` seam) and installs SIGTERM/SIGINT handlers on the main thread: set `shutdown_event`, `server.should_exit`, and `ThreadRunner.shutdown_exit_code = 0` (uvicorn only installs handlers on the main thread, and a container PID 1 with no handler never receives SIGTERM: the containerized e2e hang). `ConsumerLoop` slices fetch waits to ≤1 s so drains are prompt |
 | `ws/base.py` | Relocated `WebSocketConnectionStoreABC`/`WebSocketHandlerABC` (shim at `deployment/common/websocket_service.py`); registry/push/native-WS handler arrive with the WS iteration |
 | `thread_runner.py` | Relocated `ThreadRunner` (shim at `deployment/common/thread_runner.py` keeps `import os` for the `os._exit` patch target) |
@@ -496,13 +498,12 @@ ak-py/src/agentkernel/
 │   ├── io_handler.py         # IOHandler: single-/two-process topologies + fail-fasts
 │   ├── thread_runner.py      # ThreadRunner (relocated)
 │   ├── testing.py            # QueueTransportContract (BYO/conformance test suite)
-│   ├── transport/            # base.py (ABCs + factory), in_memory.py (+ sqs/kafka/nats upcoming)
-│   ├── response_store/       # base, handler (factory), in_memory, redis, valkey, dynamodb
+│   ├── transport/            # base.py (ABCs + factory), in_memory.py, sqs.py, kafka.py, bookkeeping.py (+ nats upcoming)
+│   ├── response_store/       # base, factory (ResponseStoreFactory), in_memory, redis, valkey, dynamodb
 │   └── ws/                   # base.py (WS ABCs; registry/push/handler arrive with the WS iteration)
 ├── deployment/              # Cloud deployment adapters
 │   ├── common/              # Shared across Lambda + ECS
 │   │   ├── thread_runner.py     # SHIM → pipeline/thread_runner.py (keeps os._exit patch target)
-│   │   ├── queue_consumer.py    # QueueConsumer: ABC shared by ECSSQSConsumer + LambdaSQSConsumer
 │   │   ├── response_store.py    # SHIM → pipeline/response_store/base.py
 │   │   ├── rest_handler.py      # SHIM → pipeline/request_handler.py (keeps AKConfig patch target)
 │   │   └── websocket_service.py # SHIM → pipeline/ws/base.py
@@ -511,7 +512,7 @@ ak-py/src/agentkernel/
 │   │   │   └── core/router/ws_lambda.py  # LambdaWSHandler (renamed from BaseWSHandler): subclasses AWSWebSocketHandler, adds Lambda-event parsing only
 │   │   ├── containerized/   # ECS Fargate handlers
 │   │   │   ├── core/
-│   │   │   │   ├── sqs_consumer.py      # ECSSQSConsumer: extends QueueConsumer: SQS poll loop
+│   │   │   │   ├── sqs_consumer.py      # ECSSQSConsumer: extends RawQueueConsumer: SQS poll loop
 │   │   │   │   └── api/
 │   │   │   │       ├── rest_api.py      # ECSQueueRequestHandler (extends RestHandler), AWSRestAPI (extends RESTAPI)
 │   │   │   │       └── websocket_api.py # ECSWebSocketHandlerBase, ECSWebSocketSystemRequestHandler, ECSWebSocketRequestHandler, AWSWebsocketAPI (extends RESTAPI)
@@ -584,15 +585,15 @@ The containerized deployment runs on ECS Fargate and uses a two-container archit
 
 | Class | File | Role |
 |---|---|---|
-| `QueueConsumer` | `deployment/common/queue_consumer.py` | Abstract base shared by `ECSSQSConsumer` and `LambdaSQSConsumer`: declares `poll`, `process_message`, `on_permanent_failure`, `delete_message` |
-| `ECSSQSConsumer` | `containerized/core/sqs_consumer.py` | Extends `QueueConsumer`: SQS long-poll loop, retry/DLQ logic. Since #495 the machinery is the pipeline's `ConsumerLoop` bound to the SQS classmethod surface: public classmethods, raw-record subclass contract, log messages, and patch targets (`…sqs_consumer.time.sleep`) unchanged |
+| `RawQueueConsumer` | `deployment/aws/core/raw_queue_consumer.py` | Internal abstract base shared by `ECSSQSConsumer` and `LambdaSQSConsumer`: declares `poll`, `process_message`, `on_permanent_failure`, `delete_message` |
+| `ECSSQSConsumer` | `containerized/core/sqs_consumer.py` | Extends `RawQueueConsumer`: SQS long-poll loop, retry/DLQ logic. Since #495 the machinery is the pipeline's `ConsumerLoop` bound to the SQS classmethod surface: public classmethods, raw-record subclass contract, log messages, and patch targets (`…sqs_consumer.time.sleep`) unchanged |
 | `ThreadRunner` | `pipeline/thread_runner.py` (shim at `deployment/common/thread_runner.py`) | Runs N callables as peer threads (one `threading.Thread` per `Task`, gated by a `Semaphore`) |
 | `ECSOutputConsumer` | `containerized/akoutputconsumer.py` | Extends `ECSSQSConsumer`: polls Output Queue, writes to DynamoDB or broadcasts via WebSocket |
 | `ECSAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSSQSConsumer`: polls Input Queue, runs the agent, sends to Output Queue. `run()` dispatches to `ECSStreamAgentRunner.run()` when `execution.mode == stream`, re-checked on every call (mirroring `ECSIOHandler.run` and the serverless `ServerlessAgentRunner.handle()`/`ServerlessStreamAgentRunner.handle()` dispatch) |
 | `ECSStreamAgentRunner` | `containerized/akagentrunner.py` | Extends `ECSAgentRunner`: STREAM-mode sibling: fans out each streamed chunk as its own Output Queue message instead of sending one full response |
 | `ECSIOHandler` | `containerized/ecs_io_handler.py` | Entrypoint for the IO container: wires REST/WebSocket API + output consumer as peer threads |
 | `RestHandler` | `pipeline/request_handler.py` (shim at `deployment/common/rest_handler.py`) | Queue-aware `AgentRESTRequestHandler` subclass used by ECS's `ECSQueueRequestHandler` (Lambda's poll path is the separate `rest_lambda.py` router, which uses a JSON body, not query params): `enqueue_and_wait` (`POST /api/v1/chat`, `REST_SYNC` waits on the response store / `REST_ASYNC` returns a `request_id`) and `poll_response` (`GET /api/v1/chat?request_id=...&session_id=...`, query params only: `session_id` is for logging, not validated against the stored reply) |
-| `ECSQueueRequestHandler` | `containerized/core/api/rest_api.py` | Thin `RestHandler` subclass wiring SQS (`QueueHandler`) + `ResponseDBHandler`; routes inherited from `RestHandler.get_router()` |
+| `ECSQueueRequestHandler` | `containerized/core/api/rest_api.py` | Thin `RestHandler` subclass wiring the SQS transport and response store (both inherited from `RestHandler`); routes inherited from `RestHandler.get_router()` |
 | `AWSRestAPI` | `containerized/core/api/rest_api.py` | Extends `RESTAPI`; overrides `get_default_handlers()` to default to `ECSQueueRequestHandler`, safe to construct without config |
 | `ECSWebSocketHandlerBase` | `containerized/core/api/websocket_api.py` | Abstract shared base for the two WS handlers: connection store, push-endpoint construction, response envelope, `x-ws-*` headers |
 | `ECSWebSocketSystemRequestHandler` | `containerized/core/api/websocket_api.py` | Framework-managed protocol routes `$connect`/`$disconnect`/`$default`; owns the `AuthValidator` (only `$connect` authenticates). Not an extension point |
@@ -643,8 +644,8 @@ Container 2: ECSAgentRunner
 ### ECSSQSConsumer Contract
 
 - **`get_queue_url(cls) → str`** *(abstract)*: return the SQS queue URL to poll.
-- **`process_message(cls, record)`** *(abstract, from `QueueConsumer`)*: handle one message; called on every successful receive.
-- **`on_permanent_failure(cls, record)`** *(abstract, from `QueueConsumer`)*: called when `ApproximateReceiveCount > max_receive_count`; **must catch its own exceptions**: if it raises, the message is not deleted and loops back.
+- **`process_message(cls, record)`** *(abstract, from `RawQueueConsumer`)*: handle one message; called on every successful receive.
+- **`on_permanent_failure(cls, record)`** *(abstract, from `RawQueueConsumer`)*: called when `ApproximateReceiveCount > max_receive_count`; **must catch its own exceptions**: if it raises, the message is not deleted and loops back.
 - **`delete_message(cls, msg: dict)`** *(public)*: subclasses may call this directly when manual deletion is needed.
 - **`run(cls)`**: blocking poll loop: the container entry-point.
 

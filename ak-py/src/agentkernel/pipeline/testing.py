@@ -11,6 +11,8 @@ queue isolation.
 
 import time
 
+import pytest
+
 from .envelope import QueueMessage, QueueName
 from .transport.base import QueueTransport
 
@@ -20,10 +22,23 @@ class QueueTransportContract:
 
     Timing knobs (``ack_wait``, ``fetch_wait``) and the ``force_redelivery`` hook may be tuned
     per backend: e.g. a mocked-broker subclass can trigger redelivery without sleeping.
+    Declared capabilities let a transport opt out of a guarantee its backend genuinely cannot
+    provide; each opt-out must be justified in the subclass, since it narrows what the pipeline
+    can promise on that backend.
     """
 
     ack_wait: float = 0.2
-    fetch_wait: float = 0.5
+    # Ceiling on a fetch that is expected to return a message. Generous on purpose: an in-process
+    # transport returns as soon as the message is there, so a high ceiling costs it nothing, while
+    # a real broker's first fetch also has to join a consumer group and can take several seconds.
+    # Assertions that a fetch comes back *empty* pass their own short wait instead of this.
+    fetch_wait: float = 10.0
+
+    # Whether an unacked message returns for redelivery on a timeout while the consumer is still
+    # alive (SQS visibility timeout, NATS ack_wait, the in_memory sweep). Kafka's classic
+    # consumer model has no equivalent: redelivery comes from an explicit nack or from an
+    # uncommitted offset being reassigned after a crash or rebalance.
+    timeout_redelivery: bool = True
 
     def make_transport(self) -> QueueTransport:
         raise NotImplementedError
@@ -34,13 +49,37 @@ class QueueTransportContract:
 
     # -- helpers -------------------------------------------------------------------------
 
+    @pytest.fixture(autouse=True)
+    def _close_created_consumers(self):
+        """Close every consumer the test created.
+
+        This is not optional hygiene. A real broker client keeps background threads and consumer
+        group membership alive until ``close()``, so a suite that leaks consumers can report every
+        test passed and then never exit, which reads as a hung CI job. In-process transports do
+        not care, which is precisely why the leak stays invisible until the contract is pointed at
+        a broker.
+        """
+        self._created_consumers = []
+        yield
+        for consumer in self._created_consumers:
+            try:
+                consumer.close()
+            except Exception:  # a close failure must not mask the test's own result
+                pass
+
     @staticmethod
     def _msg(body="{}", group_id=None, dedup_id=None, attributes=None):
         return QueueMessage(body=body, group_id=group_id, dedup_id=dedup_id, attributes=attributes or {})
 
+    def _consumer(self, transport: QueueTransport, queue=QueueName.INPUT):
+        """Create a consumer and register it for closing when the test ends."""
+        consumer = transport.create_consumer(queue)
+        self._created_consumers.append(consumer)
+        return consumer
+
     def _pair(self, queue=QueueName.INPUT):
         transport = self.make_transport()
-        return transport, transport.create_consumer(queue)
+        return transport, self._consumer(transport, queue)
 
     # -- contract ------------------------------------------------------------------------
 
@@ -93,11 +132,17 @@ class QueueTransportContract:
         transport.send(QueueName.INPUT, self._msg(body="m1", group_id="s1"))
         [message] = consumer.fetch(10, self.fetch_wait)
         consumer.nack(message)
+        # The contract requires redelivery no later than the transport's own mechanism allows:
+        # in_memory requeues on nack immediately; SQS nack is a no-op and the visibility timeout
+        # (force_redelivery) does the requeue.
+        self.force_redelivery()
         [redelivered] = consumer.fetch(10, self.fetch_wait)
         assert redelivered.body == "m1"
         assert redelivered.receive_count == 2
 
     def test_unacked_message_is_redelivered_after_ack_wait(self):
+        if not self.timeout_redelivery:
+            pytest.skip("transport has no timeout-based redelivery (see QueueTransportContract.timeout_redelivery)")
         transport, consumer = self._pair()
         transport.send(QueueName.INPUT, self._msg(body="m1", group_id="s1"))
         [message] = consumer.fetch(10, self.fetch_wait)
@@ -122,6 +167,6 @@ class QueueTransportContract:
     def test_queues_are_isolated(self):
         transport = self.make_transport()
         transport.send(QueueName.INPUT, self._msg(body="in", group_id="s1"))
-        assert transport.create_consumer(QueueName.OUTPUT).fetch(10, 0.05) == []
-        [message] = transport.create_consumer(QueueName.INPUT).fetch(10, self.fetch_wait)
+        assert self._consumer(transport, QueueName.OUTPUT).fetch(10, 0.05) == []
+        [message] = self._consumer(transport, QueueName.INPUT).fetch(10, self.fetch_wait)
         assert message.body == "in"

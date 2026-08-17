@@ -24,6 +24,16 @@ class DynamoDBResponseStore(ResponseStore):
             self.delete_message(request_id)
         return item["body"]
 
+    def get_record(self, request_id: str, get_and_delete: bool = False) -> dict | None:
+        self._log.debug("Getting DynamoDB response record for request_id=%s get_and_delete=%s", request_id, get_and_delete)
+        item = self._driver.get(request_id)
+        if item is None:
+            return None
+
+        if get_and_delete:
+            self.delete_message(request_id)
+        return item
+
     def delete_message(self, request_id: str) -> None:
         self._log.debug("Deleting DynamoDB response message for request_id=%s", request_id)
         self._driver.delete(request_id)

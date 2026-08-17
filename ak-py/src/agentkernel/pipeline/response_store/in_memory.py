@@ -26,6 +26,9 @@ class InMemoryResponseStore(ResponseStore):
     # Sentinel put by close_stream to unblock and terminate a pending stream() consumer.
     _CLOSE_SENTINEL: ClassVar[Dict[str, Any]] = {}
 
+    def supports_chunk_streaming(self) -> bool:
+        return True
+
     def add_message(self, message: Dict) -> None:
         self._log.debug("Adding in-memory response message for request_id=%s", message.get("request_id"))
         with self._lock:

@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Any, List
+from typing import Any, List, Optional
 
 from ...core.config import AKConfig
-from ...core.util.factory import AKConfigError, resolve_dotted
+from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ..envelope import QueueMessage, QueueName
 
 
@@ -27,10 +27,28 @@ class QueueTransport(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement create_consumer")
 
+    def check_consumer_capacity(self, queue: QueueName, num_consumers: int) -> None:
+        """Report, at startup, whether the backend can actually keep ``num_consumers`` busy.
+
+        Backends that bind work to a fixed number of partitions (Kafka, NATS) leave extra
+        consumer threads permanently idle, which is invisible without a check like this. Called
+        once per component start with the configured consumer count; implementations must never
+        raise or block startup on it. Default no-op: transports whose consumers all compete for
+        the same queue (in_memory, SQS) have no such ceiling.
+        """
+        return None
+
 
 class TransportConsumer(ABC):
     """Receive side of a queue transport. One instance per consumer thread: implementations
     need not be thread-safe across instances, only self-contained."""
+
+    # Cap on how long one ``fetch`` may block before the consumer loop re-checks the shutdown
+    # event. None accepts the loop's default slicing (about 1 s), which keeps graceful drains
+    # prompt. Transports whose long polls are expensive to slice (SQS bills every receive call)
+    # override this with their native long-poll ceiling, accepting a drain that may wait one
+    # full poll.
+    fetch_wait_slice_seconds: Optional[float] = None
 
     @abstractmethod
     def fetch(self, batch_size: int, wait_seconds: float) -> List[QueueMessage]:
@@ -53,6 +71,17 @@ class TransportConsumer(ABC):
         """
         return None
 
+    def dead_letter(self, message: QueueMessage) -> None:
+        """Final disposition of a message that exhausted ``max_receive_count`` deliveries.
+
+        Called by :class:`~agentkernel.pipeline.consumer.ConsumerLoop` after the component's
+        permanent-failure hook has run, in place of :meth:`ack`. The default simply acks (the
+        SQS/in_memory behavior: the message is dropped once the hook has surfaced the error);
+        transports override to route the message somewhere first (a Kafka dead-letter topic) or
+        to use a different terminal operation (a NATS ``term()``).
+        """
+        self.ack(message)
+
     def close(self) -> None:
         """Release consumer-owned resources. Default no-op."""
         return None
@@ -61,10 +90,10 @@ class TransportConsumer(ABC):
 class QueueTransportFactory:
     """Resolves ``execution.queues.type`` to a transport (#541 house pattern).
 
-    ``in_memory`` is available; the remaining built-ins (``sqs``, ``kafka``, ``nats``) arrive
-    over later #495 iterations, and selecting one before it lands raises :class:`AKConfigError`.
-    Any other value is treated as a dotted path to a :class:`QueueTransport` subclass
-    (bring-your-own), which must also implement ``create_consumer``.
+    ``in_memory``, ``sqs`` and ``kafka`` are available; ``nats`` arrives in a later #495
+    iteration, and selecting it before it lands raises :class:`AKConfigError`. Any other value is
+    treated as a dotted path to a :class:`QueueTransport` subclass (bring-your-own), which must
+    also implement ``create_consumer``.
     """
 
     _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats")
@@ -98,6 +127,34 @@ class QueueTransportFactory:
             return InMemoryTransport(
                 ack_wait=in_memory_cfg.ack_wait if in_memory_cfg is not None else DEFAULT_ACK_WAIT_SECONDS,
                 dedup_window=in_memory_cfg.dedup_window if in_memory_cfg is not None else DEFAULT_DEDUP_WINDOW_SECONDS,
+            )
+        if transport_type == "sqs":
+            from .sqs import SQSTransport
+
+            queues = AKConfig.get().execution.queues
+            input_url = queues.input.url if queues is not None else None
+            output_url = queues.output.url if queues is not None else None
+            if not input_url or not output_url:
+                raise AKConfigError("the sqs transport requires both execution.queues.input.url and execution.queues.output.url")
+            return SQSTransport(input_url=input_url, output_url=output_url)
+        if transport_type == "kafka":
+            with require_extra("kafka", "execution.queues.type: kafka"):
+                from .kafka import KafkaTransport
+
+            queues = AKConfig.get().execution.queues
+            kafka_config = getattr(queues, "kafka", None) if queues is not None else None
+            if kafka_config is None:
+                raise AKConfigError("the kafka transport requires an execution.queues.kafka configuration block")
+            return KafkaTransport(
+                bootstrap_servers=kafka_config.bootstrap_servers,
+                input_topic=kafka_config.input_topic,
+                output_topic=kafka_config.output_topic,
+                group_id=kafka_config.group_id,
+                dlq_suffix=kafka_config.dlq_suffix,
+                retry_backoff=kafka_config.retry_backoff,
+                delivery_timeout=kafka_config.delivery_timeout,
+                metadata_timeout=kafka_config.metadata_timeout,
+                client_config=kafka_config.client_config,
             )
         if transport_type in cls._BUILTIN_TYPES:
             raise AKConfigError(f"queue transport '{transport_type}' is not available yet (ships in a later #495 iteration)")

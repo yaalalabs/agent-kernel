@@ -27,6 +27,16 @@ class ValkeyResponseStore(ResponseStore):
             self.delete_message(request_id)
         return message["body"]
 
+    def get_record(self, request_id: str, get_and_delete: bool = False) -> dict | None:
+        self._log.debug("Getting Valkey response record for request_id=%s get_and_delete=%s", request_id, get_and_delete)
+        raw_message = self._driver.get(self._driver.key(request_id))
+        if raw_message is None:
+            return None
+        message = json.loads(raw_message)
+        if get_and_delete:
+            self.delete_message(request_id)
+        return message
+
     def delete_message(self, request_id: str) -> None:
         self._log.debug("Deleting Valkey response message for request_id=%s", request_id)
         self._driver.delete(self._driver.key(request_id))

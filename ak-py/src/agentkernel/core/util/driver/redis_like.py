@@ -136,6 +136,22 @@ class _RedisLikeDriver(BaseDriver):
         self._log.debug(f"GET {key}")
         return self.client.get(key)
 
+    def incr(self, key: str) -> int:
+        """
+        INCR a counter key, applying the configured TTL on the first increment.
+
+        The TTL is applied when the counter is created (result == 1) so the whole counter
+        expires a fixed time after it started, rather than being extended by every increment.
+
+        :param key: The counter key.
+        :return: The counter's new value.
+        """
+        self._log.debug(f"INCR {key}")
+        value = int(self.client.incr(key))
+        if value == 1:
+            self.expire(key)
+        return value
+
     def delete(self, *keys: str) -> None:
         """
         DEL one or more keys.

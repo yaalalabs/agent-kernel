@@ -8,6 +8,7 @@ from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
 from .envelope import ATTR_ENDPOINT_URL, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
+from .thread_runner import ThreadRunner
 from .transport.base import QueueTransport, QueueTransportFactory
 
 # Attributes forwarded from an input message to its output message(s).
@@ -61,6 +62,7 @@ class AgentRunner:
             every pipeline loop has finished its in-flight work.
         """
         queues = AKConfig.get().execution.queues
+        self._transport.check_consumer_capacity(QueueName.INPUT, queues.input.no_of_consumers)
         ConsumerLoop(
             process=self.process,
             on_permanent_failure=self.on_permanent_failure,
@@ -82,6 +84,9 @@ class AgentRunner:
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
         if cls is AgentRunner and AKConfig.get().execution.mode == ExecutionMode.STREAM:
             return StreamAgentRunner.run()
+        # A standalone runner container is usually PID 1: without these handlers SIGTERM never
+        # arrives and pod/task stop hangs until SIGKILL instead of draining in-flight runs.
+        ThreadRunner.install_shutdown_signal_handlers(cls._log)
         cls().start()
 
     # -- shared plumbing --------------------------------------------------------------------

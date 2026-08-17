@@ -186,7 +186,7 @@ if __name__ == "__main__":
 
 ### Container 2: Agent Runner (`ECSAgentRunner`)
 
-Extends `ECSSQSConsumer` (which in turn extends the shared `QueueConsumer` base also used by Lambda's `LambdaSQSConsumer`): runs `execution.queues.input.no_of_consumers` (default **5**) independent threads, each polling the Input Queue in a blocking loop, executing the agent through the full `Runtime.run()` pipeline (hooks, guardrails, session persistence), and putting the result on the Output Queue with the same `request_id`. On permanent failure it forwards an error body to the Output Queue so the client still receives a response.
+Extends `ECSSQSConsumer` (which in turn extends the shared `RawQueueConsumer` base also used by Lambda's `LambdaSQSConsumer`): runs `execution.queues.input.no_of_consumers` (default **5**) independent threads, each polling the Input Queue in a blocking loop, executing the agent through the full `Runtime.run()` pipeline (hooks, guardrails, session persistence), and putting the result on the Output Queue with the same `request_id`. On permanent failure it forwards an error body to the Output Queue so the client still receives a response.
 
 **Entrypoint (`app_agent_runner.py`)**:
 
