@@ -28,7 +28,11 @@ class QueueTransportContract:
     """
 
     ack_wait: float = 0.2
-    fetch_wait: float = 0.5
+    # Ceiling on a fetch that is expected to return a message. Generous on purpose: an in-process
+    # transport returns as soon as the message is there, so a high ceiling costs it nothing, while
+    # a real broker's first fetch also has to join a consumer group and can take several seconds.
+    # Assertions that a fetch comes back *empty* pass their own short wait instead of this.
+    fetch_wait: float = 10.0
 
     # Whether an unacked message returns for redelivery on a timeout while the consumer is still
     # alive (SQS visibility timeout, NATS ack_wait, the in_memory sweep). Kafka's classic
@@ -45,13 +49,37 @@ class QueueTransportContract:
 
     # -- helpers -------------------------------------------------------------------------
 
+    @pytest.fixture(autouse=True)
+    def _close_created_consumers(self):
+        """Close every consumer the test created.
+
+        This is not optional hygiene. A real broker client keeps background threads and consumer
+        group membership alive until ``close()``, so a suite that leaks consumers can report every
+        test passed and then never exit, which reads as a hung CI job. In-process transports do
+        not care, which is precisely why the leak stays invisible until the contract is pointed at
+        a broker.
+        """
+        self._created_consumers = []
+        yield
+        for consumer in self._created_consumers:
+            try:
+                consumer.close()
+            except Exception:  # a close failure must not mask the test's own result
+                pass
+
     @staticmethod
     def _msg(body="{}", group_id=None, dedup_id=None, attributes=None):
         return QueueMessage(body=body, group_id=group_id, dedup_id=dedup_id, attributes=attributes or {})
 
+    def _consumer(self, transport: QueueTransport, queue=QueueName.INPUT):
+        """Create a consumer and register it for closing when the test ends."""
+        consumer = transport.create_consumer(queue)
+        self._created_consumers.append(consumer)
+        return consumer
+
     def _pair(self, queue=QueueName.INPUT):
         transport = self.make_transport()
-        return transport, transport.create_consumer(queue)
+        return transport, self._consumer(transport, queue)
 
     # -- contract ------------------------------------------------------------------------
 
@@ -139,6 +167,6 @@ class QueueTransportContract:
     def test_queues_are_isolated(self):
         transport = self.make_transport()
         transport.send(QueueName.INPUT, self._msg(body="in", group_id="s1"))
-        assert transport.create_consumer(QueueName.OUTPUT).fetch(10, 0.05) == []
-        [message] = transport.create_consumer(QueueName.INPUT).fetch(10, self.fetch_wait)
+        assert self._consumer(transport, QueueName.OUTPUT).fetch(10, 0.05) == []
+        [message] = self._consumer(transport, QueueName.INPUT).fetch(10, self.fetch_wait)
         assert message.body == "in"

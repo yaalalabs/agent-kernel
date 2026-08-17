@@ -348,6 +348,37 @@ class TestDeadLetter:
         assert cluster.records(f"{INPUT_TOPIC}-failed")
 
 
+class TestDeduplicationScope:
+    def test_a_reply_is_not_dropped_because_its_request_claimed_the_same_dedup_id(self, cluster):
+        """The pipeline gives a reply the same dedup id as its request (AgentRunner forwards it),
+        so deduplication must be scoped per topic the way SQS scopes it per queue. With one global
+        namespace the input queue's claim swallowed every reply on the output queue, and every
+        rest_sync caller timed out waiting for an answer that had been silently dropped."""
+        bookkeeping = InMemoryBookkeepingStore()
+        transport = _transport(bookkeeping=bookkeeping)
+        request_id = "req-1"
+
+        transport.send(QueueName.INPUT, QueueMessage(body="request", group_id="s1", dedup_id=request_id))
+        transport.send(QueueName.OUTPUT, QueueMessage(body="reply", group_id="s1", dedup_id=request_id))
+
+        [request] = transport.create_consumer(QueueName.INPUT).fetch(10, 0.1)
+        assert request.body == "request"
+
+        [reply] = transport.create_consumer(QueueName.OUTPUT).fetch(10, 0.1)
+        assert reply.body == "reply", "the reply must survive its request's dedup claim"
+
+    def test_duplicates_are_still_dropped_within_one_topic(self, cluster):
+        transport = _transport()
+        transport.send(QueueName.INPUT, QueueMessage(body="m1", group_id="s1", dedup_id="d1"))
+        transport.send(QueueName.INPUT, QueueMessage(body="m1-dup", group_id="s1", dedup_id="d1"))
+
+        consumer = transport.create_consumer(QueueName.INPUT)
+        [first] = consumer.fetch(10, 0.1)
+        assert first.body == "m1"
+        consumer.ack(first)
+        assert consumer.fetch(10, 0.1) == [], "the second record with the same dedup id is dropped"
+
+
 class TestHeadOfLineBlocking:
     def test_sessions_sharing_a_partition_serialize(self, cluster):
         """The documented Kafka tradeoff: one record in flight per partition, so two sessions

@@ -140,7 +140,13 @@ execution:
 ```
 
 The IO process runs `IOHandler.run()` (REST API + Response Handler) and the runner process runs
-`AgentRunner.run()`, exactly as on SQS.
+`AgentRunner.run()`, exactly as on SQS. (`RESTAPI.run()` boots the whole pipeline in one process
+only when the transport resolves to `in_memory`, so on a broker transport the IO side is started
+explicitly.)
+
+A runnable version of all of this, including a single-broker Docker stack and a small harness that
+provisions topics and lets you inspect the queues and dead-letter topics, is in
+[`examples/transport/kafka`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/transport/kafka).
 
 Three Kafka-specific behaviors worth knowing, all consequences of Kafka having no per-message
 acknowledgement model:

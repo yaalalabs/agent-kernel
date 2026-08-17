@@ -280,7 +280,12 @@ Client `confluent-kafka` (new `kafka` extra). Per `research/kafka.md`:
   `incr_attempts(key) -> int`, `clear_attempts(key)`, and
   **`claim_dedup(dedup_id, owner) -> bool`**: the claim is keyed by the claiming record's
   `topic:partition:offset`, so the owner may reclaim it. A plain `seen_dedup` flag would make a
-  record's own retry look like a duplicate and silently drop it. The shared Redis/Valkey driver
+  record's own retry look like a duplicate and silently drop it. The claim id is **scoped to the
+  topic** (`f"{topic}:{dedup_id}"`), matching SQS, whose dedup window is per queue: a reply
+  carries the same dedup id as its request (`AgentRunner` forwards it), so a global namespace
+  made the input queue's claim swallow every reply on the output queue and every `rest_sync`
+  caller timed out. Found by running the contract against a real broker; the fake-backed unit
+  tests had not crossed the two queues. The shared Redis/Valkey driver
   gains `incr(key)` (applies the configured TTL on creation only, so a hot counter cannot live
   forever).
 - **Fetch path**: for each record: another owner already claimed its `dedup_id` → commit and skip;

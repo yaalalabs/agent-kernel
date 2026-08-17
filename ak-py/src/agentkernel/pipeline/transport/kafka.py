@@ -190,10 +190,16 @@ class KafkaTransportConsumer(TransportConsumer):
         return batch
 
     def _is_duplicate(self, record: Any, message: QueueMessage) -> bool:
-        """Whether another record already claimed this envelope's dedup_id."""
+        """Whether another record on this topic already claimed the envelope's dedup_id.
+
+        The claim is scoped to the topic, matching SQS, whose deduplication window is per queue.
+        A global namespace would be actively wrong here: a reply carries the same dedup id as the
+        request that produced it (``AgentRunner`` forwards it), so the input queue's claim would
+        make every reply on the output queue look like a duplicate and get dropped.
+        """
         if not message.dedup_id:
             return False
-        return not self._bookkeeping.claim_dedup(message.dedup_id, owner=self._record_key(record))
+        return not self._bookkeeping.claim_dedup(f"{self._topic}:{message.dedup_id}", owner=self._record_key(record))
 
     @staticmethod
     def _record_key(record: Any) -> str:

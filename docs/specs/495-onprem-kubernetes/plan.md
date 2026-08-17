@@ -105,8 +105,15 @@ Spec section references are to `spec.md`.
   (`_KafkaQueueConfig`), `ak-py/pyproject.toml` (`kafka` extra).
 - **Steps:** producer/consumer per §6; `BookkeepingStore` resolved from the `session:` config
   (in_memory fallback WARNING); seek+pause retry; DLQ produce on permanent failure.
-- **Verify:** `test_pipeline_kafka_transport.py` (faked clients); contract suite behind a local
-  Kafka container (marked integration).
+- **Verify:** `test_pipeline_kafka_transport.py` (fake in-memory cluster) +
+  `test_pipeline_bookkeeping.py`; the `QueueTransportContract` runs against the fake in-repo.
+- **Also delivered:** `examples/transport/kafka/` (two-process pipeline over a single-broker KRaft
+  stack) with `kafka_tester.py`, a lightweight harness that runs the compose stack, provisions the
+  topics Agent Kernel deliberately does not create, and inspects/produces to topics; its
+  `app_test.py` covers rest_sync, a multi-turn session, topic/header flow, and the retry-to-DLQ
+  path against a real broker. **Not yet wired into CI**: registering it in
+  `.github/test-config.yaml` belongs to iteration 11, and needs the `kafka` extra to be resolvable
+  (published release or the locally built wheel via `./build.sh local`).
 
 ### Iteration 8: NATS JetStream transport
 
