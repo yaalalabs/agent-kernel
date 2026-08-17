@@ -90,11 +90,10 @@ class TransportConsumer(ABC):
 class QueueTransportFactory:
     """Resolves ``execution.queues.type`` to a transport (#541 house pattern).
 
-    ``in_memory`` and ``sqs`` are available; the remaining built-ins (``kafka``, ``nats``)
-    arrive over later #495 iterations, and selecting one before it lands raises
-    :class:`AKConfigError`. Any other value is treated as a dotted path to a
-    :class:`QueueTransport` subclass (bring-your-own), which must also implement
-    ``create_consumer``.
+    ``in_memory``, ``sqs`` and ``kafka`` are available; ``nats`` arrives in a later #495
+    iteration, and selecting it before it lands raises :class:`AKConfigError`. Any other value is
+    treated as a dotted path to a :class:`QueueTransport` subclass (bring-your-own), which must
+    also implement ``create_consumer``.
     """
 
     _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats")

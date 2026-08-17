@@ -122,6 +122,23 @@ class TestRedisLikeBookkeepingStore(_StoreContract):
         assert f"{ATTEMPTS_KEY_PREFIX}t:0:5" in self.client.store
         assert f"{DEDUP_KEY_PREFIX}d1" in self.client.store
 
+    def test_claim_expiring_between_set_and_get_is_not_read_as_a_duplicate(self):
+        """Racing the tail of the dedup window: SET NX fails because the key exists, then the key
+        expires before the GET. Reading that None as "another owner holds it" would drop a
+        legitimate record, so the claim is retried instead."""
+        store = self.make_store()
+        real_get = self.client.get
+
+        def get_after_expiry(key):
+            self.client.store.pop(key, None)  # the window elapses between the SET and the GET
+            return real_get(key)
+
+        self.client.get = get_after_expiry
+        self.client.store[f"{DEDUP_KEY_PREFIX}d1"] = "some-other-record"
+
+        assert store.claim_dedup("d1", owner="t:0:5") is True
+        assert self.client.store[f"{DEDUP_KEY_PREFIX}d1"] == "t:0:5", "the retry re-claims the id"
+
     def test_counter_ttl_is_applied_once_on_creation(self):
         """A TTL refreshed on every increment would let a hot counter live forever."""
         store = self.make_store()

@@ -27,7 +27,7 @@ metadata:
 4. **Session lifecycle**: Sessions are async context managers providing concurrency-safe state management. Session stores are pluggable (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore).
 5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
 6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core` and `api`; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
-7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default; `sqs`/`kafka`/`nats` arriving over #495 iterations) and process topology selected by configuration.
+7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default, `sqs`, `kafka`, plus `nats` arriving in a later #495 iteration) and process topology selected by configuration.
 
 ## Core Abstractions
 
@@ -388,19 +388,21 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
 The #495 pipeline: every chat request on a server surface travels Request Handler → Input Queue →
 Agent Runner → Output Queue → Response Handler. Spec set: `docs/specs/495-onprem-kubernetes/`.
 Phase A (shipped): the package, the `in_memory` transport, and the single-process topology.
-Upcoming iterations: `sqs`/`kafka`/`nats` transports, pod-direct WebSocket delivery, the
+Phase B (shipped): the `sqs` and `kafka` transports, the two-process topology, and the
+public-interface cleanup that makes `pipeline.transport` the only public queue API.
+Upcoming iterations: the `nats` transport, pod-direct WebSocket delivery, the
 `ak-deployment/ak-k8s` Helm chart.
 
 | Module | Contents |
 |---|---|
 | `envelope.py` | `QueueMessage` (`body`, `attributes`, `group_id`, `dedup_id`, `receive_count`, `message_id`, `native` excluded from serialization) + attribute constants `ATTR_REQUEST_ID`/`ATTR_USER_ID`/`ATTR_ENDPOINT_URL`/`ATTR_STATUS_CODE`; `QueueName` (INPUT/OUTPUT) |
-| `transport/base.py` | `QueueTransport` (`send` + `create_consumer` hook), `TransportConsumer` (`fetch`/`ack`/`nack`/`close`: **one instance per consumer thread**), `QueueTransportFactory` (#541 house pattern; `resolve_type()`: explicit `type` wins, else `input.url` implies `sqs`, else `in_memory`; not-yet-shipped built-ins raise `AKConfigError`; dotted-path BYO supported) |
+| `transport/base.py` | `QueueTransport` (`send`, `create_consumer` hook, `check_consumer_capacity` startup warning hook), `TransportConsumer` (`fetch`/`ack`/`nack`/`dead_letter`/`close` plus `fetch_wait_slice_seconds`: **one instance per consumer thread**), `QueueTransportFactory` (#541 house pattern; `resolve_type()`: explicit `type` wins, else `input.url` implies `sqs`, else `in_memory`; not-yet-shipped built-ins raise `AKConfigError`; dotted-path BYO supported) |
 | `transport/in_memory.py` | `InMemoryTransport`: process-wide class-level queues; per-group FIFO with at most one in-flight message per group (groupless messages get synthetic groups); `ack_wait` redelivery with exact `receive_count`; `dedup_window`; blocking fetch; `reset()` for test isolation |
 | `consumer.py` | `ConsumerLoop`: the generic batch/retry/permanent-failure machinery extracted from `ECSSQSConsumer` (exact log-message parity; `logger` param keeps legacy `ak.ecs.*` logger names) |
 | `agent_runner.py` | `AgentRunner`/`StreamAgentRunner`: run via `ChatService.process_chat_request`/`process_stream_chat_sync`; forward replies with a `STATUS_CODE` attribute (the ECS path drops the status); per-chunk dedup suffixes `{dedup}-{receive_count}-{i}`; `run()` rejects `in_memory` (single-process runs via `IOHandler`) |
 | `response_handler.py` | `ResponseHandler`: REST modes write records `{session_id, request_id, status_code, body}`; STREAM + local endpoint routes chunks to `InMemoryResponseStore.add_chunk`; WS push raises until the WS iteration lands |
 | `request_handler.py` | `RestHandler` (relocated; shim at `deployment/common/rest_handler.py` keeps the `AKConfig` patch target) with three default-preserving seams (`_effective_mode`, `_await_response_record`, `_build_sync_response`); pipeline `RequestHandler`: always queue mode, unset mode → REST_SYNC, SSE bridging from `store.stream`, multipart route only on `in_memory`, stored `status_code >= 400` → `HTTPException` (direct-mode error parity) |
-| `response_store/` | Relocated family (`base`/`handler`/`redis`/`valkey`/`dynamodb`; shims left at `deployment/common/response_store.py` and `deployment/aws/core/response_store/`) plus `InMemoryResponseStore` (`get_record` exposes `status_code`; `add_chunk`/`stream` for local SSE) |
+| `response_store/` | Relocated family (`base`/`factory`/`redis`/`valkey`/`dynamodb`; shims left at `deployment/common/response_store.py` and `deployment/aws/core/response_store/`) plus `InMemoryResponseStore` (`get_record` exposes `status_code`; `add_chunk`/`stream` for local SSE) |
 | `io_handler.py` | `IOHandler.run(auth_validator=None)`: single-process topology (`in_memory`: rest-api + response-handler + agent-runner threads via `ThreadRunner`) vs two-process (broker: rest-api + response-handler only); startup fail-fasts (ASYNC / STREAM-over-broker → not until the WS iteration; broker transport + in_memory/absent response store → `AKConfigError`). Serves via its own `uvicorn.Server` (`RESTAPI.build_app()` seam) and installs SIGTERM/SIGINT handlers on the main thread: set `shutdown_event`, `server.should_exit`, and `ThreadRunner.shutdown_exit_code = 0` (uvicorn only installs handlers on the main thread, and a container PID 1 with no handler never receives SIGTERM: the containerized e2e hang). `ConsumerLoop` slices fetch waits to ≤1 s so drains are prompt |
 | `ws/base.py` | Relocated `WebSocketConnectionStoreABC`/`WebSocketHandlerABC` (shim at `deployment/common/websocket_service.py`); registry/push/native-WS handler arrive with the WS iteration |
 | `thread_runner.py` | Relocated `ThreadRunner` (shim at `deployment/common/thread_runner.py` keeps `import os` for the `os._exit` patch target) |
@@ -495,8 +497,8 @@ ak-py/src/agentkernel/
 │   ├── io_handler.py         # IOHandler: single-/two-process topologies + fail-fasts
 │   ├── thread_runner.py      # ThreadRunner (relocated)
 │   ├── testing.py            # QueueTransportContract (BYO/conformance test suite)
-│   ├── transport/            # base.py (ABCs + factory), in_memory.py (+ sqs/kafka/nats upcoming)
-│   ├── response_store/       # base, handler (factory), in_memory, redis, valkey, dynamodb
+│   ├── transport/            # base.py (ABCs + factory), in_memory.py, sqs.py, kafka.py, bookkeeping.py (+ nats upcoming)
+│   ├── response_store/       # base, factory (ResponseStoreFactory), in_memory, redis, valkey, dynamodb
 │   └── ws/                   # base.py (WS ABCs; registry/push/handler arrive with the WS iteration)
 ├── deployment/              # Cloud deployment adapters
 │   ├── common/              # Shared across Lambda + ECS

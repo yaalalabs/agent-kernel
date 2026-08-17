@@ -104,9 +104,15 @@ class RedisLikeBookkeepingStore(BookkeepingStore):
         full_key = self._dedup.key(dedup_id)
         if self._dedup.set(full_key, owner, nx=True):
             return True
+
         existing = self._dedup.get(full_key)
         if isinstance(existing, (bytes, bytearray)):
             existing = existing.decode()
+        if existing is None:
+            # The claim expired between the SET and the GET, i.e. we raced the tail of the dedup
+            # window. Reading that as "someone else owns it" would drop a legitimate record, so
+            # treat the id as free and try to claim it once more.
+            return bool(self._dedup.set(full_key, owner, nx=True))
         return existing == owner
 
 

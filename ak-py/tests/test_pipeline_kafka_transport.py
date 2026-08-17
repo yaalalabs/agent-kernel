@@ -8,6 +8,7 @@ is what murmur2 hashing achieves in practice and keeps the semantics assertions 
 """
 
 import logging
+import time
 from collections import deque
 from typing import Any, Dict, List, Optional
 
@@ -20,7 +21,13 @@ from agentkernel.pipeline.testing import QueueTransportContract
 from agentkernel.pipeline.transport import kafka as kafka_module
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.bookkeeping import InMemoryBookkeepingStore
-from agentkernel.pipeline.transport.kafka import DEDUP_HEADER, DEFAULT_MAX_POLL_INTERVAL_MS, ERROR_HEADER, KafkaTransport
+from agentkernel.pipeline.transport.kafka import (
+    DEDUP_HEADER,
+    DEFAULT_MAX_POLL_INTERVAL_MS,
+    DLQ_CONFIRM_WAIT_SECONDS,
+    ERROR_HEADER,
+    KafkaTransport,
+)
 
 INPUT_TOPIC = "agent-input"
 OUTPUT_TOPIC = "agent-output"
@@ -133,9 +140,10 @@ class FakeProducer:
     def list_topics(self, topic=None, timeout=None):
         if self.cluster.metadata_error is not None:
             raise self.cluster.metadata_error
-        partitions = self.cluster.topic_partitions.get(topic)
-        topics = {} if partitions is None else {topic: FakeTopicMetadata(partitions)}
-        return FakeClusterMetadata(topics)
+        known = {name: FakeTopicMetadata(count) for name, count in self.cluster.topic_partitions.items()}
+        if topic is None:
+            return FakeClusterMetadata(known)
+        return FakeClusterMetadata({topic: known[topic]} if topic in known else {})
 
 
 class FakeConsumer:
@@ -340,6 +348,42 @@ class TestDeadLetter:
         assert cluster.committed, "the record is committed despite the failed DLQ write"
         assert any("dead-letter" in record.message for record in caplog.records)
 
+    def test_asynchronous_dlq_delivery_failure_is_logged(self, cluster, caplog):
+        """A DLQ delivery that fails *after* produce() returns (a missing dead-letter topic is the
+        likely cause, since auto-creation is normally off) must be reported. The original record is
+        committed regardless, so an unlogged failure would discard the only surviving copy."""
+        transport = _transport()
+        transport.send(QueueName.INPUT, QueueMessage(body="poison", group_id="s1"))
+        consumer = transport.create_consumer(QueueName.INPUT)
+        [message] = consumer.fetch(10, 0.1)
+        consumer._producer.delivery_error = FakeError(KafkaError.UNKNOWN_TOPIC_OR_PART)
+
+        with caplog.at_level(logging.ERROR, logger="ak.pipeline.transport.kafka"):
+            consumer.dead_letter(message)
+
+        [failure] = [record for record in caplog.records if record.levelname == "ERROR"]
+        assert "Dead-letter delivery failed" in failure.message
+        assert message.message_id in failure.message
+        assert cluster.committed, "the original record still commits"
+
+    def test_unconfirmed_dlq_delivery_warns_without_stalling(self, cluster, caplog):
+        """A broken dead-letter topic must not stall the consumer: the wait is bounded and the
+        callback still logs the outcome on a later poll."""
+        transport = _transport()
+        transport.send(QueueName.INPUT, QueueMessage(body="poison", group_id="s1"))
+        consumer = transport.create_consumer(QueueName.INPUT)
+        [message] = consumer.fetch(10, 0.1)
+        consumer._producer.dropped = True  # the callback never fires
+
+        started = time.monotonic()
+        with caplog.at_level(logging.WARNING, logger="ak.pipeline.transport.kafka"):
+            consumer.dead_letter(message)
+        elapsed = time.monotonic() - started
+
+        assert any("was not confirmed" in record.message for record in caplog.records)
+        assert elapsed < DLQ_CONFIRM_WAIT_SECONDS + 2, "the wait stays bounded"
+        assert cluster.committed
+
     def test_custom_dlq_suffix(self, cluster):
         transport = _transport(dlq_suffix="-failed")
         transport.send(QueueName.INPUT, QueueMessage(body="poison", group_id="s1"))
@@ -473,7 +517,7 @@ class TestCommitFailure:
 
 class TestConsumerCapacity:
     def test_warns_when_partitions_cannot_keep_consumers_busy(self, cluster, caplog):
-        cluster.topic_partitions = {INPUT_TOPIC: 2}
+        cluster.topic_partitions = {INPUT_TOPIC: 2, f"{INPUT_TOPIC}.dlq": 2}
         with caplog.at_level(logging.WARNING, logger="ak.pipeline.transport.kafka"):
             _transport().check_consumer_capacity(QueueName.INPUT, num_consumers=5)
 
@@ -482,7 +526,7 @@ class TestConsumerCapacity:
         assert "3 will stay idle" in warning.message
 
     def test_no_warning_when_partitions_are_sufficient(self, cluster, caplog):
-        cluster.topic_partitions = {INPUT_TOPIC: 32}
+        cluster.topic_partitions = {INPUT_TOPIC: 32, f"{INPUT_TOPIC}.dlq": 32}
         with caplog.at_level(logging.INFO, logger="ak.pipeline.transport.kafka"):
             _transport().check_consumer_capacity(QueueName.INPUT, num_consumers=5)
         assert [record for record in caplog.records if record.levelname == "WARNING"] == []
@@ -499,7 +543,7 @@ class TestConsumerCapacity:
         assert [record for record in caplog.records if record.levelname == "WARNING"] == []
 
     def test_reported_once_per_topic(self, cluster, caplog):
-        cluster.topic_partitions = {INPUT_TOPIC: 1}
+        cluster.topic_partitions = {INPUT_TOPIC: 1, f"{INPUT_TOPIC}.dlq": 1}
         with caplog.at_level(logging.WARNING, logger="ak.pipeline.transport.kafka"):
             _transport().check_consumer_capacity(QueueName.INPUT, num_consumers=5)
             _transport().check_consumer_capacity(QueueName.INPUT, num_consumers=5)

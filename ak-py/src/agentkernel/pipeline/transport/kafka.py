@@ -50,6 +50,20 @@ ERROR_HEADER = "ak-error"
 # rebalance storm. Raised well past a typical turn and overridable via queues.kafka.client_config.
 DEFAULT_MAX_POLL_INTERVAL_MS = 900000
 
+# How long dead_letter waits for the broker to confirm the DLQ copy. Short on purpose: a broken
+# dead-letter topic must not stall the consumer, and the delivery callback still logs the outcome
+# whenever a later poll services it.
+DLQ_CONFIRM_WAIT_SECONDS = 2.0
+
+
+def _produce_record(producer: Producer, **produce_kwargs: Any) -> None:
+    """Produce, giving librdkafka a chance to drain if its local queue is full."""
+    try:
+        producer.produce(**produce_kwargs)
+    except BufferError:
+        producer.poll(1.0)
+        producer.produce(**produce_kwargs)
+
 
 class KafkaTransportConsumer(TransportConsumer):
     """Consumer over one Kafka topic. One instance (and one ``confluent_kafka.Consumer``) per
@@ -117,20 +131,61 @@ class KafkaTransportConsumer(TransportConsumer):
             time.sleep(self._retry_backoff)
 
     def dead_letter(self, message: QueueMessage) -> None:
-        """Route a permanently failed record to the dead-letter topic, then commit it."""
+        """Route a permanently failed record to the dead-letter topic, then commit it.
+
+        The original record is committed either way: the component's permanent-failure hook has
+        already surfaced the error to the caller, and leaving a poison record uncommitted would
+        replay it forever. That makes the DLQ copy the only remaining evidence, so its delivery is
+        confirmed rather than assumed, and a failure is always logged.
+        """
         record = message.native
         try:
             headers = list(record.headers() or [])
             headers.append((ERROR_HEADER, f"exceeded max_receive_count after {message.receive_count} deliveries".encode()))
-            self._producer.produce(topic=self._dlq_topic, value=record.value(), key=record.key(), headers=headers)
-            self._producer.poll(0)
-            _log.warning(f"Routed message {message.message_id} to dead-letter topic {self._dlq_topic}")
+            self._produce_to_dead_letter_topic(message, record, headers)
         except Exception:
-            # Never block the terminal ack on the DLQ write: the component's permanent-failure
-            # hook has already surfaced the error to the caller, and leaving the record
-            # uncommitted would replay it forever.
             _log.exception(f"Failed to route message {message.message_id} to dead-letter topic {self._dlq_topic}")
         self.ack(message)
+
+    def _produce_to_dead_letter_topic(self, message: QueueMessage, record: Any, headers: List[tuple]) -> None:
+        """Produce the DLQ copy and wait briefly for the broker to confirm it.
+
+        The delivery callback owns the logging, so an asynchronous failure (most plausibly a
+        missing dead-letter topic, since auto-creation is normally off) is reported instead of
+        vanishing. Waiting only ``DLQ_CONFIRM_WAIT_SECONDS`` keeps a broken DLQ from stalling the
+        consumer: if the confirm has not arrived by then the callback still fires on a later poll
+        of this process-wide producer, and a late log beats no log.
+        """
+        confirmed = threading.Event()
+
+        def _on_delivery(error, delivered_record) -> None:
+            confirmed.set()
+            if error is not None:
+                _log.error(
+                    f"Dead-letter delivery failed for message {message.message_id} to topic {self._dlq_topic}: {error}. "
+                    "The original record is already committed, so this copy is lost: check that the dead-letter topic "
+                    "exists, since topic auto-creation is normally disabled."
+                )
+            else:
+                _log.warning(f"Routed message {message.message_id} to dead-letter topic {self._dlq_topic}")
+
+        _produce_record(
+            self._producer,
+            topic=self._dlq_topic,
+            value=record.value(),
+            key=record.key(),
+            headers=headers,
+            on_delivery=_on_delivery,
+        )
+
+        deadline = time.monotonic() + DLQ_CONFIRM_WAIT_SECONDS
+        while not confirmed.is_set() and time.monotonic() < deadline:
+            self._producer.poll(0.05)
+        if not confirmed.is_set():
+            _log.warning(
+                f"Dead-letter delivery for message {message.message_id} to topic {self._dlq_topic} was not confirmed "
+                f"within {DLQ_CONFIRM_WAIT_SECONDS} s; its outcome will be logged when the producer is next polled"
+            )
 
     def close(self) -> None:
         self._consumer.close()
@@ -281,7 +336,7 @@ class KafkaTransport(QueueTransport):
             delivery["error"], delivery["record"] = error, record
 
         producer = self._get_producer()
-        self._produce(
+        _produce_record(
             producer,
             topic=self._topics[queue],
             value=message.body.encode(),
@@ -316,13 +371,27 @@ class KafkaTransport(QueueTransport):
                 return
             self._capacity_checked.add(cache_key)
 
+        dlq_topic = f"{topic}{self._dlq_suffix}"
         try:
-            metadata = self._get_producer().list_topics(topic=topic, timeout=self._metadata_timeout)
+            # No topic filter: one round trip covers the queue and its dead-letter topic, and it
+            # cannot nudge a broker with auto-creation enabled into creating either of them.
+            metadata = self._get_producer().list_topics(timeout=self._metadata_timeout)
             topic_metadata = metadata.topics.get(topic)
             partitions = 0 if topic_metadata is None or topic_metadata.error is not None else len(topic_metadata.partitions)
+            dlq_metadata = metadata.topics.get(dlq_topic)
+            dlq_exists = dlq_metadata is not None and dlq_metadata.error is None
         except Exception as e:
-            _log.debug(f"Could not read partition metadata for topic {topic}: {e}")
+            _log.debug(f"Could not read topic metadata for {topic}: {e}")
             return
+
+        if not dlq_exists:
+            # Checked here because the alternative is discovering it at the worst moment: the
+            # permanently failed record is committed either way, so a missing DLQ silently
+            # discards the only copy that would have survived.
+            _log.warning(
+                f"Dead-letter topic {dlq_topic} does not exist: permanently failed records from {topic} cannot be "
+                "preserved. Provision it alongside the queue topics, since topic auto-creation is normally disabled."
+            )
 
         if partitions == 0:
             _log.warning(f"Topic {topic} is unavailable or has no partitions: it must be provisioned before the pipeline can consume it")
@@ -374,15 +443,6 @@ class KafkaTransport(QueueTransport):
             if cache_key not in self._producers:
                 self._producers[cache_key] = Producer(config)
             return self._producers[cache_key]
-
-    @staticmethod
-    def _produce(producer: Producer, **produce_kwargs: Any) -> None:
-        """Produce, giving librdkafka a chance to drain if its local queue is full."""
-        try:
-            producer.produce(**produce_kwargs)
-        except BufferError:
-            producer.poll(1.0)
-            producer.produce(**produce_kwargs)
 
     @classmethod
     def reset(cls) -> None:

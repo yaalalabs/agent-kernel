@@ -485,11 +485,13 @@ preserves today's inline path unchanged.
   `_ResponseStoreConfig.type` (`config.py:314`) accepts a built-in short name
   (`in_memory|redis|valkey|dynamodb`) or a dotted path to a `ResponseStore` subclass (the #541
   BYO branch, `resolve_dotted(type, base=ResponseStore)()`); the old regex pattern is dropped,
-  so unknown short names fail loudly at store-build time (`ValueError` listing the options)
+  so unknown short names fail loudly at store-build time (`AKConfigError` listing the options)
   rather than at config load, matching the session/thread/trace store factories.
 - **Resolution default**: `execution.response_store is None` + transport `in_memory` → in_memory store
-  (today's constructor raises `ValueError`, `handler.py:50-51`; that error is preserved for
-  broker transports without a configured store).
+  (today's constructor raises `ValueError`, `handler.py:50-51`; the fail-fast behavior is
+  preserved for broker transports without a configured store, but the **type changes** to
+  `AKConfigError`, which subclasses `Exception` and not `ValueError`, so any caller catching
+  `ValueError` must be updated: named in the §12 change 12 changelog note).
 - **`InMemoryResponseStore`**: process-wide dict of `request_id → queue.Queue` +
   `threading.Event`-based waiters. `add_message(record)` honors the standard record shape;
   `get_message(request_id, get_and_delete)` returns `record["body"]`: matching the existing
@@ -516,6 +518,7 @@ class _KafkaQueueConfig(BaseModel):
     dlq_suffix: str = ".dlq"
     retry_backoff: float = 2.0
     delivery_timeout: float = 30.0        # bound on the synchronous send confirm (§6)
+    metadata_timeout: float = 5.0         # bound on the startup partition/DLQ capacity check (§6)
     client_config: dict[str, Any] = {}      # passthrough to confluent-kafka (SASL/TLS etc.)
 
 class _NatsQueueConfig(BaseModel):
@@ -777,16 +780,31 @@ New test files (patterns per `ak-dev-testing-conventions`: `DummyAgent`/`DummyRu
 Existing tests: the riskiest consumer is `ECSSQSConsumer` (its internals move):
 `test_ecs_sqs_consumer_parallel.py` must pass **unmodified**: it imports and patches the class
 surface directly (`tests/test_ecs_sqs_consumer_parallel.py:5`, classmethod seams `poll`,
-`process_message`, `delete_message`, `_get_client`), which the shim preserves. `test_sqs_handler.py`,
-`test_akagentrunner_stream.py`, `test_akresponsehandler.py`, `test_thread_runner.py` (import path
-via the `deployment/common` shim), and `test_api_http.py` (explicit-handler instantiation)
-must pass unmodified; `test_api_http.py` gains a delegation test class (delegates when
-unconfigured + in_memory; never for explicit handlers, subclasses, or broker transports), and its
-two pre-existing bare-`RESTAPI.run()` tests pin a broker transport via
-`QueueTransportFactory.resolve_type`: the only sanctioned test edits, required by behavioural
-change 1 (the bare-run default now genuinely boots the pipeline). `test_rest_handler_poll.py`
-passes unmodified (the relocation shim keeps its `AKConfig` patch target and the seam preserves
-the store-call keyword style it asserts).
+`process_message`, `delete_message`, `_get_client`), which the shim preserves.
+
+**Pass unmodified**: `test_ecs_sqs_consumer_parallel.py`, `test_akagentrunner_stream.py`,
+`test_akresponsehandler.py`, `test_thread_runner.py` (import path via the `deployment/common`
+shim).
+
+**Sanctioned edits**, each forced by a numbered behavioural change and expected to appear in the
+diff:
+
+- `test_api_http.py`: gains a delegation test class (delegates when unconfigured + in_memory;
+  never for explicit handlers, subclasses, or broker transports), and its two pre-existing
+  bare-`RESTAPI.run()` tests pin a broker transport via `QueueTransportFactory.resolve_type`
+  (change 1: the bare-run default now genuinely boots the pipeline).
+- `test_sqs_handler.py`: drops the assertion that `QueueMessageBody`/`SendMessageAttributes` are
+  inherited from the deleted `QueueHandler` ABC; the models are now `SQSHandler`'s own and every
+  other assertion in the file is untouched (change 12).
+- `test_rest_handler_poll.py`: its fake handler implements `get_transport()` instead of
+  `get_queue_handler()` (change 12's seam retype).
+- `test_config.py`: the `_ResponseStoreConfig` pattern-rejection test becomes a dotted-path
+  acceptance test, with the fail-loud case moving to `test_response_store_in_memory.py`
+  (change 12: the type field accepts BYO paths and validates at build time).
+- `test_pipeline_consumer_loop.py`: the "not available yet" factory case switches from `kafka` to
+  `nats` as each built-in transport lands.
+- `test_response_store_valkey.py`: `ResponseDBHandler` references become `ResponseStoreFactory`,
+  and the missing-block case expects `AKConfigError` rather than `ValueError` (change 12).
 
 Run: `cd ak-py && uv run pytest`. Chart CI: `ct lint` + kind install smoke per flavor values
 file with one end-to-end chat request through the NATS transport.
