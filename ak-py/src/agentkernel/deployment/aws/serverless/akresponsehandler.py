@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from ....core.config import AKConfig
 from ....core.model import ExecutionMode, StreamChunk
-from ..core.response_store import ResponseDBHandler
+from ..core.response_store import ResponseStoreFactory
 from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
 from .core.router.ws_lambda import LambdaWSHandler
@@ -26,7 +26,7 @@ class ResponseHandler(LambdaSQSConsumer):
     @classmethod
     def _get_response_store(cls):
         if cls._response_store is None:
-            cls._response_store = ResponseDBHandler().get_store()
+            cls._response_store = ResponseStoreFactory.create()
         return cls._response_store
 
     @classmethod

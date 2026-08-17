@@ -293,10 +293,9 @@ def test_response_store_accepts_in_memory_type(tmp_path, monkeypatch):
     assert cfg.execution.response_store.type == "in_memory"
 
 
-def test_response_store_rejects_unknown_type():
-    import pydantic
-
+def test_response_store_accepts_dotted_path_type():
+    """The type field takes built-in short names or a BYO dotted path (#541 factory pattern);
+    unknown short names fail loudly at store-build time (see test_response_store_in_memory)."""
     from agentkernel.core.config import _ResponseStoreConfig
 
-    with pytest.raises(pydantic.ValidationError):
-        _ResponseStoreConfig(type="bogus")
+    assert _ResponseStoreConfig(type="my_pkg.stores.MyResponseStore").type == "my_pkg.stores.MyResponseStore"

@@ -1,6 +1,6 @@
 import importlib.metadata
 from threading import RLock
-from typing import Any, ClassVar, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -311,7 +311,10 @@ class _ResponseStoreDynamoDBConfig(_DynamoDBConfig):
 
 
 class _ResponseStoreConfig(BaseModel):
-    type: str = Field(default=None, pattern="^(in_memory|redis|valkey|dynamodb)$")
+    type: str = Field(
+        default=None,
+        description="Response store backend: a built-in short name (in_memory, redis, valkey, dynamodb) or a dotted path to a ResponseStore subclass",
+    )
     retry_count: int = Field(default=5, description="Number of retry attempts for response store reads")
     delay: float = Field(default=5, description="Delay in seconds between response store reads retry attempts")
     redis: Optional[_ResponseStoreRedisConfig] = None
@@ -363,6 +366,30 @@ class _InMemoryQueueConfig(BaseModel):
     dedup_window: float = Field(default=300.0, description="Seconds within which a repeated message_deduplication_id is dropped")
 
 
+class _KafkaQueueConfig(BaseModel):
+    bootstrap_servers: str = Field(default="localhost:9092", description="Kafka bootstrap servers (host:port, comma-separated)")
+    input_topic: str = Field(default="agent-input", description="Topic carrying chat requests")
+    output_topic: str = Field(default="agent-output", description="Topic carrying agent replies")
+    group_id: str = Field(
+        default="agent-kernel",
+        description="Consumer group id prefix; the input and output consumers append their queue name to it",
+    )
+    dlq_suffix: str = Field(
+        default=".dlq",
+        description="Suffix appended to a topic name for its dead-letter topic, where permanently failed records are routed",
+    )
+    retry_backoff: float = Field(default=2.0, description="Seconds to wait before an in-process retry of a failed record")
+    delivery_timeout: float = Field(default=30.0, description="Seconds to wait for the broker to confirm a produced message before failing the send")
+    metadata_timeout: float = Field(
+        default=5.0,
+        description="Seconds to wait for topic metadata during the startup partition-capacity check (the check is skipped on timeout)",
+    )
+    client_config: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Passthrough settings merged into the confluent-kafka producer and consumer configs (SASL, TLS, tuning)",
+    )
+
+
 class _QueuesConfig(BaseModel):
     type: Optional[str] = Field(
         default=None,
@@ -375,6 +402,7 @@ class _QueuesConfig(BaseModel):
     input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input queue configuration for queue execution mode")
     output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output queue configuration for queue execution mode")
     in_memory: Optional[_InMemoryQueueConfig] = Field(default=None, description="in_memory transport settings")
+    kafka: Optional[_KafkaQueueConfig] = Field(default=None, description="kafka transport settings")
     batch_size: Optional[int] = Field(
         default=None,
         description=(

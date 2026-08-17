@@ -156,7 +156,7 @@ Before writing a word of detailed design, read the code the change touches and c
 - Check the supporting surfaces that specs routinely get wrong:
   - **Config**: the actual Pydantic classes in `ak-py/src/agentkernel/core/config.py` — field names, types, defaults, descriptions, and which sections are `Optional` (a missing block may raise `AttributeError`, `ValueError`, or nothing, depending on the default).
   - **Optional dependencies**: which extras in `ak-py/pyproject.toml` cover which imports, and which factory paths actually have `try/except ImportError` (only some do — verify per path, don't generalize).
-  - **Factories and wiring**: `SessionStoreBuilder`, `AttachmentStorageManager`, `ResponseDBHandler`, framework/provider factories — what selects the component and what error behavior each has.
+  - **Factories and wiring**: `SessionStoreBuilder`, `AttachmentStorageManager`, `ResponseStoreFactory`, framework/provider factories — what selects the component and what error behavior each has.
   - **Existing tests**: which test files cover the area and what they monkeypatch — `plan.md` must name the patch targets that move.
   - **Dev skills**: grep `.agents/skills/` for references to classes/files the change moves or renames; the plan's final step updates them.
 - Note behavior asymmetries between the copies/paths you touch (e.g. one swallows errors where its twin propagates, one checks config where another doesn't). Each asymmetry forces a design decision the spec must make explicitly.

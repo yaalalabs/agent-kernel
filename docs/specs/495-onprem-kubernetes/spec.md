@@ -27,7 +27,7 @@ ak-py/src/agentkernel/pipeline/
 ├── response_store/
 │   ├── __init__.py
 │   ├── base.py            # ResponseStore ABC (moved from deployment/common/response_store.py)
-│   ├── handler.py         # ResponseDBHandler factory (moved from deployment/aws/core/response_store/)
+│   ├── factory.py         # ResponseStoreFactory (#541 pattern; owns the pipeline resolution defaults)
 │   ├── in_memory.py       # InMemoryResponseStore (new)
 │   ├── redis.py / valkey.py / dynamodb.py   # moved unchanged
 ├── ws/
@@ -51,13 +51,18 @@ Coupling rules (numbered, enforced by import direction):
 1. `pipeline` imports `core` and `api` only. `api/handler.py` imports nothing new;
    `api/http.py` imports `pipeline` **lazily inside methods** (same pattern as its existing lazy
    a2a/mcp imports, `api/http.py:105-115`), so no import cycle exists.
-2. `deployment/` imports `pipeline`; nothing in `pipeline` imports `deployment`.
+2. `deployment/` imports `pipeline`; nothing in `pipeline` imports `deployment`. The SQS
+   wire-format primitives (attribute models, `send_message` kwargs assembly, record-attribute
+   flatteners) live in `transport/sqs.py`; `SQSHandler` imports them and delegates, with its
+   nested classes (`CustomAttribute`, `AttributeDataType`, `SQSQueueInputMessage`) aliasing the
+   relocated models so its public surface, isinstance checks, and patch targets are unchanged
+   (the same relocation-with-delegation pattern as `ECSSQSConsumer` → `ConsumerLoop`).
 3. Moved modules leave **re-export shims** at their old paths so every existing import keeps
    working: `deployment/common/thread_runner.py`, `deployment/common/response_store.py`,
    `deployment/common/websocket_service.py`, and `deployment/aws/core/response_store/`
-   (`__init__.py` re-exports `ResponseDBHandler`; `redis/valkey/dynamodb` modules re-export their
-   store classes). `deployment/common/__init__.py` (`queue_consumer`/`thread_runner` exports,
-   currently 2 lines) keeps exporting `QueueConsumer` and `ThreadRunner`.
+   (`__init__.py` re-exports `ResponseStoreFactory`; `redis/valkey/dynamodb` modules re-export their
+   store classes). `deployment/common/__init__.py` keeps exporting `ThreadRunner` (its
+   `QueueConsumer` export is removed by the public-interface cleanup, §12 change 12).
 4. Transports never read `AKConfig` for connection details at method level: the factory reads
    config once and passes explicit constructor parameters (mirrors the shared-driver rule,
    `core/util/driver/`).
@@ -90,7 +95,11 @@ class TransportConsumer(ABC):          # receive side: ONE INSTANCE PER CONSUMER
     @abstractmethod
     def ack(self, message: QueueMessage) -> None: ...     # success or handled permanent failure
     def nack(self, message: QueueMessage) -> None: ...    # default no-op: redelivery via timeout
+    def dead_letter(self, message: QueueMessage) -> None: ...  # terminal disposition after the
+    #   permanent-failure hook; default acks (SQS/in_memory), Kafka routes to its DLQ topic first,
+    #   NATS will term(). Keeps DLQ routing out of ack, which cannot tell the two paths apart.
     def close(self) -> None: ...                          # default no-op
+    fetch_wait_slice_seconds: Optional[float] = None       # cap on one fetch's block (§3 rule 5)
 
 class QueueTransportFactory:
     _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats")
@@ -108,9 +117,14 @@ class QueueTransportFactory:
 - The concurrency contract: `QueueTransport.send` must be callable from any thread and the
   uvicorn event loop (always dispatched via `asyncio.to_thread` from async code, as
   `rest_handler.py:56` does today); each `TransportConsumer` instance is single-thread-owned.
-- `QueueHandler` (`deployment/common/queue_handler.py:7`) is **unchanged**: it remains the
-  send-side ABC for the ECS/Lambda legacy path. The pipeline does not implement it; the two meet
-  only at the SQS wire format (§6).
+- **This transport interface is the only public queue API** (public-interface cleanup, §12
+  change 12): producers name a logical queue (`QueueName`) and send an envelope; configuration
+  resolves the backend and physical queue. The old deployment-side contracts are removed or
+  internalized: the `QueueHandler` ABC is deleted (its `QueueMessageBody`/
+  `SendMessageAttributes` models fold into `SQSHandler`, which becomes AWS-adapter-internal
+  glue over the same wire format), and `QueueConsumer` is renamed `RawQueueConsumer` and moved
+  to `deployment/aws/core/raw_queue_consumer.py` as the internal raw-record base of
+  `LambdaSQSConsumer`/`ECSSQSConsumer`.
 
 ### 3. Generic consumer machinery (`consumer.py`)
 
@@ -147,8 +161,12 @@ Behavior, byte-equivalent to the ECS semantics:
 4. `async def process` callables are supported via the same `inspect.iscoroutinefunction` +
    `asyncio.run` dispatch as `sqs_consumer.py:119-123`.
 5. Long fetch waits are sliced to ≤1 s per call so `shutdown_event` is observed promptly (a
-   signal-initiated drain must not stall for a full long-poll interval); revisit per-transport
-   when the `sqs` transport lands, since SQS long-poll economics favor a single 20 s wait.
+   signal-initiated drain must not stall for a full long-poll interval). A consumer whose long
+   polls are expensive to slice lifts the cap by declaring
+   `TransportConsumer.fetch_wait_slice_seconds` (default `None` = the loop's 1 s slicing): the
+   SQS consumer declares 20 s, since SQS bills every receive call and 1 s slices would multiply
+   the empty-poll API cost ~20x, accepting a drain that may wait one full poll (within the 30 s
+   default stop grace periods on ECS and Kubernetes).
 
 `ECSSQSConsumer` is rebuilt as a thin shim over `ConsumerLoop` with its public surface unchanged:
 `max_receive_count`/`num_consumers` class attrs, `get_queue_url`, `poll`, `process_message`,
@@ -187,47 +205,104 @@ Process-wide singleton state (one `_InMemoryQueue` per `QueueName`), `threading.
 
 ### 5. SQS transport (`transport/sqs.py`)
 
-- `send`: delegates to `SQSHandler.send_message` (`aws/core/sqs_handler.py:227`) with
-  `message_group_id=group_id`, `message_deduplication_id=dedup_id`, and attributes via
-  `SQSHandler.CustomAttribute`: the wire format is **identical** to today's
-  `send_message_to_input_queue`/`send_message_to_output_queue` (`sqs_handler.py:309-392`)
-  including the standard `request_id`/`user_id` attributes (`:273-295`), so pipeline producers
-  and ECS consumers (or vice versa) interoperate during migration.
+- The SQS wire-format primitives are relocated **into** this module (§1 rule 2):
+  `AttributeDataType`, `CustomAttribute`, `SQSQueueInputMessage`, `serialize_message_body`,
+  `build_message_attribute(s)`, `build_send_message_kwargs`, and the
+  `get_message_system_attributes`/`get_message_custom_attributes` flatteners; `SQSHandler`
+  delegates to them with an unchanged public surface.
+- `send`: builds kwargs via the shared `build_send_message_kwargs` with
+  `message_group_id=group_id`, `message_deduplication_id=dedup_id`, and envelope attributes as
+  String `CustomAttribute`s, sent on the transport's own lazily created boto3 client: the wire
+  format is **identical by construction** to today's
+  `send_message_to_input_queue`/`send_message_to_output_queue` (`sqs_handler.py`) including the
+  standard `request_id`/`user_id` attributes, so pipeline producers and ECS consumers (or vice
+  versa) interoperate during migration.
 - `TransportConsumer`: one boto3 client per consumer instance; `fetch` = `receive_message` with
-  `MaxNumberOfMessages=batch_size`, `WaitTimeSeconds=wait_seconds`, `AttributeNames=["All"]`,
+  `MaxNumberOfMessages=batch_size`, `WaitTimeSeconds=int(min(wait_seconds, 20))` (boto3 requires
+  an integer; SQS caps long polls at 20 s), `AttributeNames=["All"]`,
   `MessageAttributeNames=["All"]` (as `sqs_consumer.py:66-71`); envelope mapping: `body` =
   `record["Body"]`, `attributes` via `SQSHandler.get_message_custom_attributes`
   (`sqs_handler.py:170`), `group_id` from `Attributes.MessageGroupId`, `receive_count` from
   `Attributes.ApproximateReceiveCount`, `native=record`; `ack` = `delete_message(ReceiptHandle)`;
-  `nack` = no-op (visibility timeout).
-- Queue URLs from the existing `execution.queues.input.url`/`output.url` (`config.py:323,340`).
+  `nack` = no-op (visibility timeout). Declares `fetch_wait_slice_seconds = 20` so the
+  `ConsumerLoop` issues one full-length long poll instead of 1 s slices (§3 rule 5).
+- Queue URLs from the existing `execution.queues.input.url`/`output.url` (`config.py:323,340`);
+  both are required: the factory raises `AKConfigError` when either is missing.
 
 ### 6. Kafka transport (`transport/kafka.py`, `transport/bookkeeping.py`)
 
 Client `confluent-kafka` (new `kafka` extra). Per `research/kafka.md`:
 
-- **Producer** (process-wide singleton): `enable.idempotence=true`; `send` maps `group_id` →
-  record key, `attributes` (+ `dedup_id` under key `ak-dedup-id`) → headers, topic from config
-  (`input_topic`/`output_topic`).
-- **Consumer** (one `confluent_kafka.Consumer` per thread): `group.id` from config,
-  `enable.auto.commit=false`, `partition.assignment.strategy=cooperative-sticky`. `fetch` =
-  `consume(num_messages=batch_size, timeout=wait_seconds)`.
+- **Producer** (process-wide, one per broker configuration; class-level cache keyed by the
+  resolved producer config, `reset()` for tests): `enable.idempotence=true`; `send` maps
+  `group_id` → record key, `attributes` (+ `dedup_id` under header `ak-dedup-id`) → headers,
+  topic from config (`input_topic`/`output_topic`). The send **waits for the broker
+  acknowledgement** (delivery callback polled up to `delivery_timeout`, default 30 s) and raises
+  on error or timeout, so an unreachable broker fails the request rather than silently dropping
+  the message (error table); it returns `{"MessageId": "topic:partition:offset"}` for the
+  Request Handler's enqueue log.
+- **Consumer** (one `confluent_kafka.Consumer` per thread): `group.id` =
+  `f"{group_id}-{queue}"` so input and output offsets/rebalances stay independent,
+  `enable.auto.commit=false`, `auto.offset.reset=earliest`,
+  `partition.assignment.strategy=cooperative-sticky`, and
+  **`max.poll.interval.ms=900000`** (an LLM-bound agent turn easily exceeds librdkafka's 5 min
+  default, which would evict the consumer mid-run); `client_config` merges over all of it for
+  SASL/TLS/tuning. `fetch` = `consume(num_messages=batch_size, timeout=wait_seconds)`.
+- **Parallelism is per consumer thread, capped by partitions**: Kafka gives a partition to at
+  most one group member and a consumer thread processes messages one at a time, so sessions whose
+  keys hash to the same partition are handled one after another (SQS FIFO, by contrast, runs a
+  queue's distinct groups concurrently). Concurrency therefore equals the number of consumer
+  threads holding partitions: `no_of_consumers x replicas` must stay <= the partition count, and
+  `QueueTransport.check_consumer_capacity(queue, num_consumers)` (new optional hook, default
+  no-op; called from `AgentRunner.start`/`ResponseHandler.start`) reads cluster metadata once per
+  process per topic and warns when partitions are fewer than the configured consumers, when the
+  queue topic is missing, and when the topic's **dead-letter topic** is missing (a permanently
+  failed record commits either way, so an absent DLQ silently discards the only surviving copy);
+  it logs the ratio otherwise. One unfiltered metadata call covers the queue and its DLQ, which
+  also avoids nudging a broker with auto-creation enabled into creating either. Metadata failures
+  are ignored: a startup check never blocks startup.
+- **One record in flight per partition**: the consumer buffers a fetched batch per partition and
+  hands out at most one record per partition, releasing the next only on `ack`. Required so a
+  retry can redeliver a record before any later offset in that partition is committed. This costs
+  no throughput (the `ConsumerLoop` processes a batch sequentially anyway); it only turns one
+  batch into several buffer-served fetches with no broker round trip.
+- **Rebalance handling**: `subscribe` registers `on_revoke`/`on_lost` callbacks that drop buffered
+  and in-flight records for partitions this consumer no longer owns; without them, locally
+  buffered records would be processed here *and* by the partition's new owner. The callbacks
+  commit nothing (uncommitted work is meant to be redelivered) and never reassign partitions, so
+  librdkafka's default cooperative handling applies. A **failed commit** (lost partition after a
+  rebalance or an eviction during a long turn, or a briefly unreachable broker) is logged and the
+  record is released rather than retried locally: processing already succeeded, and the
+  uncommitted offset means whoever owns the partition next redelivers it.
 - **Receive count + dedup: `BookkeepingStore`** (design decision Q5: follows the session
-  storage configuration): resolved from `AKConfig.session.type`: `redis`/`valkey` use the shared
-  drivers (`core/util/driver/`) with the session block's connection settings and key prefixes
-  `ak:qattempts:` / `ak:qdedup:`; `in_memory` (or any other session type) falls back to an
-  in-process dict **with a one-time WARNING** that Kafka retry bookkeeping is process-local.
-  Surface: `incr_attempts(key) -> int` (TTL 1 h), `clear_attempts(key)`,
-  `seen_dedup(dedup_id) -> bool` (SET NX EX 300 semantics).
-- **Fetch path**: for each record: dedup header seen → `ack` (commit) and skip;
-  `receive_count = incr_attempts(f"{topic}:{partition}:{offset}")`.
-- **Ack** = commit offset (per-partition, after the batch's records complete in order) +
-  `clear_attempts`. **Nack** = `seek()` back to the record's offset + `pause()` the partition for
-  a backoff (default 2 s, config `retry_backoff`), calling `poll(0)` during the pause so the
-  consumer stays under `max.poll.interval.ms`; `resume()` then re-fetch: the blocking in-process
-  retry pattern. Head-of-line blocking per partition is accepted and documented.
-- **Permanent failure**: after the `ConsumerLoop` runs the hook, `ack` additionally produces the
-  original record (headers + `ak-error` header) to `f"{topic}{dlq_suffix}"` (default `.dlq`).
+  storage configuration) built by `BookkeepingStoreFactory`: `redis`/`valkey` session types use
+  the shared drivers (`core/util/driver/`) with the session block's connection settings and key
+  prefixes `ak:qattempts:` (TTL 1 h) / `ak:qdedup:` (TTL 300 s); every other session type falls
+  back to process-local dicts **with a one-time WARNING** naming the consequence (counts reset on
+  restart, so a message that crashes its worker can evade the permanent-failure path). Surface:
+  `incr_attempts(key) -> int`, `clear_attempts(key)`, and
+  **`claim_dedup(dedup_id, owner) -> bool`**: the claim is keyed by the claiming record's
+  `topic:partition:offset`, so the owner may reclaim it. A plain `seen_dedup` flag would make a
+  record's own retry look like a duplicate and silently drop it. The claim id is **scoped to the
+  topic** (`f"{topic}:{dedup_id}"`), matching SQS, whose dedup window is per queue: a reply
+  carries the same dedup id as its request (`AgentRunner` forwards it), so a global namespace
+  made the input queue's claim swallow every reply on the output queue and every `rest_sync`
+  caller timed out. Found by running the contract against a real broker; the fake-backed unit
+  tests had not crossed the two queues. The shared Redis/Valkey driver
+  gains `incr(key)` (applies the configured TTL on creation only, so a hot counter cannot live
+  forever).
+- **Fetch path**: for each record: another owner already claimed its `dedup_id` → commit and skip;
+  otherwise `receive_count = incr_attempts(f"{topic}:{partition}:{offset}")`.
+- **Ack** = commit the record's offset (synchronous) + `clear_attempts`, releasing its partition.
+  **Nack** = requeue the record at its partition's buffer head and sleep `retry_backoff`
+  (default 2 s): the offset is never committed, so a crash mid-retry leaves the record for
+  another group member, and no `seek`/`pause`/`resume` dance is needed (the buffer already holds
+  it, and the one-in-flight rule stops later offsets from overtaking it).
+- **Permanent failure**: `ConsumerLoop` calls the transport's `dead_letter` disposition after the
+  component hook (§2); Kafka's produces the original record (headers + `ak-error`) to
+  `f"{topic}{dlq_suffix}"` (default `.dlq`) and then commits. A failed DLQ write is logged and
+  the record still commits, since the hook has already answered the caller and an uncommitted
+  poison record would replay forever.
 - Topics are pre-provisioned (Strimzi CRs / chart); the transport does not create topics.
 
 ### 7. NATS JetStream transport (`transport/nats.py`)
@@ -295,19 +370,24 @@ Client `nats-py` (new `nats` extra). Per `research/nats-jetstream.md`:
 
 **`RequestHandler`** (`request_handler.py`): extends `RestHandler`, which moves into
 `pipeline/request_handler.py` (shim left at `deployment/common/rest_handler.py`, which also keeps
-an `AKConfig` name so existing patch targets resolve; the `QueueHandler` return type becomes a
-TYPE_CHECKING-only import so the pipeline never imports `deployment/` at runtime). `RestHandler`
-stays behavior-identical except for three overridable seams (defaults preserve today's ECS
-behavior exactly):
+an `AKConfig` name so existing patch targets resolve). `RestHandler` enqueues through
+`get_transport()` (default: the factory-configured transport) via an internal
+`_enqueue_request()` that builds the input-queue envelope (`request_id` attribute,
+`group_id=session_id`, `dedup_id=request_id`, body dumped with `exclude_none=True` for byte
+parity with the old SQSHandler path); `ECSQueueRequestHandler` inherits this, so ECS enqueues
+ride the SQS transport. `RestHandler` stays behavior-identical otherwise, with three overridable
+seams (defaults preserve today's ECS behavior exactly):
 
 - `_build_sync_response(record) -> Any` (default: today's `response.get("body", response)`) so
   subclasses can honor `status_code`;
 - `_await_response_record(request_id)` (default: today's `get_message_with_retry(...)` call with
   its original keyword style) so subclasses can retrieve full records;
 - `_effective_mode()` (default: `execution.mode` as-is) so the pipeline can map unset → REST_SYNC.
-- `RequestHandler.get_queue_handler()` returns an adapter exposing
-  `send_message_to_input_queue(...)` over `QueueTransport.send` (keeps `enqueue_and_wait`
-  verbatim); `get_response_store()` uses the relocated `ResponseDBHandler`.
+- `RestHandler.get_response_store()` defaults to `ResponseStoreFactory.create()` (the factory
+  owns the resolution defaults, so ECS and the pipeline share one implementation);
+  `RequestHandler._await_response_record` polls **full records** (`ResponseStore.get_record`)
+  with the pipeline retry budget, so the stored `status_code` is honored on every store,
+  shared backends included.
 - `_build_sync_response` override: stored `status_code >= 400` → `HTTPException(status_code,
   detail=body)`: restoring today's **direct-mode** error contract
   (`ResponseBuilder.build_response` raises in `rest_api_mode`, `chat_service.py:299-302`) on the
@@ -345,6 +425,10 @@ behavior exactly):
   `exit_on_shutdown=False`, so each returns after finishing its in-flight work and only
   IOHandler's outer `ThreadRunner.run` exits the process, once every loop has reported in;
   standalone container mains (`AgentRunner.run()`, the ECS classes) keep the exiting default.
+  The handler body lives in `ThreadRunner.install_shutdown_signal_handlers` (shared);
+  `AgentRunner.run()` installs the same handlers (without the uvicorn step), since a standalone
+  runner container in the two-process topology is PID 1 too and must drain on SIGTERM rather
+  than hang until SIGKILL. The ECS classes are unchanged.
 
 **`RESTAPI` default wiring** (`api/http.py`): `run()` gains a pipeline delegation guard ahead of
 its current body: it lazily imports and delegates to `IOHandler.run()` **only when all three
@@ -392,13 +476,25 @@ preserves today's inline path unchanged.
 
 ### 10. Response store changes (`pipeline/response_store/`)
 
-- `ResponseStore` ABC, `ResponseDBHandler`, and the Redis/Valkey/DynamoDB stores move unchanged
-  (shims at old paths, §1 rule 3). `ResponseDBHandler.Type` (`handler.py:16`) gains `IN_MEMORY`;
-  `_ResponseStoreConfig.type` pattern (`config.py:314`) becomes
-  `^(in_memory|redis|valkey|dynamodb)$`.
+- `ResponseStore` ABC and the Redis/Valkey/DynamoDB stores move (shims at old paths, §1
+  rule 3). The selection factory is `ResponseStoreFactory` (`factory.py`, renamed from
+  `ResponseDBHandler` with its `Type` enum dropped; #541 shape, `AKConfigError` on unknown
+  types): it owns the pipeline resolution defaults in one place (in_memory default on the
+  in_memory transport; broker transports require an explicit shared store). The ABC gains
+  `get_record` (the full stored record including `status_code`, implemented by every store)
+  and an optional chunk-streaming capability (`supports_chunk_streaming` +
+  `add_chunk`/`stream`/`close_stream` defaults that fail loudly): pipeline components check
+  the capability, never concrete store classes, so BYO stores can take part in SSE delivery.
+  `_ResponseStoreConfig.type` (`config.py:314`) accepts a built-in short name
+  (`in_memory|redis|valkey|dynamodb`) or a dotted path to a `ResponseStore` subclass (the #541
+  BYO branch, `resolve_dotted(type, base=ResponseStore)()`); the old regex pattern is dropped,
+  so unknown short names fail loudly at store-build time (`AKConfigError` listing the options)
+  rather than at config load, matching the session/thread/trace store factories.
 - **Resolution default**: `execution.response_store is None` + transport `in_memory` → in_memory store
-  (today's constructor raises `ValueError`, `handler.py:50-51`; that error is preserved for
-  broker transports without a configured store).
+  (today's constructor raises `ValueError`, `handler.py:50-51`; the fail-fast behavior is
+  preserved for broker transports without a configured store, but the **type changes** to
+  `AKConfigError`, which subclasses `Exception` and not `ValueError`, so any caller catching
+  `ValueError` must be updated: named in the §12 change 12 changelog note).
 - **`InMemoryResponseStore`**: process-wide dict of `request_id → queue.Queue` +
   `threading.Event`-based waiters. `add_message(record)` honors the standard record shape;
   `get_message(request_id, get_and_delete)` returns `record["body"]`: matching the existing
@@ -421,8 +517,11 @@ class _InMemoryQueueConfig(BaseModel):
 class _KafkaQueueConfig(BaseModel):
     bootstrap_servers: str = "localhost:9092"
     input_topic: str = "agent-input"; output_topic: str = "agent-output"
-    group_id: str = "agent-kernel"; dlq_suffix: str = ".dlq"
+    group_id: str = "agent-kernel"        # consumers append "-input"/"-output"
+    dlq_suffix: str = ".dlq"
     retry_backoff: float = 2.0
+    delivery_timeout: float = 30.0        # bound on the synchronous send confirm (§6)
+    metadata_timeout: float = 5.0         # bound on the startup partition/DLQ capacity check (§6)
     client_config: dict[str, Any] = {}      # passthrough to confluent-kafka (SASL/TLS etc.)
 
 class _NatsQueueConfig(BaseModel):
@@ -486,7 +585,9 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
    path).
 6. Output messages and response-store records now carry `status_code`; the **pipeline** REST
    surface maps stored errors to `HTTPException` (the ECS path keeps returning error bodies with
-   HTTP 200: its today's behavior, unchanged).
+   HTTP 200: its today's behavior, unchanged). Since the interface cleanup this holds on
+   shared stores too: the pipeline polls full records via `ResponseStore.get_record` (§10),
+   where it previously saw only bodies outside the in-memory store.
 7. `ECSSQSConsumer` internals delegate to `ConsumerLoop`; its public classmethod surface,
    record shapes, log messages, and retry semantics are unchanged.
 8. New native `/ws` WebSocket endpoint + `/internal/push` endpoint exist only when `IOHandler`
@@ -498,7 +599,10 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
     uvicorn stops, the process exits. Pre-pipeline this worked implicitly because uvicorn ran on
     the main thread; the pipeline flip had regressed container stop to a hang on PID-1 runtimes
     with no SIGKILL escalation (the `examples/containerized/openai` harness) and to ungraceful
-    SIGKILL-after-grace on orchestrators. Ctrl+C on a local run also now exits cleanly.
+    SIGKILL-after-grace on orchestrators. Ctrl+C on a local run also now exits cleanly. The
+    standalone `AgentRunner.run()` container main installs the same handlers (drain in-flight
+    runs, exit 0). SQS consumers drain within one full long-poll interval (≤20 s, §3 rule 5)
+    rather than the ≤1 s slice of other transports.
 11. Bug fix exposed by the pipeline's thread-based execution:
     `AgentHandler._run_async_sync` (`core/chat_service.py`) previously wrapped
     `run_until_complete(coro)` in `except RuntimeError: asyncio.run(coro)`, so an agent's own
@@ -506,10 +610,31 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
     awaited coroutine". The fallback now applies only to `get_event_loop()` failing; agent
     exceptions propagate as-is. (The ECS runner shares this code path: strictly an error-fidelity
     improvement.)
+12. **Public queue interface cleanup (breaking, decided 2026-08-14)**: the pipeline transport
+    (`QueueTransport`/`QueueName`/`QueueMessage` + `QueueTransportFactory`) is the single public
+    queue API; configuration resolves the backend and physical queue. Removals, without
+    deprecation aliases: the `QueueHandler` ABC (`deployment/common/queue_handler.py`) is
+    deleted, with `QueueMessageBody`/`SendMessageAttributes` folded into `SQSHandler` (now
+    AWS-internal glue with an unchanged method surface); `QueueConsumer` is renamed
+    `RawQueueConsumer` and relocated to `deployment/aws/core/raw_queue_consumer.py`;
+    `deployment/common/__init__.py` no longer exports `QueueConsumer`. The `RestHandler`
+    enqueue seam is retyped from `get_queue_handler()` to `get_transport()`, so
+    `ECSQueueRequestHandler` enqueues through the SQS transport (wire format identical by
+    construction; body JSON dumped with `exclude_none=True` as before). Only code importing the
+    removed ABCs/paths breaks; `SQSHandler` callers and `ECSSQSConsumer`/`LambdaSQSConsumer`
+    subclasses are unaffected. Same wave: `ResponseDBHandler` becomes `ResponseStoreFactory`
+    (`response_store/factory.py`, `Type` enum dropped, `AKConfigError` instead of
+    `ValueError`, owns the resolution defaults; the `deployment/aws/core/response_store/`
+    shim re-exports the new name), `ResponseStore` gains `get_record` + the chunk-streaming
+    capability (§10), and the relocated modules' logger names unify under `ak.pipeline.*`
+    (`ak.thread_runner` → `ak.pipeline.thread_runner`, `ak.deployment.response_store` and
+    `ak.response_db_handler` → `ak.pipeline.response_store`, the WS ABCs →
+    `ak.pipeline.ws.*`, RestHandler default → `ak.pipeline.rest_handler`; the ECS classes
+    keep their explicit `ak.ecs.*` names). Needs a changelog entry at release.
 
 **Non-changes**: ECS and Lambda wire behavior, entry points, and exports
-(`deployment/aws/__init__.py` lazy-export table unchanged); `SQSHandler` and `QueueHandler`
-surfaces; SQS FIFO group/dedup mapping; session/thread/multimodal stores; CLI, A2A, MCP
+(`deployment/aws/__init__.py` lazy-export table unchanged); `SQSHandler`'s method surface;
+SQS FIFO group/dedup mapping; session/thread/multimodal stores; CLI, A2A, MCP
 (`AgentService` direct); Azure/GCP deployments; `AgentRESTRequestHandler` routes and shapes when
 explicitly instantiated.
 
@@ -616,12 +741,27 @@ New test files (patterns per `ak-dev-testing-conventions`: `DummyAgent`/`DummyRu
 - `test_transport_contract.py`: a reusable `QueueTransportContract` (the
   `SandboxProviderContract` pattern, `sandbox/testing.py`) asserting the six queue-semantics
   requirements from `research/current-queue-mode.md`; run against `in_memory` in-repo; `sqs` via
-  mocked boto3; the same class is reused by integration CI against real Kafka/NATS containers.
+  mocked boto3 (the subclass lives in `test_pipeline_sqs_transport.py`, next to its in-memory
+  FIFO fake of the boto3 client); the same class is reused by integration CI against real
+  Kafka/NATS containers.
 - `test_pipeline_sqs_transport.py`: envelope mapping from boto3 records, send-side kwargs
-  equality with `SQSHandler.build_send_message_kwargs` output.
-- `test_pipeline_kafka_transport.py`: faked `confluent_kafka.Consumer/Producer`: header/key
-  mapping, commit-after-ack, seek+pause on nack, DLQ produce on permanent failure, bookkeeping
-  fallback WARNING when session type is in_memory.
+  equality with `SQSHandler.build_send_message_kwargs` output, long-poll parameters
+  (integer `WaitTimeSeconds`, unsliced 20 s wait), factory URL resolution, the SQSHandler
+  delegation pins (nested-class identity, shared kwargs builder, duplicate-attribute rejection),
+  plus the contract suite over the mocked-boto3 FIFO fake.
+- `test_pipeline_kafka_transport.py`: a fake in-memory cluster (per-partition logs, fetch
+  positions independent of committed offsets, delivery callbacks) behind
+  `confluent_kafka.Consumer/Producer`: envelope/header/key mapping, synchronous send confirm
+  (delivery error and unconfirmed-delivery both raise), commit-after-ack, nack requeue without
+  commit, DLQ produce plus commit-on-DLQ-failure, partition-EOF skip vs fatal record error,
+  client/producer config (manual commit, cooperative-sticky, `max.poll.interval.ms`, per-queue
+  group ids, `client_config` passthrough, producer sharing), the head-of-line-blocking tradeoff
+  with a forced partition collision, factory resolution, plus the full `QueueTransportContract`
+  (with `timeout_redelivery = False`).
+- `test_pipeline_bookkeeping.py`: one shared assertion set run against both bookkeeping backends
+  (attempt counts, retry-safe dedup claims incl. owner reclaim, expiry), key prefixes and
+  create-only counter TTL on the driver-backed store, and factory selection from the session
+  config incl. the once-per-process fallback warning.
 - `test_pipeline_nats_transport.py`: faked `nats` client on a real `_NatsLoop`: subject
   construction, `Nats-Msg-Id`, `num_delivered` mapping, `term()` on permanent failure,
   `auto_provision=false` verification error.
@@ -635,21 +775,39 @@ New test files (patterns per `ak-dev-testing-conventions`: `DummyAgent`/`DummyRu
 - `test_pipeline_ws.py`: native `/ws` route (auth, registry lifecycle), `/internal/push`
   (token auth, 404 on unknown user, frame delivery), `PodPushWebSocketHandler` retry-on-404.
 - `test_response_store_in_memory.py`: record shape (`get_message` returns `body`), status_code
-  retention, chunk streaming, `get_message_with_retry` inheritance.
+  retention, chunk streaming, `get_message_with_retry` inheritance, `ResponseStoreFactory`
+  selection (in_memory default on the in_memory transport, broker fail-fast, BYO dotted path,
+  wrong base and unknown short name fail loudly), and the chunk-streaming capability defaults.
+  `test_response_store_valkey.py` additionally covers `get_record` round trips.
 
 Existing tests: the riskiest consumer is `ECSSQSConsumer` (its internals move):
 `test_ecs_sqs_consumer_parallel.py` must pass **unmodified**: it imports and patches the class
 surface directly (`tests/test_ecs_sqs_consumer_parallel.py:5`, classmethod seams `poll`,
-`process_message`, `delete_message`, `_get_client`), which the shim preserves. `test_sqs_handler.py`,
-`test_akagentrunner_stream.py`, `test_akresponsehandler.py`, `test_thread_runner.py` (import path
-via the `deployment/common` shim), and `test_api_http.py` (explicit-handler instantiation)
-must pass unmodified; `test_api_http.py` gains a delegation test class (delegates when
-unconfigured + in_memory; never for explicit handlers, subclasses, or broker transports), and its
-two pre-existing bare-`RESTAPI.run()` tests pin a broker transport via
-`QueueTransportFactory.resolve_type`: the only sanctioned test edits, required by behavioural
-change 1 (the bare-run default now genuinely boots the pipeline). `test_rest_handler_poll.py`
-passes unmodified (the relocation shim keeps its `AKConfig` patch target and the seam preserves
-the store-call keyword style it asserts).
+`process_message`, `delete_message`, `_get_client`), which the shim preserves.
+
+**Pass unmodified**: `test_ecs_sqs_consumer_parallel.py`, `test_akagentrunner_stream.py`,
+`test_akresponsehandler.py`, `test_thread_runner.py` (import path via the `deployment/common`
+shim).
+
+**Sanctioned edits**, each forced by a numbered behavioural change and expected to appear in the
+diff:
+
+- `test_api_http.py`: gains a delegation test class (delegates when unconfigured + in_memory;
+  never for explicit handlers, subclasses, or broker transports), and its two pre-existing
+  bare-`RESTAPI.run()` tests pin a broker transport via `QueueTransportFactory.resolve_type`
+  (change 1: the bare-run default now genuinely boots the pipeline).
+- `test_sqs_handler.py`: drops the assertion that `QueueMessageBody`/`SendMessageAttributes` are
+  inherited from the deleted `QueueHandler` ABC; the models are now `SQSHandler`'s own and every
+  other assertion in the file is untouched (change 12).
+- `test_rest_handler_poll.py`: its fake handler implements `get_transport()` instead of
+  `get_queue_handler()` (change 12's seam retype).
+- `test_config.py`: the `_ResponseStoreConfig` pattern-rejection test becomes a dotted-path
+  acceptance test, with the fail-loud case moving to `test_response_store_in_memory.py`
+  (change 12: the type field accepts BYO paths and validates at build time).
+- `test_pipeline_consumer_loop.py`: the "not available yet" factory case switches from `kafka` to
+  `nats` as each built-in transport lands.
+- `test_response_store_valkey.py`: `ResponseDBHandler` references become `ResponseStoreFactory`,
+  and the missing-block case expects `AKConfigError` rather than `ValueError` (change 12).
 
 Run: `cd ak-py && uv run pytest`. Chart CI: `ct lint` + kind install smoke per flavor values
 file with one end-to-end chat request through the NATS transport.

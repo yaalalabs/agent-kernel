@@ -19,8 +19,9 @@ class ConsumerLoop:
        graceful=True``); each thread owns one ``TransportConsumer`` from ``consumer_factory``
        and loops until ``ThreadRunner.shutdown_event`` is set.
     2. Per message: ``receive_count > max_receive_count`` runs ``on_permanent_failure`` (which
-       must catch its own exceptions) then acks; otherwise ``process`` then ack. A raising
-       ``process`` logs and nacks: redelivery is the transport's timeout mechanics.
+       must catch its own exceptions) then hands the message to the transport's
+       ``dead_letter`` disposition (which acks by default); otherwise ``process`` then ack. A
+       raising ``process`` logs and nacks: redelivery is the transport's own mechanics.
     3. A raising ``fetch`` logs and retries after a fixed back-off.
     4. ``process`` may be an async callable; it is detected and driven via ``asyncio.run``.
     """
@@ -92,14 +93,19 @@ class ConsumerLoop:
         )
 
     # Long fetch waits are sliced so the loop re-checks shutdown_event about once a second: a
-    # signal-initiated drain must not stall for a full long-poll interval. Revisit per-transport
-    # when the sqs transport lands (SQS long-poll economics favor a single 20 s wait).
+    # signal-initiated drain must not stall for a full long-poll interval. A consumer whose long
+    # polls are expensive to slice raises its own cap via
+    # ``TransportConsumer.fetch_wait_slice_seconds`` (SQS bills every receive call, so it takes
+    # a single 20 s wait and the slower drain).
     _MAX_FETCH_WAIT_SLICE_SECONDS = 1.0
 
     def _consumer_loop(self) -> None:
         """One consumer thread: fetch batches and process them until shutdown."""
         consumer = self._consumer_factory()
-        fetch_wait = min(self._wait_seconds, self._MAX_FETCH_WAIT_SLICE_SECONDS)
+        slice_cap = consumer.fetch_wait_slice_seconds
+        if slice_cap is None:
+            slice_cap = self._MAX_FETCH_WAIT_SLICE_SECONDS
+        fetch_wait = min(self._wait_seconds, slice_cap)
         try:
             while not ThreadRunner.shutdown_event.is_set():
                 try:
@@ -124,7 +130,9 @@ class ConsumerLoop:
             if message.receive_count > self._max_receive_count:
                 self._log.warning(f"Message {message_id} exceeded max_receive_count ({message.receive_count} > {self._max_receive_count})")
                 self._on_permanent_failure(message)
-                consumer.ack(message)
+                # Terminal disposition, not a plain ack: transports may dead-letter first
+                # (the default implementation is exactly the previous ack).
+                consumer.dead_letter(message)
                 return
 
             underlying_fn = getattr(self._process, "__func__", self._process)
