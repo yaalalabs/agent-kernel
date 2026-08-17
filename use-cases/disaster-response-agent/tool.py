@@ -88,70 +88,148 @@ def _send_whatsapp_message(to_number: str, text: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------------------
 # Dummy "database" of volunteers / donors who can be dispatched to fulfil a need.
 # In production this would come from a CRM, spreadsheet, or registration system.
+#
+# All phone numbers below (and on the seeded offers further down) are set to the SAME real,
+# WhatsApp-Cloud-API-verified test number so that any match - same-region or cross-region -
+# actually dispatches successfully while WHATSAPP_ENABLED=true. Meta's test sandbox only
+# allows sending to numbers explicitly added as verified test recipients; distinct fake
+# numbers per donor look nicer but will silently fail to send. Swap these for real donor/
+# volunteer numbers (added as additional verified test recipients, or in production once
+# past sandbox mode) as you onboard them.
 # --------------------------------------------------------------------------------------
 VOLUNTEER_DIRECTORY: list[dict[str, Any]] = [
     {
         "id": "vol-001",
         "name": "Nimal Perera",
-        "phone": "+94771234001",
+        "phone": "+94760048658",
         "region": "galle",
         "resource_types": ["drinking water", "water", "food packs", "food"],
     },
     {
         "id": "vol-002",
         "name": "Kamala Silva",
-        "phone": "+94771234002",
+        "phone": "+94760048658",
         "region": "galle",
         "resource_types": ["medicine", "medical supplies", "first aid"],
     },
     {
         "id": "vol-003",
         "name": "Ruwan Fernando",
-        "phone": "+94771234003",
+        "phone": "+94760048658",
         "region": "colombo",
         "resource_types": ["drinking water", "water", "blankets", "clothing"],
     },
     {
         "id": "vol-004",
         "name": "Dilani Jayasuriya",
-        "phone": "+94771234004",
+        "phone": "+94760048658",
         "region": "matara",
         "resource_types": ["food packs", "food", "shelter", "tents"],
     },
     {
         "id": "vol-005",
         "name": "Sunil Rathnayake",
-        "phone": "+94771234005",
+        "phone": "+94760048658",
         "region": "ratnapura",
         "resource_types": ["boats", "rescue", "medicine", "medical supplies"],
     },
     {
         "id": "vol-006",
         "name": "Anusha Wickramasinghe",
-        "phone": "+94771234006",
+        "phone": "+94760048658",
         "region": "kalutara",
         "resource_types": ["drinking water", "water", "food packs", "food"],
     },
 ]
 
 # Resources considered life-critical get a higher base urgency weight (0-5 scale).
+# Canonical resource categories: each maps a canonical name (what gets stored on every
+# request/offer, and what match_resources compares) to its criticality (0-5, used by
+# score_urgency) and every synonym/phrasing that should resolve to it. This exists because
+# match_resources requires an exact resource_type match between a need and an offer, and
+# real messages are inconsistent - "food" vs "food packs" vs "meals" are all the same thing
+# to a human but were previously treated as unrelated resource types, silently preventing
+# otherwise-good matches. submit_intake runs every resource_type through _canonical_resource_type
+# so "food" and "food packs" both become "food packs" before anything else sees them.
+RESOURCE_CATEGORIES: dict[str, dict[str, Any]] = {
+    "drinking water": {
+        "criticality": 5,
+        "synonyms": {"drinking water", "water", "clean water", "potable water", "bottled water"},
+    },
+    "food packs": {
+        "criticality": 4,
+        "synonyms": {"food packs", "food pack", "food", "meals", "dry rations", "ration packs", "rations"},
+    },
+    "medicine": {
+        "criticality": 5,
+        "synonyms": {"medicine", "medicines", "medical supplies", "medication", "meds",
+                     "first aid", "first aid kit", "first aid kits"},
+    },
+    "shelter": {
+        "criticality": 4,
+        "synonyms": {"shelter", "tents", "tent", "temporary shelter"},
+    },
+    "boats": {
+        "criticality": 4,
+        "synonyms": {"boats", "boat"},
+    },
+    "rescue": {
+        "criticality": 5,
+        "synonyms": {"rescue", "evacuation", "rescue boat"},
+    },
+    "blankets": {
+        "criticality": 3,
+        "synonyms": {"blankets", "blanket"},
+    },
+    "clothing": {
+        "criticality": 2,
+        "synonyms": {"clothing", "clothes"},
+    },
+    "hygiene kits": {
+        "criticality": 3,
+        "synonyms": {"hygiene kits", "hygiene kit", "sanitation kits", "sanitary kits"},
+    },
+}
+
+# Derived flat lookup kept for score_urgency's simple dict.get(record["resource_type"], ...).
 RESOURCE_CRITICALITY: dict[str, int] = {
-    "drinking water": 5,
-    "water": 5,
-    "medicine": 5,
-    "medical supplies": 5,
-    "first aid": 5,
-    "food": 4,
-    "food packs": 4,
-    "shelter": 4,
-    "tents": 4,
-    "boats": 4,
-    "rescue": 5,
-    "blankets": 3,
-    "clothing": 2,
-    "hygiene kits": 3,
+    name: info["criticality"] for name, info in RESOURCE_CATEGORIES.items()
 }
 DEFAULT_CRITICALITY = 3
+
+# Synonym -> canonical name, sorted longest-phrase-first so a more specific synonym (e.g.
+# "first aid kit") is checked before a shorter one that might otherwise substring-match
+# something unintended.
+_SYNONYM_TO_CANONICAL: list[tuple[str, str]] = sorted(
+    (
+        (synonym, canonical)
+        for canonical, info in RESOURCE_CATEGORIES.items()
+        for synonym in info["synonyms"]
+    ),
+    key=lambda pair: len(pair[0]),
+    reverse=True,
+)
+
+
+def _canonical_resource_type(raw: str) -> str:
+    """Map a free-form resource type to its canonical category, so "food" and "food packs"
+    (or "water" and "drinking water") are treated as the same thing for matching/scoring.
+
+    Tries an exact synonym match first, then falls back to substring containment (e.g. "food
+    supplies for the family" contains "food"). If nothing matches, returns the normalized raw
+    string unchanged - it just won't benefit from synonym-aware matching, and will only match
+    another intake with the exact same unrecognized phrasing.
+    """
+    text = _normalize(raw)
+    if not text:
+        return "unspecified"
+    for synonym, canonical in _SYNONYM_TO_CANONICAL:
+        if text == synonym:
+            return canonical
+    for synonym, canonical in _SYNONYM_TO_CANONICAL:
+        if synonym in text or text in synonym:
+            return canonical
+    return text
 
 # Keyword bank used to detect vulnerable-group indicators in free-form text.
 VULNERABLE_KEYWORDS: dict[str, list[str]] = {
@@ -288,7 +366,7 @@ def _seed_demo_data() -> None:
         "quantity": 50,
         "unit": "packs",
         "donor_name": "Colombo Rotary Club",
-        "donor_phone": "+94771234098",
+        "donor_phone": "+94760048658",
         "status": "open",
         "created_at": _now(),
         "transport_flag": None,
@@ -306,7 +384,7 @@ def _seed_demo_data() -> None:
         "quantity": 30,
         "unit": "kits",
         "donor_name": "Ratnapura Medical Volunteers",
-        "donor_phone": "+94771234099",
+        "donor_phone": "+94760048658",
         "status": "open",
         "created_at": _now(),
         "transport_flag": True,  # explicitly able to deliver
@@ -350,7 +428,7 @@ def submit_intake(
     record = {
         "intake_id": intake_id,
         "message_type": message_type,
-        "resource_type": _normalize(resource_type) or "unspecified",
+        "resource_type": _canonical_resource_type(resource_type),
         "quantity": max(int(quantity or 1), 1),
         "unit": unit or "units",
         "region": _normalize(location) or "unspecified",

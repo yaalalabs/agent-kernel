@@ -91,6 +91,21 @@ class TestIntakeExtraction:
         )
         assert record["transport_flag"] is True
 
+    def test_resource_type_synonyms_canonicalize_to_the_same_category(self):
+        # "food" and "food packs" must resolve to the same resource_type, or a "need food"
+        # message will never match an existing "food packs" offer (the bug this fixes).
+        _, water_record = submit(resource_type="water")
+        _, drinking_water_record = submit(resource_type="drinking water")
+        assert water_record["resource_type"] == drinking_water_record["resource_type"] == "drinking water"
+
+        _, food_record = submit(resource_type="food")
+        _, food_packs_record = submit(resource_type="food packs")
+        assert food_record["resource_type"] == food_packs_record["resource_type"] == "food packs"
+
+    def test_unrecognized_resource_type_falls_back_to_normalized_raw_text(self):
+        _, record = submit(resource_type="  Generators  ")
+        assert record["resource_type"] == "generators"
+
 
 # ----------------------------------------------------------------------------------
 # Urgency scoring
@@ -141,14 +156,16 @@ class TestResourceMatching:
 
     def test_same_region_match_outranks_cross_region_for_equal_coverage(self):
         # Two open offers of the same resource_type/quantity in different regions - same-region
-        # one must win on proximity alone.
+        # one must win on proximity alone. Uses "shelter" (the canonical form) since that's
+        # what submit_intake would produce for "tents" too - see TestIntakeExtraction's
+        # canonicalization tests for that mapping.
         tool._region_store("colombo")["offers"]["offer-near"] = {
-            "id": "offer-near", "region": "colombo", "resource_type": "tents", "quantity": 10,
+            "id": "offer-near", "region": "colombo", "resource_type": "shelter", "quantity": 10,
             "unit": "units", "donor_name": "Near Donor", "donor_phone": "+9400", "status": "open",
             "created_at": "now", "transport_flag": None, "history": [],
         }
         tool._region_store("ratnapura")["offers"]["offer-far"] = {
-            "id": "offer-far", "region": "ratnapura", "resource_type": "tents", "quantity": 10,
+            "id": "offer-far", "region": "ratnapura", "resource_type": "shelter", "quantity": 10,
             "unit": "units", "donor_name": "Far Donor", "donor_phone": "+9401", "status": "open",
             "created_at": "now", "transport_flag": None, "history": [],
         }
@@ -191,6 +208,14 @@ class TestResourceMatching:
         result = json.loads(tool.match_resources(intake_id))
         assert result["candidate_count"] == 0
         assert result["matches"] == []
+
+    def test_synonym_resource_type_matches_across_the_synonym_gap(self):
+        # Exact real-world case that surfaced this fix: "need food in colombo" must match the
+        # seeded "food packs" offer in Colombo, not come back empty.
+        intake_id, _ = submit(resource_type="food", location="colombo", quantity=1)
+        result = json.loads(tool.match_resources(intake_id))
+        assert result["candidate_count"] >= 1
+        assert result["matches"][0]["region"] == "colombo"
 
     def test_fulfilled_candidates_are_excluded(self):
         offers = tool._region_store("galle")["offers"]

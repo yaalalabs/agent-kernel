@@ -101,7 +101,7 @@ consistent and independently testable (see `tests/test_tool_layer.py`).
 
 | Tool | Used by | Does |
 |---|---|---|
-| `submit_intake` | intake_agent | Records a structured intake; detects a transport/logistics signal ("no transport", "can deliver") from the raw message text. |
+| `submit_intake` | intake_agent | Records a structured intake; canonicalizes resource_type through a synonym table ("food"/"food packs"/"meals" all become the same category); detects a transport/logistics signal ("no transport", "can deliver") from the raw message text. |
 | `get_region_status` | intake_agent | Returns all open requests/offers for a region, for tracking questions. |
 | `score_urgency` | priority_matching_agent | Combines resource criticality, quantity, and detected vulnerable-group keywords into a 0-100 urgency score and band. |
 | `match_resources` | priority_matching_agent | Searches the opposite pool across all regions; scores each candidate on quantity coverage, proximity (approximate road distance), and transport compatibility. |

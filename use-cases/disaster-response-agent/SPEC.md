@@ -33,7 +33,7 @@ logic is plain Python so it's consistent and testable independent of the model.
 
 | Tool | Used by | Does |
 |---|---|---|
-| `submit_intake` | intake_agent | Records a structured intake; detects a transport/logistics signal ("no transport", "can deliver") from the raw message text. |
+| `submit_intake` | intake_agent | Records a structured intake; canonicalizes resource_type through a synonym table ("food"/"food packs"/"meals" all become the same category, so a matching gap doesn't silently hide real matches); detects a transport/logistics signal ("no transport", "can deliver") from the raw message text. |
 | `get_region_status` | intake_agent | Returns all open requests/offers for a region, for tracking questions. |
 | `score_urgency` | priority_matching_agent | Combines resource criticality, quantity, and detected vulnerable-group keywords into a 0-100 urgency score and band. |
 | `match_resources` | priority_matching_agent | Searches the opposite pool (offers for a need, needs for an offer) across all regions; scores each candidate on quantity coverage, proximity (approximate road distance), and transport compatibility. |
