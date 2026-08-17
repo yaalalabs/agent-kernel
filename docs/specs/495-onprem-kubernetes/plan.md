@@ -134,9 +134,10 @@ Spec section references are to `spec.md`.
   account lookup, and inspects streams with direct gets rather than a second consumer (a work-queue
   stream rejects overlapping consumers, and a peeking consumer would steal work). Its `app_test.py`
   covers rest_sync, a multi-turn session, stream and per-partition consumer provisioning, and the
-  retry-to-termination path. **Not yet run against a real `nats-server`** (no Docker at the time of
-  writing) and, like the Kafka example, not registered in CI: that is iteration 11, and it needs the
-  `nats` extra published.
+  retry-to-termination path. **Verified against a real single-server JetStream stack**: the
+  `QueueTransportContract` passed 10/10 with no skips (`ack_wait` is a genuine visibility timeout, so
+  the unacked-redelivery case applies here where it does not on Kafka) and the example's own suite
+  passed 4/4 with a live agent, exercising `auto_provision` against the server.
 
 ## Phase C: WebSocket delivery and Kubernetes
 

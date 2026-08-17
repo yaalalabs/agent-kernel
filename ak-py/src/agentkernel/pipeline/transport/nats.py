@@ -203,7 +203,10 @@ class NatsTransport(QueueTransport):
 
     _connections: Dict[str, Any] = {}
     _connections_lock = threading.Lock()
+    # Streams whose provisioning has *completed*, plus one lock per stream so concurrent callers
+    # for the same stream queue up instead of racing (see _ensure_provisioned).
     _provisioned: set = set()
+    _provision_locks: Dict[str, threading.Lock] = {}
     _provisioned_lock = threading.Lock()
 
     def __init__(
@@ -314,25 +317,35 @@ class NatsTransport(QueueTransport):
     # -- provisioning ------------------------------------------------------------------------
 
     def _ensure_provisioned(self, queue: QueueName) -> None:
-        """Create or verify the stream and its partition consumers, once per process per stream."""
+        """Create or verify the stream and its partition consumers, once per process per stream.
+
+        The stream is recorded as provisioned only after the work has actually finished, and callers
+        for the same stream queue behind one lock. Both matter because a pipeline component starts
+        several consumer threads at once: if a thread could see the record while another was still
+        creating the objects, it would race ahead to ``pull_subscribe_bind`` and die on a consumer
+        that does not exist yet. Locking per stream rather than globally lets the input and output
+        streams provision concurrently.
+        """
         stream = self._streams[queue]
         cache_key = f"{self._url}:{stream}"
         with self._provisioned_lock:
             if cache_key in self._provisioned:
                 return
-            self._provisioned.add(cache_key)
+            provision_lock = self._provision_locks.setdefault(cache_key, threading.Lock())
 
-        try:
+        with provision_lock:
+            if cache_key in self._provisioned:
+                return  # another thread finished the work while this one waited for the lock
+
             if self._auto_provision:
                 self._provision(queue, stream)
             else:
                 self._verify(queue, stream)
-        except Exception:
-            # A failed attempt must not be remembered as done, or the next call would skip it and
-            # fail somewhere less obvious.
+
+            # Only now: a failure leaves the stream unrecorded so the next call retries instead of
+            # skipping and failing somewhere less obvious.
             with self._provisioned_lock:
-                self._provisioned.discard(cache_key)
-            raise
+                self._provisioned.add(cache_key)
 
     def _provision(self, queue: QueueName, stream: str) -> None:
         jetstream = self._jetstream()
@@ -418,9 +431,18 @@ class NatsTransport(QueueTransport):
             client = self._connections.get(self._url)
             if client is None or not getattr(client, "is_connected", False):
                 _log.info(f"Connecting to NATS at {self._url}")
-                client = _NatsLoop.run(nats.connect(servers=self._url.split(",")), self._request_timeout)
+                client = _NatsLoop.run(nats.connect(servers=self._server_list()), self._request_timeout)
                 self._connections[self._url] = client
             return client
+
+    def _server_list(self) -> List[str]:
+        """Split the configured URL into servers, tolerating spaces around the commas.
+
+        ``url`` is documented as comma-separated for a cluster, and writing it with spaces after the
+        commas is natural; an untrimmed entry would be handed to the client verbatim and fail to
+        connect.
+        """
+        return [server.strip() for server in self._url.split(",") if server.strip()]
 
     @classmethod
     def reset(cls) -> None:
@@ -429,6 +451,7 @@ class NatsTransport(QueueTransport):
             cls._connections.clear()
         with cls._provisioned_lock:
             cls._provisioned.clear()
+            cls._provision_locks.clear()
 
 
 def _subject_token(group_id: Optional[str]) -> str:

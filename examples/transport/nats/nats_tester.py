@@ -58,6 +58,7 @@ class NatsTester:
     def __init__(self, url: str = URL):
         self.url = url
         self._request_timeout = 10.0
+        self._client: Optional[Any] = None
 
     # -- infrastructure ------------------------------------------------------------------
 
@@ -71,6 +72,7 @@ class NatsTester:
 
     def down(self) -> None:
         """Stop the stack and delete its volumes: nothing survives to confuse the next run."""
+        self.close()  # release the connection before the server it points at disappears
         self.compose("down", "-v")
 
     def wait_for_jetstream(self, timeout: float = 90.0) -> None:
@@ -188,10 +190,25 @@ class NatsTester:
     # -- internals -----------------------------------------------------------------------
 
     def _jetstream(self) -> Any:
+        """One connection for the life of the tester, reconnecting only when it has dropped.
+
+        Reconnecting per call would leak a socket and its background tasks on every one: the
+        readiness loop alone can call this dozens of times, and `tail` calls it once per invocation.
+        """
         import nats
 
-        client = _NatsLoop.run(nats.connect(servers=[self.url]), self._request_timeout)
-        return client.jetstream()
+        if self._client is None or not self._client.is_connected:
+            self._client = _NatsLoop.run(nats.connect(servers=[self.url]), self._request_timeout)
+        return self._client.jetstream()
+
+    def close(self) -> None:
+        """Drop the connection. Safe to call more than once."""
+        if self._client is not None:
+            try:
+                _NatsLoop.run(self._client.close(), self._request_timeout)
+            except Exception:
+                pass  # the server may already be gone, e.g. straight after `down`
+            self._client = None
 
 
 def main(argv: Optional[List[str]] = None) -> int:

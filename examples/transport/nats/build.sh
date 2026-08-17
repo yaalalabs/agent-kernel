@@ -15,5 +15,5 @@ else
   # published one, so without it uv can satisfy the install from its cache and quietly hand you
   # the release instead of your build.
   uv sync --find-links ../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --no-deps --no-index --no-cache --find-links ../../../ak-py/dist agentkernel[api,openai,nats,valkey,test] || true
+  uv pip install --force-reinstall --no-deps --no-index --no-cache --find-links ../../../ak-py/dist agentkernel[api,openai,nats,valkey,test]
 fi

@@ -237,7 +237,6 @@ Three things to know:
 
 ---
 
-
 ## How It Works in Lambda (Serverless)
 
 ### Components

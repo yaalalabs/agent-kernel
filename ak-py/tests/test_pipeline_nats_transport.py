@@ -481,6 +481,73 @@ class TestProvisioning:
         with pytest.raises(AKConfigError, match="partitions"):
             _transport(partitions=0)
 
+    def test_concurrent_callers_never_see_a_half_provisioned_stream(self, server):
+        """A component starts several consumer threads at once. If a thread could observe the
+        stream as provisioned while another was still creating it, it would race ahead to
+        pull_subscribe_bind and die on a consumer that does not exist yet."""
+        slow_add_consumer = FakeJetStream.add_consumer
+        observed_during_provisioning = []
+
+        async def add_consumer_slowly(self, stream, config):
+            # While provisioning is mid-flight, record what a second thread would conclude.
+            observed_during_provisioning.append(f"{URL}:{INPUT_STREAM}" in NatsTransport._provisioned)
+            await asyncio.sleep(0.02)
+            return await slow_add_consumer(self, stream, config)
+
+        FakeJetStream.add_consumer = add_consumer_slowly
+        try:
+            transport = _transport(auto_provision=True)
+            consumers = []
+            errors = []
+
+            def create():
+                try:
+                    consumers.append(transport.create_consumer(QueueName.INPUT))
+                except Exception as e:  # a race would surface as NotFoundError from the bind
+                    errors.append(e)
+
+            threads = [threading.Thread(target=create) for _ in range(4)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=30)
+        finally:
+            FakeJetStream.add_consumer = slow_add_consumer
+
+        assert errors == [], f"a concurrent caller failed: {errors}"
+        assert len(consumers) == 4
+        assert not any(observed_during_provisioning), "the stream was advertised as provisioned before the work finished"
+        assert len(server.created_consumers) == PARTITIONS, "the work happened exactly once despite four callers"
+
+
+class TestServerList:
+    """`url` is documented as comma-separated for a cluster, so the entries have to survive the
+    spacing people actually write."""
+
+    @pytest.mark.parametrize(
+        "url, expected",
+        [
+            ("nats://a:4222", ["nats://a:4222"]),
+            ("nats://a:4222,nats://b:4222", ["nats://a:4222", "nats://b:4222"]),
+            ("nats://a:4222, nats://b:4222", ["nats://a:4222", "nats://b:4222"]),
+            (" nats://a:4222 , nats://b:4222 ", ["nats://a:4222", "nats://b:4222"]),
+            ("nats://a:4222,,nats://b:4222,", ["nats://a:4222", "nats://b:4222"]),
+        ],
+    )
+    def test_cluster_urls_are_split_and_trimmed(self, server, url, expected):
+        assert _transport(url=url)._server_list() == expected
+
+    def test_the_connection_uses_the_parsed_list(self, server, monkeypatch):
+        captured = {}
+
+        async def _connect(servers=None, **kwargs):
+            captured["servers"] = servers
+            return FakeClient(server)
+
+        monkeypatch.setattr(nats_module.nats, "connect", _connect)
+        _transport(url="nats://a:4222, nats://b:4222")._client()
+        assert captured["servers"] == ["nats://a:4222", "nats://b:4222"], "an untrimmed entry would fail to connect"
+
 
 class TestConsumerCapacity:
     def test_warns_when_partitions_cannot_keep_consumers_busy(self, server, caplog):
