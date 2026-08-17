@@ -600,6 +600,59 @@ Configure queue-backed and serverless execution behavior.
     - **Default**: `300.0`
     - **Description**: Seconds within which a repeated `message_deduplication_id` is dropped
 
+  - **Kafka Bootstrap Servers**
+    - **Field**: `execution.queues.kafka.bootstrap_servers`
+    - **Default**: `localhost:9092`
+    - **Description**: Kafka bootstrap servers (host:port, comma-separated)
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__KAFKA__BOOTSTRAP_SERVERS`
+
+  - **Kafka Input Topic**
+    - **Field**: `execution.queues.kafka.input_topic`
+    - **Default**: `agent-input`
+    - **Description**: Topic carrying chat requests
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__KAFKA__INPUT_TOPIC`
+
+  - **Kafka Output Topic**
+    - **Field**: `execution.queues.kafka.output_topic`
+    - **Default**: `agent-output`
+    - **Description**: Topic carrying agent replies
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__KAFKA__OUTPUT_TOPIC`
+
+  - **Kafka Consumer Group Id**
+    - **Field**: `execution.queues.kafka.group_id`
+    - **Default**: `agent-kernel`
+    - **Description**: Consumer group id prefix; the input and output consumers append their queue name to it
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__KAFKA__GROUP_ID`
+
+  - **Kafka Dead-Letter Topic Suffix**
+    - **Field**: `execution.queues.kafka.dlq_suffix`
+    - **Default**: `.dlq`
+    - **Description**: Suffix appended to a topic name for its dead-letter topic, where permanently failed records are routed
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__KAFKA__DLQ_SUFFIX`
+
+  - **Kafka Retry Backoff**
+    - **Field**: `execution.queues.kafka.retry_backoff`
+    - **Default**: `2.0`
+    - **Description**: Seconds to wait before an in-process retry of a failed record
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__KAFKA__RETRY_BACKOFF`
+
+  - **Kafka Delivery Timeout**
+    - **Field**: `execution.queues.kafka.delivery_timeout`
+    - **Default**: `30.0`
+    - **Description**: Seconds to wait for the broker to confirm a produced message before failing the send
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__KAFKA__DELIVERY_TIMEOUT`
+
+  - **Kafka Metadata Timeout**
+    - **Field**: `execution.queues.kafka.metadata_timeout`
+    - **Default**: `5.0`
+    - **Description**: Seconds to wait for topic metadata during the startup partition-capacity check (the check is skipped on timeout)
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__KAFKA__METADATA_TIMEOUT`
+
+  - **Kafka Client Config**
+    - **Field**: `execution.queues.kafka.client_config`
+    - **Default**: `{}`
+    - **Description**: Passthrough settings merged into the `confluent-kafka` producer and consumer configs (SASL, TLS, tuning); set via `config.yaml`, not individually exported as environment variables
+
   - **Queue Batch Size**
     - **Field**: `execution.queues.batch_size`
     - **Default**: `None`
@@ -612,7 +665,7 @@ Configure queue-backed and serverless execution behavior.
 
   - **Type**
     - **Field**: `execution.response_store.type`
-    - **Options**: `in_memory`, `redis`, `valkey`, `dynamodb`
+    - **Options**: `in_memory`, `redis`, `valkey`, `dynamodb`, or a dotted path to a `ResponseStore` subclass
     - **Description**: Response store backend selector configured in `config.yaml`; this value is not exported as an environment variable. Defaults to an in-process `in_memory` store when unset and no other backend is configured.
 
   - **Retry Count**
@@ -1258,9 +1311,19 @@ execution:
       max_receive_count: 3
       no_of_consumers: 5 # in-process pipeline + containerized deployments, ignored by serverless deployments
     # in_memory: {ack_wait: 300.0, dedup_window: 300.0}  # in_memory transport settings, unused otherwise
+    # kafka:  # kafka transport settings, unused otherwise
+    #   bootstrap_servers: localhost:9092
+    #   input_topic: agent-input
+    #   output_topic: agent-output
+    #   group_id: agent-kernel
+    #   dlq_suffix: .dlq
+    #   retry_backoff: 2.0
+    #   delivery_timeout: 30.0
+    #   metadata_timeout: 5.0
+    #   client_config: {} # passthrough confluent-kafka producer/consumer settings (SASL, TLS, tuning)
     # batch_size is set by the deployment tooling — set via AK_EXECUTION__QUEUES__BATCH_SIZE, never here
   response_store:
-    type: redis # in_memory | redis | valkey | dynamodb — omit for the built-in in_memory store
+    type: redis # in_memory | redis | valkey | dynamodb | dotted path — omit for the built-in in_memory store
     retry_count: 5
     delay: 5
     redis: # if this is given, then valkey/dynamodb response store parts cannot be given
