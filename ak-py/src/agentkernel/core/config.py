@@ -390,6 +390,45 @@ class _KafkaQueueConfig(BaseModel):
     )
 
 
+class _NatsQueueConfig(BaseModel):
+    url: str = Field(default="nats://localhost:4222", description="NATS server URL (comma-separated for a cluster)")
+    input_stream: str = Field(default="AGENT_REQUESTS", description="JetStream stream carrying chat requests")
+    input_subject_prefix: str = Field(default="chat.req", description="Subject prefix for chat requests")
+    output_stream: str = Field(default="AGENT_REPLIES", description="JetStream stream carrying agent replies")
+    output_subject_prefix: str = Field(default="chat.out", description="Subject prefix for agent replies")
+    partitions: int = Field(
+        default=32,
+        description=(
+            "Number of partition subjects per stream, each served by its own durable consumer. Sessions hash to a "
+            "partition, so this caps how many messages can be in flight at once: keep it at or above "
+            "no_of_consumers x replicas. Changing it re-maps sessions, so size it up front (idle partitions cost "
+            "almost nothing)."
+        ),
+    )
+    ack_wait: float = Field(
+        default=300.0,
+        description=(
+            "Seconds the server waits for an acknowledgement before redelivering. Must exceed your longest agent "
+            "turn: a turn that outlives it is redelivered and executed a second time."
+        ),
+    )
+    retry_backoff: float = Field(default=2.0, description="Seconds to delay a redelivery after a failed message (nak delay)")
+    duplicate_window: float = Field(default=300.0, description="Seconds within which a repeated dedup id is dropped by the stream (SQS parity)")
+    max_age: float = Field(
+        default=86400.0,
+        description="Seconds before an unconsumed message is discarded. A safety net: work-queue messages are otherwise kept forever",
+    )
+    request_timeout: float = Field(default=10.0, description="Seconds to wait for a NATS request (publish, ack, management call) to complete")
+    auto_provision: bool = Field(
+        default=False,
+        description=(
+            "Create the streams and per-partition consumers at startup if missing. Convenient for local and dev "
+            "clusters; leave false in production, where the objects are managed declaratively (NACK CRs) and a "
+            "missing object should fail loudly instead of being created with defaults."
+        ),
+    )
+
+
 class _QueuesConfig(BaseModel):
     type: Optional[str] = Field(
         default=None,
@@ -403,6 +442,7 @@ class _QueuesConfig(BaseModel):
     output: _OutputQueueConfig = Field(default_factory=_OutputQueueConfig, description="Output queue configuration for queue execution mode")
     in_memory: Optional[_InMemoryQueueConfig] = Field(default=None, description="in_memory transport settings")
     kafka: Optional[_KafkaQueueConfig] = Field(default=None, description="kafka transport settings")
+    nats: Optional[_NatsQueueConfig] = Field(default=None, description="nats transport settings")
     batch_size: Optional[int] = Field(
         default=None,
         description=(

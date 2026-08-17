@@ -76,6 +76,10 @@ kafka = [
     "confluent-kafka>=2.15.0",
 ]
 
+nats = [
+    "nats-py>=2.15.0",
+]
+
 thread = [
     "litellm>=1.74.9",
 ]
