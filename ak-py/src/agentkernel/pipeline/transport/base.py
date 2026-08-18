@@ -90,10 +90,9 @@ class TransportConsumer(ABC):
 class QueueTransportFactory:
     """Resolves ``execution.queues.type`` to a transport (#541 house pattern).
 
-    ``in_memory``, ``sqs`` and ``kafka`` are available; ``nats`` arrives in a later #495
-    iteration, and selecting it before it lands raises :class:`AKConfigError`. Any other value is
-    treated as a dotted path to a :class:`QueueTransport` subclass (bring-your-own), which must
-    also implement ``create_consumer``.
+    All four built-ins are available: ``in_memory``, ``sqs``, ``kafka`` and ``nats``. Any other
+    value is treated as a dotted path to a :class:`QueueTransport` subclass (bring-your-own),
+    which must also implement ``create_consumer``.
     """
 
     _BUILTIN_TYPES = ("in_memory", "sqs", "kafka", "nats")
@@ -156,8 +155,43 @@ class QueueTransportFactory:
                 metadata_timeout=kafka_config.metadata_timeout,
                 client_config=kafka_config.client_config,
             )
+        if transport_type == "nats":
+            with require_extra("nats", "execution.queues.type: nats"):
+                from .nats import NatsTransport
+
+            queues = AKConfig.get().execution.queues
+            nats_config = getattr(queues, "nats", None) if queues is not None else None
+            if nats_config is None:
+                raise AKConfigError("the nats transport requires an execution.queues.nats configuration block")
+            return NatsTransport(
+                url=nats_config.url,
+                input_stream=nats_config.input_stream,
+                input_subject_prefix=nats_config.input_subject_prefix,
+                output_stream=nats_config.output_stream,
+                output_subject_prefix=nats_config.output_subject_prefix,
+                partitions=nats_config.partitions,
+                ack_wait=nats_config.ack_wait,
+                retry_backoff=nats_config.retry_backoff,
+                duplicate_window=nats_config.duplicate_window,
+                max_age=nats_config.max_age,
+                request_timeout=nats_config.request_timeout,
+                auto_provision=nats_config.auto_provision,
+                # The server ceiling sits one delivery above the loop's own limit, so the
+                # component's permanent-failure hook runs and the server is only the backstop.
+                max_deliver={
+                    QueueName.INPUT: queues.input.max_receive_count + 1,
+                    QueueName.OUTPUT: queues.output.max_receive_count + 1,
+                },
+            )
         if transport_type in cls._BUILTIN_TYPES:
-            raise AKConfigError(f"queue transport '{transport_type}' is not available yet (ships in a later #495 iteration)")
+            # Reachable only if a name is added to _BUILTIN_TYPES before its branch above: a clear
+            # error for the next transport author beats falling through to the dotted-path resolver.
+            raise AKConfigError(f"queue transport '{transport_type}' is listed as a built-in but has no implementation wired up")
+        if "." not in transport_type:
+            raise AKConfigError(
+                f"unknown queue transport '{transport_type}'; expected one of {list(cls._BUILTIN_TYPES)} "
+                "or a dotted path to a QueueTransport subclass"
+            )
         return resolve_dotted(transport_type, base=QueueTransport)()
 
     @classmethod

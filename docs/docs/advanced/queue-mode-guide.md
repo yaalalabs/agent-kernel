@@ -37,7 +37,7 @@ The queue transport is pluggable via `execution.queues.type`:
 | `in_memory` | ✅ the default | All five components as threads in one process (local, single-container) |
 | `sqs` | ✅ | Two-process topology on AWS; also the transport behind the Lambda and ECS deployment adapters below |
 | `kafka` | ✅ (`pip install agentkernel[kafka]`) | Kubernetes / on-prem two-process topology |
-| `nats` | Upcoming (#495) | Kubernetes / on-prem two-process topology |
+| `nats` (recommended on-prem) | ✅ (`pip install agentkernel[nats]`) | Kubernetes / on-prem two-process topology |
 
 Delivery sub-modes (`execution.mode`):
 
@@ -177,6 +177,63 @@ what keeps a cold start from losing requests produced before the consumers were 
 also means pointing a **new** `group_id` at a topic with history replays that history. Use
 dedicated topics for the pipeline, keep retention short (24-72 hours is plenty), and treat a
 `group_id` change as a deliberate replay.
+
+---
+
+## Running Queue Mode on NATS JetStream
+
+The recommended on-prem broker: one static Go binary, an official Helm chart, and NACK CRDs for
+declarative streams. Install the extra (`pip install agentkernel[nats]`) and configure it:
+
+```yaml
+execution:
+  mode: rest_sync
+  queues:
+    type: nats
+    nats:
+      url: "nats://nats:4222"
+      input_stream: AGENT_REQUESTS
+      input_subject_prefix: chat.req
+      output_stream: AGENT_REPLIES
+      output_subject_prefix: chat.out
+      partitions: 32          # sessions hash to a partition; caps concurrent work
+      ack_wait: 300           # visibility timeout: must exceed your longest agent turn
+      retry_backoff: 2.0      # nak delay before a redelivery
+      auto_provision: false   # true for local/dev; leave false where NACK CRs own the objects
+  response_store:             # required: the two processes must share it
+    type: valkey
+    valkey:
+      url: "valkey://valkey:6379"
+```
+
+Process layout is identical to the other broker transports: `IOHandler.run()` in one process,
+`AgentRunner.run()` in the other.
+
+A runnable version, including a single-server JetStream stack and a harness that inspects the
+streams safely (a work-queue stream cannot be browsed with a second consumer, so it reads by
+sequence), is in
+[`examples/transport/nats`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/transport/nats).
+
+JetStream is the closest fit of any backend here, because the server provides most of what the
+pipeline needs rather than the client rebuilding it: `ack_wait` is the visibility timeout,
+`num_delivered` is an exact delivery count, `max_deliver` enforces the ceiling server-side,
+`Nats-Msg-Id` plus the stream's duplicate window is deduplication, and `term()` is the terminal
+disposition. There is no bookkeeping store and no dead-letter topic to provision.
+
+Three things to know:
+
+- **Partitions set your concurrency**, as on Kafka, but the server enforces it. Sessions hash to a
+  partition subject, each served by a durable consumer with `max_ack_pending: 1`, so a session's
+  turns stay ordered and at most `partitions` messages are in flight cluster-wide. Agent Kernel logs
+  the ratio at startup and warns when partitions are fewer than the configured consumers. Changing
+  the count re-maps sessions, so size it up front.
+- **`ack_wait` must exceed your longest turn.** It defaults to 300 seconds here rather than
+  JetStream's usual 30, because it is a visibility timeout: a turn that outlives it is redelivered
+  and the agent runs again.
+- **`auto_provision` is off by default.** Locally, turn it on and Agent Kernel creates the streams
+  and per-partition consumers at startup. In production, leave it off so a missing stream or consumer
+  fails loudly at startup, naming the object, instead of being silently created with defaults
+  alongside your NACK CRs.
 
 ---
 
@@ -512,7 +569,7 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | `in_memory` | ✅ | The default: single-process pipeline, full semantics minus durability |
 | `sqs` | ✅ | Two-process topology on AWS, wire-compatible with the Lambda/ECS adapters below |
 | `kafka` | ✅ | confluent-kafka client, per-session ordering by record key, DLQ topics, Strimzi-provisioned clusters. Needs the `kafka` extra and an `execution.queues.kafka` block; see the notes below |
-| `nats` (recommended on-prem) | Upcoming | JetStream work-queue streams, partitioned per-session ordering |
+| `nats` (recommended on-prem) | ✅ | JetStream work-queue streams, partitioned per-session ordering, server-side delivery counts and dedup. Needs the `nats` extra and an `execution.queues.nats` block |
 | Kubernetes Helm chart (baremetal + EKS) | Upcoming | Two-Deployment topology, KEDA autoscaling |
 
 **AWS deployment components:**

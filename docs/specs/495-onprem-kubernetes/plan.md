@@ -122,8 +122,22 @@ Spec section references are to `spec.md`.
   `pyproject.toml` (`nats` extra).
 - **Steps:** `_NatsLoop` bridge; partitioned streams/consumers + subject transform;
   `auto_provision` create/verify; ack/nak/term mapping.
-- **Verify:** `test_pipeline_nats_transport.py`; contract suite behind a local `nats-server`
-  container (integration).
+- **Verify:** `test_pipeline_nats_transport.py` (fake JetStream behind the real `_NatsLoop`
+  bridge) plus the `QueueTransportContract` with no skips, since `ack_wait` gives NATS a genuine
+  visibility timeout. Shipped deviations from the §7 sketch, both recorded there: partitioning is
+  computed client-side with a stable `crc32` (no server-side subject transform, so
+  `auto_provision: false` operators need no transform in their NACK CRs), and `ack_wait` defaults
+  to 300 s rather than 30 s because it is the visibility timeout and a turn that outlives it is
+  executed twice.
+- **Also delivered:** `examples/transport/nats/` (two-process pipeline over a single-server
+  JetStream stack) with `nats_tester.py`, which brings up the stack, waits on a real JetStream
+  account lookup, and inspects streams with direct gets rather than a second consumer (a work-queue
+  stream rejects overlapping consumers, and a peeking consumer would steal work). Its `app_test.py`
+  covers rest_sync, a multi-turn session, stream and per-partition consumer provisioning, and the
+  retry-to-termination path. **Verified against a real single-server JetStream stack**: the
+  `QueueTransportContract` passed 10/10 with no skips (`ack_wait` is a genuine visibility timeout, so
+  the unacked-redelivery case applies here where it does not on Kafka) and the example's own suite
+  passed 4/4 with a live agent, exercising `auto_provision` against the server.
 
 ## Phase C: WebSocket delivery and Kubernetes
 

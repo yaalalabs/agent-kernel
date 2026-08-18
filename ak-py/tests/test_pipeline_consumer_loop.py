@@ -223,17 +223,34 @@ class TestTransportFactory:
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._FakeCfgNoTypeNoUrl))
         assert isinstance(QueueTransportFactory.create(), InMemoryTransport)
 
-    def test_builtin_not_yet_available_raises(self, monkeypatch):
+    def test_builtin_without_an_implementation_raises(self, monkeypatch):
+        """Every built-in now ships, so this guards the next one: a name added to _BUILTIN_TYPES
+        before its factory branch must say so rather than fall through to the dotted-path resolver."""
+
         class _Cfg:
             class execution:
                 class queues:
-                    type = "nats"  # the last built-in still to land; kafka shipped in iteration 7
+                    type = "rabbitmq"
 
                     class input:
                         url = None
 
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
-        with pytest.raises(AKConfigError, match="not available yet"):
+        monkeypatch.setattr(QueueTransportFactory, "_BUILTIN_TYPES", ("in_memory", "sqs", "kafka", "nats", "rabbitmq"))
+        with pytest.raises(AKConfigError, match="no implementation wired up"):
+            QueueTransportFactory.create()
+
+    def test_unknown_type_lists_the_valid_options(self, monkeypatch):
+        class _Cfg:
+            class execution:
+                class queues:
+                    type = "bogus"
+
+                    class input:
+                        url = None
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        with pytest.raises(AKConfigError, match="expected one of"):
             QueueTransportFactory.create()
 
     def test_dotted_path_resolves_byo_transport(self, monkeypatch):

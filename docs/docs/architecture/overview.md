@@ -169,7 +169,7 @@ All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAM
 Built-in support for:
 - Multi-cloud session persistence (AWS, Azure, GCP)
 - Token-level streaming (SSE over REST, WebSocket on AWS serverless)
-- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS (Kafka, NATS, and Kubernetes deployment upcoming)
+- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Kafka and NATS JetStream for on-prem / Kubernetes (Kubernetes deployment chart upcoming)
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
 - Observability and tracing (Langfuse, OpenLLMetry, Logfire)
@@ -293,7 +293,7 @@ The queue transport is a pluggable backend (`execution.queues.type`):
 |-----------|--------|------------|-------------|
 | `in_memory` | ✅ the default | In-process only | Local development, single-container deployments: full queue semantics (per-session FIFO, bounded retry, deduplication) with zero backing services |
 | SQS | ✅ on AWS Lambda and ECS (via the deployment adapters) | Durable, FIFO | Production on AWS |
-| `kafka`, `nats` | Upcoming (#495) | Durable | Production on-prem / Kubernetes |
+| `kafka`, `nats` | ✅ (`kafka`/`nats` extras) | Durable | Production on-prem / Kubernetes |
 
 **One pipeline, three topologies.** The logical components map onto processes per deployment:
 
