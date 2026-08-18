@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from agentkernel.core.base import Agent, Runner
-from agentkernel.core.chat_service import ACTING_USER_CACHE_KEY, ChatService
+from agentkernel.core.chat_service import ChatService
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import (
     AgentReplyText,
@@ -14,7 +14,7 @@ from agentkernel.core.model import (
     BaseRunRequest,
     StreamChunk,
 )
-from agentkernel.core.runtime import Runtime
+from agentkernel.core.runtime import ACTING_USER_CACHE_KEY, Runtime
 
 ACTING_USER_AGENT = "acting-user-agent"
 
@@ -34,7 +34,7 @@ def _stream_handler(chunks):
     handler = MagicMock()
     handler.get_response_session_id.side_effect = lambda sid: sid
 
-    async def _achunks(requests):
+    async def _achunks(requests, acting_user_id=None):
         for chunk in chunks:
             yield chunk
 
@@ -155,7 +155,7 @@ class TestExecuteStream:
 
     @pytest.mark.asyncio
     async def test_in_stream_exception_becomes_error_chunk(self):
-        async def _failing(requests):
+        async def _failing(requests, acting_user_id=None):
             yield StreamChunk(delta="par")
             raise RuntimeError("stream blew up")
 
@@ -181,7 +181,7 @@ class TestExecuteStreamSync:
         assert collected == chunks
 
     def test_in_stream_exception_becomes_error_chunk(self):
-        def _failing(requests):
+        def _failing(requests, acting_user_id=None):
             yield StreamChunk(delta="par")
             raise RuntimeError("stream blew up")
 

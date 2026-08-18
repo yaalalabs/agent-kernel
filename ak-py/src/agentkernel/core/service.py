@@ -136,27 +136,31 @@ class AgentService:
 
         return result
 
-    async def run_multi(self, requests: list[AgentRequest]) -> AgentReply:
+    async def run_multi(self, requests: list[AgentRequest], acting_user_id: str | None = None) -> AgentReply:
         """
         Async method to run the agent.
 
         :param requests: List of requests to send to the agent. This list can contain multi modal inputs. It will be submitted to the agent as a single request
                         AgentRequestText objects will be concatenated into a single text prompt.
                         AgentRequestAny is handled only by pre-hooks, not by the agent itself
+        :param acting_user_id: When given, published as the run's acting user in the session's volatile
+                        cache (see Runtime.run) so hooks and tools can attribute work to the caller.
         """
         if not self._agent:
             raise ValueError("No agent selected. Please select an agent before running.")
         if not self._session:
             raise ValueError("No session available. Please create or load a session before running.")
 
-        result = await self._runtime.run(self._agent, self._session, requests)
+        result = await self._runtime.run(self._agent, self._session, requests, acting_user_id=acting_user_id)
         return result
 
-    async def stream_multi(self, requests: list[AgentRequest]) -> AsyncGenerator[StreamChunk, None]:
+    async def stream_multi(self, requests: list[AgentRequest], acting_user_id: str | None = None) -> AsyncGenerator[StreamChunk, None]:
         """
         Async generator that streams the agent response token by token.
 
         :param requests: List of requests to send to the agent.
+        :param acting_user_id: When given, published as the run's acting user in the session's volatile
+                        cache (see Runtime.stream) so hooks and tools can attribute work to the caller.
         :return: An async generator yielding StreamChunk objects.
         """
         if not self._agent:
@@ -164,7 +168,9 @@ class AgentService:
         if not self._session:
             raise ValueError("No session available. Please create or load a session before running.")
 
-        async for chunk in self._runtime.stream(self._agent, self._session, requests):  # using async due to aync iterator
+        async for chunk in self._runtime.stream(
+            self._agent, self._session, requests, acting_user_id=acting_user_id
+        ):  # using async due to aync iterator
             yield chunk
 
     def get_response_session_id(self, session_id: str | None = None) -> str | None:

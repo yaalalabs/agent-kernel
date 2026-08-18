@@ -29,6 +29,10 @@ from .model import (
 from .multimodal import MultimodalPreHookFactory
 from .session import SessionStore
 
+# Volatile-cache key under which the run's acting user is published, so hooks and tools can read
+# who the request was made on behalf of without threading user_id through every call.
+ACTING_USER_CACHE_KEY = "ak.acting_user_id"
+
 
 class Runtime:
     """
@@ -182,7 +186,7 @@ class Runtime:
 
         return requests
 
-    async def run(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
+    async def run(self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: Optional[str] = None) -> AgentReply:
         """
         Runs the specified agent with the multi-modal requests.
 
@@ -194,10 +198,14 @@ class Runtime:
         :param requests: The multi-modal inputs are provided to the agent.  It will be submitted to the agent as a single request
                         AgentRequestText objects will be concatenated into a single text prompt.
                         AgentRequestAny is handled only by pre-hooks, not by the agent itself
+        :param acting_user_id: When given, published under ACTING_USER_CACHE_KEY in the session's volatile
+                        cache for the duration of this run, so hooks and tools can attribute work to the caller.
         :return: The result of the agent's execution.
         """
         async with session:
             try:
+                if acting_user_id:
+                    session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, acting_user_id)
                 with agent._activate():
                     requests_or_reply = await self._prepare_requests(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
@@ -221,7 +229,9 @@ class Runtime:
             finally:
                 session.get_volatile_cache().clear()
 
-    async def stream(self, agent: Agent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamChunk, None]:
+    async def stream(
+        self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: Optional[str] = None
+    ) -> AsyncGenerator[StreamChunk, None]:
         """
         Streams the specified agent response token by token.
 
@@ -232,10 +242,14 @@ class Runtime:
         :param agent: The agent to run.
         :param session: The session to use for the agent.
         :param requests: The multi-modal inputs provided to the agent.
+        :param acting_user_id: When given, published under ACTING_USER_CACHE_KEY in the session's volatile
+                        cache for the duration of this run, so hooks and tools can attribute work to the caller.
         :return: An async generator of StreamChunk objects.
         """
         async with session:
             try:
+                if acting_user_id:
+                    session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, acting_user_id)
                 with agent._activate():
                     requests_or_reply = await self._prepare_requests(agent, session, requests)
                     if isinstance(requests_or_reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
