@@ -8,7 +8,7 @@ so the framing question ("**one** adapter of what?") is itself part of what this
 |---|---|---|---|
 | [`ag-ui.md`](ag-ui.md) | AG-UI protocol survey + AK gap analysis + four integration routes | AK already produces the *text* half of AG-UI and already discards the rest at the runner boundary; the real cost is not the HTTP surface, it is enriching `Runner.stream`'s `str` contract | Complete; no code written |
 | [`a2ui.md`](a2ui.md) | A2UI protocol survey + four routes for AK to emit it | A2UI is a *payload*, not a transport — it needs no new AK frontend, it needs a prompt/catalog capability plus a reply type, and AK already has the machinery for both | Complete; no code written |
-| [`decision-log.md`](decision-log.md) | Decisions taken in review, the intended five-PR delivery shape, and the verified code facts behind them | Read this before writing `spec.md`: it records what was settled (and what was reversed), and §4 lists the load-bearing `path:line` facts so they are not re-derived | Living; **partly superseded by `design.md`** — see the status note at the top of the file before relying on any entry |
+| [`decision-log.md`](decision-log.md) | Decisions taken in review, the then-intended five-PR delivery shape (now six — see `design.md`), and the verified code facts behind them | Read this before writing `spec.md`: it records what was settled (and what was reversed), and §4 lists the load-bearing `path:line` facts so they are not re-derived | Living; **partly superseded by `design.md`** — see the status note at the top of the file before relying on any entry |
 
 ## How the two relate
 

@@ -17,11 +17,16 @@ Build order for [spec.md](spec.md). **Six PRs** and one non-PR closing step, two
 Iterations 1 and 2 can run in parallel. So can 4, 5 and 6's adapter work; only iteration 6's *last
 step* waits on 4 and 5.
 
-**There is no separate documentation iteration.** Every docs and skills surface this change
-invalidates is updated inside the PR that invalidates it, as a step of that iteration — a merged PR
-must never leave the docs describing behaviour it just changed. The full inventory, including the
-surfaces verified as needing *no* change, is at the end of this document as reference material rather
-than as work.
+**There is no separate tests iteration and no separate documentation iteration**, though
+`ak-dev-write-spec`'s template has both. Each is folded into the PR that creates the need, and the
+omissions are deliberate:
+
+- **Tests** ship with the behaviour they cover, because the same template requires every iteration to
+  leave the branch working and testable. A trailing test iteration would mean five of the six PRs
+  merge untested.
+- **Docs and skills** are updated inside the PR that invalidates them — a merged PR must never leave
+  the docs describing behaviour it just changed. The full inventory, including the surfaces verified
+  as needing *no* change, is at the end of this document as reference material rather than as work.
 
 ---
 
@@ -209,6 +214,7 @@ record. Every row was located by search.
 | `advanced/multimodal.md` | — | all five source forms now work; state which are described/stored and which pass through | PR 2 |
 | `integrations/overview.md` | — | add AG-UI to the integration list | PR 3 |
 | new page under `advanced/` | — | AG-UI: routes, config, the fidelity matrix, `agui_state`, `forwardedProps`, `context`, and the tool-call redaction limit | PR 3 |
+| `docs/sidebars.js` | `tutorialSidebar` → `Advanced` category | add the new AG-UI page. The sidebar enumerates every page explicitly rather than autogenerating from the filesystem, so a new `.md` file alone is invisible in the nav | PR 3 |
 | `advanced/threads.md` | — | verified: no change. It documents the `Authoriser` AG-UI now shares, but AG-UI adds no thread behaviour | — |
 
 PR 1 owns most of it, which is expected: it is the PR that changes the contract everything else

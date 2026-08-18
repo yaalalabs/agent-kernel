@@ -161,13 +161,13 @@ This is the only consumer of `Runner.stream` in the repo (verified by search acr
 # TRANSITIONAL (PR 1 → PR 6): adapters that still yield `str` are normalised into one
 # synthetic assistant message, so every consumer downstream of this loop sees the same
 # event stream whether or not the adapter has been migrated yet. Deleted in PR 6.
-legacy_message_id: str | None = None
+legacy_message_id: str | None = None    # allocated on the first str
+legacy_started = False                  # MessageStart actually emitted
 
 async for ev in agent.runner.stream(agent, session, requests):
     if isinstance(ev, str):                                   # TRANSITIONAL
         if legacy_message_id is None:
             legacy_message_id = uuid4().hex
-            yield StreamChunk(event=MessageStart(message_id=legacy_message_id))
         ev = TextDelta(message_id=legacy_message_id, content=ev)
 
     text = ev.content if isinstance(ev, (TextDelta, ReasoningDelta)) else None
@@ -182,9 +182,13 @@ async for ev in agent.runner.stream(agent, session, requests):
         if text != ev.content:
             ev = ev.model_copy(update={"content": text})
 
+    if legacy_message_id is not None and not legacy_started:  # TRANSITIONAL
+        legacy_started = True
+        yield StreamChunk(event=MessageStart(message_id=legacy_message_id))
+
     yield StreamChunk(delta=text if isinstance(ev, TextDelta) else None, event=ev)
 
-if legacy_message_id is not None:                             # TRANSITIONAL
+if legacy_started:                                            # TRANSITIONAL
     yield StreamChunk(event=MessageEnd(message_id=legacy_message_id))
 ```
 
@@ -206,6 +210,13 @@ Six rules this encodes, each from a `design.md` requirement:
    references `on_stream_chunk`. Normalising also means PR 3's AG-UI surface emits real text while
    all four adapters still yield `str` — without it, PR 3 would ship a surface that sends only
    `RunStarted` and `RunFinished`.
+   - **Allocating the id and emitting the boundary are separate steps, hence two variables.** The
+     `message_id` must exist *before* the `TextDelta` is built, but `MessageStart` must not be
+     committed until the hook chain has actually passed something through. Emitting it on the first
+     `str`, as an earlier draft did, means a response the hooks reject in full still produces
+     `MessageStart` + `MessageEnd` with nothing between — an empty assistant bubble in any AG-UI
+     client. `legacy_started` is what defers it, and it is also what the trailing `MessageEnd` keys
+     off, so a wholly-redacted stream emits neither boundary.
 5. **Only `TextDelta` reaches `delta`.** `ReasoningDelta` passes through the hook chain but is
    **not** projected into `delta`, so reasoning text never reaches consumers that concatenate it —
    REST SSE clients rendering an answer, and `ThreadRecorder`, which persists the concatenation into
@@ -242,9 +253,11 @@ async for ev in agent.runner.stream(agent, session, requests):
     yield StreamChunk(delta=text if isinstance(ev, TextDelta) else None, event=ev)
 ```
 
-The loop body is unchanged throughout — the transition only ever added a prologue and an epilogue
-around it. What PR 6 removes is the `TRANSITIONAL` comment, the `legacy_message_id` declaration, the
-`isinstance(ev, str)` block, and the trailing `if legacy_message_id is not None:` yield.
+The loop body is unchanged throughout — the transition only ever added a prologue, one interleaved
+guard, and an epilogue around it. What PR 6 removes is the `TRANSITIONAL` comment, **both**
+declarations (`legacy_message_id` and `legacy_started`), the `isinstance(ev, str)` block, the
+`if legacy_message_id is not None and not legacy_started:` guard that emits `MessageStart`, and the
+trailing `if legacy_started:` yield.
 
 - **Two imports go stale with it.** `core/runtime.py` does not import `uuid` today, so PR 1 adds
   `from uuid import uuid4`; nothing uses it afterwards. `MessageStart` and `MessageEnd` are likewise
@@ -294,15 +307,16 @@ def clear_agui_state(self) -> None
 Absent reads back as `None`, matching `get_framework_context`. Nothing outside `Session` spells the
 raw key string.
 
-`forwardedProps` gets **no** enum member. It lives in the volatile cache under
-`AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"`, because `Runtime` already clears that cache
-after every run (`core/runtime.py:230, 275`) and the field is per-request by nature.
+`forwardedProps` and `context` get **no** enum member. Both live in the volatile cache, under
+`AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"` and `AGUI_CONTEXT_KEY = "agui_context"`, because
+`Runtime` already clears that cache after every run (`core/runtime.py:230, 275`) and both fields are
+per-request by nature — AG-UI re-sends them on every run, so a previous copy is never wanted.
+Contrast `agui_state`, which earns a top-level key precisely because it must survive the run.
 
-The constant is defined in **`core/agui_state.py`** (§6) — not in `core/base.py`, and not in
-`integration/agui/`. Both users need it: the read tool in `core/` and `envelope.py` in
-`integration/`, and `core/` may not import from `integration/`, so `core/agui_state.py` is the only
-placement that lets both import it. `envelope.py` imports it from there rather than redeclaring the
-string.
+Both constants are defined in **`core/agui_state.py`** (§6) — not in `core/base.py`, and not in
+`integration/agui/`. Each has two users: a read tool in `core/` and `envelope.py` in `integration/`,
+and `core/` may not import from `integration/`, so `core/agui_state.py` is the only placement that
+lets both import them. `envelope.py` imports them from there rather than redeclaring the strings.
 
 ### 6. System tools — `core/agui_state.py` (new)
 
@@ -470,6 +484,24 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 - The run body is a `StreamingResponse` over an async generator that emits `RunStarted`, then
   `to_agui(chunk.event)` for each chunk whose `event` is not `None` and maps to something, then
   `StateSnapshot` when the state changed, then exactly one of `RunFinished` / `RunError`.
+- **"When the state changed" means this, precisely.** `design.md` names the mechanism — a pre-run
+  copy the handler compares against — but the comparison has to be spelled out or it will be
+  implemented wrong:
+  - The handler takes a **deep copy** of `session.get_agui_state()` *after* `envelope.py` has applied
+    any inbound `state`, and before the run starts. Copying after the envelope is what stops an
+    echo: state the client just sent is state the client already has, and re-emitting it would make
+    every run produce a `StateSnapshot`.
+  - **The deep copy is load-bearing, not defensive.** `get_agui_state` returns the *live* dict,
+    matching `get_framework_context` (`core/base.py:186-192`, whose docstring says "live … so hooks
+    can edit it in place"). Keeping the reference means comparing the object with itself after
+    `update_agui_state` has mutated it, so the comparison reports "unchanged" on every run and
+    `StateSnapshot` never fires. This is the single easiest way to implement this section wrong, and
+    it fails silently — the surface still works, it just never syncs state back.
+  - Comparison is dict equality (`!=`) once the stream has drained normally, in the same place the
+    terminal event is decided. An unset-to-set transition counts as changed (`None != {...}`), which
+    is the common first-run case.
+  - On a difference, emit `StateSnapshotEvent` carrying the current state. Otherwise emit nothing —
+    there is no empty snapshot.
 - **Every event is serialised through the SDK's `EventEncoder`**, constructed per request as
   `EventEncoder(accept=request.headers.get("accept"))`, and the response's media type is
   `encoder.get_content_type()` rather than a hard-coded string.
@@ -748,11 +780,11 @@ Run with `cd ak-py && uv run pytest`.
 | File | Asserts |
 |---|---|
 | `tests/test_stream_events.py` | Discriminated-union round trip: every member serialises with its `type` and re-parses to the same class; every field is JSON-serialisable |
-| `tests/test_runtime_stream_events.py` | `Runtime.stream` populates `delta` and `event` together; a hook that redacts rewrites **both** (the §4 rule 1 check); a hook returning `None` drops the whole chunk; non-text events skip hooks; **`ReasoningDelta` reaches the hook chain but never reaches `delta`** (rule 5); and for the transitional branch — **a `str`-yielding runner's tokens are redacted and dropped by `on_stream_chunk` exactly as a `TextDelta`-yielding one's are** (rule 4), wrapped in one synthetic `MessageStart`/`MessageEnd` pair sharing a single `message_id`. The hook assertions are the regression guard: no test in the suite references `on_stream_chunk` today, so nothing else would catch the chain being bypassed |
+| `tests/test_runtime_stream_events.py` | `Runtime.stream` populates `delta` and `event` together; a hook that redacts rewrites **both** (the §4 rule 1 check); a hook returning `None` drops the whole chunk; non-text events skip hooks; **`ReasoningDelta` reaches the hook chain but never reaches `delta`** (rule 5); and for the transitional branch — **a `str`-yielding runner's tokens are redacted and dropped by `on_stream_chunk` exactly as a `TextDelta`-yielding one's are** (rule 4), wrapped in one synthetic `MessageStart`/`MessageEnd` pair sharing a single `message_id`, and **a run whose hooks drop every token emits neither boundary** rather than an empty message. The hook assertions are the regression guard: no test in the suite references `on_stream_chunk` today, so nothing else would catch the chain being bypassed |
 | `tests/test_multimodal_source_forms.py` | All five source forms through `MultimodalPreHook`: bare base64 stored as today; `data:` split with its real mime type; `http`/`https`/`s3` neither described nor stored **and still present in the returned request list** |
 | `tests/test_agui_envelope.py` | `thread_id`→`session_id`; `state` stored, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` is dropped rather than 422; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every envelope mapping** |
 | `tests/test_agui_mapping.py` | Exhaustiveness: enumerate every member of the `StreamEvent` union and assert `to_agui` returns either an AG-UI event or an explicit `None` from a known-unmapped allowlist. A new event type with no decision fails this test |
-| `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; `StateSnapshot` only when state changed |
+| `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; and four `StateSnapshot` cases — unset→set emits, inbound `state` alone does **not** emit, no change does not emit, and a tool calling `update_agui_state` **does** emit (the last is the regression guard for the deep-copy trap in §9: with a live reference instead of a copy it silently never fires) |
 | `tests/test_agui_state_tools.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.forwarded_props.enabled`, and respects `agents` scoping |
 
 ### Existing test files that change
