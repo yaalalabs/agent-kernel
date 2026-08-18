@@ -298,8 +298,7 @@ class ResponseBuilder:
     """Formats agent results and errors into response dicts."""
 
     @staticmethod
-    def build_response(status_code: int, session_id: Optional[str], rest_api_mode: bool, result: Any = None,
-                       error: Optional[Exception] = None):
+    def build_response(status_code: int, session_id: Optional[str], rest_api_mode: bool, result: Any = None, error: Optional[Exception] = None):
         """Build response from agent result or error.
 
         :param status_code: HTTP status code
@@ -313,8 +312,7 @@ class ResponseBuilder:
             response_dict = {"error": str(error)}
         else:
             response_dict = {
-                "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage,
-                                                             AgentReplyAny)) else "Non textual result received"
+                "result": str(result) if isinstance(result, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
             }
 
         if session_id:
@@ -359,8 +357,7 @@ class ChatService:
         self._log = logging.getLogger("ak.chatservice")
         self.rest_api_mode = rest_api_mode
 
-    async def execute(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[
-        AgentReply, Optional[str]]:
+    async def execute(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
         """Validate, build (unless prebuilt), select the agent, and run the request.
 
         Transport-neutral execution core: returns the typed reply and lets exceptions
@@ -382,8 +379,7 @@ class ChatService:
         result = await handler.run_async(requests, acting_user_id=req.user_id)
         return result, handler.get_response_session_id(req.session_id)
 
-    def execute_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[
-        AgentReply, Optional[str]]:
+    def execute_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
         """Synchronous counterpart of execute().
 
         :param req: Run request carrying prompt, agent, and session_id
@@ -401,8 +397,7 @@ class ChatService:
         result = handler.run_sync(requests, acting_user_id=req.user_id)
         return result, handler.get_response_session_id(req.session_id)
 
-    async def execute_stream(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> \
-    AsyncGenerator[StreamChunk, None]:
+    async def execute_stream(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> AsyncGenerator[StreamChunk, None]:
         """Streaming counterpart of execute(): yields raw StreamChunk objects, no framing.
 
         Validates and selects the agent eagerly, so invalid input raises at call time,
@@ -431,8 +426,7 @@ class ChatService:
 
         return _stream()
 
-    def execute_stream_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> Generator[
-        StreamChunk, None, None]:
+    def execute_stream_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> Generator[StreamChunk, None, None]:
         """Synchronous counterpart of execute_stream().
 
         Preserves the sync path's buffering semantics: AgentHandler.run_stream_sync collects
@@ -483,8 +477,7 @@ class ChatService:
             raise ValueError("Scheduling is not configured. Add a 'schedule' block to config.yaml")
         task = manager.create_from_request(req)
         self._log.info(f"Deferred request as scheduled task {task.task_id}")
-        return AgentReplyAny(
-            content={"status": "SCHEDULED", "scheduled_task_id": task.task_id, "session_id": task.session_id})
+        return AgentReplyAny(content={"status": "SCHEDULED", "scheduled_task_id": task.task_id, "session_id": task.session_id})
 
     def _record_trigger(self, req: BaseChatRequest) -> None:
         """Record the occurrence a scheduled trigger is running, when this request is one.
@@ -504,8 +497,7 @@ class ChatService:
             if manager is None:
                 self._log.warning(f"Trigger of scheduled task {task_id} arrived while scheduling is not configured")
                 return
-            manager.record_trigger(task_id, request_id=getattr(req, "request_id", None),
-                                   occurred_at=getattr(req, "scheduled_time", None))
+            manager.record_trigger(task_id, request_id=getattr(req, "request_id", None), occurred_at=getattr(req, "scheduled_time", None))
         except Exception as e:
             self._log.error(f"Failed to record trigger of scheduled task {task_id}: {e}")
 
@@ -586,8 +578,7 @@ class ChatService:
         """
         try:
             result, session_id = self.execute_sync(req)
-            return ResponseBuilder.build_response(self._success_status(req), session_id, self.rest_api_mode,
-                                                  result=result)
+            return ResponseBuilder.build_response(self._success_status(req), session_id, self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
@@ -595,8 +586,7 @@ class ChatService:
             self._log.error(f"Error processing request: {e}")
             return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
 
-    async def process_async_chat_request(self, req: BaseChatRequest) -> Union[
-        tuple[int, Dict[str, Any]], Dict[str, Any]]:
+    async def process_async_chat_request(self, req: BaseChatRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request asynchronously.
 
         :param req: Base chat request (could be a BaseRunRequest or another subclass
@@ -606,8 +596,7 @@ class ChatService:
         """
         try:
             result, session_id = await self.execute(req)
-            return ResponseBuilder.build_response(self._success_status(req), session_id, self.rest_api_mode,
-                                                  result=result)
+            return ResponseBuilder.build_response(self._success_status(req), session_id, self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
             return ResponseBuilder.build_response(400, req.session_id, self.rest_api_mode, error=ve)
@@ -616,9 +605,9 @@ class ChatService:
             return ResponseBuilder.build_response(500, req.session_id, self.rest_api_mode, error=e)
 
     async def process_stream_chat_async(
-            self,
-            req: BaseChatRequest,
-            sse_format: bool = False,
+        self,
+        req: BaseChatRequest,
+        sse_format: bool = False,
     ) -> AsyncGenerator[str, None]:
         """Process a streaming chat request asynchronously.
 
@@ -644,9 +633,9 @@ class ChatService:
         return _stream()
 
     def process_stream_chat_sync(
-            self,
-            req: BaseRunRequest,
-            sse_format: bool = False,
+        self,
+        req: BaseRunRequest,
+        sse_format: bool = False,
     ) -> Generator[str, None, None]:
         """Process a streaming chat request synchronously.
 

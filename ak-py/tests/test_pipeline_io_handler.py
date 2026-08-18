@@ -10,10 +10,12 @@ from unittest.mock import MagicMock
 import httpx
 import pytest
 
+from agentkernel.core.config import AKConfig, _ScheduleConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.io_handler import IOHandler
 from agentkernel.pipeline.thread_runner import ThreadRunner
+from agentkernel.schedule.manager import ScheduleManager
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +62,40 @@ class TestTopologyValidation:
 
     def test_in_memory_topology_passes(self):
         IOHandler._validate_topology(ExecutionMode.STREAM, "in_memory", _cfg(ExecutionMode.STREAM))
+
+
+class TestScheduleRouteMounting:
+    """The single-process topology mounts the schedule management routes on its own."""
+
+    @pytest.fixture
+    def scheduling(self):
+        """Configure the scheduling capability on the live AKConfig singleton."""
+
+        def _configure(**fields):
+            AKConfig.get().schedule = _ScheduleConfig.model_validate(fields)
+
+        yield _configure
+        AKConfig.get().schedule = None
+        ScheduleManager.reset()
+
+    def test_routes_are_absent_without_a_schedule_block(self):
+        assert [type(handler).__name__ for handler in IOHandler._build_handlers(None)] == ["RequestHandler"]
+
+    def test_routes_are_mounted_when_the_capability_is_configured(self, scheduling):
+        scheduling()
+
+        handlers = IOHandler._build_handlers(None)
+
+        assert [type(handler).__name__ for handler in handlers] == ["RequestHandler", "ScheduleRESTRequestHandler"]
+        assert {route.path for route in handlers[1].get_router().routes} == {"/api/v1/schedules", "/api/v1/schedules/{task_id}"}
+
+    def test_unusable_scheduling_configuration_fails_the_boot(self, scheduling):
+        # Building the manager at startup is what turns this into a boot failure rather than a
+        # 500 on the first request that tries to schedule anything.
+        scheduling(provider={"type": "not-a-provider"})
+
+        with pytest.raises(AKConfigError, match="unknown schedule provider type"):
+            IOHandler._build_handlers(None)
 
 
 class TestSignalHandlers:

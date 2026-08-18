@@ -112,7 +112,7 @@ Spec sections: "Management REST handler", "Agent system tools", "Example".
 
 ### Iteration 4.1: ScheduleRESTRequestHandler + pipeline mounting
 
-- **Files:** `schedule/handler.py` (new), `pipeline/io_handler.py` (`schedule_authoriser` param, conditional handler composition, eager `ScheduleManager.get()` at startup).
+- **Files:** `schedule/handler.py` (new), `pipeline/io_handler.py` (generic `authoriser` param, conditional handler composition, eager `ScheduleManager.get()` at startup).
 - **Verify:** `tests/test_schedule_router.py` (404/401/403/PUT/DELETE matrix); IOHandler startup fail-fast case.
 
 ### Iteration 4.2: System tools

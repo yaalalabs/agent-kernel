@@ -3,6 +3,8 @@ from typing import Optional
 
 import uvicorn
 
+from ..api.handler import RESTRequestHandler
+from ..auth.authoriser import Authoriser
 from ..auth.handler import AuthValidator
 from ..core.config import AKConfig
 from ..core.model import ExecutionMode
@@ -29,7 +31,14 @@ class IOHandler:
     _log = logging.getLogger("ak.pipeline.io_handler")
 
     @classmethod
-    def run(cls, auth_validator: Optional[AuthValidator] = None) -> None:
+    def run(cls, auth_validator: Optional[AuthValidator] = None, authoriser: Optional[Authoriser] = None) -> None:
+        """Boot the pipeline topology this configuration implies and serve until shutdown.
+
+        :param auth_validator: Optional token validator for the WebSocket delivery paths.
+        :param authoriser: Optional Authoriser protecting the resource-management routes this
+                           topology mounts on the application's behalf (the schedule routes today).
+        :raises AKConfigError: If the topology, or the scheduling configuration, is unusable.
+        """
         config = AKConfig.get()
         mode = config.execution.mode
         transport_type = QueueTransportFactory.resolve_type()
@@ -47,7 +56,8 @@ class IOHandler:
         # on the main thread, and here it runs on the rest-api worker thread.
         host, port = config.api.host, config.api.port
         cls._log.info(f"Agent Kernel REST API listening on http://{host}:{port}")
-        server = uvicorn.Server(uvicorn.Config(app=RESTAPI.build_app(handlers=[RequestHandler()]), host=host, port=port))
+        app = RESTAPI.build_app(handlers=cls._build_handlers(authoriser))
+        server = uvicorn.Server(uvicorn.Config(app=app, host=host, port=port))
         cls._install_signal_handlers(server)
 
         tasks = [
@@ -76,6 +86,33 @@ class IOHandler:
             )
 
         ThreadRunner.run(tasks=tasks, max_workers=len(tasks))
+
+    @classmethod
+    def _build_handlers(cls, authoriser: Optional[Authoriser]) -> list[RESTRequestHandler]:
+        """Compose the REST handlers this topology serves.
+
+        The schedule management routes ride along whenever the capability is configured, so a
+        single-process app gets them without mounting anything itself. The manager is built here
+        rather than on the first request, which turns an unusable provider/transport pairing or an
+        incomplete provider configuration into a startup failure — joining the topology
+        fail-fasts, where an operator sees it immediately.
+
+        :param authoriser: Optional Authoriser protecting the resource-management routes mounted here.
+        :return: The handlers the app is assembled from.
+        :raises AKConfigError: If the scheduling capability is configured unusably.
+        """
+        handlers: list[RESTRequestHandler] = [RequestHandler()]
+        if AKConfig.get().schedule is None:
+            return handlers
+
+        from ..schedule.handler import ScheduleRESTRequestHandler
+        from ..schedule.manager import ScheduleManager
+
+        # Result discarded on purpose: building it here is the fail-fast (see above).
+        ScheduleManager.get()
+        cls._log.info("Scheduling capability configured: mounting the schedule management routes")
+        handlers.append(ScheduleRESTRequestHandler(authoriser=authoriser))
+        return handlers
 
     @classmethod
     def _install_signal_handlers(cls, server: uvicorn.Server) -> None:
