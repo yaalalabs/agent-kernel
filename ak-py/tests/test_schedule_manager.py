@@ -9,8 +9,10 @@ from typing import ClassVar, Optional
 
 import pytest
 
+from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig, _ScheduleConfig
-from agentkernel.core.model import BaseRunRequest, ScheduleSpec
+from agentkernel.core.model import AgentReplyText, BaseRunRequest, ScheduleSpec
+from agentkernel.core.runtime import Runtime
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.schedule.errors import ScheduleError
@@ -59,6 +61,31 @@ class SqsOnlyScheduleProvider(FakeScheduleProvider):
     supported_transports: ClassVar[Optional[frozenset[str]]] = frozenset({"sqs"})
 
 
+class DummyRunner(Runner):
+    async def run(self, agent, session, requests):
+        return AgentReplyText(response="ok")
+
+    async def stream(self, agent, session, requests):
+        yield "ok"
+
+
+class DummyAgent(Agent):
+    def __init__(self, name: str = "planner"):
+        super().__init__(name, DummyRunner("DummyRunner"))
+
+    def get_description(self) -> str:
+        return "Test agent"
+
+    def get_a2a_card(self):
+        return None
+
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
+
+
 @pytest.fixture(autouse=True)
 def _reset_manager():
     ScheduleManager.reset()
@@ -81,6 +108,15 @@ def provider():
 @pytest.fixture
 def manager(provider, store):
     return ScheduleManager(provider=provider, store=store)
+
+
+@pytest.fixture
+def registered_agent():
+    """A registered agent, so a task naming it passes the manager's named-agent precheck."""
+    agent = DummyAgent()
+    Runtime.current().register(agent)
+    yield agent
+    Runtime.current().deregister(agent)
 
 
 def _configure_schedule(monkeypatch, **schedule_fields) -> None:
@@ -151,7 +187,7 @@ class TestCreation:
         # The stored record carries the provider reference, so a later cancel can deregister it.
         assert store.get(task.task_id).provider_ref == task.provider_ref
 
-    def test_create_from_a_chat_request_takes_the_envelope_fields(self, manager):
+    def test_create_from_a_chat_request_takes_the_envelope_fields(self, manager, registered_agent):
         req = BaseRunRequest(
             prompt="send the weekly report",
             agent="planner",
@@ -164,6 +200,22 @@ class TestCreation:
 
         assert (task.user_id, task.agent, task.session_id) == ("u1", "planner", "s1")
         assert task.spec.timezone == "Asia/Colombo"
+
+    def test_creation_rejects_an_agent_that_is_not_registered(self, manager, store):
+        # Every occurrence runs unattended, so a bad agent name has to fail at creation rather
+        # than in the runner at each fire time.
+        with pytest.raises(ValueError, match="No agent available"):
+            _create(manager, agent="not-an-agent")
+
+        assert store.list() == ([], None)
+
+    def test_creation_without_an_agent_name_is_not_prechecked(self, manager, provider):
+        # The default agent is resolved by whichever process fires the occurrence, which is not
+        # necessarily this one, so an unnamed agent is left to run time.
+        task = _create(manager)
+
+        assert task.agent is None
+        assert provider.created[0][0] == task.task_id
 
     def test_create_from_a_request_without_a_schedule_block_is_rejected(self, manager):
         req = BaseRunRequest(prompt="hi", session_id="s1", user_id="u1")

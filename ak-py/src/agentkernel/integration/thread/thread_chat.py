@@ -198,17 +198,14 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
 
     @staticmethod
     def _check_agent_available(name: Optional[str]) -> None:
-        """Agent-availability precheck before any thread write, applying the same rule
-        as AgentHandler.initialize: a named agent must be registered, otherwise at
-        least one agent must exist. Keeps a missing agent from leaving a phantom
-        thread with an unanswered user message.
+        """Agent-availability precheck before any thread write, keeping a missing agent
+        from leaving a phantom thread with an unanswered user message. The rule itself is
+        shared with the other commit-before-running surfaces (Runtime.ensure_agent_available).
 
         :param name: The requested agent name, or None for the default agent
         :raises ValueError: If no matching agent is available
         """
-        agents = Runtime.current().agents()
-        if (name and name not in agents) or (not name and not agents):
-            raise ValueError("No agent available")
+        Runtime.ensure_agent_available(name)
 
 
 class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):

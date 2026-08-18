@@ -14,6 +14,7 @@ from typing import Any, ClassVar, Dict, Optional
 
 from ..core.config import AKConfig
 from ..core.model import BaseChatRequest, ScheduleSpec
+from ..core.runtime import Runtime
 from ..core.util.factory import AKConfigError
 from ..core.util.pagination import clamp_limit, decode_cursor, encode_cursor
 from ..pipeline.transport.base import QueueTransportFactory
@@ -113,7 +114,7 @@ class ScheduleManager:
         :param agent: The agent each occurrence runs on, or None for the default.
         :param session_id: Originating session of the task.
         :return: The created task, carrying its provider reference.
-        :raises ValueError: If the owner, prompt, session or occurrence rule is unusable.
+        :raises ValueError: If the owner, prompt, session, agent or occurrence rule is unusable.
         :raises ScheduleError: If the provider rejected the registration.
         """
         if not user_id:
@@ -122,6 +123,12 @@ class ScheduleManager:
             raise ValueError("Scheduling requires a prompt to run at the scheduled time")
         if not session_id:
             raise ValueError("Scheduling requires a session_id on the request")
+        # Every occurrence runs unattended, so a named agent that does not exist has to fail here,
+        # where the caller still sees it, rather than in the runner at each fire time. Only a named
+        # agent is checked: an unnamed one resolves to whatever default the firing process has, and
+        # that process is not necessarily this one.
+        if agent:
+            Runtime.ensure_agent_available(agent)
         OccurrenceCalculator.validate(spec)
 
         now = utc_now_iso()

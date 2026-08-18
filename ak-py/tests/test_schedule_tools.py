@@ -10,10 +10,10 @@ import json
 
 import pytest
 
-from agentkernel.core.base import Session
+from agentkernel.core.base import Agent, Runner, Session
 from agentkernel.core.config import _ScheduleConfig
-from agentkernel.core.model import ScheduleSpec
-from agentkernel.core.runtime import ACTING_USER_CACHE_KEY
+from agentkernel.core.model import AgentReplyText, ScheduleSpec
+from agentkernel.core.runtime import ACTING_USER_CACHE_KEY, Runtime
 from agentkernel.core.tool import SystemToolFactory
 from agentkernel.schedule.manager import ScheduleManager
 from agentkernel.schedule.model import ScheduleStatus
@@ -50,6 +50,31 @@ class RecordingScheduleProvider(ScheduleProvider):
 
     def get(self, provider_ref):
         return {"provider_ref": provider_ref}
+
+
+class DummyRunner(Runner):
+    async def run(self, agent, session, requests):
+        return AgentReplyText(response="ok")
+
+    async def stream(self, agent, session, requests):
+        yield "ok"
+
+
+class DummyAgent(Agent):
+    def __init__(self, name: str = "planner"):
+        super().__init__(name, DummyRunner("DummyRunner"))
+
+    def get_description(self) -> str:
+        return "Test agent"
+
+    def get_a2a_card(self):
+        return None
+
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
 
 
 def _install_schedule_cfg(monkeypatch, schedule, multimodal_agents=None) -> None:
@@ -100,6 +125,15 @@ def anonymous_session():
     token = Session.current_session.set(Session("s1"))
     yield
     Session.current_session.reset(token)
+
+
+@pytest.fixture
+def registered_agent():
+    """A registered agent, so a tool naming it passes the manager's named-agent precheck."""
+    agent = DummyAgent()
+    Runtime.current().register(agent)
+    yield agent
+    Runtime.current().deregister(agent)
 
 
 def _create(manager: ScheduleManager, **overrides):
@@ -226,7 +260,7 @@ class TestActingUser:
 
 class TestToolContracts:
     @pytest.mark.asyncio
-    async def test_create_returns_the_agent_facing_view(self, manager, acting_session):
+    async def test_create_returns_the_agent_facing_view(self, manager, acting_session, registered_agent):
         result = json.loads(await create_schedule("send the weekly report", cron="0 9 * * 1", timezone="Asia/Colombo", agent="planner"))
 
         assert result["prompt"] == "send the weekly report"
@@ -239,6 +273,14 @@ class TestToolContracts:
         assert result["trigger_count"] == 0
         # Provider machinery and ownership are not the agent's business.
         assert "provider_ref" not in result and "user_id" not in result
+
+    @pytest.mark.asyncio
+    async def test_create_reports_an_agent_that_is_not_registered(self, manager, acting_session):
+        # The agent name comes from the model, so an invented one must fail here rather than at
+        # every unattended fire time.
+        result = json.loads(await create_schedule("send the weekly report", cron="0 9 * * 1", agent="not-an-agent"))
+
+        assert result == {"error": "No agent available"}
 
     @pytest.mark.asyncio
     async def test_create_accepts_a_one_time_timestamp(self, manager, acting_session):

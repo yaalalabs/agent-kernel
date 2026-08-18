@@ -129,6 +129,23 @@ class Runtime:
         """
         return self._agents
 
+    @staticmethod
+    def ensure_agent_available(name: Optional[str]) -> None:
+        """Check that a request naming ``name`` could be served, without selecting anything.
+
+        The rule ``AgentHandler.initialize`` applies when it selects: a named agent must be
+        registered, and an unnamed one needs at least one agent to default to. Surfaces that
+        commit state before the agent ever runs — a thread write, a scheduled task — call this
+        first, so a request that could never be answered fails while the caller is still
+        listening instead of at run time.
+
+        :param name: The requested agent name, or None for the default agent.
+        :raises ValueError: If no matching agent is available.
+        """
+        agents = Runtime.current().agents()
+        if (name and name not in agents) or (not name and not agents):
+            raise ValueError("No agent available")
+
     def register(self, agent: Agent) -> None:
         """
         Registers an agent in the runtime.
