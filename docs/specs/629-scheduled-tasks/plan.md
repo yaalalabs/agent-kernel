@@ -36,14 +36,16 @@ Behavior-preserving. Spec sections: "Shared authorization refactor", the paginat
 ### Iteration 1.4: Tests and sync
 
 - **Files:** `tests/test_authoriser_shared.py` (new: adapter behavior, `agentkernel.auth` export identity, plus a guard that the thread package no longer exposes `Authoriser`).
-- **Steps:** add tests; sync the surfaces the relocation invalidates — `.agents/skills/ak-dev-architecture/SKILL.md` (thread section's location note → `agentkernel.auth`), `skills/ak-add-capabilities/SKILL.md` and `docs/docs/advanced/threads.md` (import lines, done in 1.1). Add the breaking import change to the release notes.
+- **Steps:** add tests; sync the surfaces the relocation invalidates — `.agents/skills/ak-dev-architecture/SKILL.md` (thread section's location note → `agentkernel.auth`), `skills/ak-add-capabilities/SKILL.md` and `docs/docs/advanced/threads.md` (import lines, done in 1.1), and `.agents/skills/ak-dev-testing-conventions/SKILL.md` (add every test file this phase introduces to the inventory table). Add the breaking import change to `release-notes.md`.
 - **Verify:** `cd ak-py && uv run pytest` and `make lint-check`.
 
 ---
 
 ## Phase 2: Queue-path groundwork (PR 2, `feat:`)
 
-No scheduling yet; ships spec Behavioural changes 4, 5, 6, 9 (call them out in the PR body). Spec sections: "Trigger consumption changes", the 202/acting-user parts of "ChatService interception".
+No scheduling yet; ships spec Behavioural changes 4, 5, 6, 9 (call them out in the PR body). Spec sections: "Trigger consumption changes", the 202 part of "ChatService interception", "Acting-user propagation".
+
+Before merge, sync `.agents/skills/ak-dev-testing-conventions/SKILL.md` (inventory rows for every test file this phase introduces) and add Behavioural changes 4, 5, 6, 9 to `release-notes.md`.
 
 ### Iteration 2.1: request_id body fallback (pipeline)
 
@@ -65,8 +67,8 @@ No scheduling yet; ships spec Behavioural changes 4, 5, 6, 9 (call them out in t
 
 ### Iteration 2.4: Acting-user propagation
 
-- **Files:** `core/chat_service.py`.
-- **Steps:** add `ACTING_USER_CACHE_KEY`; set it after `handler.initialize(...)` in all four execution-core entry points.
+- **Files:** `core/runtime.py`, `core/__init__.py`, `core/service.py`, `core/chat_service.py`.
+- **Steps:** add `ACTING_USER_CACHE_KEY` to `core/runtime.py` and re-export it from `core/__init__.py`; thread `acting_user_id` as an explicit optional parameter from all four `ChatService` execution-core entry points through `AgentHandler.run_*` and `AgentService.run_multi`/`stream_multi` into `Runtime.run`/`stream`, where it is set on the volatile cache *inside* `async with session:` — the same lock whose `finally` clears the cache, so set and clear cannot race across concurrent same-session runs.
 - **Verify:** propagation + per-run clearing cases added to `tests/test_chat_service_core.py`.
 
 ---

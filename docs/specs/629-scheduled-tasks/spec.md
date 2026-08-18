@@ -99,11 +99,9 @@ The amendable set (PUT and `update_schedule`): `at`, `cron`, `timezone`, `sessio
 
 ### ChatService interception (`core/chat_service.py`)
 
-One new module-level constant and three private helpers on `ChatService`; the four execution-core entry points (`execute` :334, `execute_sync` :352, `execute_stream` :366, `execute_stream_sync` :391) each gain two calls at the top and one after validation:
+Two private helpers on `ChatService`; the four execution-core entry points (`execute` :338, `execute_sync` :356, `execute_stream` :370, `execute_stream_sync` :395) each gain two calls at the top:
 
 ```python
-ACTING_USER_CACHE_KEY = "ak.acting_user_id"   # module level, exported
-
 def _maybe_schedule(self, req) -> Optional[AgentReplyAny]:
     if getattr(req, "schedule", None) is None:
         return None
@@ -123,23 +121,18 @@ def _record_trigger(self, req) -> None:          # never raises: log-and-continu
     if manager is not None:
         manager.record_trigger(task_id, request_id=getattr(req, "request_id", None),
                                occurred_at=getattr(req, "scheduled_time", None))
-
-@staticmethod
-def _propagate_acting_user(handler: AgentHandler, req) -> None:
-    if req.user_id and handler.service and handler.service.session:
-        handler.service.session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, req.user_id)
 ```
 
 Entry-point wiring (identical shape in all four):
 
-- `execute` / `execute_sync`: `scheduled = self._maybe_schedule(req); if scheduled is not None: return scheduled, req.session_id`. Then `self._record_trigger(req)`, then the existing `_prepare_* / AgentHandler` flow with `self._propagate_acting_user(handler, req)` inserted after `handler.initialize(...)` (`chat_service.py:347-349,361-363`). The volatile cache is cleared by `Runtime.run`'s `finally`, so the key is per-run.
+- `execute` / `execute_sync`: `scheduled = self._maybe_schedule(req); if scheduled is not None: return scheduled, req.session_id`. Then `self._record_trigger(req)`, then the existing `_prepare_* / AgentHandler` flow, unchanged.
 - `execute_stream` / `execute_stream_sync`: when scheduled, return a generator yielding exactly one terminal chunk: `StreamChunk(delta=str(ack), done=True)` where `str(ack)` is the JSON-serialized acknowledgement (`AgentReplyAny.__str__`, `core/model.py:140-141`). Not an error chunk (design decision). Otherwise identical wiring.
 - The scheduled return for `execute`/`execute_sync` uses `req.session_id` as the response session id (no agent/session was selected).
 
 **202 plumbing**:
 
-- `process_chat_request` / `process_async_chat_request` (`chat_service.py:437-470`): success status becomes `202 if getattr(req, "schedule", None) is not None else 200`.
-- `ResponseBuilder.build_response` (`chat_service.py:282-307`): in `rest_api_mode`, a success with `status_code != 200` returns `fastapi.responses.JSONResponse(content=response_dict, status_code=status_code)` (lazy FastAPI import, same pattern as the existing `HTTPException` import at :303). The non-rest tuple path is unchanged: `(202, dict)` flows to the queue runners, which already forward it as the `STATUS_CODE` attribute (`pipeline/agent_runner.py:98-99`).
+- `process_chat_request` / `process_async_chat_request` (`chat_service.py:441-474`): success status becomes `202 if getattr(req, "schedule", None) is not None else 200`.
+- `ResponseBuilder.build_response` (`chat_service.py:286-311`): in `rest_api_mode`, a success with `status_code != 200` returns `fastapi.responses.JSONResponse(content=response_dict, status_code=status_code)` (lazy FastAPI import, same pattern as the existing `HTTPException` import at :307). The non-rest tuple path is unchanged: `(202, dict)` flows to the queue runners, which already forward it as the `STATUS_CODE` attribute (`pipeline/agent_runner.py:98-99`).
 - Streaming wrappers are unchanged: the terminal chunk rides the existing SSE framing.
 
 **Thread handler** (`integration/thread/thread_chat.py`): both `_run_with_recording` (:110) and `_stream_with_recording` (:133) check `req.schedule` after `_validate_chat_request` + `_check_agent_available` and **before** `ThreadRecorder.pre_run`:
@@ -148,6 +141,28 @@ Entry-point wiring (identical shape in all four):
 - Stream: return the (single-terminal-chunk) generator from `self.chat_service.execute_stream(req)` framed as SSE, skipping `pre_run`/`post_run`.
 
 The agent-availability precheck stays in front deliberately: a schedule whose agent does not exist should fail at creation, not at fire time.
+
+### Acting-user propagation (`core/runtime.py`) — shipped in Phase 2
+
+The acting user is **not** poked into the volatile cache from `ChatService`. `ACTING_USER_CACHE_KEY` lives in `core/runtime.py:34` (re-exported from `core/__init__.py`), and `acting_user_id` is threaded as an explicit optional parameter down the execution chain:
+
+`ChatService.execute*` (`chat_service.py:353,367,388,412` — passing `req.user_id`) → `AgentHandler.run_async` / `run_sync` / `run_stream_async` / `run_stream_sync` (`chat_service.py:227-270`) → `AgentService.run_multi` / `stream_multi` (`core/service.py:139,157`) → `Runtime.run` / `Runtime.stream` (`core/runtime.py:189,233`).
+
+`Runtime` performs the only cache write, **inside** `async with session:` (`core/runtime.py:207-208`, `250-252`):
+
+```python
+async with session:
+    try:
+        if acting_user_id:
+            session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, acting_user_id)
+        ...
+    finally:
+        session.get_volatile_cache().clear()
+```
+
+Set and clear are therefore serialized by the same per-session lock, so concurrent same-session runs on one session cannot have one run's `finally` clear another run's acting user. The key stays per-run.
+
+Consumers (the Phase 4 schedule tools) read it with `Session.current().get_volatile_cache().get(ACTING_USER_CACHE_KEY)`, importing the constant from `core.runtime` (or `core`).
 
 ### ScheduleManager (`schedule/manager.py`)
 
@@ -376,7 +391,7 @@ def get_schedule_tools() -> list[SystemTool]:
 
 - Signatures: `create_schedule(prompt, cron=None, at=None, timezone="UTC", session_mode="reuse", agent=None)`; `update_schedule(task_id, prompt, cron=None, at=None, timezone="UTC", session_mode="reuse", status="active")` (PUT semantics); `list_schedules()`, `get_schedule(task_id)`, `delete_schedule(task_id)`.
 - Every tool starts `manager = ScheduleManager.get(); if manager is None: return _DISABLED` (`_DISABLED = json.dumps({"error": "scheduling capability is disabled"})`, the sandbox first-line pattern `sandbox/tools.py:79-81`).
-- **Acting user**: `Session.current().get_volatile_cache().get(ACTING_USER_CACHE_KEY)` (imported from `core.chat_service`). Every tool requires it: absent → `{"error": "scheduling requires a user identity: include user_id on the chat request"}`. `list_schedules` is scoped to the acting user; `get`/`update`/`delete` pass it for ownership enforcement (a `PermissionError` becomes an error JSON).
+- **Acting user**: `Session.current().get_volatile_cache().get(ACTING_USER_CACHE_KEY)` (imported from `core.runtime`, or equivalently from `core`, which re-exports it). Every tool requires it: absent → `{"error": "scheduling requires a user identity: include user_id on the chat request"}`. `list_schedules` is scoped to the acting user; `get`/`update`/`delete` pass it for ownership enforcement (a `PermissionError` becomes an error JSON).
 - `create_schedule` with `session_mode="reuse"` uses `Session.current().id` as the originating session.
 - **Registration**: one new block in `SystemToolFactory.get_all()` after the sandbox block (`core/tool.py:194-198`):
 
@@ -441,7 +456,7 @@ All intentional; each traced to a design requirement:
 6. A missing `request_id` message attribute no longer permanently fails a queue message whose **body** carries `request_id` (the trigger contract); messages missing both keep today's error path (`pipeline/agent_runner.py:89-94`, `akagentrunner.py:62-64`, serverless :47-54/:191-196).
 7. `IOHandler` mounts the schedule management routes automatically when the `schedule` block is present, and fails startup on provider/transport incompatibility (new `AKConfigError`, joining the existing fail-fasts `pipeline/io_handler.py:107-119`).
 8. The thread handler does not create a thread or record messages for a request carrying `schedule` (checked before `ThreadRecorder.pre_run`, `thread_chat.py:120,146`).
-9. Runs whose request carries `user_id` now expose it in the session volatile cache under `ak.acting_user_id` for the duration of the run (visible to hooks/tools; cleared by the existing `Runtime` volatile-cache clearing).
+9. Runs whose request carries `user_id` now expose it in the session volatile cache under `ak.acting_user_id` for the duration of the run (visible to hooks/tools; set and cleared by `Runtime` inside the per-session lock). `AgentHandler.run_*`, `AgentService.run_multi`/`stream_multi`, and `Runtime.run`/`stream` each gain a backward-compatible optional `acting_user_id` parameter.
 10. The Terraform input queue flips to `content_based_deduplication = true` when `enable_scheduling` (containerized `modules/queues/main.tf:17`, serverless equivalent). App senders are unaffected: an explicit `MessageDeduplicationId` (always sent today, `pipeline/request_handler.py:86`, `sqs_handler.py:343-350`) takes precedence over content-based dedup.
 11. `ThreadRESTRequestHandler` inherits `_resolve_user` from the new `AuthorisedRESTRequestHandler` and `Authoriser` moves to `auth/`: runtime behavior and error strings identical, but **the import path changes** — `Authoriser` is now only importable from `agentkernel.auth`, no longer from `agentkernel.thread` or `agentkernel.integration.thread`. Apps that subclass it must update one import line.
 

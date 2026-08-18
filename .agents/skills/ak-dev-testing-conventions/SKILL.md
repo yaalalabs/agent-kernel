@@ -68,7 +68,9 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_gmail_integration.py` | Gmail handler on the ChatService core: prompt assembly, session fallback, attachments, error paths |
 | `test_thread_integration.py` | Thread integration: `ThreadRecorder` ordering/enforcement, `AgentThreadRequestHandler` recording + no-phantom-thread prechecks, stream accumulation, end-to-end read-back |
 | `test_thread_router.py` | Thread read routes (`ThreadRESTRequestHandler`): pagination, `Authoriser` 401/403 semantics |
+| `test_authoriser_shared.py` | Shared `Authoriser` in `agentkernel.auth`: package-export identity, guard that the thread package no longer exposes it, `AuthValidatorAuthoriser` adapter, `AuthorisedRESTRequestHandler` inheritance |
 | `test_akagentrunner_stream.py` | Serverless `ServerlessStreamAgentRunner` (SQS streaming) |
+| `test_serverless_agent_runner_schedule.py` | Serverless runners' trigger consumption: `request_id`/`user_id` body fallback, attribute precedence, missing-in-both error path |
 | `test_akresponsehandler.py` | Serverless response handler (`CHAT_RESPONSE` / `STREAM_CHUNK` broadcast) |
 | `test_ws_lambda_stream.py` | WebSocket Lambda router in `stream` mode |
 | `test_cli_tester.py` | CLI test framework |
@@ -82,8 +84,11 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_error_util.py` | `user_facing_error_message` error mapping |
 | `test_thread_runner.py` | ThreadRunner task validation, failure/shutdown semantics |
 | `test_ecs_sqs_consumer_parallel.py` | ECSSQSConsumer message processing + delete/retry semantics |
+| `test_ecs_agent_runner_schedule.py` | ECS runner trigger consumption: `request_id`/`user_id` body fallback with attribute precedence, and `ChatService`'s status forwarded to the output queue instead of discarded |
+| `test_ecs_output_consumer_status.py` | ECS output consumer persisting `status_code` on stored records (default 200, permanent failure 500) |
 | `test_deployment_queue_contracts.py` | #495 public-interface cleanup: `pipeline.transport` (`QueueTransport`/`QueueMessage`) is the only public queue API; `RawQueueConsumer` + `SQSHandler`'s send models are internal; removed public names (`QueueHandler`, `QueueConsumer`, `deployment.common.queue_*`) raise `ImportError` |
 | `test_pipeline_agent_runner.py` | `AgentRunner`/`StreamAgentRunner`: chat execution via `ChatService`, reply forwarding with `STATUS_CODE` attribute, per-chunk dedup suffixes, `run()` rejecting `in_memory` transport |
+| `test_pipeline_agent_runner_schedule.py` | Pipeline runners' trigger consumption: `request_id`/`user_id` resolved from the message body, attribute precedence, and body-resolved metadata injected back into the attributes for output forwarding |
 | `test_pipeline_bookkeeping.py` | Delivery bookkeeping for transports lacking native receive counts/dedup (spec #495 §6): `InMemoryBookkeepingStore`/`RedisLikeBookkeepingStore` attempt counters, retry-safe dedup claims, `BookkeepingStoreFactory` backend selection |
 | `test_pipeline_sqs_transport.py` | `SQSTransport`: send/fetch/ack/nack/dead_letter, graceful shutdown handling, fetch-wait slicing, shared wire-format primitives |
 | `test_pipeline_kafka_transport.py` | `KafkaTransport` against a fake in-memory Kafka cluster: send/fetch/ack/nack, dead-letter routing scoped by topic, delivery errors, consumer capacity check |
