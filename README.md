@@ -38,7 +38,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 |---|---|
 | 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, and Google ADK side by side. Swap with 2 import lines. |
 | ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
-| 🔁 **Queue-Pipeline Execution** | Every chat request runs through a queued pipeline: in-process by default (zero services, full retry/FIFO/dedup semantics locally), SQS and Kafka transports for distributed deployments; NATS and Kubernetes upcoming. |
+| 🔁 **Queue-Pipeline Execution** | Every chat request runs through a queued pipeline: in-process by default (zero services, full retry/FIFO/dedup semantics locally), SQS, Kafka, and NATS JetStream transports for distributed deployments; Kubernetes chart upcoming. |
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
 | 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |

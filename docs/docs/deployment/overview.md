@@ -49,7 +49,7 @@ graph TB
 
 ## Execution Modes
 
-Independently of *where* you deploy, `execution.mode` selects *how* requests are processed and replies delivered. Chat execution always runs on the [queue pipeline](../architecture/overview#the-queue-execution-pipeline): in-process with the default `in_memory` transport on every server flavor, over durable SQS queues on AWS Lambda/ECS (Kafka, NATS, and a Kubernetes chart are upcoming). WebSocket delivery is currently an AWS feature.
+Independently of *where* you deploy, `execution.mode` selects *how* requests are processed and replies delivered. Chat execution always runs on the [queue pipeline](../architecture/overview#the-queue-execution-pipeline): in-process with the default `in_memory` transport on every server flavor, over durable SQS queues on AWS Lambda/ECS, or over Kafka/NATS on-prem or Kubernetes (a Kubernetes Helm chart is upcoming). WebSocket delivery is currently an AWS feature.
 
 | Mode | Transport | How the client gets the reply | Queues | Response store | Supported on |
 |------|-----------|-------------------------------|--------|----------------|--------------|
@@ -100,7 +100,7 @@ GCP "serverless" and "containerized" are both Cloud Run: the difference is `min_
 
 ## Scalable Queue Topologies
 
-Queue mode decouples request ingestion from agent execution. The same five-component pipeline runs everywhere: in-process on any server flavor (the `in_memory` default), and split across compute over SQS FIFO queues on AWS. Kafka/NATS transports and a Kubernetes Helm chart (baremetal + EKS) arrive with the upcoming [#495](https://github.com/yaalalabs/agent-kernel/issues/495) iterations.
+Queue mode decouples request ingestion from agent execution. The same five-component pipeline runs everywhere: in-process on any server flavor (the `in_memory` default), split across compute over SQS FIFO queues on AWS, or over Kafka/NATS JetStream on-prem or Kubernetes. A Kubernetes Helm chart (baremetal + EKS) arrives with the upcoming [#495](https://github.com/yaalalabs/agent-kernel/issues/495) iterations.
 
 ```mermaid
 graph LR
