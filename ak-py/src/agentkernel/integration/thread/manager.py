@@ -225,7 +225,7 @@ class ConversationThreadManager:
         """
         Return a page of a thread's messages in chronological order.
         :param session_id: Unique identifier for the thread.
-        :param limit: Maximum number of messages (clamped to [1, MAX_PAGE_SIZE]).
+        :param limit: Maximum number of messages (clamped to [1, core.util.pagination.MAX_PAGE_SIZE]).
         :param cursor: Opaque cursor from a previous page's next_cursor.
         :return: A MessagePage with the messages and the next opaque cursor.
         :raises ValueError: If the cursor is malformed.
@@ -246,7 +246,7 @@ class ConversationThreadManager:
         List threads filtered by user_id and/or group_id (metadata only), paginated.
         :param user_id: Filter by owning user id.
         :param group_id: Filter by group id.
-        :param limit: Maximum number of threads (clamped to [1, MAX_PAGE_SIZE]).
+        :param limit: Maximum number of threads (clamped to [1, core.util.pagination.MAX_PAGE_SIZE]).
         :param cursor: Opaque cursor from a previous page's next_cursor.
         :return: A ThreadPage with the threads and the next opaque cursor.
         :raises ValueError: If the cursor is malformed.
