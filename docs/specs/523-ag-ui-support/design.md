@@ -209,12 +209,19 @@ at all, which existing clients already skip because `if chunk.delta` is what the
   thread recorder that an earlier revision of this design had to work around never arises — the
   recorder is not touched at all.
 - **The break is in the runner contract, not on the wire.** These are different audiences and the
-release notes must not merge them:
+migration note must not merge them:
   - A user-written `Runner` subclass that yields plain `str` **is** broken. `Runtime.stream`
   (`core/runtime.py:248`) is the sole consumer of `Runner.stream`, and it now builds
   `StreamChunk(event=…)`; a bare string arriving there has no discriminator for `to_agui` to match
-  and serialises to the wrong shape. Upgrading users fix their runners, and it must be in the
-  release notes and the upgrade guide rather than discovered at runtime.
+  and serialises to the wrong shape. Upgrading users fix their runners — that is expected and
+  unavoidable; the requirement here is only that they are **told**, rather than discovering it at
+  runtime.
+    - It ships **with a version/changelog note**, the same treatment #500's clean break got
+    (`docs/specs/500-rename-text-prompt-fields/design.md:92`). No upgrade guide or migration page is
+    added: AK has never had one, and inventing the convention here would leave a single orphaned
+    page nothing else follows.
+    - The affected docs pages are updated to describe the new contract, which is the other half of
+    what #500 did. Those updates ride in the PRs that cause them — see `plan.md`.
     - **The reason is boundaries, not an unwillingness to be compatible.** Normalizing a `str` into a
     synthetic text-delta event would cost one `isinstance` in that one place, and it would make the
     text surfaces — REST SSE, WebSocket, the thread recorder — work exactly as they do today. What it

@@ -1,7 +1,7 @@
 # #523: AG-UI protocol support — Implementation Plan
 
-Build order for `[spec.md](spec.md)`. Six PRs, two independent roots; §-references point at
-`spec.md` sections rather than restating them.
+Build order for [spec.md](spec.md). **Six PRs** and one non-PR closing step, two independent roots;
+§-references point at `spec.md` sections rather than restating them.
 
 
 | Iteration | PR                                                | Depends on          |
@@ -12,11 +12,16 @@ Build order for `[spec.md](spec.md)`. Six PRs, two independent roots; §-referen
 | 4         | PR 4 — OpenAI + LangGraph                         | 1                   |
 | 5         | PR 5 — Google ADK                                 | 1                   |
 | 6         | PR 6 — Pydantic AI, and the end of the transition | 1, and 4 + 5 merged |
-| 7         | Docs and skills sync                              | all                 |
 
 
 Iterations 1 and 2 can run in parallel. So can 4, 5 and 6's adapter work; only iteration 6's *last
 step* waits on 4 and 5.
+
+**There is no separate documentation iteration.** Every docs and skills surface this change
+invalidates is updated inside the PR that invalidates it, as a step of that iteration — a merged PR
+must never leave the docs describing behaviour it just changed. The full inventory, including the
+surfaces verified as needing *no* change, is at the end of this document as reference material rather
+than as work.
 
 ---
 
@@ -41,6 +46,12 @@ untouched.
     `None` drops the whole chunk, and the transitional `str` branch carrying the comment that names
      PR 6.
   5. Write the two new test files.
+  6. Docs and skills, all invalidated by this PR's contract change:
+     `core-concepts/runner.md` (35, 55, 59, 122-136), `integrations/hooks.md` (176-188),
+     `architecture/execution-flow.md` (173-193 and 366-387),
+     `ak-dev-architecture/SKILL.md` (61, 90-93),
+     `ak-dev-new-framework-integration/SKILL.md` (158, 376),
+     `ak-dev-testing-conventions/SKILL.md` (109).
 - **Verify:** `cd ak-py && uv run pytest` — green with **zero edits to existing tests**. That is the
 gate, not a nicety: an edit anywhere else means the projection in §4 is wrong.
 
@@ -58,6 +69,8 @@ base64. No AG-UI code involved.
     retain the ones it declined (§8b). **This is the half that is easy to miss** — without it a URL
      attachment is deleted instead of merely undescribed.
   3. Write the new test file, covering all five forms.
+  4. Docs: `advanced/multimodal.md` — all five source forms now work; say which are described and
+     stored and which pass through untouched.
 - **Verify:** `uv run pytest tests/test_multimodal_source_forms.py`, then the full suite. Existing
 multimodal tests must pass unchanged — they exercise bare base64, which is untouched.
 
@@ -155,42 +168,53 @@ confirm it is gone.
 
 
 
-## Iteration 7: Sync docs and skills
+## Documentation surfaces — reference
 
-Every surface below was located by search; each is named with the line the change invalidates.
+Not an iteration and not a PR. This is the inventory behind the docs steps in iterations 1, 2 and 3,
+kept in one place so no PR author has to rediscover it and so the "no change needed" calls are on the
+record. Every row was located by search.
 
 **Dev skills** (`.agents/skills/`):
 
-
-| File                                        | Line  | What changes                                                                              |
-| ------------------------------------------- | ----- | ----------------------------------------------------------------------------------------- |
-| `ak-dev-architecture/SKILL.md`              | 42    | `Session.Keys` list gains `AGUI_STATE` and its accessors                                  |
-| `ak-dev-architecture/SKILL.md`              | 61    | `Runner.stream` is no longer `AsyncGenerator[str, None]`; add `supports_streaming`        |
-| `ak-dev-architecture/SKILL.md`              | 90-93 | `Runtime.stream` — the event write-back and the `delta`/`event` pair                      |
-| `ak-dev-new-framework-integration/SKILL.md` | 158   | "just implement `Runner.stream()`" now means yielding events, with the adapter-state rule |
-| `ak-dev-new-framework-integration/SKILL.md` | 376   | checklist item gains `supports_streaming`                                                 |
-| `ak-dev-testing-conventions/SKILL.md`       | 109   | the `DummyRunner.stream` snippet yields events, not token strings                         |
-
+| File | Line | What changes | Owner |
+|---|---|---|---|
+| `ak-dev-architecture/SKILL.md` | 61 | `Runner.stream` is no longer `AsyncGenerator[str, None]`; add `supports_streaming` | PR 1 |
+| `ak-dev-architecture/SKILL.md` | 90-93 | `Runtime.stream` — the event write-back and the `delta`/`event` pair | PR 1 |
+| `ak-dev-architecture/SKILL.md` | 42 | `Session.Keys` list gains `AGUI_STATE` and its accessors | PR 3 |
+| `ak-dev-new-framework-integration/SKILL.md` | 158 | "just implement `Runner.stream()`" now means yielding events, with the adapter-state rule | PR 1 |
+| `ak-dev-new-framework-integration/SKILL.md` | 376 | checklist item gains `supports_streaming` | PR 1 |
+| `ak-dev-testing-conventions/SKILL.md` | 109 | the `DummyRunner.stream` snippet yields events, not token strings | PR 1 |
 
 **Docs** (`docs/docs/`):
 
+| File | Line | What changes | Owner |
+|---|---|---|---|
+| `core-concepts/runner.md` | 35, 55, 59, 122-136 | `stream()` yields events; the `StreamChunk` example gains `event` | PR 1 |
+| `integrations/hooks.md` | 176-188 | `on_stream_chunk` still takes `str`, but its return is written back into the event; add the tool-call limit | PR 1 |
+| `architecture/execution-flow.md` | 173-193 | the streaming sequence diagram shows `Runner.stream()` returning a bare `delta` and the SSE payload as `{"delta": ..., "done": ...}`; both gain `event` | PR 1 |
+| `architecture/execution-flow.md` | 366-387 | the WebSocket `STREAM_CHUNK` payload and the execution-mode table carry the same wire shape | PR 1 |
+| `advanced/multimodal.md` | — | all five source forms now work; state which are described/stored and which pass through | PR 2 |
+| `integrations/overview.md` | — | add AG-UI to the integration list | PR 3 |
+| new page under `advanced/` | — | AG-UI: routes, config, the fidelity matrix, `agui_state`, `forwardedProps` | PR 3 |
 
-| File                             | Line                | What changes                                                                                                                                            |
-| -------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core-concepts/runner.md`        | 35, 55, 59, 122-136 | `stream()` yields events; the `StreamChunk` example gains `event`                                                                                       |
-| `integrations/hooks.md`          | 176-188             | `on_stream_chunk` still takes `str`, but its return is written back into the event; add the tool-call limit                                             |
-| `advanced/multimodal.md`         | —                   | all five source forms now work; state which are described/stored and which pass through                                                                 |
-| `integrations/overview.md`       | —                   | add AG-UI to the integration list                                                                                                                       |
-| `architecture/execution-flow.md` | 173-193             | the streaming sequence diagram shows `Runner.stream()` returning a bare `delta` and the SSE payload as `{"delta": ..., "done": ...}`; both gain `event` |
-| `architecture/execution-flow.md` | 366-387             | the WebSocket `STREAM_CHUNK` payload and the execution-mode table carry the same wire shape                                                             |
-| new page under `advanced/`       | —                   | AG-UI: routes, config, the fidelity matrix, `agui_state`, `forwardedProps`                                                                              |
-
+PR 1 owns most of it, which is expected: it is the PR that changes the contract everything else
+describes.
 
 **Verified as needing no change**, by search rather than assumption — zero matches for `StreamChunk`,
 `Runner.stream` or `delta` in either:
 
 - `core-concepts/session.md` — the caches and their semantics are unchanged; the new key is additive.
 - `core-concepts/tools.md` — the system-tool mechanism is unchanged; only a new capability uses it.
-- **Verify:** run the `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` flows before
-merge, and confirm each row above is either applied or re-justified as unnecessary.
 
+**The breaking change ships as a version/changelog note, not as a docs page.** That is what AK already
+does: #500 renamed `text`→`prompt` across public models and handled it exactly this way
+(`docs/specs/500-rename-text-prompt-fields/design.md:92`). There is no upgrade guide or migration page
+anywhere in `docs/`. The note must keep two audiences apart: a custom `Runner` yielding `str` must
+change to yield events; a frontend reading `delta` needs no change at all.
+
+**After the combined merge**, `.github/workflows/auto-sync-skills-docs.yaml` runs over
+`.agents/skills/**`, `docs/docs/**`, `docs/sidebars.js` and `docs/docs/agent-skills.md` and opens a
+`docs:` PR labelled `auto-skill-doc-sync`. Because the six PRs merge together, it runs **once against
+the complete end state** rather than against intermediate commits — so the fidelity matrix and
+`runner.md` are already true when it reads them. Anything it raises is a docs-only follow-up, not
+part of this set.
