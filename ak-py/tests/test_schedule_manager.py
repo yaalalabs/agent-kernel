@@ -360,9 +360,32 @@ class TestAmendment:
         task = _create(manager)
 
         with pytest.raises(ValueError, match="exactly one of 'at'"):
-            manager.update(task.task_id, {"at": FUTURE_AT})
+            manager.update(task.task_id, {"at": FUTURE_AT, "cron": "0 9 * * 1"})
         with pytest.raises(ValueError, match="unknown schedule timezone"):
-            manager.update(task.task_id, {"timezone": "Mars/Olympus"})
+            manager.update(task.task_id, {"cron": "0 9 * * 1", "timezone": "Mars/Olympus"})
+
+    def test_amending_one_occurrence_field_replaces_the_whole_rule(self, manager):
+        task = _create(manager, spec=ScheduleSpec(cron="0 9 * * 1", timezone="Asia/Colombo", session_mode="new"))
+
+        amended = manager.update(task.task_id, {"at": FUTURE_AT})
+
+        # The rule is replaced as a unit, so the fields the amendment left out fall back to their
+        # defaults rather than to the stored values.
+        assert (amended.spec.at, amended.spec.cron) == (FUTURE_AT, None)
+        assert (amended.spec.timezone, amended.spec.session_mode) == ("UTC", "reuse")
+
+    def test_an_occurrence_rule_cannot_be_amended_away(self, manager):
+        task = _create(manager)
+
+        with pytest.raises(ValueError, match="exactly one of 'at'"):
+            manager.update(task.task_id, {"timezone": "Asia/Colombo"})
+
+    def test_an_amendment_naming_no_occurrence_field_leaves_the_rule_untouched(self, manager):
+        task = _create(manager, spec=ScheduleSpec(cron="0 9 * * 1", timezone="Asia/Colombo"))
+
+        amended = manager.update(task.task_id, {"prompt": "send the daily report"})
+
+        assert (amended.spec.cron, amended.spec.timezone) == ("0 9 * * 1", "Asia/Colombo")
 
     def test_amending_an_unknown_task_reports_it_as_missing(self, manager):
         with pytest.raises(KeyError, match="not found"):

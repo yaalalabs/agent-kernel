@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 
 from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError, resolve_dotted
+from ...core.util.pagination import DEFAULT_PAGE_SIZE
 from ..model import ScheduledTask
 
 # Backends shipped with the capability; anything else is treated as a dotted path (BYO).
@@ -61,7 +62,7 @@ class ScheduleStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def list(self, user_id: Optional[str] = None, limit: int = 50, offset: int = 0) -> Tuple[List[ScheduledTask], Optional[int]]:
+    def list(self, user_id: Optional[str] = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> Tuple[List[ScheduledTask], Optional[int]]:
         """List task records, most-recently updated first.
 
         :param user_id: Filter by owning user id; unfiltered when omitted.

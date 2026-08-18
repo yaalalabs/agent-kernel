@@ -3,7 +3,7 @@
 import logging
 from typing import ClassVar, List, Optional, Tuple
 
-from ...core.util.pagination import paginate
+from ...core.util.pagination import DEFAULT_PAGE_SIZE, paginate
 from ..model import ScheduledTask, ScheduleStatus, utc_now_iso
 from .base import ScheduleStore
 
@@ -35,7 +35,7 @@ class InMemoryScheduleStore(ScheduleStore):
     def delete(self, task_id: str) -> None:
         self._tasks.pop(task_id, None)
 
-    def list(self, user_id: Optional[str] = None, limit: int = 50, offset: int = 0) -> Tuple[List[ScheduledTask], Optional[int]]:
+    def list(self, user_id: Optional[str] = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> Tuple[List[ScheduledTask], Optional[int]]:
         matches = [task.model_copy(deep=True) for task in self._tasks.values() if user_id is None or task.user_id == user_id]
         matches.sort(key=lambda task: task.updated_at, reverse=True)
         return paginate(matches, limit, offset)

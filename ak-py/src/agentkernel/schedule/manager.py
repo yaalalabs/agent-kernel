@@ -16,15 +16,12 @@ from ..core.config import AKConfig
 from ..core.model import BaseChatRequest, ScheduleSpec
 from ..core.runtime import Runtime
 from ..core.util.factory import AKConfigError
-from ..core.util.pagination import clamp_limit, decode_cursor, encode_cursor
+from ..core.util.pagination import DEFAULT_PAGE_SIZE, clamp_limit, decode_cursor, encode_cursor
 from ..pipeline.transport.base import QueueTransportFactory
 from .model import TOKEN_OCCURRENCE_TIME, TOKEN_REQUEST_ID, ScheduledTask, ScheduledTaskPage, ScheduleStatus, utc_now_iso
 from .provider.base import ScheduleProvider, ScheduleProviderFactory
 from .store.base import ScheduleStore, ScheduleStoreBuilder
 from .timing import OccurrenceCalculator
-
-# Page size used when a listing does not request one (the cap lives in core.util.pagination).
-DEFAULT_SCHEDULE_PAGE_SIZE = 50
 
 # Fields an amendment may carry: the occurrence rule, the prompt, and the paused/active switch.
 # Everything else about a task (its owner, its session, its occurrence history) is immutable.
@@ -176,16 +173,18 @@ class ScheduleManager:
         :raises ValueError: If the cursor is malformed.
         """
         offset = decode_cursor(cursor)
-        page_size = clamp_limit(limit, DEFAULT_SCHEDULE_PAGE_SIZE)
+        page_size = clamp_limit(limit, DEFAULT_PAGE_SIZE)
         tasks, next_offset = self._store.list(user_id=user_id, limit=page_size, offset=offset)
         return ScheduledTaskPage(tasks=tasks, next_cursor=encode_cursor(next_offset))
 
     def update(self, task_id: str, amendment: Dict[str, Any], user_id: Optional[str] = None) -> ScheduledTask:
         """Amend a task's occurrence rule, prompt, or paused/active state.
 
-        The amendment carries the full amendable representation (PUT semantics), so an omitted
-        occurrence field clears it rather than keeping the previous value. The store is written
-        first and restored to the previous record if the provider rejects the amendment.
+        The amendment carries the full amendable representation (PUT semantics): the occurrence
+        rule is replaced as a unit, so an amendment that names any occurrence field and omits the
+        others clears them rather than keeping the previous values (see :meth:`_apply_amendment`).
+        The store is written first and restored to the previous record if the provider rejects
+        the amendment.
 
         :param task_id: Identifier of the task to amend.
         :param amendment: The amendable fields: at, cron, timezone, session_mode, prompt, status.
@@ -312,14 +311,21 @@ class ScheduleManager:
     def _apply_amendment(previous: ScheduledTask, amendment: Dict[str, Any]) -> ScheduledTask:
         """Build the amended task from the previous record and the amendment.
 
+        The occurrence rule is replaced as a unit: an amendment naming any of at/cron/timezone/
+        session_mode rebuilds the whole spec from what that amendment carries, so an omitted field
+        falls back to its default rather than to the stored value. An amendment naming none of them
+        leaves the rule untouched, which is how a prompt-only or pause/resume amendment works.
+
         :param previous: The stored record being amended.
         :param amendment: The amendable fields.
         :return: The amended task (not yet persisted).
         :raises ValueError: If the amended spec, prompt or status is invalid.
         """
         spec_fields = {field: value for field, value in amendment.items() if field in _SPEC_AMENDABLE_FIELDS}
-        # Rebuilt rather than copied so the spec's own structural validation runs on the result.
-        spec = ScheduleSpec(**{**previous.spec.model_dump(), **spec_fields}) if spec_fields else previous.spec
+        # Built from the amendment alone, not merged over the stored spec: the occurrence rule is
+        # replaced as a unit, so an omitted field falls back to its default rather than to the
+        # stored value. Rebuilding also runs the spec's own structural validation on the result.
+        spec = ScheduleSpec(**spec_fields) if spec_fields else previous.spec
 
         prompt = amendment.get("prompt", previous.prompt)
         if not prompt:

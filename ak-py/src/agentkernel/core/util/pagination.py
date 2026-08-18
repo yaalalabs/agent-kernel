@@ -13,6 +13,10 @@ from typing import Optional
 # Cap applied to every requested page size.
 MAX_PAGE_SIZE = 200
 
+# Page size used when a listing requests none. Shared by the service layer (via clamp_limit) and
+# the store signatures beneath it, so a listing's default lives in one place.
+DEFAULT_PAGE_SIZE = 50
+
 
 def encode_cursor(offset: Optional[int]) -> Optional[str]:
     """Encode a numeric page offset into an opaque cursor token, or None."""
