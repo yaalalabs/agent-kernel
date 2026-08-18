@@ -93,8 +93,8 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
                 user_id = resolved_user_id  # listings are forced to the authorised user
             try:
                 page = manager.list_tasks(user_id=user_id, limit=limit, cursor=cursor)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
+            except (ValueError, ScheduleError) as e:
+                raise self._as_http_error(e)
             return {
                 "schedules": [task.model_dump(mode="json") for task in page.tasks],
                 "next_cursor": page.next_cursor,
@@ -150,14 +150,15 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
         return manager
 
     @staticmethod
-    def _as_http_error(error: Exception, task_id: str) -> HTTPException:
+    def _as_http_error(error: Exception, task_id: Optional[str] = None) -> HTTPException:
         """Map a manager error onto the HTTP status its surface reports.
 
         The manager's typed errors are the contract, so every route shares one mapping instead of
         interpreting each operation's failures itself.
 
         :param error: The error the manager raised.
-        :param task_id: The task the request addressed, named in the not-found detail.
+        :param task_id: The task the request addressed, named in the not-found detail; omitted by
+                        the listing route, which addresses no single task.
         :return: The HTTPException the route raises.
         """
         if isinstance(error, PermissionError):

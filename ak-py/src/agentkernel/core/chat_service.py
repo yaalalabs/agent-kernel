@@ -531,22 +531,6 @@ class ChatService:
         """
         return 202 if req.schedule is not None else 200
 
-    @staticmethod
-    def _propagate_acting_user(handler: AgentHandler, req: BaseChatRequest) -> None:
-        """Publish the request's user as the run's acting user in the session volatile cache.
-
-        Called after the handler has selected its session, so hooks and tools running inside the
-        run can attribute work to the caller. The cache is volatile: ``Runtime.run``/``stream``
-        clear it when the run ends, so the key never leaks into the next run of the same session.
-
-        :param handler: The initialized agent handler owning the session
-        :param req: The request whose user_id is published (a request without one publishes nothing)
-        :return: None
-        """
-        if not req.user_id or not handler.service or not handler.service.session:
-            return
-        handler.service.session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, req.user_id)
-
     async def _prepare_async(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]]) -> List[AgentRequest]:
         """Validate the request and return the effective request list (built or prebuilt).
 
