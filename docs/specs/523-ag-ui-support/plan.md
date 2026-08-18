@@ -103,10 +103,10 @@ round-trip state.
     `get_forwarded_props`, `get_agui_context`), their two `SystemTool` builders, and the two
      volatile-cache key constants this module owns (§5, §6). Docstrings are the LLM-facing tool
      schema; write them as such.
-  3. Config: `_AGUIConfig` with the nested `state` and `forwarded_props` blocks (§Config changes),
+  3. Config: `_AGUIConfig` with the nested `state` and `client_context` blocks (§Config changes),
     then the two `SystemToolFactory` branches (§7). Both flags default `False`.
-  4. `integration/agui/envelope.py` (§9) — there is **no** `authoriser.py`: AG-UI uses the shared
-    `auth/authoriser.py` and `AuthorisedRESTRequestHandler` that PR #632 added to `develop`. Envelope
+  4. `integration/agui/run_input.py` (§9) — there is **no** `authoriser.py`: AG-UI uses the shared
+    `auth/authoriser.py` and `AuthorisedRESTRequestHandler` that PR #632 added to `develop`. The
      mapping is pure and testable without a server; cover every `InputContent` type for both `data`
      and `url` sources, and the unknown-`role` drop.
   5. `integration/agui/mapping.py` — `to_agui` plus its exhaustiveness test. Write the test with the

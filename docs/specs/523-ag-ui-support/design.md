@@ -109,7 +109,7 @@ passes it to `RESTAPI.run(handlers=[...])`. There is no `enabled` flag.
   route prefix — and never switches it on. This mirrors how the `thread` block relates to
   `AgentThreadRequestHandler`.
     - One clarification, because it looks like a contradiction otherwise: the block **does** switch
-    on the agent-facing tools, via `agui.state.enabled` and `agui.forwarded_props.enabled`
+    on the agent-facing tools, via `agui.state.enabled` and `agui.client_context.enabled`
     (see State). Those gate tools bound onto agents, not the AG-UI surface itself, which is still
     enabled only by mounting.
   - The handler fails fast in `__init__` when its configuration is incoherent, rather than at first
@@ -382,7 +382,7 @@ consults the process-wide mode nor forces it to `stream`.
 
 ### Identity and request handling
 
-- `user_id` is derived from the bearer token, never from the request envelope.
+- `user_id` is derived from the bearer token, never from the request body.
   - Rationale: AG-UI carries a conversation identifier but no user identity. Trusting the body would
   let any caller resume another user's conversation by guessing an id.
 - AG-UI uses the **shared** `Authoriser` in `auth/authoriser.py` and extends
@@ -452,7 +452,7 @@ and reaches the agent through a read-only `get_forwarded_props()` system tool.
   so a write tool would mutate something nothing reads. `agui_state` has an update tool only
   because `StateSnapshot` exists to carry the result. Reviewers will ask why the two are
   asymmetric; this is the reason.
-  - Gated on `agui.forwarded_props.enabled`, attached through `SystemToolFactory` by the same
+  - Gated on `agui.client_context.enabled`, attached through `SystemToolFactory` by the same
   mechanism as the AG-UI state tools — see State for the registration rules and why the flags live
   under `agui`.
   - **Known risk, accepted**: the model may simply never call the tool, and the forwarded context is
@@ -518,10 +518,11 @@ follow-up, for the reasons at the end of this section.
     default, plus an optional `agents` list.
     - This is a further `if` of the identical shape `get_all()` already uses twice
       (`core/tool.py:186-200`): `_agent_allowed(config, agent_name)` reads exactly `enabled` and
-      `agents`. `agui.forwarded_props` gets its own branch of the same shape.
+      `agents`. `agui.client_context` gets its own branch of the same shape.
     - **Two flags, not one.** `agui.state` commits to mutation and to emitting `StateSnapshot`;
-      `forwarded_props` is a read of one inbound field. An application may reasonably want the second
-      without the first, and one combined flag would stop each flag meaning one thing.
+      `client_context` only ever reads inbound fields — `forwardedProps` and `context` — and never
+      writes. An application may reasonably want the second without the first, and one combined flag
+      would stop each flag meaning one thing.
     - Nested under `agui` rather than given a top-level block because the capability exists to serve
       AG-UI and nothing else turns it on. `core/` reading an integration's config **section** is not
       a coupling breach — the rule is about imports, and `AKConfig` already defines every
@@ -683,7 +684,7 @@ cannot emit reasoning events says so.
   - It must also state plainly that **CrewAI and smolagents are not reachable over AG-UI yet**, and
   why, rather than omitting them and letting a reader assume full coverage.
 - The `thread_id` → `session_id` mapping and the absence of thread recording are documented
-explicitly, since the envelope field name invites the opposite assumption.
+explicitly, since the protocol's field name invites the opposite assumption.
 - The ignored `RunAgentInput.tools` field is documented as a non-goal; silence would produce a
 feature that fails with no error.
 - **`forwardedProps` is read-only and pull-based**, and both halves are documented: there is no way
@@ -721,7 +722,7 @@ than rejected, so a frontend newer than the server still runs.
   so unknown *fields* already parse and are ignored. Unknown *message types* do not: `Message` is a
   discriminated union on `role`, so an unrecognised role raises `ValidationError` and FastAPI turns
   it into a 422 before the handler runs. Honouring this requirement therefore takes explicit work in
-  the envelope — see `spec.md` §9.
+  the inbound mapping — see `spec.md` §9.
   - The server never emits an event type it cannot fully populate.
   - AG-UI documents no version-negotiation handshake, so this is AK's own policy; confirm that
   against the pinned version before implementing.
@@ -800,7 +801,7 @@ Filed separately, not part of this set:
 - **Client-executed tools.** AG-UI lets the *frontend* declare tools that the *frontend* runs — a
 browser app can say "I have a `zoom_map` tool; call it and I'll execute it and send you the
 result." Those arrive in `RunAgentInput.tools`, and AK ignores the field.
-  - Two reasons it cannot be handled by envelope mapping. AK's tool registry is built once at
+  - Two reasons it cannot be handled by the inbound mapping. AK's tool registry is built once at
   startup (`core/runtime.py:132-140`) with no per-request injection path. And a browser-executed
   tool needs the run to pause, hand control back to the client, and resume with the returned
   result — machinery AK has no equivalent of.
