@@ -236,9 +236,17 @@ until the adapter work lands.
   - Verification bar: the full existing test suite passes **with zero test edits** at that commit.
   This is an in-branch review checkpoint, not a promise about a released version — every PR ships
   in one release (see Delivery).
-  - Existing streaming tests should **also** survive the adapter PRs, since `delta` keeps its meaning
-  and `event` is additive. Any test that does need editing is a signal the projection is wrong, not
-  an accepted cost — which makes the suite a live check on the compatibility claim above.
+  - Two test populations, and only one of them survives the adapter PRs — verified, not assumed:
+    - Tests that assert on `StreamChunk` or the wire shape **do** survive, because `delta` keeps its
+    meaning and `event` is additive. `test_chat_service_streaming.py` constructs
+    `StreamChunk(delta="Hello")` directly and asserts the exact JSON; that stays byte-identical. A
+    test in this group needing an edit is a signal the projection is wrong, not an accepted cost.
+    - Tests that assert on **`Runner.stream` output directly do not**, and cannot: the four adapter
+    suites collect `[delta async for delta in runner.stream(...)]` and assert `deltas == ["hi"]`
+    (`tests/test_openai_runner.py:210-212`, `tests/test_adk_runner.py:269-270`,
+    `tests/test_langgraph_runner.py:133`, `tests/test_pydanticai_runner.py:159`). Once an adapter
+    yields events those assertions must change. That edit belongs to that adapter's own PR and is
+    part of its per-adapter test work, not a regression.
 - **A transitional `str` tolerance exists between PR 1 and PR 6, and PR 6 removes it.** This is the
 one piece of scaffolding in the plan, and it is called out because scaffolding that nobody is
 assigned to remove becomes permanent.
@@ -269,10 +277,22 @@ text-redaction hook must not begin receiving tool-call objects.
     rule as the `delta` projection, applied in the other direction.
   - A hook returning `None` drops **the whole chunk**, event included — not the text while keeping
   the event.
-  - Known limit to document: hooks never see tool-call arguments or results, so a redaction hook does
-  not cover them. That is true today as well, but today those values never leave the adapter; after
-  this change they reach the client, so the gap becomes reachable for the first time. Closing it
-  needs a hook that sees events, which is a larger contract change and is not in this issue.
+  - **Known limit, deferred deliberately**: hooks never see tool-call arguments or results, so a
+  redaction hook does not cover them.
+    - The exposure is new. Those values are discarded at the adapter today, so nothing could reach a
+    client; after this change they do.
+    - It is **not** mitigated by output guardrails, and the reason is easy to miss: `Runtime.stream`
+    never calls `PostHook.on_run` (`core/runtime.py:243-259`) — it only runs the per-token
+    `on_stream_chunk`. On a streamed run that token hook is the *entire* output-side defence, so a
+    value it cannot see has none.
+    - The argument that tool code is application-written does not close it. The **code** is, but the
+    **data** often is not: `ToolCallArgs` is written by the model from the conversation, and a tool
+    result usually carries a database row or an API response.
+    - Closing it needs an **event-aware post-hook** — a contract wider than
+    `(str) -> str | None`, since a JSON argument fragment cannot be handed to a hook written for
+    prose without corrupting it. That is a core hook-contract change, out of scope here, and gets
+    its own issue.
+    - Until then it is documented, not silently carried.
 - Adapter coverage in this issue is the four that already stream: OpenAI, LangGraph, ADK and
 Pydantic AI. CrewAI and smolagents are untouched beyond their `supports_streaming = False`
 declaration.
@@ -719,6 +739,8 @@ Filed separately, not part of this set:
 - *(The multimodal pre-hook's source-form bug is no longer filed separately — it is PR 2. It is still
   pre-existing and still affects every surface; it is fixed here because AG-UI is the first surface
   whose ordinary clients send `data:` URIs.)*
+- **Event-aware post-hooks**, so redaction can cover tool-call arguments and results (see Streaming
+  contract). It is a core hook-contract change, not AG-UI work.
 - A2UI and queue mode (see Non-goals).
 
 
