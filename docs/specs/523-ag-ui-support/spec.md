@@ -4,10 +4,14 @@ How the design in [`design.md`](design.md) is built. Agent Kernel gains an AG-UI
 `integration/agui/`; `Runner.stream` widens from `AsyncGenerator[str, None]` to yield typed event
 objects; `StreamChunk` gains an additive `event` field alongside its existing `delta`; and the
 multimodal pre-hook learns the attachment source forms it currently corrupts. `design.md` is the
-requirements source — every requirement there is covered here, and nothing here changes a decision
-taken there.
+requirements source — every requirement there is covered here. Two decisions taken there have since
+been overtaken by `develop` and are reversed in both documents rather than silently absorbed: the
+AG-UI-owned authoriser (§9) and the `ag-ui-protocol` version floor (§ the `agui` extra).
 
-All `path:line` citations are against `develop` at `1693d2e0`, re-verified while writing this spec.
+All `path:line` citations are against `develop` at `97a272e1` and were re-verified mechanically —
+every cited range was located in the current tree, not carried over. The set was previously pinned to
+`1693d2e0`; `develop` has since moved 11 commits and roughly half the citations had drifted, some by
+70+ lines. `research/` remains pinned to `1693d2e0` and is not re-verified — it is a dated record.
 Paths are relative to `ak-py/src/agentkernel/` unless stated otherwise.
 
 ---
@@ -119,7 +123,7 @@ asserts the serialised result is exactly `{"delta": "Hello", "done": false, "ses
 assertion. `Runtime.stream` is therefore the single place that populates both fields together.
 
 `session_id` remains absent from the model and is attached by `ResponseBuilder.stream_chunk`
-(`core/chat_service.py:316-317`); `Runtime.stream` passing `session_id=` to the constructor continues
+(`core/chat_service.py:320-321`); `Runtime.stream` passing `session_id=` to the constructor continues
 to be silently dropped by Pydantic's default `extra="ignore"`. This spec does not change that
 behaviour, but it is noted because it looks like a bug when read alongside the response payload.
 
@@ -139,7 +143,7 @@ async def stream(self, agent, session, requests) -> AsyncGenerator["StreamEvent"
 ```
 
 - `supports_streaming` is a **property**, not a class attribute. Five existing test doubles already
-  declare `@property def supports_streaming` (`tests/test_base.py:12-14`, `test_runtime.py:26-28`,
+  declare `@property def supports_streaming` (`tests/test_base.py:14-16`, `test_runtime.py:26-28`,
   `test_module.py:12`, `test_tool.py:18`, `test_tool_adk.py:23`) even though the base class has no
   such member today. Implementing it as a property makes those overrides valid rather than shadowed,
   and is why this change needs no test edits.
@@ -148,17 +152,23 @@ async def stream(self, agent, session, requests) -> AsyncGenerator["StreamEvent"
 - The `stream` return annotation widens. Only the annotation changes in PR 1; the four adapters keep
   yielding `str` until PRs 4–6.
 
-### 4. `Runtime.stream` — `core/runtime.py:243-259`
+### 4. `Runtime.stream` — `core/runtime.py:232-275`
 
 This is the only consumer of `Runner.stream` in the repo (verified by search across `core/`, `api/`,
 `integration/`, `pipeline/`, `deployment/`). The loop becomes:
 
 ```python
+# TRANSITIONAL (PR 1 → PR 6): adapters that still yield `str` are normalised into one
+# synthetic assistant message, so every consumer downstream of this loop sees the same
+# event stream whether or not the adapter has been migrated yet. Deleted in PR 6.
+legacy_message_id: str | None = None
+
 async for ev in agent.runner.stream(agent, session, requests):
-    # TRANSITIONAL — remove in PR 6, when the last adapter stops yielding str.
-    if isinstance(ev, str):
-        yield StreamChunk(delta=ev)
-        continue
+    if isinstance(ev, str):                                   # TRANSITIONAL
+        if legacy_message_id is None:
+            legacy_message_id = uuid4().hex
+            yield StreamChunk(event=MessageStart(message_id=legacy_message_id))
+        ev = TextDelta(message_id=legacy_message_id, content=ev)
 
     text = ev.content if isinstance(ev, (TextDelta, ReasoningDelta)) else None
 
@@ -172,10 +182,13 @@ async for ev in agent.runner.stream(agent, session, requests):
         if text != ev.content:
             ev = ev.model_copy(update={"content": text})
 
-    yield StreamChunk(delta=text, event=ev)
+    yield StreamChunk(delta=text if isinstance(ev, TextDelta) else None, event=ev)
+
+if legacy_message_id is not None:                             # TRANSITIONAL
+    yield StreamChunk(event=MessageEnd(message_id=legacy_message_id))
 ```
 
-Four rules this encodes, each from a `design.md` requirement:
+Six rules this encodes, each from a `design.md` requirement:
 
 1. **The hook's edit is written back into the event.** `PostHook.on_stream_chunk` may *modify* the
    text, not only drop it (`core/hooks.py:73-85`), and redaction is its documented purpose. Without
@@ -185,14 +198,65 @@ Four rules this encodes, each from a `design.md` requirement:
 2. **Returning `None` drops the whole chunk**, not the text while keeping the event.
 3. **Hooks only ever see text.** Non-text events skip the hook chain entirely, so a text-redaction
    hook never receives a `ToolCallArgs`.
-4. **The `str` branch is scaffolding with an owner.** It yields a text-only chunk with `event=None`,
-   which is byte-identical to today's output — that is what lets PR 1 meet its zero-test-edits gate
-   while adapters still yield `str`. The comment names PR 6 so the removal is discoverable from the
-   source.
+4. **The `str` branch normalises rather than short-circuits.** It converts the string into a
+   `TextDelta` and falls through into the same hook chain, so a legacy adapter's tokens are filtered
+   exactly as today's loop filters them (`core/runtime.py:264-270`). An earlier draft of this spec
+   yielded the `str` directly and `continue`d, which silently disabled every `on_stream_chunk` hook
+   for the whole PR 1 → PR 6 window; no test would have caught it, because no test in the suite
+   references `on_stream_chunk`. Normalising also means PR 3's AG-UI surface emits real text while
+   all four adapters still yield `str` — without it, PR 3 would ship a surface that sends only
+   `RunStarted` and `RunFinished`.
+5. **Only `TextDelta` reaches `delta`.** `ReasoningDelta` passes through the hook chain but is
+   **not** projected into `delta`, so reasoning text never reaches consumers that concatenate it —
+   REST SSE clients rendering an answer, and `ThreadRecorder`, which persists the concatenation into
+   the stored assistant message (`integration/thread/thread_chat.py:158-160`). Enriched clients read
+   reasoning from `event`. This is the one place the two requirements pull apart: a redaction hook
+   must see reasoning (so it runs through the chain), while a plain-text client must not (so it is
+   kept out of the projection). `ToolCallArgs.delta` is not projected either — it is a JSON
+   fragment, not prose, and feeding it to a text hook would corrupt the JSON.
+6. **Deleting the branch in PR 6 leaves a loud failure, not a silent one.** Stated because "fails
+   loudly" is otherwise an assertion about code that does not exist yet. Once the branch is gone, a
+   `str` from a stale runner falls past the `isinstance(ev, (TextDelta, ReasoningDelta))` check with
+   `text = None` — no error there — and reaches `StreamChunk(..., event=ev)`. `event` is typed as the
+   `StreamEvent` discriminated union, so pydantic rejects a bare `str` and raises `ValidationError`
+   on construction. The failure therefore lands inside `Runtime.stream` on the very first token and
+   names the offending field, rather than degrading into a silently empty stream. This is the
+   mechanism PR 6's removal test asserts on.
 
-`ReasoningDelta` is included in the text projection deliberately: it is text the user sees, and a
-redaction hook that misses reasoning output is a hole. `ToolCallArgs.delta` is **not** projected —
-it is a JSON fragment, not prose, and feeding it to a text hook would corrupt the JSON.
+**The end state, so PR 6 deletes the right lines.** The loop after the transitional code is gone:
+
+```python
+async for ev in agent.runner.stream(agent, session, requests):
+    text = ev.content if isinstance(ev, (TextDelta, ReasoningDelta)) else None
+
+    if text is not None:
+        for hook in post_hooks:
+            text = await hook.on_stream_chunk(session, requests, agent, text)
+            if text is None:
+                break
+        if text is None:
+            continue                      # hook dropped the whole chunk, event included
+        if text != ev.content:
+            ev = ev.model_copy(update={"content": text})
+
+    yield StreamChunk(delta=text if isinstance(ev, TextDelta) else None, event=ev)
+```
+
+The loop body is unchanged throughout — the transition only ever added a prologue and an epilogue
+around it. What PR 6 removes is the `TRANSITIONAL` comment, the `legacy_message_id` declaration, the
+`isinstance(ev, str)` block, and the trailing `if legacy_message_id is not None:` yield.
+
+- **Two imports go stale with it.** `core/runtime.py` does not import `uuid` today, so PR 1 adds
+  `from uuid import uuid4`; nothing uses it afterwards. `MessageStart` and `MessageEnd` are likewise
+  only ever constructed by `Runtime` for the synthetic message — real adapters emit their own — so
+  both drop out of the import from `core/events.py`. `TextDelta` and `ReasoningDelta` stay.
+- **Deletion hazard: two `isinstance` calls survive, and both are permanent.**
+  `isinstance(ev, (TextDelta, ReasoningDelta))` is rule 3 (which text reaches hooks) and
+  `isinstance(ev, TextDelta)` is rule 5 (which text reaches `delta`, keeping reasoning out). Only
+  `isinstance(ev, str)` is scaffolding. Removing the second by mistake would silently put reasoning
+  back into `delta` and re-introduce the consumer regression rule 5 exists to prevent — and, as with
+  the hook bypass, the suite would stay green apart from the rule 5 assertion in
+  `test_runtime_stream_events.py`, which is the guard.
 
 **Deferred, and stated here because it is a security limit rather than an oversight.** Tool-call
 arguments and results therefore reach the client with no hook able to inspect them. Two facts make
@@ -209,7 +273,7 @@ anticipate it; when it lands, the projection in this section is the single place
 
 ### 5. AG-UI state on the session — `core/base.py`
 
-A fourth member on the existing enum (`core/base.py:39-47`):
+A fourth member on the existing enum (`core/base.py:40-48`):
 
 ```python
 class Keys(Enum):
@@ -219,7 +283,7 @@ class Keys(Enum):
     AGUI_STATE = "agui_state"
 ```
 
-with accessors modelled exactly on the `framework_context` trio (`core/base.py:165-192`):
+with accessors modelled exactly on the `framework_context` trio (`core/base.py:186-213`):
 
 ```python
 def get_agui_state(self) -> dict | None:      # live dict, never auto-creates
@@ -230,30 +294,47 @@ def clear_agui_state(self) -> None
 Absent reads back as `None`, matching `get_framework_context`. Nothing outside `Session` spells the
 raw key string.
 
-`forwardedProps` gets **no** enum member. It lives in the volatile cache under the module-level
-constant `AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"`, because `Runtime` already clears that
-cache after every run (`core/runtime.py:220-221, 257-258`) and the field is per-request by nature.
+`forwardedProps` gets **no** enum member. It lives in the volatile cache under
+`AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"`, because `Runtime` already clears that cache
+after every run (`core/runtime.py:230, 275`) and the field is per-request by nature.
+
+The constant is defined in **`core/agui_state.py`** (§6) — not in `core/base.py`, and not in
+`integration/agui/`. Both users need it: the read tool in `core/` and `envelope.py` in
+`integration/`, and `core/` may not import from `integration/`, so `core/agui_state.py` is the only
+placement that lets both import it. `envelope.py` imports it from there rather than redeclaring the
+string.
 
 ### 6. System tools — `core/agui_state.py` (new)
 
 ```python
+AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"   # volatile-cache keys, owned here (§5)
+AGUI_CONTEXT_KEY = "agui_context"
+
 def get_agui_state() -> dict:          # returns {} when unset
 def update_agui_state(updates: dict) -> dict   # shallow merge, returns the merged dict
 def get_forwarded_props() -> dict      # returns {} when unset
+def get_agui_context() -> list[dict]   # returns [] when unset; {description, value} pairs
 
 def get_agui_state_tools() -> list[SystemTool]      # gated by agui.state
-def get_forwarded_props_tools() -> list[SystemTool] # gated by agui.forwarded_props
+def get_forwarded_props_tools() -> list[SystemTool] # gated by agui.forwarded_props; returns BOTH
+                                                    # get_forwarded_props and get_agui_context
 ```
 
-- All three reach the session through `ToolContext.get().session` (`core/tool.py:90-100`), the same
+- All four reach the session through `ToolContext.get().session` (`core/tool.py:90-100`), the same
   handle every tool uses. They never take a session parameter, because the docstring is the LLM tool
   schema and a session argument would be exposed to the model.
 - `update_agui_state` shallow-merges, matching `_store_framework_context`'s semantics
-  (`core/base.py:278`). A key set to `None` by the caller is stored as `None`, not deleted — deletion
+  (`core/base.py:299`). A key set to `None` by the caller is stored as `None`, not deleted — deletion
   is the client's job via a fresh `state` on the next request.
+- One config block, two tools. `agui.forwarded_props` gates both `get_forwarded_props` and
+  `get_agui_context`: they are the same capability — read-only, client-supplied, pull-based context
+  the model may consult but must not obey — and splitting them into two flags would make an operator
+  reason about a distinction that does not exist. **Open for review:** the block's name now
+  undersells what it governs; `agui.client_context` would describe it better, and renaming costs
+  nothing before implementation.
 - Docstrings are load-bearing: they are the tool descriptions the model reads, and
-  `get_forwarded_props`' docstring is the only mitigation for the "model never calls it" risk
-  `design.md` accepts. They must say what the data is and when to call, and must not describe
+  `get_forwarded_props`' and `get_agui_context`' docstrings are the only mitigation for the "model
+  never calls it" risk `design.md` accepts. They must say what the data is and when to call, and must not describe
   implementation.
 
 ### 7. `SystemToolFactory` — `core/tool.py:178-200`
@@ -269,7 +350,7 @@ if state_cfg and state_cfg.enabled and SystemToolFactory._agent_allowed(state_cf
 
 fp_cfg = getattr(agui_cfg, "forwarded_props", None) if agui_cfg else None
 if fp_cfg and fp_cfg.enabled and SystemToolFactory._agent_allowed(fp_cfg, agent_name):
-    from .agui_state import get_forwarded_props_tools
+    from .agui_state import get_forwarded_props_tools   # get_forwarded_props + get_agui_context
     tools.extend(get_forwarded_props_tools())
 ```
 
@@ -327,44 +408,92 @@ dangling reference is never passed to the agent.
 
 ```
 integration/agui/
-├── __init__.py        # exports AGUIRequestHandler, AGUIAuthoriser
-├── handler.py         # AGUIRequestHandler(RESTRequestHandler)
-├── authoriser.py      # AGUIAuthoriser(ABC)
+├── __init__.py        # exports AGUIRequestHandler
+├── handler.py         # AGUIRequestHandler(AuthorisedRESTRequestHandler)
 ├── mapping.py         # to_agui(event) -> ag_ui event | None
-└── envelope.py        # RunAgentInput -> AgentRequest list, state, forwardedProps
+└── envelope.py        # RunAgentInput -> AgentRequest list, state, forwardedProps, context
 ```
 
-**`authoriser.py`** mirrors `integration/thread/authoriser.py` exactly — an ABC with
-`authorise(token: str) -> Optional[str]`. Copied rather than shared: `design.md` requires each
-integration to own its authoriser so both stay dependency leaves.
+**There is no `authoriser.py`, and this reverses an earlier decision in this spec.** It used to
+specify an `AGUIAuthoriser` ABC copied from `integration/thread/authoriser.py`, on `design.md`'s rule
+that each integration owns its authoriser so both stay dependency leaves. **That file no longer
+exists.** PR #632 (`10f9dda0`, on `develop`) deleted it and hoisted the ABC to a shared
+`auth/authoriser.py`, which the thread integration now imports. Copying it would mean re-forking an
+abstraction the codebase has just deliberately unified, so AG-UI uses the shared one. `design.md`'s
+own-your-authoriser requirement is superseded and updated there.
 
-**`handler.py`** implements `RESTRequestHandler` (`api/handler.py:15-33`), whose only contract is
-`get_router() -> APIRouter`.
+The same PR also added two pieces AG-UI would otherwise have hand-rolled:
+
+- **`AuthorisedRESTRequestHandler`** (`api/handler.py:37-71`) — a base class owning the constructor,
+  the Bearer parsing and the 401 mapping, exposing `_resolve_user(request)`. `ThreadRESTRequestHandler`
+  now extends it (`integration/thread/thread_chat.py:196`).
+- **`AuthValidatorAuthoriser`** (`auth/authoriser.py:35-56`) — an adapter presenting an existing
+  `AuthValidator` as an `Authoriser`. This *is* the "`AuthValidator` fallback" this spec previously
+  described building by hand.
+
+**`handler.py`** therefore extends `AuthorisedRESTRequestHandler`:
 
 ```python
-class AGUIRequestHandler(RESTRequestHandler):
-    def __init__(self, authoriser: Optional[AGUIAuthoriser] = None): ...
+class AGUIRequestHandler(AuthorisedRESTRequestHandler):
+    def __init__(self,
+                 authoriser: Optional[Authoriser] = None,
+                 auth_validator: Optional[AuthValidator] = None): ...
     def get_router(self) -> APIRouter: ...
 ```
 
-- `__init__` fails fast: it imports `ag_ui` and raises a `ValueError` naming the `agui` extra if the
-  import fails, and raises if neither an `AGUIAuthoriser` nor a registered `AuthValidator` is
-  available. AG-UI routes are never open.
+- `__init__` fails fast on three counts: it imports `ag_ui` and raises a `ValueError` naming the
+  `agui` extra if the import fails; it resolves the authoriser as `authoriser or
+  AuthValidatorAuthoriser(auth_validator)` and **raises when both are `None`**; and it validates
+  `default_agent` against `agui.agents`.
+- The never-open rule needs that explicit raise, because the inherited behaviour is the opposite:
+  `AuthorisedRESTRequestHandler._resolve_user` returns `None` when no authoriser is configured, which
+  leaves routes open — correct for thread reads, wrong for AG-UI. AG-UI narrows the base contract
+  rather than reimplementing it.
+- `auth_validator` is an explicit constructor parameter, not a lookup. `RESTAPI.add_auth_handlers`
+  (`api/http.py:149-175`) turns validators into FastAPI dependencies and keeps no retrievable
+  registry, so there is nothing for the handler to query.
 - Routes, mirroring A2A's prefix-per-agent shape (`api/a2a/handler.py:50-75`):
 
   | Method | Path | Purpose |
   |---|---|---|
-  | `GET` | `/agui/agents` | discovery; lists only `supports_streaming` agents |
+  | `GET` | `/agui/agents` | discovery; lists the **intersection** of `supports_streaming` agents and `agui.agents` |
   | `POST` | `/agui/{agent_name}` | run an agent |
   | `POST` | `/agui` | run the default agent, registered only when one is configured |
 
-- Identity resolves **inside** the route, not via router-level `Depends`, which do not hand their
-  return value to the endpoint. The resolution helper is a copy of
-  `ThreadRESTRequestHandler._resolve_user` (`integration/thread/thread_chat.py:218-237`) with the
-  no-authoriser branch replaced by the `AuthValidator` fallback and the "open route" case removed.
+- Identity resolves **inside** the route by calling the inherited `_resolve_user(request)`, not via
+  router-level `Depends`, which do not hand their return value to the endpoint. Nothing is copied:
+  the base class already parses the Bearer header and maps failures to 401, and the constructor above
+  has already guaranteed an authoriser exists, so the base's open-route branch is unreachable here.
+- Both run routes enforce `agui.agents` before anything else: an agent absent from the list is
+  treated exactly as an unknown agent (404), so the surface never reveals that a name exists but is
+  not exposed. `default_agent` is validated against the same list at startup.
 - The run body is a `StreamingResponse` over an async generator that emits `RunStarted`, then
   `to_agui(chunk.event)` for each chunk whose `event` is not `None` and maps to something, then
   `StateSnapshot` when the state changed, then exactly one of `RunFinished` / `RunError`.
+- **Every event is serialised through the SDK's `EventEncoder`**, constructed per request as
+  `EventEncoder(accept=request.headers.get("accept"))`, and the response's media type is
+  `encoder.get_content_type()` rather than a hard-coded string.
+  - **Verified against the pinned SDK, and it is weaker than it looks:** `EventEncoder.__init__` is
+    `pass` — it stores nothing — and `get_content_type()` returns `"text/event-stream"`
+    unconditionally in every release from 0.1.9 to 0.1.20, including for
+    `application/vnd.ag-ui.event+proto`. So negotiation is a no-op today and the surface always
+    replies SSE. `design.md`'s "media type negotiated from the request's `Accept` header" describes
+    the SDK's intent, not its behaviour.
+  - Going through the encoder anyway is still correct: it owns the `data: {json}\n\n` framing and
+    the `by_alias=True, exclude_none=True` dump, so AK never hand-rolls the wire format, and the day
+    the SDK implements negotiation AK inherits it with no code change.
+- **Version-skew leniency is enforced in `envelope.py`, and only half of it comes free:**
+  - *Unknown fields* — free. Every SDK model inherits `ConfiguredBaseModel`, which sets
+    `extra="allow"`, so a future top-level field or message attribute parses and is ignored
+    (verified: a `RunAgentInput` carrying an unknown key constructs and retains it).
+  - *Unknown message types* — **not** free, and this is the trap. `Message` is a discriminated union
+    on `role`, so an unrecognised role raises `ValidationError` and FastAPI turns it into a 422
+    before the handler runs. To honour the requirement, the route takes the body as a raw `dict`,
+    drops `messages` entries whose `role` is not in the SDK's `Role` literal, and only then
+    constructs `RunAgentInput`. A test asserts a message with role `"quantum"` is dropped rather
+    than rejected.
+  - *Outbound* — `to_agui` returns `None` for any AK event it cannot fully populate, and the handler
+    skips `None`, which is what "never emits an event type it cannot fully populate" means in code.
 - The handler calls `ChatService.execute_stream` — the execution core, not the presentation wrappers
   — because it owns its own transport and error shape. This is the Slack precedent in
   `ak-dev-architecture`'s routing rubric.
@@ -385,13 +514,49 @@ A `match` on the discriminator, not a dict — matching how adapters translate t
 
 **`envelope.py`** maps `RunAgentInput` onto AK types, and is where the trust boundary is enforced:
 
+SDK models set `alias_generator=to_camel`, so every field below is `snake_case` in Python and
+`camelCase` on the wire (`forwarded_props` ↔ `forwardedProps`). This table uses the Python names.
+
 | Field | Destination |
 |---|---|
 | `thread_id` | `session_id` |
+| `run_id`, `parent_run_id` | echoed on `RunStarted` / `RunFinished` for correlation; never stored |
 | `state` | `session.set_agui_state(...)`, only when not `None` |
-| `forwardedProps` | `session.get_volatile_cache().set(AGUI_FORWARDED_PROPS_KEY, ...)` |
-| message content | `AgentRequestText` / `AgentRequestImage` / `AgentRequestFile`, verbatim |
-| `tools`, `messages`, system prompts | dropped |
+| `forwarded_props` | `session.get_volatile_cache().set(AGUI_FORWARDED_PROPS_KEY, ...)` |
+| `context` | `session.get_volatile_cache().set(AGUI_CONTEXT_KEY, [...])`, read back by `get_agui_context()` |
+| final `user` message content | `AgentRequestText` / `AgentRequestImage` / `AgentRequestFile` (see below) |
+| `tools`, all earlier messages, non-`user` messages, system prompts, `resume` | dropped |
+
+**`context` is delivered as tool output, never as instructions.** `design.md` requires the
+anti-injection posture, and the mechanism is the one `forwardedProps` already uses: the entries land
+in the volatile cache and the model pulls them through a read-only `get_agui_context()` system tool
+in `core/agui_state.py`, gated by the same `agui.forwarded_props` config block. `Context` is
+`{description: str, value: str}` (verified against the SDK), so the tool returns a list of those
+pairs unchanged — no flattening into the prompt, which is exactly what would turn client text into
+instructions. That makes **four** system tools in total, not three.
+
+**Message content — verified against `ag-ui-protocol` 0.1.16–0.1.20, and the reason the floor moves.**
+`UserMessage.content` is `Union[str, List[InputContent]]`, where `InputContent` is a union
+discriminated on `type`:
+
+| Content type | Carries | Maps to |
+|---|---|---|
+| `TextInputContent` | `text: str` | `AgentRequestText` |
+| `ImageInputContent` | `source` | `AgentRequestImage` |
+| `DocumentInputContent` | `source` | `AgentRequestFile` |
+| `AudioInputContent`, `VideoInputContent` | `source` | `HTTPException(400)` — AK has no request type |
+| `BinaryInputContent` | `mime_type` + one of `id` / `url` / `data` | deprecated in the SDK (it raises `DeprecationWarning` on construction); accepted, `data` and `url` handled as below, `id` rejected with 400 |
+
+`source` is itself a union discriminated on `type`: `InputContentDataSource` (`type: "data"`,
+`value` = base64, `mime_type` required) or `InputContentUrlSource` (`type: "url"`, `value` = URL,
+`mime_type` optional). **Both forms occur**, which is precisely why the multimodal fix in PR 2 is a
+prerequisite rather than a nice-to-have: a URL-sourced attachment reaching today's
+`_extract_attachment` is stored as though the URL text were the bytes.
+
+`design.md`'s "`RunAgentInput.messages` is ignored" means the **history** is ignored — AK rebuilds it
+from the session store. The final `user` message is the turn's input and is converted; everything
+before it is dropped. Stated here because the two readings differ and the table above is the
+binding one.
 
 **No function in this package writes `framework_context`.** A test asserts it
 (`test_agui_envelope.py`, below).
@@ -424,7 +589,7 @@ cross-session bug rather than a crash:
   `PartStartEvent.index`. PRs 4 and 6 must take that route rather than generating and storing ids.
 
 **Pydantic AI's rewrite must re-plumb two things** currently inside the `async with run_stream(...)`
-block (`framework/pydanticai/pydanticai.py:204-211`): `fw_session.messages = to_jsonable_python(...)`
+block (`framework/pydanticai/pydanticai.py:205-211`): `fw_session.messages = to_jsonable_python(...)`
 and `_store_framework_context`. Both must still run only after the stream drains normally — inside
 the `try`, after the loop, never in `finally` — so a disconnect leaves the stored context intact.
 
@@ -448,12 +613,12 @@ PR 6 also deletes the transitional `str` branch from §4.
 
 | Consumer | Change |
 |---|---|
-| `ResponseBuilder.stream_chunk` (`core/chat_service.py:310-321`) | **None.** `model_dump(exclude_none=True)` picks up `event` automatically and omits it when `None` |
-| `ThreadRecorder` / `AgentThreadRequestHandler` (`integration/thread/thread_chat.py:157-161`) | **None.** It reads `chunk.delta`, which keeps its type and meaning |
-| `AgentService.stream_multi` (`core/service.py:167`) | **None.** It forwards `StreamChunk` objects |
+| `ResponseBuilder.stream_chunk` (`core/chat_service.py:314-325`) | **None.** `model_dump(exclude_none=True)` picks up `event` automatically and omits it when `None` |
+| `ThreadRecorder` / `AgentThreadRequestHandler` (`integration/thread/thread_chat.py:155-162`) | **None.** It accumulates `chunk.delta` under `if chunk.delta:`, so the event-only chunks it now receives are skipped, and `delta` keeps its type and meaning — reasoning is deliberately excluded from the projection (§4 rule 5) so the recorded assistant message stays exactly what it is today |
+| `AgentService.stream_multi` (`core/service.py:171`) | **None.** It forwards `StreamChunk` objects |
 | `PostHook.on_stream_chunk` (`core/hooks.py:73-85`) | **Signature unchanged.** Behaviour change: its return value is now written back into the event |
 | Pipeline response handler / stores | **None.** `StreamChunk` stays picklable and JSON-serialisable |
-| `AgentRESTRequestHandler.AGENTS_PATH` (`api/handler.py:46`) | **None.** AG-UI discovery is a separate route |
+| `AgentRESTRequestHandler.AGENTS_PATH` (`api/handler.py:84`) | **None.** AG-UI discovery is a separate route |
 
 ### Config changes
 
@@ -465,8 +630,8 @@ class _AGUIStateConfig(BaseModel):
     agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 class _AGUIForwardedPropsConfig(BaseModel):
-    enabled: bool = Field(default=False, description="Expose the AG-UI forwarded-props tool to agents")
-    agents: Optional[list[str]] = Field(default=None, description="Agent names the tool attaches to; omitted = all agents")
+    enabled: bool = Field(default=False, description="Expose the read-only AG-UI client-context tools (forwarded props and context) to agents")
+    agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 class _AGUIConfig(BaseModel):
     """Parameterizes a mounted AGUIRequestHandler. Mounting the handler is what enables AG-UI;
@@ -493,12 +658,18 @@ One new extra in `ak-py/pyproject.toml`:
 
 ```toml
 agui = [
-    "ag-ui-protocol>=0.1.9",
+    "ag-ui-protocol>=0.1.16",
 ]
 ```
 
-The floor is pinned per `design.md`; the exact minimum is confirmed against the released package
-before the PR.
+**The floor is 0.1.16, and it is load-bearing — an earlier draft of this spec said 0.1.9.** That was
+wrong in a way that would have failed at implementation time: in 0.1.9 through 0.1.15,
+`UserMessage.content` is a plain `str`, and none of `TextInputContent`, `ImageInputContent`,
+`DocumentInputContent` or `InputContentSource` exist. `ImageInputContent` first appears in **0.1.16**
+(verified by downloading and inspecting every wheel from 0.1.4 to 0.1.20). Below that floor the
+envelope's attachment mapping has no inbound source at all and PR 2's multimodal work has nothing to
+receive. Latest at time of writing is 0.1.20; no upper bound is pinned, per `design.md`'s pre-1.0
+posture.
 
 ### Behavioural changes
 
@@ -509,18 +680,26 @@ before the PR.
 3. **`PostHook.on_stream_chunk`'s return value now also rewrites the event's text.** Intentional, and
    a security fix in advance: without it a redaction hook would leak the original text through
    `event`.
-4. **`ReasoningDelta` text passes through the post-hook chain.** Intentional — it is user-visible
-   text, and a redaction hook that skipped it would be a hole. It is new text reaching hooks that
-   never saw it before, because reasoning was previously discarded at the adapter.
-5. **Tool-call arguments and results reach the client uninspected.** Intentional and deferred, not
+4. **`ReasoningDelta` text passes through the post-hook chain, but not into `delta`.** Intentional
+   — it is user-visible text, so a redaction hook that skipped it would be a hole, but projecting it
+   into `delta` would interleave chain-of-thought into every plain-text surface and persist it into
+   recorded threads. It is new text reaching hooks that never saw it before, because reasoning was
+   previously discarded at the adapter. See §4 rule 5.
+5. **Streams now contain chunks with `delta=None`.** Intentional. Non-text events (tool calls, step
+   and message boundaries) carry `event` with no `delta`, and during the PR 1 → PR 6 transition the
+   synthetic `MessageStart` / `MessageEnd` pair does too. Every in-repo consumer already guards on
+   truthiness (`integration/thread/thread_chat.py:158`) or drops the key entirely via
+   `model_dump(exclude_none=True)` (`core/chat_service.py:322`), so no in-repo behaviour changes; a
+   third-party client that assumes every non-terminal chunk has a `delta` sees more frames.
+6. **Tool-call arguments and results reach the client uninspected.** Intentional and deferred, not
    an oversight — see §4. Documented in PR 3's docs; the fix is an event-aware post-hook filed as its
    own issue.
-6. **Non-bare-base64 attachments now work with `multimodal.enabled: true`.** Intentional bug fix.
+7. **Non-bare-base64 attachments now work with `multimodal.enabled: true`.** Intentional bug fix.
    Today `data:` double-prefixes and URLs are stored as though they were bytes
    (`core/multimodal/hooks.py:82, 226-232, 246-256`).
-7. **URL-sourced attachments now reach the adapter instead of being stripped.** Intentional, and the
+8. **URL-sourced attachments now reach the adapter instead of being stripped.** Intentional, and the
    consequence of 6: the pre-hook declines them, so the filter loop must keep them.
-8. **Agents gain up to three system tools and one prompt-suffix paragraph** when the new flags are
+9. **Agents gain up to four system tools and one prompt-suffix paragraph** when the new flags are
    on. Off by default.
 
 **Non-changes**, verified and load-bearing:
@@ -542,15 +721,20 @@ before the PR.
 |---|---|
 | `ag-ui-protocol` not installed | `AGUIRequestHandler.__init__` raises `ValueError` naming the `agui` extra. Importing `agentkernel` without it must not fail — the import lives in `__init__`, not at module scope |
 | No authoriser and no `AuthValidator` | `__init__` raises. Never falls back to anonymous |
-| Missing / malformed `Authorization` header | `HTTPException(401)`, matching `integration/thread/thread_chat.py:226-233` |
+| Missing / malformed `Authorization` header | `HTTPException(401)`, matching `api/handler.py:52-71` |
 | Authoriser returns `None` | `HTTPException(401)` |
 | Unknown `agent_name` | `HTTPException(404)` |
+| `agent_name` exists but is not in `agui.agents` | `HTTPException(404)`, identical to unknown. Deliberately indistinguishable, so the surface does not confirm that a name exists |
+| `default_agent` set to a name absent from `agui.agents` | `__init__` raises. A startup error, not a per-request one |
 | Agent whose runner declares `supports_streaming = False` | `HTTPException(400)` naming the framework and pointing at the follow-up issue. Live path from day one for any app with a CrewAI or smolagents agent |
 | Pre-hook halts the run (guardrail rejection) | `RunStarted` already sent, so the stream ends with `RunError` carrying the halt reply's text |
 | Agent raises mid-stream | `RunError`, then the generator closes |
 | Client disconnects | Nothing. The generator is closed and there is nobody to write to; no terminal event is attempted |
 | `RunAgentInput.state` is `None` or absent | Stored state is left untouched. **Not** cleared |
 | Audio / video content in the envelope | `HTTPException(400)` with an explanatory message. AK has no equivalent request type |
+| Message with an unrecognised `role` | Dropped before validation, not rejected. Required by `design.md`'s lenient-skew rule; without the pre-filter the SDK's discriminated union raises `ValidationError` and FastAPI returns 422 |
+| `BinaryInputContent` carrying only `id` | `HTTPException(400)`. The id references a store AK does not have; `data` and `url` are both handled |
+| Unknown top-level field in `RunAgentInput` | Ignored. Free from the SDK's `extra="allow"` |
 | `_extract_attachment` meets a malformed `data:` URI | Falls through to the bare-base64 path rather than raising, so one bad attachment cannot fail the run |
 
 ---
@@ -564,12 +748,12 @@ Run with `cd ak-py && uv run pytest`.
 | File | Asserts |
 |---|---|
 | `tests/test_stream_events.py` | Discriminated-union round trip: every member serialises with its `type` and re-parses to the same class; every field is JSON-serialisable |
-| `tests/test_runtime_stream_events.py` | `Runtime.stream` populates `delta` and `event` together; a hook that redacts rewrites **both** (the §4 rule 1 check); a hook returning `None` drops the whole chunk; non-text events skip hooks; the transitional `str` branch yields `StreamChunk(delta=..., event=None)` |
+| `tests/test_runtime_stream_events.py` | `Runtime.stream` populates `delta` and `event` together; a hook that redacts rewrites **both** (the §4 rule 1 check); a hook returning `None` drops the whole chunk; non-text events skip hooks; **`ReasoningDelta` reaches the hook chain but never reaches `delta`** (rule 5); and for the transitional branch — **a `str`-yielding runner's tokens are redacted and dropped by `on_stream_chunk` exactly as a `TextDelta`-yielding one's are** (rule 4), wrapped in one synthetic `MessageStart`/`MessageEnd` pair sharing a single `message_id`. The hook assertions are the regression guard: no test in the suite references `on_stream_chunk` today, so nothing else would catch the chain being bypassed |
 | `tests/test_multimodal_source_forms.py` | All five source forms through `MultimodalPreHook`: bare base64 stored as today; `data:` split with its real mime type; `http`/`https`/`s3` neither described nor stored **and still present in the returned request list** |
-| `tests/test_agui_envelope.py` | `thread_id`→`session_id`; `state` stored, `None` does not clobber; `forwardedProps` in the volatile cache; `tools`/`messages` dropped; **`session.get_framework_context()` is `None` after every envelope mapping** |
+| `tests/test_agui_envelope.py` | `thread_id`→`session_id`; `state` stored, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` is dropped rather than 422; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every envelope mapping** |
 | `tests/test_agui_mapping.py` | Exhaustiveness: enumerate every member of the `StreamEvent` union and assert `to_agui` returns either an AG-UI event or an explicit `None` from a known-unmapped allowlist. A new event type with no decision fails this test |
-| `tests/test_agui_handler.py` | Route shape; 401/404/400 paths; `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; `StateSnapshot` only when state changed |
-| `tests/test_agui_state_tools.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, and respects `agents` scoping |
+| `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; `StateSnapshot` only when state changed |
+| `tests/test_agui_state_tools.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.forwarded_props.enabled`, and respects `agents` scoping |
 
 ### Existing test files that change
 
@@ -579,7 +763,7 @@ Run with `cd ak-py && uv run pytest`.
 | `tests/test_langgraph_runner.py:133, 167` | same | 4 |
 | `tests/test_adk_runner.py:269, 303, 322` | same, plus the derived `MessageStart`/`MessageEnd` | 5 |
 | `tests/test_pydanticai_runner.py:159` | same, plus `framework_context` round trip preserved across the rewrite | 6 |
-| — | **PR 6 additionally** adds a test asserting a `str`-yielding runner now fails, and deletes the transitional branch | 6 |
+| — | **PR 6 additionally** deletes the transitional branch and adds a test asserting a `str`-yielding runner now fails — asserting the `ValidationError` in §4 rule 6, not merely an absence of output | 6 |
 
 These four are the *only* existing files expected to change. They assert on `Runner.stream` output
 directly, which is the contract being changed.

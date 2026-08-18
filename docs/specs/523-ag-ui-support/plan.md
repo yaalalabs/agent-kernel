@@ -43,15 +43,20 @@ untouched.
     return annotation (§3). Declare `False` on `CrewAIRunner` and `SmolagentsRunner`; leave their
      bodies raising.
   4. Rewrite the `Runtime.stream` loop (§4): text extraction, hook chain, write-back into the event,
-    `None` drops the whole chunk, and the transitional `str` branch carrying the comment that names
-     PR 6.
-  5. Write the two new test files.
+    `None` drops the whole chunk, `ReasoningDelta` through the hooks but out of `delta`, and the
+     transitional `str` branch — which **normalizes into a `TextDelta` and falls through the same
+     hook chain**, wrapped in one synthetic `MessageStart`/`MessageEnd` pair, carrying the comment
+     that names PR 6. A branch that yields the string and skips the hooks silently disables every
+     `on_stream_chunk` hook until PR 6; §4 rule 4 explains why no existing test would catch it.
+  5. Write the two new test files. `test_runtime_stream_events.py` must assert hooks apply to the
+    transitional `str` path and that reasoning never reaches `delta` — those two are the regression
+     guards for step 4, and nothing in the current suite references `on_stream_chunk`.
   6. Docs and skills, all invalidated by this PR's contract change:
-     `core-concepts/runner.md` (35, 55, 59, 122-136), `integrations/hooks.md` (176-188),
+     `core-concepts/runner.md` (35, 54, 59, 129), `integrations/hooks.md` (210-233),
      `architecture/execution-flow.md` (173-193 and 366-387),
-     `ak-dev-architecture/SKILL.md` (61, 90-93),
-     `ak-dev-new-framework-integration/SKILL.md` (158, 376),
-     `ak-dev-testing-conventions/SKILL.md` (109).
+     `ak-dev-architecture/SKILL.md` (63, 95, 224, 810-814),
+     `ak-dev-new-framework-integration/SKILL.md` (132, 151-156, 160, 378),
+     `ak-dev-testing-conventions/SKILL.md` (120-123).
 - **Verify:** `cd ak-py && uv run pytest` — green with **zero edits to existing tests**. That is the
 gate, not a nicety: an edit anywhere else means the projection in §4 is wrong.
 
@@ -84,29 +89,35 @@ is testable at each step.
 - **Goal:** a compliant AG-UI client can discover agents, start a run, receive the event stream, and
 round-trip state.
 - **Files:** `core/base.py`, `core/agui_state.py` (new), `core/tool.py`, `core/config.py`,
-`ak-py/pyproject.toml`, `integration/agui/` (new, 5 modules), `examples/api/agui/` (new),
+`ak-py/pyproject.toml`, `integration/agui/` (new, 4 modules), `examples/api/agui/` (new),
 `docs/docs/`, plus four new test files
 - **Steps:**
   1. **Session key first** — `Session.Keys.AGUI_STATE` and its three accessors (§5). Independently
     testable, and everything else leans on it.
-  2. `core/agui_state.py` — the three tool functions and their two `SystemTool` builders (§6).
-    Docstrings are the LLM-facing tool schema; write them as such.
+  2. `core/agui_state.py` — the four tool functions (`get_agui_state`, `update_agui_state`,
+    `get_forwarded_props`, `get_agui_context`), their two `SystemTool` builders, and the two
+     volatile-cache key constants this module owns (§5, §6). Docstrings are the LLM-facing tool
+     schema; write them as such.
   3. Config: `_AGUIConfig` with the nested `state` and `forwarded_props` blocks (§Config changes),
     then the two `SystemToolFactory` branches (§7). Both flags default `False`.
-  4. `integration/agui/authoriser.py` and `envelope.py` (§9). Envelope mapping is pure and testable
-    without a server.
+  4. `integration/agui/envelope.py` (§9) — there is **no** `authoriser.py`: AG-UI uses the shared
+    `auth/authoriser.py` and `AuthorisedRESTRequestHandler` that PR #632 added to `develop`. Envelope
+     mapping is pure and testable without a server; cover every `InputContent` type for both `data`
+     and `url` sources, and the unknown-`role` drop.
   5. `integration/agui/mapping.py` — `to_agui` plus its exhaustiveness test. Write the test with the
     mapping, not after.
   6. `integration/agui/handler.py` — routes, identity, run lifecycle, `StateSnapshot` (§9).
-  7. `agui` extra in `pyproject.toml`; confirm the `ag-ui-protocol` floor against the released
-    package before pinning.
+  7. `agui` extra in `pyproject.toml`, pinned `ag-ui-protocol>=0.1.16` — the floor is confirmed, not
+    pending: the multimodal `InputContent` types first appear in 0.1.16 (§ the `agui` extra).
   8. `examples/api/agui/` — one static HTML file, no build step. It must show a tool call live *and*
     a state round-trip, and ship the config that enables both tool groups.
   9. Docs: the fidelity matrix, the `thread_id`→`session_id` note, the ignored-`tools` non-goal,
     `forwardedProps` being read-only and pull-based, AG-UI state's session lifetime, and the
      tool-call redaction limit (§4 deferred note).
 - **Verify:** `uv run pytest tests/test_agui_*.py`, then the full suite. Manually: run the example,
-attach a file, confirm a tool call renders and a `StateSnapshot` arrives.
+attach a file, confirm streamed text renders and a `StateSnapshot` arrives. **Tool calls cannot
+render yet** — no adapter emits `ToolCallStart` until PR 4, so text arrives here via the
+transitional normalization in §4 and the tool-call half of the example is exercised at PR 4.
 
 
 
@@ -159,7 +170,9 @@ full suite.
   3. Update `tests/test_pydanticai_runner.py`, keeping the `framework_context` round-trip assertions
     intact — that is the regression this rewrite most easily causes.
   4. **Only once iterations 4 and 5 have merged:** delete the transitional `str` branch from
-    `Runtime.stream`, and add a test asserting a `str`-yielding runner now fails loudly.
+    `Runtime.stream`, and add a test asserting a `str`-yielding runner now fails loudly — the
+     assertion is the pydantic `ValidationError` from `StreamChunk.event` rejecting a bare `str`
+     (§4 rule 6), not merely an absence of output.
 - **Verify:** `uv run pytest` — full suite. Grep `core/runtime.py` for the transitional comment and
 confirm it is gone.
 
@@ -178,24 +191,25 @@ record. Every row was located by search.
 
 | File | Line | What changes | Owner |
 |---|---|---|---|
-| `ak-dev-architecture/SKILL.md` | 61 | `Runner.stream` is no longer `AsyncGenerator[str, None]`; add `supports_streaming` | PR 1 |
-| `ak-dev-architecture/SKILL.md` | 90-93 | `Runtime.stream` — the event write-back and the `delta`/`event` pair | PR 1 |
+| `ak-dev-architecture/SKILL.md` | 63 | `Runner.stream` is no longer `AsyncGenerator[str, None]`; add `supports_streaming` | PR 1 |
+| `ak-dev-architecture/SKILL.md` | 95, 224, 810-814 | `Runtime.stream` — the event write-back and the `delta`/`event` pair | PR 1 |
 | `ak-dev-architecture/SKILL.md` | 42 | `Session.Keys` list gains `AGUI_STATE` and its accessors | PR 3 |
-| `ak-dev-new-framework-integration/SKILL.md` | 158 | "just implement `Runner.stream()`" now means yielding events, with the adapter-state rule | PR 1 |
-| `ak-dev-new-framework-integration/SKILL.md` | 376 | checklist item gains `supports_streaming` | PR 1 |
-| `ak-dev-testing-conventions/SKILL.md` | 109 | the `DummyRunner.stream` snippet yields events, not token strings | PR 1 |
+| `ak-dev-new-framework-integration/SKILL.md` | 132, 151-156, 160 | "just implement `Runner.stream()`" now means yielding events, with the adapter-state rule | PR 1 |
+| `ak-dev-new-framework-integration/SKILL.md` | 378 | checklist item gains `supports_streaming` | PR 1 |
+| `ak-dev-testing-conventions/SKILL.md` | 120-123 | the `DummyRunner.stream` snippet yields events, not token strings | PR 1 |
 
 **Docs** (`docs/docs/`):
 
 | File | Line | What changes | Owner |
 |---|---|---|---|
-| `core-concepts/runner.md` | 35, 55, 59, 122-136 | `stream()` yields events; the `StreamChunk` example gains `event` | PR 1 |
-| `integrations/hooks.md` | 176-188 | `on_stream_chunk` still takes `str`, but its return is written back into the event; add the tool-call limit | PR 1 |
+| `core-concepts/runner.md` | 35, 54, 59, 129 | `stream()` yields events; the `StreamChunk` example gains `event` | PR 1 |
+| `integrations/hooks.md` | 210-233 | `on_stream_chunk` still takes `str`, but its return is written back into the event; add the tool-call limit | PR 1 |
 | `architecture/execution-flow.md` | 173-193 | the streaming sequence diagram shows `Runner.stream()` returning a bare `delta` and the SSE payload as `{"delta": ..., "done": ...}`; both gain `event` | PR 1 |
 | `architecture/execution-flow.md` | 366-387 | the WebSocket `STREAM_CHUNK` payload and the execution-mode table carry the same wire shape | PR 1 |
 | `advanced/multimodal.md` | — | all five source forms now work; state which are described/stored and which pass through | PR 2 |
 | `integrations/overview.md` | — | add AG-UI to the integration list | PR 3 |
-| new page under `advanced/` | — | AG-UI: routes, config, the fidelity matrix, `agui_state`, `forwardedProps` | PR 3 |
+| new page under `advanced/` | — | AG-UI: routes, config, the fidelity matrix, `agui_state`, `forwardedProps`, `context`, and the tool-call redaction limit | PR 3 |
+| `advanced/threads.md` | — | verified: no change. It documents the `Authoriser` AG-UI now shares, but AG-UI adds no thread behaviour | — |
 
 PR 1 owns most of it, which is expected: it is the PR that changes the contract everything else
 describes.

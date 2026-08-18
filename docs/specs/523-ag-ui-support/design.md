@@ -12,6 +12,10 @@ analysis), `a2ui.md` (the related protocol, out of scope here), and `decision-lo
 settled in review, with the verified code facts behind them; **partly superseded by this document**
 — see the status note at its top).
 
+All `path:line` citations are against `develop` at `97a272e1`, re-verified mechanically. Two
+requirements below were reversed because `develop` moved under them — the AG-UI-owned authoriser and
+the `ag-ui-protocol` floor — and both say so inline rather than being quietly rewritten.
+
 ## Motivation
 
 - AK's entire streaming vocabulary is three fields — `StreamChunk(delta, done, error)`
@@ -21,7 +25,7 @@ settled in review, with the verified code facts behind them; **partly superseded
   - There is no representation for a tool call, a step, state, or reasoning — the events modern
   chat UIs are built around.
 - The adapters already hold the missing information and discard it, because `Runner.stream` is typed
-`AsyncGenerator[str, None]` (`core/base.py:355`).
+`AsyncGenerator[str, None]` (`core/base.py:376`).
   - OpenAI iterates the SDK's full event stream, then keeps only text deltas
   (`framework/openai/openai.py:224-229`) — tool-call items and handoffs are dropped by the filter.
   - Google ADK `continue`s on every non-partial event (`framework/adk/adk.py:274-286`), which is
@@ -80,7 +84,7 @@ hooks) applies, because execution goes through `Runtime`.
 enqueues, agent runner executes, response handler writes chunks to the response store, handler
 streams them back — is a coherent future topology, but it is not planned or specified here. It
 needs the pipeline's pod-direct WebSocket delivery first: streaming over a broker transport
-already fails fast (`pipeline/io_handler.py:111-112`), and shared response stores implement
+already fails fast (`pipeline/io_handler.py:100-101`), and shared response stores implement
 whole-message storage rather than chunk streaming. It gets its own issue if and when that lands.
 
 
@@ -97,7 +101,7 @@ alongside `integration/thread/` and the messaging platforms.
   serves. `api/` holds machine-to-machine interop — A2A is agents talking to agents, MCP is tools
   and context talking to models.
   - It stays a dependency leaf: nothing in `core/`, `api/` or `pipeline/` imports it.
-- Implemented as a `RESTRequestHandler` (`api/handler.py:15-33`) whose only contract is
+- Implemented as a `RESTRequestHandler` (`api/handler.py:16-34`) whose only contract is
 `get_router() -> APIRouter`.
 - **Mounting the handler is what enables it**, exactly as for conversation threads: the application
 passes it to `RESTAPI.run(handlers=[...])`. There is no `enabled` flag.
@@ -116,8 +120,14 @@ passes it to `RESTAPI.run(handlers=[...])`. There is no `enabled` flag.
 - Route shape mirrors A2A (`api/a2a/handler.py:36-68`): one POST per agent under an `/agui` prefix,
 a discovery route, and a bare-path route only when a default agent is configured.
   - Rationale: `RunAgentInput` carries no agent field, so agent selection must come from the path.
-- Accepts a `RunAgentInput` body and replies with an SSE stream of AG-UI events, with the media type
-negotiated from the request's `Accept` header by the SDK's `EventEncoder`.
+- Accepts a `RunAgentInput` body and replies with an SSE stream of AG-UI events, encoded through the
+SDK's `EventEncoder` and typed from `encoder.get_content_type()` rather than a hard-coded string.
+  - **Correction, verified against the SDK:** `EventEncoder` accepts an `accept` argument but ignores
+  it — `__init__` is `pass` and `get_content_type()` returns `"text/event-stream"` unconditionally in
+  every release from 0.1.9 to 0.1.20. An earlier revision of this document said the media type is
+  "negotiated from the request's `Accept` header"; that describes the SDK's intent, not its
+  behaviour. AK still routes through the encoder — it owns the wire framing, and AK inherits real
+  negotiation for free if the SDK ever implements it — but the surface replies SSE either way.
 - Translation is a **pure function**, `to_agui(event)` in `integration/agui/mapping.py`: a branch per
 AK event discriminator, returning `None` where AG-UI has no equivalent. No class, no state — the
 event model carries the boundaries that would otherwise have to be inferred.
@@ -158,7 +168,7 @@ fail with an explanatory error naming the extra.
   between the two issues.
 - Discovery is a **new route under the AG-UI prefix**, listing only agents whose runner declares
 `supports_streaming = True`.
-  - The existing `AgentRESTRequestHandler.AGENTS_PATH` (`api/handler.py:46`) is left untouched, so
+  - The existing `AgentRESTRequestHandler.AGENTS_PATH` (`api/handler.py:84`) is left untouched, so
   current REST clients see no change. The two lists legitimately differ — that is the point.
 - POSTing a run to a non-capable agent returns an explanatory refusal naming the framework, not a
 generic 500 and not a degenerate single-message run.
@@ -199,10 +209,10 @@ enriched stream AG-UI does.
   the rich events. They do, by construction.
 - **Existing frontends keep working, and that falls out of the serializer rather than a shim.**
 `ResponseBuilder.stream_chunk` dumps with `model_dump(exclude_none=True)`
-(`core/chat_service.py:318`), so a text chunk goes out as `{"delta": "hi", "event": {…}}` — a client
+(`core/chat_service.py:322`), so a text chunk goes out as `{"delta": "hi", "event": {…}}` — a client
 reading `.delta` is unaffected — and a tool-call chunk goes out as `{"event": {…}}` with no `delta`
 at all, which existing clients already skip because `if chunk.delta` is what they all do.
-  - Internal blast radius is one file: `integration/thread/thread_chat.py:157-161` is the only
+  - Internal blast radius is one file: `integration/thread/thread_chat.py:155-162` is the only
   non-test reader of `StreamChunk.delta` in the repo. It appends `chunk.delta` and joins the list,
   which keeps working unchanged.
   - Consequently **no `StreamChunk.text` accessor is needed**, and the latent `TypeError` in the
@@ -211,7 +221,7 @@ at all, which existing clients already skip because `if chunk.delta` is what the
 - **The break is in the runner contract, not on the wire.** These are different audiences and the
 migration note must not merge them:
   - A user-written `Runner` subclass that yields plain `str` **is** broken. `Runtime.stream`
-  (`core/runtime.py:248`) is the sole consumer of `Runner.stream`, and it now builds
+  (`core/runtime.py:264`) is the sole consumer of `Runner.stream`, and it now builds
   `StreamChunk(event=…)`; a bare string arriving there has no discriminator for `to_agui` to match
   and serialises to the wrong shape. Upgrading users fix their runners — that is expected and
   unavoidable; the requirement here is only that they are **told**, rather than discovering it at
@@ -238,6 +248,16 @@ migration note must not merge them:
     line in one place, and nothing else in the design depends on its absence.
   - A user-written *frontend* reading the SSE stream is **not** broken. It keeps receiving `delta`
   and can adopt `event` whenever it wants to.
+  - **Only assistant text is projected into `delta`.** Reasoning is carried on `event` alone, even
+  though it passes through the post-hook chain first (so a redaction hook still sees it). Projecting
+  it would interleave chain-of-thought into every plain-text surface and persist it into recorded
+  threads via `ThreadRecorder` (`integration/thread/thread_chat.py:158-160`) — which would make the
+  "not broken" claim above false. Tool-call arguments are not projected either: they are JSON
+  fragments, and feeding them to a text hook would corrupt them.
+  - The one consequence for a plain-text client: streams now contain chunks carrying `event` with no
+  `delta`. Every in-repo consumer already guards on truthiness or drops null keys on serialisation,
+  so nothing in AK changes; a third-party client that assumed every non-terminal chunk has a `delta`
+  sees more frames.
 - The contract change is additive on its own — the types widen, but nothing emits an event object
 until the adapter work lands.
   - Verification bar: the full existing test suite passes **with zero test edits** at that commit.
@@ -258,15 +278,26 @@ until the adapter work lands.
 one piece of scaffolding in the plan, and it is called out because scaffolding that nobody is
 assigned to remove becomes permanent.
   - Why it must exist: PR 1 changes the contract, but the four adapters keep yielding `str` until
-  PRs 4, 5 and 6. `Runtime.stream` (`core/runtime.py:248`) is the sole consumer, so it must accept
+  PRs 4, 5 and 6. `Runtime.stream` (`core/runtime.py:264`) is the sole consumer, so it must accept
   `str | StreamEvent` for that window — otherwise PR 1 cannot meet its own zero-test-edits gate.
+  - **The tolerance normalizes; it must not short-circuit.** The incoming `str` is converted into a
+  text event and then follows the identical path — post-hook chain included — that a native event
+  follows. A branch that yields the string directly and skips the rest would disable every
+  `on_stream_chunk` hook for the whole PR 1 → PR 6 window, which is every streamed run, and no test
+  in the suite would fail: nothing in `ak-py/tests` references `on_stream_chunk`. PR 1 therefore
+  adds that test alongside the tolerance.
+  - Normalizing is also what makes PR 3 deliverable. The AG-UI surface lands before any adapter emits
+  events, so if the tolerance produced no event object, PR 3 would ship a surface that sends only
+  `RunStarted` and `RunFinished`, with no text.
   - Why it must not survive: leaving it in place means a `str`-yielding runner keeps working, which
   silently reverses the decision above that such runners are broken. The design would say one thing
   and the code do another, with no failing test either way — the tolerance passes whether or not it
   is still needed.
   - **PR 6 owns the removal**, so the step has a named owner rather than being everyone's assumption.
   Its green gate is therefore not only its own per-adapter tests but also: the tolerance is deleted,
-  and a new test asserts that a `str`-yielding runner now fails loudly. The removal itself requires
+  and a new test asserts that a `str`-yielding runner now fails loudly — concretely, `StreamChunk`'s
+  `event` field is the `StreamEvent` discriminated union, so a bare `str` is rejected by pydantic with
+  a `ValidationError` on the first token rather than degrading into an empty stream. The removal itself requires
   all three adapter PRs merged — see Delivery for how that interacts with their sibling ordering.
   - PR 1 must mark the tolerance as transitional where it is written, naming PR 6, so the removal is
   discoverable from the code and not only from this document.
@@ -289,7 +320,7 @@ text-redaction hook must not begin receiving tool-call objects.
     - The exposure is new. Those values are discarded at the adapter today, so nothing could reach a
     client; after this change they do.
     - It is **not** mitigated by output guardrails, and the reason is easy to miss: `Runtime.stream`
-    never calls `PostHook.on_run` (`core/runtime.py:243-259`) — it only runs the per-token
+    never calls `PostHook.on_run` (`core/runtime.py:232-275`) — it only runs the per-token
     `on_stream_chunk`. On a streamed run that token hook is the *entire* output-side defence, so a
     value it cannot see has none.
     - The argument that tool code is application-written does not close it. The **code** is, but the
@@ -329,7 +360,7 @@ AK's vocabulary — and it keeps `Runtime`, `ResponseBuilder` and `to_agui` stat
   `StateSnapshot` (see State). Neither reconstructs anything the event stream failed to say.
 - Pydantic AI's rewrite carries a second cost: the `async with run_stream(...)` block also holds the
 session-message bookkeeping and the `framework_context` store
-(`framework/pydanticai/pydanticai.py:204-211`). Both must be re-plumbed onto the replacement API,
+(`framework/pydanticai/pydanticai.py:205-211`). Both must be re-plumbed onto the replacement API,
 and the `framework_context` store must still run only after the stream drains normally.
 
 
@@ -354,19 +385,26 @@ consults the process-wide mode nor forces it to `stream`.
 - `user_id` is derived from the bearer token, never from the request envelope.
   - Rationale: AG-UI carries a conversation identifier but no user identity. Trusting the body would
   let any caller resume another user's conversation by guessing an id.
-- AG-UI defines **its own pluggable authoriser** in `integration/agui/`, the same shape as the thread
-integration's (`integration/thread/authoriser.py`): `authorise(token) -> Optional[str]` returning
-the resolved user id, supplied to the handler's `__init__`.
-  - An integration owning its authoriser keeps it a dependency leaf, and threads already set the
-  precedent. This supersedes the earlier recommendation to depend on `auth/` directly, whose
-  reasoning assumed AG-UI would live in `api/`.
+- AG-UI uses the **shared** `Authoriser` in `auth/authoriser.py` and extends
+`AuthorisedRESTRequestHandler` (`api/handler.py:37-71`), which already owns the Bearer parsing, the
+401 mapping and `_resolve_user`.
+  - **This reverses an earlier requirement in this document**, which said AG-UI should define its own
+  authoriser in `integration/agui/` mirroring `integration/thread/authoriser.py`, on the reasoning
+  that an integration owning its authoriser keeps it a dependency leaf. That file no longer exists:
+  PR #632 (`10f9dda0`) deleted it, hoisted the ABC to `auth/authoriser.py`, and moved the thread
+  handler onto the shared base. Copying it now would re-fork an abstraction the codebase has just
+  unified, so the original recommendation — depend on `auth/` — is the one that stands.
+  - `auth/authoriser.py` also ships `AuthValidatorAuthoriser`, an adapter presenting an existing
+  `AuthValidator` as an `Authoriser`. That is exactly the fallback described below, so AG-UI consumes
+  it instead of implementing one.
   - **Unlike thread routes, AG-UI routes are never open.** Thread read routes stay unprotected when
   no authoriser is configured; AG-UI cannot do that, because an anonymous run has no user to scope
   its session to.
-  - When no authoriser is supplied, the handler falls back to the `AuthValidator` the application
-  already registered through `RESTAPI.add_auth_handlers`, resolving identity from
-  `ValidationResult.subject` (`auth/handler.py:13-17`). An app that has configured auth gets AG-UI
-  identity with no extra wiring.
+  - When no authoriser is supplied, the handler wraps an `AuthValidator` in
+  `AuthValidatorAuthoriser`, resolving identity from `ValidationResult.subject`
+  (`auth/handler.py:13-17`). The validator is passed to the handler explicitly:
+  `RESTAPI.add_auth_handlers` turns validators into FastAPI dependencies and keeps no retrievable
+  registry, so there is nothing for the handler to look up.
   - When neither is available the handler fails at startup rather than per request, consistent with
   the fail-fast rule above. It must never fall back to running anonymously.
   - Resolution happens **inside** the route, because router-level `Depends` do not hand their return
@@ -403,7 +441,7 @@ and reaches the agent through a read-only `get_forwarded_props()` system tool.
   runtime" — a current page, a selected record, a locale.
   - **The volatile cache is the right home**, not a new `Session.Keys` member. `forwardedProps` is
   per-request by nature — AG-UI re-sends it on every run, so a previous copy is never wanted — and
-  `Runtime` already clears the volatile cache after every run (`core/runtime.py:220-221`). The
+  `Runtime` already clears the volatile cache after every run (`core/runtime.py:229-230`). The
   correct lifetime comes for free, with nothing extra to document about expiry. Contrast
   `agui_state`, which earns a top-level key precisely because it must survive the run.
   - **Reached by tool, not by injection, and that is the safer shape** — the same call this design
@@ -470,7 +508,7 @@ follow-up, for the reasons at the end of this section.
     Naming it honestly beats naming it aspirationally.
   - Accepted consequence: `core/` now contains an identifier that names an integration. That is a
     weaker version of what `AKConfig` already does with `slack`, `whatsapp` and the rest
-    (`core/config.py:628-634`), and it is a rename away from being wrong if a second surface ever
+    (`core/config.py:696-702`), and it is a rename away from being wrong if a second surface ever
     wants the capability — which is a cheap problem to have later, versus a misleading name now.
 - Agent-facing surface is **system tools**, following multimodal's `AnalyzeAttachmentsTool` and
   sandbox's eight:
@@ -487,12 +525,12 @@ follow-up, for the reasons at the end of this section.
     - Nested under `agui` rather than given a top-level block because the capability exists to serve
       AG-UI and nothing else turns it on. `core/` reading an integration's config **section** is not
       a coupling breach — the rule is about imports, and `AKConfig` already defines every
-      integration's section (`core/config.py:628-634`). Only the short registration branches name
+      integration's section (`core/config.py:696-702`). Only the short registration branches name
       `agui`; the keys and the functions do not.
     - **It cannot instead follow "AG-UI is mounted."** Mounting the handler is what enables AG-UI and
       there is deliberately no `enabled` flag (see AG-UI surface), so there is no such signal in
       config. Mounting also happens in application code, potentially after agents are registered —
-      and `_attach_system_tools` runs at agent **initialization** (`core/base.py:466-473`), before
+      and `_attach_system_tools` runs at agent **initialization** (`core/base.py:515-522`), before
       any session or surface exists. Per-run or per-surface gating is therefore impossible; the
       choice is only *which agents*, via the `agents` list.
     - **Nor always-on with no flag.** Tool descriptions are appended to every agent's system prompt
@@ -517,12 +555,13 @@ follow-up, for the reasons at the end of this section.
     in themselves.
   - The cost is one term to map when reading the AG-UI spec, stated here so nobody "corrects" it
     back later.
-- **Three client-supplied fields, three destinations, none of them `framework_context`:**
+- **Four client-supplied fields, four destinations, none of them `framework_context`:**
 
   | Field | Stored | Agent reaches it via | Lifetime |
   |---|---|---|---|
   | `state` | `Session.Keys.AGUI_STATE` | `get_agui_state` / `update_agui_state` | survives the run |
   | `forwardedProps` | volatile cache, reserved key | `get_forwarded_props` | cleared after the run |
+  | `context` | volatile cache, reserved key | `get_agui_context` | cleared after the run |
   | `tools` · `messages` · system prompts | nowhere | — | documented non-goals |
 
   - The rule this table encodes: **client-supplied data never enters `framework_context`.** That key
@@ -538,7 +577,7 @@ follow-up, for the reasons at the end of this section.
   - *Holding it during the run* is unavoidable. `update_agui_state` writes somewhere and
     `get_agui_state` reads it back; the session is the only place available.
   - *Keeping it afterwards* is what is being chosen. `Runtime` clears only the volatile cache
-    (`core/runtime.py:220-221`) and stores the whole session, so a top-level key persists
+    (`core/runtime.py:229-230`) and stores the whole session, so a top-level key persists
     automatically — the same reason `framework_context` does. **Not** persisting would take extra
     code.
   - The decision: `AGUI_STATE` is a top-level key and **does** persist. The alternative — putting
@@ -678,6 +717,11 @@ purpose is driving a user interface is not demonstrated by test assertions alone
 - The `ag-ui-protocol` version is pinned to a floor in `ak-py/pyproject.toml`.
 - Version skew is handled **leniently**: unknown inbound fields and message types are ignored rather
 than rejected, so a frontend newer than the server still runs.
+  - **Only half of this comes free, verified against the SDK.** Every SDK model sets `extra="allow"`,
+  so unknown *fields* already parse and are ignored. Unknown *message types* do not: `Message` is a
+  discriminated union on `role`, so an unrecognised role raises `ValidationError` and FastAPI turns
+  it into a 422 before the handler runs. Honouring this requirement therefore takes explicit work in
+  the envelope — see `spec.md` §9.
   - The server never emits an event type it cannot fully populate.
   - AG-UI documents no version-negotiation handshake, so this is AK's own policy; confirm that
   against the pinned version before implementing.
@@ -694,7 +738,7 @@ parallel progress.
 |---|---|---|---|
 | 1 | **The streaming contract.** Event types with boundaries, widened `Runner.stream`, the additive `StreamChunk.event` field and the `delta` projection, plus `Runner.supports_streaming` (default `True`, declared `False` on `CrewAIRunner` and `SmolagentsRunner`). `ResponseBuilder` and the thread recorder are untouched, and `Runtime.stream` accepts `str | StreamEvent` transitionally so the adapters keep working. Nothing emits an event object yet | existing suite green, **zero test edits**; new tests assert all six runners declare honestly | — |
 | 2 | **Attachment source forms.** `_extract_attachment` classifies the source and splits `data:` URIs; the filter loop retains URL-sourced requests it did not consume. Shared multimodal code, no AG-UI in it | new tests across all five source forms; existing suite unchanged | — |
-| 3 | **The integration.** `integration/agui/` package, handler and routes, discovery, `to_agui` mapping and its exhaustiveness test, authoriser, attachment mapping (no normalization — see PR 2), `Session.Keys.AGUI_STATE` with its accessors and the three system tools, `SystemToolFactory` branches, `StateSnapshot` emission, `forwardedProps` → volatile cache, the `agui` config block, the `agui` extra, single-file example frontend, docs | new tests pass | PR 1, PR 2 |
+| 3 | **The integration.** `integration/agui/` package, handler and routes (on the shared `AuthorisedRESTRequestHandler` and `Authoriser` — no AG-UI authoriser of its own), discovery, `to_agui` mapping and its exhaustiveness test, attachment mapping (no normalization — see PR 2), `Session.Keys.AGUI_STATE` with its accessors and the four system tools, `SystemToolFactory` branches, `StateSnapshot` emission, `forwardedProps` and `context` → volatile cache, the `agui` config block, the `agui` extra pinned `>=0.1.16`, single-file example frontend, docs | new tests pass | PR 1, PR 2 |
 | 4 | **OpenAI and LangGraph.** Both already iterate their framework's full event stream with explicit boundaries; both stop discarding | per-adapter tests | PR 1 |
 | 5 | **Google ADK.** Stop skipping non-partial events, plus the in-adapter derivation of message start from `partial` | per-adapter tests, including the derivation | PR 1 |
 | 6 | **Pydantic AI, and the end of the transition.** Rewrite `stream` onto `run_stream_events()`, re-plumbing session-message bookkeeping and the `framework_context` store. Also carries the **final step**: deleting the transitional `str` tolerance PR 1 added to `Runtime.stream` | per-adapter tests; `framework_context` round-trip unchanged; **tolerance removed and a test asserts a `str`-yielding runner now fails** | PR 1 (adapter work); PRs 4 and 5 merged (final step only) |
@@ -757,7 +801,7 @@ Filed separately, not part of this set:
 browser app can say "I have a `zoom_map` tool; call it and I'll execute it and send you the
 result." Those arrive in `RunAgentInput.tools`, and AK ignores the field.
   - Two reasons it cannot be handled by envelope mapping. AK's tool registry is built once at
-  startup (`core/runtime.py:128-136`) with no per-request injection path. And a browser-executed
+  startup (`core/runtime.py:132-140`) with no per-request injection path. And a browser-executed
   tool needs the run to pause, hand control back to the client, and resume with the returned
   result — machinery AK has no equivalent of.
   - Why this is documented rather than silently dropped: a frontend that sends tools gets **no
@@ -797,17 +841,20 @@ documenting later as an escape hatch for raw framework fidelity with no AK seman
 
 ## Open questions
 
-No decisions are outstanding. Two spec-stage details and three facts to verify are carried forward:
+No decisions are outstanding. Two spec-stage details and two facts to verify are carried forward
+(a third, the inbound attachment shape, has since been resolved — see below):
 
 - **Spec-stage**: naming and module location of the new event types, and the exact discriminator
 field they carry. Both settled in `spec.md`.
 - **To verify before implementation**, each stated inline in the requirement it affects rather than
 restated here: whether AG-UI publishes a usable conformance kit, and whether it defines any
 version-negotiation handshake (both under Documentation and verification).
-- **The exact shape of AG-UI's inbound attachment content** is a documentation claim that was never
-exercised locally — which message content types carry an image or a file, and whether they carry
-bytes, a URL, or either. The mapping in Attachments assumes both are possible; confirm against the
-pinned SDK before writing `spec.md`. It no longer decides a refusal rule — PR 2 makes all five source
-forms work — but it does decide which of them an AG-UI client can actually produce, and therefore
-what the tests must cover.
+- ~~**The exact shape of AG-UI's inbound attachment content.**~~ **Resolved**, by downloading and
+inspecting every `ag-ui-protocol` wheel from 0.1.4 to 0.1.20. `UserMessage.content` is
+`Union[str, List[InputContent]]`; `InputContent` is discriminated on `type` over `text`, `image`,
+`audio`, `video`, `document` and a deprecated `binary`; and each non-text part carries a `source`
+that is either `InputContentDataSource` (base64 + mime type) or `InputContentUrlSource` (URL). Both
+forms are therefore real, confirming the Attachments mapping. **This moved the version floor**: none
+of these types exist before **0.1.16** — below that, `UserMessage.content` is a plain `str` — so the
+pin is `>=0.1.16`, not the `>=0.1.9` an earlier draft carried. Full mapping table in `spec.md` §9.
 
