@@ -403,13 +403,16 @@ occurrence placeholders (`TOKEN_REQUEST_ID`, `TOKEN_OCCURRENCE_TIME` in `model.p
 ```yaml
 schedule:                 # presence enables the capability; a bare block works for local dev
   provider:
-    type: local           # local (default) | eventbridge, or a dotted path to a ScheduleProvider
+    type: local           # local (the only built-in today), or a dotted path to a ScheduleProvider
   store:
-    type: in_memory       # in_memory (default) | redis | valkey | dynamodb, or a dotted path
+    type: in_memory       # in_memory (the only built-in today), or a dotted path to a ScheduleStore
   agents: [planner]       # agents the schedule tools attach to; omitted = all agents
 ```
 
-Store backends default to `ttl: 0` (unlike threads: a schedule must not silently expire) and the
+`local` and `in_memory` are the only short names the factory and builder accept: the `eventbridge`
+provider and the `redis`, `valkey` and `dynamodb` stores are planned (their config blocks are already
+declared in `config.py` but inert), so any other short name raises `AKConfigError` today. Store
+backends default to `ttl: 0` (unlike threads: a schedule must not silently expire) and the
 redis/valkey prefix to `ak:schedule:`. Note the same env-var failure mode threads have: any
 `AK_SCHEDULE__*` variable materializes the block and enables the capability with default backends.
 

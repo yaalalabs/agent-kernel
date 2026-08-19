@@ -269,6 +269,8 @@ class _ThreadStoreConfig(BaseModel):
     cosmosdb: Optional[_ThreadCosmosDBConfig] = None
 
 
+# Declared ahead of the provider that reads it: the eventbridge provider is not among the built-in
+# short names yet, so this block is inert until it ships.
 class _ScheduleEventBridgeConfig(BaseModel):
     group_name: Optional[str] = Field(default=None, description="EventBridge Scheduler schedule-group name the schedules are created in")
     role_arn: Optional[str] = Field(
@@ -285,6 +287,8 @@ class _ScheduleProviderConfig(BaseModel):
     eventbridge: Optional[_ScheduleEventBridgeConfig] = None
 
 
+# The redis, valkey and dynamodb store blocks are likewise declared ahead of their backends: only
+# in_memory is a built-in short name today, so these three are inert until those stores ship.
 class _ScheduleStoreRedisConfig(_RedisConfig):
     # Unlike threads, schedules carry no default expiry: a task that silently disappeared
     # would stop firing with no audit trail.
@@ -308,8 +312,7 @@ class _ScheduleStoreDynamoDBConfig(_DynamoDBConfig):
 class _ScheduleStoreConfig(BaseModel):
     type: str = Field(
         default="in_memory",
-        description="Scheduled task store backend: a built-in short name (in_memory, redis, valkey, dynamodb) "
-        "or a dotted path to a ScheduleStore subclass",
+        description="Scheduled task store backend: a built-in short name (in_memory) or a dotted path to a ScheduleStore subclass",
     )
     redis: Optional[_ScheduleStoreRedisConfig] = None
     valkey: Optional[_ScheduleStoreValkeyConfig] = None
