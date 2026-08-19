@@ -200,9 +200,30 @@ class TestStreamSSE:
             frames = [json.loads(line[len("data: ") :]) for line in response.iter_lines() if line.startswith("data: ")]
 
         # Exact direct-mode wire shape (ResponseBuilder.stream_chunk with exclude_none):
-        # delta frames carry done=False, the terminal frame done=True.
-        assert frames[0] == {"delta": "he", "done": False, "session_id": "s1"}
-        assert frames[1] == {"delta": "llo", "done": False, "session_id": "s1"}
+        # delta frames carry done=False, the terminal frame done=True. Each also carries the event
+        # it was projected from, and the assistant message is bracketed by boundary frames that
+        # carry no delta at all. Here Runtime.stream synthesises the boundaries because DummyRunner
+        # still yields str; once adapters emit events they supply their own, so the frame count is
+        # the same either way.
+        message_id = frames[0]["event"]["message_id"]
+        assert frames[0] == {
+            "event": {"type": "message_start", "message_id": message_id, "role": "assistant"},
+            "done": False,
+            "session_id": "s1",
+        }
+        assert frames[1] == {
+            "delta": "he",
+            "event": {"type": "text_delta", "message_id": message_id, "content": "he"},
+            "done": False,
+            "session_id": "s1",
+        }
+        assert frames[2] == {
+            "delta": "llo",
+            "event": {"type": "text_delta", "message_id": message_id, "content": "llo"},
+            "done": False,
+            "session_id": "s1",
+        }
+        assert frames[3] == {"event": {"type": "message_end", "message_id": message_id}, "done": False, "session_id": "s1"}
         assert frames[-1]["done"] is True
         assert frames[-1]["session_id"] == "s1"
 
