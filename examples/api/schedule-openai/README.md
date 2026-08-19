@@ -10,6 +10,11 @@ mentions scheduling). It selects two backends: the **provider** that owns the ti
 **store** that persists the task records. This example uses the defaults — the `local` provider (an
 in-process scheduler thread) and the `in_memory` store — which need nothing but the process itself.
 Neither survives a restart; this demo currently supports only the `local` provider and `in_memory` store.
+That pairing is also a hard requirement rather than a default: the `local` provider's timers and the
+`in_memory` store's records are reachable only from the process that owns them, so `ScheduleManager`
+refuses at startup if either is combined with a broker transport (`sqs`/`kafka`/`nats`) or a shared store.
+A broker transport puts the management routes in a different process from the scheduler thread, where a
+cancellation would report success while the timer kept firing.
 
 Because the `schedule` block is present, `RESTAPI.run()` also mounts the management routes
 (`GET`/`PUT`/`DELETE /api/v1/schedules`). They are open here. To protect them, supply your own

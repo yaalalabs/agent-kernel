@@ -75,10 +75,16 @@ A chat request gains an optional `schedule` block that defers its execution to a
 - **Provider/transport compatibility** (declared honestly, enforced fail-fast):
   - `ScheduleProvider` declares `supported_transports: Optional[frozenset[str]]` as a class attribute; `None` means transport-agnostic.
   - `EventBridgeScheduleProvider.supported_transports = {"sqs"}`: its delivery target is baked into the schedule registration and can only be an SQS queue.
-  - `LocalScheduleProvider.supported_transports = None`: it delivers through the `QueueTransport` abstraction itself, so it composes with `in_memory` today and with `sqs`/`kafka`/`nats` when those transports ship.
+  - `LocalScheduleProvider.supported_transports = None`: **delivery** is transport-agnostic, since it sends through the `QueueTransport` abstraction itself. Manageability is not — see the single-process constraint below.
   - `ScheduleManager` validates once at construction (first `get()`): when the declared set is not `None` it must contain `QueueTransportFactory.resolve_type()` (`pipeline/transport/base.py:72-87`, the declared or implied transport, independent of whether the pipeline transport class has shipped); mismatch raises `AKConfigError` naming both sides (e.g. "schedule provider 'eventbridge' delivers to SQS, but the configured queue transport is 'in_memory'"). A misconfigured deployment fails at startup or first scheduling use, never at fire time.
   - Same shape as the sandbox's honest capability declarations enforced fail-closed by its manager, and the `IOHandler` startup fail-fasts.
   - Dotted-path BYO providers may declare their own set; the `None` default imposes no constraint.
+- **Local-provider single-process constraint** (a second fail-fast at the same construction point):
+  - The local provider's timers are a min-heap in one process's scheduler thread, and the `in_memory` store keeps its records the same way: only threads of *that* process can reach either.
+  - The `in_memory` transport is what makes a deployment single-process — `IOHandler` runs the agent runner as a thread only then, and `AgentRunner.run` refuses that transport outright. On a broker transport the management routes (IOHandler process) and the scheduler thread (agent-runner process) are therefore in different processes, and every creation path lands in the runner (chat interception and the `create_schedule` tool both run there) while every management path lands in IOHandler.
+  - Unguarded consequence: `PUT`/`DELETE /api/v1/schedules/{id}` would update the routes' own store and call `update`/`delete` on the routes' own empty provider — reporting success while the runner's timer kept firing — and a listing would not see runner-created tasks at all.
+  - So `ScheduleManager` also raises `AKConfigError` when `schedule.provider.type` is `local` and either the resolved transport or `schedule.store.type` is not `in_memory`. Kept separate from `supported_transports` because delivery is unaffected: `local` + `sqs` fires correctly and is only unmanageable.
+  - Anchored on the `local` short name rather than a declared capability, because `local` is the only built-in provider today, so it covers every reachable configuration. When the eventbridge provider and the distributed stores land, the analogous `in_memory` store + broker transport pairing (records split across processes under a provider that manages fine) needs its own guard.
 - Trigger firing reliability, retries, and DLQs are the scheduling platform's concern, outside AK's scope once registration succeeds.
 
 ### ScheduleStore abstraction (issue req 3)
@@ -213,3 +219,4 @@ graph TD
   - Store backends for iteration 1: `in_memory`, `redis`, `valkey`, `dynamodb`.
   - No per-user quota (provider quota errors surface as-is).
   - Provider/transport dependency: declared `supported_transports` + startup fail-fast (see the ScheduleProvider section).
+  - Local-provider manageability across a split pipeline: a second startup fail-fast pinning `local` to the `in_memory` transport and store (PR #638 review).

@@ -3,15 +3,18 @@
 schedule:
   provider:
     # local: an in-process scheduler thread fires each occurrence into the input queue. Armed
-    # occurrences do not survive a restart.
+    # occurrences do not survive a restart, and only this process's threads can amend them — so
+    # `local` requires the in_memory transport and store below, and is rejected at startup with
+    # anything else.
     type: local
   store:
-    # Task records live in this process only.
+    # Task records live in this process only, which is why `local` requires this store.
     type: in_memory
   # agents: [assistant]   # restrict the schedule tools to named agents; omitted = all agents
 
 # The local provider delivers each occurrence into the input queue, so scheduling needs the
-# queue-mode pipeline. With the in_memory transport all five components run in this one process.
+# queue-mode pipeline. With the in_memory transport all five components run in this one process —
+# which is what makes the local provider usable here; a broker transport would split them.
 execution:
   mode: rest_sync
   queues:
