@@ -3,10 +3,10 @@
 schedule:
   provider:
     # local: an in-process scheduler thread fires each occurrence into the input queue. Armed
-    # occurrences do not survive a restart — use the eventbridge provider for that.
+    # occurrences do not survive a restart.
     type: local
   store:
-    # Task records live in this process only. Other backends: redis | valkey | dynamodb
+    # Task records live in this process only.
     type: in_memory
   # agents: [assistant]   # restrict the schedule tools to named agents; omitted = all agents
 
