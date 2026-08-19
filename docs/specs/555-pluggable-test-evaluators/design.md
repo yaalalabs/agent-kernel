@@ -511,9 +511,13 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
   `docs/docs/testing/overview.md`, `docs/docs/core-concepts/configuration.md` — each gains the
   `evaluator` key alongside `mode`, and the testing pages gain a bring-your-own-evaluator section
   mirroring the sandbox one (`docs/docs/advanced/sandbox.md:378`)
-- Examples: 40 `examples/**/test-config.yaml` files — 34 with `mode: fallback`, 6 with `mode: fuzzy`,
-  and every one of them carrying a `judge:` block and a comment naming the old modes
-  - No `evaluator` key is added to them: the default already selects `deepeval`, and adding a key
+- Examples: 40 `examples/**/test-config.yaml` files
+  - 34 with `mode: fallback`, each also carrying a `judge:` block and the
+    `# Test comparison mode: fuzzy, judge, or fallback` comment
+  - 6 with `mode: fuzzy` (`examples/sandbox/{basic,daytona,docker,e2b,policy,profiles}/test-config.yaml`)
+    — mode line only; none of these carries a `judge:` block, and their comment explains why fuzzy was
+    chosen rather than naming the mode options
+  - No `evaluator` key is added to any of them: the default already selects `deepeval`, and adding a key
     every example would carry identically is noise. The skill templates document the key instead
 - Versioned docs under `docs/versioned_docs/` are frozen published snapshots and are **not** edited
 
