@@ -316,6 +316,46 @@ enable_api_gateway_logs = true
 
   Skipping this makes Terraform destroy and recreate these resources, discarding any retained logs.
 
+### Scheduling (EventBridge Scheduler)
+
+| Variable | Description | Type | Default | Required |
+|---|---|---|---|---|
+| `enable_scheduling` | Create the EventBridge Scheduler schedule group and the execution role Scheduler assumes to deliver triggers to the Input Queue, grant both ECS task roles `scheduler:*Schedule` + `iam:PassRole` on them, and inject their coordinates. **Requires `queue_mode = true`.** | `bool` | `false` | no |
+| `create_dynamodb_schedule_table` | Create the DynamoDB schedule store table (partition `task_id`, no sort key, no GSI, TTL on `expiry_time`) and inject its generated name as `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` | `bool` | `false` | no |
+
+```hcl
+queue_mode                     = true
+enable_scheduling              = true
+create_dynamodb_schedule_table = true
+```
+
+- Off by default; every resource is `count`-gated, so leaving both `false` provisions nothing and
+  injects nothing.
+- **You must also declare the backends in the application's `config.yaml`** — Terraform injects the
+  group/role/queue/table coordinates but never `schedule.provider.type` or `schedule.store.type`
+  (the same rule as `thread.type`):
+
+  ```yaml
+  schedule:
+    provider:
+      type: eventbridge
+    store:
+      type: dynamodb
+  ```
+
+  Setting the flags without this block leaves scheduling on the default `local` provider and
+  `in_memory` store, and the provisioned group and table sit unused with no error.
+- `enable_scheduling` flips the **Input Queue** to `content_based_deduplication = true` (an in-place
+  update on an existing queue). EventBridge Scheduler cannot set a `MessageDeduplicationId`, so
+  without it two occurrences carrying an otherwise identical trigger body would collapse into one
+  inside the 5-minute dedup window. Application senders are unaffected: they always send an explicit
+  `MessageDeduplicationId`, which takes precedence. The Output Queue is untouched.
+- Both task roles get the schedule permissions: the REST service serves the management routes
+  (amend/cancel reach Scheduler), and the agent runner hosts the `create_schedule` /
+  `update_schedule` / `delete_schedule` agent tools.
+- See the [scheduling guide](https://kernel.yaala.ai/docs/advanced/scheduling) for the application
+  side.
+
 ## Deployment Modes
 
 ### Non-Queue Mode (Default)
@@ -587,6 +627,13 @@ output "websocket_api_stage_name"         # WebSocket API Gateway stage name
 output "websocket_endpoint_url"           # Management API endpoint used for PostToConnection
 output "websocket_connection_table_name"  # DynamoDB connections table name
 output "websocket_connection_table_arn"   # DynamoDB connections table ARN
+
+# Scheduling only (`enable_scheduling` / `create_dynamodb_schedule_table`) — null otherwise
+output "schedule_group_name"           # EventBridge Scheduler schedule-group name
+output "schedule_group_arn"            # EventBridge Scheduler schedule-group ARN
+output "scheduler_execution_role_arn"  # Role Scheduler assumes to deliver triggers to the Input Queue
+output "schedule_table_name"           # DynamoDB schedule store table name
+output "schedule_table_arn"            # DynamoDB schedule store table ARN
 ```
 
 ## Requirements

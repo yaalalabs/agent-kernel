@@ -49,6 +49,12 @@ pip install "agentkernel[daytona]"          # daytona cloud provider
 pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
 ```
 
+For cron parsing with the Scheduling capability (the `eventbridge` provider rides the `aws` extra):
+
+```bash
+pip install "agentkernel[schedule]"
+```
+
 **Requirements:**
 - Python 3.12+
 
@@ -533,6 +539,102 @@ Required when `thread.type=cosmosdb`:
   - **Default**: `akagentthreads`
   - **Description**: Cosmos DB table name for thread storage
   - **Environment Variable**: `AK_THREAD__COSMOSDB__TABLE_NAME`
+
+#### Scheduling
+
+The presence of a `schedule` block enables deferred and recurring chat execution: a chat request carrying a
+`schedule` block (`at` for one-time, `cron` for recurring, plus `timezone` and `session_mode`) is not run —
+it is registered as a scheduled task and acknowledged with HTTP 202. When an occurrence is due, the provider
+delivers the stored prompt into the input queue as a plain chat request, so scheduling requires the queue
+execution pipeline. Agent Kernel also mounts the management routes (`GET`/`PUT`/`DELETE /api/v1/schedules`,
+optionally protected by a pluggable `Authoriser`) and injects five agent tools (`create_schedule`,
+`list_schedules`, `get_schedule`, `update_schedule`, `delete_schedule`). Every scheduling request needs a
+`user_id`: it is the owner the task is stored under and the identity later reads and changes are checked
+against. A bare `schedule:` block works for local development — its defaults are the `local` provider and
+the `in_memory` store. See `examples/api/schedule-openai`.
+
+- **Provider Type**
+  - **Field**: `schedule.provider.type`
+  - **Type**: string
+  - **Default**: `local`
+  - **Options**: `local` (in-process scheduler thread; requires the `in_memory` transport and store),
+    `eventbridge` (AWS EventBridge Scheduler; requires the `sqs` transport and the `aws` extra), or a dotted
+    path to a `ScheduleProvider` subclass
+  - **Environment Variable**: `AK_SCHEDULE__PROVIDER__TYPE`
+
+- **Store Type**
+  - **Field**: `schedule.store.type`
+  - **Type**: string
+  - **Default**: `in_memory`
+  - **Options**: `in_memory`, `redis`, `valkey`, `dynamodb`, or a dotted path to a `ScheduleStore` subclass
+  - **Environment Variable**: `AK_SCHEDULE__STORE__TYPE`
+
+- **Tool Scoping**
+  - **Field**: `schedule.agents`
+  - **Type**: list of strings
+  - **Default**: `null` (all agents)
+  - **Description**: Agent names the schedule tools and system-prompt guidance attach to
+  - **Environment Variable**: `AK_SCHEDULE__AGENTS`
+
+##### EventBridge Scheduler Provider
+
+Required when `schedule.provider.type=eventbridge`. All three are supplied by the AWS Terraform modules
+when `enable_scheduling = true`; a missing one fails at startup with an `AKConfigError`.
+
+- **Group Name**
+  - **Field**: `schedule.provider.eventbridge.group_name`
+  - **Description**: EventBridge Scheduler schedule-group name the schedules are created in
+  - **Environment Variable**: `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME`
+
+- **Role ARN**
+  - **Field**: `schedule.provider.eventbridge.role_arn`
+  - **Description**: Execution role ARN Scheduler assumes to deliver triggers to the input queue
+  - **Environment Variable**: `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__ROLE_ARN`
+
+- **Queue ARN**
+  - **Field**: `schedule.provider.eventbridge.queue_arn`
+  - **Description**: Input queue ARN used as the schedule target
+  - **Environment Variable**: `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__QUEUE_ARN`
+
+##### Redis / Valkey Schedule Store
+
+Required when `schedule.store.type=redis` (or `valkey`, with `schedule.store.valkey.*` / `AK_SCHEDULE__STORE__VALKEY__*`).
+
+- **URL**
+  - **Field**: `schedule.store.redis.url`
+  - **Default**: `redis://localhost:6379`
+  - **Description**: Redis connection URL. Use `rediss://` for SSL
+  - **Environment Variable**: `AK_SCHEDULE__STORE__REDIS__URL`
+
+- **Key Prefix**
+  - **Field**: `schedule.store.redis.prefix`
+  - **Default**: `ak:schedule:`
+  - **Description**: Key prefix for scheduled-task storage
+  - **Environment Variable**: `AK_SCHEDULE__STORE__REDIS__PREFIX`
+
+- **TTL (Time to Live)**
+  - **Field**: `schedule.store.redis.ttl`
+  - **Default**: `0` (disabled)
+  - **Description**: Scheduled task TTL in seconds. Unlike threads this defaults to 0 — a task that
+    silently expired would stop firing with no audit trail
+  - **Environment Variable**: `AK_SCHEDULE__STORE__REDIS__TTL`
+
+##### DynamoDB Schedule Store
+
+Required when `schedule.store.type=dynamodb`. The table needs a partition key named `task_id` (S) and no
+sort key; the AWS Terraform modules create it when `create_dynamodb_schedule_table = true`.
+
+- **Table Name**
+  - **Field**: `schedule.store.dynamodb.table_name`
+  - **Default**: `ak-agent-schedules`
+  - **Description**: DynamoDB table name for scheduled-task storage
+  - **Environment Variable**: `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME`
+
+- **TTL (Time to Live)**
+  - **Field**: `schedule.store.dynamodb.ttl`
+  - **Default**: `0` (disabled)
+  - **Description**: DynamoDB item TTL in seconds
+  - **Environment Variable**: `AK_SCHEDULE__STORE__DYNAMODB__TTL`
 
 #### Execution Configuration
 

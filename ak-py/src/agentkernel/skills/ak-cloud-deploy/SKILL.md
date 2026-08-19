@@ -4,7 +4,8 @@ description: >
   Deploy an Agent Kernel project to AWS, Azure, or GCP using Terraform modules.
   Supports serverless and containerized modes for all three clouds. AWS supports
   execution modes (rest_sync, rest_async, async, stream), queue-based scalable processing,
-  and custom API Gateway authorizers. GCP supports Cloud Run serverless (scale-to-zero)
+  custom API Gateway authorizers, and EventBridge Scheduler for scheduled tasks.
+  GCP supports Cloud Run serverless (scale-to-zero)
   and containerized (always-on) with Redis or Firestore session backends.
 license: Apache-2.0
 metadata:
@@ -221,6 +222,56 @@ Setting the Terraform flag *without* declaring `thread.type` in `config.yaml` si
 threads on the non-durable in-memory backend (any `AK_THREAD__*` var materialises `AKConfig.thread`,
 but `type` still defaults to `in_memory`) — always pair the flag with the matching `thread.type`.
 
+### Deploying Scheduled Tasks
+
+Scheduled tasks (`ak-add-capabilities`) deploy on the same two-step split: the app declares
+`schedule.provider.type` and `schedule.store.type` in `config.yaml`, and Terraform provisions the
+backends, injecting only the coordinates. Terraform never sets `AK_SCHEDULE__PROVIDER__TYPE` or
+`AK_SCHEDULE__STORE__TYPE`.
+
+**Scheduling requires queue mode** — occurrences are delivered into the input queue, so
+`queue_mode = true` is mandatory on AWS. `enable_scheduling` without it is rejected.
+
+- **AWS (serverless + containerized)**: `enable_scheduling = true` provisions an EventBridge Scheduler
+  schedule group and the execution role Scheduler assumes to deliver triggers to the input queue,
+  grants both the request/REST role and the agent-runner role `scheduler:CreateSchedule|UpdateSchedule|DeleteSchedule|GetSchedule`
+  plus `iam:PassRole` on that role, and injects
+  `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME`, `__ROLE_ARN` and `__QUEUE_ARN`. It also flips the
+  input queue to content-based deduplication, because Scheduler cannot set a
+  `MessageDeduplicationId` (application senders are unaffected — their explicit id takes precedence).
+- **AWS (serverless + containerized)**: `create_dynamodb_schedule_table = true` provisions a DynamoDB
+  table (partition `task_id`, no sort key, no GSI, TTL on `expiry_time`) and injects
+  `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME`.
+- **Redis / Valkey task store**: no dedicated Terraform flag — reuse whatever `create_redis_cluster` /
+  `create_valkey_cluster` already provisions and declare `schedule: {store: {type: redis}}` (or
+  `valkey`) with the cluster URL in `config.yaml`.
+- **Azure / GCP**: no scheduling provider ships for these clouds yet. The `local` provider only works
+  in a single always-on process with the `in_memory` transport and store, which no cloud deployment
+  mode gives you.
+
+```hcl
+queue_mode                     = true
+enable_scheduling              = true
+create_dynamodb_schedule_table = true
+```
+
+```yaml
+schedule:
+  provider:
+    type: eventbridge
+  store:
+    type: dynamodb
+```
+
+Setting the Terraform flags *without* declaring both types in `config.yaml` silently leaves scheduling
+on the in-process `local` provider and `in_memory` store (any `AK_SCHEDULE__*` var materialises
+`AKConfig.schedule`, but the types still default), while the provisioned group and table sit unused —
+always pair the flags with the matching types. The reverse is safe: declaring the types without the
+flags fails at startup with an `AKConfigError` on the missing `group_name` / `role_arn` / `queue_arn`.
+
+New outputs on both AWS stacks (null unless the matching flag is set): `schedule_group_name`,
+`schedule_group_arn`, `scheduler_execution_role_arn`, `schedule_table_name`, `schedule_table_arn`.
+
 ## AWS Serverless (Lambda + API Gateway)
 
 ### Agent Code Pattern
@@ -313,6 +364,10 @@ module "serverless_agents" {
 
   create_dynamodb_memory_table   = true
   create_dynamodb_response_store = true
+
+  # Uncomment with `schedule: {provider: {type: eventbridge}, store: {type: dynamodb}}` in config.yaml
+  # enable_scheduling              = true
+  # create_dynamodb_schedule_table = true
 
   request_handler = {
     module_name          = "rqst-hdlr"
@@ -789,6 +844,10 @@ module "containerized_agents" {
 
   queue_mode = true
   execution_mode   = "rest_sync"   # or "rest_async"
+
+  # Uncomment with `schedule: {provider: {type: eventbridge}, store: {type: dynamodb}}` in config.yaml
+  # enable_scheduling              = true
+  # create_dynamodb_schedule_table = true
 
   queue_config = {
     input_queue_visibility_timeout  = 120

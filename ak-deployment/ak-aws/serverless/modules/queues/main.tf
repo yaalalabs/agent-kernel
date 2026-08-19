@@ -23,7 +23,7 @@ module "input_queue" {
   dlq_message_retention_seconds = var.queue_config.input_queue_dlq_message_retention_seconds
 
   # FIFO-specific configuration
-  content_based_deduplication = var.queue_config.content_based_deduplication
+  content_based_deduplication = var.input_content_based_deduplication || var.queue_config.content_based_deduplication
   fifo_throughput_limit       = var.queue_config.fifo_throughput_limit
   deduplication_scope         = var.queue_config.deduplication_scope
 

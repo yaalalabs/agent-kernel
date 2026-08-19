@@ -421,6 +421,21 @@ factory time. Terraform never sets a `type`, so the application's own `config.ya
 silently expire) and the redis/valkey prefix to `ak:schedule:`. Note the same env-var failure mode threads have: any
 `AK_SCHEDULE__*` variable materializes the block and enables the capability with default backends.
 
+Terraform side (`ak-deployment/ak-aws/{containerized,serverless}/`): two flags, both `false` by
+default and every resource `count`-gated. `enable_scheduling` creates the
+`aws_scheduler_schedule_group` and the `scheduler.amazonaws.com` execution role (with an
+`aws:SourceAccount` condition and `sqs:SendMessage` on the input queue), grants both the REST/request
+role and the agent-runner role `scheduler:{Create,Update,Delete,Get}Schedule` scoped to
+`schedule/${group}/*` plus `iam:PassRole` on that role, and injects the three
+`AK_SCHEDULE__PROVIDER__EVENTBRIDGE__*` vars. It also flips the **input queue** (only) to
+`content_based_deduplication` — Scheduler cannot set a `MessageDeduplicationId`, and app senders
+always send an explicit one, which takes precedence. `create_dynamodb_schedule_table` creates the
+`task_id`-keyed table (no sort key, no GSI, TTL on `expiry_time`) and injects
+`AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME`. A root `check` block asserts `enable_scheduling` implies
+`queue_mode`. The serverless request-handler gets the schedule wiring **unconditionally** under the
+flag, unlike the thread wiring which is nulled in queue mode: an app can mount
+`ScheduleRESTRequestHandler` on that Lambda.
+
 ## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
 
 Pluggable storage backends agents can read from and write to as tools:

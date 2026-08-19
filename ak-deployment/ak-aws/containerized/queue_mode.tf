@@ -13,6 +13,9 @@ module "queues" {
 
   queue_config = var.queue_config
 
+  # EventBridge Scheduler cannot set a MessageDeduplicationId on the triggers it delivers.
+  input_content_based_deduplication = var.enable_scheduling
+
   tags = var.tags
 }
 
@@ -39,14 +42,20 @@ module "agent_runner" {
   output_queue_url = module.queues[0].output_queue_url
   output_queue_arn = module.queues[0].output_queue_arn
 
-  redis_url                     = local.redis_url
-  valkey_url                    = local.valkey_url
-  create_dynamodb_memory_table  = var.create_dynamodb_memory_table
-  dynamodb_memory_table_arn     = local.dynamodb_memory_table_arn
-  dynamodb_memory_table_name    = local.dynamodb_memory_table_name
-  create_dynamodb_thread_table  = var.create_dynamodb_thread_table
-  dynamodb_thread_table_arn     = local.dynamodb_thread_table_arn
-  dynamodb_thread_table_name    = local.dynamodb_thread_table_name
+  redis_url                      = local.redis_url
+  valkey_url                     = local.valkey_url
+  create_dynamodb_memory_table   = var.create_dynamodb_memory_table
+  dynamodb_memory_table_arn      = local.dynamodb_memory_table_arn
+  dynamodb_memory_table_name     = local.dynamodb_memory_table_name
+  create_dynamodb_thread_table   = var.create_dynamodb_thread_table
+  dynamodb_thread_table_arn      = local.dynamodb_thread_table_arn
+  dynamodb_thread_table_name     = local.dynamodb_thread_table_name
+  enable_scheduling              = var.enable_scheduling
+  schedule_group_name            = local.schedule_group_name
+  scheduler_execution_role_arn   = local.scheduler_execution_role_arn
+  create_dynamodb_schedule_table = var.create_dynamodb_schedule_table
+  dynamodb_schedule_table_arn    = local.dynamodb_schedule_table_arn
+  dynamodb_schedule_table_name   = local.dynamodb_schedule_table_name
 
   agent_runner = {
     cpu           = var.agent_runner.cpu

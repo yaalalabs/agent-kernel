@@ -19,6 +19,12 @@ variable "tags" {
   default     = {}
 }
 
+variable "input_content_based_deduplication" {
+  type        = bool
+  description = "Force content-based deduplication on the Input Queue, on top of queue_config.content_based_deduplication. Required when EventBridge Scheduler targets it: Scheduler cannot set a MessageDeduplicationId, so without it two occurrences of an otherwise identical trigger body would collapse into one. Application senders are unaffected — an explicit MessageDeduplicationId always takes precedence"
+  default     = false
+}
+
 variable "queue_config" {
   description = "Queue configuration object"
   type = object({

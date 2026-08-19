@@ -152,6 +152,15 @@ rest_service = {
 - `AK_EXECUTION__QUEUES__BATCH_SIZE` (if queue mode enabled, from root `queue_config.batch_size`)
 - `AK_EXECUTION__MODE` (`async` or `stream`, WebSocket mode only)
 - `AK_WEBSOCKET_API__CHAT_ROUTE`, `AK_WEBSOCKET_API__ENDPOINT_URL`, `AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME` (WebSocket mode only)
+- `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME`, `__ROLE_ARN`, `__QUEUE_ARN` (if `enable_scheduling`)
+- `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` (if `create_dynamodb_schedule_table`)
+
+  > Terraform never injects `AK_SCHEDULE__PROVIDER__TYPE` or `AK_SCHEDULE__STORE__TYPE` — the
+  > application declares `schedule.provider.type: eventbridge` and `schedule.store.type: dynamodb`
+  > in its committed `config.yaml`, the same rule as `thread.type`. Because any `AK_SCHEDULE__*`
+  > variable is enough to populate the config block, the injected variables *alone* would enable
+  > scheduling on the default `local`/`in_memory` backends: the provisioned group and table would
+  > sit unused.
 
 #### WebSocket Mode
 
@@ -238,6 +247,8 @@ scaling_config = {
 - `AK_SESSION__DYNAMODB__TABLE_NAME` (if DynamoDB memory table enabled)
 - `AK_EXECUTION__MODE` (`async` or `stream`, WebSocket mode only — lets the agent runner forward
   the `endpoint_url` custom attribute to the Output Queue so the REST/IO service can push the reply)
+- `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME`, `__ROLE_ARN`, `__QUEUE_ARN` (if `enable_scheduling`)
+- `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` (if `create_dynamodb_schedule_table`)
 
 **Auto Scaling Behavior**:
 When `scaling_config.enabled = true`:

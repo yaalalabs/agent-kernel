@@ -107,6 +107,48 @@ variable "dynamodb_thread_table_name" {
   default     = null
 }
 
+variable "account_id" {
+  type        = string
+  description = "AWS account ID, used to scope the EventBridge Scheduler IAM resource ARNs"
+  default     = null
+}
+
+variable "enable_scheduling" {
+  type        = bool
+  description = "Whether the EventBridge Scheduler resources are provisioned"
+  default     = false
+}
+
+variable "schedule_group_name" {
+  type        = string
+  description = "EventBridge Scheduler schedule-group name the scheduled tasks register their schedules in"
+  default     = null
+}
+
+variable "scheduler_execution_role_arn" {
+  type        = string
+  description = "ARN of the role EventBridge Scheduler assumes to deliver scheduled triggers to the Input Queue"
+  default     = null
+}
+
+variable "create_dynamodb_schedule_table" {
+  type        = bool
+  description = "Whether the DynamoDB schedule store table is created"
+  default     = false
+}
+
+variable "dynamodb_schedule_table_arn" {
+  type        = string
+  description = "DynamoDB schedule store table ARN"
+  default     = null
+}
+
+variable "dynamodb_schedule_table_name" {
+  type        = string
+  description = "DynamoDB schedule store table name"
+  default     = null
+}
+
 variable "redis_url" {
   type        = string
   description = "URL of the Redis cluster"

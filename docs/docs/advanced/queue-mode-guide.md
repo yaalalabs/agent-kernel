@@ -273,6 +273,35 @@ Both queues are **FIFO** with:
 | `MessageRetentionPeriod` | Auto-deletes stuck messages, breaks infinite loops |
 | DLQ (optional) | Catches messages that exceed `maxReceiveCount` |
 
+:::note Scheduling flips the input queue to content-based deduplication
+With `enable_scheduling`, EventBridge Scheduler becomes a second producer on the Input Queue and cannot
+set a `MessageDeduplicationId`, so the queue enables content-based deduplication instead. Application
+senders keep sending an explicit `MessageDeduplicationId`, which takes precedence — nothing about the
+flows below changes. See the [scheduling guide](./scheduling.md).
+:::
+
+### Request Metadata: Attributes, with a Body Fallback
+
+`request_id` and `user_id` normally travel as SQS **message attributes**, and the runners read them from
+there. When the attribute is absent they fall back to the same key in the **message body**, and inject
+the resolved value back into the attributes so output-side forwarding keeps working.
+
+That fallback is what makes scheduled triggers work: EventBridge Scheduler cannot set message
+attributes, so a scheduled occurrence carries its `request_id`, `user_id`, `scheduled_task_id` and
+`scheduled_time` in the body. A message missing the key in *both* places keeps the pre-existing error
+path (retry, then permanent-failure handling).
+
+### Status Codes Travel Through the Queues
+
+The agent runner forwards `ChatService`'s status code to the Output Queue as a `status_code` custom
+attribute, and the output consumer stores it on the response record. On the way back out:
+
+- `status_code >= 400` raises an `HTTPException` with that status — an error reply surfaces as a real
+  4xx/5xx instead of HTTP 200 with an error body.
+- `200 < status_code < 400` returns a `JSONResponse` with that status. This is how a deferred chat's
+  **202** reaches the client through the queue path.
+- Records with no `status_code` (written before this existed) default to 200.
+
 ### REST Sync Flow
 
 1. Client sends `POST /api/v1/chat`.
