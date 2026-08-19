@@ -214,11 +214,13 @@ reply), so a Direct Line round trip proves the integration. The **Teams** channe
 added alongside it for manual verification from the real client.
 
 1. Create the app registration and the bot (Azure portal → **Azure Bot**, or `az`):
-   - App type **Multi Tenant** — what the live e2e bot uses, so `TEAMS_TENANT_ID` stays
-     empty and channel tokens are issued by the Bot Framework tenant. Set it only for a
-     **Single Tenant** registration, and then only to that app's own tenant: pointing it
-     at any other tenant makes every reply fail with `AADSTS7000229` while the webhook
-     still answers 200. Note the **App ID (client ID)** and generate a **client secret**.
+   - The live e2e bot (`ak-e2e-teams-bot`) is app type **Single Tenant**, so
+     `TEAMS_TENANT_ID` must be its own tenant; a multi-tenant registration works too, and
+     then the value stays empty. Note the **App ID (client ID)**, generate a **client
+     secret**, and note the **tenant ID**.
+   - If you create the registration with `az ad app create` or the Graph API rather than
+     the portal, **create its service principal too** (`az ad sp create --id <app-id>`).
+     Without it the webhook still answers 200 and every reply dies with `AADSTS7000229`.
 2. Set the bot's **messaging endpoint** to the `teams_messages_url` terraform output
    (`.../teams/messages`).
 3. Add channels: **Direct Line** (copy one of its **secret keys** → the test's
@@ -233,8 +235,8 @@ added alongside it for manual verification from the real client.
    ```
 
 CI: add secrets `E2E_TEAMS_APP_ID`, `E2E_TEAMS_APP_PASSWORD`,
-`E2E_TEAMS_DIRECTLINE_SECRET`. `E2E_TEAMS_TENANT_ID` is deliberately **unset** — the bot
-is multi-tenant (see above). `test_teams.py` skips when the Direct Line secret is absent.
+`E2E_TEAMS_DIRECTLINE_SECRET`; variable `E2E_TEAMS_TENANT_ID` — set, since the bot is
+single-tenant. `test_teams.py` skips when the Direct Line secret is absent.
 
 Attachments are **not** covered by the automated test: Direct Line serves uploads from
 different hosts than Teams' `smba.trafficmanager.net` / SharePoint, so attachment

@@ -93,10 +93,14 @@ Every key is settable either way: `teams.agent` is also `AK_TEAMS__AGENT`, and s
 `teams.tenant_id` is the Entra ID tenant that owns the **bot's own app registration**, matching the
 Bot Framework SDK's `MicrosoftAppTenantId`:
 
-*   **Multi-tenant registration** (the default this guide sets up): leave it empty. Channel tokens
-    are issued by the Bot Framework tenant, and setting a tenant the app has no service principal in
-    breaks every outbound reply with `AADSTS7000229`.
-*   **Single-tenant registration**: set it to that tenant, whose authority must issue the tokens.
+*   **Multi-tenant registration** (`signInAudience: AzureADMultipleOrgs`, and the Azure Bot's app
+    type set to MultiTenant): leave it empty. Channel tokens are then issued by the Bot Framework
+    tenant.
+*   **Single-tenant registration** (`AzureADMyOrg`): set it to that tenant, whose authority is the
+    only one that can issue the tokens. Leaving it empty fails with `AADSTS700016`.
+
+The two must agree — check the app with `az ad app show --id <app-id> --query signInAudience` and the
+bot with `az bot show -n <bot> -g <group> --query "properties.msaAppType"`.
 
 It is a *different* tenant from the one an app-only attachment download needs — that one belongs to
 the customer whose Teams the message came from, and is read off the incoming activity, falling back
@@ -140,10 +144,15 @@ Inbound and outbound use different credentials: an incoming activity is validate
 Framework public keys and only has to match the App ID, while the reply needs a token minted with
 the App Password. So a broken outbound credential looks like silence, not an error.
 
-Check the logs for `Error sending reply to Teams: Failed to get access token`. `AADSTS7000229`
-("missing service principal in the tenant") means `teams.tenant_id` names a tenant the app is not
-registered in — clear it for a multi-tenant bot, or set it to the app's own tenant. See "Tenant ID"
-below.
+Check the logs for `Error sending reply to Teams: Failed to get access token`:
+
+*   **`AADSTS7000229`** — "missing service principal in the tenant". The app registration exists in
+    that tenant but has no service principal, which is the state an app created with `az ad app
+    create` or the Graph API is left in. Create it: `az ad sp create --id <app-id>`.
+*   **`AADSTS700016`** — "application ... not found in the directory". The token was requested from
+    the wrong tenant. If the directory in the message is `d6d49420-f39b-4df7-a1dc-d59a935871db`, that
+    is the Bot Framework tenant, meaning `teams.tenant_id` was left empty for a single-tenant
+    registration. See "Tenant ID" below.
 
 ### Duplicate replies
 The agent runs outside the webhook turn (via a proactive `continue_conversation` follow-up), so a

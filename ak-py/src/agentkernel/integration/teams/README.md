@@ -90,10 +90,10 @@ export AK_TEAMS__TENANT_ID="<Optional-Tenant-ID>" # Optional: the bot app's own 
 ## Tenant ID
 
 `AK_TEAMS__TENANT_ID` is the Entra ID tenant that owns the **bot's own app registration** — the Bot
-Framework SDK's `MicrosoftAppTenantId`. Leave it empty for a multi-tenant registration (the setup
-above): channel tokens are then issued by the Bot Framework tenant, and naming a tenant the app has
-no service principal in breaks every outbound reply with `AADSTS7000229`. Set it only for a
-single-tenant registration, whose own tenant must issue those tokens.
+Framework SDK's `MicrosoftAppTenantId`. Leave it empty for a multi-tenant registration
+(`signInAudience: AzureADMultipleOrgs`), whose channel tokens come from the Bot Framework tenant.
+Set it for a single-tenant registration (`AzureADMyOrg`), whose own tenant is the only authority that
+can issue those tokens. The app registration and the Azure Bot resource's app type must agree.
 
 The tenant an app-only *attachment download* needs is a different one — it belongs to the customer
 whose Teams sent the message, and is taken from the activity.
@@ -126,8 +126,12 @@ fetched without an `Authorization` header rather than being handed a token.
 *   **The endpoint returns 200 but no reply arrives**: the reply is sent with a token minted from
     `AK_TEAMS__APP_PASSWORD`, while the inbound activity is only validated against Bot Framework
     public keys — so a broken outbound credential looks like silence. Look for
-    `Error sending reply to Teams: Failed to get access token` in the logs; `AADSTS7000229` means
-    `AK_TEAMS__TENANT_ID` names a tenant the app is not registered in (see "Tenant ID" above).
+    `Error sending reply to Teams: Failed to get access token` in the logs.
+    *   `AADSTS7000229` — the app registration has no service principal in that tenant, the state an
+        app created with `az ad app create` or the Graph API is left in. Fix with
+        `az ad sp create --id <app-id>`.
+    *   `AADSTS700016` — the token went to the wrong tenant; for a single-tenant registration this
+        means `AK_TEAMS__TENANT_ID` was left empty (see "Tenant ID" above).
 *   **401 Unauthorized downloading files**:
     *   The integration automatically handles pre-authenticated (`tempauth`) URLs provided by Teams.
     *   `Cannot authorize the download of ...` in the logs means the app-only fallback was needed and
