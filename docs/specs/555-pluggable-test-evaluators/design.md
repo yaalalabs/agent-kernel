@@ -153,7 +153,7 @@ graph LR
     rubric until then
 - Only the fields the two shipped metrics need are populated, all of them from `Test.compare`'s
   existing arguments
-  - `quasi_contains` needs `actual` and `expected`
+  - The score metric (`PatternMatchMetric`) needs `actual` and `expected`
   - `GEval` is keyed on `actual` and `expected` only — its `evaluation_params` name `ACTUAL_OUTPUT`
     and `EXPECTED_OUTPUT`, so the rubric never reads the question
   - `user_input` is still carried and passed through, because `LLMTestCase.input` is mandatory in
@@ -330,22 +330,39 @@ graph LR
 ### `DeepEvalEvaluator`
 
 - Ships as part of the `test` extra, exactly as `ragas` did — one dependency line, no new extra
-- **Score metric: `quasi_contains`** via `deepeval.scorer.Scorer`, wrapped in a custom `BaseMetric` as
-  DeepEval documents for statistical scoring
-  - SQuAD-style normalised containment (case, punctuation, and article normalisation, then a
-    containment test), so a verbose correct answer still matches a short expected phrase
-  - Chosen because it is the only option that is simultaneously DeepEval-specific (Opik, RAGAS, and
-    autoevals all ship ROUGE/BLEU/BERTScore/exact-match; none ship normalised containment), needs no
-    extra dependency, downloads no model, and runs offline — so `agentkernel[test]` stays light and
-    score mode never touches the network (survey §9)
-  - It returns a binary 0/1, with two accepted consequences: `threshold` is inert on the score path
-    (any value in `(0, 1]` behaves identically), and in `fallback` a near-miss reaches the llm stage
-    rather than passing locally (survey §9, Finding 12). That cost is proportional — only failing comparisons pay
-    it — and close to today's behaviour, since the length-sensitive `fuzz.ratio` already falls through
-    for long responses against short expectations
-  - The model-backed scorers (`faithfulness` via SummaC, `hallucination` via Vectara HHEM,
-    `answer_relevancy` via a sentence-transformers cross-encoder) are **not** shipped: each pulls
-    PyTorch and a first-run model download into every environment installing the `test` extra
+- **Score metric: `PatternMatchMetric`** (`deepeval.metrics.PatternMatchMetric`) — a ready-made,
+  non-LLM `BaseMetric` DeepEval ships directly, so no custom `BaseMetric` wrapper is written at all
+  - Normalised containment: both `actual` and `expected` are normalised with the same helper
+    `Scorer.quasi_*` uses internally (`deepeval.utils.normalize_text` — case, punctuation, and article
+    normalisation), `expected` is then regex-escaped and wrapped `(?s:.*){expected}(?s:.*)`, and
+    `PatternMatchMetric` is constructed with that pattern and matched against the normalised `actual`
+    via its `fullmatch`-based `measure()`. A verbose correct answer therefore still matches a short
+    expected phrase — verified empirically against `deepeval` 4.1.8 (containment, case-only match,
+    non-match, and article/punctuation normalisation on both sides)
+  - **Superseded design decision, not an implementation detail**: the design originally specified
+    `deepeval.scorer.Scorer.quasi_contains_score` for this metric, on the assumption that it performed
+    substring containment. Verified against the source (`scorer/scorer.py:119-124`), it is list-membership
+    *equality* — `normalize_text(prediction) in normalized_targets`, the same semantics as
+    `quasi_exact_match_score` but for several gold answers (its only other in-package use is the DROP
+    benchmark's multiple-gold-answer exact match). It is never a substring test, in either argument
+    direction, so no remapping of AK's arguments onto it produces containment. `PatternMatchMetric`
+    replaces it as the metric that actually delivers the containment behaviour this section describes
+  - Chosen over the model-backed scorers (`faithfulness` via SummaC, `hallucination` via Vectara HHEM,
+    `answer_relevancy` via a sentence-transformers cross-encoder) for the same reason `quasi_contains`
+    was: each pulls PyTorch and a first-run model download into every environment installing the `test`
+    extra. `PatternMatchMetric` needs neither, runs offline, and is DeepEval-specific in the same sense
+    (Opik, RAGAS, and autoevals ship ROUGE/BLEU/BERTScore/exact-match; none ship a ready-made
+    containment metric) (survey §9)
+  - It returns a binary 0/1, with the same two accepted consequences the original choice carried:
+    `threshold` is inert on the score path (any value in `(0, 1]` behaves identically), and in
+    `fallback` a near-miss reaches the llm stage rather than passing locally (survey §9, Finding 12).
+    That cost is proportional — only failing comparisons pay it — and close to today's behaviour, since
+    the length-sensitive `fuzz.ratio` already falls through for long responses against short expectations
+  - Constructed fresh per call, not once at evaluator construction: the pattern is compiled from the
+    call's `expected`, so `score_based_evaluation` builds a new `PatternMatchMetric(pattern=...)` per
+    case rather than reusing one instance across calls
+  - Verified present with a stable constructor across the full pinned range: `deepeval.metrics.PatternMatchMetric`
+    exists and is exported unchanged from `4.1.4` (the minimum pin) through `4.1.8`
 - **Llm metric: `GEval`**
   - One AK-owned rubric, judging whether the response conveys the same information as `expected`, with
     `evaluation_params=[ACTUAL_OUTPUT, EXPECTED_OUTPUT]`
@@ -486,7 +503,8 @@ graph LR
 - Removed from the `test` extra (`pyproject.toml:152-157`): `ragas`, `datasets`, `pandas`, the
   `langchain_community==0.4.1` pin, and `rapidfuzz` (`:152`), which loses its consumer once
   `_fuzzy_compare` is deleted
-- Nothing else is added: `quasi_contains` needs no library, and `litellm` is already there
+- Nothing else is added: `PatternMatchMetric` is part of `deepeval` core (no extra library), and
+  `litellm` is already there
 - DeepEval emits anonymous usage telemetry by default and writes local state files into the working
   directory; both are suppressed — see "No outbound data"
 - Installing `deepeval` also pulls in `pytest-xdist`, `pytest-repeat`, `pytest-rerunfailures`, and
@@ -563,7 +581,7 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
   `evaluator` mid-suite takes effect instead of scoring through the previously cached instance
 - `ak-py/tests/test_test_config.py` gains assertions for the new fields, the renamed `llm` block, the
   rejected `mode` values, and the `AKConfigError` raised by a legacy `judge:` key
-- Score-mode tests run against the real `quasi_contains` scorer — no model download, no network — and
+- Score-mode tests run against the real `PatternMatchMetric` — no model download, no network — and
   assert the new score semantics rather than the old fuzzy ratio
 
 ## Non-goals
