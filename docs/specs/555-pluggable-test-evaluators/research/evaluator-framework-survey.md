@@ -211,6 +211,21 @@ Sources: [`deepeval/scorer/scorer.py`](https://github.com/confident-ai/deepeval/
 [Opik heuristic metrics](https://www.comet.com/docs/opik/evaluation/metrics/heuristic_metrics) ·
 [RAGAS traditional metrics](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/traditional/)
 
+**Correction (2026-08-19, verified against installed `deepeval` 4.1.4 and 4.1.8 wheels):**
+`Scorer.quasi_contains_score(targets, prediction)` is **not** a substring/containment test despite its
+name — it is `normalize_text(prediction) in normalized_targets`, i.e. list-membership *equality*
+(the same semantics as `quasi_exact_match_score`, extended to several gold answers). Its only other
+in-package caller is the DROP benchmark's multiple-gold-answer exact match. This survey's Finding 10/11
+characterisation of it as a normalised matcher is accurate; the containment framing carried into
+`design.md`'s original metric choice was not, and `design.md` has been corrected to use
+`deepeval.metrics.PatternMatchMetric` (a ready-made, non-LLM `BaseMetric`, present with a stable
+constructor from `4.1.4` through `4.1.8`) instead — a full-string regex match against a
+normalised-and-wildcard-wrapped pattern, which does deliver containment. This class was not enumerated
+in the §9 inventory above because that inventory scoped itself to `deepeval.scorer.Scorer` methods and
+missed the two ready-made non-LLM metric classes DeepEval also ships directly:
+`PatternMatchMetric` and `ExactMatchMetric` (`deepeval/metrics/pattern_match/`,
+`deepeval/metrics/exact_match/`).
+
 ## 10. Cross-framework metric matrix
 
 Enumerated from each vendor's own metric index on 2026-08-19 (links at the end of this section).
