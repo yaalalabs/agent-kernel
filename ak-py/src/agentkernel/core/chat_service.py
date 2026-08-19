@@ -224,46 +224,50 @@ class AgentHandler:
             return asyncio.run(coro)
         return loop.run_until_complete(coro)
 
-    def run_sync(self, requests: List[Any]) -> Any:
+    def run_sync(self, requests: List[Any], acting_user_id: Optional[str] = None) -> Any:
         """Run agent requests synchronously.
 
         :param requests: List of AgentRequest objects to process
+        :param acting_user_id: When given, published as the run's acting user (see Runtime.run)
         :return: Agent execution result
         """
-        return AgentHandler._run_async_sync(self.service.run_multi(requests=requests))
+        return AgentHandler._run_async_sync(self.service.run_multi(requests=requests, acting_user_id=acting_user_id))
 
-    async def run_async(self, requests: List[Any]) -> Any:
+    async def run_async(self, requests: List[Any], acting_user_id: Optional[str] = None) -> Any:
         """Run agent requests asynchronously.
 
         :param requests: List of AgentRequest objects to process
+        :param acting_user_id: When given, published as the run's acting user (see Runtime.run)
         :return: Agent execution result
         """
-        return await self.service.run_multi(requests=requests)
+        return await self.service.run_multi(requests=requests, acting_user_id=acting_user_id)
 
-    def run_stream_sync(self, requests: List[Any]) -> List[Any]:
+    def run_stream_sync(self, requests: List[Any], acting_user_id: Optional[str] = None) -> List[Any]:
         """Run agent streaming requests synchronously.
 
         Manages event loop lifecycle internally and returns all chunks as a list.
 
         :param requests: List of AgentRequest objects to process
+        :param acting_user_id: When given, published as the run's acting user (see Runtime.stream)
         :return: List of StreamChunk objects
         """
 
         async def _collect():
             chunks = []
-            async for chunk in self.service.stream_multi(requests=requests):
+            async for chunk in self.service.stream_multi(requests=requests, acting_user_id=acting_user_id):
                 chunks.append(chunk)
             return chunks
 
         return AgentHandler._run_async_sync(_collect())
 
-    async def run_stream_async(self, requests: List[Any]) -> AsyncGenerator[Any, None]:
+    async def run_stream_async(self, requests: List[Any], acting_user_id: Optional[str] = None) -> AsyncGenerator[Any, None]:
         """Run agent streaming requests asynchronously.
 
         :param requests: List of AgentRequest objects to process
+        :param acting_user_id: When given, published as the run's acting user (see Runtime.stream)
         :return: AsyncGenerator yielding StreamChunk objects
         """
-        async for chunk in self.service.stream_multi(requests=requests):
+        async for chunk in self.service.stream_multi(requests=requests, acting_user_id=acting_user_id):
             yield chunk
 
     def get_response_session_id(self, session_id: Optional[str]) -> Optional[str]:
@@ -346,7 +350,7 @@ class ChatService:
         requests = await self._prepare_async(req, requests)
         handler = AgentHandler()
         handler.initialize(req.session_id, req.agent)
-        result = await handler.run_async(requests)
+        result = await handler.run_async(requests, acting_user_id=req.user_id)
         return result, handler.get_response_session_id(req.session_id)
 
     def execute_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
@@ -360,7 +364,7 @@ class ChatService:
         requests = self._prepare_sync(req, requests)
         handler = AgentHandler()
         handler.initialize(req.session_id, req.agent)
-        result = handler.run_sync(requests)
+        result = handler.run_sync(requests, acting_user_id=req.user_id)
         return result, handler.get_response_session_id(req.session_id)
 
     async def execute_stream(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> AsyncGenerator[StreamChunk, None]:
@@ -381,7 +385,7 @@ class ChatService:
 
         async def _stream() -> AsyncGenerator[StreamChunk, None]:
             try:
-                async for chunk in handler.run_stream_async(requests):
+                async for chunk in handler.run_stream_async(requests, acting_user_id=req.user_id):
                     yield chunk
             except Exception as e:
                 yield StreamChunk(error=str(e), done=True)
@@ -405,7 +409,7 @@ class ChatService:
 
         def _stream() -> Generator[StreamChunk, None, None]:
             try:
-                for chunk in handler.run_stream_sync(requests):
+                for chunk in handler.run_stream_sync(requests, acting_user_id=req.user_id):
                     yield chunk
             except Exception as e:
                 yield StreamChunk(error=str(e), done=True)

@@ -9,7 +9,7 @@ class _FakeService:
         self._chunks = chunks
         self.received_requests = None
 
-    async def stream_multi(self, requests):
+    async def stream_multi(self, requests, acting_user_id=None):
         self.received_requests = requests
         for chunk in self._chunks:
             yield chunk
@@ -23,16 +23,16 @@ class _FakeHandler:
     def initialize(self, session_id, agent):
         self.initialized_with = (session_id, agent)
 
-    async def run_stream_async(self, requests):
-        async for chunk in self.service.stream_multi(requests):
+    async def run_stream_async(self, requests, acting_user_id=None):
+        async for chunk in self.service.stream_multi(requests, acting_user_id=acting_user_id):
             yield chunk
 
-    def run_stream_sync(self, requests):
+    def run_stream_sync(self, requests, acting_user_id=None):
         import asyncio
 
         async def _collect():
             chunks = []
-            async for chunk in self.service.stream_multi(requests):
+            async for chunk in self.service.stream_multi(requests, acting_user_id=acting_user_id):
                 chunks.append(chunk)
             return chunks
 

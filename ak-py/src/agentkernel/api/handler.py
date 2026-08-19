@@ -2,10 +2,11 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import ConfigDict
 
+from ..auth.authoriser import Authoriser
 from ..core import Config
 from ..core.chat_service import ChatService
 from ..core.model import BaseChatRequest, BaseRunRequest, ExecutionMode
@@ -31,6 +32,43 @@ class RESTRequestHandler(ABC):
 
         """
         pass
+
+
+class AuthorisedRESTRequestHandler(RESTRequestHandler):
+    """
+    Base for resource-management route handlers protected by an optional, pluggable
+    Authoriser (e.g. conversation threads, scheduled tasks). Owns the Bearer-token
+    parsing and 401 mapping; when no Authoriser is configured, _resolve_user returns
+    None and the handler's routes remain open.
+    """
+
+    def __init__(self, authoriser: Optional[Authoriser] = None):
+        """
+        Initializes an AuthorisedRESTRequestHandler instance.
+        :param authoriser: Optional user-supplied Authoriser protecting the handler's routes.
+        """
+        self._authoriser = authoriser
+
+    def _resolve_user(self, request: Request) -> Optional[str]:
+        """
+        Resolve the caller's user_id via the configured Authoriser.
+        :param request: The incoming FastAPI request.
+        :return: The resolved user_id, or None when no Authoriser is configured.
+        :raises HTTPException: 401 when a token is missing or rejected.
+        """
+        if self._authoriser is None:
+            return None
+        auth_header = request.headers.get("authorization")
+        if auth_header is None:
+            raise HTTPException(status_code=401, detail="Missing authorization header")
+        scheme, _, token = auth_header.partition(" ")
+        token = token.strip()
+        if scheme.lower() != "bearer" or not token:
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+        user_id = self._authoriser.authorise(token)
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return user_id
 
 
 class AgentRESTRequestHandler(RESTRequestHandler):

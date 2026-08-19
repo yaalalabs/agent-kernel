@@ -20,7 +20,7 @@ no broker, no cloud services. You get per-session FIFO ordering (parallel sessio
 `no_of_consumers` worker threads), bounded retry with a permanent-failure path, and request
 deduplication: the same semantics as the production broker transports, minus durability. The
 same application code scales out by switching `execution.queues.type` to a broker transport
-(`sqs` today; `kafka`/`nats` upcoming): the agent runner then moves to its own container with no
+(`sqs`, `kafka`, or `nats`): the agent runner then moves to its own container with no
 code changes. See the comments in [config.yaml](config.yaml) for the knobs.
 
 ## Setup

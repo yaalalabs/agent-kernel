@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Optional
 
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig
@@ -34,13 +35,36 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         return cls._chat_service
 
     @classmethod
-    def _get_record_attributes(cls, raw_queue_message: dict) -> dict:
+    def _body_from_record(cls, record: dict) -> Optional[BaseRunRequest]:
+        """
+        Best-effort parse of a record's body, for callers that have not already validated it.
+
+        A malformed body must not mask the missing-metadata error ``_get_record_attributes``
+        raises, so a parse failure resolves to None instead of propagating.
+
+        :param record: SQS record (``dict``) passed from the Lambda event
+        :return: The parsed body, or None when it is absent or unparseable
+        """
+        try:
+            return cls._parse_body(record)
+        except Exception:
+            cls._log.debug("Could not parse the record body for the request metadata fallback")
+            return None
+
+    @classmethod
+    def _get_record_attributes(cls, raw_queue_message: dict, body: Optional[BaseRunRequest] = None) -> dict:
         """
         Extract attributes from the raw SQS message record.
 
+        request_id and user_id fall back to the message body: scheduled triggers carry their
+        metadata there because EventBridge Scheduler cannot set SQS message attributes. Message
+        attributes keep precedence.
+
         :param raw_queue_message: Original SQS message (``dict``) received by the Lambda function
+        :param body: Already-validated body to use for the fallback; when omitted it is parsed
+            best-effort from the record
         :return: Dictionary (``dict``) containing extracted attributes
-        :raises ValueError: If request_id is missing
+        :raises ValueError: If request_id is present in neither the attributes nor the body
         """
         attributes = SQSHandler.get_message_system_attributes(raw_queue_message)
         message_attributes = SQSHandler.get_message_custom_attributes(raw_queue_message)
@@ -49,6 +73,12 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         endpoint_url = (
             message_attributes.get("endpoint_url") if AKConfig.get().execution.mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM) else None
         )
+
+        if not request_id or not user_id:
+            body = body if body is not None else cls._body_from_record(raw_queue_message)
+            if body is not None:
+                request_id = request_id or getattr(body, "request_id", None)
+                user_id = user_id or body.user_id
 
         if not request_id:
             raise ValueError("request_id is required")
@@ -129,7 +159,7 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         body = cls._parse_body(record)
         _, agent_response = cls._get_chat_service().process_chat_request(req=body)
         cls._log.info(f"Chat service response: '{agent_response}'")
-        record_attributes = cls._get_record_attributes(raw_queue_message=record)
+        record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
         cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes)
         cls._log.info(f"Sent Response message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
 
@@ -178,11 +208,33 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         return cls._chat_service
 
     @classmethod
-    def _get_record_attributes(cls, raw_queue_message: dict) -> dict:
+    def _body_from_record(cls, record: dict) -> Optional[BaseRunRequest]:
+        """
+        Best-effort parse of a record's body, for callers that have not already validated it.
+
+        A malformed body must not mask the missing-metadata error ``_get_record_attributes``
+        raises, so a parse failure resolves to None instead of propagating.
+
+        :param record: SQS record (``dict``) passed from the Lambda event
+        :return: The parsed body, or None when it is absent or unparseable
+        """
+        try:
+            return cls._parse_body(record)
+        except Exception:
+            cls._log.debug("Could not parse the record body for the request metadata fallback")
+            return None
+
+    @classmethod
+    def _get_record_attributes(cls, raw_queue_message: dict, body: Optional[BaseRunRequest] = None) -> dict:
         """
         Extract attributes from the raw SQS message record.
 
+        request_id and user_id fall back to the message body (see the non-streaming runner);
+        endpoint_url has no body fallback because it is an infrastructure detail of the sender.
+
         :param raw_queue_message: Original SQS message (``dict``) received by the Lambda function
+        :param body: Already-validated body to use for the fallback; when omitted it is parsed
+            best-effort from the record
         :return: Dictionary (``dict``) containing extracted attributes
         :raises ValueError: If request_id or endpoint_url is missing
         """
@@ -191,6 +243,12 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         request_id = message_attributes.get("request_id")
         user_id = message_attributes.get("user_id")
         endpoint_url = message_attributes.get("endpoint_url")
+
+        if not request_id or not user_id:
+            body = body if body is not None else cls._body_from_record(raw_queue_message)
+            if body is not None:
+                request_id = request_id or getattr(body, "request_id", None)
+                user_id = user_id or body.user_id
 
         if not request_id:
             raise ValueError("request_id is required")
@@ -259,7 +317,7 @@ class ServerlessStreamAgentRunner(LambdaSQSConsumer):
         """
         cls._log.info(f"Processing stream message: {record}")
         body = cls._parse_body(record)
-        record_attributes = cls._get_record_attributes(raw_queue_message=record)
+        record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
         # Included in the dedup suffix below so a retry's chunks never collide with a prior attempt's.
         receive_count = record.get("attributes", {}).get("ApproximateReceiveCount", "1")
 

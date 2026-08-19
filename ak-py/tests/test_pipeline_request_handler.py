@@ -2,7 +2,8 @@ import json
 import threading
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner
@@ -12,7 +13,7 @@ from agentkernel.core.runtime import Runtime
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.consumer import ConsumerLoop
 from agentkernel.pipeline.envelope import QueueName
-from agentkernel.pipeline.request_handler import RequestHandler
+from agentkernel.pipeline.request_handler import RequestHandler, RestHandler
 from agentkernel.pipeline.response_handler import ResponseHandler
 from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
 from agentkernel.pipeline.thread_runner import ThreadRunner
@@ -204,6 +205,76 @@ class TestStreamSSE:
         assert frames[1] == {"delta": "llo", "done": False, "session_id": "s1"}
         assert frames[-1]["done"] is True
         assert frames[-1]["session_id"] == "s1"
+
+
+class TestStatusHonoringResponses:
+    """The stored status_code decides the HTTP response, on every queue-backed REST surface
+    (#629 Phase 2): >= 400 raises, a 2xx-non-200 (the 202 of a deferred chat) is preserved, and a
+    record without a status_code stays 200.
+    """
+
+    def test_status_honoring_lives_in_the_shared_base(self):
+        """ECSQueueRequestHandler is a bare RestHandler, so the behavior has to be inherited, not
+        re-implemented on the pipeline handler."""
+        assert RequestHandler._build_sync_response is RestHandler._build_sync_response
+
+    def test_2xx_non_200_is_preserved(self, monkeypatch):
+        _configure(monkeypatch, mode="rest_sync")
+        record = {"request_id": "r1", "status_code": 202, "body": {"status": "SCHEDULED", "session_id": "s1"}}
+
+        response = RequestHandler()._build_sync_response(record)
+
+        assert isinstance(response, JSONResponse)
+        assert response.status_code == 202
+        assert json.loads(response.body) == {"status": "SCHEDULED", "session_id": "s1"}
+
+    def test_200_returns_the_bare_body(self, monkeypatch):
+        _configure(monkeypatch, mode="rest_sync")
+        record = {"request_id": "r1", "status_code": 200, "body": {"result": "ok", "session_id": "s1"}}
+
+        assert RequestHandler()._build_sync_response(record) == {"result": "ok", "session_id": "s1"}
+
+    def test_missing_status_code_defaults_to_200(self, monkeypatch):
+        """Records stored before the status was forwarded keep their pre-change behavior."""
+        _configure(monkeypatch, mode="rest_sync")
+
+        assert RequestHandler()._build_sync_response({"request_id": "r1", "body": {"result": "ok"}}) == {"result": "ok"}
+
+    def test_error_status_raises_with_the_body_as_detail(self, monkeypatch):
+        _configure(monkeypatch, mode="rest_sync")
+        record = {"request_id": "r1", "status_code": 400, "body": {"error": "No prompt provided in the request"}}
+
+        with pytest.raises(HTTPException) as raised:
+            RequestHandler()._build_sync_response(record)
+
+        assert raised.value.status_code == 400
+        assert raised.value.detail == {"error": "No prompt provided in the request"}
+
+    def test_record_without_a_body_is_returned_as_is(self, monkeypatch):
+        """Stores that hand back the body alone (get_message contract) still work unchanged."""
+        _configure(monkeypatch, mode="rest_sync")
+
+        assert RequestHandler()._build_sync_response({"result": "ok"}) == {"result": "ok"}
+
+    def test_stored_202_surfaces_as_http_202_on_the_poll_route(self, monkeypatch, dummy_agent):
+        _configure(monkeypatch, mode="rest_async")
+        InMemoryResponseStore().add_message(
+            {"session_id": "s1", "request_id": "r-202", "status_code": 202, "body": {"status": "SCHEDULED", "session_id": "s1"}}
+        )
+
+        response = _client().get(CHAT, params={"request_id": "r-202"})
+
+        assert response.status_code == 202
+        assert response.json() == {"status": "SCHEDULED", "session_id": "s1"}
+
+    def test_stored_error_surfaces_as_http_error_on_the_poll_route(self, monkeypatch, dummy_agent):
+        _configure(monkeypatch, mode="rest_async")
+        InMemoryResponseStore().add_message({"session_id": "s1", "request_id": "r-500", "status_code": 500, "body": {"error": "agent exploded"}})
+
+        response = _client().get(CHAT, params={"request_id": "r-500"})
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == {"error": "agent exploded"}
 
 
 class TestMultipart:

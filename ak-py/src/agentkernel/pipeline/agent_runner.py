@@ -33,7 +33,7 @@ class AgentRunner:
     def process(self, message: QueueMessage) -> None:
         """Handle one input message: run the agent and forward the reply (with its status)."""
         body = BaseRunRequest.model_validate(json.loads(message.body))
-        request_id = self._require_request_id(message)
+        request_id = self._resolve_request_metadata(message, body)
 
         self._log.info(f"[AGENT START] request_id={request_id}, session_id={body.session_id}, agent={body.agent}")
 
@@ -92,10 +92,31 @@ class AgentRunner:
     # -- shared plumbing --------------------------------------------------------------------
 
     @staticmethod
-    def _require_request_id(message: QueueMessage) -> str:
+    def _resolve_request_metadata(message: QueueMessage, body: BaseRunRequest) -> str:
+        """Resolve the message's request_id, preferring the attribute over the body.
+
+        Scheduled triggers carry their metadata in the body instead of message attributes (the
+        one delivery contract every schedule provider can honor), so the body is the fallback.
+        A body-resolved id is injected back into the attributes because the output side forwards
+        request_id/user_id from there (``_send_to_output``, ``ResponseHandler._store_response``).
+
+        :param message: The input message; its attributes are updated on the body-fallback path.
+        :param body: The already-validated request body (``extra="allow"``, so a trigger's
+            request_id arrives as an extra attribute).
+        :return: The resolved request id.
+        :raises ValueError: If neither the attributes nor the body carry a request_id.
+        """
         request_id = message.attributes.get(ATTR_REQUEST_ID)
+        if request_id:
+            return request_id
+
+        request_id = getattr(body, "request_id", None)
         if not request_id:
-            raise ValueError("request_id is required in queue message attributes")
+            raise ValueError("request_id is required in queue message attributes or body")
+
+        message.attributes[ATTR_REQUEST_ID] = request_id
+        if body.user_id:
+            message.attributes.setdefault(ATTR_USER_ID, body.user_id)
         return request_id
 
     def _send_to_output(self, source: QueueMessage, response_body, status_code: Optional[int] = None, dedup_suffix: Optional[str] = None) -> None:
@@ -129,7 +150,7 @@ class StreamAgentRunner(AgentRunner):
 
     def process(self, message: QueueMessage) -> None:
         body = BaseRunRequest.model_validate(json.loads(message.body))
-        request_id = self._require_request_id(message)
+        request_id = self._resolve_request_metadata(message, body)
         if not message.attributes.get(ATTR_ENDPOINT_URL) and QueueTransportFactory.resolve_type() != "in_memory":
             raise ValueError("endpoint_url is required in queue message attributes for STREAM mode")
 

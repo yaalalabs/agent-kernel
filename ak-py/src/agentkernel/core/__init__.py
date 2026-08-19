@@ -26,7 +26,7 @@ from .model import (
 )
 from .config import AKConfig as Config
 from .module import Module
-from .runtime import Runtime
+from .runtime import ACTING_USER_CACHE_KEY, Runtime
 from .service import AgentService
 from .hooks import PreHook, PostHook
 from .tool import ToolContext, ToolBuilder

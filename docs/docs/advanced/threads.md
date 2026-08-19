@@ -165,7 +165,8 @@ Bearer token against your own authentication provider and resolve the caller's `
 ```python
 from typing import Optional
 from agentkernel.api import RESTAPI
-from agentkernel.thread import AgentThreadRequestHandler, Authoriser
+from agentkernel.auth import Authoriser
+from agentkernel.thread import AgentThreadRequestHandler
 
 
 class MyAuthoriser(Authoriser):

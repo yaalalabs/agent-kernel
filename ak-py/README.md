@@ -653,6 +653,78 @@ Configure queue-backed and serverless execution behavior.
     - **Default**: `{}`
     - **Description**: Passthrough settings merged into the `confluent-kafka` producer and consumer configs (SASL, TLS, tuning); set via `config.yaml`, not individually exported as environment variables
 
+  - **NATS Server URL**
+    - **Field**: `execution.queues.nats.url`
+    - **Default**: `nats://localhost:4222`
+    - **Description**: NATS server URL (comma-separated for a cluster)
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__URL`
+
+  - **NATS Input Stream**
+    - **Field**: `execution.queues.nats.input_stream`
+    - **Default**: `AGENT_REQUESTS`
+    - **Description**: JetStream stream carrying chat requests
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__INPUT_STREAM`
+
+  - **NATS Input Subject Prefix**
+    - **Field**: `execution.queues.nats.input_subject_prefix`
+    - **Default**: `chat.req`
+    - **Description**: Subject prefix for chat requests
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__INPUT_SUBJECT_PREFIX`
+
+  - **NATS Output Stream**
+    - **Field**: `execution.queues.nats.output_stream`
+    - **Default**: `AGENT_REPLIES`
+    - **Description**: JetStream stream carrying agent replies
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__OUTPUT_STREAM`
+
+  - **NATS Output Subject Prefix**
+    - **Field**: `execution.queues.nats.output_subject_prefix`
+    - **Default**: `chat.out`
+    - **Description**: Subject prefix for agent replies
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__OUTPUT_SUBJECT_PREFIX`
+
+  - **NATS Partitions**
+    - **Field**: `execution.queues.nats.partitions`
+    - **Default**: `32`
+    - **Description**: Number of partition subjects per stream, each served by its own durable consumer. Sessions hash to a partition, so this caps how many messages can be in flight at once: keep it at or above `no_of_consumers` x replicas. Changing it re-maps sessions, so size it up front (idle partitions cost almost nothing)
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__PARTITIONS`
+
+  - **NATS Ack Wait**
+    - **Field**: `execution.queues.nats.ack_wait`
+    - **Default**: `300.0`
+    - **Description**: Seconds the server waits for an acknowledgement before redelivering. Must exceed your longest agent turn: a turn that outlives it is redelivered and executed a second time
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__ACK_WAIT`
+
+  - **NATS Retry Backoff**
+    - **Field**: `execution.queues.nats.retry_backoff`
+    - **Default**: `2.0`
+    - **Description**: Seconds to delay a redelivery after a failed message (nak delay)
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__RETRY_BACKOFF`
+
+  - **NATS Duplicate Window**
+    - **Field**: `execution.queues.nats.duplicate_window`
+    - **Default**: `300.0`
+    - **Description**: Seconds within which a repeated dedup id is dropped by the stream (SQS parity)
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__DUPLICATE_WINDOW`
+
+  - **NATS Max Age**
+    - **Field**: `execution.queues.nats.max_age`
+    - **Default**: `86400.0`
+    - **Description**: Seconds before an unconsumed message is discarded. A safety net: work-queue messages are otherwise kept forever
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__MAX_AGE`
+
+  - **NATS Request Timeout**
+    - **Field**: `execution.queues.nats.request_timeout`
+    - **Default**: `10.0`
+    - **Description**: Seconds to wait for a NATS request (publish, ack, management call) to complete
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__REQUEST_TIMEOUT`
+
+  - **NATS Auto Provision**
+    - **Field**: `execution.queues.nats.auto_provision`
+    - **Default**: `false`
+    - **Description**: Create the streams and per-partition consumers at startup if missing. Convenient for local and dev clusters; leave false in production, where the objects are managed declaratively (NACK CRs) and a missing object should fail loudly instead of being created with defaults
+    - **Environment Variable**: `AK_EXECUTION__QUEUES__NATS__AUTO_PROVISION`
+
   - **Queue Batch Size**
     - **Field**: `execution.queues.batch_size`
     - **Default**: `None`
@@ -1321,6 +1393,19 @@ execution:
     #   delivery_timeout: 30.0
     #   metadata_timeout: 5.0
     #   client_config: {} # passthrough confluent-kafka producer/consumer settings (SASL, TLS, tuning)
+    # nats:  # nats transport settings, unused otherwise
+    #   url: nats://localhost:4222
+    #   input_stream: AGENT_REQUESTS
+    #   input_subject_prefix: chat.req
+    #   output_stream: AGENT_REPLIES
+    #   output_subject_prefix: chat.out
+    #   partitions: 32
+    #   ack_wait: 300.0
+    #   retry_backoff: 2.0
+    #   duplicate_window: 300.0
+    #   max_age: 86400.0
+    #   request_timeout: 10.0
+    #   auto_provision: false # true for local/dev; leave false where NACK CRs own the objects
     # batch_size is set by the deployment tooling — set via AK_EXECUTION__QUEUES__BATCH_SIZE, never here
   response_store:
     type: redis # in_memory | redis | valkey | dynamodb | dotted path — omit for the built-in in_memory store

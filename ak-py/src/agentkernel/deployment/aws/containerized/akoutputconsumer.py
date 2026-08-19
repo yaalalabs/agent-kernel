@@ -135,19 +135,22 @@ class ECSOutputConsumer(ECSSQSConsumer):
                 return
 
             error_body = json.dumps(error_payload)
-            message = cls._construct_message_for_store(record, body=error_body)
+            # The delivery itself failed permanently, whatever status the runner had produced.
+            message = cls._construct_message_for_store(record, body=error_body, status_code=500)
             cls._get_response_store().add_message(message)
             cls._log.info(f"Stored permanent-failure error — " f"session_id={message['session_id']} " f"request_id={message['request_id']}")
         except Exception:
             cls._log.exception("Failed to handle permanent-failure output message")
 
     @classmethod
-    def _construct_message_for_store(cls, record: Dict[str, Any], body: Any = None) -> Dict[str, Any]:
+    def _construct_message_for_store(cls, record: Dict[str, Any], body: Any = None, status_code: int | None = None) -> Dict[str, Any]:
         """
         Build the dict to write into the Response Store.
 
         :param record: boto3 SQS record
         :param body: Override body (string or dict). Defaults to record["Body"].
+        :param status_code: Override status. Defaults to the agent runner's ``status_code``
+            attribute, or 200 when the message carries none (pre-change, TTL-bound records).
         :raises ValueError: If request_id is missing from message attributes.
         """
         message_body = body if body is not None else record.get("Body", "{}")
@@ -162,6 +165,7 @@ class ECSOutputConsumer(ECSSQSConsumer):
         return {
             "session_id": message_body.get("session_id"),
             "request_id": request_id,
+            "status_code": status_code if status_code is not None else int(message_attributes.get("status_code") or 200),
             "body": message_body,
         }
 

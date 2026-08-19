@@ -84,7 +84,7 @@ graph LR
 You get the production queue semantics locally: per-session FIFO ordering with parallel
 sessions, bounded retry with a permanent-failure error path, and request deduplication: with
 zero backing services, and the same wire responses as before. The same app moves to a durable
-broker (SQS on AWS today; Kafka/NATS upcoming) purely by configuration. See the
+broker (SQS on AWS today; Kafka/NATS on-prem or Kubernetes) purely by configuration. See the
 [Queue Mode Guide](../advanced/queue-mode-guide#running-queue-mode-locally-in_memory) for the
 config knobs and
 [`examples/api/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)

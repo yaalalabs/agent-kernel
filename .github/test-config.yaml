@@ -110,3 +110,11 @@ e2e:
     # Containerized examples
     - type: containerized
       path: examples/containerized/openai
+
+    # Transport examples: each starts its broker with docker compose and skips itself when
+    # Docker is unavailable. They resolve the kafka/nats extras from the branch wheel that
+    # build-ak-py caches into ak-py/dist, which build.sh local installs with --no-cache.
+    - type: containerized
+      path: examples/transport/kafka
+    - type: containerized
+      path: examples/transport/nats

@@ -311,23 +311,55 @@ Client `nats-py` (new `nats` extra). Per `research/nats-jetstream.md`:
 
 - **Event-loop bridge**: module-level `_NatsLoop` singleton: one daemon thread running
   `loop.run_forever()`; all client coroutines dispatched via
-  `asyncio.run_coroutine_threadsafe(...).result(timeout)`. One `nats` connection per process.
-- **Subjects/streams**: input `chat.req.<session_id>` on stream `AGENT_REQUESTS` with a
-  deterministic-subject-mapping transform to `chat.req.<partition>.<session_id>` (`partitions`
-  config, default 32); output symmetric on `AGENT_REPLIES` / `chat.out.*` (spec decision for the
-  design's open point: the output path **is** partitioned, same count: per-session chunk order
-  needs it and idle partitions are free). Retention `WorkQueuePolicy`, `duplicate_window` 300 s,
-  `max_age` 24 h safety net.
-- **Send**: `js.publish(subject, body, headers={"Nats-Msg-Id": dedup_id, ...attributes})`.
-- **Consumers**: durable pull consumer per partition (`filter_subject="chat.req.<p>.>"`,
-  `ack_wait` config default 30 s, `max_deliver = max_receive_count + 1`, `max_ack_pending=1`).
-  Each consumer thread cycles the partition consumers in a shuffled order calling
-  `fetch(1, timeout=wait_seconds/partitions)`; the server serializes competing fetchers per
-  partition. Envelope: `receive_count = msg.metadata.num_delivered`, attributes from headers,
-  `group_id` = subject's session token, `native=msg`.
-- **Ack** = `msg.ack()`. **Nack** = `msg.nak(delay=retry_backoff)`. **Permanent failure**: after
-  the hook, `ack` calls `msg.term()` (removes from the work-queue stream; `max_deliver` is the
-  server-side backstop).
+  `asyncio.run_coroutine_threadsafe(...).result(timeout)`, cancelling the coroutine on timeout so a
+  stalled call cannot leak work onto the loop. One `nats` connection per process.
+- **Subjects/streams**: streams `AGENT_REQUESTS` (`chat.req.>`) and `AGENT_REPLIES` (`chat.out.>`),
+  retention `WorkQueuePolicy`, `duplicate_window` 300 s, `max_age` 24 h safety net. The output path
+  **is** partitioned at the same count (spec decision for the design's open point: per-session
+  chunk order needs it and idle partitions are free).
+- **Partitioning is client-side** (implementation decision, deviating from the research note's
+  server-side subject transform): the publisher computes
+  `partition = crc32(session_id) % partitions` and publishes straight to
+  `<prefix>.<partition>.<session_token>`. Rationale: it needs no server-side subject-transform
+  support, keeps `auto_provision: false` operators from having to encode a transform in their NACK
+  CRs, and is deterministic and unit-testable in Python. **`crc32`, not `hash()`**: Python salts
+  string hashing per interpreter, so two pods would disagree about a session's partition and its
+  ordering guarantee would silently disappear. An external producer that publishes unpartitioned
+  subjects would need either the same hash or a server-side transform added by the operator.
+- **Send**: `js.publish(subject, body, headers={"Nats-Msg-Id": dedup_id, "Ak-Group-Id": session,
+  ...attributes})`, awaiting the `PubAck` (so an unreachable server fails the request). The session
+  id travels as a **header** as well as a subject token, because a subject token cannot contain
+  dots while a session id can; the header is authoritative and the token is for routing and
+  observability. A `duplicate` PubAck is logged, not raised: the stream rejecting a repeated dedup
+  id is the requested behaviour.
+- **Dedup scope**: JetStream's duplicate window is per stream, and requests and replies live on
+  different streams, so a reply may safely carry its request's dedup id. (The Kafka transport had
+  to scope its own claim by topic to obtain the same property; §6.)
+- **Consumers**: durable pull consumer per partition, named `<stream>-p<n>`
+  (`filter_subject="<prefix>.<p>.>"`: non-overlapping filters are a hard requirement on a
+  work-queue stream, `ack_wait` config, `max_deliver = max_receive_count + 1`, `max_ack_pending=1`
+  so one message per partition is in flight and a session's turns stay ordered). A consumer holds
+  one pull subscription per partition and a `fetch` walks them from a rotating cursor that starts
+  at a random offset per instance (threads and replicas neither converge on one partition nor
+  starve any), with a per-partition wait of `max(wait_seconds / partitions, 50 ms)` and the whole
+  call bounded by `wait_seconds`. Envelope: `receive_count = msg.metadata.num_delivered` (exact,
+  server-supplied), attributes from headers minus the two AK/NATS headers, `group_id` from
+  `Ak-Group-Id`, `message_id = "<stream>:<stream_seq>"`, `native=msg`.
+- **`ack_wait` defaults to 300 s, not 30** (deviation from the earlier sketch): it is the visibility
+  timeout, so a turn that outlives it is redelivered and the agent runs a second time. 300 s matches
+  the `in_memory` transport's reasoning about LLM-bound turns. `msg.in_progress()` exists as a
+  future refinement for extending the window mid-run.
+- **Ack** = `msg.ack()`. **Nack** = `msg.nak(delay=retry_backoff)`, and unlike Kafka the consumer
+  thread does not sleep out the backoff because the server owns the redelivery. **Permanent
+  failure**: `dead_letter` (§2) calls `msg.term()`, which stops redelivery and removes the message
+  from the work-queue stream while recording intent, with `max_deliver` as the server-side backstop.
+  No dead-letter stream is needed: the component's permanent-failure hook has already delivered the
+  error to the caller.
+- **Capacity check**: `check_consumer_capacity` warns when `partitions < no_of_consumers`, since
+  each partition consumer allows one in-flight message and therefore caps concurrency regardless of
+  how many threads poll.
+- **No bookkeeping store**: unlike Kafka, delivery counts and deduplication are server-side, so
+  `BookkeepingStore` is not involved and NATS needs no shared key store for correctness.
 - **Provisioning**: `auto_provision: true` (default in `values-dev` and local) creates
   streams/consumers/transforms via the JS management API at startup; `false` (production) only
   verifies and raises `AKConfigError` naming the missing object and pointing at the NACK CRs.
@@ -529,7 +561,11 @@ class _NatsQueueConfig(BaseModel):
     input_stream: str = "AGENT_REQUESTS"; input_subject_prefix: str = "chat.req"
     output_stream: str = "AGENT_REPLIES"; output_subject_prefix: str = "chat.out"
     partitions: int = 32
-    ack_wait: float = 30.0; retry_backoff: float = 2.0
+    ack_wait: float = 300.0                # visibility timeout: must exceed the longest turn (§7)
+    retry_backoff: float = 2.0             # nak delay
+    duplicate_window: float = 300.0        # stream dedup window (SQS parity)
+    max_age: float = 86400.0               # safety net: work-queue messages are otherwise kept forever
+    request_timeout: float = 10.0          # bound on any single bridged client call
     auto_provision: bool = False
 
 class _QueuesConfig(BaseModel):             # config.py:356: extended
@@ -762,9 +798,15 @@ New test files (patterns per `ak-dev-testing-conventions`: `DummyAgent`/`DummyRu
   (attempt counts, retry-safe dedup claims incl. owner reclaim, expiry), key prefixes and
   create-only counter TTL on the driver-backed store, and factory selection from the session
   config incl. the once-per-process fallback warning.
-- `test_pipeline_nats_transport.py`: faked `nats` client on a real `_NatsLoop`: subject
-  construction, `Nats-Msg-Id`, `num_delivered` mapping, `term()` on permanent failure,
-  `auto_provision=false` verification error.
+- `test_pipeline_nats_transport.py`: a fake JetStream behind a **real** `_NatsLoop` (so the
+  thread-to-loop bridge is exercised, not mocked): loop identity and timeout-cancellation, subject
+  and header construction, the stable-hash partition mapping (including that it is not Python's
+  salted `hash()`), dot-containing session ids staying one subject token, `num_delivered` mapping,
+  nak redelivery, `term()` on permanent failure, one-in-flight-per-partition, stream-scoped dedup
+  (a reply may reuse its request's id), `auto_provision` create-vs-verify including the named
+  missing object and that a failed attempt is retried rather than cached, the capacity warning, and
+  the full `QueueTransportContract` with **no skips** (`ack_wait` is a real visibility timeout, so
+  the unacked-redelivery case applies here where it does not on Kafka).
 - `test_pipeline_agent_runner.py` / `test_pipeline_response_handler.py`: mirror the assertions
   of `test_akagentrunner_stream.py`/`test_akresponsehandler.py` on the generalized classes,
   including `STATUS_CODE` propagation and the in_memory-STREAM chunk path.

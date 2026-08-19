@@ -14,12 +14,12 @@ from typing import List, Optional
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from ...api.handler import AgentRESTRequestHandler, RESTRequestHandler
+from ...api.handler import AgentRESTRequestHandler, AuthorisedRESTRequestHandler
+from ...auth.authoriser import Authoriser
 from ...core import Config
 from ...core.chat_service import RequestBuilder, ResponseBuilder
 from ...core.model import BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
 from ...core.runtime import Runtime
-from .authoriser import Authoriser
 from .manager import ConversationThreadManager
 from .recorder import ThreadRecorder
 
@@ -193,7 +193,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
             raise ValueError("No agent available")
 
 
-class ThreadRESTRequestHandler(RESTRequestHandler):
+class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):
     """
     API router that exposes endpoints to read conversation threads.
     Endpoints:
@@ -202,9 +202,9 @@ class ThreadRESTRequestHandler(RESTRequestHandler):
 
     Threads are renamed via the chat request's thread_name field, not through
     this router. When an Authoriser is supplied, every request must carry a
-    Bearer token that the Authoriser resolves to a user_id; listings are scoped
-    to that user and thread reads enforce ownership. Without an Authoriser,
-    routes are open.
+    Bearer token that the Authoriser resolves to a user_id (the inherited
+    _resolve_user); listings are scoped to that user and thread reads enforce
+    ownership. Without an Authoriser, routes are open.
     """
 
     def __init__(self, authoriser: Optional[Authoriser] = None):
@@ -212,29 +212,8 @@ class ThreadRESTRequestHandler(RESTRequestHandler):
         Initializes a ThreadRESTRequestHandler instance.
         :param authoriser: Optional user-supplied Authoriser protecting the thread routes.
         """
+        super().__init__(authoriser)
         self._log = logging.getLogger("ak.api.thread")
-        self._authoriser = authoriser
-
-    def _resolve_user(self, request: Request) -> Optional[str]:
-        """
-        Resolve the caller's user_id via the configured Authoriser.
-        :param request: The incoming FastAPI request.
-        :return: The resolved user_id, or None when no Authoriser is configured.
-        :raises HTTPException: 401 when a token is missing or rejected.
-        """
-        if self._authoriser is None:
-            return None
-        auth_header = request.headers.get("authorization")
-        if auth_header is None:
-            raise HTTPException(status_code=401, detail="Missing authorization header")
-        scheme, _, token = auth_header.partition(" ")
-        token = token.strip()
-        if scheme.lower() != "bearer" or not token:
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
-        user_id = self._authoriser.authorise(token)
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-        return user_id
 
     def get_router(self) -> APIRouter:
         """

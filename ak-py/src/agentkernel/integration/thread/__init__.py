@@ -9,7 +9,6 @@ Applications enable the feature by mounting AgentThreadRequestHandler; the
 'thread' config block only parameterizes the store backend and naming.
 """
 
-from .authoriser import Authoriser
 from .manager import ConversationThreadManager
 from .model import MessagePage, Thread, ThreadAttachment, ThreadMessage, ThreadPage
 from .naming import ThreadNamingStrategy
