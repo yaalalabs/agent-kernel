@@ -8,8 +8,9 @@ Expected table schema:
 Item layout (one item per task):
     task_id     -> the partition key
     data        -> the ScheduledTask as JSON
-    user_id     -> owner, denormalized so a listing can filter without parsing every document
-    updated_at  -> ISO-8601 timestamp, denormalized so a listing can sort the same way
+    user_id     -> owner, denormalized so a listing filters in the scan itself
+    updated_at  -> ISO-8601 timestamp, denormalized so a listing orders and pages on the items
+                   and deserializes only the page it returns
 
 Listings scan the table with a filter expression rather than using an index: schedules are a
 low-cardinality resource (one item per registered task, no per-message growth), so the thread
@@ -24,7 +25,7 @@ from boto3.dynamodb.conditions import Attr
 from ...core.config import AKConfig
 from ...core.util.driver.dynamodb import DynamoDBDriver
 from ...core.util.pagination import DEFAULT_PAGE_SIZE, paginate
-from ..model import ScheduledTask, ScheduleStatus, utc_now_iso
+from ..model import ScheduledTask
 from .base import ScheduleStore
 
 
@@ -59,30 +60,26 @@ class DynamoDBScheduleStore(ScheduleStore):
 
     def list(self, user_id: Optional[str] = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> Tuple[List[ScheduledTask], Optional[int]]:
         scan_kwargs = {} if user_id is None else {"FilterExpression": Attr("user_id").eq(user_id)}
-        tasks: List[ScheduledTask] = []
+        items: List[dict] = []
         resp = self._driver.table.scan(**scan_kwargs)
         while True:
-            for item in resp.get("Items", []):
-                tasks.append(ScheduledTask.model_validate_json(item["data"]))
+            items.extend(resp.get("Items", []))
             if "LastEvaluatedKey" not in resp:
                 break
             resp = self._driver.table.scan(ExclusiveStartKey=resp["LastEvaluatedKey"], **scan_kwargs)
 
-        tasks.sort(key=lambda task: task.updated_at, reverse=True)
-        return paginate(tasks, limit, offset)
+        # Ordering and paging run on the denormalized attributes, so only the page's documents are
+        # deserialized — the scan returns the whole table, but a listing returns one page of it.
+        items.sort(key=lambda item: item["updated_at"], reverse=True)
+        page, next_offset = paginate(items, limit, offset)
+        return [ScheduledTask.model_validate_json(item["data"]) for item in page], next_offset
 
     def record_trigger(self, task_id: str, request_id: Optional[str], occurred_at: str, completed: bool) -> None:
         task = self.get(task_id)
         if task is None:
             self._log.warning(f"Ignoring trigger record for unknown scheduled task {task_id}")
             return
-        task.last_triggered_at = occurred_at
-        task.last_request_id = request_id
-        task.trigger_count += 1
-        task.updated_at = utc_now_iso()
-        if completed and task.status is not ScheduleStatus.CANCELLED:
-            task.status = ScheduleStatus.COMPLETED
-        self._write(task)
+        self._write(task.apply_trigger(request_id, occurred_at, completed))
 
     def clear(self) -> None:
         self._log.debug("Clearing all stored scheduled tasks")
