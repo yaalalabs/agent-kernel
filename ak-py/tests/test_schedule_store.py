@@ -529,6 +529,17 @@ class TestDynamoDBScheduleStore:
         assert [task.task_id for task in first_page] == ["t2", "t1"]
         assert next_offset == 2
 
+    def test_only_the_returned_page_is_deserialized(self, store):
+        """Ordering and paging run on the denormalized attributes, so a document outside the page
+        is never parsed — which is what makes writing those attributes worth the item space."""
+        for index in range(3):
+            store.create(_task(f"t{index}", updated_at=f"2030-0{index + 1}-01T00:00:00+00:00"))
+        store._driver.items["t0"]["data"] = "not a task document"
+
+        tasks, _ = store.list(limit=2, offset=0)
+
+        assert [task.task_id for task in tasks] == ["t2", "t1"]
+
     def test_record_trigger_advances_the_occurrence_fields(self, store):
         store.create(_task("t1"))
 

@@ -84,6 +84,10 @@ class ScheduledTask(BaseModel):
     trigger_count: int = 0
     last_request_id: Optional[str] = None  # request_id of the most recent occurrence
 
+    def apply_trigger(self, request_id: Optional[str],      # advances the occurrence fields and
+                      occurred_at: str,                     # completes the task; returns self so
+                      completed: bool) -> "ScheduledTask": ...   # a store writes it back inline
+
 class ScheduledTaskPage(BaseModel):
     tasks: List[ScheduledTask]; next_cursor: Optional[str] = None
 ```
@@ -293,8 +297,8 @@ Backends:
 
 - `in_memory`: `ClassVar` dict keyed by `task_id`, the thread `paginate` helper shape (`integration/thread/store/base.py:16-28`).
 - `redis`/`valkey` via `_RedisLikeScheduleStore` over the shared drivers (`core/util/driver/`, `_RedisLikeDriver` subclasses): key layout `{prefix}task:{task_id}` (JSON document), index sets `{prefix}index:user:{user_id}` and `{prefix}index:all`. Default `prefix` `ak:schedule:`, default `ttl` **0** (schedules must not silently expire; unlike threads).
-- `dynamodb` over `DynamoDBDriver`: one item per task, partition key `task_id` (S), no sort key. `list` scans with a filter expression (the thread-store precedent, `integration/thread/store/dynamodb.py:215,226-227`; acceptable at schedule cardinalities, documented).
-- `record_trigger` is a read-modify-write. Concurrency contract: last-writer-wins is acceptable (occurrence fields are monotonic and advisory); no store-level locking is added. The manager is the only writer of non-occurrence fields.
+- `dynamodb` over `DynamoDBDriver`: one item per task, partition key `task_id` (S), no sort key. `list` scans with a filter expression (the thread-store precedent, `integration/thread/store/dynamodb.py:215,226-227`; acceptable at schedule cardinalities, documented). The item carries `user_id` and `updated_at` beside the `data` document, so the scan filters server-side and the listing orders and pages on the items themselves — only the returned page's documents are deserialized.
+- `record_trigger` is a read-modify-write: each backend loads the record, applies `ScheduledTask.apply_trigger` (the shared rule — advance the occurrence fields, complete the task unless it was cancelled between the fire and the record), and writes it back. Concurrency contract: last-writer-wins is acceptable (occurrence fields are monotonic and advisory); no store-level locking is added. The manager is the only writer of non-occurrence fields.
 
 ### Configuration (`core/config.py`)
 
@@ -490,7 +494,7 @@ All intentional; each traced to a design requirement:
 
 New test files (patterns per `ak-dev-testing-conventions`: config monkeypatching via `monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))`, fake drivers for redis-like stores, mocked boto3):
 
-- `tests/test_schedule_model.py`: `ScheduleSpec` one-of validation, `session_mode` literal, `ScheduledTask` JSON round trip, amendment model.
+- `tests/test_schedule_model.py`: `ScheduleSpec` one-of validation, `session_mode` literal, `ScheduledTask` JSON round trip, amendment model; `apply_trigger` (fields advance and accumulate, a final occurrence completes, a cancellation outranks that completion) — pinned once here because every store shares it.
 - `tests/test_schedule_manager.py`: `get()` returns `None` without the block; transport-compatibility fail-fast (monkeypatch `QueueTransportFactory.resolve_type`); semantic validation matrix (cron/tz/at); create order + rollback on provider failure (fake provider raising); ownership `PermissionError`; amendment rules (completed → 400-shaped `ValueError`); cancel tolerates provider not-found; `record_trigger` updates occurrence fields, completes one-time tasks, and never raises (store failure injected); cursor pagination through the shared helpers.
 - `tests/test_schedule_store.py`: in_memory, redis-like (fake `_RedisLikeDriver` client), and DynamoDB (mocked `DynamoDBDriver`) round trips: create/get/update/delete/list-filter/record_trigger.
 - `tests/test_schedule_provider_local.py`: next-fire computation (cron + timezone, `at`), single fire for one-time, re-arm for cron, token substitution, delivery into `InMemoryTransport` with **empty attributes** (uses `InMemoryTransport.reset()` isolation), pause/delete disarm.

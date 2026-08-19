@@ -16,7 +16,7 @@ from typing import List, Optional, Tuple
 
 from ...core.util.driver.redis_like import _RedisLikeDriver
 from ...core.util.pagination import DEFAULT_PAGE_SIZE, paginate
-from ..model import ScheduledTask, ScheduleStatus, utc_now_iso
+from ..model import ScheduledTask
 from .base import ScheduleStore
 
 
@@ -87,13 +87,7 @@ class _RedisLikeScheduleStore(ScheduleStore):
         if task is None:
             self._log.warning(f"Ignoring trigger record for unknown scheduled task {task_id}")
             return
-        task.last_triggered_at = occurred_at
-        task.last_request_id = request_id
-        task.trigger_count += 1
-        task.updated_at = utc_now_iso()
-        if completed and task.status is not ScheduleStatus.CANCELLED:
-            task.status = ScheduleStatus.COMPLETED
-        self._write(task)
+        self._write(task.apply_trigger(request_id, occurred_at, completed))
 
     def clear(self) -> None:
         self._log.debug(f"Clearing all scheduled task keys with prefix {self._prefix}")

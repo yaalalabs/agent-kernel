@@ -14,6 +14,21 @@ from agentkernel.core.model import BaseRunRequest, ScheduleSpec
 from agentkernel.schedule.model import ScheduledTask, ScheduledTaskPage, ScheduleStatus
 
 
+def _task(**overrides) -> ScheduledTask:
+    """A stored record with every required field, overridable per case."""
+    fields = {
+        "task_id": "t1",
+        "user_id": "u1",
+        "prompt": "send the weekly report",
+        "session_id": "s1",
+        "spec": ScheduleSpec(cron="0 9 * * 1"),
+        "created_at": "2030-01-01T00:00:00+00:00",
+        "updated_at": "2030-01-01T00:00:00+00:00",
+    }
+    fields.update(overrides)
+    return ScheduledTask(**fields)
+
+
 class TestScheduleSpec:
     def test_one_time_spec_defaults_to_utc_and_session_reuse(self):
         spec = ScheduleSpec(at="2030-01-01T09:00:00")
@@ -87,22 +102,8 @@ class TestChatRequestEnvelope:
 
 
 class TestScheduledTask:
-    @staticmethod
-    def _task(**overrides) -> ScheduledTask:
-        fields = {
-            "task_id": "t1",
-            "user_id": "u1",
-            "prompt": "send the weekly report",
-            "session_id": "s1",
-            "spec": ScheduleSpec(cron="0 9 * * 1"),
-            "created_at": "2030-01-01T00:00:00+00:00",
-            "updated_at": "2030-01-01T00:00:00+00:00",
-        }
-        fields.update(overrides)
-        return ScheduledTask(**fields)
-
     def test_new_task_starts_active_with_no_occurrences(self):
-        task = self._task()
+        task = _task()
         assert task.status is ScheduleStatus.ACTIVE
         assert task.trigger_count == 0
         assert task.last_triggered_at is None
@@ -110,17 +111,66 @@ class TestScheduledTask:
         assert task.provider_ref is None
 
     def test_json_round_trip_preserves_every_field(self):
-        task = self._task(agent="planner", provider_ref="arn:aws:scheduler:::schedule/g/ak-t1", trigger_count=3)
+        task = _task(agent="planner", provider_ref="arn:aws:scheduler:::schedule/g/ak-t1", trigger_count=3)
         restored = ScheduledTask.model_validate(json.loads(json.dumps(task.model_dump(mode="json"))))
         assert restored == task
 
     def test_dumped_record_carries_only_json_primitives(self):
         # Store portability: every backend persists the dumped document as-is.
-        dumped = self._task().model_dump(mode="json")
+        dumped = _task().model_dump(mode="json")
         assert isinstance(dumped["created_at"], str)
         assert dumped["status"] == "active"
         assert dumped["spec"] == {"at": None, "cron": "0 9 * * 1", "timezone": "UTC", "session_mode": "reuse"}
 
     def test_page_defaults_to_no_next_cursor(self):
-        page = ScheduledTaskPage(tasks=[self._task()])
+        page = ScheduledTaskPage(tasks=[_task()])
         assert page.next_cursor is None
+
+
+class TestApplyTrigger:
+    """The occurrence bookkeeping every store shares: each one loads a record, applies this, writes
+    it back, so the rule is pinned once here rather than three times over."""
+
+    def test_an_occurrence_advances_the_bookkeeping(self):
+        task = _task()
+
+        task.apply_trigger(request_id="r-1", occurred_at="2030-02-01T09:00:00+00:00", completed=False)
+
+        assert task.last_triggered_at == "2030-02-01T09:00:00+00:00"
+        assert task.last_request_id == "r-1"
+        assert task.trigger_count == 1
+        assert task.updated_at != "2030-01-01T00:00:00+00:00"
+        # A recurring task has further occurrences, so it stays active.
+        assert task.status is ScheduleStatus.ACTIVE
+
+    def test_occurrences_accumulate(self):
+        task = _task(trigger_count=2)
+
+        task.apply_trigger(request_id=None, occurred_at="2030-02-01T09:00:00+00:00", completed=False)
+
+        assert task.trigger_count == 3
+        # An occurrence whose run id never arrived clears the previous one rather than keeping a
+        # stale correlation.
+        assert task.last_request_id is None
+
+    def test_a_final_occurrence_completes_the_task(self):
+        task = _task(spec=ScheduleSpec(at="2030-06-01T09:00:00"))
+
+        task.apply_trigger(request_id="r-1", occurred_at="2030-06-01T09:00:00+00:00", completed=True)
+
+        assert task.status is ScheduleStatus.COMPLETED
+
+    def test_a_cancellation_outranks_a_completion(self):
+        """A task cancelled between the fire and the record must not come back as completed."""
+        task = _task(status=ScheduleStatus.CANCELLED)
+
+        task.apply_trigger(request_id="r-1", occurred_at="2030-06-01T09:00:00+00:00", completed=True)
+
+        assert task.status is ScheduleStatus.CANCELLED
+        # The occurrence still happened, so it is still recorded.
+        assert task.trigger_count == 1
+
+    def test_it_returns_the_task_so_a_store_can_write_it_back_inline(self):
+        task = _task()
+
+        assert task.apply_trigger(request_id="r-1", occurred_at="2030-02-01T09:00:00+00:00", completed=False) is task
