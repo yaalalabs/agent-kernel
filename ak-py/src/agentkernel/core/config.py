@@ -280,7 +280,7 @@ class _ScheduleEventBridgeConfig(BaseModel):
 class _ScheduleProviderConfig(BaseModel):
     type: str = Field(
         default="local",
-        description="Schedule provider: a built-in short name (local, eventbridge) or a dotted path to a ScheduleProvider subclass",
+        description="Schedule provider: a built-in short name (local) or a dotted path to a ScheduleProvider subclass",
     )
     eventbridge: Optional[_ScheduleEventBridgeConfig] = None
 
