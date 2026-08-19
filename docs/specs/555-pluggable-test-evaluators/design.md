@@ -64,6 +64,18 @@ graph LR
   - `score` → `AKEvaluator.score_based_evaluation`
   - `llm` → `AKEvaluator.llm_based_evaluation`
   - `fallback` → `score_based_evaluation`, then `llm_based_evaluation` only if the first did not pass
+    - "did not pass" means a returned `AKEvaluationResult` scoring below threshold, never an exception:
+      `AKMetricNotSupported` and `AKEvaluationError` raised by the score stage always propagate out of
+      `compare` and are never caught as a non-passing attempt that falls through to `llm`
+      - `AKMetricNotSupported` is a structural property of the configured evaluator, true on every
+        call rather than a per-case result; catching it would turn every comparison into a silent,
+        permanent skip of the score stage instead of surfacing the mode/evaluator mismatch once. An
+        evaluator that only implements one mode is not usable under `fallback` — it must be configured
+        under the one mode it does support
+      - Catching `AKEvaluationError` here would reproduce the Motivation bug this design removes ("a
+        broken judge is indistinguishable from a failing agent") one stage later: a broken score
+        backend is not a scored attempt, so it cannot be recorded in `attempts`, and would vanish
+        entirely if `llm` subsequently passed
 - The two names describe **how** a backend scores (deterministically, or by asking a model), never
   **what** it measures. That is what makes them backend-neutral: only four evaluation concerns exist in
   all four surveyed catalogues, so any mode vocabulary naming a measurement — `similarity`,
