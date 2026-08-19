@@ -29,6 +29,7 @@ Requirements background: [`research/evaluator-framework-survey.md`](research/eva
     than changing a configuration value
 - There is no evaluator interface today
   - All evaluation logic currently lives directly in `Test` (`ak-py/src/agentkernel/test/test.py`), so swapping evaluation backends requires changing harness code
+  - This design introduces that interface: `AKEvaluator`, under a new `test/core/akevaluators/` package
 - Mode names describe implementations, not intent
   - `Mode.FUZZY` / `Mode.JUDGE` (`test.py:16-19`) name a specific string-matching library and a specific
     RAGAS technique, so a backend that scores deterministically by another means has no accurate mode to sit under
@@ -511,6 +512,8 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
   `docs/docs/testing/overview.md`, `docs/docs/core-concepts/configuration.md` — each gains the
   `evaluator` key alongside `mode`, and the testing pages gain a bring-your-own-evaluator section
   mirroring the sandbox one (`docs/docs/advanced/sandbox.md:378`)
+  - `ak-py/README.md:967` documents `` `judge`: Uses LLM-based evaluation (Ragas) `` alongside `fuzzy`
+    and `fallback`; updated to the new mode names and backend
 - Examples: 40 `examples/**/test-config.yaml` files
   - 34 with `mode: fallback`, each also carrying a `judge:` block and the
     `# Test comparison mode: fuzzy, judge, or fallback` comment
@@ -519,6 +522,16 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
     chosen rather than naming the mode options
   - No `evaluator` key is added to any of them: the default already selects `deepeval`, and adding a key
     every example would carry identically is noise. The skill templates document the key instead
+- Use-cases: `use-cases/waste-sorting-assistant/test-config.yaml:2` is `mode: fuzzy` — the only
+  in-repo surface outside `examples/` pinned to an old mode name, so it is updated alongside the
+  6 sandbox configs above
+- Skills (non-`ak-init`/`ak-test`-template): `.agents/skills/ak-dev-testing-conventions/SKILL.md:269-275`
+  documents the `fuzzy`/`judge`/`fallback` modes, the `judge:` config block, and Ragas-based
+  evaluation — updated to `score`/`llm`/`fallback`, the `llm:` block, and `AKEvaluator`/DeepEval
+  - `ak-py/src/agentkernel/skills/ak-test/evals/evals.json:33-48` asserts on `mode: fuzzy`,
+    `mode: judge`, and `judge:` in its expected outputs (`test-mode-fuzzy`, `test-mode-judge`
+    eval cases); updated to `mode: score`, `mode: llm`, and `llm:` so the ak-test skill's own evals
+    pass against the renamed modes
 - Versioned docs under `docs/versioned_docs/` are frozen published snapshots and are **not** edited
 
 ### Test suite
