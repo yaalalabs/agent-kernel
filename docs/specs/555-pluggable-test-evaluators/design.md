@@ -27,8 +27,8 @@ Requirements background: [`research/evaluator-framework-survey.md`](research/eva
     holding — only whichever objects the current comparison method happened to build
   - Swapping the evaluation backend therefore means editing the method that does the comparing, rather
     than changing a configuration value
-- The evaluator seam exists but is unspecified
-  - `AKEvaluator` (untracked, `ak-py/src/agentkernel/test/core/akevaluators/evaluator.py`) declares `score_based_evaluation` and `llm_based_evaluation` with no parameters, no return type, and no payload model; `deepeval.py` is empty
+- There is no evaluator interface today
+  - All evaluation logic currently lives directly in `Test` (`ak-py/src/agentkernel/test/test.py`), so swapping evaluation backends requires changing harness code
 - Mode names describe implementations, not intent
   - `Mode.FUZZY` / `Mode.JUDGE` (`test.py:16-19`) name a specific string-matching library and a specific
     RAGAS technique, so a backend that scores deterministically by another means has no accurate mode to sit under
