@@ -19,6 +19,10 @@ from ...core.util.pagination import DEFAULT_PAGE_SIZE, paginate
 from ..model import ScheduledTask
 from .base import ScheduleStore
 
+# Every user index, for the one case that cannot name a single owner: dropping the memberships of
+# a task whose document is already gone. Kept beside the key builders it mirrors.
+_USER_INDEX_PATTERN = "index:user:*"
+
 
 class _RedisLikeScheduleStore(ScheduleStore):
     """Shared scheduled-task store body for the Redis-protocol backends.
@@ -62,10 +66,13 @@ class _RedisLikeScheduleStore(ScheduleStore):
     def delete(self, task_id: str) -> None:
         task = self.get(task_id)
         self._driver.delete(self._task_key(task_id))
-        if task is not None:
-            self._driver.srem(self._user_index_key(task.user_id), task_id)
-        # The all-index is cleaned unconditionally: a record whose document already expired must
-        # still lose its index membership, otherwise every later listing keeps skipping it.
+        # Both memberships go whether or not the document was still readable: a record whose TTL
+        # elapsed ahead of its index sets would otherwise stay a member forever, and every later
+        # listing would keep paying to skip it. The owning index is the one the document names;
+        # with no document left to name it, the user indexes are searched for the id instead.
+        user_index_keys = [self._user_index_key(task.user_id)] if task is not None else self._driver.scan_keys(_USER_INDEX_PATTERN)
+        for user_index_key in user_index_keys:
+            self._driver.srem(user_index_key, task_id)
         self._driver.srem(self._all_index_key(), task_id)
 
     def list(self, user_id: Optional[str] = None, limit: int = DEFAULT_PAGE_SIZE, offset: int = 0) -> Tuple[List[ScheduledTask], Optional[int]]:

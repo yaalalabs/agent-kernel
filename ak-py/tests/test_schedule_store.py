@@ -313,6 +313,20 @@ class TestRedisLikeScheduleStore:
     def test_delete_tolerates_a_missing_record(self, store):
         store.delete("missing")
 
+    def test_delete_clears_index_membership_when_the_document_already_expired(self, store):
+        """Under a TTL the document can elapse before the delete arrives. Its memberships must go
+        with it: the owning index cannot be named without the document, so it is searched for."""
+        store.create(_task("t1"))
+        store.create(_task("t2", user_id="u2"))
+        self._client(store).values.pop(f"{PREFIX}task:t1")
+
+        store.delete("t1")
+
+        assert self._client(store).sets[f"{PREFIX}index:user:u1"] == set()
+        assert self._client(store).sets[f"{PREFIX}index:all"] == {"t2"}
+        # Only the deleted id is dropped; another owner's index keeps its own members.
+        assert self._client(store).sets[f"{PREFIX}index:user:u2"] == {"t2"}
+
     def test_list_returns_most_recently_updated_first(self, store):
         store.create(_task("t1", updated_at="2030-01-01T00:00:00+00:00"))
         store.create(_task("t2", updated_at="2030-03-01T00:00:00+00:00"))
