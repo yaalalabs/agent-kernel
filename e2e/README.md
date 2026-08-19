@@ -247,6 +247,12 @@ runner: the
 container image vendors Python dependencies at build time, and building from a Mac ships
 macOS native extensions that crash the linux/amd64 container.
 
+The job builds `ak-py` from the checked-out revision and installs that wheel over the
+released `agentkernel` the lock file resolves, so the deployment always exercises the
+branch's code — an integration added on a branch is not on PyPI yet. Locally, `app/build.sh
+local` does the same thing. Re-provision whenever the integration code changes; a run
+without `provision_e2e_messaging` tests whatever is already deployed.
+
 One-time: add these secrets to the repo's `ci-tests` environment (Settings → Environments
 → ci-tests): `E2E_SLACK_BOT_TOKEN`, `E2E_SLACK_SIGNING_SECRET`, `E2E_TELEGRAM_BOT_TOKEN`,
 `E2E_TELEGRAM_WEBHOOK_SECRET` (`OPENAI_API_KEY` already exists). The job applies the

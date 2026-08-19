@@ -374,6 +374,10 @@ jobs:
           terraform_version: 1.14.3
           terraform_wrapper: false
 
+      - name: Build ak-py from this checkout
+        working-directory: ak-py
+        run: ./build.sh
+
       - name: Build deployment package
         working-directory: e2e/app
         run: |
@@ -382,6 +386,8 @@ jobs:
           uv venv
           uv export --no-hashes --no-dev > requirements.txt
           uv pip install -r requirements.txt --target=dist/data
+          rm -rf dist/data/agentkernel dist/data/agentkernel-*.dist-info
+          uv pip install --no-deps --target=dist/data ../../ak-py/dist/agentkernel-*.whl
           cp app.py config.yaml dist/data
           cp deploy/Dockerfile dist/
 
