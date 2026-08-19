@@ -64,6 +64,11 @@ graph LR
   - `score` → `AKEvaluator.score_based_evaluation`
   - `llm` → `AKEvaluator.llm_based_evaluation`
   - `fallback` → `score_based_evaluation`, then `llm_based_evaluation` only if the first did not pass
+- The two names describe **how** a backend scores (deterministically, or by asking a model), never
+  **what** it measures. That is what makes them backend-neutral: only four evaluation concerns exist in
+  all four surveyed catalogues, so any mode vocabulary naming a measurement — `similarity`,
+  `faithfulness` — would be unimplementable by at least one plausible backend (survey §10, Finding 14).
+  Every catalogue, by contrast, has deterministic scorers and LLM judges
 - `AKTestConfig.mode` validation pattern becomes `^(fallback|llm|score)$` (`ak-py/src/agentkernel/test/config.py:32`)
 - Clean break: `fuzzy` and `judge` are not accepted as aliases, and no changelog note is produced
   (the repo has no `CHANGELOG` file)
@@ -93,6 +98,11 @@ graph LR
     added later, and widening the argument afterwards would break every user subclass
 - **One metric per mode in v1.** The interface allows a backend to offer more, but AK ships exactly one
   score metric and one llm metric, so no metric-selection vocabulary or config key exists yet
+  - Deferring the vocabulary is not just scope control: a shared metric vocabulary would have to be
+    drawn from the four concerns common to every surveyed catalogue — custom rubric, answer relevancy,
+    context precision, context recall (survey §10, Finding 14) — and AK needs none of those four for
+    the ground-truth comparison `expect()` actually performs. A vocabulary defined now would name
+    metrics AK does not use and exclude the one it does
   - A backend that cannot provide one of the two raises `AKMetricNotSupported`
 - The package (`agentkernel.test.core.akevaluators`) exports the interface, the two payload models, and
   the three evaluator errors — `AKEvaluationError`, `AKMissingInput`, `AKMetricNotSupported` — so a
@@ -317,7 +327,7 @@ graph LR
     score mode never touches the network (survey §9)
   - It returns a binary 0/1, with two accepted consequences: `threshold` is inert on the score path
     (any value in `(0, 1]` behaves identically), and in `fallback` a near-miss reaches the llm stage
-    rather than passing locally (survey §12). That cost is proportional — only failing comparisons pay
+    rather than passing locally (survey §9, Finding 12). That cost is proportional — only failing comparisons pay
     it — and close to today's behaviour, since the length-sensitive `fuzz.ratio` already falls through
     for long responses against short expectations
   - The model-backed scorers (`faithfulness` via SummaC, `hallucination` via Vectara HHEM,
@@ -326,7 +336,9 @@ graph LR
 - **Llm metric: `GEval`**
   - One AK-owned rubric, judging whether the response conveys the same information as `expected`, with
     `evaluation_params=[ACTUAL_OUTPUT, EXPECTED_OUTPUT]`
-  - Required because DeepEval ships no semantic-similarity metric (survey §3), so the RAGAS
+  - Required because DeepEval ships no semantic-similarity metric — the one gap that is DeepEval's
+    alone, since RAGAS, Opik, and autoevals all ship a ground-truth comparison (survey §3 Finding 5,
+    §10 Finding 13) — so the RAGAS
     `answer_similarity` path has no drop-in replacement other than a rubric-based judge
   - **Behavioural change**: today, `judge` mode with no expected answers falls back to RAGAS
     `answer_relevancy` against the question (`test.py:201-217`). That path is dropped — `llm` mode now
@@ -504,6 +516,12 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
 
 - Any evaluator backend other than DeepEval. Opik, Braintrust, and RAGAS are not implemented here;
   `_resolve_evaluator`'s dotted-path branch is the extension point until a second built-in is added
+  - Worth recording for whoever revisits this: the catalogues differ in **coverage**, not just in
+    preference (survey §10, Finding 15). DeepEval is deepest on agentic and safety metrics and alone
+    in shipping non-LLM local-model scorers; RAGAS is deepest on reference comparison and retrieval;
+    Opik on deterministic text statistics and conversation-level judging. A user whose need is
+    reference comparison has a real reason to reach for the dotted path, and that is the case the
+    bring-your-own branch is expected to serve first
 - More than one metric per mode, and any config surface for selecting metrics
 - A per-call or per-`Test` evaluator override. `evaluator` is config-only in v1 — unlike `mode`,
   which `Test.__init__` and `compare` both accept — because `AK_TEST__EVALUATOR` already covers
