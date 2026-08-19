@@ -235,9 +235,11 @@ migration note must not merge them:
     - **The reason is boundaries, not an unwillingness to be compatible.** Normalizing a `str` into a
     synthetic text-delta event would cost one `isinstance` in that one place, and it would make the
     text surfaces — REST SSE, WebSocket, the thread recorder — work exactly as they do today. What it
-    cannot produce is `TextMessageStart` / `End`, so AG-UI would receive content events with no
-    message boundaries, which the protocol treats as malformed. Boundaries cannot be manufactured
-    from a string without the inference this design forbids downstream of the adapter.
+    cannot produce is boundaries that mean anything. PR 1's transitional branch *does* synthesise a
+    `MessageStart`/`MessageEnd` pair around the whole run, which is sound for adapters being rewritten
+    behind it — but as a permanent arrangement it asserts one message per run and can carry no tool
+    call, reasoning or step event at all. That is a degraded mode this non-goal declines, not an
+    impossibility.
     - Considered and rejected: normalize anyway, and use the capability declaration to keep such
     runners off AG-UI while they keep serving the text surfaces. It works, but `supports_streaming`
     defaults to `True`, so a custom runner would inherit it and be listed by discovery while unable

@@ -82,6 +82,12 @@ its input, and delete or shorten §2 here rather than maintaining two copies.
 Tasks and PRs are not the same unit: #495 shipped as one issue with ordered PRs, and the same
 applies here. Multimodal (D10) is its own task with its own verification but ships inside PR 1.
 
+**Superseded — kept as the 2026-08-14 record.** `design.md`'s Delivery table is the current shape:
+six PRs, differently scoped, with the streaming contract first rather than the integration. Queue
+mode (PR 5 below) has since become an explicit non-goal, and "Nothing emits them yet" no longer
+holds — `Runtime.stream` synthesises events from `str` from the first PR onward. Read the table
+below as what was decided that day, not as the plan.
+
 | PR | Scope | Green gate |
 |---|---|---|
 | **1** | AG-UI direct mode: event mapper, handler and routes, config block, `build_app` mount, `Runner.supports_streaming`, token-derived identity, inbound attachments, docs | new tests pass; existing suite untouched |
