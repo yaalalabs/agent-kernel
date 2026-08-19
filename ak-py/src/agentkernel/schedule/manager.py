@@ -47,11 +47,13 @@ class ScheduleManager:
 
         :param provider: Backend that fires the task's occurrences.
         :param store: Backend that persists the task records.
-        :raises AKConfigError: If the provider cannot deliver to the configured queue transport.
+        :raises AKConfigError: If the provider cannot deliver to the configured queue transport, or
+                               if the local provider is paired with anything but a single process.
         """
         self._provider = provider
         self._store = store
         self._validate_transport_compatibility()
+        self._validate_local_provider_topology()
 
     @classmethod
     def get(cls) -> Optional["ScheduleManager"]:
@@ -276,6 +278,35 @@ class ScheduleManager:
         raise AKConfigError(
             f"schedule provider '{provider_type}' delivers to {sorted(supported_transports)} transports, "
             f"but the configured queue transport is '{transport_type}'"
+        )
+
+    def _validate_local_provider_topology(self) -> None:
+        """Fail fast when the local provider is configured outside a single process.
+
+        Its timers are a heap in one process's scheduler thread, so only threads of that process
+        can amend them — and the ``in_memory`` store it pairs with holds records the same way. The
+        ``in_memory`` transport is what makes a deployment single-process (``IOHandler`` runs the
+        agent runner as a thread only then, and ``AgentRunner.run`` refuses that transport), so on
+        a broker transport the management routes and the scheduler thread sit in different
+        processes: a cancellation there would report success while the runner kept firing, and a
+        listing would not see the runner's tasks at all. Delivery still works, which is why
+        :meth:`_validate_transport_compatibility` passes the pairing.
+
+        :raises AKConfigError: If the local provider is paired with a broker transport or a
+                               store other than ``in_memory``.
+        """
+        schedule_config = AKConfig.get().schedule
+        # No block means nothing was configured to validate: the only path here is a caller that
+        # constructed the manager with backends of its own, which :meth:`get` never does.
+        if schedule_config is None or schedule_config.provider.type.lower() != "local":
+            return
+        transport_type = QueueTransportFactory.resolve_type()
+        store_type = schedule_config.store.type.lower()
+        if transport_type == "in_memory" and store_type == "in_memory":
+            return
+        raise AKConfigError(
+            f"schedule provider 'local' is single-process only: it requires the 'in_memory' queue transport and the "
+            f"'in_memory' store, but the configured transport is '{transport_type}' and the store is '{store_type}'"
         )
 
     def _require_amendable_task(self, task_id: str, user_id: Optional[str]) -> ScheduledTask:

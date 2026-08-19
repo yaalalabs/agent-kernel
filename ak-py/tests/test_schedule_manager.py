@@ -176,6 +176,35 @@ class TestSingletonAndConfiguration:
 
         assert ScheduleManager(provider=SqsOnlyScheduleProvider(), store=store) is not None
 
+    def test_local_provider_is_accepted_on_the_single_process_pairing(self, store, monkeypatch):
+        _configure_schedule(monkeypatch, provider={"type": "local"}, store={"type": "in_memory"})
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+
+        assert ScheduleManager(provider=FakeScheduleProvider(), store=store) is not None
+
+    def test_local_provider_and_broker_transport_fail_fast(self, store, monkeypatch):
+        """A broker transport puts the management routes and the scheduler thread in different processes."""
+        _configure_schedule(monkeypatch, provider={"type": "local"}, store={"type": "in_memory"})
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+
+        with pytest.raises(AKConfigError, match="provider 'local' is single-process only.*transport is 'sqs' and the store is 'in_memory'"):
+            ScheduleManager(provider=FakeScheduleProvider(), store=store)
+
+    def test_local_provider_and_shared_store_fail_fast(self, store, monkeypatch):
+        """A store the local provider's own process does not own is a pairing it cannot serve."""
+        _configure_schedule(monkeypatch, provider={"type": "local"}, store={"type": "dynamodb"})
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+
+        with pytest.raises(AKConfigError, match="provider 'local' is single-process only.*store is 'dynamodb'"):
+            ScheduleManager(provider=FakeScheduleProvider(), store=store)
+
+    def test_the_single_process_constraint_applies_only_to_the_local_provider(self, store, monkeypatch):
+        """A provider that owns its timers elsewhere is unaffected by this check."""
+        _configure_schedule(monkeypatch, provider={"type": "eventbridge"}, store={"type": "in_memory"})
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+
+        assert ScheduleManager(provider=SqsOnlyScheduleProvider(), store=store) is not None
+
 
 class TestCreation:
     def test_create_stores_the_record_then_registers_it(self, manager, provider, store):
