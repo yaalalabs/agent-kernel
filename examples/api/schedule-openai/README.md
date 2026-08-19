@@ -9,8 +9,7 @@ The `schedule` block in `config.yaml` is what enables the capability (see `app.p
 mentions scheduling). It selects two backends: the **provider** that owns the timers and the
 **store** that persists the task records. This example uses the defaults — the `local` provider (an
 in-process scheduler thread) and the `in_memory` store — which need nothing but the process itself.
-Neither survives a restart; a deployment that must keep firing across restarts uses the
-`eventbridge` provider with the `dynamodb`, `redis` or `valkey` store.
+Neither survives a restart; this demo currently supports only the `local` provider and `in_memory` store.
 
 Because the `schedule` block is present, `RESTAPI.run()` also mounts the management routes
 (`GET`/`PUT`/`DELETE /api/v1/schedules`). They are open here. To protect them, supply your own
