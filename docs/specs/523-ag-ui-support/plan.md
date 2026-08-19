@@ -108,7 +108,8 @@ round-trip state.
   4. `integration/agui/run_input.py` (§9) — there is **no** `authoriser.py`: AG-UI uses the shared
     `auth/authoriser.py` and `AuthorisedRESTRequestHandler` that PR #632 added to `develop`. The
      mapping is pure and testable without a server; cover every `InputContent` type for both `data`
-     and `url` sources, and the unknown-`role` drop.
+     and `url` sources, and the history pre-filter — unknown roles and unknown content types in
+     history are ignored, the same unknown content type in the final user message is a 400.
   5. `integration/agui/mapping.py` — `to_agui` plus its exhaustiveness test. Write the test with the
     mapping, not after.
   6. `integration/agui/handler.py` — routes, identity, run lifecycle, `StateSnapshot` (§9).

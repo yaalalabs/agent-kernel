@@ -258,8 +258,12 @@ migration note must not merge them:
   `delta`. Every in-repo consumer already guards on truthiness or drops null keys on serialisation,
   so nothing in AK changes; a third-party client that assumed every non-terminal chunk has a `delta`
   sees more frames.
-- The contract change is additive on its own — the types widen, but nothing emits an event object
-until the adapter work lands.
+- The contract change is additive on its own — the types widen, and no *adapter* emits an event
+object until the adapter work lands. `Runtime.stream` does, from PR 1: the transitional branch
+normalizes each legacy `str` into a `TextDelta` and wraps the run in one synthetic
+`MessageStart`/`MessageEnd` pair, so a text chunk carries both `delta` and `event` on the wire the
+moment PR 1 merges. That is deliberate, and it is what makes PR 3 deliverable ahead of the adapters
+— see the transitional-tolerance point below.
   - Verification bar: the full existing test suite passes **with zero test edits** at that commit.
   This is an in-branch review checkpoint, not a promise about a released version — every PR ships
   in one release (see Delivery).
@@ -719,10 +723,16 @@ purpose is driving a user interface is not demonstrated by test assertions alone
 - Version skew is handled **leniently**: unknown inbound fields and message types are ignored rather
 than rejected, so a frontend newer than the server still runs.
   - **Only half of this comes free, verified against the SDK.** Every SDK model sets `extra="allow"`,
-  so unknown *fields* already parse and are ignored. Unknown *message types* do not: `Message` is a
-  discriminated union on `role`, so an unrecognised role raises `ValidationError` and FastAPI turns
-  it into a 422 before the handler runs. Honouring this requirement therefore takes explicit work in
-  the inbound mapping — see `spec.md` §9.
+  so unknown *fields* already parse and are ignored. Unknown *types* do not: `Message` discriminates
+  on `role`, and `InputContent` and `InputContentSource` each discriminate on `type`, so any
+  unrecognised value in any of the three raises `ValidationError` and FastAPI turns it into a 422
+  before the handler runs. Honouring this requirement therefore takes explicit work in the inbound
+  mapping — see `spec.md` §9.
+  - **Leniency stops at the live turn, and that boundary is deliberate.** It covers the conversation
+  history and fields AK ignores — a newer frontend still runs. It does **not** extend to the message
+  the user just sent: an unrecognised content type there is refused with a 400 naming it, rather than
+  dropped. Silently discarding the current turn's attachment reads to the user as the agent ignoring
+  them, which is the same reason audio and video are refused rather than skipped.
   - The server never emits an event type it cannot fully populate.
   - AG-UI documents no version-negotiation handshake, so this is AK's own policy; confirm that
   against the pinned version before implementing.
@@ -737,7 +747,7 @@ parallel progress.
 
 | PR | Scope | Green gate | Depends on |
 |---|---|---|---|
-| 1 | **The streaming contract.** Event types with boundaries, widened `Runner.stream`, the additive `StreamChunk.event` field and the `delta` projection, plus `Runner.supports_streaming` (default `True`, declared `False` on `CrewAIRunner` and `SmolagentsRunner`). `ResponseBuilder` and the thread recorder are untouched, and `Runtime.stream` accepts `str | StreamEvent` transitionally so the adapters keep working. Nothing emits an event object yet | existing suite green, **zero test edits**; new tests assert all six runners declare honestly | — |
+| 1 | **The streaming contract.** Event types with boundaries, widened `Runner.stream`, the additive `StreamChunk.event` field and the `delta` projection, plus `Runner.supports_streaming` (default `True`, declared `False` on `CrewAIRunner` and `SmolagentsRunner`). `ResponseBuilder` and the thread recorder are untouched, and `Runtime.stream` accepts `str | StreamEvent` transitionally so the adapters keep working. No adapter emits an event object yet; `Runtime.stream` synthesizes them from `str` until PR 6 | existing suite green, **zero test edits**; new tests assert all six runners declare honestly | — |
 | 2 | **Attachment source forms.** `_extract_attachment` classifies the source and splits `data:` URIs; the filter loop retains URL-sourced requests it did not consume. Shared multimodal code, no AG-UI in it | new tests across all five source forms; existing suite unchanged | — |
 | 3 | **The integration.** `integration/agui/` package, handler and routes (on the shared `AuthorisedRESTRequestHandler` and `Authoriser` — no AG-UI authoriser of its own), discovery, `to_agui` mapping and its exhaustiveness test, attachment mapping (no normalization — see PR 2), `Session.Keys.AGUI_STATE` with its accessors and the four system tools, `SystemToolFactory` branches, `StateSnapshot` emission, `forwardedProps` and `context` → volatile cache, the `agui` config block, the `agui` extra pinned `>=0.1.16`, single-file example frontend, docs | new tests pass | PR 1, PR 2 |
 | 4 | **OpenAI and LangGraph.** Both already iterate their framework's full event stream with explicit boundaries; both stop discarding | per-adapter tests | PR 1 |
@@ -773,7 +783,7 @@ Shape of the graph:
   `data:` URI — without PR 2 the demo silently describes nothing.
 - PR 3 is the only PR a reader must understand AG-UI to review, and it is deliberately the largest:
   the package, the handler, the state capability, config, the example and the docs. **If review finds
-  it unwieldy, the clean cut is to lift the session key, the three tools and their factory branches
+  it unwieldy, the clean cut is to lift the session key, the four tools and their two factory branches
   back out as a seventh PR** — that seam is the one that was just closed, so it reopens without
   disturbing anything else.
 

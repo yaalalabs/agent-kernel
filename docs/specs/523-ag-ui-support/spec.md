@@ -373,8 +373,11 @@ if cc_cfg and cc_cfg.enabled and SystemToolFactory._agent_allowed(cc_cfg, agent_
 matching multimodal and sandbox, so `core/` does not import the module unless the capability is on.
 
 `get_system_prompt_suffix` (`core/tool.py:203-222`) needs no change: it derives the suffix from
-`get_all()`. Only one of the three tools carries a non-empty `description` for the prompt suffix (the
-sandbox pattern noted at `core/tool.py:220-221`), so the prompt gains one paragraph, not three.
+`get_all()` and joins only the non-empty descriptions. Within each block one tool carries that
+block's whole paragraph and its siblings leave `description` empty — the sandbox pattern, whose
+comment at `core/tool.py:220-221` says so outright. **The count is therefore per enabled block, not
+per tool:** both blocks on gains two paragraphs, one block gains one, neither gains none. Four tools
+never produce four paragraphs.
 
 ### 8. Attachment source forms — `core/multimodal/hooks.py`
 
@@ -518,12 +521,23 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
   - *Unknown fields* — free. Every SDK model inherits `ConfiguredBaseModel`, which sets
     `extra="allow"`, so a future top-level field or message attribute parses and is ignored
     (verified: a `RunAgentInput` carrying an unknown key constructs and retains it).
-  - *Unknown message types* — **not** free, and this is the trap. `Message` is a discriminated union
-    on `role`, so an unrecognised role raises `ValidationError` and FastAPI turns it into a 422
-    before the handler runs. To honour the requirement, the route takes the body as a raw `dict`,
-    drops `messages` entries whose `role` is not in the SDK's `Role` literal, and only then
-    constructs `RunAgentInput`. A test asserts a message with role `"quantum"` is dropped rather
-    than rejected.
+  - *Unknown message and content types* — **not** free, and this is the trap. Three nested
+    discriminated unions can each reject the whole request before the handler runs: `Message` on
+    `role`, `InputContent` on `type`, and `InputContentSource` on `type`. Any unrecognised value
+    raises `ValidationError` at construction and FastAPI returns 422.
+    - **The pre-filter is narrower than it first appears, because the mapping already ignores
+      history.** The route takes the body as a raw `dict` and keeps **only the last `messages` entry
+      whose `role` is `"user"`**, discarding every other entry, and only then constructs
+      `RunAgentInput`. Nothing in the history reaches pydantic, so an unknown role *or* an unknown
+      content type sitting in an old message becomes unreachable by construction rather than by
+      walking every part looking for it. Rejecting a request over a message the mapping was going to
+      throw away is indefensible, and this is the cheapest way to make it impossible.
+    - No `user` message at all → `HTTPException(400)`. There is no turn to run.
+    - Inside that one surviving message, an unrecognised `content[].type` or `source.type` →
+      `HTTPException(400)` naming the unknown value. This is the *live turn*, so the audio/video
+      precedent applies: a silent drop would read to the user as the agent ignoring their
+      attachment. Leniency buys forward compatibility for history and for fields AK ignores; it does
+      not extend to silently discarding the input the user just sent.
   - *Outbound* — `to_agui` returns `None` for any AK event it cannot fully populate, and the handler
     skips `None`, which is what "never emits an event type it cannot fully populate" means in code.
 - The handler calls `ChatService.execute_stream` — the execution core, not the presentation wrappers
@@ -731,7 +745,7 @@ posture.
    (`core/multimodal/hooks.py:82, 226-232, 246-256`).
 8. **URL-sourced attachments now reach the adapter instead of being stripped.** Intentional, and the
    consequence of 6: the pre-hook declines them, so the filter loop must keep them.
-9. **Agents gain up to four system tools and one prompt-suffix paragraph** when the new flags are
+9. **Agents gain up to four system tools and up to two prompt-suffix paragraphs** — one per enabled block — when the new flags are
    on. Off by default.
 
 **Non-changes**, verified and load-bearing:
@@ -764,7 +778,9 @@ posture.
 | Client disconnects | Nothing. The generator is closed and there is nobody to write to; no terminal event is attempted |
 | `RunAgentInput.state` is `None` or absent | Stored state is left untouched. **Not** cleared |
 | Audio / video content in the request body | `HTTPException(400)` with an explanatory message. AK has no equivalent request type |
-| Message with an unrecognised `role` | Dropped before validation, not rejected. Required by `design.md`'s lenient-skew rule; without the pre-filter the SDK's discriminated union raises `ValidationError` and FastAPI returns 422 |
+| Unrecognised `role`, or unknown content/source `type`, **in history** | Ignored. Unreachable by construction: the pre-filter keeps only the final `user` message, so history never reaches pydantic |
+| No `user` message in `messages` | `HTTPException(400)`. There is no turn to run |
+| Unknown `content[].type` or `source.type` **in the final user message** | `HTTPException(400)` naming the unknown value. Same treatment as audio/video, and for the same reason — a silent drop reads as the agent ignoring the attachment |
 | `BinaryInputContent` carrying only `id` | `HTTPException(400)`. The id references a store AK does not have; `data` and `url` are both handled |
 | Unknown top-level field in `RunAgentInput` | Ignored. Free from the SDK's `extra="allow"` |
 | `_extract_attachment` meets a malformed `data:` URI | Falls through to the bare-base64 path rather than raising, so one bad attachment cannot fail the run |
@@ -782,7 +798,7 @@ Run with `cd ak-py && uv run pytest`.
 | `tests/test_stream_events.py` | Discriminated-union round trip: every member serialises with its `type` and re-parses to the same class; every field is JSON-serialisable |
 | `tests/test_runtime_stream_events.py` | `Runtime.stream` populates `delta` and `event` together; a hook that redacts rewrites **both** (the §4 rule 1 check); a hook returning `None` drops the whole chunk; non-text events skip hooks; **`ReasoningDelta` reaches the hook chain but never reaches `delta`** (rule 5); and for the transitional branch — **a `str`-yielding runner's tokens are redacted and dropped by `on_stream_chunk` exactly as a `TextDelta`-yielding one's are** (rule 4), wrapped in one synthetic `MessageStart`/`MessageEnd` pair sharing a single `message_id`, and **a run whose hooks drop every token emits neither boundary** rather than an empty message. The hook assertions are the regression guard: no test in the suite references `on_stream_chunk` today, so nothing else would catch the chain being bypassed |
 | `tests/test_multimodal_source_forms.py` | All five source forms through `MultimodalPreHook`: bare base64 stored as today; `data:` split with its real mime type; `http`/`https`/`s3` neither described nor stored **and still present in the returned request list** |
-| `tests/test_agui_run_input.py` | `thread_id`→`session_id`; `state` stored, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` is dropped rather than 422; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every inbound mapping** |
+| `tests/test_agui_run_input.py` | `thread_id`→`session_id`; `state` stored, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` **and** an unknown `content[].type` in history are both ignored rather than 422, while the same unknown content type in the final user message is a 400; a body with no `user` message is a 400; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every inbound mapping** |
 | `tests/test_agui_mapping.py` | Exhaustiveness: enumerate every member of the `StreamEvent` union and assert `to_agui` returns either an AG-UI event or an explicit `None` from a known-unmapped allowlist. A new event type with no decision fails this test |
 | `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; and four `StateSnapshot` cases — unset→set emits, inbound `state` alone does **not** emit, no change does not emit, and a tool calling `update_agui_state` **does** emit (the last is the regression guard for the deep-copy trap in §9: with a live reference instead of a copy it silently never fires) |
 | `tests/test_agui_state_tools.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.client_context.enabled`, and respects `agents` scoping |
