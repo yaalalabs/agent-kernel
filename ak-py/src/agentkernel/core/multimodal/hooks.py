@@ -171,7 +171,7 @@ class MultimodalPreHook(PreHook):
         #  - AgentRequestAttachmentRef: the id is resolved and injected (or dropped if unresolved)
         # so a dangling reference is never passed to the agent. A raw image/file the hook declined is
         # kept instead, so the adapter still receives it.
-        filtered_requests = []
+        filtered_requests: list[AgentRequest] = []
         last_text_idx = -1
         for req in requests:
             if isinstance(req, AgentRequestAttachmentRef):
@@ -247,17 +247,17 @@ class MultimodalPreHook(PreHook):
             if not isinstance(req, (AgentRequestImage, AgentRequestFile)):
                 continue
 
-            attachment = self._extract_attachment(req)
-            if attachment is None:
+            extracted = self._extract_attachment(req)
+            if extracted is None:
                 consumed.add(id(req))  # an attachment request with no bytes — nothing to forward
                 continue
-            if not attachment.consumable:
-                self._log.debug(f"Attachment '{attachment.name}' is a remote reference; passing it to the agent undescribed")
+            if not extracted.consumable:
+                self._log.debug(f"Attachment '{extracted.name}' is a remote reference; passing it to the agent undescribed")
                 continue
             consumed.add(id(req))
 
             # Generate brief description via LLM
-            description = await self._describe_attachment_briefly(data=attachment.data, mime_type=attachment.mime_type)
+            description = await self._describe_attachment_briefly(data=extracted.data, mime_type=extracted.mime_type)
 
             # Truncate to configured max length
             if len(description) > config.description_max_length:
@@ -265,14 +265,14 @@ class MultimodalPreHook(PreHook):
 
             # Thread-off: save the raw bytes here.
             attachment_id = manager.save_attachment(
-                data=attachment.data,
-                attachment_type=attachment.att_type,
-                name=attachment.name,
-                mime_type=attachment.mime_type,
+                data=extracted.data,
+                attachment_type=extracted.att_type,
+                name=extracted.name,
+                mime_type=extracted.mime_type,
                 description=description,
                 max_attachments=config.max_attachments,
             )
-            self._log.info(f"Saved {attachment.att_type} {attachment_id}: {attachment.name}")
+            self._log.info(f"Saved {extracted.att_type} {attachment_id}: {extracted.name}")
             descriptions.append((attachment_id, description))
 
         return descriptions, consumed
@@ -308,19 +308,25 @@ class MultimodalPreHook(PreHook):
         bytes are not what this hook would store. Per RFC 2397 the marker is the final parameter of
         the header, so a header that merely contains the text `;base64` does not qualify.
 
+        Scheme and header matching is case-insensitive, since URI schemes (RFC 3986 §3.1), media
+        types and parameter names all are. Only the leading bytes and the short header are folded —
+        an attachment payload can be megabytes of base64, and lowercasing it would copy the lot.
+
         :param source: The raw source string from the request.
         :param declared_mime: The request's own mime_type, if it set one.
         :param default_mime: Fallback when neither the source nor the request declares one.
         :return: (data, mime_type, consumable).
         """
-        if source.startswith(("http://", "https://", "s3://")):
+        scheme = source[:8].lower()  # 8 == len("https://"), the longest prefix matched below
+
+        if scheme.startswith(("http://", "https://", "s3://")):
             return source, declared_mime or default_mime, False
 
-        if source.startswith("data:"):
+        if scheme.startswith("data:"):
             header, _, payload = source.partition(",")
-            if not payload or not header.endswith(";base64"):
+            if not payload or not header.lower().endswith(";base64"):
                 return source, declared_mime or default_mime, False
-            uri_mime = header[len("data:") :].split(";", 1)[0]
+            uri_mime = header[len("data:") :].split(";", 1)[0].lower()
             return payload, uri_mime or declared_mime or default_mime, True
 
         return source, declared_mime or default_mime, True

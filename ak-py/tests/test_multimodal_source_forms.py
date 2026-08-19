@@ -24,6 +24,8 @@ from agentkernel.core.multimodal.hooks import MultimodalPreHook
 from agentkernel.core.multimodal.storage.in_memory import InMemoryAttachmentStore
 
 REMOTE_SOURCES = ["http://example.com/cat.png", "https://example.com/cat.png", "s3://bucket/cat.png"]
+# Schemes are case-insensitive per RFC 3986 §3.1, so these are valid URLs too.
+REMOTE_SOURCES_ODD_CASE = ["HTTP://example.com/cat.png", "HTTPS://EXAMPLE.COM/CAT.PNG", "S3://bucket/cat.png", "Https://example.com/cat.png"]
 
 
 @pytest.fixture
@@ -107,6 +109,26 @@ class TestConsumableSourceForms:
         assert _stored()[0]["data"] == "aW1n"
         assert _stored()[0]["mime_type"] == "image/webp"
 
+    @pytest.mark.parametrize("source", ["DATA:image/png;base64,aW1n", "data:IMAGE/PNG;BASE64,aW1n", "Data:Image/Png;Base64,aW1n"])
+    def test_data_uri_is_split_whatever_the_header_case(self, multimodal_enabled, source):
+        session = Session("s1")
+        requests = [AgentRequestImage(image_data=source, name="pic.png")]
+
+        _run_hook(session, requests)
+
+        # The mime type is normalised to lower case; the payload keeps its case, since base64 is
+        # case-sensitive and folding it would corrupt the bytes.
+        assert _stored()[0]["data"] == "aW1n"
+        assert _stored()[0]["mime_type"] == "image/png"
+
+    def test_mixed_case_base64_payload_is_stored_verbatim(self, multimodal_enabled):
+        session = Session("s1")
+        requests = [AgentRequestImage(image_data="aW1nQUJDeHl6", name="pic.png", mime_type="image/png")]
+
+        _run_hook(session, requests)
+
+        assert _stored()[0]["data"] == "aW1nQUJDeHl6"
+
     def test_data_uri_file_is_split_the_same_way(self, multimodal_enabled):
         session = Session("s1")
         requests = [AgentRequestFile(file_data="data:application/pdf;base64,cGRm", name="doc.pdf")]
@@ -155,6 +177,19 @@ class TestRemoteSourceForms:
         result, describe = _run_hook(session, [file_req])
 
         assert result == [file_req]
+        describe.assert_not_awaited()
+        assert _stored() == []
+
+    @pytest.mark.parametrize("source", REMOTE_SOURCES_ODD_CASE)
+    def test_remote_reference_is_recognised_whatever_the_scheme_case(self, multimodal_enabled, source):
+        session = Session("s1")
+        image = AgentRequestImage(image_data=source, name="cat.png")
+
+        result, describe = _run_hook(session, [image])
+
+        # Case-folding the scheme is the difference between passing a URL to the adapter and storing
+        # the URL text as though it were the image's bytes.
+        assert result == [image]
         describe.assert_not_awaited()
         assert _stored() == []
 
