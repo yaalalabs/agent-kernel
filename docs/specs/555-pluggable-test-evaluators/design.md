@@ -444,9 +444,9 @@ graph LR
   `passed` is decided by comparing the returned score against the AK threshold
 - Out-of-range values (a leftover `50`) raise `ValueError` rather than silently passing everything,
   since any score is below 50 on the new scale
-- Call sites carrying explicit thresholds are updated: `examples/transport/nats/app_test.py:111,123`
-  and `examples/transport/kafka/app_test.py` (`threshold=10`), plus the docs pages listed under
-  Migration surface
+- Every explicit `threshold=`/`match_threshold=` call site under `examples/` is updated to the new
+  scale — currently 15 files, 30 call sites (`git grep -nE "(match_)?threshold *= *[0-9]" examples/`);
+  `spec.md` carries the full file enumeration. Plus the docs pages listed under Migration surface
 
 ### Synchronous evaluation
 
