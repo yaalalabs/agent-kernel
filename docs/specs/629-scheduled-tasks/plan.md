@@ -134,7 +134,7 @@ Spec sections: "ScheduleStore" backends, "ScheduleProvider" EventBridge.
 ### Iteration 5.1: redis/valkey/dynamodb stores
 
 - **Files:** `schedule/store/redis_like.py`, `redis.py`, `valkey.py`, `dynamodb.py`; builder branches with `require_extra`.
-- **Verify:** full `tests/test_schedule_store.py` (fake redis-like client, mocked `DynamoDBDriver`); `ScheduleStoreBuilder` unknown-type + BYO cases in `tests/test_store_builders.py`.
+- **Verify:** full `tests/test_schedule_store.py` (fake redis-like client, mocked `DynamoDBDriver`), including the `ScheduleStoreBuilder` cases — built-in branches, `require_extra` hint, BYO dotted path, unknown short name — which stay in that file beside the backends they build rather than moving to `tests/test_store_builders.py`.
 
 ### Iteration 5.2: EventBridge provider
 
