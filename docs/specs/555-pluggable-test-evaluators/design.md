@@ -357,8 +357,12 @@ graph LR
     requires `expected` and raises `AKMissingInput` without it. Every in-repo caller already passes
     expectations, and `expect()` requires them by signature (`test.py:264`)
   - AK owns the default rubric; overriding it per test is deferred (see the payload section)
-  - Constructed with `threshold=None` (DeepEval's score-only mode), `include_reason=True`, and the
-    `LiteLLMModel` from "LLM model construction"
+  - Constructed with `threshold=None` (DeepEval's score-only mode, so DeepEval never computes its own
+    pass/fail — the harness owns that, per "Threshold scale"), `include_reason=True` (so DeepEval
+    populates the rationale that becomes `AKEvaluationResult.reason`), and the `LiteLLMModel` from "LLM
+    model construction"
+  - `measure()` is invoked via the shared worker-thread helper (see "Synchronous evaluation"), never
+    called directly, because DeepEval's `async_mode=True` default drives its own event loop internally
 - Maps `AKEvaluationCase` → `LLMTestCase(input, actual_output, expected_output)`
 - Translates a soft backend failure (`metric.error`, a `None` score) into a raised `AKEvaluationError`
   rather than a low score
@@ -451,9 +455,14 @@ graph LR
   - `asyncio.run()` raises inside a running loop, and the existing `AgentHandler._run_async_sync`
     bridge (`ak-py/src/agentkernel/core/chat_service.py:207-225`) ends in `loop.run_until_complete`,
     which also raises on an already-running loop
-- An adapter whose backend is async-only must run the coroutine on a dedicated worker thread with its
-  own event loop; a shared helper in the evaluator package provides this so each adapter does not
-  reinvent it
+- An adapter whose backend is async-only, or whose nominally synchronous entry point drives its own
+  event loop internally, must run the coroutine on a dedicated worker thread with its own event loop; a
+  shared helper in the evaluator package provides this so each adapter does not reinvent it
+  - DeepEval's `BaseMetric.measure()` looks synchronous but defaults to `async_mode=True`, in which
+    `measure()` itself calls `asyncio.run_until_complete(a_measure(...))` — which raises when invoked
+    from inside an already-running loop, the exact case this section exists for. `GEval.measure()` (see
+    "Llm metric: GEval") therefore also runs through this shared worker-thread helper rather than being
+    called directly
 
 ### Dependencies
 
