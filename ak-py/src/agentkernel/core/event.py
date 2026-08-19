@@ -13,8 +13,8 @@ Two invariants hold across every member:
   request/reply models in `model.py`. The union is discriminated on it so a serialised event
   parses back to the class it came from — `StreamChunk` crosses the queue transport in
   distributed deployment topologies.
-- **No field carries a framework-native object.** Every field is a `str`, so an event stays
-  picklable and JSON-serialisable no matter which framework produced it.
+- **No field carries a framework-native object.** Every field is a `str`, `int` or `bool`, so an
+  event stays picklable and JSON-serialisable no matter which framework produced it.
 
 `message_id` and `tool_call_id` correlate a start with its deltas and its end within a single run.
 Adapters take them from the framework's own stream where one is available and generate

@@ -4,7 +4,7 @@ from typing import get_args
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from agentkernel.core.events import (
+from agentkernel.core.event import (
     MessageEnd,
     MessageStart,
     ReasoningDelta,
@@ -62,10 +62,12 @@ def test_event_round_trips_through_the_discriminated_union(event):
 
 @pytest.mark.parametrize("event", ALL_EVENTS, ids=lambda ev: ev.type)
 def test_event_is_json_serialisable(event):
-    # No field may carry a framework-native object: a StreamChunk crosses the queue transport.
+    # No field may carry a framework-native object: a StreamChunk crosses the queue transport. The
+    # scalar set matches spec §1 rule 4 rather than being narrower than it, so an int or bool field
+    # added by a later adapter PR is accepted here instead of failing a spec-legal change.
     dumped = event.model_dump()
     assert json.loads(json.dumps(dumped)) == dumped
-    assert all(isinstance(value, str) for value in dumped.values())
+    assert all(isinstance(value, (str, int, bool)) for value in dumped.values())
 
 
 @pytest.mark.parametrize("event", ALL_EVENTS, ids=lambda ev: ev.type)

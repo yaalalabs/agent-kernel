@@ -11,7 +11,7 @@ import pytest
 
 from agentkernel import Agent, Runner, Session
 from agentkernel.core.builder import SessionStoreBuilder
-from agentkernel.core.events import MessageEnd, MessageStart, ReasoningDelta, StepStart, TextDelta, ToolCallArgs, ToolCallStart
+from agentkernel.core.event import MessageEnd, MessageStart, ReasoningDelta, StepStart, TextDelta, ToolCallArgs, ToolCallStart
 from agentkernel.core.hooks import PostHook
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime

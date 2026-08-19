@@ -18,11 +18,16 @@ Paths are relative to `ak-py/src/agentkernel/` unless stated otherwise.
 
 ## Design
 
-### 1. The event model — `core/events.py` (new)
+### 1. The event model — `core/event.py` (new)
 
 A new module rather than an addition to `core/model.py`: the event union is a dozen classes with a
 discriminator, and `model.py` is already the request/reply module. `core/model.py` imports
-`StreamEvent` from it for the `StreamChunk` field.
+`StreamEvent` from it for the `StreamChunk` field. Named singular, matching `model.py` and `tool.py`.
+
+**`core/__init__.py` exports `StreamEvent` and every member class** beside `StreamChunk`. They are
+public API from PR 6 onward — a user-written `Runner` must yield them, and any consumer of
+`StreamChunk.event` needs them for `isinstance` checks — and `agentkernel/__init__.py`'s
+`from .core import *` re-exports them without further work.
 
 ```python
 class StreamEventBase(BaseModel):
@@ -123,9 +128,10 @@ asserts the serialised result is exactly `{"delta": "Hello", "done": false, "ses
 assertion. `Runtime.stream` is therefore the single place that populates both fields together.
 
 `session_id` remains absent from the model and is attached by `ResponseBuilder.stream_chunk`
-(`core/chat_service.py:320-321`); `Runtime.stream` passing `session_id=` to the constructor continues
-to be silently dropped by Pydantic's default `extra="ignore"`. This spec does not change that
-behaviour, but it is noted because it looks like a bug when read alongside the response payload.
+(`core/chat_service.py:322-323`). `Runtime.stream` used to pass `session_id=` to the constructor,
+where Pydantic's default `extra="ignore"` silently dropped it; **PR 1 removes that dead argument**, so
+the code no longer implies a field that does not exist. The wire payload is unchanged — the session id
+was only ever reaching clients through `ResponseBuilder`.
 
 ### 3. `Runner` — `core/base.py`
 
@@ -138,8 +144,9 @@ def supports_streaming(self) -> bool:
     return True
 
 @abstractmethod
-async def stream(self, agent, session, requests) -> AsyncGenerator["StreamEvent", None]:
-    ...
+async def stream(self, agent, session, requests) -> AsyncGenerator["StreamEvent | str", None]:
+    raise NotImplementedError()
+    yield
 ```
 
 - `supports_streaming` is a **property**, not a class attribute. Five existing test doubles already
@@ -149,8 +156,15 @@ async def stream(self, agent, session, requests) -> AsyncGenerator["StreamEvent"
   and is why this change needs no test edits.
 - `CrewAIRunner` and `SmolagentsRunner` override it to `False`. Their `stream` bodies are untouched
   and keep raising `NotImplementedError`.
-- The `stream` return annotation widens. Only the annotation changes in PR 1; the four adapters keep
-  yielding `str` until PRs 4–6.
+- The `stream` return annotation widens to **`StreamEvent | str`**, not to `StreamEvent`. The four
+  adapters keep yielding `str` until PRs 4–6, so the union states the transitional contract instead of
+  leaving four implementations contradicting their own base class. It carries a `TRANSITIONAL` marker;
+  **PR 6 narrows it to `StreamEvent`** when it deletes `Runtime.stream`'s normalisation branch.
+- **The body gains a trailing bare `yield`**, the same pattern `CrewAIRunner.stream` already uses.
+  Without it the method has no `yield`, so mypy types it as `Coroutine[..., AsyncGenerator[...]]`
+  rather than an async generator, and every adapter override mismatches on *shape* regardless of yield
+  type. Verified: the four `[override]` errors clear only with the union **and** the `yield` — either
+  alone leaves them. This mismatch predates #523; the `yield` is permanent, unlike the union.
 
 ### 4. `Runtime.stream` — `core/runtime.py:232-275`
 
@@ -262,7 +276,7 @@ trailing `if legacy_started:` yield.
 - **Two imports go stale with it.** `core/runtime.py` does not import `uuid` today, so PR 1 adds
   `from uuid import uuid4`; nothing uses it afterwards. `MessageStart` and `MessageEnd` are likewise
   only ever constructed by `Runtime` for the synthetic message — real adapters emit their own — so
-  both drop out of the import from `core/events.py`. `TextDelta` and `ReasoningDelta` stay.
+  both drop out of the import from `core/event.py`. `TextDelta` and `ReasoningDelta` stay.
 - **Deletion hazard: two `isinstance` calls survive, and both are permanent.**
   `isinstance(ev, (TextDelta, ReasoningDelta))` is rule 3 (which text reaches hooks) and
   `isinstance(ev, TextDelta)` is rule 5 (which text reaches `delta`, keeping reasoning out). Only
@@ -487,6 +501,10 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 - The run body is a `StreamingResponse` over an async generator that emits `RunStarted`, then
   `to_agui(chunk.event)` for each chunk whose `event` is not `None` and maps to something, then
   `StateSnapshot` when the state changed, then exactly one of `RunFinished` / `RunError`.
+- **The handler tracks no per-run message state and never synthesises a closing `TextMessageEnd`.** A
+  run that fails mid-message ends with an unmatched `TextMessageStart`, and that is correct: `RunError`
+  is the terminal event (`research/ag-ui.md:13-15`), AG-UI imposes no balance requirement, and a
+  synthetic `TextMessageEnd` would assert a completion that did not happen.
 - **"When the state changed" means this, precisely.** `design.md` names the mechanism — a pre-run
   copy the handler compares against — but the comparison has to be spelled out or it will be
   implemented wrong:
@@ -800,7 +818,7 @@ Run with `cd ak-py && uv run pytest`.
 | `tests/test_multimodal_source_forms.py` | All five source forms through `MultimodalPreHook`: bare base64 stored as today; `data:` split with its real mime type; `http`/`https`/`s3` neither described nor stored **and still present in the returned request list** |
 | `tests/test_agui_run_input.py` | `thread_id`→`session_id`; `state` stored, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` **and** an unknown `content[].type` in history are both ignored rather than 422, while the same unknown content type in the final user message is a 400; a body with no `user` message is a 400; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every inbound mapping** |
 | `tests/test_agui_mapping.py` | Exhaustiveness: enumerate every member of the `StreamEvent` union and assert `to_agui` returns either an AG-UI event or an explicit `None` from a known-unmapped allowlist. A new event type with no decision fails this test |
-| `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; and four `StateSnapshot` cases — unset→set emits, inbound `state` alone does **not** emit, no change does not emit, and a tool calling `update_agui_state` **does** emit (the last is the regression guard for the deep-copy trap in §9: with a live reference instead of a copy it silently never fires) |
+| `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; a runner that raises after a `TextDelta` producing `RunError` with **no** synthesised `TextMessageEnd`, which a handler balancing the boundaries would fail; and four `StateSnapshot` cases — unset→set emits, inbound `state` alone does **not** emit, no change does not emit, and a tool calling `update_agui_state` **does** emit (the last is the regression guard for the deep-copy trap in §9: with a live reference instead of a copy it silently never fires) |
 | `tests/test_agui_state_tools.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.client_context.enabled`, and respects `agents` scoping |
 
 ### Existing test files that change

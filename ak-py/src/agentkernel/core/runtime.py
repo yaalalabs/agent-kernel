@@ -14,7 +14,7 @@ from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
 from ..sandbox.hooks import SandboxPreHookFactory
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
-from .events import MessageEnd, MessageStart, ReasoningDelta, TextDelta
+from .event import MessageEnd, MessageStart, ReasoningDelta, TextDelta
 from .model import (
     AgentReply,
     AgentReplyAny,
@@ -302,7 +302,7 @@ class Runtime:
                         yield StreamChunk(event=MessageEnd(message_id=legacy_message_id))
 
                     self.sessions().store(session)
-                    yield StreamChunk(done=True, session_id=session.id)
+                    yield StreamChunk(done=True)
             finally:
                 session.get_volatile_cache().clear()
 

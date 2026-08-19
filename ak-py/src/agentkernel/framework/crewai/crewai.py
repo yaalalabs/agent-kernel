@@ -13,7 +13,7 @@ from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
-from ...core.events import StreamEvent
+from ...core.event import StreamEvent
 from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
@@ -411,7 +411,7 @@ class CrewAIRunner(Runner):
     @property
     def supports_streaming(self) -> bool:
         """
-        :return: False — CrewAI has no streaming API, so stream() always raises.
+        :return: False — this adapter does not implement streaming, so stream() always raises.
         """
         return False
 

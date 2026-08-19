@@ -5,7 +5,7 @@ from typing import Any, Callable, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
-from .events import StreamEvent
+from .event import StreamEvent
 
 
 class AgentRequestText(BaseModel):

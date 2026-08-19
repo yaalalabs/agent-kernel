@@ -58,15 +58,17 @@ step* waits on 4 and 5. Iteration 7 waits on all six.
 
 ## Iteration 1: The streaming contract (PR 1)
 
-- **Goal:** the event model exists, `Runner.stream` is typed for it, `StreamChunk` carries `event`,
-and nothing has changed behaviour — the adapters still yield `str` and the whole suite passes
-untouched.
-- **Files:** `core/events.py` (new), `core/model.py`, `core/base.py`, `core/runtime.py`,
+- **Goal:** the event model exists, `Runner.stream` is typed for it, and `StreamChunk` carries `event`.
+The adapters still yield `str`; the only externally visible change is the synthetic
+`message_start`/`message_end` frames on the streaming wire, recorded under Verify below.
+- **Files:** `core/event.py` (new), `core/model.py`, `core/base.py`, `core/runtime.py`, `core/__init__.py`,
 `framework/crewai/crewai.py`, `framework/smolagents/smolagents.py`,
 `tests/test_stream_events.py` (new), `tests/test_runtime_stream_events.py` (new),
 `examples/api/pydanticai-streaming/app_test.py`
 - **Steps:**
-  1. Add `core/events.py` — the twelve event classes and the `StreamEvent` discriminated union (§1).
+  1. Add `core/event.py` — the twelve event classes and the `StreamEvent` discriminated union (§1), and
+    export `StreamEvent` plus every member class from `core/__init__.py`. They are public API from PR 6
+     on, so the export ships with the classes rather than being owned by a later PR.
   2. Add `event: StreamEvent | None` to `StreamChunk`, after `delta` (§2). `delta` stays a plain
     settable field — **not** a computed field; §2 explains which existing test decides this.
   3. Add the `supports_streaming` **property** to `Runner` (default `True`) and widen `stream`'s
@@ -221,7 +223,11 @@ full suite.
   4. **Only once iterations 4 and 5 have merged:** delete the transitional `str` branch from
     `Runtime.stream`, and add a test asserting a `str`-yielding runner now fails loudly — the
      assertion is the pydantic `ValidationError` from `StreamChunk.event` rejecting a bare `str`
-     (§4 rule 6), not merely an absence of output.
+     (§4 rule 6), not merely an absence of output. **Narrow `Runner.stream`'s annotation from
+     `AsyncGenerator[StreamEvent | str, None]` back to `AsyncGenerator[StreamEvent, None]`** in the
+     same step (§3) — the union is transitional scaffolding and becomes permanent by omission if this
+     is missed. The trailing bare `yield` in the base body **stays**: it is what makes the method an
+     async generator rather than a coroutine, and is unrelated to the transition.
   5. **Migrate the three test doubles the deletion breaks**, none of which appear in §*Existing test
     files that change*: `tests/test_runtime.py:756-759` (the `Agent.current()`-during-stream double),
      `tests/test_chat_service_core.py:257-259` (acting-user propagation) and
