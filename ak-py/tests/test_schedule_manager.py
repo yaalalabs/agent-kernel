@@ -5,7 +5,7 @@ ordering guarantees (record first, register second, roll back on failure) are ob
 """
 
 import json
-from typing import ClassVar, Optional
+from typing import Optional
 
 import pytest
 
@@ -19,6 +19,7 @@ from agentkernel.schedule.errors import ScheduleError
 from agentkernel.schedule.manager import ScheduleManager
 from agentkernel.schedule.model import TOKEN_OCCURRENCE_TIME, TOKEN_REQUEST_ID, ScheduleStatus
 from agentkernel.schedule.provider.base import ScheduleProvider
+from agentkernel.schedule.provider.eventbridge import EventBridgeScheduleProvider
 from agentkernel.schedule.provider.local import LocalScheduleProvider
 from agentkernel.schedule.store.in_memory import InMemoryScheduleStore
 
@@ -55,10 +56,12 @@ class FakeScheduleProvider(ScheduleProvider):
             raise ScheduleError(f"provider {operation} rejected")
 
 
-class SqsOnlyScheduleProvider(FakeScheduleProvider):
-    """A provider that can only deliver to SQS, like the EventBridge one."""
+def _sqs_only_provider() -> EventBridgeScheduleProvider:
+    """The shipped SQS-only provider, so the compatibility checks pin the real class attribute.
 
-    supported_transports: ClassVar[Optional[frozenset[str]]] = frozenset({"sqs"})
+    Its client is created on first use, so constructing one never reaches AWS.
+    """
+    return EventBridgeScheduleProvider(group_name="ak-schedules", role_arn="arn:aws:iam::1:role/r", queue_arn="arn:aws:sqs:us-east-1:1:q.fifo")
 
 
 class DummyRunner(Runner):
@@ -168,13 +171,13 @@ class TestSingletonAndConfiguration:
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
 
         with pytest.raises(AKConfigError, match="delivers to \\['sqs'\\] transports, but the configured queue transport is 'in_memory'"):
-            ScheduleManager(provider=SqsOnlyScheduleProvider(), store=store)
+            ScheduleManager(provider=_sqs_only_provider(), store=store)
 
     def test_compatible_provider_and_transport_are_accepted(self, store, monkeypatch):
-        _configure_schedule(monkeypatch, provider={"type": "eventbridge"})
+        _configure_schedule(monkeypatch, provider={"type": "eventbridge"}, store={"type": "dynamodb"})
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
 
-        assert ScheduleManager(provider=SqsOnlyScheduleProvider(), store=store) is not None
+        assert ScheduleManager(provider=_sqs_only_provider(), store=store) is not None
 
     def test_local_provider_is_accepted_on_the_single_process_pairing(self, store, monkeypatch):
         _configure_schedule(monkeypatch, provider={"type": "local"}, store={"type": "in_memory"})
@@ -200,10 +203,18 @@ class TestSingletonAndConfiguration:
 
     def test_the_single_process_constraint_applies_only_to_the_local_provider(self, store, monkeypatch):
         """A provider that owns its timers elsewhere is unaffected by this check."""
+        _configure_schedule(monkeypatch, provider={"type": "eventbridge"}, store={"type": "dynamodb"})
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+
+        assert ScheduleManager(provider=_sqs_only_provider(), store=store) is not None
+
+    def test_in_memory_store_and_broker_transport_fail_fast(self, store, monkeypatch):
+        """A durable provider fires from whichever process created a task; in-memory records do not travel."""
         _configure_schedule(monkeypatch, provider={"type": "eventbridge"}, store={"type": "in_memory"})
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
 
-        assert ScheduleManager(provider=SqsOnlyScheduleProvider(), store=store) is not None
+        with pytest.raises(AKConfigError, match="store 'in_memory' is single-process only.*transport is 'sqs'"):
+            ScheduleManager(provider=_sqs_only_provider(), store=store)
 
 
 class TestCreation:

@@ -48,12 +48,14 @@ class ScheduleManager:
         :param provider: Backend that fires the task's occurrences.
         :param store: Backend that persists the task records.
         :raises AKConfigError: If the provider cannot deliver to the configured queue transport, or
-                               if the local provider is paired with anything but a single process.
+                               if the local provider or the in-memory store is paired with anything
+                               but a single process.
         """
         self._provider = provider
         self._store = store
         self._validate_transport_compatibility()
         self._validate_local_provider_topology()
+        self._validate_store_topology()
 
     @classmethod
     def get(cls) -> Optional["ScheduleManager"]:
@@ -307,6 +309,30 @@ class ScheduleManager:
         raise AKConfigError(
             f"schedule provider 'local' is single-process only: it requires the 'in_memory' queue transport and the "
             f"'in_memory' store, but the configured transport is '{transport_type}' and the store is '{store_type}'"
+        )
+
+    def _validate_store_topology(self) -> None:
+        """Fail fast when the in-memory store is configured outside a single process.
+
+        Its records are a dict in one process's memory. A durable provider fires triggers into the
+        queue whatever process created them, so on a broker transport the creation paths (chat
+        interception and the ``create_schedule`` tool, both in the agent-runner process) and the
+        management routes (the IOHandler process) would each hold their own set of records: a
+        listing would not see what the runner created, and an amendment would report success
+        against a record the firing process never had. Firing itself is unaffected, which is why
+        this is a separate guard from the two above it.
+
+        :raises AKConfigError: If the ``in_memory`` store is paired with a broker transport.
+        """
+        schedule_config = AKConfig.get().schedule
+        if schedule_config is None or schedule_config.store.type.lower() != "in_memory":
+            return
+        transport_type = QueueTransportFactory.resolve_type()
+        if transport_type == "in_memory":
+            return
+        raise AKConfigError(
+            f"schedule store 'in_memory' is single-process only: its records are reachable from one process, "
+            f"but the configured queue transport is '{transport_type}'; use the 'redis', 'valkey' or 'dynamodb' store"
         )
 
     def _require_amendable_task(self, task_id: str, user_id: Optional[str]) -> ScheduledTask:

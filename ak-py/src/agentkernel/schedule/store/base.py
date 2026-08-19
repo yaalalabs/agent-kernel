@@ -5,12 +5,12 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 
 from ...core.config import AKConfig
-from ...core.util.factory import AKConfigError, resolve_dotted
+from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ...core.util.pagination import DEFAULT_PAGE_SIZE
 from ..model import ScheduledTask
 
 # Backends shipped with the capability; anything else is treated as a dotted path (BYO).
-_BUILTIN_SCHEDULE_STORES = ["in_memory"]
+_BUILTIN_SCHEDULE_STORES = ["in_memory", "redis", "valkey", "dynamodb"]
 
 
 class ScheduleStore(ABC):
@@ -104,8 +104,9 @@ class ScheduleStoreBuilder:
     def build() -> ScheduleStore:
         """Build and return a ScheduleStore instance based on the configured ``schedule.store.type``.
 
-        ``type`` is a built-in short name or a dotted path to a user-supplied ``ScheduleStore``
-        subclass (bring-your-own). An unknown, non-dotted value raises ``AKConfigError``.
+        ``type`` is a built-in short name (in_memory, redis, valkey, dynamodb) or a dotted path to a
+        user-supplied ``ScheduleStore`` subclass (bring-your-own). An unknown, non-dotted value
+        raises ``AKConfigError``.
 
         :return: The configured store.
         :raises ValueError: If the scheduling capability is not configured.
@@ -117,10 +118,26 @@ class ScheduleStoreBuilder:
 
         store_type = schedule_config.store.type
         ScheduleStoreBuilder._log.info(f"Building '{store_type}' schedule store")
-        if store_type.lower() == "in_memory":
+        key = store_type.lower()
+        if key == "in_memory":
             from .in_memory import InMemoryScheduleStore
 
             return InMemoryScheduleStore()
+        if key == "redis":
+            with require_extra("redis", "schedule.store.type: redis"):
+                from .redis import RedisScheduleStore
+
+            return RedisScheduleStore()
+        if key == "valkey":
+            with require_extra("valkey", "schedule.store.type: valkey"):
+                from .valkey import ValkeyScheduleStore
+
+            return ValkeyScheduleStore()
+        if key == "dynamodb":
+            with require_extra("aws", "schedule.store.type: dynamodb"):
+                from .dynamodb import DynamoDBScheduleStore
+
+            return DynamoDBScheduleStore()
         if "." not in store_type:
             raise AKConfigError(
                 f"unknown schedule store type '{store_type}'; expected one of {_BUILTIN_SCHEDULE_STORES} "

@@ -9,12 +9,12 @@ import logging
 from abc import ABC, abstractmethod
 from typing import ClassVar, Optional
 
-from ...core.config import AKConfig
-from ...core.util.factory import AKConfigError, resolve_dotted
+from ...core.config import AKConfig, _ScheduleEventBridgeConfig
+from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ..model import ScheduledTask
 
 # Providers shipped with the capability; anything else is treated as a dotted path (BYO).
-_BUILTIN_SCHEDULE_PROVIDERS = ["local"]
+_BUILTIN_SCHEDULE_PROVIDERS = ["local", "eventbridge"]
 
 
 class ScheduleProvider(ABC):
@@ -93,13 +93,14 @@ class ScheduleProviderFactory:
     def create() -> ScheduleProvider:
         """Create the configured provider, resolving its dependencies from config once.
 
-        ``type`` is a built-in short name or a dotted path to a user-supplied
+        ``type`` is a built-in short name (local, eventbridge) or a dotted path to a user-supplied
         ``ScheduleProvider`` subclass (bring-your-own). An unknown, non-dotted value raises
         ``AKConfigError``.
 
         :return: The configured provider.
         :raises ValueError: If the scheduling capability is not configured.
-        :raises AKConfigError: If the configured type is neither a built-in nor a resolvable dotted path.
+        :raises AKConfigError: If the configured type is neither a built-in nor a resolvable dotted
+                               path, or if a built-in's own configuration is incomplete.
         """
         schedule_config = AKConfig.get().schedule
         if schedule_config is None:
@@ -107,16 +108,47 @@ class ScheduleProviderFactory:
 
         provider_type = schedule_config.provider.type
         ScheduleProviderFactory._log.info(f"Building '{provider_type}' schedule provider")
-        if provider_type.lower() == "local":
+        key = provider_type.lower()
+        if key == "local":
             from ...pipeline.transport.base import QueueTransportFactory
             from .local import LocalScheduleProvider
 
             # The transport is resolved here, not inside the provider: a provider must not read
             # AKConfig in its methods.
             return LocalScheduleProvider(transport=QueueTransportFactory.create())
+        if key == "eventbridge":
+            with require_extra("aws", "schedule.provider.type: eventbridge"):
+                from .eventbridge import EventBridgeScheduleProvider
+
+            settings = ScheduleProviderFactory._require_eventbridge_settings(schedule_config.provider.eventbridge)
+            return EventBridgeScheduleProvider(**settings)
         if "." not in provider_type:
             raise AKConfigError(
                 f"unknown schedule provider type '{provider_type}'; expected one of {_BUILTIN_SCHEDULE_PROVIDERS} "
                 "or a dotted path to a ScheduleProvider subclass"
             )
         return resolve_dotted(provider_type, base=ScheduleProvider)()
+
+    @staticmethod
+    def _require_eventbridge_settings(eventbridge_config: Optional[_ScheduleEventBridgeConfig]) -> dict:
+        """Read the EventBridge provider's connection settings, rejecting an incomplete block.
+
+        All three are mandatory and Terraform-provisioned: without them a schedule cannot be
+        registered at all, so an incomplete block fails here rather than at the first deferral.
+
+        :param eventbridge_config: The ``schedule.provider.eventbridge`` block, when present.
+        :return: The provider's constructor arguments.
+        :raises AKConfigError: If any of the three settings is missing.
+        """
+        settings = {
+            "group_name": eventbridge_config.group_name if eventbridge_config else None,
+            "role_arn": eventbridge_config.role_arn if eventbridge_config else None,
+            "queue_arn": eventbridge_config.queue_arn if eventbridge_config else None,
+        }
+        missing = sorted(name for name, value in settings.items() if not value)
+        if missing:
+            raise AKConfigError(
+                f"schedule provider 'eventbridge' requires schedule.provider.eventbridge settings {missing}: "
+                "they are provisioned by the AWS Terraform stack (AK_SCHEDULE__PROVIDER__EVENTBRIDGE__*)"
+            )
+        return settings

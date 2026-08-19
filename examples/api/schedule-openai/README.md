@@ -9,7 +9,8 @@ The `schedule` block in `config.yaml` is what enables the capability (see `app.p
 mentions scheduling). It selects two backends: the **provider** that owns the timers and the
 **store** that persists the task records. This example uses the defaults — the `local` provider (an
 in-process scheduler thread) and the `in_memory` store — which need nothing but the process itself.
-Neither survives a restart; this demo currently supports only the `local` provider and `in_memory` store.
+Neither survives a restart, which is why this demo stays on that pairing; a durable deployment uses the
+`eventbridge` provider with the `redis`, `valkey` or `dynamodb` store instead.
 That pairing is also a hard requirement rather than a default: the `local` provider's timers and the
 `in_memory` store's records are reachable only from the process that owns them, so `ScheduleManager`
 refuses at startup if either is combined with a broker transport (`sqs`/`kafka`/`nats`) or a shared store.
