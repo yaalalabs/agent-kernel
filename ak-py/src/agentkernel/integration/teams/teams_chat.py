@@ -28,25 +28,13 @@ from ...core.model import (
     BaseChatRequest,
 )
 
-# Teams rejects an activity whose payload exceeds roughly 28 KB. Chunk well below that so
-# the surrounding activity envelope always fits.
+
 MAX_MESSAGE_LENGTH = 8000
-
-# Content type Teams uses to wrap an uploaded file. It says nothing about the file itself:
-# the real media type only comes from the file name or `attachment.content["fileType"]`.
 FILE_DOWNLOAD_INFO = "application/vnd.microsoft.teams.file.download.info"
-
-# Bot Connector attachment endpoints serve inline (pasted) images and accept only a Bot
-# Framework token, which is a different audience from Graph or SharePoint.
 CONNECTOR_HOST_SUFFIXES = ("botframework.com", "trafficmanager.net", "skype.com", "skype.net")
 
 GRAPH_HOST = "graph.microsoft.com"
-
-# Query parameters that make a download URL a bearer in its own right. Adding an
-# Authorization header on top of one of these makes the request fail, so it is skipped.
 PRE_AUTH_PARAMS = ("tempauth=", "access_token=", "authkey=")
-
-# Matches an <at> mention tag in either the bare or the id-carrying form Teams emits.
 AT_TAG_PATTERN = re.compile(r"<at\b[^>]*>(.*?)</at>", re.IGNORECASE | re.DOTALL)
 
 
@@ -96,21 +84,12 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
                 "set teams.tenant_id to pin it."
             )
 
-        # Initialize Bot Framework Adapter. `channel_auth_tenant` is intentionally left unset
-        # for a multi-tenant bot: inbound channel auth uses the botframework.com tenant.
         settings = BotFrameworkAdapterSettings(self._app_id, self._app_password, channel_auth_tenant=self._tenant_id or None)
         self._adapter = BotFrameworkAdapter(settings)
         self._adapter.on_turn_error = self._on_turn_error
 
-        # MSAL clients are built lazily and cached per tenant: constructing one performs OIDC
-        # discovery over the network, which must not happen while the process is starting up.
-        # `acquire_token_for_client` is only legal against a tenant-specific authority, never
-        # against /common, so a tenant is always resolved before one is created.
         self._msal_apps: Dict[str, msal.ConfidentialClientApplication] = {}
         self._bot_credentials: Optional[MicrosoftAppCredentials] = None
-
-        # Agent runs are detached from the webhook turn; keep strong references so the event
-        # loop cannot garbage collect a task while it is still running.
         self._background_tasks: Set[asyncio.Task] = set()
 
     def get_router(self) -> APIRouter:
@@ -138,20 +117,14 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
                 raise HTTPException(status_code=400, detail="Invalid request body")
 
             try:
-                # The adapter authenticates from the `auth_header` argument; the dict only
-                # needs to carry the deserialized activity under "body".
                 invoke_response = await self._adapter.process_activity({"body": body}, auth_header, self._on_turn)
             except PermissionError as pe:
-                # Raised by the adapter when the Bot Framework JWT fails validation. Azure
-                # retries on 5xx, so an auth problem must not be reported as a server error.
                 self._log.warning(f"Rejected unauthenticated Teams activity: {pe}")
                 raise HTTPException(status_code=401, detail="Unauthorized")
             except Exception as e:
                 self._log.error(f"Error processing Teams message: {str(e)}\n{traceback.format_exc()}")
                 raise HTTPException(status_code=500, detail="Internal server error")
 
-            # `invoke` activities (OAuth cards, adaptive card actions, message extensions)
-            # expect the InvokeResponse the pipeline produced, not a bare 200.
             if invoke_response is not None:
                 return JSONResponse(status_code=invoke_response.status, content=invoke_response.body)
             return Response(status_code=200)
@@ -186,9 +159,6 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
             return
 
         self._log.info(f"Received Teams message from {user_name}: {text[:100]}")
-
-        # Reject media we will never process before promising the user anything, using only
-        # the metadata on the activity so nothing is downloaded first.
         rejected = [self._attachment_name(a) for a in attachments if self._declared_mime(a).startswith(("audio/", "video/"))]
         if rejected:
             await self._send_text(
@@ -335,8 +305,6 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
             return " " if label.strip() in bot_names else label
 
         text = AT_TAG_PATTERN.sub(_replace, text)
-        # Close the gap a removed mention leaves behind. The lookbehind keeps leading
-        # indentation intact, so newlines and code blocks in the message survive.
         return re.sub(r"(?<=\S)[ \t]{2,}", " ", text).strip()
 
     def _resolve_tenant(self, activity: Activity) -> Optional[str]:
@@ -448,13 +416,9 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
                 failed.append(name)
                 continue
 
-            # The server's content type is authoritative, but SharePoint answers
-            # application/octet-stream for anything it does not recognise, so it only wins
-            # when it is more specific than what the activity declared.
             if resolved_type and resolved_type != "application/octet-stream":
                 content_type = resolved_type
 
-            # Media is only detectable here when the activity carried no usable file name.
             if content_type.startswith(("audio/", "video/")):
                 rejected.append(name)
                 continue
