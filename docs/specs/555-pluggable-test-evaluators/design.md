@@ -357,12 +357,13 @@ graph LR
     requires `expected` and raises `AKMissingInput` without it. Every in-repo caller already passes
     expectations, and `expect()` requires them by signature (`test.py:264`)
   - AK owns the default rubric; overriding it per test is deferred (see the payload section)
-  - Constructed with `threshold=None` (DeepEval's score-only mode, so DeepEval never computes its own
-    pass/fail — the harness owns that, per "Threshold scale"), `include_reason=True` (so DeepEval
-    populates the rationale that becomes `AKEvaluationResult.reason`), and the `LiteLLMModel` from "LLM
-    model construction"
-  - `measure()` is invoked via the shared worker-thread helper (see "Synchronous evaluation"), never
-    called directly, because DeepEval's `async_mode=True` default drives its own event loop internally
+  - Constructed with `threshold=None` (DeepEval's score-only mode — the harness owns pass/fail, per
+    "Threshold scale") and the `LiteLLMModel` from "LLM model construction". Requires `deepeval>=4.1.4`
+    (see "Dependencies") — on every earlier release, `threshold=None` crashes `measure()`/`a_measure()`
+    with a `TypeError` on every call, not just at construction
+  - No `include_reason` is passed: `GEval` does not accept that constructor argument (verified against
+    `deepeval` 2.9.3 and 4.1.8) — unlike DeepEval's RAG metrics, `GEval` always returns `(score, reason)`
+    from the single rubric-judging LLM call, so there is no reason/no-reason mode to toggle
 - Maps `AKEvaluationCase` → `LLMTestCase(input, actual_output, expected_output)`
 - Translates a soft backend failure (`metric.error`, a `None` score) into a raised `AKEvaluationError`
   rather than a low score
@@ -455,19 +456,32 @@ graph LR
   - `asyncio.run()` raises inside a running loop, and the existing `AgentHandler._run_async_sync`
     bridge (`ak-py/src/agentkernel/core/chat_service.py:207-225`) ends in `loop.run_until_complete`,
     which also raises on an already-running loop
-- An adapter whose backend is async-only, or whose nominally synchronous entry point drives its own
-  event loop internally, must run the coroutine on a dedicated worker thread with its own event loop; a
-  shared helper in the evaluator package provides this so each adapter does not reinvent it
-  - DeepEval's `BaseMetric.measure()` looks synchronous but defaults to `async_mode=True`, in which
-    `measure()` itself calls `asyncio.run_until_complete(a_measure(...))` — which raises when invoked
-    from inside an already-running loop, the exact case this section exists for. `GEval.measure()` (see
-    "Llm metric: GEval") therefore also runs through this shared worker-thread helper rather than being
-    called directly
+- An adapter whose backend is async-only must run the coroutine on a dedicated worker thread with its
+  own event loop; a shared helper in the evaluator package provides this so each adapter does not
+  reinvent it
+  - `GEval.measure()` does not need this helper: DeepEval's default `async_mode=True` makes `measure()`
+    call `asyncio.run_until_complete(a_measure(...))` internally, but DeepEval's own
+    `get_or_create_event_loop()` first calls `nest_asyncio.apply()` whenever it detects an
+    already-running loop — `nest_asyncio` is a hard dependency of `deepeval` itself, the same mechanism
+    `ragas.evaluate()` already relies on today (`ragas/async_utils.py`) for the identical nested-loop
+    case, which is why the current judge path has never broken under `@pytest.mark.asyncio`. Verified
+    empirically against `deepeval` 2.9.3, 2.9.7, and 4.1.8: `GEval.measure()` called from inside a
+    running loop returns normally
+    - Residual risk, not addressed here: `nest_asyncio.apply()` raises on a uvloop-based loop (the same
+      incompatibility `ragas` special-cases). No shipped AK example runs evaluation under uvloop today
 
 ### Dependencies
 
-- `deepeval` replaces `ragas` in the `test` extra as a single dependency line, the same way `ragas` was
-  declared (`ak-py/pyproject.toml:153`)
+- `deepeval` replaces `ragas` in the `test` extra, pinned `>=4.1.4` rather than declared as an unpinned
+  single line the way `ragas` was (`ak-py/pyproject.toml:153`)
+  - Required, not a preference: `GEval.measure()`/`a_measure()` compute `self.success = self.score >=
+    self.threshold` with no `None` guard on every `deepeval` release checked from `2.9.3` through
+    `4.1.3` (spot-checked `2.9.3`, `2.9.5`, `2.9.7`, `3.0.0`, `3.5.0`, `3.8.0`, `4.0.0`, `4.0.9`, `4.1.0`,
+    `4.1.1`, `4.1.2`, `4.1.3`) — with `threshold=None` (see "Llm metric: GEval"), that line raises
+    `TypeError: '>=' not supported between instances of 'float' and 'NoneType'` on every real
+    evaluation, empirically reproduced against the installed `2.9.3`. `4.1.4` is the first release that
+    routes through a guarded `is_successful()` (`self.success = None if self.threshold is None else
+    ...`), verified empirically against the downloaded `4.1.4` and `4.1.8` wheels
 - Removed from the `test` extra (`pyproject.toml:152-157`): `ragas`, `datasets`, `pandas`, the
   `langchain_community==0.4.1` pin, and `rapidfuzz` (`:152`), which loses its consumer once
   `_fuzzy_compare` is deleted
