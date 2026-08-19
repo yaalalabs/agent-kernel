@@ -38,7 +38,7 @@ Splitting the pipeline this way buys you several things at once:
 - **Per-session ordering** — `MessageGroupId = session_id` keeps a conversation's turns strictly in order while unrelated sessions process fully in parallel.
 - **Crash resilience** — a message only leaves the queue once it's fully processed, so a worker crashing or hanging mid-turn simply leaves the turn there for the next worker.
 - **Automatic bounded retries** — unacknowledged messages redeliver up to `max_receive_count`, absorbing provider rate limits and transient failures without the caller noticing. After that, the caller gets a graceful error instead of a hang.
-- **Deduplication** — `MessageDeduplicationId = request_id` means a caller-retried request is never enqueued twice, and a duplicate reply is never delivered. (Redelivery after a processed-but-unacknowledged failure is a separate thing: that's the retry bullet above doing its job.)
+- **Deduplication** — `MessageDeduplicationId = request_id` means a caller-retried request isn't enqueued twice, and the Agent Runner's reply isn't delivered twice — but only inside SQS FIFO's 5-minute dedup window. A caller retrying later than that, or a `stream`-mode chunk (whose dedup ID deliberately includes the receive count), gets through, so delivery stays at-least-once end to end and anything with side effects should be idempotent on `request_id`. (Redelivery after a processed-but-unacknowledged failure is a separate thing: that's the retry bullet above doing its job.)
 
 None of this is exotic. What matters is that Agent Kernel now gives it to you as a configuration switch rather than infrastructure you build yourself.
 

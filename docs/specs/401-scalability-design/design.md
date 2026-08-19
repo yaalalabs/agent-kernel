@@ -7,14 +7,6 @@ four client communication modes: REST Sync, REST Async (user polling), Streaming
 their shared shape so the new Kafka/on-premise method follows the same contract instead of
 diverging, and extends that shape to on-premise deployments.
 
-> **Point-in-time document.** Written against `develop` **before**
-> [#495](../495-onprem-kubernetes/design.md) landed. The Motivation below records the state of the
-> codebase *at the time of writing*, and the Kafka section describes a target shape that was never
-> built as written. Both have since been superseded: the unified `agentkernel.pipeline` package now
-> ships `kafka` and `nats` transports with runnable local examples. `path:line` citations were
-> refreshed against `develop` as of 2026-08-19. Read this document as the design record that
-> motivated #495, not as a description of current code.
-
 ## Motivation
 
 - Two of the three processing methods already exist in the codebase, built around the same
@@ -466,11 +458,13 @@ graph TD
 ## Open questions
 
 - **Is load-based ECS scaling viable for the Agent Runner, or is BacklogPerTask mandatory?**
-  The concern is that agent work is dominated by outbound model-provider calls, so queue backlog
-  can climb while CPU and memory stay flat — which would make CPU/memory target tracking scale too
-  late, or not at all. This has not been measured. Needs empirical testing against a representative
-  workload before either policy is recommended as the default. Until then this design assumes
-  BacklogPerTask (see [Scaling](#scaling)).
+  *Settled in implementation, unmeasured in theory.* BacklogPerTask shipped as the Agent Runner's
+  scaling policy (see [Scaling](#scaling)): a scheduled Lambda publishes
+  `ApproximateNumberOfMessages / max(runningCount, 1)` to CloudWatch and an ECS target-tracking
+  policy holds it at `backlog_target`. The reasoning stands — agent work is dominated by outbound
+  model-provider calls, so backlog can climb while CPU and memory stay flat, which would make
+  CPU/memory target tracking scale too late or not at all — but it was never benchmarked against a
+  representative workload. What remains is a validation task, not a design decision.
 - **Should session-level message dedup be implemented, and where?**
   All three methods above describe storing a hashed message ID with the session so a redelivered
   input message isn't re-added to chat history. None of them implement it: `ServerlessAgentRunner`,
