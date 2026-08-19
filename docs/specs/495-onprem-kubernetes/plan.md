@@ -141,21 +141,46 @@ Spec section references are to `spec.md`.
 
 ## Phase C: WebSocket delivery and Kubernetes
 
-### Iteration 9: Pod-direct WebSocket delivery
+### Iteration 9: Gateway-tier WebSocket delivery (reworked 2026-08-18)
 
-- **Goal:** ASYNC/STREAM modes work on the pipeline: in-process locally, pod-to-pod on
-  multi-pod deployments.
-- **Files:** `pipeline/ws/{registry,handler,endpoint,push}.py` (§9), `core/config.py`
-  (`push_auth_token`, `push_port`), `io_handler.py` (WS-mode mounting + auth fail-fast).
-- **Steps:** native `/ws` route + custom-route decorator; `LocalConnectionRegistry`;
-  `/internal/push` with shared-secret auth; `PodPushWebSocketHandler`; `ENDPOINT_URL`
-  construction (`AK_POD_IP`) + `local` sentinel.
-- **Verify:** `test_pipeline_ws.py`; single-process ASYNC/STREAM end-to-end over `in_memory`.
+- **Goal:** ASYNC/STREAM modes work on the pipeline through a dedicated WebSocket Gateway:
+  co-hosted in-process locally, its own Deployment on multi-pod topologies; the IO handler's
+  API stays plain REST.
+- **Files:** `core/session/base.py` (`WSConnectionStore` ABC +
+  `SessionStore.get_connection_store`), per-store implementations
+  (`core/session/redis_like.py`, `in_memory.py`, `dynamodb.py`),
+  `core/util/driver/redis_like.py` (`hdel`/`hgetall`) and `dynamodb.py`
+  (`query_items`/`query_index`), `pipeline/ws/{registry,handler,endpoint,push,gateway}.py`
+  (§9), `core/config.py` (`push_auth_token`, `push_port`, `session.connection_store`),
+  `io_handler.py` (broker: REST-only + push-token/shared-store fail-fasts; in_memory: gateway
+  co-hosting).
+- **Steps:** session-backed connection stores (`get_connection_store` per backend, incl.
+  DynamoDB against an existing `session.connection_store.table_name` table); native `/ws`
+  route + custom-route decorator enqueueing directly to the transport; `WebSocketGateway.run`
+  entry point (broker-only: on `in_memory` it fails fast, naming the co-hosted `IOHandler`
+  topology); `/internal/push` (`PostToConnection` analogue) with shared-secret auth;
+  store-lookup delivery in `PodPushWebSocketHandler`; `USER_ID` presence replaces
+  `ENDPOINT_URL` stamping as the WS-entered discriminator.
+- **Verify:** `test_pipeline_ws.py` + `test_session_kv_table.py`; single-process ASYNC/STREAM
+  end-to-end over `in_memory`; a two-"pod" delivery test (two registries/gateway apps, reply
+  landing wherever the user's connections are).
+- **History:** first delivered 2026-08-18 as pod-direct push (design Q3 Option D: `endpoint_url`
+  stamped on messages, pod-local registry only, origin-pod-only delivery). Reworked the same
+  day, pre-commit, after the maintainer revised Q3 to the gateway model (see design.md): the
+  stamped-address plumbing (`pod_endpoint_url` on the enqueue path, endpoint-attribute routing
+  in the Response Handler, the endpoint requirement in `StreamAgentRunner`) is replaced by the
+  shared connection store, and IOHandler's WS mounting narrows to the `in_memory` co-hosting
+  case. Refined 2026-08-19 on maintainer review: the connection store became a per-backend
+  `WSConnectionStore` family provided by `SessionStore.get_connection_store()` (any database
+  with a driver can implement one; the `KeyValueTable` shim remains only for bookkeeping), the
+  gateway entry point stays broker-only (an implicit `in_memory` delegation to the
+  single-process topology was tried and reverted the same day: rejection is cleaner, and the
+  error names `IOHandler.run(auth_validator=...)` for local testing).
 
 ### Iteration 10: Helm chart + k8s example
 
-- **Goal:** `helm install` deploys the two-Deployment topology on a micro-cluster in both
-  flavors' values files.
+- **Goal:** `helm install` deploys the io + agent-runner topology (plus the ws-gateway
+  Deployment in WS-mode values) on a micro-cluster in both flavors' values files.
 - **Files:** `ak-deployment/ak-k8s/` (§13, incl. observability README section §15),
   `examples/k8s/openai-queue-mode/` (§14), chart-publish workflow addition.
 - **Steps:** chart templates + values files; NACK/Strimzi CRs; KEDA ScaledObject;

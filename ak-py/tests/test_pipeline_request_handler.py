@@ -304,3 +304,33 @@ class TestMultipart:
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
         response = _client().post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "x", "session_id": "s1"})
         assert response.status_code == 404
+
+
+class TestWebSocketModeGuards:
+    """REST chat routes reject the modes whose delivery is the WebSocket route (#495 §9)."""
+
+    def test_async_mode_rejects_rest_chat(self, monkeypatch):
+        _configure(monkeypatch, mode="async")
+        response = _client().post(CHAT, json={"prompt": "hi", "session_id": "s1"})
+        assert response.status_code == 400
+        assert "/ws" in response.json()["detail"]["error"]
+
+    def test_stream_without_a_chunk_streaming_store_rejects_rest_chat(self, monkeypatch):
+        """Broker STREAM topologies pair a shared store with WS delivery: the SSE route has
+        nothing to drain, so the request must be refused before it is enqueued."""
+        _configure(monkeypatch, mode="stream")
+
+        class _NoChunkStore:
+            def supports_chunk_streaming(self):
+                return False
+
+        handler = RequestHandler()
+        handler._response_store = _NoChunkStore()
+        app = FastAPI()
+        app.include_router(handler.get_router())
+        response = TestClient(app).post(CHAT, json={"prompt": "hi", "session_id": "s1"})
+        assert response.status_code == 400
+        assert "/ws" in response.json()["detail"]["error"]
+
+        # Nothing was enqueued: the input queue stays empty.
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []

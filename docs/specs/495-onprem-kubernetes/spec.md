@@ -32,10 +32,12 @@ ak-py/src/agentkernel/pipeline/
 │   ├── redis.py / valkey.py / dynamodb.py   # moved unchanged
 ├── ws/
 │   ├── base.py            # WebSocketConnectionStoreABC + WebSocketHandlerABC (moved)
-│   ├── registry.py        # LocalConnectionRegistry (pod-local, in-memory)
-│   ├── push.py            # PodPushWebSocketHandler (HTTP POST to endpoint_url)
+│   ├── registry.py        # LocalConnectionRegistry (the gateway pod's own sockets)
+│   ├── push.py            # PodPushWebSocketHandler (store lookup + HTTP POST per connection)
+│   │                      #   + default_connection_store() (SessionStore.get_connection_store)
 │   ├── handler.py         # PipelineWebSocketHandler (native FastAPI WebSocket route)
-│   └── endpoint.py        # internal push endpoint router (+ shared-secret auth)
+│   ├── endpoint.py        # gateway push endpoint router (+ shared-secret auth)
+│   └── gateway.py         # WebSocketGateway entry point (the gateway tier's container main)
 └── transport/
     ├── __init__.py
     ├── base.py            # QueueTransport / TransportConsumer ABCs + QueueTransportFactory
@@ -72,7 +74,11 @@ Coupling rules (numbered, enforced by import direction):
 ```python
 class QueueMessage(BaseModel):
     body: str                          # JSON payload (serialized BaseRunRequest / reply dict)
-    attributes: dict[str, str] = {}    # REQUEST_ID, USER_ID, ENDPOINT_URL, STATUS_CODE (constants in envelope.py)
+    attributes: dict[str, str] = {}    # REQUEST_ID, USER_ID, ENDPOINT_URL, STATUS_CODE (constants in envelope.py).
+                                       # Invariant (§9): USER_ID is stamped only by the WS gateway from the
+                                       # authenticated claim; REST-entered requests carry user_id in the body only,
+                                       # so USER_ID's presence marks a WS-entered request. ENDPOINT_URL belongs to
+                                       # the SQS/ECS wire format; the pipeline neither stamps nor reads it.
     group_id: Optional[str] = None     # session_id: per-group FIFO key
     dedup_id: Optional[str] = None
     receive_count: int = 1             # 1-based, like SQS ApproximateReceiveCount
@@ -443,9 +449,18 @@ seams (defaults preserve today's ECS behavior exactly):
     (`ResponseHandler` loop), **and `agent-runner` (`AgentRunner` loop)**: all five components.
   - broker types → **two-process**: `rest-api` + `response-handler` only; `AgentRunner.run()` is
     the second container.
-- WS modes (`ASYNC`/`STREAM` over WS): `auth_validator` mandatory (fail-fast as
-  `ecs_io_handler.py:32-36`); the REST app additionally mounts `PipelineWebSocketHandler` (§9)
-  and the internal push endpoint router.
+- WS modes: the IO handler's own API is plain REST; WS handling belongs to the gateway tier
+  (§9). On **broker transports** the gateway is a separate process (`WebSocketGateway.run`),
+  IOHandler mounts nothing and needs no validator: its Response Handler only needs
+  `websocket_api.push_auth_token` and a `shared` connection table to push, both checked at
+  startup (`AKConfigError`). On the **`in_memory` transport** a separate gateway process is
+  impossible (the queue is in-process), so passing an `auth_validator` in `ASYNC`/`STREAM`
+  co-hosts the gateway handlers (`/ws` + push endpoint) on the REST app; `ASYNC` over
+  `in_memory` requires the validator (WS is the only delivery), `STREAM` over `in_memory`
+  defaults to SSE and co-hosts WS only when a validator is passed (fail-fast rules, the
+  ecs_io_handler.py:32-36 analogue). The REST chat route refuses the WS-delivered modes
+  explicitly (400): `ASYNC` always, `STREAM` whenever the response store cannot stream chunks:
+  nothing is enqueued that could never be delivered.
 - **Signal contract**: `IOHandler.run()` serves the app through its own `uvicorn.Server` (via
   the new `RESTAPI.build_app()` seam) and installs SIGTERM/SIGINT handlers on the main thread
   that set `ThreadRunner.shutdown_event`, flag `server.should_exit`, and mark the drain exit
@@ -472,39 +487,98 @@ paths untouched, so ECS never delegates), the caller passed no explicit `handler
 `AgentThreadRequestHandler`: Q6: the thread surface stays an inline, IO-side handler in v1)
 preserves today's inline path unchanged.
 
-### 9. WebSocket delivery (`ws/`): pod-direct push (design Q3, Option D)
+### 9. WebSocket delivery (`ws/`): gateway tier + shared connection store (design Q3, revised 2026-08-18)
+
+**The connection store** (the generalized Q5 rule; final shape decided 2026-08-19): the
+session stores provide the gateway's connection store on their own backend via
+**`SessionStore.get_connection_store()`**, each implementation living with (or explicitly
+declined in) its store's file, encapsulating its database operations over the shared drivers
+(`core/util/driver/`); any database with a driver can be a connection store. The base-class
+default raises actionable guidance so BYO dotted-path session stores keep working until a WS
+mode is enabled. Queue retry/dedup bookkeeping keeps its own Q5 factory
+(`transport/bookkeeping.py`, unchanged): an earlier generic `KeyValueTable`/`create_table`
+mechanism was tried and removed the same day once the connection store went per-backend,
+leaving it with no consumer that a plain driver-backed factory does not serve.
+
+- **`WSConnectionStore`** (ABC beside `SessionStore` in `core/session/base.py`, `shared`
+  property + endpoint-aware surface: `add_connection(user, connection, endpoint)`,
+  `get_endpoints(user) -> {connection: endpoint}`, reverse lookups, deletes).
+- **`InMemoryWSConnectionStore`** (`in_memory.py`): class-level process-wide state, no TTL,
+  single-process only (`shared` False, so multi-process topologies fail fast).
+- **`RedisLikeWSConnectionStore`** (`core/session/redis_like.py`, client-library-agnostic like
+  the driver layer's `redis_like`; constructed by the redis and valkey stores with their own
+  drivers, prefix `ak:ws_connections:`, the drivers gain `hdel`/`hgetall`). Layout: one hash
+  per user (`user:{user_id}`, field `connection_id` -> endpoint, field-atomic so concurrent
+  connects never lose entries) plus one plain key per connection (`conn:{connection_id}` ->
+  `{"user_id", "endpoint"}`) for reverse lookups.
+- **`DynamoDBWSConnectionStore`** (`dynamodb.py`): over an **existing** table the store never
+  creates, named by `session.connection_store.table_name` (§11): partition key `user_id`, sort
+  key `connection_id`, a `connection_id-index` GSI for reverse lookups, DynamoDB TTL on
+  `expiry_time`: the same schema as the AWS deployment adapters' connections table, so one
+  table can serve both. The shared `DynamoDBDriver` gains `query_items`/`query_index`.
+- cosmosdb/firestore raise actionably and are the natural place for native implementations
+  later. TTL everywhere comes from `session.connection_store.ttl` (default 24 h): the safety
+  net for gateway pods that die without cleanup (normal cleanup happens on disconnect and on
+  stale pushes). The pipeline resolves the store via `default_connection_store()`
+  (`ws/push.py`) = `SessionStoreBuilder.build().get_connection_store()`.
+
+**The gateway** (design R6):
 
 - **`ws/base.py`**: `WebSocketConnectionStoreABC` + `WebSocketHandlerABC` moved verbatim from
   `deployment/common/websocket_service.py:7,65` (shim left behind; AWS subclasses untouched).
-- **`LocalConnectionRegistry`** (`ws/registry.py`): implements `WebSocketConnectionStoreABC`
-  over two in-process dicts (`user_id → {connection_id: WebSocket}`, `connection_id → user_id`),
-  `threading.Lock`-guarded. No TTL (connections die with the pod).
-- **`PipelineWebSocketHandler`** (`ws/handler.py`): a **native FastAPI WebSocket route**
-  (`/ws`): new code; the ECS handlers assume API-Gateway-proxied HTTP frames with `x-ws-*`
-  headers (`websocket_api.py:32-34`) and are not reusable here. Lifecycle: accept → authenticate
+- **`LocalConnectionRegistry`** (`ws/registry.py`): unchanged role: the raw sockets are
+  process-local to the gateway pod that accepted them (two lock-guarded dicts, no TTL;
+  `deliver_threadsafe` writes frames from worker threads via `run_coroutine_threadsafe`, and
+  `deliver_to_connection` targets one socket).
+- **`PipelineWebSocketHandler`** (`ws/handler.py`): the **native FastAPI WebSocket route**
+  (`/ws`): the ECS handlers assume API-Gateway-proxied HTTP frames with `x-ws-*` headers
+  (`websocket_api.py:32-34`) and are not reusable here. Lifecycle: accept → authenticate
   `token` query param via the `AuthValidator` (claims must include `userId`, matching
-  `websocket_api.py:138-148`) → register in the local registry; frame loop parses
-  `BaseRequest.from_payload` (`model.py:225`) and dispatches the chat route (enqueue with
-  attributes `REQUEST_ID`, `USER_ID`, `ENDPOINT_URL`) plus custom routes (same
-  `register(route)`-style decorator surface as `AWSWebsocketAPI.register`,
-  `websocket_api.py:447-469`); disconnect → deregister.
-- **`ENDPOINT_URL` value**: `http://{pod_ip}:{api.port}` where `pod_ip` = env `AK_POD_IP`
-  (chart-injected via the downward API) → fallback `socket.gethostbyname(socket.gethostname())`
-  → `127.0.0.1`. With the `in_memory` transport the sentinel value `local` short-circuits to
-  in-process delivery through the registry (no HTTP hop).
-- **Internal push endpoint** (`ws/endpoint.py`): `POST /internal/push` with JSON
-  `{"user_id", "message", "message_type"}`; auth via header `x-ak-push-token` compared against
-  config `websocket_api.push_auth_token` (required whenever the transport is not `in_memory`:
-  startup `AKConfigError` otherwise); resolves the user's local connections and writes frames on
-  the uvicorn loop via `asyncio.run_coroutine_threadsafe`. Unknown user/no connections → 404
-  (the k8s `GoneException` analogue).
-- **`PodPushWebSocketHandler`** (`ws/push.py`): implements `WebSocketHandlerABC.send` as the
-  HTTP POST above (connection pooling via a module-level `httpx.Client`); 404/connection-refused
-  → log + raise so the `ConsumerLoop` retry/permanent-failure semantics apply
-  (`max_receive_count` retries, then the error is dropped with a warning: bounded, never
-  crash-looping).
-- Semantic difference recorded (design R6): replies reach the user's connections on the
-  originating pod only.
+  `websocket_api.py:138-148`) → register the socket in the local registry **and** the mapping
+  (with this pod's push endpoint) in the connection store; frame loop dispatches off the raw
+  payload's `route` key: the chat route parses `BaseRequest.from_payload` (`model.py:225`) and
+  **enqueues directly to the transport** with attributes `REQUEST_ID` + `USER_ID` (no REST hop:
+  the queue is the interface; no return address: the store is), custom routes (same
+  `register(route)` decorator surface as `AWSWebsocketAPI.register`, `websocket_api.py:447-469`)
+  receive their frame body unparsed; disconnect → deregister from both.
+- **`WebSocketGateway`** (`ws/gateway.py`): the tier's entry point (`run(auth_validator=...)`,
+  its own Deployment on k8s): serves `PipelineWebSocketHandler` + the push endpoint through its
+  own `uvicorn.Server` with the shared SIGTERM/SIGINT handlers (PID-1 drain, §8). Broker-only
+  by design (decided 2026-08-19: rejection over implicit delegation): on `in_memory` it fails
+  fast with an error naming `IOHandler.run(auth_validator=...)`, the single-process topology
+  that co-hosts the same handlers for local testing. Fail-fasts: validator required;
+  `in_memory` transport, REST modes, non-`shared` connection store, or missing
+  `push_auth_token` → `AKConfigError`.
+- **Gateway push endpoint** (`PushEndpointHandler`, `ws/endpoint.py`): `POST /internal/push`
+  with JSON `{"connection_id", "message"}`: the `PostToConnection` analogue; auth via header
+  `x-ak-push-token` against `websocket_api.push_auth_token` (fails closed with 403 when no
+  token is configured); resolves the one socket from the local registry and writes the frame on
+  the uvicorn loop via `asyncio.run_coroutine_threadsafe` (a sync `def` endpoint served on the
+  FastAPI threadpool, so blocking on the send future cannot deadlock the loop). Unknown/gone
+  connection → 404 (the `GoneException` analogue).
+- **Gateway endpoint value**: `http://{pod_ip}:{push_port or api.port}` where `pod_ip` = env
+  `AK_POD_IP` (chart-injected via the downward API) → fallback
+  `socket.gethostbyname(socket.gethostname())` → `127.0.0.1`; recorded in the connection store
+  at connect time. With the `in_memory` transport the sentinel value `local` is recorded and
+  delivery short-circuits through the local registry (no HTTP hop).
+- **`PodPushWebSocketHandler`** (`ws/push.py`): the Response Handler's delivery client.
+  `broadcast(user_id=...)` resolves the user's **current** connections from the
+  `WSConnectionStore` and `send`s per connection to the owning gateway's push endpoint
+  (pooled module-level `httpx.Client`). A 404 deletes the stale mapping and moves on (AWS
+  `GoneException` parity); reaching **no** connection at all raises so the `ConsumerLoop`
+  retry/permanent-failure semantics apply (`max_receive_count` retries, then the error is
+  dropped with a warning: bounded, never crash-looping); partial delivery is success, as on
+  AWS.
+- **WS-entered discriminator**: the pipeline stamps no return address, so the `USER_ID`
+  attribute (set only by the gateway, from the authenticated claim) is what marks a WS-entered
+  request: `StreamAgentRunner` requires it on broker transports (replacing the `ENDPOINT_URL`
+  requirement), and the Response Handler's STREAM routing is `USER_ID` present → WS push,
+  absent → the SSE chunk store. Invariant recorded in §2: REST-entered requests carry `user_id`
+  only in the body, never as a message attribute. `ATTR_ENDPOINT_URL` remains in the envelope
+  constants for the SQS/ECS wire format but the pipeline no longer stamps or reads it.
+- Semantics (design R6): replies reach **all** of a user's connections on whichever gateway
+  pods hold them, and survive a mid-request reconnect to a different gateway pod: AWS parity.
+  IO/runner pods roll without dropping connections; only gateway redeploys drop sockets.
 
 ### 10. Response store changes (`pipeline/response_store/`)
 
@@ -580,6 +654,11 @@ class _QueuesConfig(BaseModel):             # config.py:356: extended
 
 - `_WebSocketAPIConfig` (`config.py:104-107`) gains `push_auth_token: Optional[str] = None` and
   `push_port: Optional[int] = None` (defaults to `api.port`).
+- `_SessionStoreConfig` gains `connection_store: _SessionConnectionStoreConfig`
+  (default-constructed): `table_name: Optional[str] = None` (DynamoDB only: the **existing**
+  WebSocket connections table, never created by the store; pk `user_id`, sk `connection_id`,
+  `connection_id-index` GSI, TTL attribute `expiry_time`) and `ttl: float = 86400.0` (the
+  mapping-expiry safety net, all backends; §9).
 - Field descriptions updated to drop "SQS" where the field is now backend-neutral
   (`_QueuesConfig.input/output` descriptions, `config.py:357-358`); `url` descriptions state
   "SQS only".
@@ -690,9 +769,12 @@ ak-deployment/ak-k8s/
 │   │                              #   store only for single-pod profile
 │   └── templates/
 │       ├── _helpers.tpl
-│       ├── deployment-io.yaml         # io-handler: IOHandler.run entrypoint; AK_POD_IP downward API
+│       ├── deployment-io.yaml         # io-handler: IOHandler.run entrypoint (plain REST)
 │       ├── deployment-agent-runner.yaml
-│       ├── service.yaml               # ClusterIP for io-handler (+ push port)
+│       ├── deployment-ws-gateway.yaml # WebSocketGateway.run entrypoint; AK_POD_IP downward API;
+│       │                              #   enabled only in WS-mode values (async/stream)
+│       ├── service.yaml               # ClusterIP for io-handler; headless Service for gateway pods
+│       │                              #   (pod-direct /internal/push)
 │       ├── gateway.yaml / httproute.yaml   # Gateway API Standard; WS route with raised timeouts,
 │       │                                    #   no request buffering; enabled: gateway.enabled
 │       ├── service-lb.yaml            # fallback Service type=LoadBalancer (gateway.enabled=false)
@@ -814,8 +896,33 @@ New test files (patterns per `ak-dev-testing-conventions`: `DummyAgent`/`DummyRu
   `rest_sync` parity (success dict + HTTPException on stored error), `rest_async`
   accept/poll, SSE streaming end-to-end, multipart-on-in_memory, multipart-absent on broker
   transports (mocked).
-- `test_pipeline_ws.py`: native `/ws` route (auth, registry lifecycle), `/internal/push`
-  (token auth, 404 on unknown user, frame delivery), `PodPushWebSocketHandler` retry-on-404.
+- `test_session_connection_store.py`: the `WSConnectionStore` contract over all three
+  implementations (endpoint round trips, both-direction deletes, reconnect overwrite), the
+  in-memory store's process-wide state, the redis-like store's key layout/TTL refresh and
+  poisoned-record cleanup, the DynamoDB store's `expiry_time` stamping and GSI reverse
+  lookups, and `SessionStore.get_connection_store` per built-in (valkey builds the
+  driver-backed store on the session URL with the configured TTL, dynamodb builds on the
+  configured table and fails actionably without `session.connection_store.table_name`;
+  store-less backends and pre-method BYO stores raise actionably).
+- `test_pipeline_ws.py`: `LocalConnectionRegistry` (round trips, per-connection threadsafe
+  delivery on a live loop, stale-connection drop),
+  `pod_endpoint_url` (AK_POD_IP, push_port, `local` sentinel, loopback fallback),
+  `PodPushWebSocketHandler` (store-resolved delivery, local short-circuit, per-connection POST
+  body/token/type wrapping, gone-connection cleanup with the rest still delivering,
+  all-gone/none-registered raising for retry, transient-failure mapping retention,
+  AKConfigError without a token), `/internal/push` (fail-closed 403, 401, 404 on a connection
+  not held here, per-connection delivery), the native `/ws` route over `TestClient` (1008
+  closes for each auth failure, dual registry+store registration and disconnect cleanup, chat
+  enqueue attributes: `REQUEST_ID`+`USER_ID` only, chat_route config, validation frames,
+  unknown route, custom-route dispatch incl. async/None/raising and name validation),
+  `WebSocketGateway` validation (validator/in_memory/REST-mode/push-token fail-fasts) and its
+  app surface, and the iteration's two verify gates: single-process ASYNC and STREAM end-to-end
+  over `in_memory` (WS frame in, `CHAT_RESPONSE` / ordered `STREAM_CHUNK` frames out through
+  all five components), and cross-"pod" delivery between two gateway apps sharing one
+  connection store (the reply follows the user's connections, including after a reconnect to
+  the other gateway). The response-handler WS delivery branches (USER_ID-presence routing,
+  missing-attribute retries, permanent-failure frames) live in
+  `test_pipeline_response_handler.py`.
 - `test_response_store_in_memory.py`: record shape (`get_message` returns `body`), status_code
   retention, chunk streaming, `get_message_with_retry` inheritance, `ResponseStoreFactory`
   selection (in_memory default on the in_memory transport, broker fail-fast, BYO dotted path,
