@@ -18,7 +18,7 @@ Requirements background: [`research/evaluator-framework-survey.md`](research/eva
 
 - The comparison logic is RAGAS-specific and cannot be swapped
   - `Test._judge_compare` imports `ragas` / `litellm` inline and builds RAGAS clients directly (`ak-py/src/agentkernel/test/test.py:152-181`)
-  - The two RAGAS metrics are selected by an `if expected:` branch inside that method (`test.py:188`, `test.py:201`)
+  - The two RAGAS metrics are selected by an `if expected:` branch inside that method (`test.py:183`, gating metric selections at `test.py:193` and `test.py:211`)
 - The harness owns the evaluation clients
   - The judge's LLM and embedding clients are parked on `Test` class attributes (`test.py:25-26`) and
     constructed **inside the comparison method itself** (`test.py:171-178`), so `Test` holds live
@@ -489,10 +489,12 @@ graph LR
 - Nothing else is added: `quasi_contains` needs no library, and `litellm` is already there
 - DeepEval emits anonymous usage telemetry by default and writes local state files into the working
   directory; both are suppressed — see "No outbound data"
-- Installing `deepeval` also installs four pytest plugins — `pytest-xdist`, `pytest-repeat`,
-  `pytest-rerunfailures`, `pytest-asyncio` are its runtime dependencies, and pytest auto-loads plugins
-  via entry points, so they become active in every AK test session alongside the existing `addopts`
-  (`pyproject.toml:212`). RAGAS brought none; the interaction must be verified before merge
+- Installing `deepeval` also pulls in `pytest-xdist`, `pytest-repeat`, `pytest-rerunfailures`, and
+  `pytest-asyncio` as runtime dependencies, and pytest auto-loads plugins via entry points; `pytest-asyncio`
+  is already a direct dependency of the `test` extra (`pyproject.toml:148`) and is already active today, so
+  only the other three — `pytest-xdist`, `pytest-repeat`, `pytest-rerunfailures` — become newly active in
+  every AK test session alongside the existing `addopts` (`pyproject.toml:212`). RAGAS brought none of
+  these three; the interaction must be verified before merge
 - The identical `langchain_community==0.4.1` pin in the `langgraph` extra (`pyproject.toml:45`) is a
   separate pin and is untouched. AK's CI installs every extra (`ak-py/build.sh` runs
   `uv sync --all-extras`, driven by `.github/workflows/test-reusable.yaml:152`), so that pin still
