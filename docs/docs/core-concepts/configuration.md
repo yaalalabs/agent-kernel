@@ -175,6 +175,13 @@ telegram:
   webhook_secret: ""  # Optional webhook security token
   api_version: "bot"  # Bot API version prefix
 
+teams:
+  agent: ""  # Default agent for Microsoft Teams
+  agent_acknowledgement: ""  # Message sent when a Teams message is received
+  app_id: ""  # Azure Bot / Entra ID application (client) ID
+  app_password: ""  # Azure Bot / Entra ID application client secret
+  tenant_id: ""  # Entra ID tenant ID; empty for a multi-tenant bot
+
 # Guardrails configuration
 guardrail:
   input:
@@ -335,6 +342,13 @@ Alternatively, use `config.json`:
     "bot_token": "",
     "webhook_secret": "",
     "api_version": "bot"
+  },
+  "teams": {
+    "agent": "",
+    "agent_acknowledgement": "",
+    "app_id": "",
+    "app_password": "",
+    "tenant_id": ""
   },
   "guardrail": {
     "input": {
@@ -760,6 +774,15 @@ telegram:
   bot_token: ""                 # Telegram bot token from BotFather
   webhook_secret: ""            # Optional secret token for webhook security
   api_version: "bot"            # Telegram Bot API version prefix
+
+teams:
+  agent: ""                     # Default agent for Microsoft Teams interactions
+  agent_acknowledgement: ""     # Message sent as an acknowledgement when a Teams message is received
+  app_id: ""                    # Azure Bot / Entra ID application (client) ID
+  app_password: ""              # Azure Bot / Entra ID application client secret
+  tenant_id: ""                 # Entra ID tenant ID. Empty for a multi-tenant bot. Required to
+                                # enable the app-only token fallback used to download attachments
+                                # whose URL is not pre-authenticated
 
 # Trace / Observability
 trace:

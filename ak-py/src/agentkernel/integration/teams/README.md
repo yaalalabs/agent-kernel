@@ -9,8 +9,10 @@ The `AgentTeamsRequestHandler` class handles conversations with agents via Micro
 1.  When a message is sent to the bot in Teams, Azure Bot Service sends a payload to your configured **Webhook URL**.
 2.  The handler verifies the request and authenticates it using your Azure App credentials.
 3.  The message is processed and passed to your chosen Agent.
-4.  The Agent's response is sent back to Teams using the Bot Framework APIs.
-5.  File attachments (PDF files only) are automatically downloaded (handling authentication) and processed.
+4.  The Agent's response is sent back to Teams using the Bot Framework APIs. The agent runs
+    *outside* the webhook turn (a proactive `continue_conversation` follow-up), so a slow agent
+    cannot exceed the Bot Framework delivery timeout and cause Azure to redeliver the activity.
+5.  File attachments are automatically downloaded (handling authentication) and passed to the agent. Audio and video are rejected, and anything over `api.max_file_size` is refused.
 
 ## Setup Guide
 
@@ -87,16 +89,35 @@ export AK_TEAMS__TENANT_ID="<Optional-Tenant-ID>" # Optional: Leave empty for Mu
 
 ## Security & Permissions
 
-*   **Files.Read.All**: To allow the bot to download files shared in chat, you may need to grant API permissions in your Azure App Registration:
-    *   Go to **API permissions** > **Add a permission** > **Microsoft Graph**.
-    *   Select **Application permissions**.
-    *   Search for `Files.Read.All` and add it.
+Most files Teams delivers carry a **pre-authenticated `downloadUrl`**, which the handler fetches with
+no extra credentials. That is the common path and it requires no Azure permissions at all.
+
+When a download URL is *not* pre-authenticated, the handler falls back to an app-only (client
+credentials) token minted for the host serving the file. That fallback needs:
+
+*   **A tenant ID.** The client credentials grant is not valid against the `/common` authority, so a
+    specific tenant is required. The handler prefers the tenant on the incoming activity and uses
+    `AK_TEAMS__TENANT_ID` as the fallback; if neither is available the download is refused with a
+    clear message rather than retried unauthenticated.
+*   **A SharePoint application permission** — `Sites.Read.All` under *Office 365 SharePoint Online*
+    (not Microsoft Graph), with admin consent — because the token requested is for the SharePoint
+    resource serving the file:
+    *   Go to **API permissions** > **Add a permission** > **APIs my organization uses** >
+        **Office 365 SharePoint Online** > **Application permissions** > `Sites.Read.All`.
     *   **Grant admin consent** for your organization.
+
+A bearer token is only ever sent to a host it was minted for. An unrecognised download host is
+fetched without an `Authorization` header rather than being handed a token.
 
 ## Troubleshooting
 
 *   **Bot doesn't respond**: Check your webhook URL in Azure Bot Configuration. Ensure it handles POST requests to `/teams/messages`.
 *   **401 Unauthorized downloading files**:
-    *   The integration automatically handles `tempauth` URLs provided by Teams.
-    *   If using the fallback Method, ensure the bot has `Files.Read.All` permission granted in Azure AD.
+    *   The integration automatically handles pre-authenticated (`tempauth`) URLs provided by Teams.
+    *   `Cannot authorize the download of ...` in the logs means the app-only fallback was needed and
+        could not be used — set `AK_TEAMS__TENANT_ID` and grant the SharePoint permission above.
+    *   `Direct download failed with status 401` means the URL itself was rejected — confirm the bot
+        still has access to the file and that the `downloadUrl` has not expired.
+*   **Duplicate replies**: the agent runs outside the webhook turn, so this normally means more than
+    one instance is registered on the same messaging endpoint.
 *   **"Operation returned an invalid status code 'Unauthorized'"**: Check that your `AK_TEAMS__APP_ID` and `AK_TEAMS__APP_PASSWORD` are correct and match the Azure Bot resource.

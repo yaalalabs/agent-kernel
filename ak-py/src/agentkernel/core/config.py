@@ -171,6 +171,20 @@ class _TelegramConfig(BaseModel):
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
 
 
+class _TeamsConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for Microsoft Teams interactions")
+    agent_acknowledgement: str = Field(
+        default="",
+        description="The message to send as an acknowledgement when a Teams message is received",
+    )
+    app_id: str = Field(default="", description="Azure Bot / Entra ID application (client) ID")
+    app_password: str = Field(default="", description="Azure Bot / Entra ID application client secret")
+    tenant_id: str = Field(
+        default="",
+        description="Entra ID tenant ID. Leave empty for a multi-tenant bot. Required to enable the app-only token fallback used to download attachments whose URL is not pre-authenticated",
+    )
+
+
 class _GmailConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Gmail")
     token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")
@@ -698,6 +712,7 @@ class AKConfig(YamlBaseSettingsModified):
     messenger: _MessengerConfig = Field(description="Facebook Messenger related configurations", default_factory=_MessengerConfig)
     instagram: _InstagramConfig = Field(description="Instagram Business API related configurations", default_factory=_InstagramConfig)
     telegram: _TelegramConfig = Field(description="Telegram Bot related configurations", default_factory=_TelegramConfig)
+    teams: _TeamsConfig = Field(description="Microsoft Teams related configurations", default_factory=_TeamsConfig)
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
     multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
     thread: Optional[_ThreadStoreConfig] = Field(

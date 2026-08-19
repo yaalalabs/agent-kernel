@@ -1,14 +1,19 @@
+import asyncio
 import base64
 import logging
+import mimetypes
 import re
 import traceback
-from typing import List
+from typing import Dict, List, Optional, Set, Tuple
+from urllib.parse import urlparse
 
 import httpx
 import msal
 from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
-from botbuilder.schema import Activity, ActivityTypes, Attachment
+from botbuilder.schema import Activity, ActivityTypes, Attachment, ConversationReference
+from botframework.connector.auth import MicrosoftAppCredentials
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 
 from ...api import RESTRequestHandler
 from ...core import ChatService, Config
@@ -23,6 +28,35 @@ from ...core.model import (
     BaseChatRequest,
 )
 
+# Teams rejects an activity whose payload exceeds roughly 28 KB. Chunk well below that so
+# the surrounding activity envelope always fits.
+MAX_MESSAGE_LENGTH = 8000
+
+# Content type Teams uses to wrap an uploaded file. It says nothing about the file itself:
+# the real media type only comes from the file name or `attachment.content["fileType"]`.
+FILE_DOWNLOAD_INFO = "application/vnd.microsoft.teams.file.download.info"
+
+# Bot Connector attachment endpoints serve inline (pasted) images and accept only a Bot
+# Framework token, which is a different audience from Graph or SharePoint.
+CONNECTOR_HOST_SUFFIXES = ("botframework.com", "trafficmanager.net", "skype.com", "skype.net")
+
+GRAPH_HOST = "graph.microsoft.com"
+
+# Query parameters that make a download URL a bearer in its own right. Adding an
+# Authorization header on top of one of these makes the request fail, so it is skipped.
+PRE_AUTH_PARAMS = ("tempauth=", "access_token=", "authkey=")
+
+# Matches an <at> mention tag in either the bare or the id-carrying form Teams emits.
+AT_TAG_PATTERN = re.compile(r"<at\b[^>]*>(.*?)</at>", re.IGNORECASE | re.DOTALL)
+
+
+class _AttachmentTooLarge(Exception):
+    """Raised while streaming when an attachment exceeds api.max_file_size."""
+
+    def __init__(self, size: int):
+        super().__init__(f"attachment exceeds the maximum size ({size} bytes)")
+        self.size = size
+
 
 class AgentTeamsRequestHandler(RESTRequestHandler):
     """
@@ -30,6 +64,10 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
 
     This handler uses Azure Bot Framework to receive messages and send responses.
     Supports text, images, and files like WhatsApp/Messenger/Slack integrations.
+
+    The agent runs outside the webhook turn, via a proactive `continue_conversation` follow
+    up, so a long agent run cannot exceed the Bot Framework delivery timeout and make Azure
+    redeliver the same activity.
 
     Endpoints:
     - GET /health: Health check
@@ -52,21 +90,28 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
 
         if self._tenant_id:
             self._log.info(f"Using Teams App ID: {self._app_id} with Tenant ID: {self._tenant_id}")
-            self._msal_authority = f"https://login.microsoftonline.com/{self._tenant_id}"
         else:
-            self._log.info(f"Using Teams App ID: {self._app_id} (Multi Tenant)")
-            self._msal_authority = "https://login.microsoftonline.com/common"
+            self._log.info(
+                f"Using Teams App ID: {self._app_id} (Multi Tenant). The tenant is taken from each incoming activity; "
+                "set teams.tenant_id to pin it."
+            )
 
-        # Initialize Bot Framework Adapter
-        settings = BotFrameworkAdapterSettings(self._app_id, self._app_password, channel_auth_tenant=self._tenant_id)
+        # Initialize Bot Framework Adapter. `channel_auth_tenant` is intentionally left unset
+        # for a multi-tenant bot: inbound channel auth uses the botframework.com tenant.
+        settings = BotFrameworkAdapterSettings(self._app_id, self._app_password, channel_auth_tenant=self._tenant_id or None)
         self._adapter = BotFrameworkAdapter(settings)
+        self._adapter.on_turn_error = self._on_turn_error
 
-        # Initialize MSAL Application for Graph access
-        self._msal_app = msal.ConfidentialClientApplication(
-            self._app_id,
-            authority=self._msal_authority,
-            client_credential=self._app_password,
-        )
+        # MSAL clients are built lazily and cached per tenant: constructing one performs OIDC
+        # discovery over the network, which must not happen while the process is starting up.
+        # `acquire_token_for_client` is only legal against a tenant-specific authority, never
+        # against /common, so a tenant is always resolved before one is created.
+        self._msal_apps: Dict[str, msal.ConfidentialClientApplication] = {}
+        self._bot_credentials: Optional[MicrosoftAppCredentials] = None
+
+        # Agent runs are detached from the webhook turn; keep strong references so the event
+        # loop cannot garbage collect a task while it is still running.
+        self._background_tasks: Set[asyncio.Task] = set()
 
     def get_router(self) -> APIRouter:
         """
@@ -83,225 +128,461 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
             """
             Handle incoming Teams messages via Bot Framework.
             """
+            auth_header = request.headers.get("Authorization", "")
+            self._log.debug(f"Received Teams activity, auth header present: {bool(auth_header)}")
+
             try:
-                import json
+                body = await request.json()
+            except Exception as e:
+                self._log.warning(f"Teams activity body is not valid JSON: {e}")
+                raise HTTPException(status_code=400, detail="Invalid request body")
 
-                body_text = (await request.body()).decode("utf-8")
-                auth_header = request.headers.get("Authorization", "")
-
-                self._log.debug(f"Received Teams message, auth header present: {bool(auth_header)}")
-
-                # Bot Framework expects a dict with 'body' as parsed JSON
-                req_dict = {"body": json.loads(body_text), "headers": {"Authorization": auth_header}}  # Parse JSON
-
-                # Process the activity using Bot Framework adapter
-                async def bot_logic(turn_context: TurnContext):
-                    await self._handle_teams_message(turn_context)
-
-                # Process the request - Bot Framework validates auth internally
-                await self._adapter.process_activity(req_dict, auth_header, bot_logic)
-                return Response(status_code=200)
-
+            try:
+                # The adapter authenticates from the `auth_header` argument; the dict only
+                # needs to carry the deserialized activity under "body".
+                invoke_response = await self._adapter.process_activity({"body": body}, auth_header, self._on_turn)
+            except PermissionError as pe:
+                # Raised by the adapter when the Bot Framework JWT fails validation. Azure
+                # retries on 5xx, so an auth problem must not be reported as a server error.
+                self._log.warning(f"Rejected unauthenticated Teams activity: {pe}")
+                raise HTTPException(status_code=401, detail="Unauthorized")
             except Exception as e:
                 self._log.error(f"Error processing Teams message: {str(e)}\n{traceback.format_exc()}")
                 raise HTTPException(status_code=500, detail="Internal server error")
 
+            # `invoke` activities (OAuth cards, adaptive card actions, message extensions)
+            # expect the InvokeResponse the pipeline produced, not a bare 200.
+            if invoke_response is not None:
+                return JSONResponse(status_code=invoke_response.status, content=invoke_response.body)
+            return Response(status_code=200)
+
         return router
 
-    async def _handle_teams_message(self, turn_context: TurnContext):
+    async def _on_turn_error(self, turn_context: TurnContext, error: Exception):
+        """Adapter-level fallback so a failure anywhere in the pipeline still reaches the user."""
+        self._log.error(f"Unhandled error in Teams turn: {error}\n{traceback.format_exc()}")
+        try:
+            await turn_context.send_activity("Sorry, an error occurred while processing your request.")
+        except Exception as e:
+            self._log.error(f"Could not deliver the Teams error message: {e}")
+
+    async def _on_turn(self, turn_context: TurnContext):
         """
-        Process incoming Teams message and send response.
+        Accept an incoming Teams activity and hand the agent run off to a background turn.
         """
         activity: Activity = turn_context.activity
 
         # Only handle message activities
         if activity.type != ActivityTypes.message:
+            self._log.debug(f"Ignoring Teams activity of type '{activity.type}'")
             return
 
-        # Get message details
-        text = activity.text or ""
-        conversation_id = activity.conversation.id
+        text = self._strip_mentions(activity)
+        attachments = [a for a in (activity.attachments or []) if (a.content_type or "") != "text/html"]
         user_name = activity.from_property.name if activity.from_property else "User"
 
-        # Remove bot mentions from text
-        text = self._remove_mentions(text, activity.recipient.id if activity.recipient else None)
-        text = text.strip()
-
         # Skip empty messages
-        if not text and not activity.attachments:
+        if not text and not attachments:
             return
 
         self._log.info(f"Received Teams message from {user_name}: {text[:100]}")
 
-        try:
-            # Send acknowledgement if configured
-            if self._teams_agent_acknowledgement:
-                await turn_context.send_activity(f"Hi {user_name}, {self._teams_agent_acknowledgement}")
+        # Reject media we will never process before promising the user anything, using only
+        # the metadata on the activity so nothing is downloaded first.
+        rejected = [self._attachment_name(a) for a in attachments if self._declared_mime(a).startswith(("audio/", "video/"))]
+        if rejected:
+            await self._send_text(
+                turn_context,
+                "I can only process text messages, images, and document files. "
+                f"The following audio/video files were rejected: {', '.join(rejected)}",
+            )
+            return
 
-            # Build requests list with text, files, and images
+        if self._teams_agent_acknowledgement:
+            await self._send_text(turn_context, f"Hi {user_name}, {self._teams_agent_acknowledgement}")
+
+        reference = TurnContext.get_conversation_reference(activity)
+        task = asyncio.create_task(self._run_agent_turn(reference, activity, text, attachments, user_name))
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _run_agent_turn(
+        self,
+        reference: ConversationReference,
+        activity: Activity,
+        text: str,
+        attachments: List[Attachment],
+        user_name: str,
+    ):
+        """
+        Continue the conversation proactively so the agent run is not bounded by the
+        Bot Framework delivery timeout on the inbound webhook.
+        """
+
+        async def _callback(turn_context: TurnContext):
+            await self._handle_teams_message(turn_context, activity, text, attachments, user_name)
+
+        try:
+            await self._adapter.continue_conversation(reference, _callback, self._app_id)
+        except Exception as e:
+            self._log.error(f"Failed to continue the Teams conversation: {e}\n{traceback.format_exc()}")
+
+    async def _handle_teams_message(
+        self,
+        turn_context: TurnContext,
+        activity: Activity,
+        text: str,
+        attachments: List[Attachment],
+        user_name: str,
+    ):
+        """
+        Download attachments, run the agent, and send the reply.
+        """
+        conversation_id = activity.conversation.id if activity.conversation else None
+
+        try:
             requests = []
             if text:
                 requests.append(AgentRequestText(prompt=text))
 
-            # Process attachments (images and files)
-            if activity.attachments:
-                failed_files = await self._process_attachments(activity.attachments, requests)
-                if failed_files:
-                    await turn_context.send_activity(
-                        f"Sorry {user_name}, I could not download the following files: {', '.join(failed_files)}. Please try again."
+            if attachments:
+                rejected, oversized, failed, unauthorised = await self._process_attachments(attachments, requests, self._resolve_tenant(activity))
+                if rejected:
+                    await self._send_text(
+                        turn_context,
+                        "I can only process text messages, images, and document files. "
+                        f"The following audio/video files were rejected: {', '.join(rejected)}",
+                    )
+                    return
+                if oversized:
+                    await self._send_text(
+                        turn_context,
+                        f"Sorry {user_name}, the following files exceed the maximum size of "
+                        f"{self._max_file_size / (1024 * 1024):.2f} MB: {', '.join(oversized)}",
+                    )
+                    return
+                if unauthorised:
+                    await self._send_text(
+                        turn_context,
+                        f"Sorry {user_name}, I am not allowed to download the following files: {', '.join(unauthorised)}. "
+                        "File downloads are not configured correctly — please contact your administrator.",
+                    )
+                    return
+                if failed:
+                    await self._send_text(
+                        turn_context,
+                        f"Sorry {user_name}, I could not download the following files: {', '.join(failed)}. Please try again.",
                     )
                     return
 
-            # Invoke agent
+            if not requests:
+                await self._send_text(turn_context, "Please provide a message or attachment.")
+                return
+
             req = BaseChatRequest(
                 prompt=text,
                 agent=self._teams_agent,
                 session_id=conversation_id,
                 user_id=activity.from_property.id if activity.from_property else None,
+                group_id=self._resolve_group(activity),
             )
             try:
                 reply, _ = await self._chat_service.execute(req, requests=requests)
             except ValueError as ve:
                 self._log.warning(f"Agent execution rejected: {ve} (session_id: {conversation_id})")
-                await turn_context.send_activity("No agent available to handle your request.")
+                await self._send_text(turn_context, "No agent available to handle your request.")
                 return
 
-            # Send reply
             await self._send_reply(turn_context, reply, user_name)
 
         except Exception as e:
             self._log.error(f"Error processing agent message: {str(e)}\n{traceback.format_exc()}")
-            await turn_context.send_activity(f"Sorry {user_name}, an error occurred while processing your request.")
+            await self._send_text(turn_context, f"Sorry {user_name}, an error occurred while processing your request.")
 
-    def _remove_mentions(self, text: str, bot_id: str = None) -> str:
-        """Remove @mentions from text."""
-        # Remove <at>bot</at> mentions
-        text = re.sub(r"<at>.*?</at>", "", text)
-        # Remove plain @mentions
-        text = re.sub(r"@\w+", "", text)
-        return text.strip()
+    def _strip_mentions(self, activity: Activity) -> str:
+        """
+        Remove the bot's own @mention from the message text.
 
-    async def _process_attachments(self, attachments: List[Attachment], requests: List) -> List[str]:
+        Mentions of other people keep their display name so the agent still sees who was
+        referred to, and text that merely looks like a handle (an email address, a Python
+        decorator) is left untouched.
         """
-        Process Teams attachments (images and files).
-        Returns list of failed file names.
+        text = activity.text or ""
+        if not text:
+            return ""
+
+        bot_id = activity.recipient.id if activity.recipient else None
+        bot_names = set()
+        if activity.recipient and activity.recipient.name:
+            bot_names.add(activity.recipient.name)
+
+        for entity in activity.entities or []:
+            if (entity.type or "").lower() != "mention":
+                continue
+            properties = entity.additional_properties or {}
+            mentioned = properties.get("mentioned") or {}
+            if bot_id and mentioned.get("id") != bot_id:
+                continue
+            # `text` carries the literal "<at ...>Name</at>" fragment as it appears in the message
+            raw = properties.get("text")
+            if raw:
+                text = text.replace(raw, " ")
+            elif mentioned.get("name"):
+                bot_names.add(mentioned["name"])
+
+        def _replace(match: "re.Match") -> str:
+            label = match.group(1)
+            return " " if label.strip() in bot_names else label
+
+        text = AT_TAG_PATTERN.sub(_replace, text)
+        # Close the gap a removed mention leaves behind. The lookbehind keeps leading
+        # indentation intact, so newlines and code blocks in the message survive.
+        return re.sub(r"(?<=\S)[ \t]{2,}", " ", text).strip()
+
+    def _resolve_tenant(self, activity: Activity) -> Optional[str]:
         """
-        failed_files = []
-        rejected_files = []
-        oversized_files = []
+        Resolve the Entra ID tenant that owns this conversation.
+
+        The adapter copies the Teams tenant from channelData onto conversation.tenant_id; the
+        configured tenant_id is the fallback. A tenant is required because the app-only token
+        grant is illegal against the /common authority.
+        """
+        conversation = activity.conversation
+        if conversation is not None and getattr(conversation, "tenant_id", None):
+            return conversation.tenant_id
+        tenant = ((activity.channel_data or {}).get("tenant") or {}).get("id")
+        return tenant or self._tenant_id or None
+
+    @staticmethod
+    def _resolve_group(activity: Activity) -> Optional[str]:
+        """Return the Teams channel or team the message came from, if any."""
+        channel_data = activity.channel_data or {}
+        channel = channel_data.get("channel") or {}
+        team = channel_data.get("team") or {}
+        return channel.get("id") or team.get("id")
+
+    @staticmethod
+    def _attachment_name(attachment: Attachment) -> str:
+        """Best available file name for an attachment, including inline images that carry none."""
+        if attachment.name:
+            return attachment.name
+        content_type = attachment.content_type or ""
+        if content_type.startswith("image/"):
+            extension = mimetypes.guess_extension(content_type) or ".png"
+            return f"image{extension}"
+        return "file"
+
+    @staticmethod
+    def _declared_mime(attachment: Attachment) -> str:
+        """
+        Best guess at an attachment's real media type from the activity alone.
+
+        Uploaded files arrive wrapped as FILE_DOWNLOAD_INFO and inline images as the
+        placeholder "image/*", so neither content type identifies the payload on its own.
+        """
+        content_type = attachment.content_type or ""
+        if content_type and content_type != FILE_DOWNLOAD_INFO and not content_type.endswith("/*"):
+            return content_type
+
+        name = attachment.name or ""
+        content = attachment.content if isinstance(attachment.content, dict) else {}
+        file_type = content.get("fileType") or ""
+        if not name and file_type:
+            name = f"file.{file_type}"
+        guessed, _ = mimetypes.guess_type(name)
+        return guessed or content_type
+
+    async def _process_attachments(
+        self,
+        attachments: List[Attachment],
+        requests: List,
+        tenant_id: Optional[str],
+    ) -> Tuple[List[str], List[str], List[str], List[str]]:
+        """
+        Process Teams attachments (images and files) and append them to `requests`.
+
+        :return: (rejected, oversized, failed, unauthorised) file name lists. Each is reported
+                 to the user with its own message, since they need different remedies.
+        """
+        rejected: List[str] = []
+        oversized: List[str] = []
+        failed: List[str] = []
+        unauthorised: List[str] = []
 
         for attachment in attachments:
-            content_type = attachment.content_type or ""
-            name = attachment.name or "file"
+            name = self._attachment_name(attachment)
+            content_type = self._declared_mime(attachment)
             content_url = attachment.content_url
 
-            # Handle Teams file attachments which have downloadUrl in content
-            if content_type == "application/vnd.microsoft.teams.file.download.info":
-                # content is a dict-like object (or dict)
-                if attachment.content and isinstance(attachment.content, dict):
-                    # Always prefer the downloadUrl from content if available as it often contains tempauth
-                    download_url_from_content = attachment.content.get("downloadUrl")
-                    if download_url_from_content:
-                        content_url = download_url_from_content
+            # An uploaded file carries its real, often pre-authenticated, URL in `content`.
+            if attachment.content_type == FILE_DOWNLOAD_INFO and isinstance(attachment.content, dict):
+                content_url = attachment.content.get("downloadUrl") or content_url
 
             if not content_url:
-                # Ignore text/html attachments (usually the message body)
-                if content_type == "text/html":
-                    continue
-
-                self._log.warning(f"Attachment '{name}' has no content URL. Type: '{content_type}'.")
-                failed_files.append(name)
+                self._log.warning(f"Attachment '{name}' has no content URL. Type: '{attachment.content_type}'.")
+                failed.append(name)
                 continue
 
-            # Reject audio/video files
             if content_type.startswith(("audio/", "video/")):
-                rejected_files.append(name)
-                continue
-
-            file_data = None
-            download_success = False
-
-            # Try Direct Download from content_url
-            try:
-                headers = {}
-
-                # Check if content_url has tempauth, if so we likely don't need extra headers
-                has_tempauth = "tempauth=" in content_url if content_url else False
-
-                if content_type == "application/vnd.microsoft.teams.file.download.info" and not has_tempauth:
-                    try:
-                        # Extract the host from the download URL to determine the correct scope
-                        from urllib.parse import urlparse
-
-                        parsed_url = urlparse(content_url)
-                        resource_host = parsed_url.netloc
-                        hostname = parsed_url.hostname or ""
-
-                        # Construct scope for the specific resource
-                        if hostname == "sharepoint.com" or hostname.endswith(".sharepoint.com"):
-                            scope = f"https://{resource_host}/.default"
-                        else:
-                            scope = "https://graph.microsoft.com/.default"
-
-                        result = self._msal_app.acquire_token_for_client(scopes=[scope])
-
-                        if "access_token" in result:
-                            token = result["access_token"]
-                            headers["Authorization"] = f"Bearer {token}"
-                        else:
-                            self._log.error(f"Failed to acquire token for {scope}: {result.get('error_description')}")
-                    except Exception as e:
-                        self._log.error(f"Error getting access token for attachment download: {e}")
-
-                # Download attachment
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(content_url, headers=headers, timeout=30.0)
-                    if response.status_code == 200:
-                        file_data = response.content
-                        download_success = True
-                        # Update content_type from response headers
-                        if "content-type" in response.headers:
-                            content_type = response.headers["content-type"].split(";")[0].strip()
-                    else:
-                        self._log.warning(f"Direct download failed with status {response.status_code}.")
-
-            except Exception as e:
-                self._log.warning(f"Direct download attempt failed for {name}: {str(e)}")
-
-            if not download_success:
-                failed_files.append(name)
+                rejected.append(name)
                 continue
 
             try:
-                # Verify file size
-                file_size = len(file_data)
-                if file_size > self._max_file_size:
-                    oversized_files.append(f"{name} ({file_size / (1024 * 1024):.2f} MB)")
-                    continue
+                headers = await self._download_headers(content_url, tenant_id)
+            except PermissionError as pe:
+                self._log.error(f"Cannot authorize the download of '{name}': {pe}")
+                unauthorised.append(name)
+                continue
 
-                # Add to requests based on type
-                if content_type.startswith("image/"):
-                    requests.append(AgentRequestImage(image_data=base64.b64encode(file_data).decode("utf-8"), name=name, mime_type=content_type))
-                    self._log.info(f"Image {name} added to request")
-                else:
-                    requests.append(AgentRequestFile(file_data=base64.b64encode(file_data).decode("utf-8"), name=name, mime_type=content_type))
-                    self._log.info(f"File {name} added to request")
+            try:
+                file_data, resolved_type = await self._download(content_url, headers)
+            except _AttachmentTooLarge as too_large:
+                oversized.append(f"{name} ({too_large.size / (1024 * 1024):.2f} MB)")
+                continue
             except Exception as e:
-                self._log.error(f"Error processing downloaded content for {name}: {e}")
-                failed_files.append(name)
+                self._log.warning(f"Download failed for {name}: {e}")
+                failed.append(name)
+                continue
 
-        # Return combined list of all failed/rejected files
-        return failed_files + rejected_files + oversized_files
+            if file_data is None:
+                failed.append(name)
+                continue
+
+            # The server's content type is authoritative, but SharePoint answers
+            # application/octet-stream for anything it does not recognise, so it only wins
+            # when it is more specific than what the activity declared.
+            if resolved_type and resolved_type != "application/octet-stream":
+                content_type = resolved_type
+
+            # Media is only detectable here when the activity carried no usable file name.
+            if content_type.startswith(("audio/", "video/")):
+                rejected.append(name)
+                continue
+
+            encoded = base64.b64encode(file_data).decode("utf-8")
+            if content_type.startswith("image/"):
+                requests.append(AgentRequestImage(image_data=encoded, name=name, mime_type=content_type))
+                self._log.info(f"Image {name} added to request")
+            else:
+                requests.append(AgentRequestFile(file_data=encoded, name=name, mime_type=content_type))
+                self._log.info(f"File {name} added to request")
+
+        return rejected, oversized, failed, unauthorised
+
+    async def _download_headers(self, content_url: str, tenant_id: Optional[str]) -> Dict[str, str]:
+        """
+        Build the Authorization header for an attachment URL.
+
+        A bearer is only ever sent to a host whose audience it was minted for; an
+        unrecognised host is fetched without one rather than being handed a token.
+
+        :raises PermissionError: when the host needs a token that cannot be obtained.
+        """
+        if any(param in content_url for param in PRE_AUTH_PARAMS):
+            return {}
+
+        host = (urlparse(content_url).hostname or "").lower()
+
+        if any(host == suffix or host.endswith(f".{suffix}") for suffix in CONNECTOR_HOST_SUFFIXES):
+            token = await self._bot_framework_token()
+            if not token:
+                raise PermissionError(f"could not obtain a Bot Framework token for {host}")
+            return {"Authorization": f"Bearer {token}"}
+
+        if host == GRAPH_HOST:
+            scope = f"https://{GRAPH_HOST}/.default"
+        elif host == "sharepoint.com" or host.endswith(".sharepoint.com"):
+            scope = f"https://{host}/.default"
+        else:
+            self._log.debug(f"No known token audience for download host '{host}'; fetching without authorization")
+            return {}
+
+        if not tenant_id:
+            raise PermissionError(
+                f"{host} requires an app-only token but no tenant is known. Set teams.tenant_id "
+                "(the client credentials grant is not valid against the /common authority)."
+            )
+
+        result = await asyncio.to_thread(self._acquire_token, tenant_id, scope)
+        if "access_token" not in result:
+            raise PermissionError(
+                f"token request for {scope} in tenant {tenant_id} failed: " f"{result.get('error')} - {result.get('error_description')}"
+            )
+        return {"Authorization": f"Bearer {result['access_token']}"}
+
+    def _acquire_token(self, tenant_id: str, scope: str) -> dict:
+        """Acquire an app-only token, building and caching the tenant's MSAL client on first use."""
+        app = self._msal_apps.get(tenant_id)
+        if app is None:
+            app = msal.ConfidentialClientApplication(
+                self._app_id,
+                authority=f"https://login.microsoftonline.com/{tenant_id}",
+                client_credential=self._app_password,
+            )
+            self._msal_apps[tenant_id] = app
+        return app.acquire_token_for_client(scopes=[scope])
+
+    async def _bot_framework_token(self) -> Optional[str]:
+        """Return the bot's own Bot Framework token, used for Bot Connector attachment URLs."""
+        if self._bot_credentials is None:
+            self._bot_credentials = MicrosoftAppCredentials(self._app_id, self._app_password)
+        try:
+            return await asyncio.to_thread(self._bot_credentials.get_access_token)
+        except Exception as e:
+            self._log.error(f"Could not acquire a Bot Framework token: {e}")
+            return None
+
+    async def _download(self, content_url: str, headers: Dict[str, str]) -> Tuple[Optional[bytes], Optional[str]]:
+        """
+        Stream an attachment, aborting as soon as it exceeds api.max_file_size.
+
+        :return: (content, response content type); content is None when the server refused.
+        :raises _AttachmentTooLarge: when the attachment is larger than the configured limit.
+        """
+        async with httpx.AsyncClient() as client:
+            async with client.stream("GET", content_url, headers=headers, timeout=30.0) as response:
+                if response.status_code != 200:
+                    self._log.warning(f"Direct download failed with status {response.status_code}.")
+                    return None, None
+
+                declared = response.headers.get("content-length")
+                if declared and declared.isdigit() and int(declared) > self._max_file_size:
+                    raise _AttachmentTooLarge(int(declared))
+
+                buffer = bytearray()
+                async for chunk in response.aiter_bytes():
+                    buffer.extend(chunk)
+                    if len(buffer) > self._max_file_size:
+                        raise _AttachmentTooLarge(len(buffer))
+
+                content_type = response.headers.get("content-type", "")
+                return bytes(buffer), content_type.split(";")[0].strip() or None
 
     async def _send_reply(self, turn_context: TurnContext, reply: AgentReply, user_name: str):
         """Send agent reply to Teams."""
         try:
             # Standardize reply handling similar to Slack/WhatsApp
             reply_text = str(reply) if isinstance(reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)) else "Non textual result received"
+            if not reply_text.strip():
+                reply_text = "The agent returned an empty response."
 
-            # Send the text response
-            await turn_context.send_activity(reply_text)
+            for chunk in self._split_reply(reply_text):
+                await turn_context.send_activity(chunk)
 
         except Exception as e:
             self._log.error(f"Error sending reply to Teams: {e}")
-            await turn_context.send_activity("Error sending agent response.")
+            await self._send_text(turn_context, "Error sending agent response.")
+
+    @staticmethod
+    def _split_reply(reply: str) -> List[str]:
+        """Split a reply into chunks Teams will accept, since it drops oversized activities."""
+        if len(reply) <= MAX_MESSAGE_LENGTH:
+            return [reply]
+        return [reply[i : i + MAX_MESSAGE_LENGTH] for i in range(0, len(reply), MAX_MESSAGE_LENGTH)]
+
+    async def _send_text(self, turn_context: TurnContext, text: str):
+        """Send a status message, logging rather than raising when Teams refuses it."""
+        try:
+            await turn_context.send_activity(text)
+        except Exception as e:
+            self._log.error(f"Could not send a message to Teams: {e}")

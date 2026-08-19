@@ -1262,6 +1262,30 @@ Configure integrations with messaging platforms.
 - **Bot Token**, **Webhook Secret**, **API Version**
   - **Environment Variables**: `AK_TELEGRAM__BOT_TOKEN`, `AK_TELEGRAM__WEBHOOK_SECRET`, `AK_TELEGRAM__API_VERSION`
 
+##### Microsoft Teams
+
+- **Agent**
+  - **Field**: `teams.agent`
+  - **Default**: `""`
+  - **Description**: Default agent for Microsoft Teams interactions
+  - **Environment Variable**: `AK_TEAMS__AGENT`
+
+- **Agent Acknowledgement**
+  - **Field**: `teams.agent_acknowledgement`
+  - **Default**: `""`
+  - **Description**: Message sent as an acknowledgement when a Teams message is received
+  - **Environment Variable**: `AK_TEAMS__AGENT_ACKNOWLEDGEMENT`
+
+- **App ID**, **App Password**
+  - **Description**: Azure Bot / Entra ID application (client) ID and client secret. Both are required
+  - **Environment Variables**: `AK_TEAMS__APP_ID`, `AK_TEAMS__APP_PASSWORD`
+
+- **Tenant ID**
+  - **Field**: `teams.tenant_id`
+  - **Default**: `""`
+  - **Description**: Entra ID tenant ID. Leave empty for a multi-tenant bot. Required to enable the app-only token fallback used to download attachments whose URL is not pre-authenticated
+  - **Environment Variable**: `AK_TEAMS__TENANT_ID`
+
 ##### Gmail
 
 - **Agent**
@@ -1469,6 +1493,10 @@ instagram:
   agent: my-agent
 telegram:
   agent: my-agent
+teams:
+  agent: my-agent
+  app_id: "<azure-app-client-id>"
+  app_password: "<azure-app-client-secret>"
 gmail:
   agent: my-agent
   poll_interval: 30
@@ -1540,6 +1568,11 @@ gmail:
   },
   "telegram": {
     "agent": "my-agent"
+  },
+  "teams": {
+    "agent": "my-agent",
+    "app_id": "<azure-app-client-id>",
+    "app_password": "<azure-app-client-secret>"
   },
   "gmail": {
     "agent": "my-agent",

@@ -401,6 +401,9 @@ jobs:
           TF_VAR_instagram_verify_token: ${{ secrets.E2E_INSTAGRAM_VERIFY_TOKEN }}
           TF_VAR_instagram_app_secret: ${{ secrets.E2E_INSTAGRAM_APP_SECRET }}
           TF_VAR_instagram_account_id: ${{ vars.E2E_INSTAGRAM_ACCOUNT_ID }}
+          TF_VAR_teams_app_id: ${{ secrets.E2E_TEAMS_APP_ID }}
+          TF_VAR_teams_app_password: ${{ secrets.E2E_TEAMS_APP_PASSWORD }}
+          TF_VAR_teams_tenant_id: ${{ vars.E2E_TEAMS_TENANT_ID }}
         run: |
           terraform init -input=false
           terraform apply -input=false -auto-approve
@@ -494,4 +497,5 @@ jobs:
           E2E_WHATSAPP_SENDER_PHONE_NUMBER_ID: ${{ vars.E2E_WHATSAPP_SENDER_PHONE_NUMBER_ID }}
           E2E_WHATSAPP_BOT_NUMBER: ${{ vars.E2E_WHATSAPP_BOT_NUMBER }}
           E2E_WHATSAPP_SENDER_NUMBER: ${{ vars.E2E_WHATSAPP_SENDER_NUMBER }}
+          E2E_TEAMS_DIRECTLINE_SECRET: ${{ secrets.E2E_TEAMS_DIRECTLINE_SECRET }}
         run: uv run pytest -v -rs

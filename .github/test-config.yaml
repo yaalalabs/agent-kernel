@@ -87,6 +87,8 @@ e2e:
     - type: api
       path: examples/api/telegram
     - type: api
+      path: examples/api/teams
+    - type: api
       path: examples/api/messenger
     - type: api
       path: examples/api/whatsapp
