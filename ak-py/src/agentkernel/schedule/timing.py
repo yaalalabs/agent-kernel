@@ -87,7 +87,7 @@ class OccurrenceCalculator:
         Imported on demand rather than at module import so one-time (``at``) schedules work
         without the extra installed.
         """
-        with require_extra("schedule", "a cron schedule expression"):
+        with require_extra("cron", "a cron schedule expression"):
             from croniter import croniter
 
         return croniter

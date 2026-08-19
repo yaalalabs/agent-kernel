@@ -81,6 +81,9 @@ crewai = [
     { name = "openinference-instrumentation-crewai" },
     { name = "openinference-instrumentation-litellm" },
 ]
+cron = [
+    { name = "croniter" },
+]
 daytona = [
     { name = "daytona" },
 ]
@@ -149,9 +152,6 @@ redis = [
 sandbox-docker = [
     { name = "docker" },
 ]
-schedule = [
-    { name = "croniter" },
-]
 slack = [
     { name = "httpx" },
     { name = "slack-bolt" },
@@ -216,7 +216,7 @@ requires-dist = [
     { name = "chromadb", marker = "extra == 'chromadb'", specifier = ">=0.4.0" },
     { name = "confluent-kafka", marker = "extra == 'kafka'", specifier = ">=2.15.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=1.15.0" },
-    { name = "croniter", marker = "extra == 'schedule'", specifier = ">=3.0" },
+    { name = "croniter", marker = "extra == 'cron'", specifier = ">=3.0" },
     { name = "datasets", marker = "extra == 'test'", specifier = ">=2.14.0" },
     { name = "daytona", marker = "extra == 'daytona'", specifier = ">=0.198.0,<0.199" },
     { name = "deprecated", specifier = ">=1.2.18" },
@@ -283,7 +283,7 @@ requires-dist = [
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.0.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "cli", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "schedule", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona"]
+provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "cli", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -84,7 +84,8 @@ thread = [
     "litellm>=1.74.9",
 ]
 
-schedule = [
+# Only needed for cron-expression schedules (`schedule.cron`); `at`-only schedules work without it.
+cron = [
     "croniter>=3.0",
 ]
 
