@@ -49,7 +49,7 @@ class InMemoryScheduleStore(ScheduleStore):
         task.last_request_id = request_id
         task.trigger_count += 1
         task.updated_at = utc_now_iso()
-        if completed:
+        if completed and task.status is not ScheduleStatus.CANCELLED:
             task.status = ScheduleStatus.COMPLETED
 
     def clear(self) -> None:
