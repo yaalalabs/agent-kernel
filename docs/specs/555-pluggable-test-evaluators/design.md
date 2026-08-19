@@ -596,24 +596,13 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
 - Dataset-level batch evaluation (`deepeval.evaluate(test_cases, metrics)`)
 - Editing `docs/versioned_docs/` snapshots
 
-### Verification required in `spec.md`
+### Verification required before implementation
 
-- The argument direction of `quasi_contains_score(targets, prediction)`: documented as testing whether
-  the normalised prediction appears in the normalised target list, which is the reverse of what this
-  harness needs (the short expected phrase should be found inside the longer response). AK controls
-  which value goes into which argument — confirm against the source and map accordingly
-- Whether passing a `LiteLLMModel` instance to a metric is sufficient, or whether DeepEval also
-  requires the `USE_LITELLM=1` environment variable its docs mention for litellm-backed judges
-- That the configured judge model can actually return schema-constrained JSON: `GEval` parses
-  structured verdicts, so a weak or non-JSON-capable model behind `llm.model` fails at evaluation time
-  rather than at configuration time
-- That opting out of telemetry does not break evaluation in the pinned DeepEval version — the project
-  has a history of opt-out regressions (confident-ai/deepeval#1613), so the pin must be tested with
-  `DEEPEVAL_TELEMETRY_OPT_OUT=1` set
-- Whether DeepEval still creates `.deepeval/` when telemetry is opted out, and whether a path override
-  exists to move it out of the user's repository
+- Tracked pointwise in [`spec.md`](spec.md) rather than here: these are implementation-detail
+  confirmations against the DeepEval source, not design decisions, so they belong in the
+  implementation spec once it is written (see `ak-dev-write-spec`)
 
 ## Open questions
 
 - None outstanding. Items needing confirmation against the DeepEval source or a pinned version are
-  listed under "Verification required in `spec.md`" rather than left as design decisions.
+  tracked in [`spec.md`](spec.md) rather than left as design decisions.
