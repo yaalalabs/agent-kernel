@@ -60,7 +60,7 @@ Pick the agent in `config.yaml`:
 teams:
   agent: "general"                                    # Default agent for Teams messages
   agent_acknowledgement: "I'm looking into that..."   # Optional: sent as soon as a message arrives
-  tenant_id: ""                                       # Optional: see "Attachment downloads" below
+  tenant_id: ""                                       # Optional: the bot's own tenant; see "Tenant ID" below
 ```
 
 Supply the bot credentials as environment variables, so secrets stay out of the config file:
@@ -88,6 +88,20 @@ Every key is settable either way: `teams.agent` is also `AK_TEAMS__AGENT`, and s
     `@decorator` — is left untouched.
 *   **Long replies**: Replies larger than a single Teams message are split across several messages.
 
+### Tenant ID
+
+`teams.tenant_id` is the Entra ID tenant that owns the **bot's own app registration**, matching the
+Bot Framework SDK's `MicrosoftAppTenantId`:
+
+*   **Multi-tenant registration** (the default this guide sets up): leave it empty. Channel tokens
+    are issued by the Bot Framework tenant, and setting a tenant the app has no service principal in
+    breaks every outbound reply with `AADSTS7000229`.
+*   **Single-tenant registration**: set it to that tenant, whose authority must issue the tokens.
+
+It is a *different* tenant from the one an app-only attachment download needs — that one belongs to
+the customer whose Teams the message came from, and is read off the incoming activity, falling back
+to this value only when the activity carries none.
+
 ### Attachment downloads
 
 Most files Teams delivers carry a pre-authenticated `downloadUrl`, which the handler fetches with no
@@ -96,10 +110,10 @@ extra credentials — that is the common path and it needs no Azure permissions 
 When a download URL is *not* pre-authenticated, the handler falls back to an app-only
 (client credentials) token for the host serving the file. That fallback needs:
 
-*   **`teams.tenant_id` set.** The client credentials grant is not valid against the `/common`
-    authority, so a specific tenant is required. The handler prefers the tenant on the incoming
-    activity and uses `teams.tenant_id` as the fallback; if neither is available the download is
-    refused with a clear message rather than being retried unauthenticated.
+*   **A tenant to mint the token in.** The client credentials grant is not valid against the
+    `/common` authority, so a specific tenant is required. The handler prefers the tenant on the
+    incoming activity and uses `teams.tenant_id` as the fallback; if neither is available the
+    download is refused with a clear message rather than being retried unauthenticated.
 *   **A SharePoint application permission** — `Sites.Read.All` under *Office 365 SharePoint Online*,
     with admin consent — because the token requested is for the SharePoint resource serving the file,
     not for Microsoft Graph.
@@ -120,6 +134,16 @@ If the bot fails to download files:
 *   Check Azure Bot **Configuration** to ensure the **Messaging endpoint** is correct and accessible.
 *   Verify your App ID and Password in environment variables match the Azure App Registration. A
     credential mismatch is answered with HTTP 401, which appears in your access logs.
+
+### The webhook returns 200 but no reply arrives
+Inbound and outbound use different credentials: an incoming activity is validated against Bot
+Framework public keys and only has to match the App ID, while the reply needs a token minted with
+the App Password. So a broken outbound credential looks like silence, not an error.
+
+Check the logs for `Error sending reply to Teams: Failed to get access token`. `AADSTS7000229`
+("missing service principal in the tenant") means `teams.tenant_id` names a tenant the app is not
+registered in — clear it for a multi-tenant bot, or set it to the app's own tenant. See "Tenant ID"
+below.
 
 ### Duplicate replies
 The agent runs outside the webhook turn (via a proactive `continue_conversation` follow-up), so a

@@ -180,7 +180,7 @@ teams:
   agent_acknowledgement: ""  # Message sent when a Teams message is received
   app_id: ""  # Azure Bot / Entra ID application (client) ID
   app_password: ""  # Azure Bot / Entra ID application client secret
-  tenant_id: ""  # Entra ID tenant ID; empty for a multi-tenant bot
+  tenant_id: ""  # Bot app registration's own tenant; empty for a multi-tenant bot
 
 # Guardrails configuration
 guardrail:
@@ -780,9 +780,10 @@ teams:
   agent_acknowledgement: ""     # Message sent as an acknowledgement when a Teams message is received
   app_id: ""                    # Azure Bot / Entra ID application (client) ID
   app_password: ""              # Azure Bot / Entra ID application client secret
-  tenant_id: ""                 # Entra ID tenant ID. Empty for a multi-tenant bot. Required to
-                                # enable the app-only token fallback used to download attachments
-                                # whose URL is not pre-authenticated
+  tenant_id: ""                 # Entra ID tenant that owns the bot's app registration. Required
+                                # only for a single-tenant registration; empty for a multi-tenant
+                                # bot. Also the fallback tenant for the app-only token used to
+                                # download attachments whose URL is not pre-authenticated
 
 # Trace / Observability
 trace:

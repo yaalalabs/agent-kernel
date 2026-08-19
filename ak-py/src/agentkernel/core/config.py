@@ -181,7 +181,7 @@ class _TeamsConfig(BaseModel):
     app_password: str = Field(default="", description="Azure Bot / Entra ID application client secret")
     tenant_id: str = Field(
         default="",
-        description="Entra ID tenant ID. Leave empty for a multi-tenant bot. Required to enable the app-only token fallback used to download attachments whose URL is not pre-authenticated",
+        description="Entra ID tenant that owns the bot's app registration. Required only for a single-tenant registration, whose channel tokens must be issued by its own tenant; leave empty for a multi-tenant bot. Also the fallback tenant for the app-only token used to download attachments whose URL is not pre-authenticated, when the incoming activity carries none",
     )
 
 

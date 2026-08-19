@@ -84,8 +84,19 @@ Configure these in your `.env` file or environment:
 ```bash
 export AK_TEAMS__APP_ID="<Your-Application-Client-ID>"
 export AK_TEAMS__APP_PASSWORD="<Your-Client-Secret-Value>"
-export AK_TEAMS__TENANT_ID="<Optional-Tenant-ID>" # Optional: Leave empty for Multi-Tenant
+export AK_TEAMS__TENANT_ID="<Optional-Tenant-ID>" # Optional: the bot app's own tenant; leave empty for Multi-Tenant
 ```
+
+## Tenant ID
+
+`AK_TEAMS__TENANT_ID` is the Entra ID tenant that owns the **bot's own app registration** — the Bot
+Framework SDK's `MicrosoftAppTenantId`. Leave it empty for a multi-tenant registration (the setup
+above): channel tokens are then issued by the Bot Framework tenant, and naming a tenant the app has
+no service principal in breaks every outbound reply with `AADSTS7000229`. Set it only for a
+single-tenant registration, whose own tenant must issue those tokens.
+
+The tenant an app-only *attachment download* needs is a different one — it belongs to the customer
+whose Teams sent the message, and is taken from the activity.
 
 ## Security & Permissions
 
@@ -95,10 +106,10 @@ no extra credentials. That is the common path and it requires no Azure permissio
 When a download URL is *not* pre-authenticated, the handler falls back to an app-only (client
 credentials) token minted for the host serving the file. That fallback needs:
 
-*   **A tenant ID.** The client credentials grant is not valid against the `/common` authority, so a
-    specific tenant is required. The handler prefers the tenant on the incoming activity and uses
-    `AK_TEAMS__TENANT_ID` as the fallback; if neither is available the download is refused with a
-    clear message rather than retried unauthenticated.
+*   **A tenant to mint the token in.** The client credentials grant is not valid against the
+    `/common` authority, so a specific tenant is required. This is the *customer's* tenant, read off
+    the incoming activity, with `AK_TEAMS__TENANT_ID` as the fallback; if neither is available the
+    download is refused with a clear message rather than retried unauthenticated.
 *   **A SharePoint application permission** — `Sites.Read.All` under *Office 365 SharePoint Online*
     (not Microsoft Graph), with admin consent — because the token requested is for the SharePoint
     resource serving the file:
@@ -112,6 +123,11 @@ fetched without an `Authorization` header rather than being handed a token.
 ## Troubleshooting
 
 *   **Bot doesn't respond**: Check your webhook URL in Azure Bot Configuration. Ensure it handles POST requests to `/teams/messages`.
+*   **The endpoint returns 200 but no reply arrives**: the reply is sent with a token minted from
+    `AK_TEAMS__APP_PASSWORD`, while the inbound activity is only validated against Bot Framework
+    public keys — so a broken outbound credential looks like silence. Look for
+    `Error sending reply to Teams: Failed to get access token` in the logs; `AADSTS7000229` means
+    `AK_TEAMS__TENANT_ID` names a tenant the app is not registered in (see "Tenant ID" above).
 *   **401 Unauthorized downloading files**:
     *   The integration automatically handles pre-authenticated (`tempauth`) URLs provided by Teams.
     *   `Cannot authorize the download of ...` in the logs means the app-only fallback was needed and

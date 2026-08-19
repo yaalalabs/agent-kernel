@@ -1283,7 +1283,7 @@ Configure integrations with messaging platforms.
 - **Tenant ID**
   - **Field**: `teams.tenant_id`
   - **Default**: `""`
-  - **Description**: Entra ID tenant ID. Leave empty for a multi-tenant bot. Required to enable the app-only token fallback used to download attachments whose URL is not pre-authenticated
+  - **Description**: Entra ID tenant that owns the bot's app registration. Required only for a single-tenant registration, whose channel tokens must be issued by its own tenant; leave empty for a multi-tenant bot. Also the fallback tenant for the app-only token used to download attachments whose URL is not pre-authenticated, when the incoming activity carries none
   - **Environment Variable**: `AK_TEAMS__TENANT_ID`
 
 ##### Gmail
