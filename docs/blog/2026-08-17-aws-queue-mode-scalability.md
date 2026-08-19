@@ -38,7 +38,7 @@ Splitting the pipeline this way buys you several things at once:
 - **Per-session ordering** — `MessageGroupId = session_id` keeps a conversation's turns strictly in order while unrelated sessions process fully in parallel.
 - **Crash resilience** — a message only leaves the queue once it's fully processed, so a worker crashing or hanging mid-turn simply leaves the turn there for the next worker.
 - **Automatic bounded retries** — unacknowledged messages redeliver up to `max_receive_count`, absorbing provider rate limits and transient failures without the caller noticing. After that, the caller gets a graceful error instead of a hang.
-- **Deduplication** — `MessageDeduplicationId = request_id` means a retried message can never be processed, or appended to conversation history, twice.
+- **Deduplication** — `MessageDeduplicationId = request_id` means a caller-retried request is never enqueued twice, and a duplicate reply is never delivered. (Redelivery after a processed-but-unacknowledged failure is a separate thing: that's the retry bullet above doing its job.)
 
 None of this is exotic. What matters is that Agent Kernel now gives it to you as a configuration switch rather than infrastructure you build yourself.
 
@@ -88,7 +88,7 @@ The `yaalalabs/ak-containerized/aws` and `yaalalabs/ak-serverless/aws` Terraform
 
 ## What's Next
 
-SQS + Lambda and SQS + ECS validate a shape that generalizes: input queue, independently-scaling runner, output queue, pluggable response delivery. That same contract now also ships as a **Kafka transport** (`pip install agentkernel[kafka]`) for on-premise and self-hosted deployments, with the identical per-session ordering, dedup, and bounded-retry semantics, just backed by partitions and consumer groups instead of SQS FIFO queues. A Kubernetes-native topology (Helm charts, plus NATS JetStream as another pluggable transport) is next, so the scaling model here isn't tied to one cloud, or to AWS at all.
+SQS + Lambda and SQS + ECS validate a shape that generalizes: input queue, independently-scaling runner, output queue, pluggable response delivery. That same contract now also ships as a **Kafka transport** (`pip install agentkernel[kafka]`) and a **NATS JetStream transport** (`pip install agentkernel[nats]`) for on-premise and self-hosted deployments, with the identical per-session ordering, dedup, and bounded-retry semantics, just backed by partitions and consumer groups (or JetStream work-queue streams) instead of SQS FIFO queues. Both come with runnable two-process local examples under `examples/transport/`. A Kubernetes-native topology (Helm charts, KEDA autoscaling) is next, so the scaling model here isn't tied to one cloud, or to AWS at all.
 
 ## Get Started
 

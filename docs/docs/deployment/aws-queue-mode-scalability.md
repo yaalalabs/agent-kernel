@@ -125,22 +125,39 @@ graph TB
 | Component | Role | As implemented |
 |-----------|------|-----------------|
 | **Request Handler** | Enqueues to the Input Queue; for REST Sync/Async also reads the response store | Lambda function, `modules/request-handler/` (Terraform) |
-| **Input SQS Queue** | FIFO; `MessageGroupId = SessionID` preserves per-session order; `MessageDeduplicationId` prevents duplicate delivery; `MessageVisibilityTimeout` + `MessageRetentionPeriod` bound retries | `modules/queues/` |
+| **Input SQS Queue** | FIFO; `MessageGroupId = SessionID` preserves per-session order; `MessageDeduplicationId` rejects a duplicate *enqueue* of the same request within SQS's 5-minute dedup window (delivery itself stays at-least-once — that's governed by the visibility timeout); `MessageVisibilityTimeout` + `MessageRetentionPeriod` bound retries | `modules/queues/` |
 | **Agent Runner** | Triggered by an Event Source Mapping, one Lambda invocation per batch; runs the agent and writes to the Output Queue; returns `batchItemFailures` so the ESM only retries the messages that actually failed | `LambdaSQSConsumer`, `modules/agent-runner/` |
 | **Output SQS Queue** | Same FIFO/dedup/visibility properties as the Input Queue | `modules/queues/` |
 | **Response Handler** | Reads the Output Queue and either writes to the response store (REST modes) or pushes over WebSocket (Async/Stream) | Separate Lambda, `modules/response-handler/` |
 | **Response Store** | Holds replies keyed by session/request ID with a TTL, for the Request Handler to read | DynamoDB, Redis, or Valkey — configurable |
 
-Both queues use `MessageDeduplicationId = request_id` so a retried message is never processed, or
-appended to conversation history, twice.
+Both queues use `MessageDeduplicationId = request_id`: a request the *caller* retries within the
+dedup window is never enqueued twice, and the reply the Agent Runner produces is never delivered
+twice (the Agent Runner reuses the input message's dedup ID when it sends to the Output Queue).
+
+:::caution What dedup does *not* cover
+SQS FIFO deduplication rejects duplicate **enqueues**; it does not stop a message that SQS
+**redelivers** from being processed again. Redelivery is the retry mechanism working as designed —
+a message whose visibility timeout expires before it was deleted comes back, and the Agent Runner
+re-runs the agent, which appends the turn to session history a **second time**. Only the duplicate
+reply is suppressed, and only inside SQS's 5-minute dedup window. In `stream` mode not even that
+holds: chunk dedup IDs deliberately include the receive count (`{dedup}-{receive_count}-{i}`) so a
+retry's chunks are never suppressed as duplicates of the previous attempt's.
+
+There is no session-level message-ID bookkeeping in either runner to close this gap. If duplicate
+history entries would be harmful for your workload, make the agent turn itself idempotent, or
+deduplicate on `request_id` in your own application layer.
+:::
 
 ### Failure Handling
 
 - **Request Handler crashes on an inbound request** — not handled by the system; the caller gets a
   server error and must retry.
-- **A message is processed but not deleted by the Agent Runner** — mitigated by session-level
-  dedup (a hashed message ID stored with the session) plus `MessageDeduplicationId` on the Output
-  Queue.
+- **A message is processed but not deleted by the Agent Runner** — the message reappears after the
+  visibility timeout and is processed again: the agent re-runs and the turn is appended to session
+  history a second time. The duplicate *reply* is suppressed, because the Agent Runner reuses the
+  input message's `MessageDeduplicationId` on the Output Queue — but only within the 5-minute dedup
+  window (see the caution above).
 - **The Agent Runner Lambda crashes or is killed mid-message** — the message reappears once
   `MessageVisibilityTimeout` expires.
 - **Some messages in a batch fail** — the failing IDs are returned as `batchItemFailures`; the ESM
@@ -235,8 +252,9 @@ queue — so a caller waiting on that response never just hangs.
 
 - **REST Service (IO container) crashes on an inbound request** — not handled by the system; the
   caller gets a server error and must retry.
-- **A message is processed but not deleted by the Agent Runner** — mitigated the same way as
-  Lambda (session-level hashed-ID dedup, `MessageDeduplicationId` on the Output Queue).
+- **A message is processed but not deleted by the Agent Runner** — same as Lambda: the redelivered
+  message re-runs the agent and re-appends the turn to session history; only the duplicate reply is
+  suppressed, via `MessageDeduplicationId` reuse on the Output Queue within the 5-minute window.
 - **The Agent Runner container crashes mid-message** — the message reappears once the visibility
   timeout expires.
 - **A message fails processing** — it's simply not deleted, so it reappears after the visibility

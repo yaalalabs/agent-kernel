@@ -265,7 +265,7 @@ sequenceDiagram
 
 See [Execution Flow](./execution-flow) for the full request lifecycle including the queue-based and WebSocket paths.
 
-## Scalability: The Queue Execution Pipeline
+## Scalability: The Queue Execution Pipeline {#the-queue-execution-pipeline}
 
 Two facts shape how Agent Kernel is built to grow with demand:
 

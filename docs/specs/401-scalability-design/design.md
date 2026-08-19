@@ -7,26 +7,41 @@ four client communication modes: REST Sync, REST Async (user polling), Streaming
 their shared shape so the new Kafka/on-premise method follows the same contract instead of
 diverging, and extends that shape to on-premise deployments.
 
+> **Point-in-time document.** Written against `develop` **before**
+> [#495](../495-onprem-kubernetes/design.md) landed. The Motivation below records the state of the
+> codebase *at the time of writing*, and the Kafka section describes a target shape that was never
+> built as written. Both have since been superseded: the unified `agentkernel.pipeline` package now
+> ships `kafka` and `nats` transports with runnable local examples. `path:line` citations were
+> refreshed against `develop` as of 2026-08-19. Read this document as the design record that
+> motivated #495, not as a description of current code.
+
 ## Motivation
 
 - Two of the three processing methods already exist in the codebase, built around the same
   input-queue → agent runner → output-queue → response-delivery shape:
   - ECS: `ECSAgentRunner`/`ECSSQSConsumer` poll an input SQS queue and write results to an output
     queue (`ak-py/src/agentkernel/deployment/aws/containerized/akagentrunner.py:13`,
-    `aws/containerized/core/sqs_consumer.py:14`); `ECSIOHandler` runs the REST/WebSocket API and
-    `ECSOutputConsumer` as two `ThreadRunner` threads (`aws/containerized/ecs_io_handler.py:10`,
-    `deployment/common/thread_runner.py:11`).
+    `ak-py/src/agentkernel/deployment/aws/containerized/core/sqs_consumer.py:39`); `ECSIOHandler`
+    runs the REST/WebSocket API and `ECSOutputConsumer` as two `ThreadRunner` threads
+    (`ak-py/src/agentkernel/deployment/aws/containerized/ecs_io_handler.py:10`,
+    `ak-py/src/agentkernel/pipeline/thread_runner.py:12` — `ThreadRunner` has since moved into
+    `pipeline/`; `deployment/common/thread_runner.py` is now a re-export shim).
   - Lambda: `LambdaSQSConsumer` is push-triggered by an SQS Event Source Mapping and returns
-    `{"batchItemFailures": ...}` for partial-batch retry (`aws/serverless/core/sqs_consumer.py:9,64`).
+    `{"batchItemFailures": ...}` for partial-batch retry
+    (`ak-py/src/agentkernel/deployment/aws/serverless/core/sqs_consumer.py:9,64`).
   - Both back their input/output queues with SQS FIFO queues using `MessageGroupId` /
-    `MessageDeduplicationId` (`aws/core/sqs_handler.py:37-38,219-220`).
+    `MessageDeduplicationId` (`ak-py/src/agentkernel/deployment/aws/core/sqs_handler.py:45-46`
+    for the send-attribute fields, `:285-286` and `:327-328` for the input/output send sites).
   - All four communication modes already have working examples: `examples/aws-containerized/
     openai-dynamodb-scalable` (REST sync/async), `examples/aws-containerized/
     openai-websocket-scalable` (Async), `examples/aws-containerized/openai-stream-queue-mode`
-    (Streaming/SSE), and `examples/aws-serverless/scalable-openai` (Lambda REST).
-- No on-premise / self-hosted queue-based processing method exists yet — `deployment/` currently
-  has only `aws/`, `azure/`, `gcp/`, and `common/` (no `local/`) — so a Kafka-backed on-premise
-  method is greenfield work, not a variant of something already running.
+    (Streaming — delivered as WebSocket `STREAM_CHUNK` frames on AWS, not SSE), and
+    `examples/aws-serverless/scalable-openai` (Lambda REST).
+- At the time of writing, no on-premise / self-hosted queue-based processing method existed —
+  `deployment/` held only `aws/`, `azure/`, `gcp/`, and `common/` (no `local/`) — so a Kafka-backed
+  on-premise method was greenfield work, not a variant of something already running. (Still true of
+  `deployment/` today; the on-premise pipeline that shipped since lives under `pipeline/`, not
+  `deployment/local/`.)
 - Without a shared reference design, each new processing method or communication mode risks
   re-deriving its own queue contract, failure-handling behavior, and component boundaries instead
   of reusing the one that SQS + Lambda and SQS + ECS already validate in production.
@@ -140,10 +155,13 @@ graph LR
   - Processes the batch and adds response messages to the Output Queue.
   - Returns failing message IDs as `batchItemFailures` so the Event Source Mapping deletes the
     successful messages but leaves the failed ones for retry.
-  - On receiving a message, stores the session with a hashed message ID in the session database
-    (the previous session), so duplicate chat messages aren't re-added to history.
-  - Uses `MessageDeduplicationId` to avoid re-sending the same output message to the user multiple
-    times.
+  - **Designed but not implemented:** on receiving a message, store the session with a hashed
+    message ID in the session database (the previous session), so duplicate chat messages aren't
+    re-added to history. Neither `ServerlessAgentRunner` nor `ECSAgentRunner` does this — see
+    [Open questions](#open-questions).
+  - Reuses the input message's `MessageDeduplicationId` when sending to the Output Queue, so a
+    duplicate reply is rejected at enqueue time (within SQS's 5-minute dedup window). This is the
+    only duplicate protection that actually ships.
 - **Output SQS Queue** — same FIFO/`MessageGroupId`/`MessageVisibilityTimeout`/
   `MessageDeduplicationId` properties as the Input Queue.
 - **Response Handler**
@@ -159,8 +177,12 @@ graph LR
 
 - **Request Handler crashes when triggered by API Gateway** — not handled by the system; the user
   gets an Internal Server Error and must retry.
-- **A message is processed but not deleted by the Agent Runner** — mitigated by the hashed-message-
-  ID session dedup and `MessageDeduplicationId` on the Output Queue (see Agent Runner above).
+- **A message is processed but not deleted by the Agent Runner** — the redelivered message is
+  processed again: the agent re-runs and the turn is appended to session history a second time.
+  Only the *reply* is protected, by `MessageDeduplicationId` reuse on the Output Queue, and only
+  within SQS's 5-minute dedup window. The hashed-message-ID session dedup that would have closed
+  the history gap was designed but never implemented (see Agent Runner above and
+  [Open questions](#open-questions)).
 - **Lambda crashes or dies while processing a message** — the message reappears in the queue once
   `MessageVisibilityTimeout` expires.
 - **Messages fail while a Lambda processes them** — failing message IDs are returned as
@@ -253,9 +275,12 @@ graph TD
   - Failing messages are **not deleted**, so they reappear in the queue (no `batchItemFailures`
     mechanism — an ECS container does not get the Lambda Event Source Mapping's per-message retry
     signal).
-  - Stores the session with a hashed message ID in the session database on receipt, to prevent
-    duplicate chat-history entries.
-  - Uses `MessageDeduplicationId` to avoid re-sending the same output message multiple times.
+  - **Designed but not implemented:** store the session with a hashed message ID in the session
+    database on receipt, to prevent duplicate chat-history entries. `ECSAgentRunner.process_message`
+    calls `ChatService.process_chat_request` directly with no message-ID bookkeeping — see
+    [Open questions](#open-questions).
+  - Reuses the input message's `MessageDeduplicationId` when sending to the Output Queue, so a
+    duplicate reply is rejected at enqueue time (within SQS's 5-minute dedup window).
 - **Output SQS Queue** — same FIFO/`MessageGroupId`/`MessageVisibilityTimeout`/
   `MessageDeduplicationId` properties as the Input Queue.
 - **Database**
@@ -267,8 +292,9 @@ graph TD
 
 - **REST Service crashes when triggered by a user request** — not handled by the system; the user
   gets an Internal Server Error and must retry.
-- **A message is processed but not deleted by the Agent Runner** — mitigated the same way as SQS +
-  Lambda (hashed-message-ID session dedup, `MessageDeduplicationId` on the Output Queue).
+- **A message is processed but not deleted by the Agent Runner** — same gap as SQS + Lambda: the
+  redelivered message re-runs the agent and re-appends the turn to session history; only the reply
+  is suppressed, by `MessageDeduplicationId` reuse on the Output Queue within the 5-minute window.
 - **ECS container crashes while processing a message** — the message reappears in the queue once
   `MessageVisibilityTimeout` expires.
 - **Messages fail while an ECS container processes them** — the failing messages are not deleted,
@@ -285,7 +311,7 @@ graph TD
 - **Load-based scaling** — ECS's normal scale-on-(CPU load / memory utilization / ALB load).
   - Weak fit for SQS + ECS: queue backlog can be high while CPU stays low (processing is often
     dominated by outbound API calls, not compute) — **needs empirical testing before relying on
-    it** (see Open questions).
+    it** (see [Open questions](#open-questions)).
 - **Scaling on queue depth (BacklogPerTask)** — based on the
   [AWS blog post pattern](https://aws.amazon.com/blogs/containers/scaling-container-instances-using-custom-metrics-with-amazon-ecs/) [best-effort external reference, not independently verified here]:
   - Run worker tasks in an ECS service consuming from SQS.
@@ -401,8 +427,10 @@ graph TD
     instance) for parallelism.
   - Processes the batch and adds successful messages to the Output Queue.
   - Offsets of failing messages are **not committed**, so those messages reappear in the queue.
-  - Stores the session with a hashed message ID in the session database on receipt, to prevent
-    duplicate chat-history entries.
+  - **Designed but not implemented:** store the session with a hashed message ID in the session
+    database on receipt, to prevent duplicate chat-history entries. The Kafka transport that
+    actually shipped under [#495](../495-onprem-kubernetes/design.md) carries no such mechanism
+    either — see [Open questions](#open-questions).
 - **Output Kafka Queue** — same one-topic/multiple-partitions/Partition-Key=SessionID/
   fixed-configurable-partition-count shape as the Input Kafka Queue.
 - **Database**
@@ -414,8 +442,10 @@ graph TD
 
 - **REST Service crashes when a user sends a request** — not handled by the system; the user gets
   an Internal Server Error and must retry.
-- **A message is processed but its offset is not committed by the Agent Runner** — mitigated by
-  the hashed-message-ID session dedup; **the same message must not be re-added to the queue over
+- **A message is processed but its offset is not committed by the Agent Runner** — the message is
+  redelivered and re-processed, re-appending the turn to session history. The hashed-message-ID
+  session dedup intended to mitigate this was never implemented (see
+  [Open questions](#open-questions)); **the same message must not be re-added to the queue over
   and over** is an implementation obligation, not automatically guaranteed by Kafka itself.
 - **A consumer crashes while processing a message** — its offset isn't committed, so the partition
   is reassigned to another consumer, which resumes from the last committed offset.
@@ -432,3 +462,22 @@ graph TD
 
 - CLI mode is unaffected by this design — it continues to work exactly as it does today, using the
   Runner directly with no queue indirection.
+
+## Open questions
+
+- **Is load-based ECS scaling viable for the Agent Runner, or is BacklogPerTask mandatory?**
+  The concern is that agent work is dominated by outbound model-provider calls, so queue backlog
+  can climb while CPU and memory stay flat — which would make CPU/memory target tracking scale too
+  late, or not at all. This has not been measured. Needs empirical testing against a representative
+  workload before either policy is recommended as the default. Until then this design assumes
+  BacklogPerTask (see [Scaling](#scaling)).
+- **Should session-level message dedup be implemented, and where?**
+  All three methods above describe storing a hashed message ID with the session so a redelivered
+  input message isn't re-added to chat history. None of them implement it: `ServerlessAgentRunner`,
+  `ECSAgentRunner`, and the shipped `agentkernel.pipeline` runners all call
+  `ChatService.process_chat_request` with no message-ID bookkeeping. The residual gap is that a
+  message redelivered after a processed-but-not-deleted failure re-runs the agent (double
+  provider cost) and appends the turn to session history a second time; only the duplicate *reply*
+  is suppressed, via `MessageDeduplicationId` reuse on the Output Queue, and only inside SQS's
+  5-minute dedup window. Deciding this needs an owner: whether to close the gap in the shared
+  `AgentRunner` (so every transport inherits it), and what the dedup key's retention should be.

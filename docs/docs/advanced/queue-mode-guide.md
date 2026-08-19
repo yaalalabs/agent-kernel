@@ -36,8 +36,10 @@ caller and the Agent Runner. This gives you:
 - **Capped provider concurrency**: how hard the model provider gets hit is set by the number of
   consumers draining the queue, not by request arrival rate: a spike lengthens the queue instead
   of fanning out into simultaneous provider calls.
-- **Deduplication**: a per-request deduplication ID prevents the same message from being processed
-  (or appended to conversation history) twice, so retries are safe.
+- **Deduplication**: a per-request deduplication ID prevents the same request being enqueued twice
+  and the same reply being delivered twice, so caller retries are safe. (This covers duplicate
+  *enqueues*, not redelivery: a message redelivered after a processed-but-unacknowledged failure is
+  re-run by the Agent Runner, which re-appends that turn to session history.)
 
 The queue transport is pluggable via `execution.queues.type`:
 
