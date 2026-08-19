@@ -28,7 +28,6 @@ from ...core.model import (
     BaseChatRequest,
 )
 
-
 MAX_MESSAGE_LENGTH = 8000
 FILE_DOWNLOAD_INFO = "application/vnd.microsoft.teams.file.download.info"
 CONNECTOR_HOST_SUFFIXES = ("botframework.com", "trafficmanager.net", "skype.com", "skype.net")
