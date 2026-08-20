@@ -174,7 +174,9 @@ class ResponseHandler:
             body = {"response": body}
 
         self._get_ws_handler().broadcast(message=body, user_id=user_id, message_type=message_type)
-        self._log.info(f"[OUTPUT DONE] Broadcasted {message_type.value} via WebSocket: user_id={user_id}")
+        # Chunks are one message per token: INFO here would log the whole reply token by token.
+        log = self._log.debug if message_type == WebSocketHandlerABC.MessageType.STREAM_CHUNK else self._log.info
+        log(f"[OUTPUT DONE] Broadcasted {message_type.value} via WebSocket: user_id={user_id}")
 
     def _broadcast_error(self, message: QueueMessage, error_message: dict, message_type: WebSocketHandlerABC.MessageType) -> None:
         """Best-effort WebSocket delivery of a permanent-failure error (never hang the client silently)."""

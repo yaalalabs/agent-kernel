@@ -161,7 +161,7 @@ Spec section references are to `spec.md`.
   topology); `/internal/push` (`PostToConnection` analogue) with shared-secret auth;
   store-lookup delivery in `PodPushWebSocketHandler`; `USER_ID` presence replaces
   `ENDPOINT_URL` stamping as the WS-entered discriminator.
-- **Verify:** `test_pipeline_ws.py` + `test_session_kv_table.py`; single-process ASYNC/STREAM
+- **Verify:** `test_pipeline_ws.py` + `test_session_connection_store.py`; single-process ASYNC/STREAM
   end-to-end over `in_memory`; a two-"pod" delivery test (two registries/gateway apps, reply
   landing wherever the user's connections are).
 - **History:** first delivered 2026-08-18 as pod-direct push (design Q3 Option D: `endpoint_url`

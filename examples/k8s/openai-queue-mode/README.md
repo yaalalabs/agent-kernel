@@ -39,8 +39,9 @@ cd ..
 
 `package.sh` stages each component's dependencies into `dist-<component>/data` (uv
 cross-installs Linux wheels, so the build works from macOS too), bakes the chosen config
-variant in as `config.yaml`, and builds `ak-example-io-handler:dev` and
-`ak-example-agent-runner:dev`.
+variant in as `config.yaml`, and builds all three images: `ak-example-io-handler:dev`,
+`ak-example-agent-runner:dev`, and `ak-example-ws-gateway:dev` (the last one is only deployed
+in the WebSocket walkthrough below).
 
 ## k3d (macOS and Linux)
 

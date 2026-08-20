@@ -222,6 +222,11 @@ networkPolicy:
   gatewayNamespaceSelector:
     matchLabels:
       kubernetes.io/metadata.name: envoy-gateway-system
+  # Additional ingress rules appended verbatim (NetworkPolicyIngressRule entries). Needed when
+  # WebSocket clients arrive outside the Gateway API data plane: with the serviceLB fallback,
+  # traffic comes through kube-proxy with no pod identity, so add an ipBlock rule here (or
+  # disable the policy).
+  extraIngress: []
 
 # Queue-depth autoscaling for the agent-runner tier. Prerequisite: KEDA installed in the
 # cluster (this chart does not install it).

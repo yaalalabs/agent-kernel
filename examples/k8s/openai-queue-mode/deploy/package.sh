@@ -1,6 +1,7 @@
 #!/bin/bash
 
-# Builds the two container images the Helm chart deploys:
+# Builds the three container images the Helm chart deploys (io-handler, agent-runner, and
+# ws-gateway for the WebSocket modes):
 #
 #   ./package.sh [local] [nats|kafka]
 #

@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import uuid
 from typing import Any, Callable, ClassVar, Dict, Optional
 
@@ -135,11 +136,15 @@ class PipelineWebSocketHandler(RESTRequestHandler):
 
         connection_id = str(uuid.uuid4())
         # The socket stays here; the shared store tells Response Handlers on any pod where to
-        # push for this connection.
+        # push for this connection. Registry first (a store mapping must never point at a pod
+        # not yet holding the socket), and the try starts before the store write so a store
+        # failure still tears the registry entry down in the finally: the registry has no TTL,
+        # and with no store mapping no push would ever target the entry to trigger the
+        # drop-on-failed-send cleanup.
         self._registry.add_connection(user_id, connection_id, websocket=websocket, loop=asyncio.get_running_loop())
-        await asyncio.to_thread(self.get_connection_store().add_connection, user_id, connection_id, self._endpoint_url)
-        self._log.info(f"Connected: user_id={user_id}, connection_id={connection_id}")
         try:
+            await asyncio.to_thread(self.get_connection_store().add_connection, user_id, connection_id, self._endpoint_url)
+            self._log.info(f"Connected: user_id={user_id}, connection_id={connection_id}")
             while True:
                 raw_frame = await websocket.receive_text()
                 await self._dispatch(websocket, user_id, raw_frame)
@@ -147,15 +152,25 @@ class PipelineWebSocketHandler(RESTRequestHandler):
             pass
         finally:
             self._registry.delete_connection(user_id, connection_id)
-            try:
-                # Synchronous on purpose: this finally also runs under task cancellation (server
-                # shutdown tearing the connection down), where an await would raise immediately
-                # and skip the cleanup, leaving a stale mapping until the TTL reaps it.
-                self.get_connection_store().delete_connection(user_id, connection_id)
-            except Exception:
-                # The mapping's TTL reaps it if the store is briefly unreachable at disconnect.
-                self._log.exception(f"Failed to deregister connection mapping: connection_id={connection_id}")
+            # Fire-and-forget on a daemon thread: this finally also runs under task cancellation
+            # (server shutdown tearing the connection down), where an await would raise
+            # immediately and skip the cleanup, and a synchronous call would stall the event
+            # loop behind driver connect/retry backoffs when the store is unreachable, freezing
+            # every other socket on the pod exactly when clients are churning.
+            threading.Thread(
+                target=self._delete_connection_mapping,
+                args=(user_id, connection_id),
+                daemon=True,
+                name=f"ws-deregister-{connection_id[:8]}",
+            ).start()
             self._log.info(f"Disconnected: user_id={user_id}, connection_id={connection_id}")
+
+    def _delete_connection_mapping(self, user_id: str, connection_id: str) -> None:
+        try:
+            self.get_connection_store().delete_connection(user_id, connection_id)
+        except Exception:
+            # The mapping's TTL reaps it if the store is briefly unreachable at disconnect.
+            self._log.exception(f"Failed to deregister connection mapping: connection_id={connection_id}")
 
     async def _authenticate(self, websocket: WebSocket) -> Optional[str]:
         """Validate the ``token`` query parameter; a failure closes the socket (policy violation)."""

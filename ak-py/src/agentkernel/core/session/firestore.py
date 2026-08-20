@@ -124,6 +124,6 @@ class FirestoreSessionStore(SessionStore):
         :raises AKConfigError: Always.
         """
         raise AKConfigError(
-            f"session.type 'firestore' does not yet provide a WebSocket connection store: "
+            "session.type 'firestore' does not yet provide a WebSocket connection store: "
             "use redis, valkey or dynamodb sessions, or in_memory for single-process deployments"
         )

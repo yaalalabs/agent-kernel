@@ -30,4 +30,7 @@ spec:
       ports:
         - port: {{ .Values.wsGateway.port }}
           protocol: TCP
+    {{- with .Values.networkPolicy.extraIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}

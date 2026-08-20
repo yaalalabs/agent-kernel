@@ -54,7 +54,7 @@ class IOHandler:
             # cannot tell this process where another pod's sockets are.
             if not default_connection_store().shared:
                 raise AKConfigError(
-                    "WebSocket delivery over a broker transport needs a shared connection store: " "configure session.type redis or valkey"
+                    "WebSocket delivery over a broker transport needs a shared connection store: " "configure session.type redis, valkey or dynamodb"
                 )
         ws_cohosted = single_process and auth_validator is not None and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM)
         cls._log.info(
@@ -143,10 +143,13 @@ class IOHandler:
                     "WebSocket delivery over a broker transport needs websocket_api.push_auth_token: "
                     "the Response Handler authenticates its pushes to the gateway pods with it"
                 )
-        if transport_type != "in_memory":
+        if transport_type != "in_memory" and mode not in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
+            # REST modes only (spec §10): the enqueueing or polling pod and the consuming pod
+            # can differ, so replies must travel through a shared store. WebSocket modes never
+            # touch the response store: replies push to the gateway pods instead.
             response_store_config = config.execution.response_store
             if response_store_config is None or response_store_config.type in (None, "in_memory"):
                 raise AKConfigError(
-                    "multi-process queue modes need a shared response store (redis, valkey or dynamodb): "
+                    "multi-process REST queue modes need a shared response store (redis, valkey or dynamodb): "
                     "the in_memory store is single-process only"
                 )

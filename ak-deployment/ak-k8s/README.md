@@ -157,7 +157,10 @@ The WebSocket HTTPRoute carries raised timeouts (`gateway.websocket.requestTimeo
 disables them) and must never have request buffering enabled: Envoy Gateway deadlocks
 buffered WebSocket upgrades (envoyproxy/gateway#8578). The NetworkPolicy restricts ingress to
 the gateway pods to the Gateway API data plane and this release's own pods, which keeps
-`/internal/push` unreachable from other cluster workloads.
+`/internal/push` unreachable from other cluster workloads. If WebSocket clients arrive
+through the `serviceLB` fallback instead of a Gateway API implementation, that traffic comes
+via kube-proxy with no pod identity and the policy blocks it on most CNIs: append an
+`ipBlock` rule through `networkPolicy.extraIngress`, or set `networkPolicy.enabled: false`.
 
 ## Autoscaling and drain
 
@@ -206,7 +209,7 @@ Then set `serviceMonitor.enabled: true` here if your image exposes an app metric
   (`spec.kafkaExporter: {}` on the Kafka CR).
 
 **Tracing**: Agent Kernel's tracing providers (Langfuse, OpenLLMetry, Logfire) are app-level
-and configured through `config.yaml`/`AK_TRACING__*` in your image; on-cluster, run one
+and configured through `config.yaml`/`AK_TRACE__*` in your image; on-cluster, run one
 OpenTelemetry Collector as the single funnel and point OTLP-capable providers at it:
 
 ```bash

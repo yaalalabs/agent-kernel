@@ -130,7 +130,9 @@ class _WebSocketAPIConfig(BaseModel):
     )
     push_port: Optional[int] = Field(
         default=None,
-        description="Port other pods push WebSocket deliveries to (defaults to api.port)",
+        description="Port other pods push WebSocket deliveries to (defaults to api.port). Only for custom "
+        "gateways that mount PushEndpointHandler on their own separate listener; the built-in WebSocketGateway "
+        "serves everything on api.port and rejects a differing value at startup",
     )
 
 

@@ -555,6 +555,18 @@ class TestWebSocketGateway:
         config = _use_config(monkeypatch, mode=ExecutionMode.STREAM, push_auth_token="s3cret")
         WebSocketGateway._validate(_Validator(), "nats", config)
 
+    def test_push_port_differing_from_api_port_is_rejected(self, monkeypatch):
+        """The built-in gateway serves /ws and /internal/push on one server bound to api.port:
+        a different advertised push port would record endpoints nothing answers, so it fails
+        fast (push_port exists for custom gateways with their own separate push listener)."""
+        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret", push_port=9001, api_port=8000)
+        with pytest.raises(AKConfigError, match="push_port"):
+            WebSocketGateway._validate(_Validator(), "nats", config)
+
+    def test_push_port_matching_api_port_passes(self, monkeypatch):
+        config = _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret", push_port=8000, api_port=8000)
+        WebSocketGateway._validate(_Validator(), "nats", config)
+
     def test_app_serves_health_ws_and_push(self, monkeypatch):
         _use_config(monkeypatch, mode=ExecutionMode.ASYNC, push_auth_token="s3cret")
         app = WebSocketGateway._build_app(

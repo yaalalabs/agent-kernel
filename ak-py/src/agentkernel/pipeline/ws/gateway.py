@@ -50,7 +50,7 @@ class WebSocketGateway:
         if not connection_store.shared:
             raise AKConfigError(
                 "a standalone WebSocket gateway needs a shared connection store: configure session.type "
-                "redis or valkey so Response Handlers on other pods can find this pod's connections"
+                "redis, valkey or dynamodb so Response Handlers on other pods can find this pod's connections"
             )
 
         app = cls._build_app(
@@ -96,4 +96,13 @@ class WebSocketGateway:
         if not config.websocket_api.push_auth_token:
             raise AKConfigError(
                 "the WebSocket gateway requires websocket_api.push_auth_token: Response Handlers " "authenticate their pushes to this pod with it"
+            )
+        push_port = config.websocket_api.push_port
+        if push_port is not None and push_port != config.api.port:
+            # This gateway serves /ws and /internal/push on one server bound to api.port, so a
+            # different advertised push port would record endpoints in the connection store
+            # that nothing answers, and every reply push would fail.
+            raise AKConfigError(
+                f"websocket_api.push_port ({push_port}) differs from api.port ({config.api.port}): leave it unset "
+                "here. It exists for custom gateways that mount PushEndpointHandler on their own separate listener"
             )

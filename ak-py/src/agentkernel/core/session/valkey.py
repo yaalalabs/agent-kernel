@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from ..base import Session
 from ..config import AKConfig

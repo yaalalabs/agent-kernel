@@ -71,8 +71,20 @@ class TestTopologyValidation:
         with pytest.raises(AKConfigError, match="shared response store"):
             IOHandler._validate_topology(ExecutionMode.REST_SYNC, "sqs", _cfg(ExecutionMode.REST_SYNC))
 
+    def test_broker_default_mode_without_shared_response_store_rejected(self):
+        """Unset mode is REST_SYNC, so the REST-scoped store requirement applies."""
+        with pytest.raises(AKConfigError, match="shared response store"):
+            IOHandler._validate_topology(None, "sqs", _cfg())
+
     def test_broker_with_shared_response_store_passes(self):
         IOHandler._validate_topology(ExecutionMode.REST_SYNC, "sqs", _cfg(ExecutionMode.REST_SYNC, response_store_type="redis"))
+
+    def test_websocket_modes_over_broker_need_no_response_store(self):
+        """The store requirement is REST-scoped (spec §10): WS replies push to the gateway pods."""
+        IOHandler._validate_topology(ExecutionMode.ASYNC, "kafka", _cfg(ExecutionMode.ASYNC, push_auth_token="s3cret"))
+        IOHandler._validate_topology(
+            ExecutionMode.STREAM, "nats", _cfg(ExecutionMode.STREAM, response_store_type="in_memory", push_auth_token="s3cret")
+        )
 
     def test_in_memory_topology_passes(self):
         IOHandler._validate_topology(ExecutionMode.STREAM, "in_memory", _cfg(ExecutionMode.STREAM))

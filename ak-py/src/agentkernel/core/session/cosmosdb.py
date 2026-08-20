@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from ..base import Session
 from ..config import AKConfig
@@ -137,6 +136,6 @@ class CosmosDBSessionStore(SessionStore):
         :raises AKConfigError: Always.
         """
         raise AKConfigError(
-            f"session.type 'cosmosdb' does not yet provide a WebSocket connection store: "
+            "session.type 'cosmosdb' does not yet provide a WebSocket connection store: "
             "use redis, valkey or dynamodb sessions, or in_memory for single-process deployments"
         )
