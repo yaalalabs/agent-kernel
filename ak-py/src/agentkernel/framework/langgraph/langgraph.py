@@ -41,7 +41,7 @@ from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "langgraph"
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger("ak.langgraph.runner")
 
 
 class CheckPointer(BaseCheckpointSaver):
@@ -461,6 +461,7 @@ class LangGraphRunner(BaseRunner):
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
             incoming = self._load_framework_context(session)
+            started: set[str] = set()  # run ids with an open message; a local, never on self — see _map_event
             input_state: dict[str, Any] = {}
             if incoming:
                 input_state.update(incoming)
@@ -471,7 +472,7 @@ class LangGraphRunner(BaseRunner):
                 config=config,
                 version="v2",
             ):
-                for stream_event in self._map_event(event):
+                for stream_event in self._map_event(event, started):
                     yield stream_event
 
             # astream_events yields events, not a final state, so read the state back once the stream drains
@@ -488,7 +489,7 @@ class LangGraphRunner(BaseRunner):
                 context.reset()
 
     @staticmethod
-    def _map_event(event: dict) -> list[StreamEvent]:
+    def _map_event(event: dict, started: set[str]) -> list[StreamEvent]:
         """Translate one LangChain `astream_events` event into AK events.
 
         Every other event name — `on_chain_*`, `on_prompt_*`, retriever and parser events — maps to
@@ -496,25 +497,51 @@ class LangGraphRunner(BaseRunner):
         fires for every runnable in the graph, not only the nodes a user would recognise as steps,
         so naming them is a decision on its own rather than part of this mapping.
 
+        **`MessageStart` is deferred until text actually arrives, and `started` is what defers it.**
+        LangChain fires `on_chat_model_start` and `on_chat_model_end` around every model call whether
+        or not any prose was streamed, so a tool-calling turn — where the content chunks are empty and
+        the call rides on `chunk.tool_calls` — would otherwise be bracketed into a message with
+        nothing in it. That is an empty assistant bubble in any AG-UI client, which is the same defect
+        `Runtime.stream`'s `legacy_started` exists to prevent on the transitional path. So the id is
+        taken from the *stream* event, `on_chat_model_start` maps to nothing, and `MessageEnd` is
+        emitted only for a call that opened.
+
+        A set keyed by `run_id`, not one flag: LangChain assigns an id per invocation, and a tool that
+        itself calls a model produces a second one, so a single flag would let one call's end close
+        another's message. The caller owns the set and passes it in, because it must be a **local** to
+        one `stream` call — a `Runner` instance is shared across every agent and every concurrent
+        session (see spec §10), so remembering this on `self` would let one session's message
+        suppress another's.
+
         :param event: One event from `astream_events(version="v2")`.
+        :param started: Run ids whose `MessageStart` has been emitted. Mutated in place.
         :return: The AK events this event produces, empty when it maps to nothing.
         """
         kind = event["event"]
         run_id = event["run_id"]
 
-        if kind == "on_chat_model_start":
-            return [MessageStart(message_id=run_id)]
         if kind == "on_chat_model_end":
+            if run_id not in started:
+                return []
+            started.discard(run_id)
             return [MessageEnd(message_id=run_id)]
         if kind == "on_chat_model_stream":
-            return [TextDelta(message_id=run_id, content=text) for text in LangGraphRunner._chunk_text(event)]
+            texts = LangGraphRunner._chunk_text(event)
+            if not texts:
+                return []
+            events: list[StreamEvent] = []
+            if run_id not in started:
+                started.add(run_id)
+                events.append(MessageStart(message_id=run_id))
+            events.extend(TextDelta(message_id=run_id, content=text) for text in texts)
+            return events
         if kind == "on_tool_start":
-            events: list[StreamEvent] = [ToolCallStart(tool_call_id=run_id, name=event.get("name") or "")]
+            call: list[StreamEvent] = [ToolCallStart(tool_call_id=run_id, name=event.get("name") or "")]
             arguments = LangGraphRunner._tool_arguments(event)
             if arguments:
-                events.append(ToolCallArgs(tool_call_id=run_id, delta=arguments))
-            events.append(ToolCallEnd(tool_call_id=run_id))
-            return events
+                call.append(ToolCallArgs(tool_call_id=run_id, delta=arguments))
+            call.append(ToolCallEnd(tool_call_id=run_id))
+            return call
         if kind == "on_tool_end":
             return [ToolCallResult(tool_call_id=run_id, content=LangGraphRunner._tool_output(event))]
         return []
@@ -557,7 +584,7 @@ class LangGraphRunner(BaseRunner):
         try:
             return json.dumps(tool_input, default=str)
         except Exception as e:
-            _logger.debug(f"LangGraph tool input could not be serialised; emitting no arguments: {e!r}")
+            _logger.warning(f"LangGraph tool input could not be serialised; the tool call is emitted with no arguments: {e!r}")
             return ""
 
     @staticmethod

@@ -141,7 +141,7 @@ class TestLangGraphRunnerFrameworkContext:
 
         events = [event async for event in runner.stream(agent, session, requests)]
 
-        assert events == [TextDelta(message_id="run-1", content="tok")]
+        assert events == [MessageStart(message_id="run-1"), TextDelta(message_id="run-1", content="tok")]
         assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "99"}
 
     @pytest.mark.asyncio
@@ -154,8 +154,8 @@ class TestLangGraphRunnerFrameworkContext:
         agent = _mock_stream_agent([event], {"user_id": "99"})
 
         agen = runner.stream(agent, session, requests)
-        first = await agen.__anext__()
-        assert first == TextDelta(message_id="run-1", content="tok")
+        assert await agen.__anext__() == MessageStart(message_id="run-1")
+        assert await agen.__anext__() == TextDelta(message_id="run-1", content="tok")
         await agen.aclose()  # simulate client disconnect at the yield
 
         agent.agent.aget_state.assert_not_called()
@@ -175,7 +175,7 @@ class TestLangGraphRunnerFrameworkContext:
         with caplog.at_level(logging.ERROR, logger="ak.core.runner"):
             events = [event async for event in runner.stream(agent, session, requests)]
 
-        assert events == [TextDelta(message_id="run-1", content="tok")]
+        assert events == [MessageStart(message_id="run-1"), TextDelta(message_id="run-1", content="tok")]
         assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "42"}
         assert any("framework_context write-back was skipped" in r.message for r in caplog.records)
 
@@ -210,24 +210,58 @@ class TestLangGraphRunnerStreamEvents:
         ]
 
     @pytest.mark.asyncio
-    async def test_two_model_calls_do_not_share_a_message_id(self):
-        """A nested model call inside a tool gets its own run_id, so the ids must not collide."""
+    async def test_a_tool_call_only_turn_emits_no_message_boundaries(self):
+        """LangChain fires the chat-model start and end whether or not any prose was streamed.
+
+        On a tool-calling turn the content chunks are empty — the call rides on `chunk.tool_calls` —
+        so bracketing unconditionally would send `MessageStart` + `MessageEnd` with nothing between,
+        which spec.md:229-233 spells out as an empty assistant bubble in any AG-UI client.
+        """
         events = await _collect(
             [
-                {"event": "on_chat_model_start", "run_id": "outer", "data": {}},
-                {"event": "on_chat_model_start", "run_id": "inner", "data": {}},
+                {"event": "on_chat_model_start", "run_id": "m1", "data": {}},
+                {"event": "on_chat_model_stream", "run_id": "m1", "data": {"chunk": _chunk("")}},
+                {"event": "on_chat_model_end", "run_id": "m1", "data": {}},
+                {"event": "on_tool_start", "run_id": "t1", "name": "update_state", "data": {"input": {}}},
+                {"event": "on_tool_end", "run_id": "t1", "data": {"output": "ok"}},
+            ]
+        )
+        assert [e.type for e in events] == ["tool_call_start", "tool_call_args", "tool_call_end", "tool_call_result"]
+
+    @pytest.mark.asyncio
+    async def test_two_model_calls_do_not_share_a_message_id(self):
+        """A nested model call inside a tool gets its own run_id, so the ids must not collide.
+
+        Also the guard that `started` is keyed per run id rather than being one flag: the inner call's
+        end must close only the inner message, leaving the outer one open to close afterwards.
+        """
+        events = await _collect(
+            [
+                {"event": "on_chat_model_stream", "run_id": "outer", "data": {"chunk": _chunk("o")}},
+                {"event": "on_chat_model_stream", "run_id": "inner", "data": {"chunk": _chunk("i")}},
                 {"event": "on_chat_model_end", "run_id": "inner", "data": {}},
                 {"event": "on_chat_model_end", "run_id": "outer", "data": {}},
             ]
         )
-        assert [e.message_id for e in events] == ["outer", "inner", "inner", "outer"]
+        assert [(e.type, e.message_id) for e in events] == [
+            ("message_start", "outer"),
+            ("text_delta", "outer"),
+            ("message_start", "inner"),
+            ("text_delta", "inner"),
+            ("message_end", "inner"),
+            ("message_end", "outer"),
+        ]
 
     @pytest.mark.asyncio
     async def test_a_list_content_chunk_yields_only_its_text_blocks(self):
         """Providers that interleave text with tool-use blocks send a list; blocks without text are skipped."""
         chunk = _chunk([{"text": "a"}, {"type": "tool_use"}, {"text": "b"}])
         events = await _collect([{"event": "on_chat_model_stream", "run_id": "run-1", "data": {"chunk": chunk}}])
-        assert events == [TextDelta(message_id="run-1", content="a"), TextDelta(message_id="run-1", content="b")]
+        assert events == [
+            MessageStart(message_id="run-1"),
+            TextDelta(message_id="run-1", content="a"),
+            TextDelta(message_id="run-1", content="b"),
+        ]
 
     @pytest.mark.asyncio
     async def test_an_empty_chunk_is_dropped_rather_than_forwarded(self):

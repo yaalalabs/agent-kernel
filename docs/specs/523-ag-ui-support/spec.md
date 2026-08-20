@@ -775,12 +775,31 @@ The four adapters already respect this — `incoming`, `produced` and `context` 
 `stream` today. It is called out because PR 5 is the first place where forgetting it would cause a
 cross-session bug rather than a crash:
 
-- **ADK (PR 5) is the only adapter that must remember anything.** It has no message-start signal and
-  no message id, so it derives both: a `message_id: str | None` **local** inside `stream`, set on the
-  first `partial=True` event and cleared on the first `partial=False`.
-- The other three read correlation ids off the framework's own events and need no memory — OpenAI
-  from its stream item, LangGraph from `on_chat_model_start`'s run id, Pydantic AI from
-  `PartStartEvent.index`. PRs 4 and 6 must take that route rather than generating and storing ids.
+**Two separate questions, which an earlier draft of this section conflated:** where a *correlation id*
+comes from, and whether a *message boundary* has to be derived. Three adapters need no memory for the
+first; two need it for the second.
+
+- **Correlation ids are read off the framework's own events in three adapters** — OpenAI from its
+  stream item's `id`, LangGraph from `run_id`, Pydantic AI from `PartStartEvent.index`. PRs 4 and 6
+  must take that route rather than generating and storing ids. ADK has no id to read and must generate
+  one.
+- **Boundaries must be derived wherever the framework gives no usable message-start signal, and that
+  is ADK *and* LangGraph** — not ADK alone, as this section first claimed.
+  - **ADK** has neither a start signal nor an id: a `message_id: str | None` **local** inside
+    `stream`, set on the first `partial=True` event and cleared on the first `partial=False`.
+  - **LangGraph** has an id but its `on_chat_model_start` / `on_chat_model_end` fire around *every*
+    model call whether or not prose was streamed, so mapping them directly brackets a tool-calling
+    turn into a message with nothing in it — the empty assistant bubble §4 rule 4 exists to prevent.
+    It therefore ignores `on_chat_model_start` entirely, emits `MessageStart` on the first non-empty
+    text delta, and emits `MessageEnd` only for a call that opened. The memory is a
+    `started: set[str]` **local** inside `stream`, keyed by `run_id` because a tool that itself calls
+    a model produces a nested id and one flag would let the inner call's end close the outer message.
+    Found by reviewing PR 4, not by writing this section — see `plan.md` iteration 4.
+  - **OpenAI needs no derivation.** `response.output_item.added` / `.done` fire per output item, so a
+    tool-call-only turn produces a `function_call` item and no message boundary at all. Reading real
+    boundary events beats deriving them; nothing should be added there.
+- Whichever the adapter, **the memory is a local inside `stream`**, never an attribute — see the rule
+  above this list.
 
 **Pydantic AI's rewrite must re-plumb two things** currently inside the `async with run_stream(...)`
 block (`framework/pydanticai/pydanticai.py:205-211`): `fw_session.messages = to_jsonable_python(...)`

@@ -362,6 +362,23 @@ fidelity.
      - **`StepStart`/`StepEnd` are not emitted.** `on_chain_*` fires for every runnable in a LangGraph,
        not only the nodes a reader would call steps, so choosing which to name is its own decision
        rather than part of this mapping.
+     - **LangGraph bracketed an empty message on every tool-calling turn, and a review caught it.**
+       `on_chat_model_start` / `on_chat_model_end` were mapped directly, but LangChain fires both
+       whether or not prose was streamed — so a turn where the model emits only a tool call produced
+       `MessageStart` + `MessageEnd` with nothing between. That is exactly what §4 rule 4 restructured
+       itself to avoid ("an empty assistant bubble in any AG-UI client"), and the example frontend does
+       render it: `reduceEvent.ts` pushes an empty assistant line on `TEXT_MESSAGE_START` and
+       `Transcript.tsx` has no empty guard. It was the *common* path for the AG-UI example, whose
+       planner calls `update_agui_state` on nearly every turn. **OpenAI never had the bug** —
+       `response.output_item.added` fires per output item, so a tool-call-only turn yields a
+       `function_call` item and no message boundary — which means the two adapters in one PR disagreed
+       on the same protocol. Fixed by copying `Runtime.stream`'s `legacy_started` shape: a
+       `started: set[str]` local, `MessageStart` deferred to the first non-empty delta, `MessageEnd`
+       only for a call that opened. **The `on_chat_model_start` branch is gone**, which deviates from
+       step 2 above — the id is on the stream event, so the branch earned nothing once the boundary
+       moved. §10 was corrected too: it claimed ADK was the only adapter needing memory, conflating
+       correlation ids with boundary derivation. A set rather than one flag because a tool that calls a
+       model nests a second `run_id`; there is a test for that.
      - **One bug found by its own test.** `_tool_arguments` re-serialises LangChain's parsed input dict
        with `json.dumps(default=str)`, and `default=str` runs arbitrary `__str__` — so the encoder can
        raise anything, not just `TypeError`/`ValueError`. The first `except` was too narrow and let an

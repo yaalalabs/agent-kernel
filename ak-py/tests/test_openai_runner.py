@@ -34,8 +34,13 @@ class CalendarEvent(BaseModel):
     date: str
 
 
-def _delta_event(text: str):
-    """Build a stream event the OpenAI runner recognizes as a text delta."""
+def _delta_event(text: str, item_id: str = "msg-1"):
+    """Build a stream event the OpenAI runner recognizes as a text delta.
+
+    `item_id` defaults to the same id `_message_item()` uses, because in a real response the two
+    *are* the same value — a delta names the output item it belongs to. Fixtures that disagree would
+    let a delta keyed off the wrong field pass unnoticed.
+    """
     from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
     event = MagicMock()
@@ -43,7 +48,7 @@ def _delta_event(text: str):
     event.data = ResponseTextDeltaEvent(
         content_index=0,
         delta=text,
-        item_id="item",
+        item_id=item_id,
         logprobs=[],
         output_index=0,
         sequence_number=0,
@@ -189,7 +194,7 @@ class TestOpenAIRunnerFrameworkContext:
 
             agen = runner.stream(mock_agent, session, requests)
             first = await agen.__anext__()
-            assert first == TextDelta(message_id="item", content="hi")
+            assert first == TextDelta(message_id="msg-1", content="hi")
             await agen.aclose()  # simulate client disconnect at the yield
 
             # Write-back is after the loop, so it is skipped and the last-known-good context is preserved.
@@ -221,7 +226,7 @@ class TestOpenAIRunnerFrameworkContext:
             with caplog.at_level(logging.ERROR, logger="ak.core.runner"):
                 events = [event async for event in runner.stream(mock_agent, session, requests)]
 
-            assert events == [TextDelta(message_id="item", content="hi")]
+            assert events == [TextDelta(message_id="msg-1", content="hi")]
             assert session.get(FRAMEWORK_CONTEXT) == {"seed": 1}
             assert any("framework_context write-back was skipped" in r.message for r in caplog.records)
 
@@ -325,8 +330,8 @@ class TestOpenAIRunnerStreamEvents:
         )
         assert events == [
             MessageStart(message_id="msg-1", role="assistant"),
-            TextDelta(message_id="item", content="he"),
-            TextDelta(message_id="item", content="llo"),
+            TextDelta(message_id="msg-1", content="he"),
+            TextDelta(message_id="msg-1", content="llo"),
             MessageEnd(message_id="msg-1"),
         ]
 

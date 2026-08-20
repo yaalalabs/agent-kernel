@@ -310,7 +310,8 @@ class OpenAIRunner(BaseRunner):
             return [ReasoningDelta(message_id=data.item_id, content=data.delta)] if data.delta else []
         return []
 
-    def _map_run_item(self, name: str, item: Any) -> list[StreamEvent]:
+    @staticmethod
+    def _map_run_item(name: str, item: Any) -> list[StreamEvent]:
         """Translate one `RunItemStreamEvent` into AK events.
 
         Only the two tool names are mapped. `message_output_created` and `reasoning_item_created`
@@ -329,14 +330,14 @@ class OpenAIRunner(BaseRunner):
             return []
 
         raw = getattr(item, "raw_item", None)
-        call_id = self._raw_field(raw, "call_id")
+        call_id = OpenAIRunner._raw_field(raw, "call_id")
         if not call_id:
             _log.debug(f"OpenAI '{name}' item carries no call_id; not emitted")
             return []
 
         if name == "tool_called":
-            tool_name = self._raw_field(raw, "name") or ""
-            arguments = self._raw_field(raw, "arguments")
+            tool_name = OpenAIRunner._raw_field(raw, "name") or ""
+            arguments = OpenAIRunner._raw_field(raw, "arguments")
             events: list[StreamEvent] = [ToolCallStart(tool_call_id=call_id, name=tool_name)]
             if arguments:
                 events.append(ToolCallArgs(tool_call_id=call_id, delta=arguments))
@@ -346,7 +347,7 @@ class OpenAIRunner(BaseRunner):
         # The raw item's "output" is the string the model is shown; `item.output` is the tool's
         # own return value, which may be any object. Prefer the former, so what a UI renders is
         # what the model read.
-        content = self._raw_field(raw, "output")
+        content = OpenAIRunner._raw_field(raw, "output")
         if content is None:
             content = getattr(item, "output", None)
         return [ToolCallResult(tool_call_id=call_id, content="" if content is None else str(content))]
