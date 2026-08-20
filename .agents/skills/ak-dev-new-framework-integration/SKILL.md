@@ -129,35 +129,66 @@ class <Name>Runner(Runner):
 ```python
 from collections.abc import AsyncGenerator
 
-async def stream(self, agent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+async def stream(self, agent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
     tool_context = ToolContext(Runtime.current(), agent, session, requests)
     try:
         tool_context.set()
         fw_session = self._session(session)
         prompt = "".join(req.prompt for req in requests if isinstance(req, AgentRequestText))
 
+        # Anything remembered mid-stream is a local — see the rule below.
+        message_id: str | None = None
+
         result = await self._execute_streamed(agent, fw_session, prompt)  # framework-specific
         async for event in result:
-            delta = self._extract_text_delta(event)  # framework-specific
-            if delta:
-                yield delta
+            for ak_event in self._map_event(event, ...):  # framework-specific, returns StreamEvents
+                yield ak_event
     finally:
         tool_context.reset()
 ```
 
+**`stream()` yields typed events, not strings.** The union is in `core/event.py`: message boundaries
+(`MessageStart` / `TextDelta` / `MessageEnd`), reasoning (`ReasoningStart` / `ReasoningDelta` /
+`ReasoningEnd`), tool calls (`ToolCallStart` / `ToolCallArgs` / `ToolCallEnd` / `ToolCallResult`) and
+steps (`StepStart` / `StepEnd`). Yielding a bare `str` is rejected by `StreamChunk.event` with a
+`ValidationError`, so an unmigrated adapter fails loudly rather than degrading.
+
+Three rules the existing adapters all follow, each of which was a bug in an early draft:
+
+- **Read correlation ids off the framework's own events; never generate one you could have read.** A
+  generated id cannot correlate a tool result to the call that produced it. Generate only where the
+  framework supplies nothing — and then keep the mapping in a local.
+- **Anything remembered mid-stream is a local inside `stream()`, never an attribute.** One `Runner`
+  instance serves every agent and every concurrent session, so state on `self` would let one
+  session's boundaries close another's, or two sessions share a message id and have a client splice
+  their text together.
+- **Never open a message you might not fill.** If the framework's start signal fires for turns that
+  produce no prose (a tool-call-only turn), defer `MessageStart` until text actually arrives and emit
+  `MessageEnd` only for a message that opened — otherwise every such turn renders as an empty
+  assistant bubble.
+
 **If the framework has no native token streaming** (e.g. CrewAI, smolagents), implement `stream()` as a generator that always raises, so it satisfies the abstract method contract but fails fast with a clear message:
 
 ```python
-async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
     """
     <Name> does not support SSE streaming.
     :raises NotImplementedError: Always raised — use rest_sync mode instead.
     """
     raise NotImplementedError("<Name> does not support SSE streaming. Use rest_sync mode.")
     yield  # make this an async generator to satisfy the type contract
+
+@property
+def supports_streaming(self) -> bool:
+    """Declared False so a caller can reject a streamed request instead of provoking the raise."""
+    return False
 ```
 
-`Runtime.stream()` wraps each yielded token in a `StreamChunk`, runs it through `PostHook.on_stream_chunk()`, and forwards it to the caller (REST SSE endpoint or AWS Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new framework's streaming — just implement `Runner.stream()`.
+Declaring `supports_streaming = False` is what keeps the raise off the happy path: surfaces that
+require streaming (AG-UI, `execution.mode: stream`) check it and reject the request with a clear
+message instead of opening a stream that dies on its first event.
+
+`Runtime.stream()` wraps each yielded event in a `StreamChunk`, passes the **text-carrying** ones (`TextDelta`, `ReasoningDelta`) through `PostHook.on_stream_chunk()` and writes any edit back into the event, then forwards the chunk to the caller (REST SSE endpoint, AG-UI surface, or the queue/WebSocket pipeline). `delta` is populated only for `TextDelta`, so reasoning never reaches a plain-text client as the answer. No other core changes are needed to support a new framework's streaming — implement `Runner.stream()` and declare `supports_streaming`.
 
 ### 3c. Wire up the per-run framework context
 
@@ -375,7 +406,8 @@ Create at minimum:
 
 - [ ] `ak-py/src/agentkernel/framework/<name>/` directory with `__init__.py` and `<name>.py`
 - [ ] `<Name>Session` (if needed), `<Name>Runner`, `<Name>Agent`, `<Name>Module`, `<Name>ToolBuilder`
-- [ ] `<Name>Runner.stream()` implemented — either real token streaming or a `NotImplementedError` stub
+- [ ] `<Name>Runner.stream()` implemented — either real event streaming or a `NotImplementedError` stub
+- [ ] `<Name>Runner.supports_streaming` declared — `False` when `stream()` only raises, so callers reject instead of provoking it
 - [ ] `<Name>Runner`'s `name` (passed to `super().__init__()`) matches the session key used in `session.get/set(...)` — required for `Session.get_framework_session()` to resolve it
 - [ ] Public alias at `ak-py/src/agentkernel/<name>.py`
 - [ ] Optional dependency group in `ak-py/pyproject.toml`

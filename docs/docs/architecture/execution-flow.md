@@ -176,20 +176,32 @@ sequenceDiagram
     User->>API: POST /api/v1/chat (same payload)
     API->>RT: stream(agent, session, requests)
     RT->>RT: pre-hook pipeline (same as run)
-    loop each token
-        Run-->>RT: delta
-        RT->>Post: on_stream_chunk(delta)
-        Post-->>RT: delta (or None to drop)
-        RT-->>API: StreamChunk(delta=...)
-        API-->>User: data: {"delta": "...", "done": false, "session_id": "..."}
+    Run-->>RT: MessageStart(message_id)
+    RT-->>API: StreamChunk(event=message_start)
+    API-->>User: data: {"event": {"type": "message_start", ...}, "done": false, "session_id": "..."}
+    loop each text event
+        Run-->>RT: TextDelta(message_id, content)
+        RT->>Post: on_stream_chunk(text)
+        Post-->>RT: text (or None to drop the chunk)
+        RT-->>API: StreamChunk(delta=..., event=text_delta)
+        API-->>User: data: {"delta": "...", "event": {"type": "text_delta", ...}, "done": false, "session_id": "..."}
     end
+    Run-->>RT: MessageEnd(message_id)
+    RT-->>API: StreamChunk(event=message_end)
+    API-->>User: data: {"event": {"type": "message_end", ...}, "done": false, "session_id": "..."}
     RT->>RT: store session, clear volatile cache
     RT-->>API: StreamChunk(done=true)
-    API-->>User: data: {"delta": "...", "done": true, "session_id": "..."}
+    API-->>User: data: {"done": true, "session_id": "..."}
 ```
 
+**The frame shape, stated once.** Every frame carries `event` — the typed event it was built from.
+`delta` is present **only** for a `text_delta`, so the boundary frames above, and any tool-call frame,
+carry no `delta` key at all (the payload is dumped with `exclude_none=True`, so an absent value is an
+absent key). The terminal `{"done": true}` frame carries neither. A client that concatenates the reply
+must therefore test for the key rather than assume every non-terminal frame has one.
+
 - If a pre-hook halts (e.g., an input guardrail trips), the stream yields a single `StreamChunk` with `error` set and `done: true`.
-- **Framework support**: OpenAI Agents SDK, LangGraph, and Google ADK stream natively. CrewAI and Smolagents raise `NotImplementedError` in stream mode.
+- **Framework support**: OpenAI Agents SDK, LangGraph, Google ADK and Pydantic AI stream natively. CrewAI and Smolagents raise `NotImplementedError` and declare `supports_streaming = False`, so a streaming surface rejects the request rather than provoking the raise.
 - On AWS serverless and AWS ECS containerized, the same `StreamChunk`s are delivered as WebSocket `STREAM_CHUNK` messages instead of SSE; see below.
 
 ## The Queue Pipeline Abstraction
@@ -362,10 +374,10 @@ sequenceDiagram
         RSH->>WSGW: PostToConnection CHAT_RESPONSE
         WSGW-->>Client: {"type": "CHAT_RESPONSE", "result": ..., "session_id": ...}
     else stream mode
-        loop each token
+        loop each event
             AR->>RSH: one SQS message per StreamChunk
             RSH->>WSGW: PostToConnection STREAM_CHUNK
-            WSGW-->>Client: {"type": "STREAM_CHUNK", "delta": ..., "done": false, ...}
+            WSGW-->>Client: {"type": "STREAM_CHUNK", "event": {...}, "delta": ..., "done": false, ...}
         end
         WSGW-->>Client: {"type": "STREAM_CHUNK", "done": true, ...}
     end
@@ -384,7 +396,7 @@ See [AWS Serverless Deployment](../deployment/aws-serverless) for configuration,
 | `rest_sync` | HTTP | JSON on the same connection (server polls store) | Required | Required | AWS Lambda, AWS ECS |
 | `rest_async` | HTTP | Client polls with `request_id` | Required | Required | AWS Lambda, AWS ECS |
 | `async` | WebSocket | Single `CHAT_RESPONSE` push | Optional | Not used | AWS Lambda, AWS ECS |
-| `stream` | SSE (REST) or WebSocket (AWS serverless, AWS ECS) | Token-level `StreamChunk`s | Optional (WebSocket path) | Not used | REST API surfaces; AWS Lambda WebSocket; AWS ECS WebSocket |
+| `stream` | SSE (REST) or WebSocket (AWS serverless, AWS ECS) | Event-level `StreamChunk`s — every frame carries `event`, `delta` only on `text_delta` | Optional (WebSocket path) | Not used | REST API surfaces; AWS Lambda WebSocket; AWS ECS WebSocket |
 
 ## Multimodal Flow
 

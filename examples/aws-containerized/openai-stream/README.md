@@ -68,13 +68,11 @@ request was accepted — the reply arrives over the connection as a **sequence**
 token delta, terminated by a chunk with `"done": true`:
 
 ```json
-{"type": "STREAM_CHUNK", "delta": "Australia", "session_id": "..."}
-{"type": "STREAM_CHUNK", "delta": " won", "session_id": "..."}
-{"type": "STREAM_CHUNK", "delta": " the", "session_id": "..."}
-{"type": "STREAM_CHUNK", "delta": " 1996", "session_id": "..."}
-{"type": "STREAM_CHUNK", "delta": " Cricket", "session_id": "..."}
-{"type": "STREAM_CHUNK", "delta": " World", "session_id": "..."}
-{"type": "STREAM_CHUNK", "delta": " Cup.", "session_id": "..."}
+{"type": "STREAM_CHUNK", "event": {"type": "message_start", "message_id": "m1", "role": "assistant"}, "session_id": "..."}
+{"type": "STREAM_CHUNK", "delta": "Australia", "event": {"type": "text_delta", "message_id": "m1", "content": "Australia"}, "session_id": "..."}
+...
+{"type": "STREAM_CHUNK", "delta": " Cup.", "event": {"type": "text_delta", "message_id": "m1", "content": " Cup."}, "session_id": "..."}
+{"type": "STREAM_CHUNK", "event": {"type": "message_end", "message_id": "m1"}, "session_id": "..."}
 {"type": "STREAM_CHUNK", "done": true, "session_id": "..."}
 ```
 

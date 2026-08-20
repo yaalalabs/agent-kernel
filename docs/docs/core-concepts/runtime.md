@@ -52,8 +52,14 @@ The Runtime:
 
 `Runtime.stream(agent, session, requests)` is the streaming counterpart (used when `execution.mode: stream`). It shares the same pre-hook pipeline, then:
 
-- Iterates `agent.runner.stream(...)`, passing each token delta through every post-hook's `on_stream_chunk()`; a hook returning `None` drops that token (useful for redaction/filtering).
-- Yields a `StreamChunk(delta=...)` per surviving token, then a final `StreamChunk(done=True, session_id=...)`.
+- Iterates `agent.runner.stream(...)`, which yields **typed events**. Only the text-carrying ones
+  (`TextDelta`, `ReasoningDelta`) go through every post-hook's `on_stream_chunk()`; a hook returning
+  `None` drops the whole chunk, event included, and a hook that edits the text has its edit written
+  back into the event so `delta` and `event` cannot disagree.
+- Yields one `StreamChunk` per surviving event — `event` always, and `delta` **only for `TextDelta`**.
+  Reasoning is deliberately kept out of `delta`, which is what plain-text clients concatenate as the
+  answer and what a recorded thread stores, so boundary and tool-call frames arrive with `delta=None`.
+  Then a final `StreamChunk(done=True, session_id=...)`.
 - If a pre-hook halts, yields a single `StreamChunk(error=..., done=True)`.
 - Stores the session and clears the volatile cache in `finally`, same as `run()`.
 

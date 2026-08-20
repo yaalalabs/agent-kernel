@@ -670,6 +670,20 @@ failed on the first row. Located by `grep -rln 'data: {"delta"\|"delta": ' examp
 | example JS/HTML frontends | — | verified: no change. Zero matches for `.delta` in any example's `.html` or `.js` | — |
 | `examples/api/agui/**` | — | **not PR 7 — PR 3.** A new example ships with its own README, and it is written against the AG-UI surface rather than the SSE frame shape PR 7 corrects elsewhere. Its one forward reference (the docs page carrying the fidelity matrix) resolves when PR 7 lands in the same stack | PR 3 |
 
+**Two more surfaces, found while implementing PR 7 — the same miss a third and fourth time:**
+
+| File | What changed | Why the inventory missed it |
+|---|---|---|
+| `docs/docs/deployment/aws-containerized.md` | "one `STREAM_CHUNK` push per token delta" → per stream event | Prose describing the wire shape without naming `StreamChunk`, `delta` or `Runner.stream` |
+| `docs/docs/frameworks/pydantic-ai.md` | a whole `:::info Streaming limitation` callout claiming a streamed run "stops at the **first `output_type` match**" | Not a streaming-*contract* surface at all — a framework page, describing a limitation of `run_stream()` that PR 6 removed by replacing it |
+
+The second is worth more than a table row. That claim turned out to exist in **three** places — the
+adapter docstring, `examples/api/pydanticai-streaming/README.md`, and this callout — and all three were
+false the moment PR 6 landed, because `run_stream_events()` wraps `run()` and has no early stop. The
+first two were caught by reviewing PR 6; this one only by grepping for the *behaviour* rather than the
+identifier. A capability that is removed rather than added leaves claims behind in places the
+"what does this change touch" search never reaches, because nothing there names the changed symbol.
+
 Every row is PR 7 apart from the one example *test*, which is PR 1's. Three docs rows and the entire
 Examples table were absent until implementation of PR 1 found them:
 `architecture/overview.md` and `core-concepts/runtime.md` both describe `Runtime.stream`'s loop but

@@ -346,15 +346,22 @@ Set `execution.mode: stream` in `config.yaml` (or `AK_EXECUTION__MODE=stream`) t
 **Response:** A stream of `data:` events, each a JSON-encoded chunk:
 
 ```
-data: {"delta": "Hello", "done": false, "session_id": "user-123"}
+data: {"event": {"type": "message_start", "message_id": "m1", "role": "assistant"}, "done": false, "session_id": "user-123"}
 
-data: {"delta": " world", "done": false, "session_id": "user-123"}
+data: {"delta": "Hello", "event": {"type": "text_delta", "message_id": "m1", "content": "Hello"}, "done": false, "session_id": "user-123"}
 
-data: {"delta": "!", "done": true, "session_id": "user-123"}
+data: {"delta": " world", "event": {"type": "text_delta", "message_id": "m1", "content": " world"}, "done": false, "session_id": "user-123"}
+
+data: {"event": {"type": "message_end", "message_id": "m1"}, "done": false, "session_id": "user-123"}
+
+data: {"done": true, "session_id": "user-123"}
 
 ```
 
-Reassemble the `delta` fields in order to build the full response. The final chunk has `"done": true`. If an unrecoverable error occurs mid-stream, the final chunk contains `"error"` instead of `"delta"`.
+Every frame carries `event` — the typed event it was built from — and `delta` appears **only** on a
+`text_delta`. Boundary and tool-call frames therefore have no `delta` key at all, and the terminal
+`{"done": true}` frame has neither: reassemble by testing for the key rather than by position. If an
+unrecoverable error occurs mid-stream, the final chunk contains `"error"` instead.
 
 **Client example (Python):**
 

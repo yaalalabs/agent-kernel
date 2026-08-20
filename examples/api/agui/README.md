@@ -89,6 +89,17 @@ rather than guessed from a timer, so it is accurate even when a step takes a lon
 Not every agent fills every row: an agent whose framework reports no reasoning simply never produces a
 thinking block. The per-adapter matrix in the AG-UI docs page says which events each one can emit.
 
+**The demo agent fills three of the four rows out of the box.** Tool calls come from
+`count_open_tasks` and from the shared-state tools, so a card appears whenever the agent reads or
+writes the list. **Reasoning is opt-in**, because the model this example defaults to emits none and
+running a reasoning model on every CI build would be slower and pricier for no gain:
+
+    AK_DEMO_REASONING_MODEL=<a reasoning-capable model> python app.py
+
+That switches the agent onto that model and asks for a reasoning *summary* — the summary is what the
+adapter maps, so a reasoning model alone still renders nothing. With it set, ask for something worth
+planning and the dimmed thinking block fills in above the answer, on its own message id.
+
 There is no `execution: mode: stream` in `config.yaml`, and that is deliberate: AG-UI delivers every
 run as a stream by definition, so this surface does not consult the execution mode.
 
@@ -162,6 +173,10 @@ Open <http://localhost:5173> and try:
   conversation, because the `threadId` is reused
 - **New conversation** — a fresh `threadId`, so the agent's memory and the shared state both reset
 - `what time is it for me?` — the agent reads the context the browser attached
+- `how many tasks are left?` — a tool card appears for `count_open_tasks`, arguments and result
+  included, and the status strip reads `Calling count_open_tasks` while it runs
+- with `AK_DEMO_REASONING_MODEL` set, `which of my tasks should I do first?` — the thinking block
+  fills in first, then the answer, on two different message ids
 
 ## Talking to it without a browser
 

@@ -903,12 +903,14 @@ In `async` mode the agent completes, then the full response is broadcast as a si
 
 **Receiving Responses (stream mode)**
 
-In `stream` mode each generated token arrives as a separate `STREAM_CHUNK` message. Reassemble the `delta` fields in order. The chunk with `"done": true` signals the end of the stream. If an unrecoverable error occurs, the final chunk contains an `error` field instead of `delta`. Every chunk also carries the `session_id` from the original request.
+In `stream` mode each stream event arrives as a separate `STREAM_CHUNK` message. Every chunk carries `event` — the typed event it was built from — while `delta` appears **only** on a `text_delta`, so boundary and tool-call chunks have no `delta` key at all and the terminal chunk has neither. Reassemble by testing for the key rather than by position. The chunk with `"done": true` signals the end of the stream; if an unrecoverable error occurs, the final chunk contains an `error` field instead. Every chunk also carries the `session_id` from the original request.
 
 ```json
-{"type": "STREAM_CHUNK", "delta": "Hello",  "done": false, "session_id": "user-123"}
-{"type": "STREAM_CHUNK", "delta": " world", "done": false, "session_id": "user-123"}
-{"type": "STREAM_CHUNK", "delta": "!",      "done": true,  "session_id": "user-123"}
+{"type": "STREAM_CHUNK", "event": {"type": "message_start", "message_id": "m1", "role": "assistant"}, "done": false, "session_id": "user-123"}
+{"type": "STREAM_CHUNK", "delta": "Hello",  "event": {"type": "text_delta", "message_id": "m1", "content": "Hello"},  "done": false, "session_id": "user-123"}
+{"type": "STREAM_CHUNK", "delta": " world", "event": {"type": "text_delta", "message_id": "m1", "content": " world"}, "done": false, "session_id": "user-123"}
+{"type": "STREAM_CHUNK", "event": {"type": "message_end", "message_id": "m1"}, "done": false, "session_id": "user-123"}
+{"type": "STREAM_CHUNK", "done": true, "session_id": "user-123"}
 ```
 
 Error chunk:

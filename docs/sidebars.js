@@ -141,6 +141,7 @@ const sidebars = {
         'advanced/sandbox',
         'advanced/knowledge-bases',
         'advanced/queue-mode-guide',
+        'advanced/agui',
         {
           type: 'category',
           label: 'Guardrails',

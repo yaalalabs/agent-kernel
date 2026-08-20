@@ -52,6 +52,37 @@ multimodal:
   storage_type: in_memory             # Default - no session bloat
 ```
 
+## Attachment Source Forms
+
+`AgentRequestImage.image_data` and `AgentRequestFile.file_data` accept several source forms, and what
+`MultimodalPreHook` does with each differs. Only inline bytes can be described by a vision model or
+stored — a URL is a reference to something the hook never reads.
+
+| Source form | Example | Described | Stored | Reaches the agent |
+|---|---|---|---|---|
+| Bare base64 | `iVBORw0KGgo...` | ✅ | ✅ | As a description, plus an `attachment_id` |
+| `data:` URI, base64 | `data:image/png;base64,iVBOR...` | ✅ | ✅ | As above. The URI's own media type wins over `mime_type` |
+| `data:` URI, no base64 marker | `data:text/plain,hello` | ❌ | ❌ | Passed through untouched |
+| `http://` / `https://` URL | `https://cdn.example.com/a.png` | ❌ | ❌ | Passed through untouched |
+| `s3://` URL | `s3://bucket/key.pdf` | ❌ | ❌ | Passed through untouched |
+
+"Passed through untouched" is the important row. The hook neither describes nor stores these, and — as
+of the source-form work — it no longer *strips* them either: the request travels on to the framework
+adapter with the URL intact, so an adapter that can fetch a URL itself (as several can) gets the chance
+to. Previously they were consumed and dropped, so the agent saw nothing at all.
+
+A `data:` URI with an empty payload (`data:image/png;base64,`) is dropped rather than forwarded, since
+there are no bytes to describe and nothing for an adapter to fetch. Scheme and media-type matching is
+case-insensitive.
+
+:::warning With Conversation Thread Support enabled, only bare base64 is safe
+The table above describes the **thread-off** path. When threads are enabled,
+`ConversationThreadManager.store_attachments` stores `image_data` / `file_data` verbatim before the
+hook runs and does no source-form classification — so a `data:` URI or a URL is persisted corrupted,
+and the description the agent later sees is of those corrupted bytes. Bare base64 is unaffected. This
+is tracked as a follow-up; until it lands, send bare base64 when threads are on.
+:::
+
 ## Attachment Storage
 
 Attachments are stored **outside** the session to prevent session bloat. The storage backend is independent of your session storage; you can use Redis sessions with in-memory attachment storage, or vice versa.

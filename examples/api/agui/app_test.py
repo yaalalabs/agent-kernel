@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -146,3 +147,47 @@ async def test_client_context_reaches_the_agent_as_tool_output(base_url):
     events = await collect(base_url, run_input(prompt, str(uuid.uuid4()), context=context))
     text = "".join(e["delta"] for e in events if e["type"] == "TEXT_MESSAGE_CONTENT")
     assert "vermilion" in text.lower(), text
+
+
+@pytest.mark.asyncio
+async def test_a_tool_call_is_streamed_as_tool_call_events(base_url):
+    """The tool-call half of the demo, which only became reachable once the adapters were migrated.
+
+    `count_open_tasks` is a plain function tool, so what this proves is the whole outbound chain for a
+    tool call: the adapter's run-item mapping, `to_agui`, and the encoder. The prompt names the tool
+    for the same reason the context test does — the capability is that the call *surfaces as events*,
+    not that the model infers its way to it.
+    """
+    thread_id = str(uuid.uuid4())
+    state = {"tasks": [{"title": "milk", "done": False}, {"title": "bread", "done": True}]}
+    events = await collect(base_url, run_input("Call count_open_tasks and tell me the number.", thread_id, state=state))
+    types = [event["type"] for event in events]
+
+    assert "TOOL_CALL_START" in types, types
+    assert "TOOL_CALL_END" in types, types
+
+    # The call and its result correlate on one id, which is what lets a client attach the result to
+    # the card it already rendered.
+    call_ids = {event["toolCallId"] for event in events if event["type"].startswith("TOOL_CALL_")}
+    assert len(call_ids) >= 1
+    started = [e for e in events if e["type"] == "TOOL_CALL_START"]
+    assert any(e["toolCallName"] == "count_open_tasks" for e in started), [e.get("toolCallName") for e in started]
+
+
+@pytest.mark.skipif(not os.getenv("AK_DEMO_REASONING_MODEL"), reason="reasoning is opt-in; set AK_DEMO_REASONING_MODEL")
+@pytest.mark.asyncio
+async def test_reasoning_is_streamed_on_its_own_events_when_enabled(base_url):
+    """Skipped by default, and deliberately so: the CI model emits no reasoning, and pointing this
+    example at a reasoning model on every PR would make it slower and pricier for no coverage gain.
+
+    Asserting the *separation* rather than the content — reasoning must arrive on REASONING_MESSAGE_*
+    and never inside TEXT_MESSAGE_CONTENT, which is what keeps chain-of-thought out of the answer a
+    plain-text client concatenates (§4 rule 5).
+    """
+    events = await collect(base_url, run_input("Plan the order to do two errands in, briefly.", str(uuid.uuid4())))
+    types = [event["type"] for event in events]
+
+    assert "REASONING_MESSAGE_START" in types, types
+    reasoning_ids = {e["messageId"] for e in events if e["type"].startswith("REASONING_MESSAGE_")}
+    answer_ids = {e["messageId"] for e in events if e["type"].startswith("TEXT_MESSAGE_")}
+    assert reasoning_ids and not (reasoning_ids & answer_ids), (reasoning_ids, answer_ids)

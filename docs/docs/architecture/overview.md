@@ -244,13 +244,18 @@ sequenceDiagram
     alt halted by pre-hook
         R-->>U: StreamChunk(error=..., done=true)
     else streaming
-        loop each token delta
-            Run-->>R: delta (str)
-            R->>PoH: on_stream_chunk(delta)
-            alt hook returns None
-                Note over R: token dropped
-            else
-                R-->>U: StreamChunk(delta=...)
+        loop each stream event
+            Run-->>R: StreamEvent (text, reasoning, tool call or boundary)
+            alt event carries text
+                R->>PoH: on_stream_chunk(text)
+                alt hook returns None
+                    Note over R: chunk dropped, event included
+                else
+                    Note over R: edit written back into the event
+                    R-->>U: StreamChunk(event=..., delta=... if text_delta)
+                end
+            else boundary or tool call
+                R-->>U: StreamChunk(event=...)
             end
         end
         R->>R: store session, clear volatile cache
