@@ -173,6 +173,16 @@ class TestSingletonAndConfiguration:
         with pytest.raises(AKConfigError, match="delivers to \\['sqs'\\] transports, but the configured queue transport is 'in_memory'"):
             ScheduleManager(provider=_sqs_only_provider(), store=store)
 
+    def test_incompatible_pairing_without_a_schedule_block_still_reports_a_config_error(self, store, monkeypatch):
+        """A manager built with its own backends gets the same diagnosis, named by the provider class."""
+        AKConfig._reset()
+        base = AKConfig.get()
+        monkeypatch.setattr(AKConfig, "get", classmethod(lambda cls: base.model_copy(update={"schedule": None})))
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+
+        with pytest.raises(AKConfigError, match="schedule provider 'EventBridgeScheduleProvider' delivers to \\['sqs'\\] transports"):
+            ScheduleManager(provider=_sqs_only_provider(), store=store)
+
     def test_compatible_provider_and_transport_are_accepted(self, store, monkeypatch):
         _configure_schedule(monkeypatch, provider={"type": "eventbridge"}, store={"type": "dynamodb"})
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))

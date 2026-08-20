@@ -268,6 +268,11 @@ class ScheduleManager:
         The declared transport type is resolved rather than the transport itself, so the check
         holds on deployments whose pipeline transport class is not the one consuming the queue.
 
+        Unlike the two topology guards below, an absent ``schedule`` block does not skip the check:
+        the pairing is undeliverable whoever supplied the provider, so a caller that constructed
+        the manager with backends of its own is told the same thing — under the provider's class
+        name, since no configured name exists to quote.
+
         :raises AKConfigError: If the pairing cannot deliver a trigger.
         """
         supported_transports = type(self._provider).supported_transports
@@ -276,7 +281,8 @@ class ScheduleManager:
         transport_type = QueueTransportFactory.resolve_type()
         if transport_type in supported_transports:
             return
-        provider_type = AKConfig.get().schedule.provider.type
+        schedule_config = AKConfig.get().schedule
+        provider_type = schedule_config.provider.type if schedule_config is not None else type(self._provider).__name__
         raise AKConfigError(
             f"schedule provider '{provider_type}' delivers to {sorted(supported_transports)} transports, "
             f"but the configured queue transport is '{transport_type}'"
