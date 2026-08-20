@@ -224,6 +224,31 @@ Spec section references are to `spec.md`.
 - **Steps:** wire `QueueTransportContract` into integration CI; add the chart smoke job per
   flavor values file.
 - **Verify:** CI green on a PR touching the pipeline; `uv run pytest` + `make lint-check-all`.
+- **Delivered 2026-08-20:** `ak-py/tests/test_transport_contract_live.py` runs the unchanged
+  `QueueTransportContract` against real brokers, env-gated (`AK_TEST_NATS_URL` /
+  `AK_TEST_KAFKA_BOOTSTRAP`; skipped in normal runs) with per-test unique streams/topics for
+  isolation on a shared broker; a `transport-integration-tests` job in `test-reusable.yaml`
+  starts the transport examples' compose stacks (broker services only) and runs it on every PR;
+  and `chart-test.yaml` (path-filtered) runs `ct lint`, renders every flavor and optional tier,
+  then kind-smokes each flavor values file with one real chat request through NATS: dev
+  auto-provisions, while baremetal and eks install the Gateway API v1.6.0 CRDs and a real NACK
+  controller so `autoProvision: false` verifies operator-reconciled objects; the CI overlays in
+  `ak-deployment/ak-k8s/ci/` swap only storage class and sizing. The transport examples'
+  `test-config.yaml` registration (deferred from iterations 7/8) was found already landed.
+- **Findings pinned in the live-contract file:** the NATS per-partition pull window
+  (`fetch_wait / partitions`) must stay below `ack_wait` or the server redelivers an in-flight
+  message into the still-open pull, duplicating it within one fetch (found live, invisible on
+  the fake); the contract's fixed group ids need partition counts chosen from the real
+  partitioner mappings (crc32 % 4 for NATS; Kafka's murmur2 needs 8, since 4 collides s1 with
+  s2); Kafka topic creation polls metadata before use since the pipeline never auto-creates.
+- **Verified 2026-08-20 locally:** live contract green twice against real single-node
+  JetStream and KRaft brokers (19 passed, 1 justified Kafka timeout_redelivery skip, ~88 s);
+  baremetal and eks flavor smokes end to end on kind (NACK reconciled 2 Streams + 8 Consumers
+  to Created, Gateway/HTTPRoute applied unreconciled, live chat replies through NATS), dev
+  flavor already verified in iteration 10; full `uv run pytest` green apart from the
+  pre-existing `test_cli_tester.py` OPENAI_API_KEY dependence (passes with the key, which CI
+  sets); `make lint-check-all` green. The workflow runs themselves become observable on the
+  next PR touching the pipeline.
 
 ## Iteration 12: Sync docs and skills (final)
 

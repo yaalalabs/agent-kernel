@@ -1,0 +1,170 @@
+name: Chart Test
+
+# The #495 chart gates: ct lint plus a kind install smoke per flavor values file, each driving
+# one real chat request through the NATS transport (spec Testing). The dev flavor runs
+# auto-provisioned JetStream; baremetal and EKS run their production posture on kind: Gateway
+# API objects against installed CRDs (unreconciled without a controller, so entry is a
+# port-forward) and JetStream objects reconciled from the chart's NACK CRs by a real NACK
+# controller, with only storage and sizing overlaid from ak-deployment/ak-k8s/ci/.
+
+on:
+  pull_request:
+    paths:
+      - 'ak-deployment/ak-k8s/**'
+      - 'examples/k8s/**'
+      - 'ak-py/src/agentkernel/pipeline/**'
+      - '.github/workflows/chart-test.yaml'
+  push:
+    branches:
+      - develop
+    paths:
+      - 'ak-deployment/ak-k8s/**'
+      - 'examples/k8s/**'
+      - 'ak-py/src/agentkernel/pipeline/**'
+      - '.github/workflows/chart-test.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CHART_DIR: ak-deployment/ak-k8s/chart
+  GATEWAY_API_VERSION: v1.6.0
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2
+
+      - name: Build chart dependencies
+        run: helm dependency build "$CHART_DIR"
+
+      - name: ct lint
+        run: ct lint --config ak-deployment/ak-k8s/ci/ct.yaml
+
+      - name: Render every flavor and mode
+        # ct lint only exercises chart/ci/*-values.yaml; render the flavor files and the
+        # optional tiers explicitly so a template regression in any of them fails here.
+        run: |
+          for values in values.yaml values-dev.yaml values-baremetal.yaml values-eks.yaml; do
+            echo "--- $values"
+            helm template smoke "$CHART_DIR" -f "$CHART_DIR/$values" > /dev/null
+          done
+          echo "--- websocket mode"
+          helm template smoke "$CHART_DIR" -f "$CHART_DIR/values-baremetal.yaml" \
+            --set execution.mode=stream --set wsGateway.enabled=true \
+            --set wsGateway.auth.token=render --set keda.enabled=true > /dev/null
+          echo "--- kafka mode"
+          helm template smoke "$CHART_DIR" \
+            --set transport.type=kafka --set kafka.enabled=true --set nats.enabled=false \
+            --set keda.enabled=true > /dev/null
+
+  kind-smoke:
+    needs: lint
+    # The chat request needs OPENAI_API_KEY, which fork PRs cannot see.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork != true }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [dev, baremetal, eks]
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Build agentkernel wheel
+        working-directory: ak-py
+        run: ./build.sh
+
+      - name: Build example images
+        working-directory: examples/k8s/openai-queue-mode
+        run: |
+          ./build.sh local
+          cd deploy && ./package.sh local
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: chart-smoke
+
+      - name: Load images
+        run: kind load docker-image ak-example-io-handler:dev ak-example-agent-runner:dev --name chart-smoke
+
+      - name: Install Gateway API CRDs and NACK (production-posture flavors)
+        if: matrix.flavor != 'dev'
+        run: |
+          kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml"
+          kubectl apply -f https://github.com/nats-io/nack/releases/latest/download/crds.yml
+          helm repo add nats https://nats-io.github.io/k8s/helm/charts/
+          # NACK retries the NATS connection until the release's server exists.
+          helm install nack nats/nack --set jetstream.nats.url=nats://ak-nats:4222 --wait --timeout 120s
+
+      - name: Install chart
+        run: |
+          kubectl create secret generic openai --from-literal=api-key="${{ secrets.OPENAI_API_KEY }}"
+          helm dependency build "$CHART_DIR"
+          if [[ "${{ matrix.flavor }}" == "dev" ]]; then
+            VALUES=(-f "$CHART_DIR/values-dev.yaml" -f "$CHART_DIR/ci/kind-smoke-values.yaml")
+          else
+            VALUES=(-f "$CHART_DIR/values-${{ matrix.flavor }}.yaml" -f "ak-deployment/ak-k8s/ci/${{ matrix.flavor }}-smoke-values.yaml")
+          fi
+          helm install ak "$CHART_DIR" "${VALUES[@]}" \
+            --set 'extraEnv[0].name=OPENAI_API_KEY' \
+            --set 'extraEnv[0].valueFrom.secretKeyRef.name=openai' \
+            --set 'extraEnv[0].valueFrom.secretKeyRef.key=api-key' \
+            --wait --timeout 600s
+
+      - name: Chat request through NATS
+        run: |
+          kubectl port-forward service/ak-agent-kernel-io 18000:80 &
+          trap "kill %1" EXIT
+          sleep 3
+          RESPONSE=$(curl -sf -m 120 -X POST http://localhost:18000/api/v1/chat \
+            -H 'Content-Type: application/json' \
+            -d '{"prompt": "What is 17 * 23? Answer with the number only.", "session_id": "ci-smoke-1", "agent": "triage"}')
+          echo "Response: $RESPONSE"
+          RESULT=$(echo "$RESPONSE" | jq -r '.result')
+          if [[ -z "$RESULT" || "$RESULT" == "null" || "$RESULT" == Error* ]]; then
+            echo "Chat request failed: $RESPONSE"
+            exit 1
+          fi
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl get events --sort-by=.lastTimestamp | tail -40
+          for deployment in ak-agent-kernel-io ak-agent-kernel-agent-runner; do
+            echo "--- logs: $deployment"
+            kubectl logs "deployment/$deployment" --tail=60 || true
+          done
+          kubectl get stream,consumer -A 2>/dev/null || true
