@@ -916,10 +916,10 @@ means deploying in queue mode.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,schedule]>=0.8.1",
+    "agentkernel[openai,api,cron]>=0.8.1",
 ]
 ```
-The `schedule` extra brings `croniter`, needed for cron parsing.
+The `cron` extra brings `croniter`, needed for cron parsing.
 
 2. Update `config.yaml`. The presence of the `schedule` block is what enables the capability — there is
    no handler to mount and nothing to change in `app.py`:
@@ -990,7 +990,7 @@ curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,schedule]>=0.8.1",
+    "agentkernel[openai,api,aws,cron]>=0.8.1",
 ]
 ```
 ```yaml
@@ -1012,7 +1012,7 @@ them. See the `ak-cloud-deploy` skill.
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,schedule]>=0.8.1",   # or valkey
+    "agentkernel[openai,api,redis,cron]>=0.8.1",   # or valkey
 ]
 ```
 ```yaml

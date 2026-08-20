@@ -70,10 +70,10 @@ if __name__ == "__main__":
     RESTAPI.run()
 ```
 
-Cron parsing needs the `schedule` extra:
+Cron parsing needs the `cron` extra:
 
 ```bash
-pip install "agentkernel[schedule]"
+pip install "agentkernel[cron]"
 ```
 
 ## Chat Request Fields

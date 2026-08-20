@@ -52,7 +52,7 @@ pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
 For cron parsing with the Scheduling capability (the `eventbridge` provider rides the `aws` extra):
 
 ```bash
-pip install "agentkernel[schedule]"
+pip install "agentkernel[cron]"
 ```
 
 **Requirements:**
@@ -1475,7 +1475,7 @@ thread: # optional; configures Conversation Thread Support (enabled by mounting 
 execution:
   mode: rest_sync
   queues:
-    # type: in_memory | sqs | kafka | nats — omit to auto-detect (sqs if input.url is set, else in_memory)
+    type: sqs # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass — mandatory whenever this block is declared
     input:
       url: https://queue.example.com/<accountno>/<queuename> # sqs transport only
       max_receive_count: 3

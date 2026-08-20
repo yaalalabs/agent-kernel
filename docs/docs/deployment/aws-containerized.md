@@ -243,6 +243,54 @@ For the full example see [examples/aws-containerized/openai-dynamodb-scalable](h
 
 For queue mode internals see [Queue Mode Guide](../advanced/queue-mode-guide.md).
 
+## Scheduling (EventBridge Scheduler)
+
+Deferred and recurring chats run on AWS EventBridge Scheduler, which delivers each occurrence as a
+trigger message to the Input Queue. **Scheduling requires `queue_mode = true`** — there is no
+non-queue path for it.
+
+Two Terraform variables turn on the infrastructure, both `false` by default and fully `count`-gated:
+
+| Variable | Description | Type | Default |
+|---|---|---|---|
+| `enable_scheduling` | Create the EventBridge Scheduler schedule group and the execution role Scheduler assumes to deliver triggers to the Input Queue, grant both ECS task roles `scheduler:*Schedule` + `iam:PassRole`, and inject their coordinates. Requires `queue_mode = true`. | `bool` | `false` |
+| `create_dynamodb_schedule_table` | Create the DynamoDB schedule store table (partition `task_id`, no sort key, no GSI, TTL on `expiry_time`) and inject its generated name as `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` | `bool` | `false` |
+
+```hcl
+queue_mode                     = true
+enable_scheduling              = true
+create_dynamodb_schedule_table = true
+```
+
+**Terraform is only half of it.** The module injects the group, role, queue and table coordinates but
+never `schedule.provider.type` or `schedule.store.type` — the same rule as `thread.type`. The
+application's `config.yaml` must declare the backends:
+
+```yaml
+schedule:
+  provider:
+    type: eventbridge
+  store:
+    type: dynamodb
+```
+
+Setting the flags without that block leaves scheduling on the default `local` provider and `in_memory`
+store, and the provisioned group and table sit unused with no error.
+
+Two further consequences worth knowing:
+
+- `enable_scheduling` flips the **Input Queue** to `content_based_deduplication = true` (an in-place
+  update on an existing queue). EventBridge Scheduler cannot set a `MessageDeduplicationId`, so
+  without it two occurrences carrying an otherwise identical trigger body would collapse into one
+  inside the 5-minute dedup window. Application senders are unaffected — they always send an explicit
+  `MessageDeduplicationId`, which takes precedence. The Output Queue is untouched.
+- Both task roles get the schedule permissions: the REST service serves the `/api/v1/schedules`
+  management routes (amend and cancel reach Scheduler), and the agent runner hosts the
+  `create_schedule` / `update_schedule` / `delete_schedule` agent tools.
+
+For the full example see [examples/aws-containerized/openai-schedule](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-schedule),
+and for the application side see the [Scheduling guide](../advanced/scheduling.md).
+
 ## WebSocket Mode
 
 Set `execution_mode = "async"` to front the ECS service with a **WebSocket API Gateway**
@@ -665,4 +713,6 @@ See [examples/aws-containerized](https://github.com/yaalalabs/agent-kernel/tree/
 [openai-websocket-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-websocket-scalable),
 [openai-stream](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream),
 and [openai-stream-queue-mode](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-stream-queue-mode)
-for WebSocket mode.
+for WebSocket mode, and
+[openai-schedule](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-schedule)
+for deferred and recurring chats on EventBridge Scheduler.
