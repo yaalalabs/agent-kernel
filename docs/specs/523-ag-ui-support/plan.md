@@ -166,13 +166,14 @@ is testable at each step.
 
 - **Goal:** a compliant AG-UI client can discover agents, start a run, receive the event stream, and
 round-trip state.
-- **Files:** `core/base.py`, `core/agui_state.py` (new), `core/tool.py`, `core/config.py`,
+- **Files:** `core/base.py`, `core/client_state.py` (new), `core/tool.py`, `core/config.py`,
+`agui.py` (new — the top-level alias module every integration has, e.g. `thread.py`),
 `ak-py/pyproject.toml`, `integration/agui/` (new, 4 modules), `examples/api/agui/` (new),
-plus four new test files
+`.github/test-config.yaml`, plus four new test files
 - **Steps:**
   1. **Session key first** — `Session.Keys.AGUI_STATE` and its three accessors (§5). Independently
     testable, and everything else leans on it.
-  2. `core/agui_state.py` — the four tool functions (`get_agui_state`, `update_agui_state`,
+  2. `core/client_state.py` — the four tool functions (`get_agui_state`, `update_agui_state`,
     `get_forwarded_props`, `get_agui_context`), their two `SystemTool` builders, and the two
      volatile-cache key constants this module owns (§5, §6). Docstrings are the LLM-facing tool
      schema; write them as such.
@@ -188,12 +189,120 @@ plus four new test files
   6. `integration/agui/handler.py` — routes, identity, run lifecycle, `StateSnapshot` (§9).
   7. `agui` extra in `pyproject.toml`, pinned `ag-ui-protocol>=0.1.16` — the floor is confirmed, not
     pending: the multimodal `InputContent` types first appear in 0.1.16 (§ the `agui` extra).
-  8. `examples/api/agui/` — one static HTML file, no build step. It must show a tool call live *and*
-    a state round-trip, and ship the config that enables both tool groups.
-- **Verify:** `uv run pytest tests/test_agui_*.py`, then the full suite. Manually: run the example,
-attach a file, confirm streamed text renders and a `StateSnapshot` arrives. **Tool calls cannot
-render yet** — no adapter emits `ToolCallStart` until PR 4, so text arrives here via the
-transitional normalization in §4 and the tool-call half of the example is exercised at PR 4.
+  7b. **Only the filename left the protocol behind.** `core/agui_state.py` became
+    `core/client_state.py`; everything inside stayed AG-UI-named — the four tools, the two prompt
+    sections, `Session.Keys.AGUI_STATE`, the volatile-cache keys, and the `agui.state` /
+    `agui.client_context` blocks. The reason is placement, not behaviour: `core/` is framework- and
+    surface-agnostic, so a filename there naming one integration reads as a layering breach to anyone
+    scanning the directory, while the internal names are only read by someone already in the file who
+    wants to know exactly what the tools touch — and they touch AG-UI's fields.
+    A wider rename — capability names for the tools, prompt sections, session key and config as well —
+    was implemented and then **reverted**. Recorded so it is not re-proposed: the tools genuinely do
+    AG-UI work, so protocol-neutral names described them less accurately, not more. The persisted
+    session-key value never moved, so no migration is implied.
+    One claim in design.md is withdrawn rather than reversed: it said placement in `core/` was
+    *forced* because `core/` may not import `integration/`. It is not — `SystemToolFactory.get_all()`
+    already reaches outside core for the sandbox branch. Core owns these because they are core
+    capabilities.
+  8. `examples/api/agui/` — a frontend and the config that enables both tool groups. It must show a
+    tool call live *and* a state round-trip; only the second is reachable at PR 3, see below.
+     - **The "one static HTML file, no build step" constraint did not survive contact, and was
+       dropped deliberately.** A single file with runtime-compiled templates is React in name only:
+       there are no components to read, no JSX, and nothing to test. The example is now a Vite + JSX
+       app under `examples/api/agui/frontend/`, built to `dist/` and served by `app.py`. The AG-UI
+       event stream is folded into the whole UI by one pure `reduceEvent(view, event)` that imports
+       neither React nor the DOM — which is what makes reasoning, tool calls and a live status strip
+       separable components, and what makes them unit-testable with Node's built-in runner and no
+       test framework.
+     - **The app is TypeScript, and the protocol types come from `@ag-ui/core` rather than being
+       written out here.** Hand-copying ~30 event shapes would put a second, drifting definition of the
+       wire format in the repo, against a pre-1.0 protocol that is already deprecating its
+       `THINKING_*` family; taking the SDK instead type-checks the reducer's branches *and* the
+       outbound `RunAgentInput` envelope against the published format. Every use is an `import type`,
+       so it is a devDependency and neither it nor its `zod` dependency reaches the bundle — verified:
+       zero matches for `zod` in the built asset, whose size moved 198.35 → 198.57 kB. Three decisions
+       fell out of it:
+       - The transcript is a **discriminated union** (`TextLine | ToolLine`), not one shape with
+         optional fields, because `patchLine`'s callers each read only their own kind's fields. The
+         single narrowing assumption — a `messageId` names a text line, a `toolCallId` a tool line —
+         is asserted once inside `patchLine` instead of at all five call sites.
+       - `StateSchema` in the SDK is `z.any()`, deliberately: the state's shape is an agreement between
+         one agent and one client, not part of the protocol. So `types.ts` declares this demo's own
+         `DemoState` and the `STATE_SNAPSHOT` branch casts to it. That cast, and the one in `sse.ts`
+         where `JSON.parse` output is asserted to be an `AGUIEvent`, are the only two in the app and
+         both sit exactly on the trust boundary — types cannot check the wire without runtime
+         validation, so every consumer of the state reads defensively.
+       - The reducer's parameter stays strictly typed and **the test casts from `unknown` instead**.
+         The suite deliberately feeds malformed and unknown-version events (`RUN_STARTED` with no
+         `threadId`, a `SOMETHING_FROM_0_3`) because surviving them is the contract under test; typing
+         that parameter loosely to accommodate them would have destroyed narrowing in every branch.
+     - **Tests run on Node's type stripping, not a test framework.** Keeping the "no framework
+       installed" property cost `.ts` extensions in import specifiers (`allowImportingTsExtensions`)
+       and a Node 22.18 floor in `engines`; vitest would have cost 29 extra packages against the whole
+       toolchain's 9. `erasableSyntaxOnly` and `verbatimModuleSyntax` make the stripping requirement
+       machine-checked rather than a convention. One tsconfig, not the usual three — `vite.config.ts`
+       needs no Node-specific types, so the app and config share it.
+     - The type gate was **negative-tested**, not assumed: reintroducing the real `TOOL_CALL_END`
+       bug from PR 3 (reading `event.toolCallName`, a field that event does not carry) fails
+       `tsc`, as do a `TextLine` passed to `ToolCall` and a snake_cased envelope field. Verified only
+       under Node 24.18 locally; the 22.18 floor is where unflagged stripping landed upstream.
+     - **A later pass halved the prose and merged the component files** — 924 → 770 lines, 18 files →
+       14, and 14 React hook calls → 9. The hook reduction is the substantive part: nothing in the app
+       is `React.memo`'d and no React Compiler is configured, so all three `useCallback`s memoized
+       identities nothing observed, and the `useRef` they forced (to dodge the stale `view.state` their
+       dependency arrays created) went with them. Verified behaviour-preserving by a byte-identical
+       headless-Chrome DOM dump and a bundle that moved 198.57 → 198.38 kB. **CopilotKit was evaluated
+       and rejected**: its provider takes `agent` as a string naming an agent on a CopilotRuntime, so
+       adopting it means a Node service beside `app.py` — breaking single-origin serving, the
+       optional-npm property and the CI job — at a cost of 557 packages, one of which (`@scarf/scarf`)
+       runs a postinstall phone-home. `@ag-ui/client`'s `HttpAgent` was the near-miss, rejected because
+       `rxjs` and `zod` would become the app's first runtime dependencies and an observable would hide
+       the POST-and-SSE mechanics the example exists to show. The README points at CopilotKit instead.
+     - The Node toolchain is **optional**: `build.sh` warns and continues when `npm` is absent, and
+       `GET /` explains how to build. No CI job sets up Node for this example, and `app_test.py`
+       exercises the AG-UI routes rather than the page, so nothing in CI depends on the build. Where
+       npm *is* present, `npm run build` type-checks before bundling, so a type error fails the build
+       instead of shipping.
+     - "Show a tool call live" **cannot be met at PR 3** — see Verify — and the example does not try
+       to fake it. It renders reasoning, tool calls and the live status strip as first-class
+       components, tested against hand-written event sequences; they simply stay empty until PRs 4-6
+       migrate the adapters. **Nothing in the example says so**, deliberately: the seven PRs merge as
+       one stack, so by the time this reaches `develop` the adapters do emit those events and any note
+       about "not yet" would be false on arrival — the same born-stale trap as the skills notes in the
+       header. A sample-replay button was tried first and removed for exactly that reason.
+- **Verify:** `uv run pytest tests/test_agui_*.py` (131 new tests), then the full suite — green with
+**no edits to any existing test**, which is the compatibility claim for a purely additive PR.
+Manually: run the example, confirm streamed text renders and a `StateSnapshot` arrives. **Tool calls
+cannot render yet** — no adapter emits `ToolCallStart` until PR 4, so text arrives here via the
+transitional normalization in §4 and the tool-call half of the example is exercised at PR 4. The
+example's `index.html` still handles the tool-call events, so PR 4 lights it up with no example change.
+  - **The `dict` tool parameter would have shipped broken, and nothing in the plan would have caught
+    it.** `update_agui_state(updates: dict)` — the signature §6 specified — makes the OpenAI Agents
+     SDK raise `UserError: additionalProperties should not be set for object types` when it builds its
+     strict schema, so **every** agent with `agui.state.enabled` failed to *construct*. Found by
+     booting the example, not by any unit test: the tool tests call the function directly, and the
+     handler tests use scripted runners that never bind a tool. `test_client_state_tools.py` now asserts
+     all four tools bind through `OpenAIToolBuilder`, which is the guard that was missing.
+  - **Discovery leaked the system prompt.** The first version returned
+    `agent.get_description()` alongside each name; several adapters return the agent's *instructions*
+     from it (`framework/openai/openai.py:270`), so the payload contained the whole system prompt
+     including the injected system-tool guidance. Now names only, matching
+     `AgentRESTRequestHandler.list_agents`.
+  - **§9's `ChatService.execute_stream` choice was wrong and is reversed in the spec.** It cannot
+    deliver `forwardedProps` or `context` under any persistent session store — see §9 for the two
+     facts that combine to make it silently return `{}`. The handler drives `Runtime.stream` instead,
+     guarded by a test using a deep-copying session store.
+  - **An example test is registered in CI** (`.github/test-config.yaml`, `type: api`), because
+    iteration 1 established that `uv run pytest` in `ak-py` is not evidence the examples are green.
+     It is also the only test anywhere that drives a real adapter through `Runtime.stream`, `to_agui`
+     and `EventEncoder` onto a real HTTP surface. Its state-round-trip assertion depends on the model
+     actually calling `update_agui_state` — deliberately, since that call *is* the capability.
+  - **No new mypy errors** in the three existing files touched: `base.py` 2→2, `config.py` 5→5, and
+    `tool.py` 4→**2** (annotating `tools: list[SystemTool]` cleared two pre-existing errors along with
+     the two the new branches would have added). All five new modules are clean.
+  - **The conformance kit question is answered — there is none.** Four candidate PyPI names all 404,
+    and the upstream repository publishes no Python conformance package. Recorded in §*Conformance
+     kit* so it is not re-opened.
 
 
 
@@ -364,7 +473,7 @@ and is retained only to make that uniformity explicit rather than accidental.
 | `core-concepts/runtime.md` | 55-56 | **missed by the original search.** The `stream()` pipeline bullets describe passing each token delta through `on_stream_chunk` and yielding `StreamChunk(delta=...)` per token | PR 7 |
 | `advanced/multimodal.md` | — | all five source forms now work; state which are described/stored and which pass through | PR 7 |
 | `integrations/overview.md` | — | add AG-UI to the integration list | PR 7 |
-| new page under `advanced/` | — | AG-UI: routes, config, the fidelity matrix, `agui_state`, `forwardedProps`, `context`, and the tool-call redaction limit. The matrix is the row that forced this table's Owner column to PR 7 — its content is decided by PRs 4-6 | PR 7 |
+| new page under `advanced/` | — | AG-UI: routes, config, the fidelity matrix, `shared_state`, `forwardedProps`, `context`, and the tool-call redaction limit. The matrix is the row that forced this table's Owner column to PR 7 — its content is decided by PRs 4-6 | PR 7 |
 | `docs/sidebars.js` | `tutorialSidebar` → `Advanced` category | add the new AG-UI page. The sidebar enumerates every page explicitly rather than autogenerating from the filesystem, so a new `.md` file alone is invisible in the nav | PR 7 |
 | `advanced/threads.md` | — | verified: no change. It documents the `Authoriser` AG-UI now shares, but AG-UI adds no thread behaviour | — |
 
@@ -381,6 +490,7 @@ failed on the first row. Located by `grep -rln 'data: {"delta"\|"delta": ' examp
 | `examples/api/pydanticai-streaming/app_test.py` | 79 | **not PR 7 — PR 1.** A test, not a doc; it ships with the behaviour that breaks it. Listed here so the row is not mistaken for an omission | PR 1 |
 | the other three `mode: stream` examples' test files | — | verified: none exists. Only `pydanticai-streaming` has an `app_test.py` that asserts on frames | — |
 | example JS/HTML frontends | — | verified: no change. Zero matches for `.delta` in any example's `.html` or `.js` | — |
+| `examples/api/agui/**` | — | **not PR 7 — PR 3.** A new example ships with its own README, and it is written against the AG-UI surface rather than the SSE frame shape PR 7 corrects elsewhere. Its one forward reference (the docs page carrying the fidelity matrix) resolves when PR 7 lands in the same stack | PR 3 |
 
 Every row is PR 7 apart from the one example *test*, which is PR 1's. Three docs rows and the entire
 Examples table were absent until implementation of PR 1 found them:

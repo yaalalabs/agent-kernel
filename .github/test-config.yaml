@@ -104,6 +104,8 @@ e2e:
       path: examples/api/pydanticai
     - type: api
       path: examples/api/pydanticai-streaming
+    - type: api
+      path: examples/api/agui
     
     # Memory examples
     - type: memory

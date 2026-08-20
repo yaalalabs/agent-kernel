@@ -1,0 +1,13 @@
+# Mounting AGUIRequestHandler in app.py is what turns the AG-UI surface on; this block only
+# parameterizes it. Note there is no `execution: mode: stream` here — AG-UI delivers every run as a
+# stream of events by definition, so the surface does not consult the execution mode.
+agui:
+  default_agent: planner # serves POST /agui in addition to POST /agui/planner
+  # agents: [planner]    # omitted = every streaming-capable agent is reachable
+  state:
+    enabled: true # attaches get_agui_state / update_agui_state to the agents below
+  client_context:
+    enabled: true # attaches the read-only get_forwarded_props / get_agui_context
+
+api:
+  custom_router_prefix: "" # serves the demo frontend at GET / instead of GET /custom/

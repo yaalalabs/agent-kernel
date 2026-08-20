@@ -84,6 +84,10 @@ thread = [
     "litellm>=1.74.9",
 ]
 
+agui = [
+    "ag-ui-protocol>=0.1.16",
+]
+
 neo4j = [
     "neo4j>=5.0.0",
 ]

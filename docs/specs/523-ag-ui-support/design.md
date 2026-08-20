@@ -362,7 +362,7 @@ into message boundaries. That is exactly an adapter's job — translating one fr
 AK's vocabulary — and it keeps `Runtime`, `ResponseBuilder` and `to_agui` stateless. The claim is
 *no inferred state downstream of the adapter*, not no state anywhere.
   - The handler is the one exception, and only for things AG-UI itself defines rather than infers: the
-  run lifecycle, and the pre-run copy of `agui_state` it compares against to decide whether to emit
+  run lifecycle, and the pre-run copy of `shared_state` it compares against to decide whether to emit
   `StateSnapshot` (see State). Neither reconstructs anything the event stream failed to say.
 - Pydantic AI's rewrite carries a second cost: the `async with run_stream(...)` block also holds the
 session-message bookkeeping and the `framework_context` store
@@ -449,18 +449,18 @@ and reaches the agent through a read-only `get_forwarded_props()` system tool.
   per-request by nature — AG-UI re-sends it on every run, so a previous copy is never wanted — and
   `Runtime` already clears the volatile cache after every run (`core/runtime.py:229-230`). The
   correct lifetime comes for free, with nothing extra to document about expiry. Contrast
-  `agui_state`, which earns a top-level key precisely because it must survive the run.
+  `shared_state`, which earns a top-level key precisely because it must survive the run.
   - **Reached by tool, not by injection, and that is the safer shape** — the same call this design
   already makes for `RunAgentInput.context` above, which is fed to the model as tool output rather
   than as instructions. Client data should arrive where the model treats it as information, not as
   orders.
   - **Read-only: there is no `update_forwarded_props`.** AG-UI has no event to carry the field back,
-  so a write tool would mutate something nothing reads. `agui_state` has an update tool only
+  so a write tool would mutate something nothing reads. `shared_state` has an update tool only
   because `StateSnapshot` exists to carry the result. Reviewers will ask why the two are
   asymmetric; this is the reason.
   - Gated on `agui.client_context.enabled`, attached through `SystemToolFactory` by the same
-  mechanism as the AG-UI state tools — see State for the registration rules and why the flags live
-  under `agui`.
+  mechanism as the shared-state tools — see State for the registration rules and why both flags are
+  top-level rather than nested under `agui`.
   - **Known risk, accepted**: the model may simply never call the tool, and the forwarded context is
   then silently unused. Injection did not have that failure mode. First mitigation is the tool's
   docstring, which AK writes and can therefore get right in one place. If that proves too weak, the
@@ -498,24 +498,28 @@ follow-up, for the reasons at the end of this section.
     - Nesting it as `framework_context["agui_state"]` does not help: `_store_framework_context`
       merges at the *top* level, so the nested dict is one unit and is dropped or restored wholesale.
   - The ownership reason: they are different concepts sharing a shape. `framework_context` is
-    *caller* context; `agui_state` is the *UI's*. An application already keeping tenant data in
+    *caller* context; `shared_state` is the *UI's*. An application already keeping tenant data in
     `framework_context` must not collide with AG-UI writing form state into the same dict.
   - This is one more named compartment inside the existing session record, not a second session or a
     second store entry — the same way each framework adapter already keeps its state under its own
     key.
-- The session key and the tool functions live in **core**, and are **named for AG-UI anyway**.
-  - Placement is forced by coupling: `SystemToolFactory.get_all()` (`core/tool.py:178-200`) lazily
-    imports each capability's tools. A tool under `integration/agui/` would make `core/` import an
-    integration, breaking the dependency-leaf rule AG-UI otherwise honours. The code has to sit in
-    `core/`; that is not a choice.
-  - The **name** is a choice, and it is `agui_state` rather than something surface-neutral. Nothing
-    but AG-UI populates this key, and a neutral name would advertise a generality that does not
-    exist — the same reasoning that put the config under `agui` rather than at the top level.
-    Naming it honestly beats naming it aspirationally.
-  - Accepted consequence: `core/` now contains an identifier that names an integration. That is a
-    weaker version of what `AKConfig` already does with `slack`, `whatsapp` and the rest
-    (`core/config.py:696-702`), and it is a rename away from being wrong if a second surface ever
-    wants the capability — which is a cheap problem to have later, versus a misleading name now.
+- The session key and the tool functions live in **core**, and are **named for AG-UI**: the tools,
+  the prompt sections, `Session.Keys.AGUI_STATE`, the two volatile-cache keys, and the `agui.state` /
+  `agui.client_context` blocks that gate them. AG-UI is the only surface that populates any of it, and
+  naming these for the thing they actually do beats naming them for a generality no second surface has
+  asked for. A session key's value is persisted, which makes the storage name a migration to change.
+  - **The filename is the one exception**: `core/client_state.py`, not `core/agui_state.py`. That is
+    about placement, not behaviour. `core/` is framework- and surface-agnostic, so a filename there
+    naming one integration reads as a layering breach to anyone scanning the directory — a cost paid
+    by every reader, where the internal names are only read by someone already in the file. The
+    filename describes the capability's shape; the module docstring says whose capability it is.
+  - One earlier claim in this document was wrong and is withdrawn: that placement in `core/` was
+    *forced* because `core/` may not import `integration/`. `SystemToolFactory.get_all()` already
+    reaches outside core for the sandbox branch (`from ..sandbox.tools import ...`). Core owns these
+    because they are core capabilities — a reason, not a constraint.
+  - A wider rename — capability names for the tools, prompt sections, session key and config too —
+    was implemented and then **reverted**. Recorded so it is not re-proposed: the tools genuinely do
+    AG-UI work, so protocol-neutral names described them less accurately, not more.
 - Agent-facing surface is **system tools**, following multimodal's `AnalyzeAttachmentsTool` and
   sandbox's eight:
   - `get_agui_state()` returns the current dict.
@@ -526,14 +530,14 @@ follow-up, for the reasons at the end of this section.
       (`core/tool.py:186-200`): `_agent_allowed(config, agent_name)` reads exactly `enabled` and
       `agents`. `agui.client_context` gets its own branch of the same shape.
     - **Two flags, not one.** `agui.state` commits to mutation and to emitting `StateSnapshot`;
-      `client_context` only ever reads inbound fields — `forwardedProps` and `context` — and never
+      `agui.client_context` only ever reads inbound fields — `forwardedProps` and `context` — and never
       writes. An application may reasonably want the second without the first, and one combined flag
       would stop each flag meaning one thing.
     - Nested under `agui` rather than given a top-level block because the capability exists to serve
       AG-UI and nothing else turns it on. `core/` reading an integration's config **section** is not
       a coupling breach — the rule is about imports, and `AKConfig` already defines every
       integration's section (`core/config.py:696-702`). Only the short registration branches name
-      `agui`; the keys and the functions do not.
+      `agui`; the tool names and the prompt sections do not.
     - **It cannot instead follow "AG-UI is mounted."** Mounting the handler is what enables AG-UI and
       there is deliberately no `enabled` flag (see AG-UI surface), so there is no such signal in
       config. Mounting also happens in application code, potentially after agents are registered —
@@ -547,14 +551,14 @@ follow-up, for the reasons at the end of this section.
   - Two consequences to document: mounting AG-UI **without** either block yields no tools, which is
     the intended explicit opt-in; and setting `enabled: True` **without** mounting AG-UI puts the
     tools on every agent for nothing.
-- **The owner is always named, but only where it has to be** — `agui.state` in config,
+- **The owner is always named, but only where it has to be** — `client_state` in config,
   `Session.Keys.AGUI_STATE` in the session, `get_agui_state` / `update_agui_state` as tools.
   - AG-UI calls the concept *shared state*. AK deliberately does not: a bare `shared_state` says
     nothing about **whose** state it is or what it is shared *with*, and beside `session`,
     `execution` and `multimodal` it reads as a general-purpose store it is not. That AG-UI uses the
     generic term is not a reason for AK to inherit it.
   - The config key is plain `state` because the `agui` block already supplies the owner —
-    `agui.agui_state` stutters, and the objection to a bare `state` was that it is generic at *top*
+    `agui.shared_state` stutters, and the objection to a bare `state` was that it is generic at *top*
     level, which nesting removes. The session key and the tools are not nested and carry no such
     parent, so they spell it out: `AGUI_STATE`, `get_agui_state`, `update_agui_state`.
   - The rule, so a reviewer does not read the difference as an inconsistency: **name the owner
@@ -775,7 +779,7 @@ Shape of the graph:
   base-class default. It was separated to keep the integration PR small, but a six-line change is
   not a review unit — and it belongs with the streaming contract it declares.
   - *The state capability folded into PR 3.* It was separate while the session key and tools were
-  surface-neutral. Naming them `agui_state` (see State) settled that they are not: the key, the
+  surface-neutral. Naming them `shared_state` (see State) settled that they are not: the key, the
   tools and the config all say AG-UI, so reviewing them apart from AG-UI bought nothing. This
   removes the awkwardness of a PR whose config belonged to a feature it was not allowed to mention.
 - **The adapter work stays split three ways because the work differs in kind, not just in file.**

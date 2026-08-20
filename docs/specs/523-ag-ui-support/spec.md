@@ -314,8 +314,8 @@ with accessors modelled exactly on the `framework_context` trio (`core/base.py:1
 
 ```python
 def get_agui_state(self) -> dict | None:      # live dict, never auto-creates
-def set_agui_state(self, state: dict) -> dict # rejects non-dicts with TypeError
-def clear_agui_state(self) -> None
+def set_shared_state(self, state: dict) -> dict # rejects non-dicts with TypeError
+def clear_shared_state(self) -> None
 ```
 
 Absent reads back as `None`, matching `get_framework_context`. Nothing outside `Session` spells the
@@ -325,21 +325,24 @@ raw key string.
 `AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"` and `AGUI_CONTEXT_KEY = "agui_context"`, because
 `Runtime` already clears that cache after every run (`core/runtime.py:230, 275`) and both fields are
 per-request by nature — AG-UI re-sends them on every run, so a previous copy is never wanted.
-Contrast `agui_state`, which earns a top-level key precisely because it must survive the run.
+Contrast `shared_state`, which earns a top-level key precisely because it must survive the run.
 
-Both constants are defined in **`core/agui_state.py`** (§6) — not in `core/base.py`, and not in
+Both constants are defined in **`core/client_state.py`** (§6) — not in `core/base.py`, and not in
 `integration/agui/`. Each has two users: a read tool in `core/` and `run_input.py` in `integration/`,
-and `core/` may not import from `integration/`, so `core/agui_state.py` is the only placement that
+and `core/` may not import from `integration/`, so `core/client_state.py` is the only placement that
 lets both import them. `run_input.py` imports them from there rather than redeclaring the strings.
+The constants, the tools and the config blocks all keep AG-UI's names, because AG-UI is what writes
+and gates them. Only the **filename** is surface-neutral, so that `core/` carries no integration name
+in its directory listing — see design.md.
 
-### 6. System tools — `core/agui_state.py` (new)
+### 6. System tools — `core/client_state.py` (new)
 
 ```python
 AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"   # volatile-cache keys, owned here (§5)
 AGUI_CONTEXT_KEY = "agui_context"
 
 def get_agui_state() -> dict:          # returns {} when unset
-def update_agui_state(updates: dict) -> dict   # shallow merge, returns the merged dict
+def update_agui_state(updates: str) -> dict    # `updates` is a JSON object; shallow merge, returns the merged dict
 def get_forwarded_props() -> dict      # returns {} when unset
 def get_agui_context() -> list[dict]   # returns [] when unset; {description, value} pairs
 
@@ -354,12 +357,20 @@ def get_client_context_tools() -> list[SystemTool] # gated by agui.client_contex
 - `update_agui_state` shallow-merges, matching `_store_framework_context`'s semantics
   (`core/base.py:299`). A key set to `None` by the caller is stored as `None`, not deleted — deletion
   is the client's job via a fresh `state` on the next request.
+- **`updates` is a JSON object string, not a `dict`, and this is forced rather than stylistic.** The
+  OpenAI Agents SDK builds a strict JSON schema from the signature and rejects a `dict` parameter
+  outright — `UserError: additionalProperties should not be set for object types` — so with a `dict`
+  parameter *every* agent with `agui.state.enabled` fails to construct, not just at call time.
+  Verified by probing the SDK: only **parameters** are affected, so the three readers keep their
+  `dict` / `list[dict]` return types. The tool parses the string and returns `{"error": ...}` on
+  malformed input rather than raising, matching the sandbox tools' contract. A binding test in
+  `test_client_state_tools.py` guards it.
 - One config block, two tools. `agui.client_context` gates both `get_forwarded_props` and
   `get_agui_context`: they are the same capability — read-only, client-supplied, pull-based context
   the model may consult but must not obey — and splitting them into two flags would make an operator
-  reason about a distinction that does not exist. The block is named for the capability rather than
-  for `forwardedProps` alone, because it governs both inbound fields; the AG-UI field keeps its own
-  name everywhere it appears on the wire.
+  reason about a distinction that does not exist. The block is named `client_context` rather than for
+  `forwardedProps` alone, because it governs both inbound fields; the AG-UI field keeps its own name
+  everywhere it appears on the wire.
 - Docstrings are load-bearing: they are the tool descriptions the model reads, and
   `get_forwarded_props`' and `get_agui_context`' docstrings are the only mitigation for the "model
   never calls it" risk `design.md` accepts. They must say what the data is and when to call, and must not describe
@@ -373,12 +384,12 @@ Two further branches of the shape already used twice:
 agui_cfg = getattr(AKConfig.get(), "agui", None)
 state_cfg = getattr(agui_cfg, "state", None) if agui_cfg else None
 if state_cfg and state_cfg.enabled and SystemToolFactory._agent_allowed(state_cfg, agent_name):
-    from .agui_state import get_agui_state_tools
+    from .shared_state import get_agui_state_tools
     tools.extend(get_agui_state_tools())
 
 cc_cfg = getattr(agui_cfg, "client_context", None) if agui_cfg else None
 if cc_cfg and cc_cfg.enabled and SystemToolFactory._agent_allowed(cc_cfg, agent_name):
-    from .agui_state import get_client_context_tools   # get_forwarded_props + get_agui_context
+    from .shared_state import get_client_context_tools   # get_forwarded_props + get_agui_context
     tools.extend(get_client_context_tools())
 ```
 
@@ -538,7 +549,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
   | Method | Path | Purpose |
   |---|---|---|
-  | `GET` | `/agui/agents` | discovery; lists the **intersection** of `supports_streaming` agents and `agui.agents` |
+  | `GET` | `/agui/agents` | discovery; lists the **intersection** of `supports_streaming` agents and `agui.agents`, as `{"agents": [name, ...]}` |
   | `POST` | `/agui/{agent_name}` | run an agent |
   | `POST` | `/agui` | run the default agent, registered only when one is configured |
 
@@ -546,6 +557,10 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
   router-level `Depends`, which do not hand their return value to the endpoint. Nothing is copied:
   the base class already parses the Bearer header and maps failures to 401, and the constructor above
   has already guaranteed an authoriser exists, so the base's open-route branch is unreachable here.
+- **Discovery publishes names only**, matching `AgentRESTRequestHandler.list_agents`
+  (`api/handler.py:101`). Not `agent.get_description()`: several adapters return the agent's
+  *instructions* from it (`framework/openai/openai.py:270`), so including it would publish the system
+  prompt — the injected system-tool guidance included — to every authorised caller.
 - Both run routes enforce `agui.agents` before anything else: an agent absent from the list is
   treated exactly as an unknown agent (404), so the surface never reveals that a name exists but is
   not exposed. `default_agent` is validated against the same list at startup.
@@ -609,9 +624,28 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
       not extend to silently discarding the input the user just sent.
   - *Outbound* — `to_agui` returns `None` for any AK event it cannot fully populate, and the handler
     skips `None`, which is what "never emits an event type it cannot fully populate" means in code.
-- The handler calls `ChatService.execute_stream` — the execution core, not the presentation wrappers
-  — because it owns its own transport and error shape. This is the Slack precedent in
-  `ak-dev-architecture`'s routing rubric.
+- **The handler drives `Runtime.stream` directly, and this reverses an earlier decision in this
+  spec.** It used to specify `ChatService.execute_stream`, on the Slack precedent in
+  `ak-dev-architecture`'s routing rubric — right for Slack, which never touches the session itself.
+  AG-UI does: it writes `state`, `forwardedProps` and `context` onto the session *before* the run and
+  reads the state back *after* it, so it needs the same session object throughout.
+  `execute_stream` loads its own session by id (`core/service.py:74` via `AgentHandler.initialize`),
+  and two facts make that fatal rather than merely redundant:
+  - `load()` returns a **fresh object** on every call for every store except in-memory (and
+    redis/valkey when a `session.cache` is configured, which is off by default).
+  - `store()` **excludes the volatile cache** by construction — `Session.get_all(volatile=False)`
+    (`core/session/redis.py:90`, `core/base.py:151`) — so the props cannot be handed over by
+    persisting them either.
+
+  Together: `get_forwarded_props()` and `get_agui_context()` would return `{}` on every request under
+  every persistent store, silently, and an in-memory test suite would never notice. Owning the load
+  is what makes the client-context tools work at all. `test_agui_handler.py` guards it with a session
+  store whose `load()` deep-copies, reproducing persistent-store behaviour.
+
+  What the handler takes on instead is small and it needed all of it anyway: resolve the agent (it
+  already does, for the 404 and the `supports_streaming` 400), load the session, and call
+  `Runtime.stream`. It builds its own requests from `RunAgentInput` rather than from
+  `RequestBuilder`, and it wants its own error shape (`RunError`, not an error `StreamChunk`).
 
 **`mapping.py`**
 
@@ -627,6 +661,27 @@ def to_agui(event: StreamEvent) -> BaseEvent | None:
 A `match` on the discriminator, not a dict — matching how adapters translate typed unions
 (`framework/openai/openai.py:108-140`). Pure function, no class, no state.
 
+**All twelve AK events map**, so the "known-unmapped allowlist" in the exhaustiveness test is empty
+and the `case _` branch is a forward-compatibility guard rather than a live path. Three of the twelve
+needed a decision the sketch above does not make, each verified against the pinned SDK:
+
+- **Reasoning maps to the `REASONING_MESSAGE_*` trio**, not `THINKING_*`. The thinking family is the
+  pre-0.1.13 spelling and carries no `message_id`, so AK's correlated reasoning events could not
+  round-trip through it; the reasoning family carries one and is a 1:1 fit. The phase-level
+  `ReasoningStart` / `ReasoningEnd` that wrap the message in the SDK's own usage are **not** emitted —
+  AK has no concept distinct from the message, and inventing one would mean `to_agui` returning more
+  than one event.
+- **`ToolCallResult` is given a freshly generated `message_id`.** AG-UI requires one (the result
+  becomes a tool message in the client's list) and no framework supplies it, so AK's event does not
+  carry one. Generating it is correct rather than a stand-in — each result genuinely is a new message —
+  and it is what the first-party Pydantic AI adapter does
+  (`pydantic_ai/ui/ag_ui/_event_stream.py:290`). The alternative, returning `None`, would drop every
+  tool result silently.
+- **An unrecognised `MessageStart.role` degrades to `assistant`** with a debug log. AK's field is a
+  plain `str` so `core/` owes nothing to AG-UI's vocabulary (§1 rule 2), but AG-UI's is a four-value
+  literal, and a custom adapter's unexpected role would otherwise raise mid-stream and turn a working
+  run into a `RunError`.
+
 **`run_input.py`** maps `RunAgentInput` onto AK types, and is where the trust boundary is enforced:
 
 SDK models set `alias_generator=to_camel`, so every field below is `snake_case` in Python and
@@ -636,7 +691,7 @@ SDK models set `alias_generator=to_camel`, so every field below is `snake_case` 
 |---|---|
 | `thread_id` | `session_id` |
 | `run_id`, `parent_run_id` | echoed on `RunStarted` / `RunFinished` for correlation; never stored |
-| `state` | `session.set_agui_state(...)`, only when not `None` |
+| `state` | `session.set_shared_state(...)`, only when not `None` |
 | `forwarded_props` | `session.get_volatile_cache().set(AGUI_FORWARDED_PROPS_KEY, ...)` |
 | `context` | `session.get_volatile_cache().set(AGUI_CONTEXT_KEY, [...])`, read back by `get_agui_context()` |
 | final `user` message content | `AgentRequestText` / `AgentRequestImage` / `AgentRequestFile` (see below) |
@@ -645,7 +700,7 @@ SDK models set `alias_generator=to_camel`, so every field below is `snake_case` 
 **`context` is delivered as tool output, never as instructions.** `design.md` requires the
 anti-injection posture, and the mechanism is the one `forwardedProps` already uses: the entries land
 in the volatile cache and the model pulls them through a read-only `get_agui_context()` system tool
-in `core/agui_state.py`, gated by the same `agui.client_context` config block. `Context` is
+in `core/client_state.py`, gated by the same `agui.client_context` config block. `Context` is
 `{description: str, value: str}` (verified against the SDK), so the tool returns a list of those
 pairs unchanged — no flattening into the prompt, which is exactly what would turn client text into
 instructions. That makes **four** system tools in total, not three.
@@ -672,6 +727,22 @@ prerequisite rather than a nice-to-have: a URL-sourced attachment reaching today
 from the session store. The final `user` message is the turn's input and is converted; everything
 before it is dropped. Stated here because the two readings differ and the table above is the
 binding one.
+
+**Two things the table above does not cover, both found at implementation time:**
+
+- **`state`, `tools`, `context` and `forwardedProps` are *required* by `RunAgentInput`** (verified:
+  they are declared with no default, so an absent one raises `ValidationError`). The pre-filter
+  defaults them — `None`, `[]`, `[]`, `None` — when neither the camelCase nor the snake_case spelling
+  is present, because AK ignores `tools` outright and treats the other three as optional. Without
+  this, the error-handling row "`RunAgentInput.state` is `None` **or absent** → stored state left
+  untouched" is unreachable: an absent `state` would be a 422. A residual `ValidationError` from
+  anything else maps to **422**, which is what FastAPI would have returned had the route taken a typed
+  body instead of a `dict`.
+- **`ImageInputContent` and `DocumentInputContent` carry no filename**, but `AgentRequestImage` and
+  `AgentRequestFile` require a `name` — it is what the multimodal pre-hook shows the model and what an
+  attachment is stored under. A URL source is named from its own last path segment (percent-decoded);
+  everything else gets `agui-attachment-{n}` with an extension guessed from the mime type.
+  `BinaryInputContent` keeps its own `filename` when it has one.
 
 **No function in this package writes `framework_context`.** A test asserts it
 (`test_agui_run_input.py`, below).
@@ -741,11 +812,11 @@ One new top-level block in `core/config.py`, added to `AKConfig` beside `thread`
 
 ```python
 class _AGUIStateConfig(BaseModel):
-    enabled: bool = Field(default=False, description="Expose the AG-UI state tools to agents")
+    enabled: bool = Field(default=False, description="Expose the shared-state tools to agents")
     agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 class _AGUIClientContextConfig(BaseModel):
-    enabled: bool = Field(default=False, description="Expose the read-only AG-UI client-context tools (forwarded props and context) to agents")
+    enabled: bool = Field(default=False, description="Expose the read-only client-context tools to agents")
     agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 class _AGUIConfig(BaseModel):
@@ -852,6 +923,10 @@ posture.
 | Unknown `content[].type` or `source.type` **in the final user message** | `HTTPException(400)` naming the unknown value. Same treatment as audio/video, and for the same reason — a silent drop reads as the agent ignoring the attachment |
 | `BinaryInputContent` carrying only `id` | `HTTPException(400)`. The id references a store AK does not have; `data` and `url` are both handled |
 | Unknown top-level field in `RunAgentInput` | Ignored. Free from the SDK's `extra="allow"` |
+| `state`, `tools`, `context` or `forwardedProps` absent | Defaulted (`None` / `[]` / `[]` / `None`). The SDK declares all four as required; AK ignores `tools` and treats the rest as optional |
+| `RunAgentInput` malformed in any other way (e.g. no `threadId`) | `HTTPException(422)`, matching what FastAPI returns for a malformed typed body |
+| `RunAgentInput.state` present but not a JSON object | `HTTPException(400)`. `Session.set_shared_state` would raise `TypeError`, which is a 500 |
+| `update_agui_state` called with malformed JSON | Returns `{"error": ...}` to the model; nothing is written. A tool never raises into the framework |
 | `_extract_attachment` meets a malformed `data:` URI | Falls through to the bare-base64 path rather than raising, so one bad attachment cannot fail the run |
 
 ---
@@ -870,7 +945,7 @@ Run with `cd ak-py && uv run pytest`.
 | `tests/test_agui_run_input.py` | `thread_id`→`session_id`; `state` stored, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` **and** an unknown `content[].type` in history are both ignored rather than 422, while the same unknown content type in the final user message is a 400; a body with no `user` message is a 400; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every inbound mapping** |
 | `tests/test_agui_mapping.py` | Exhaustiveness: enumerate every member of the `StreamEvent` union and assert `to_agui` returns either an AG-UI event or an explicit `None` from a known-unmapped allowlist. A new event type with no decision fails this test |
 | `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; a runner that raises after a `TextDelta` producing `RunError` with **no** synthesised `TextMessageEnd`, which a handler balancing the boundaries would fail; and four `StateSnapshot` cases — unset→set emits, inbound `state` alone does **not** emit, no change does not emit, and a tool calling `update_agui_state` **does** emit (the last is the regression guard for the deep-copy trap in §9: with a live reference instead of a copy it silently never fires) |
-| `tests/test_agui_state_tools.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.client_context.enabled`, and respects `agents` scoping |
+| `tests/test_client_state_tools.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.client_context.enabled`, and respects `agents` scoping |
 
 ### Existing test files that change
 
@@ -901,6 +976,9 @@ If a file in this list needs an edit, the projection in §4 is wrong.
 
 ### Conformance kit
 
-`design.md` carries an unverified claim that AG-UI may publish a conformance kit. Confirm before
-writing `test_agui_handler.py`; if one exists and is usable from pytest, PR 3 inherits it following
-the reusable-contract pattern in `pipeline/testing.py` and `sandbox/testing.py`.
+`design.md` carried an unverified claim that AG-UI may publish a conformance kit. **Checked, and there
+is none to inherit:** `ag-ui-conformance`, `agui-conformance`, `ag-ui-protocol-conformance` and
+`ag-ui-testing` are all absent from PyPI, and the upstream repository publishes no Python conformance
+package (its `sdks/` and `integrations/` trees are the SDKs themselves). `test_agui_handler.py` is
+therefore written from scratch. If a kit appears later it can be adopted following the
+reusable-contract pattern in `pipeline/testing.py` and `sandbox/testing.py`.

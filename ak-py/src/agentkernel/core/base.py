@@ -46,6 +46,7 @@ class Session:
         VOLATILE_CACHE = "v_cache"
         NON_VOLATILE_CACHE = "nv_cache"
         FRAMEWORK_CONTEXT = "framework_context"
+        AGUI_STATE = "agui_state"
 
     current_session: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("current_session", default=None)
 
@@ -212,6 +213,35 @@ class Session:
         Deletes the per-run framework context, so nothing is injected on the next turn.
         """
         self.delete(Session.Keys.FRAMEWORK_CONTEXT.value)
+
+    def get_agui_state(self) -> dict | None:
+        """
+        Returns the live AG-UI state dict, so a tool can edit it in place.
+        Never auto-creates the key: absent means "the client has never sent state".
+        :return: The stored AG-UI state dict, or None when the key is absent.
+        """
+        return cast(dict | None, self.get(Session.Keys.AGUI_STATE.value))
+
+    def set_agui_state(self, state: dict) -> dict:
+        """
+        Seeds or replaces the AG-UI state carried across turns of a session.
+        :param state: The state dict to store. Must be picklable, since sessions are persisted with pickle.
+        :return: The stored state dict.
+        :raises TypeError: If state is not a dict.
+        """
+        if not isinstance(state, dict):
+            raise TypeError(
+                f"Session '{self._id}' agui_state must be a dict, got "
+                f"{type(state).__name__}. The reserved agui_state key carries the AG-UI "
+                f"shared state object; wrap the value in a dict before setting it."
+            )
+        return cast(dict, self.set(Session.Keys.AGUI_STATE.value, state))
+
+    def clear_agui_state(self) -> None:
+        """
+        Deletes the AG-UI state, so the next run starts with none.
+        """
+        self.delete(Session.Keys.AGUI_STATE.value)
 
     def set(self, key: str, value: Any) -> Any:
         """
