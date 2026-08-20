@@ -216,6 +216,10 @@ A runnable version, including a single-server JetStream stack and a harness that
 streams safely (a work-queue stream cannot be browsed with a second consumer, so it reads by
 sequence), is in
 [`examples/transport/nats`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/transport/nats).
+To run the same two-process topology on a cluster, the [Helm chart](../deployment/onprem-kubernetes)
+deploys it with in-cluster NATS, NACK-managed streams, and KEDA autoscaling
+([`examples/k8s/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
+walks it end to end on a micro-cluster).
 
 JetStream is the closest fit of any backend here, because the server provides most of what the
 pipeline needs rather than the client rebuilding it: `ack_wait` is the visibility timeout,
@@ -678,7 +682,7 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | `kafka` | ✅ | confluent-kafka client, per-session ordering by record key, DLQ topics, Strimzi-provisioned clusters. Needs the `kafka` extra and an `execution.queues.kafka` block; see the notes below |
 | `nats` (recommended on-prem) | ✅ | JetStream work-queue streams, partitioned per-session ordering, server-side delivery counts and dedup. Needs the `nats` extra and an `execution.queues.nats` block |
 | WebSocket delivery (`async`/`stream`) | ✅ | Gateway tier (`WebSocketGateway.run(auth_validator=...)`; co-hosted by `IOHandler` on `in_memory`) + session-backed shared connection store; see [WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-asyncstream) |
-| Kubernetes Helm chart (baremetal + EKS) | Upcoming | Two-Deployment topology, KEDA autoscaling |
+| Kubernetes Helm chart (baremetal + EKS) | ✅ | Two-Deployment topology (io-handler + agent-runner, optional ws-gateway), KEDA queue-depth autoscaling, NACK/Strimzi-provisioned brokers; see [On-Prem / Kubernetes](../deployment/onprem-kubernetes) |
 
 **AWS deployment components:**
 

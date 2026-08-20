@@ -262,6 +262,30 @@ Spec section references are to `spec.md`.
   over the full branch diff; confirm surfaces that need **no** update (serverless docs, Azure/GCP
   pages) and state so in the PR.
 - **Verify:** docs build; `ak-dev-review-pr` spec-vs-implementation pass on the final PR.
+- **Delivered 2026-08-20 (docs):** new `docs/docs/deployment/onprem-kubernetes.md` under a new
+  sidebar On-Prem / Kubernetes category; `deployment/overview.md` gained the flavor node,
+  execution-mode/protocol/comparison rows, a Kubernetes column in the queue-topology role
+  table, a Getting Started subsection, and corrected WS-delivery claims;
+  `queue-mode-guide.md`'s status table row flipped to shipped and the NATS section points at
+  the chart and the k8s example; `architecture/overview.md`, root `README.md` (feature bullet
+  + deploy-table row), `ak-py/README.md` (On-Prem / Kubernetes deployment section),
+  `deployment/local.md`, and the landing page's deploy blurb dropped their stale "upcoming"/
+  Docker-only claims. Surfaces confirmed needing no update: the AWS/Azure/GCP
+  serverless/containerized pages (Terraform paths unchanged) and `DEVELOPER_GUIDE.md`.
+- **Delivered 2026-08-20 (skills):** new `ak-dev-new-queue-transport` dev skill (semantics
+  contract, implementation rules from the shipped transports, factory/config/extras, the
+  three test layers incl. the live-broker traps, example and chart wiring);
+  `ak-dev-architecture` updated (Phase C status, description keywords) and cleaned of
+  unresolved stash-conflict markers that had been committed into its pipeline tables (both
+  blocks resolved to the side matching the shipped code); `ak-dev-testing-conventions` gained
+  the seven missing pipeline/WS/contract test-file rows and the `transport-integration-tests`
+  + `chart-test.yaml` workflow entries; user skill `ak-cloud-deploy` gained the On-Prem /
+  Kubernetes deployment path (entry files, image contract, helm install per flavor, WS mode,
+  teardown) plus a `deploy-kubernetes-helm` eval; inventories updated in
+  `docs/docs/agent-skills.md` and `AGENTS.md`.
+- **Verified 2026-08-20:** the docs site builds green with the new page and sidebar (Docusaurus
+  link checking on); `ak-cloud-deploy` evals JSON re-parses; no em dashes introduced. The
+  `ak-dev-review-pr` spec-vs-implementation pass runs on the final PR once pushed.
 
 ## Deferred follow-ups (post-#495, separate issues)
 
