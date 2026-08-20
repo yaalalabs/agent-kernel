@@ -35,6 +35,7 @@ logfire = [
     "logfire>=3.0",
 ]
 crewai = [
+    "crewai>=1.15.0",
     "openinference-instrumentation-crewai>=0.1.16",
     "openinference-instrumentation-litellm>=0.1.28",
 ]
@@ -187,6 +188,13 @@ dev = [
 
 [tool.uv]
 package = true
+# crewai (posthog<6.0.0 via chromadb) and test (posthog>=7.0.0 via deepeval) are never installed together, so don't require a joint resolution
+conflicts = [
+    [
+        { extra = "crewai" },
+        { extra = "test" },
+    ],
+]
 
 [tool.isort]
 profile = "black"
