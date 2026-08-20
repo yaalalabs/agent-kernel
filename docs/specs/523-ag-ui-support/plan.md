@@ -122,17 +122,17 @@ projection in §4 is wrong.
 base64. No AG-UI code involved.
 - **Files:** `core/multimodal/hooks.py`, `tests/test_multimodal_source_forms.py` (new)
 - **Steps:**
-  1. Extend `_extract_attachment` to classify the source and return `consumable` (§8a). Split
+  1. Extend `_extract_attachment` to classify the source and return `is_base64` (§8a). Split
     `data:` URIs into base64 plus their real mime type, dropping the `"image/jpeg"` fallback.
-  2. Have `_process_attachments` return the set of consumed requests, and change the filter loop to
-    retain the ones it declined (§8b). **This is the half that is easy to miss** — without it a URL
-     attachment is deleted instead of merely undescribed.
+  2. Make `on_run` decide, in one pass over the requests, both what to describe and what travels on,
+    retaining anything the hook declined (§8b). **This is the half that is easy to miss** — without it
+     a URL attachment is deleted instead of merely undescribed.
   3. Write the new test file, covering all five forms.
   4. **Post-review additions.** Three things came out of PR #648's review:
      - **A `data:` URI with an empty payload is now dropped, not retained.** `_resolve_source` returns
        `Optional[...]`, so `data:image/png;base64,` resolves to `None` and takes the existing
        "no bytes" path — the same one `image_data=""` already took. Previously `not payload` was
-       OR-ed with the base64-marker check, so a payloadless URI was classified non-consumable and
+       OR-ed with the base64-marker check, so a payloadless URI was classified as not base64 and
        forwarded to the adapter. Splitting that condition also separates two unrelated cases: an empty
        payload (no bytes, drop) and a non-base64 `data:` URI (real content, retain). Both halves are
        now tested, and the empty-payload test was confirmed to fail before the fix.
@@ -143,6 +143,17 @@ base64. No AG-UI code involved.
      - **The thread-off qualifier in design.md**, which the "all five forms work" claim was missing.
        See design.md; the thread path is a separate follow-up, and PR 7's `advanced/multimodal.md`
        must say which path each source form works on.
+  5. **The consumed-`id(req)` set was removed, and should not be re-proposed.** The first
+    implementation of step 2 split the work across two loops over the same list: one described and
+     stored while recording which requests it had taken over, the other consulted that set to decide
+     what to strip. Neither loop could be read on its own, and the set needed a docstring paragraph
+     explaining why its key was object identity rather than equality. Merging them into one pass puts
+     the decision and its consequence on the same line, which removes the set, the `id(req)` key and
+     the explanation; the two storage paths became `_describe_stored` and `_store`, with truncation
+     stated once in `_described`. It is a pure refactor: **34 of the 35 tests passed unmodified**, and
+     the injected prompt text was proven byte-identical across six request shapes. The one deleted
+     test existed only to pin the set's meaning. The requirement in §8b is unchanged — a declined
+     attachment must still survive into the returned list — only the mechanism moved.
 - **Verify:** `uv run pytest tests/test_multimodal_source_forms.py`, then the full suite. Existing
 multimodal tests must pass unchanged — they exercise bare base64, which is untouched.
 

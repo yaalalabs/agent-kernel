@@ -408,7 +408,7 @@ class _ExtractedAttachment:
     att_type: str
     name: str
     mime_type: str
-    consumable: bool
+    is_base64: bool
 
 @staticmethod
 def _extract_attachment(req) -> Optional[_ExtractedAttachment]:
@@ -416,7 +416,7 @@ def _extract_attachment(req) -> Optional[_ExtractedAttachment]:
 
 @staticmethod
 def _resolve_source(source, declared_mime, default_mime) -> Optional[tuple[str, str, bool]]:
-    # returns (data, mime_type, consumable), or None when the source carries no bytes
+    # returns (data, mime_type, is_base64), or None when the source carries no bytes
 ```
 
 The dataclass is the normative shape: named fields beat a 5-tuple at the call site, and one
@@ -426,13 +426,13 @@ source parsing out of the type dispatch is what lets both request types share on
 - `data:<mime>;base64,<b64>` → split into `(b64, mime_type=<mime from the URI>, True)`. The URI's own
   mime wins over the request's `mime_type` and over the default, which is what stops a PNG being
   stored as JPEG. This also removes the hardcoded `"image/jpeg"` fallback for the `data:` case.
-- Bare base64 → returned unchanged, `consumable=True`.
-- `http://`, `https://`, `s3://` → `consumable=False`; the hook neither describes nor stores it.
+- Bare base64 → returned unchanged, `is_base64=True`.
+- `http://`, `https://`, `s3://` → `is_base64=False`; the hook neither describes nor stores it.
   Fetching would put network I/O and SSRF exposure inside a system pre-hook.
 - **A `data:` URI with an empty payload** (`data:image/png;base64,`) → `None`, so the caller drops the
   request. It holds exactly as many bytes as `image_data=""`, which was already dropped, and retaining
   it would hand an adapter a payloadless URI. The two spellings of "no bytes" must not diverge.
-- **A `data:` URI with no base64 marker** (`data:text/plain,hello`) → `consumable=False`, retained for
+- **A `data:` URI with no base64 marker** (`data:text/plain,hello`) → `is_base64=False`, retained for
   the adapter rather than decoded. Its payload is real content that simply is not base64, so storing
   it as base64 would store the wrong bytes. Per RFC 2397 the marker is the header's *final* parameter,
   so a header merely containing the text `;base64` does not qualify.
@@ -440,20 +440,44 @@ source parsing out of the type dispatch is what lets both request types share on
   and parameter names all are. Only the leading bytes and the short header are folded — a payload can
   be megabytes of base64, and lowercasing it would copy the lot.
 
-**8b. Retain unconsumed attachments in the filter loop (`:150-157`).** The loop currently strips
-**every** `AgentRequestImage`/`AgentRequestFile` unconditionally. `_process_attachments` must record
-which requests it consumed, and the loop must keep the rest:
+**8b. A declined attachment must survive into the returned list (`:150-157`).** The loop currently
+strips **every** `AgentRequestImage`/`AgentRequestFile` unconditionally. It must keep the ones this
+hook declined to consume.
+
+`on_run` makes both decisions — what to describe, and whether the request travels on — in **one pass**,
+so each branch ends in an explicit `continue` or an append:
 
 ```python
-consumed_ids = await self._process_attachments(session, requests, config)  # returns set of id(req)
 for req in requests:
     if isinstance(req, AgentRequestAttachmentRef):
-        continue
-    if isinstance(req, (AgentRequestImage, AgentRequestFile)) and id(req) in consumed_ids:
-        continue
-    ...
+        described = await self._describe_stored(req, manager, config)   # None when the id is missing
+        if described is not None:
+            descriptions.append(described)
+        continue                                       # a ref never travels on, resolved or not
+    if isinstance(req, (AgentRequestImage, AgentRequestFile)):
+        extracted = self._extract_attachment(req)
+        if extracted is None:
+            continue                                   # no bytes, so nothing to forward either
+        if not extracted.is_base64:
+            filtered_requests.append(req)                        # the same object — the adapter resolves it
+            continue
+        descriptions.append(await self._store(extracted, manager, config))
+        continue                                       # the bytes are in storage now
+    if isinstance(req, AgentRequestText):
+        last_text_idx = len(filtered_requests)
     filtered_requests.append(req)
 ```
+
+**One loop, not two.** An earlier implementation had `_process_attachments` return a set of consumed
+`id(req)` values for a second loop to consult. That set existed only because the decision and its
+consequence sat in different places, and it cost a paragraph of docstring explaining why the key was
+object identity rather than equality (these models are unhashable, and two equal attachments must be
+tracked separately). Merging the loops removes the set, the identity key and the explanation. The two
+storage paths become helpers that each return one value — `_describe_stored` for thread mode,
+`_store` for thread-off — with description truncation stated once in `_described`.
+
+**A retained request must be the same object, not a copy** (`tests/test_multimodal_source_forms.py`
+asserts `result[1] is plain`), so `filtered_requests.append(req)` appends the request itself.
 
 Without 8b, skipping a URL for description deletes the attachment outright and the model never sees
 it — strictly worse than today's corruption. The retained request reaches the adapter, which already

@@ -279,21 +279,6 @@ class TestMixedAndEdgeCases:
         assert len(_stored()) == 0
         describe.assert_not_awaited()
 
-    def test_text_requests_are_never_recorded_as_consumed(self, multimodal_enabled):
-        session = Session("s1")
-        text = AgentRequestText(prompt="hi")
-        remote = AgentRequestImage(image_data="https://example.com/cat.png", name="cat.png")
-
-        hook = MultimodalPreHook()
-        with patch.object(hook, "_describe_attachment_briefly", new=AsyncMock(return_value="d")):
-            config = AKConfig.get().multimodal
-            _, consumed = asyncio.run(hook._process_attachments(session, [text, remote], config))
-
-        # consumed must hold only attachment requests the hook took over. A text request landing in
-        # there is harmless today only because the filter loop re-checks the type; the set's meaning
-        # is what this pins.
-        assert consumed == set()
-
     def test_remote_only_request_needs_no_synthetic_text(self, multimodal_enabled):
         session = Session("s1")
         image = AgentRequestImage(image_data="s3://bucket/cat.png", name="cat.png")
