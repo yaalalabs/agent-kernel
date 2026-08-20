@@ -111,8 +111,9 @@ content-type: application/json
 {"result":"{\"status\": \"SCHEDULED\", \"scheduled_task_id\": \"74ca19a5-...\", \"session_id\": \"ses-1\"}","session_id":"ses-1"}
 ```
 
-The 202 surfaces on every REST surface: direct mode, through the pipeline waiter/poller, and on ECS
-(where the queue runners forward it as a `status_code` attribute). Streaming surfaces yield the
+The 202 surfaces on every REST surface: direct mode, through the pipeline waiter/poller, and on both
+AWS deployments — ECS and Lambda — where the queue runners forward it as a `status_code` attribute.
+Streaming surfaces yield the
 acknowledgement as a single terminal chunk — deliberately not an error chunk, since deferring was the
 requested outcome.
 

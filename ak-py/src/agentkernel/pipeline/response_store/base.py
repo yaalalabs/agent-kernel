@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Iterator, Optional
+from typing import Callable, Dict, Iterator, Optional
 
 from ...core.config import AKConfig
 
@@ -86,13 +86,36 @@ class ResponseStore(ABC):
         """
         if async_mode:
             return self._get_message_with_retry_async(request_id, get_and_delete)
+        return self._poll_with_retry(self.get_message, request_id, get_and_delete)
 
+    def get_record_with_retry(self, request_id: str, get_and_delete: bool = False) -> Dict | None:
+        """
+        Wait until a record exists for a request ID and retrieve the whole record.
+
+        The record-level counterpart of :meth:`get_message_with_retry`, for callers that must
+        honor the stored ``status_code`` instead of returning the body alone.
+
+        :param request_id: Request ID
+        :param get_and_delete: Delete the record after retrieval when True
+        :return: the stored record as dict or None if not found
+        """
+        return self._poll_with_retry(self.get_record, request_id, get_and_delete)
+
+    def _poll_with_retry(self, read: Callable[[str, bool], Dict | None], request_id: str, get_and_delete: bool) -> Dict | None:
+        """
+        Poll ``read`` on the configured retry budget until it yields a value.
+
+        :param read: Reader called as ``read(request_id, get_and_delete)``
+        :param request_id: Request ID
+        :param get_and_delete: Delete the entry after retrieval when True
+        :return: The first non-None read, or None once the budget is exhausted
+        """
         retry_count, delay = self._get_retry_config()
         for attempt in range(retry_count):
             self._log.debug("Attempt %d/%d for request_id=%s", attempt + 1, retry_count, request_id)
-            message = self.get_message(request_id, get_and_delete=get_and_delete)
-            if message is not None:
-                return message
+            result = read(request_id, get_and_delete)
+            if result is not None:
+                return result
             if attempt < retry_count - 1:
                 time.sleep(delay)
         return None

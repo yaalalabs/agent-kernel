@@ -295,14 +295,18 @@ path (retry, then permanent-failure handling).
 
 ### Status Codes Travel Through the Queues
 
-The agent runner forwards `ChatService`'s status code to the Output Queue as a `status_code` custom
-attribute, and the output consumer stores it on the response record. On the way back out:
+Every agent runner — pipeline, ECS and the agent-runner Lambda — forwards `ChatService`'s status code
+to the Output Queue as a `status_code` custom attribute, and the output consumer (or response-handler
+Lambda) stores it on the response record. On the way back out:
 
-- `status_code >= 400` raises an `HTTPException` with that status — an error reply surfaces as a real
-  4xx/5xx instead of HTTP 200 with an error body.
-- `200 < status_code < 400` returns a `JSONResponse` with that status. This is how a deferred chat's
-  **202** reaches the client through the queue path.
+- `status_code >= 400` surfaces as a real 4xx/5xx instead of HTTP 200 with an error body: the REST
+  surfaces raise an `HTTPException`, the Lambda router answers with that status.
+- `200 < status_code < 400` is preserved. This is how a deferred chat's **202** reaches the client
+  through the queue path.
 - Records with no `status_code` (written before this existed) default to 200.
+
+A response that never arrived is the one case the two surfaces differ on: the REST surfaces answer
+504 (sync) / 404 (poll), the Lambda router keeps its `NOT_FOUND` error body under a 200.
 
 ### REST Sync Flow
 
