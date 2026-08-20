@@ -7,12 +7,14 @@ consumers executing the agents), talking through in-cluster NATS JetStream with 
 sessions and responses. A Kafka variant is one values switch away.
 
 ```
-app_io_handler.py       IOHandler.run()                the io image's entry point
-app_agent_runner.py     agents + AgentRunner.run()     the runner image's entry point
+app_io_handler.py       IOHandler.run()                     the io image's entry point
+app_agent_runner.py     agents + AgentRunner.run()          the runner image's entry point
+app_ws_gateway.py       WebSocketGateway.run(validator)     the gateway image's entry point
+ws_client.py            demo client for the WebSocket walkthrough (runs on your machine)
 config.nats.yaml        baked in as config.yaml by package.sh (default)
 config.kafka.yaml       the Kafka variant
 deploy/Dockerfile.*     one image per component, python:3.12-slim + staged dependencies
-deploy/package.sh       stages dependencies and builds both images
+deploy/package.sh       stages dependencies and builds the three images
 ```
 
 The same wire behavior can be exercised without Kubernetes:
@@ -176,16 +178,41 @@ helm upgrade --install ak ../../../ak-deployment/ak-k8s/chart \
 The chat request is byte-for-byte the same as under NATS: the transport is infrastructure,
 not API.
 
-## WebSocket modes (async / stream)
+## WebSocket streaming (async / stream modes)
 
-This example's REST modes need no gateway tier. For `async`/`stream` modes, add a third entry
-file wired to your authentication (see the chart README's WebSocket section):
+The REST modes above need no gateway tier. For token streaming, the third image
+(`ak-example-ws-gateway`, from `app_ws_gateway.py`) runs the WebSocket gateway: it
+authenticates each handshake with a demo JWT validator (users `user-1`/`user-2`, signature
+verification off, demo only), enqueues chat frames straight to the transport, and receives
+each reply chunk from the Response Handler on its authenticated `/internal/push` endpoint.
+The connection table rides the session store, which values-dev already puts on Valkey.
 
-```python
-from agentkernel.pipeline import WebSocketGateway
+Switch the running release to stream mode with the gateway enabled (config unchanged: the
+mode override is one env var away):
 
-WebSocketGateway.run(auth_validator=YourAuthValidator())
+```bash
+k3d image import -c ak ak-example-ws-gateway:dev    # kind: kind load docker-image ...
+
+helm upgrade ak ../../../ak-deployment/ak-k8s/chart \
+  -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f ak-values.yaml \
+  --set execution.mode=stream \
+  --set wsGateway.enabled=true --set wsGateway.replicaCount=1 \
+  --set wsGateway.image.repository=ak-example-ws-gateway \
+  --set wsGateway.auth.token="$(openssl rand -hex 16)"
+kubectl rollout status deployment/ak-agent-kernel-ws-gateway
 ```
 
-package it as a third image, and enable it at install time (`wsGateway.enabled=true`, a push
-token, and `execution.mode=stream`).
+Then connect and stream (the client lives in this directory; `./build.sh` installed its
+dependencies):
+
+```bash
+kubectl port-forward service/ak-agent-kernel-ws-gateway 18001:8000 &
+uv run python ws_client.py ws://localhost:18001/ws "Tell me about Napoleon in two sentences."
+```
+
+The client prints a `CHAT_QUEUED` acknowledgement, then the `STREAM_CHUNK` frames as the
+runner produces them, the last one carrying `done: true` (in `async` mode a single
+`CHAT_RESPONSE` frame arrives instead). Each chunk traveled
+gateway -> NATS -> agent-runner -> NATS -> Response Handler -> the gateway pod holding your
+socket, resolved through the shared connection store, so the reply finds you on whichever
+gateway pod you are connected to.

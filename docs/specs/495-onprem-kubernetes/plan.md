@@ -207,6 +207,14 @@ Spec section references are to `spec.md`.
   NATS -> Valkey response store -> the waiting request, with session continuity across the
   turns. The k3d walkthrough of the example README remains the manual gate (kind covered the
   same import-and-install flow in its place).
+- **Extended 2026-08-20 (maintainer request):** the example gained the WebSocket tier before
+  iteration 11: `app_ws_gateway.py` (the AWS example's demo JWT validator behind
+  `WebSocketGateway.run`), a third image in `package.sh`, a `ws_client.py` demo client, and a
+  stream-mode README walkthrough (spec §14 updated). Verified live on a fresh kind install with
+  `execution.mode=stream` + `wsGateway.enabled`: the client's chat frame was acknowledged with
+  `CHAT_QUEUED`, then ~80 `STREAM_CHUNK` token deltas arrived ending in `done: true`, each
+  pushed gateway -> NATS -> runner -> NATS -> Response Handler -> `/internal/push` on the
+  owning gateway pod, resolved through the Valkey-backed connection store.
 
 ## Iteration 11: Cross-cutting tests and CI
 
@@ -249,6 +257,15 @@ Spec section references are to `spec.md`.
   cardinality bounded (per-agent yes, per-session/request no). A neutral pipeline feature, so
   ECS deployments gain it too; the R11 recipes-not-bundled-stack posture is unchanged. Decided
   2026-08-20: post-#495, its own issue.
+- **Automated k8s end-to-end test suite**: bring the k8s example up to the transport examples'
+  testing bar. Iteration 11's CI covers the chart-level smoke (ct lint/install per flavor values
+  file plus one chat request); this task adds an `app_test.py`-style suite for
+  `examples/k8s/openai-queue-mode` in the built-in Test framework, registered in
+  `.github/test-config.yaml`, driving the chart-deployed topology on an ephemeral kind cluster:
+  multi-turn sessions, the retry-to-permanent-failure path through the deployed pods, rollout
+  behavior (a runner restart mid-conversation), and the Kafka variant behind the Strimzi
+  operator where CI capacity allows. Needs the same release-or-local-wheel resolvability the
+  transport examples' registration waits on. Decided 2026-08-20: post-#495, its own issue.
 - **ECS runtime classes become pipeline instantiations**: `ECSAgentRunner`/
   `ECSStreamAgentRunner`/`ECSOutputConsumer`/`ECSIOHandler` still parallel the pipeline's
   `AgentRunner`/`ResponseHandler`/`IOHandler` instead of instantiating them. The wire formats

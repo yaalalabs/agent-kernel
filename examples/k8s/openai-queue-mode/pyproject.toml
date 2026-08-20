@@ -5,7 +5,7 @@ description = "Demo of OpenAI Agents SDK based agents running the Agent Kernel t
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,api,nats,kafka,valkey]>=0.8.1",
+    "agentkernel[openai,api,nats,kafka,valkey,auth]>=0.8.1",
 ]
 
 [dependency-groups]
@@ -14,6 +14,7 @@ dev = [
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+    "websockets>=12.0",
 ]
 
 [tool.uv]

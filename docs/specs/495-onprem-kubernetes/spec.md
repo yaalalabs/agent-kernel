@@ -812,12 +812,15 @@ ak-deployment/ak-k8s/
 
 ### 14. Example (`examples/k8s/openai-queue-mode/`)
 
-Mirrors `examples/aws-containerized/openai-stream-queue-mode/` (two entry files, two
-Dockerfiles): `app_io_handler.py` (`from agentkernel.pipeline import IOHandler`;
-`IOHandler.run(auth_validator=...)` in WS modes) and `app_agent_runner.py`
-(`from agentkernel.pipeline import AgentRunner`; registers the `OpenAIModule`), `config.yaml`
-variants (`config.nats.yaml`, `config.kafka.yaml`), helm-install README covering k3d (macOS),
-microk8s (native Ubuntu; `metallb`/`hostpath-storage`/`registry` addons), and k3s parity.
+Mirrors `examples/aws-containerized/openai-stream-queue-mode/` (entry file + Dockerfile per
+component): `app_io_handler.py` (`from agentkernel.pipeline import IOHandler`; plain REST) and
+`app_agent_runner.py` (`from agentkernel.pipeline import AgentRunner`; registers the
+`OpenAIModule`), `config.yaml` variants (`config.nats.yaml`, `config.kafka.yaml`),
+helm-install README covering k3d (macOS), microk8s (native Ubuntu;
+`metallb`/`hostpath-storage`/`registry` addons), and k3s parity. Extended 2026-08-20 at
+maintainer request with the WebSocket tier: `app_ws_gateway.py`
+(`WebSocketGateway.run(auth_validator=...)` behind the AWS example's demo JWT validator), a
+third Dockerfile, a `ws_client.py` demo client, and a stream-mode README walkthrough.
 
 ### 15. Observability recipes and docs surfaces (design R11, R13)
 

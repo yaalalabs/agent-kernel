@@ -67,8 +67,9 @@ popd
 
 create_deployment_package io-handler app_io_handler.py
 create_deployment_package agent-runner app_agent_runner.py
+create_deployment_package ws-gateway app_ws_gateway.py
 
 rm -f ../requirements.txt
 
 echo
-echo "Built ak-example-io-handler:${IMAGE_TAG} and ak-example-agent-runner:${IMAGE_TAG} (config: ${TRANSPORT})"
+echo "Built ak-example-io-handler:${IMAGE_TAG}, ak-example-agent-runner:${IMAGE_TAG}, and ak-example-ws-gateway:${IMAGE_TAG} (config: ${TRANSPORT})"
