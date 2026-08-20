@@ -6,7 +6,6 @@ from collections.abc import AsyncGenerator
 from threading import RLock
 from types import ModuleType
 from typing import Optional
-from uuid import uuid4  # TRANSITIONAL (PR 1 -> PR 6): used only by the str-normalisation branch in stream()
 
 from singleton_type import Singleton
 
@@ -14,7 +13,7 @@ from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
 from ..sandbox.hooks import SandboxPreHookFactory
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
-from .event import MessageEnd, MessageStart, ReasoningDelta, TextDelta
+from .event import ReasoningDelta, TextDelta
 from .model import (
     AgentReply,
     AgentReplyAny,
@@ -268,18 +267,7 @@ class Runtime:
 
                     post_hooks = self._get_system_post_hooks() + agent.post_hooks
 
-                    # TRANSITIONAL (PR 1 -> PR 6): adapters that still yield `str` are normalised into one
-                    # synthetic assistant message, so every consumer downstream of this loop sees the same
-                    # event stream whether or not the adapter has been migrated yet. Deleted in PR 6.
-                    legacy_message_id: str | None = None  # allocated on the first str
-                    legacy_started = False  # MessageStart actually emitted
-
                     async for ev in agent.runner.stream(agent, session, requests):
-                        if isinstance(ev, str):  # TRANSITIONAL
-                            if legacy_message_id is None:
-                                legacy_message_id = uuid4().hex
-                            ev = TextDelta(message_id=legacy_message_id, content=ev)
-
                         text = ev.content if isinstance(ev, (TextDelta, ReasoningDelta)) else None
 
                         if text is not None:
@@ -292,14 +280,7 @@ class Runtime:
                             if text != ev.content:
                                 ev = ev.model_copy(update={"content": text})
 
-                        if legacy_message_id is not None and not legacy_started:  # TRANSITIONAL
-                            legacy_started = True
-                            yield StreamChunk(event=MessageStart(message_id=legacy_message_id))
-
                         yield StreamChunk(delta=text if isinstance(ev, TextDelta) else None, event=ev)
-
-                    if legacy_started:  # TRANSITIONAL
-                        yield StreamChunk(event=MessageEnd(message_id=legacy_message_id))
 
                     self.sessions().store(session)
                     yield StreamChunk(done=True)

@@ -5,6 +5,7 @@ import pytest
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.chat_service import ChatService
 from agentkernel.core.config import AKConfig
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import (
     AgentReplyText,
     AgentRequestAny,
@@ -255,8 +256,13 @@ class _ActingUserRunner(Runner):
         return AgentReplyText(response="ok")
 
     async def stream(self, agent, session, requests):
+        # A runner owns its own boundaries. Worth knowing why the tests below also assert on errors:
+        # ChatService.execute_stream converts a mid-stream raise into an error chunk, so asserting
+        # `seen` alone could not tell a working stream from a broken one.
         self.seen.append(session.get_volatile_cache().get(ACTING_USER_CACHE_KEY))
-        yield "ok"
+        yield MessageStart(message_id="acting-1")
+        yield TextDelta(message_id="acting-1", content="ok")
+        yield MessageEnd(message_id="acting-1")
 
 
 class _ActingUserAgent(Agent):
@@ -306,8 +312,11 @@ class TestActingUserPropagation:
     @pytest.mark.asyncio
     async def test_execute_stream_exposes_the_acting_user(self, runner):
         chunks = await ChatService().execute_stream(self._request("s-acting-3", user_id="u-3"))
-        [chunk async for chunk in chunks]
+        collected = [chunk async for chunk in chunks]
         assert runner.seen == ["u-3"]
+        # execute_stream turns a mid-stream raise into an error chunk, so asserting `seen` alone
+        # cannot tell a working stream from a broken one.
+        assert [chunk.error for chunk in collected if chunk.error] == []
 
     def test_execute_stream_sync_exposes_the_acting_user(self, runner):
         list(ChatService().execute_stream_sync(self._request("s-acting-4", user_id="u-4")))

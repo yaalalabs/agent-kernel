@@ -488,10 +488,10 @@ class LangGraphRunner(BaseRunner):
         Translate one LangChain `astream_events` event into AK events.
 
         `MessageStart` is deferred until text arrives: LangChain fires chat-model start/end even
-        on tool-only turns, and unconditional bracketing would emit an empty assistant message.
-        `started` is keyed by `run_id` (not a single flag) so nested calls close correctly, and
-        must stay a per-stream local — a `Runner` is shared across sessions. Chain/prompt/etc.
-        events are ignored (`on_chain_*` is too coarse for `StepStart`/`StepEnd`).
+        on tool-only turns, and unconditional bracketing would emit an empty assistant message
+        (§4 rule 4). `started` is keyed by `run_id` (not a single flag) so nested calls close
+        correctly, and must stay a per-stream local — a `Runner` is shared across sessions.
+        Chain/prompt/etc. events are ignored (`on_chain_*` is too coarse for `StepStart`/`StepEnd`).
 
         :param event: One event from `astream_events(version="v2")`.
         :param started: Run ids whose `MessageStart` has been emitted. Mutated in place.

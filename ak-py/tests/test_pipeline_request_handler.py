@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
@@ -31,8 +32,12 @@ class DummyRunner(Runner):
         return AgentReplyText(response=f"ok:{prompt}")
 
     async def stream(self, agent, session, requests):
+        # A runner owns its own boundaries. The frame assertions below are unchanged: the boundaries
+        # are emitted here rather than synthesised downstream, which does not alter the wire.
+        yield MessageStart(message_id="m-1")
         for token in ["he", "llo"]:
-            yield token
+            yield TextDelta(message_id="m-1", content=token)
+        yield MessageEnd(message_id="m-1")
 
 
 class DummyAgent(Agent):

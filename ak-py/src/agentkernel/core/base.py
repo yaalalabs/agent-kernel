@@ -383,15 +383,12 @@ class Runner(ABC):
         return True
 
     @abstractmethod
-    async def stream(
-        self, agent: Any, session: Session, requests: list[AgentRequest]
-    ) -> AsyncGenerator[StreamEvent | str, None]:  # TRANSITIONAL (PR 1 -> PR 6): `| str` drops with Runtime.stream's normalisation branch
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
         Streams the agent response as a sequence of stream events.
 
-        Adapters not yet migrated to the event model still yield `str`, which Runtime.stream
-        normalises; the union records that transitional state rather than leaving the four
-        unmigrated adapters as invalid overrides.
+        Every adapter emits events; a runner that yields a bare `str` is rejected by
+        `StreamChunk.event` with a `ValidationError` rather than being normalised (§4 rule 6).
 
         :param agent: The agent to run.
         :param session: The session to use for the agent.

@@ -783,6 +783,16 @@ first; two need it for the second.
   stream item's `id`, LangGraph from `run_id`, Pydantic AI from `PartStartEvent.index`. PRs 4 and 6
   must take that route rather than generating and storing ids. ADK has no id to read and must generate
   one.
+  - **Corrected at PR 6: `PartStartEvent.index` is not usable as an id, so Pydantic AI needs memory
+    too.** `index` is the part's position *within one response*, and the SDK states that a repeated
+    index **replaces** the part rather than continuing it. A run that calls a tool and then answers
+    restarts at 0, so two unrelated messages would collide on one id and any AG-UI client would splice
+    them into one bubble. The adapter keeps an `open_parts: dict[int, tuple[str, str]]` **local**
+    mapping each live index to the AK id it opened with: a text or thinking part takes the provider's
+    `part.id` when there is one and a generated id otherwise, while a tool call takes its own
+    `tool_call_id`, which is never generated because the result correlates on it. A repeat at the same
+    index closes the old stream before opening the new one. Three of the four adapters therefore
+    remember something, not two.
 - **Boundaries must be derived wherever the framework gives no usable message-start signal, and that
   is ADK *and* LangGraph** — not ADK alone, as this section first claimed.
   - **ADK** has neither a start signal nor an id: a `message_id: str | None` **local** inside

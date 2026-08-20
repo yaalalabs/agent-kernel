@@ -8,6 +8,7 @@ recorder persists, without raising.
 """
 
 import pytest
+from pydantic import ValidationError
 
 from agentkernel import Agent, Runner, Session
 from agentkernel.core.builder import SessionStoreBuilder
@@ -34,7 +35,8 @@ def isolate_system_hooks(monkeypatch):
 
 
 class ScriptedRunner(Runner):
-    """Yields a fixed script, so a test can hand the runtime events, bare strings, or both."""
+    """Yields a fixed script, so a test can hand the runtime AK events — or bare strings, to prove
+    the runtime rejects them."""
 
     def __init__(self, script):
         super().__init__("ScriptedRunner")
@@ -172,47 +174,22 @@ async def test_reasoning_reaches_hooks_but_never_reaches_delta():
 
 
 @pytest.mark.asyncio
-async def test_str_yielding_runner_is_normalised_into_one_synthetic_message():
-    # TRANSITIONAL (§4 rule 4). Delete with the branch in PR 6.
-    chunks = await _collect(["Hel", "lo"])
+async def test_a_str_yielding_runner_now_fails_loudly():
+    """The transition is over: PR 1's normalisation branch is gone, so an unmigrated adapter is a
+    hard error rather than being quietly patched up.
 
-    events = _events(chunks)
-    assert [type(event) for event in events] == [MessageStart, TextDelta, TextDelta, MessageEnd]
-    assert len({event.message_id for event in events}) == 1
-    assert [chunk.delta for chunk in chunks if isinstance(chunk.event, TextDelta)] == ["Hel", "lo"]
-
-
-@pytest.mark.asyncio
-async def test_str_yielding_runner_tokens_pass_through_the_hook_chain():
-    # TRANSITIONAL (§4 rule 4), and the reason the branch normalises rather than short-circuits: an
-    # earlier draft yielded the str directly, silently disabling every on_stream_chunk hook until PR 6.
-    hook = RecordingHook(transform=lambda d: None if d == "b" else d.upper())
-
-    chunks = await _collect(["a", "b", "c"])
-    assert [chunk.delta for chunk in chunks if isinstance(chunk.event, TextDelta)] == ["a", "b", "c"]
-
-    chunks = await _collect(["a", "b", "c"], hooks=[hook])
-
-    assert hook.seen == ["a", "b", "c"]
-    assert [chunk.delta for chunk in chunks if isinstance(chunk.event, TextDelta)] == ["A", "C"]
-    assert [event.content for event in _events(chunks) if isinstance(event, TextDelta)] == ["A", "C"]
-
-
-@pytest.mark.asyncio
-async def test_fully_redacted_str_stream_emits_neither_boundary():
-    # TRANSITIONAL (§4 rule 4): allocating the message id and committing MessageStart are separate
-    # steps. Emitting the boundary on the first str gives an AG-UI client an empty assistant bubble.
-    hook = RecordingHook(transform=lambda d: None)
-
-    chunks = await _collect(["a", "b"], hooks=[hook])
-
-    assert _events(chunks) == []
-    assert [chunk.done for chunk in chunks] == [True]
+    Asserting the `ValidationError` specifically, not merely an absence of output (§4 rule 6): the
+    branch used to synthesise boundaries around bare strings, and its removal has to surface as a
+    failure a developer cannot miss. `StreamChunk.event` is a discriminated union of the AK events,
+    so a `str` cannot satisfy it.
+    """
+    with pytest.raises(ValidationError):
+        await _collect(["Hel", "lo"])
 
 
 @pytest.mark.asyncio
 async def test_event_yielding_runner_gets_no_synthetic_boundaries():
-    # The transitional branch must stay inert for a migrated adapter: its own MessageStart/MessageEnd
+    # A migrated adapter owns its boundaries end to end: its own MessageStart/MessageEnd
     # are the only boundaries, so PR 4-6 adapters are not double-wrapped.
     script = [
         MessageStart(message_id="m1"),
