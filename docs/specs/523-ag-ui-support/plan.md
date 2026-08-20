@@ -258,9 +258,19 @@ round-trip state.
        runs a postinstall phone-home. `@ag-ui/client`'s `HttpAgent` was the near-miss, rejected because
        `rxjs` and `zod` would become the app's first runtime dependencies and an observable would hide
        the POST-and-SSE mechanics the example exists to show. The README points at CopilotKit instead.
+     - **The asset route matches names, it does not join them.** CodeQL raised three High
+       path-injection alerts against the first version, which built `assets/<Path(filename).name>` and
+       leaned on an `is_relative_to` containment check. They were false positives — but a near miss:
+       `Path("..").name` is `".."`, not `""`, so the containment check was the only thing stopping it
+       and `.name` alone was never sufficient. The route now compares `filename` against the entries
+       `iterdir()` yields, so user input never becomes a path segment and no guard has to be trusted;
+       the query has no dataflow left to follow either. A regression test sends `/assets/%2e%2e`
+       percent-encoded, because httpx normalises a literal `/assets/..` to `/` before it leaves the
+       client and would have passed against anything.
      - The Node toolchain is **optional**: `build.sh` warns and continues when `npm` is absent, and
        `GET /` explains how to build. No CI job sets up Node for this example, and `app_test.py`
-       exercises the AG-UI routes rather than the page, so nothing in CI depends on the build. Where
+       exercises the AG-UI routes and the asset route's 404 paths, never the built page, so nothing in
+       CI depends on the build. Where
        npm *is* present, `npm run build` type-checks before bundling, so a type error fails the build
        instead of shipping.
      - "Show a tool call live" **cannot be met at PR 3** — see Verify — and the example does not try

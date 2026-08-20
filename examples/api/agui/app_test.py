@@ -91,6 +91,16 @@ async def test_routes_reject_a_missing_or_bad_token(base_url):
 
 
 @pytest.mark.asyncio
+async def test_the_asset_route_serves_nothing_outside_assets(base_url):
+    """The route matches names against the assets directory, so neither traversal nor an unknown
+    name can reach a file. `..` must be sent percent-encoded — httpx normalises a literal
+    `/assets/..` to `/` before it leaves the client, which would test nothing."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for path in ("/assets/%2e%2e", "/assets/nope.js"):
+            assert (await client.get(f"{base_url}{path}")).status_code == 404, path
+
+
+@pytest.mark.asyncio
 async def test_run_lifecycle_brackets_the_response(base_url):
     events = await collect(base_url, run_input("Say hello in five words.", str(uuid.uuid4())))
     types = [event["type"] for event in events]

@@ -68,14 +68,15 @@ def index() -> HTMLResponse:
 def asset(filename: str) -> FileResponse:
     """Serve one of Vite's built assets.
 
-    A path parameter cannot span a "/", and taking `.name` discards any traversal attempt regardless;
-    the containment check is what makes that a guarantee rather than a claim about FastAPI's routing.
+    The requested name is matched against the directory's own entries rather than joined onto it, so
+    the request never contributes a path segment — the servable set is exactly what is on disk, and a
+    traversal attempt has nothing to traverse.
     """
-    root = (DIST / "assets").resolve()
-    candidate = (root / Path(filename).name).resolve()
-    if not candidate.is_relative_to(root) or not candidate.is_file():
-        raise HTTPException(status_code=404, detail=f"No such asset: {filename}")
-    return FileResponse(candidate)
+    root = DIST / "assets"
+    match = next((p for p in root.iterdir() if p.name == filename and p.is_file()), None) if root.is_dir() else None
+    if match is None:
+        raise HTTPException(status_code=404, detail="No such asset")
+    return FileResponse(match)
 
 
 RESTAPI.add(ui_router)
