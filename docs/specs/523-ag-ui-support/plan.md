@@ -462,6 +462,14 @@ branch until PR 6 deletes it.
      about `delta` and the event list cannot show it; and three `test_tool_adk.py` fixtures had to set
      `thought = False` explicitly, since a bare `MagicMock` attribute is truthy and would classify
      every fixture's text as reasoning — a real `types.Part` defaults it to `None`.
+  8. **Handoffs cost no code, and that was the finding worth recording.** Raised for ADK after PR 4
+     mapped OpenAI's handoff run items: nothing was needed here, because `TransferToAgentTool` is a
+     `FunctionTool`, so a transfer arrives as an ordinary `function_call` and step 3's mapping already
+     carries it. Tests were still added, because §10's cross-adapter claim rested on reading the SDK
+     rather than on anything the suite checked — one of them reads the tool's name off
+     `TransferToAgentTool` instead of a literal, so an upstream rename fails rather than silently
+     invalidating the claim. OpenAI remains the only adapter that needed a branch, since it is the
+     only one that lifts handoffs out of its own tool stream.
 - **Verify:** `uv run pytest tests/test_adk_runner.py tests/test_tool_adk.py`, then the full suite.
 
 

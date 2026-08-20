@@ -808,6 +808,12 @@ first; two need it for the second.
       belongs to the frameworks, not to the mapping. Unwrapping a lone `result` key was rejected: it
       would make a tool that genuinely returns `{"result": x}` indistinguishable from one returning
       `x`. PR 7's fidelity matrix should carry this rather than re-deriving it.
+    - **Handoffs need no branch, and that is now tested rather than assumed.** `TransferToAgentTool`
+      is a `FunctionTool`, so a transfer reaches the adapter through `get_function_calls()` like any
+      other tool and `_tool_events` maps it unchanged — the same `ToolCall*` events OpenAI emits for
+      the same concept, which is the cross-adapter property the handoff section below claims.
+      `test_adk_runner.py` reads the tool's name off the SDK rather than a literal, so an upstream
+      rename fails the test instead of silently invalidating the claim.
   - **LangGraph** has an id but its `on_chat_model_start` / `on_chat_model_end` fire around *every*
     model call whether or not prose was streamed, so mapping them directly brackets a tool-calling
     turn into a message with nothing in it — the empty assistant bubble §4 rule 4 exists to prevent.

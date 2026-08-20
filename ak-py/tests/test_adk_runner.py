@@ -584,6 +584,48 @@ class TestGoogleADKRunnerStreamEvents:
             await b.aclose()
 
 
+class TestGoogleADKRunnerHandoffs:
+    """ADK needs no handoff branch, and these are what make that a guarantee rather than an assumption.
+
+    A transfer is an ordinary tool call here: `TransferToAgentTool` is a `FunctionTool`, so it reaches
+    the adapter through `get_function_calls()` like any other and `_tool_events` maps it unchanged.
+    OpenAI is the adapter that had to be told (spec §10), because it alone lifts handoffs out of its
+    tool stream into dedicated run items. Both adapters therefore emit the same AK events for the same
+    concept, which is the property the spec claims and nothing was checking.
+    """
+
+    def test_the_transfer_tools_real_name_is_read_from_the_sdk(self):
+        """Pinned against the SDK rather than a literal. If ADK renamed the tool or stopped deriving
+        it from a FunctionTool, §10's cross-adapter claim would be stale and this is what says so."""
+        from google.adk.tools import FunctionTool, TransferToAgentTool
+
+        tool = TransferToAgentTool(agent_names=["billing"])
+        assert isinstance(tool, FunctionTool)
+        assert tool.name == "transfer_to_agent"
+
+    @pytest.mark.asyncio
+    async def test_a_handoff_maps_like_any_other_tool_call(self):
+        events = await _collect(
+            [
+                _nonpartial_event(
+                    calls=[_call(name="transfer_to_agent", args={"agent_name": "billing"}, call_id="ho-1")],
+                    responses=[_response(name="transfer_to_agent", response={"result": None}, call_id="ho-1")],
+                )
+            ]
+        )
+        assert _shape(events) == ["tool_call_start", "tool_call_args", "tool_call_end", "tool_call_result"]
+        assert {event.tool_call_id for event in events} == {"ho-1"}
+        assert [event.name for event in events if event.type == "tool_call_start"] == ["transfer_to_agent"]
+        assert [event.delta for event in events if event.type == "tool_call_args"] == ['{"agent_name": "billing"}']
+
+    @pytest.mark.asyncio
+    async def test_a_handoff_needs_no_special_case_to_be_bracketed(self):
+        """The call is opened and closed even when the transfer returns nothing to report, so a client
+        never holds an unresolved handoff."""
+        events = await _collect([_nonpartial_event(calls=[_call(name="transfer_to_agent", call_id="ho-2")])])
+        assert _shape(events) == ["tool_call_start", "tool_call_end"]
+
+
 class TestGoogleADKRunnerErrorHandling:
     """Error replies from failures that happen before the prompt is extracted"""
 
