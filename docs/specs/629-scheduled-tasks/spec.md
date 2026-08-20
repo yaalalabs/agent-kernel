@@ -123,7 +123,8 @@ def _record_trigger(self, req) -> None:          # never raises: log-and-continu
     from ..schedule.manager import ScheduleManager
     manager = ScheduleManager.get()
     if manager is not None:
-        manager.record_trigger(task_id, request_id=getattr(req, "request_id", None),
+        manager.record_trigger(task_id, req.user_id,
+                               request_id=getattr(req, "request_id", None),
                                occurred_at=getattr(req, "scheduled_time", None))
 ```
 
@@ -193,7 +194,7 @@ class ScheduleManager:
     def list_tasks(self, user_id=None, limit=None, cursor=None) -> ScheduledTaskPage
     def update(self, task_id, amendment: dict, user_id=None) -> ScheduledTask
     def cancel(self, task_id, user_id=None) -> ScheduledTask
-    def record_trigger(self, task_id, request_id=None, occurred_at=None) -> None
+    def record_trigger(self, task_id, user_id, request_id=None, occurred_at=None) -> None
 ```
 
 - **Transport compatibility (fail-fast)**: at construction, when `provider.supported_transports is not None` and `QueueTransportFactory.resolve_type()` (`pipeline/transport/base.py:72-87`) is not in the set, raise `AKConfigError("schedule provider 'eventbridge' delivers to 'sqs' transports, but the configured queue transport is 'in_memory'")`. `resolve_type()` is used (not `create()`) because it returns the declared or URL-implied type even where the pipeline transport class has not shipped (ECS today).
@@ -202,7 +203,7 @@ class ScheduleManager:
 - **Amendment** (`update`): load + ownership check → reject when `status` in (`completed`, `cancelled`) with `ValueError` → apply the amendable fields (semantic re-validation) → `store.update` → `provider.update` (which re-freezes the trigger body; pause/resume maps to provider state). On provider failure the store change is rolled back to the previous record and the error re-raised.
 - **Cancel**: ownership check → `provider.delete(provider_ref)` (tolerates already-gone) → `store.update(status=CANCELLED)`. Soft transition: the record is the audit trail.
 - **Ownership**: `get_task`/`update`/`cancel` raise `PermissionError` when `user_id is not None and task.user_id != user_id` (the thread convention, `integration/thread/manager.py:251-252`); `list_tasks` filters by owner.
-- **record_trigger**: `store.record_trigger(task_id, request_id, occurred_at or now)` updating `last_triggered_at`, `trigger_count += 1`, `last_request_id`; a one-time task (spec has `at`) also moves to `COMPLETED`. Wrapped in `try/except Exception: log`: recording never fails a run.
+- **record_trigger**: the acting `user_id` must own the task, otherwise nothing is recorded and a warning is logged — the trigger metadata arrives on a client-bindable chat request, so a caller can name any task id, and a forged one would otherwise inflate another user's counters and complete their one-time task (after which no amendment or cancellation is accepted). An absent identity is a mismatch, not an unauthenticated caller to wave through. Then `store.record_trigger(task_id, request_id, occurred_at or now)` updating `last_triggered_at`, `trigger_count += 1`, `last_request_id`; a one-time task (spec has `at`) also moves to `COMPLETED`. Wrapped in `try/except Exception: log`: recording never fails a run.
 - **Pagination**: cursor/limit helpers move to a new shared `core/util/pagination.py` (`encode_cursor`, `decode_cursor`, `clamp_limit`) extracted verbatim from `integration/thread/manager.py:27-54`; the thread manager is refactored to call them (behavior identical: base64 offset cursor, `ValueError("Invalid pagination cursor")`, default 50 / max 200). `ScheduleManager` uses the same helpers.
 
 ### Trigger bodies and delivery

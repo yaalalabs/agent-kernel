@@ -223,6 +223,12 @@ class ScheduleManager:
         than a delete. Deregistration tolerates a registration that is already gone, which is the
         normal state of a one-time schedule that has already fired.
 
+        Ordered as :meth:`create` and :meth:`update` are — store first, provider second, store
+        restored if the provider rejects — so a caller that sees an error never has to wonder which
+        of the two took effect. The window this leaves, where the record reads cancelled while the
+        registration can still fire once, is the harmless direction: ``apply_trigger`` refuses to
+        complete a cancelled task, so a trigger landing in it records its occurrence and nothing more.
+
         :param task_id: Identifier of the task to cancel.
         :param user_id: When provided, the task's owner must match.
         :return: The cancelled task.
@@ -231,19 +237,28 @@ class ScheduleManager:
         :raises ValueError: If the task is already closed.
         :raises ScheduleError: If the provider rejected the deregistration.
         """
-        task = self._require_amendable_task(task_id, user_id)
-        if task.provider_ref:
-            self._provider.delete(task.provider_ref)
+        previous = self._require_amendable_task(task_id, user_id)
+        cancelled = previous.model_copy(update={"status": ScheduleStatus.CANCELLED, "updated_at": utc_now_iso()})
+        self._store.update(cancelled)
+        try:
+            if previous.provider_ref:
+                self._provider.delete(previous.provider_ref)
+        except Exception:
+            self._log.error(f"Restoring scheduled task {task_id}: provider deregistration failed")
+            self._store.update(previous)
+            raise
         self._log.info(f"Cancelled scheduled task {task_id}")
-        return self._store.update(task.model_copy(update={"status": ScheduleStatus.CANCELLED, "updated_at": utc_now_iso()}))
+        return cancelled
 
-    def record_trigger(self, task_id: str, request_id: Optional[str] = None, occurred_at: Optional[str] = None) -> None:
+    def record_trigger(self, task_id: str, user_id: Optional[str], request_id: Optional[str] = None, occurred_at: Optional[str] = None) -> None:
         """Record that an occurrence of a task fired, and complete a one-time task.
 
         Never raises: the occurrence fields are advisory bookkeeping, and a store that cannot
-        take them must not fail the run the trigger started.
+        take them must not fail the run the trigger started. A rejected owner is the same kind of
+        non-event — the run itself is legitimate, only its claim to be someone's occurrence is not.
 
         :param task_id: Identifier of the task that fired.
+        :param user_id: The user the run acts for; must own the task or nothing is recorded.
         :param request_id: Request id of the run the occurrence produced, when known.
         :param occurred_at: Occurrence timestamp reported by the provider; now when omitted.
         """
@@ -251,6 +266,8 @@ class ScheduleManager:
             task = self._store.get(task_id)
             if task is None:
                 self._log.warning(f"Trigger received for unknown scheduled task {task_id}")
+                return
+            if not self._owns_occurrence(task, user_id):
                 return
             # A one-time schedule has no further occurrences, so the trigger closes it.
             self._store.record_trigger(
@@ -261,6 +278,28 @@ class ScheduleManager:
             )
         except Exception as exc:
             self._log.error(f"Failed to record trigger of scheduled task {task_id}: {exc}")
+
+    def _owns_occurrence(self, task: ScheduledTask, user_id: Optional[str]) -> bool:
+        """Check that a run claiming to be a task's occurrence is entitled to say so.
+
+        The trigger metadata (``scheduled_task_id``) rides on the ordinary chat request that
+        providers deliver, and the chat request is a client-bindable model — so any caller can name
+        any task id. A genuine trigger always matches, because the manager froze ``user_id`` into
+        the body from the task's own owner; a forged one names a task it does not own, and would
+        otherwise inflate another user's occurrence counters and complete their one-time task out
+        from under them (after which no amendment or cancellation is accepted).
+
+        Stricter than :meth:`_check_ownership`: an absent identity is a mismatch rather than an
+        unauthenticated caller to wave through, since omitting ``user_id`` would reopen the hole.
+
+        :param task: The task the run claims to be an occurrence of.
+        :param user_id: The user the run acts for.
+        :return: True when the occurrence may be recorded.
+        """
+        if user_id is not None and task.user_id == user_id:
+            return True
+        self._log.warning(f"Ignoring trigger for scheduled task {task.task_id}: user {user_id} does not own it")
+        return False
 
     def _validate_transport_compatibility(self) -> None:
         """Fail fast when the provider cannot deliver to the configured queue transport.

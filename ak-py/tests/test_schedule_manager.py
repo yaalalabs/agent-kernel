@@ -485,6 +485,16 @@ class TestCancellation:
         with pytest.raises(KeyError, match="not found"):
             manager.cancel("missing")
 
+    def test_provider_failure_restores_the_active_record(self, store):
+        """A cancellation the provider rejected must not leave a record claiming it succeeded."""
+        manager = ScheduleManager(provider=FakeScheduleProvider(fail_on="delete"), store=store)
+        task = _create(manager)
+
+        with pytest.raises(ScheduleError, match="provider delete rejected"):
+            manager.cancel(task.task_id)
+
+        assert store.get(task.task_id).status is ScheduleStatus.ACTIVE
+
     def test_cancelling_twice_is_rejected(self, manager):
         task = _create(manager)
         manager.cancel(task.task_id)
@@ -518,6 +528,24 @@ class TestTriggerRecording:
         manager.record_trigger(task.task_id, "u1", request_id="r1")
 
         assert store.get(task.task_id).status is ScheduleStatus.COMPLETED
+
+    def test_recording_against_a_task_another_user_owns_is_ignored(self, manager, store):
+        """A forged trigger must not complete someone else's one-time task out from under them."""
+        task = _create(manager, user_id="u1", spec=ScheduleSpec(at=FUTURE_AT))
+
+        manager.record_trigger(task.task_id, "u2", request_id="r1")
+
+        recorded = store.get(task.task_id)
+        assert recorded.trigger_count == 0
+        assert recorded.status is ScheduleStatus.ACTIVE
+
+    def test_recording_without_an_identity_is_ignored(self, manager, store):
+        """An absent user_id is a mismatch, not an unauthenticated caller to wave through."""
+        task = _create(manager, user_id="u1")
+
+        manager.record_trigger(task.task_id, None, request_id="r1")
+
+        assert store.get(task.task_id).trigger_count == 0
 
     def test_recording_an_unknown_task_is_ignored(self, manager):
         manager.record_trigger("missing", "u1", request_id="r1")
