@@ -187,6 +187,26 @@ Spec section references are to `spec.md`.
   NetworkPolicy + push-token Secret; example apps/Dockerfiles/README (k3d/microk8s/k3s paths).
 - **Verify:** `ct lint`; kind install with `values-dev.yaml` + one chat request through NATS;
   manual k3d walkthrough of the example README.
+- **Shipped deviations, all recorded in spec §13's tree:** the NACK CRs are gated by their own
+  `natsResources.enabled` rather than `nats.enabled` (the subchart flag also covers dev installs
+  running `auto_provision` with no NACK controller, where rendering CRs would fail the install),
+  and carry no subject transform per iteration 8's client-side partitioning; the io tier's plain
+  HPA (design R10) lives in its own `hpa-io.yaml`; the kind smoke values live in `chart/ci/`
+  where chart-testing discovers them. The chart also grew per-component image overrides
+  (`ioHandler.image` / `agentRunner.image` / `wsGateway.image` over a shared `image` block)
+  because the example bakes one Dockerfile per component, mirroring its ECS counterpart; and the
+  example's `deploy/package.sh` cross-installs Linux wheels via uv's `--python-platform`
+  (manylinux_2_28 floor: confluent-kafka ships no older-tagged wheels), so the images build from
+  macOS hosts too.
+- **Verified 2026-08-20:** `ct lint` green (`ci/ct.yaml`); all four values files template
+  cleanly against the pinned subcharts (valkey 0.11.0, nats 2.14.5, whose strict values schema
+  accepts the condition keys); `helm install` of `values-dev.yaml` + the kind smoke values on a
+  fresh kind cluster went ready on the first `--wait`, with the runner auto-provisioning the
+  4-partition streams at startup; and two live `rest_sync` chat turns round-tripped
+  REST -> NATS -> agent-runner (OpenAI, triage handoffs to the history and math agents) ->
+  NATS -> Valkey response store -> the waiting request, with session continuity across the
+  turns. The k3d walkthrough of the example README remains the manual gate (kind covered the
+  same import-and-install flow in its place).
 
 ## Iteration 11: Cross-cutting tests and CI
 
@@ -219,6 +239,16 @@ Spec section references are to `spec.md`.
 - **A2A/MCP uniformity over the pipeline**: A2A and MCP currently execute via `AgentService`
   inline even when their host process runs the pipeline; making them uniform is a separate
   design/issue (decided 2026-08-13).
+- **App metrics endpoint for the pipeline**: a Prometheus `/metrics` surface (optional extra,
+  `observability.metrics` config) covering what neither the broker exporters nor the tracing
+  providers can see: ConsumerLoop retry/permanent-failure counters, redeliveries, per-agent turn
+  duration, response-store wait times, WS push outcomes. The io handler and gateway add a route
+  to their existing FastAPI apps; the agent-runner, which has no HTTP server, needs a small
+  dedicated metrics listener plus chart-side PodMonitor/metrics-port wiring (the chart's
+  ServiceMonitor template already exists, disabled and documented as awaiting this). Keep label
+  cardinality bounded (per-agent yes, per-session/request no). A neutral pipeline feature, so
+  ECS deployments gain it too; the R11 recipes-not-bundled-stack posture is unchanged. Decided
+  2026-08-20: post-#495, its own issue.
 - **ECS runtime classes become pipeline instantiations**: `ECSAgentRunner`/
   `ECSStreamAgentRunner`/`ECSOutputConsumer`/`ECSIOHandler` still parallel the pipeline's
   `AgentRunner`/`ResponseHandler`/`IOHandler` instead of instantiating them. The wire formats

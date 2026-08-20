@@ -1,0 +1,288 @@
+# Agent Kernel pipeline chart: neutral defaults.
+#
+# The split of responsibilities mirrors the ECS Terraform deployment: your application image
+# declares WHAT runs (agents, config.yaml with execution.mode), and this chart injects WHERE it
+# runs (broker connection values, response store, session store) as AK_* environment variables,
+# which override the corresponding config.yaml fields.
+#
+# Flavor values files layer on top of this file; see values-dev.yaml, values-baremetal.yaml,
+# and values-eks.yaml. Full documentation: ak-deployment/ak-k8s/README.md.
+
+global:
+  # Prefix every image reference (this chart and its subcharts) with a private registry for
+  # air-gapped installs, e.g. "registry.example.internal:5000". A per-release manifest of every
+  # image the chart references is published as images.txt on the GitHub release.
+  imageRegistry: ""
+
+# The application image defaults, built from your app's Dockerfiles (see
+# examples/k8s/openai-queue-mode/ for the reference layout). Each component can override
+# repository and tag under its own block (ioHandler.image, agentRunner.image,
+# wsGateway.image), which is the natural fit for the example's one-Dockerfile-per-component
+# build; a single shared image with per-Deployment commands works just as well.
+image:
+  repository: agent-kernel-app
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Extra environment for every Agent Kernel container (io-handler, agent-runner, ws-gateway).
+# Standard EnvVar entries; the natural place for model provider credentials, e.g.
+#   - name: OPENAI_API_KEY
+#     valueFrom:
+#       secretKeyRef: {name: openai, key: api-key}
+extraEnv: []
+# Extra envFrom sources (ConfigMaps/Secrets) for every Agent Kernel container.
+extraEnvFrom: []
+
+execution:
+  # rest_sync (wait for the reply) | rest_async (accept, then poll) | async | stream
+  # (async and stream deliver over WebSocket and need wsGateway.enabled).
+  mode: rest_sync
+
+logging:
+  level: INFO
+
+transport:
+  # Queue transport carrying requests and replies between the io-handler and the agent-runner:
+  # nats | kafka | sqs. (in_memory cannot cross pods; see the single-process profile in
+  # values-dev.yaml for the smallest installs.)
+  type: nats
+  # Max messages fetched per receive call, common to both queues. Empty uses the library default.
+  batchSize: ""
+  input:
+    # Deliveries before a message is permanently failed (an error reply is produced and the
+    # message acknowledged).
+    maxReceiveCount: 3
+    # Consumer threads per agent-runner pod. Keep replicas * noOfConsumers <= partitions.
+    noOfConsumers: 5
+  output:
+    maxReceiveCount: 3
+    # Consumer threads per io-handler pod delivering replies.
+    noOfConsumers: 2
+  nats:
+    # Empty uses the in-cluster server from the nats subchart (nats://<release>-nats:4222).
+    url: ""
+    inputStream: AGENT_REQUESTS
+    inputSubjectPrefix: chat.req
+    outputStream: AGENT_REPLIES
+    outputSubjectPrefix: chat.out
+    # Partition subjects per stream, each with its own durable consumer; caps in-flight
+    # messages. Changing it re-maps sessions, so size it up front.
+    partitions: 32
+    # Visibility timeout in seconds: must exceed your longest agent turn or the turn runs twice.
+    ackWait: 300
+    # Seconds within which a repeated dedup id is dropped by the stream.
+    duplicateWindow: 300
+    # Seconds before an unconsumed message is discarded (safety net).
+    maxAge: 86400
+    # Create streams and consumers at startup if missing. Dev convenience; keep false in
+    # production and manage the objects declaratively instead (natsResources below).
+    autoProvision: false
+  kafka:
+    # Empty uses the in-cluster Strimzi cluster from kafka.enabled
+    # (<clusterName>-kafka-bootstrap:9092).
+    bootstrapServers: ""
+    inputTopic: agent-input
+    outputTopic: agent-output
+    # Consumer group prefix; the input and output consumers append their queue name.
+    groupId: agent-kernel
+    dlqSuffix: ".dlq"
+  sqs:
+    # Full queue URLs; SQS is the EKS-without-a-broker option (values-eks.yaml).
+    inputUrl: ""
+    outputUrl: ""
+
+# Replies travel back to the polling or waiting pod through this store; any broker transport
+# with more than one pod requires a shared backend (valkey or redis). type in_memory is valid
+# only for the single-process profile and fails fast otherwise.
+responseStore:
+  type: valkey
+  # Empty with valkey.enabled uses the in-cluster Valkey (valkey://<release>-valkey:6379).
+  url: ""
+  prefix: "ak:responses:"
+  # retryCount * delay bounds how long a rest_sync caller waits for a reply.
+  retryCount: 60
+  delay: 1
+
+session:
+  # Session store backend: valkey | redis | in_memory (single pod only). Other backends
+  # (dynamodb, cosmosdb, firestore) are configured through extraEnv.
+  type: valkey
+  url: ""
+  prefix: "ak:sessions:"
+
+ioHandler:
+  replicaCount: 2
+  # Optional per-component image; repository/tag fall back to the top-level image block.
+  image: {}
+  # The entry file in your image that calls IOHandler.run().
+  command: ["python", "app_io_handler.py"]
+  port: 8000
+  resources: {}
+  extraEnv: []
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Plain HPA: the io tier is request-bound, so CPU is the right signal here (the runner tier
+  # scales on queue depth via keda below).
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+
+agentRunner:
+  # The single-process profile (values-dev.yaml) disables this Deployment entirely.
+  enabled: true
+  replicaCount: 2
+  # Optional per-component image; repository/tag fall back to the top-level image block.
+  image: {}
+  # The entry file in your image that calls AgentRunner.run().
+  command: ["python", "app_agent_runner.py"]
+  resources: {}
+  extraEnv: []
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Consumers observe SIGTERM (ThreadRunner.shutdown_event), stop claiming work, and finish
+  # in-flight runs; keep this above your longest agent turn.
+  terminationGracePeriodSeconds: 120
+  # A short preStop sleep lets endpoint deregistration settle before SIGTERM arrives.
+  preStopSleepSeconds: 5
+
+# The WebSocket gateway tier: owns client sockets, enqueues chat frames directly to the
+# transport, and receives reply pushes from Response Handlers on its /internal/push endpoint.
+# Required for async and stream execution modes on a broker transport.
+wsGateway:
+  enabled: false
+  replicaCount: 2
+  # Optional per-component image; repository/tag fall back to the top-level image block.
+  image: {}
+  # The entry file in your image that calls WebSocketGateway.run(auth_validator=...).
+  command: ["python", "app_ws_gateway.py"]
+  port: 8000
+  auth:
+    # Shared secret authenticating Response Handler pushes to /internal/push. Required when
+    # the gateway is enabled; alternatively point existingSecret at a Secret holding the key
+    # push-auth-token.
+    token: ""
+    existingSecret: ""
+  resources: {}
+  extraEnv: []
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Gateway API entry (Standard channel). Prerequisites: the Gateway API CRDs and an
+# implementation (Envoy Gateway on baremetal, AWS Load Balancer Controller on EKS); this chart
+# installs neither.
+gateway:
+  enabled: false
+  className: envoy-gateway
+  # e.g. cert-manager.io/cluster-issuer: internal-ca
+  annotations: {}
+  # Hostname for the HTTP route; empty matches any host.
+  hostname: ""
+  http:
+    port: 80
+  tls:
+    enabled: false
+    port: 443
+    # The certificate Secret; with a cert-manager annotation above, cert-manager fills it.
+    secretName: ""
+  # The dedicated WebSocket route (rendered when wsGateway.enabled). Raised timeouts because
+  # agent streams are long-lived; request buffering must never be enabled on WS routes
+  # (Envoy Gateway deadlocks WebSocket upgrades when it buffers: envoyproxy/gateway#8578).
+  websocket:
+    path: /ws
+    # HTTPRoute timeouts; "0s" disables the timeout entirely.
+    requestTimeout: 0s
+
+# Fallback entry when no Gateway API implementation is available: a plain Service
+# type=LoadBalancer in front of the io-handler (and the ws-gateway when enabled).
+serviceLB:
+  enabled: false
+  annotations: {}
+  port: 80
+
+# Restricts ingress to ws-gateway pods: only the gateway data plane (WebSocket clients) and
+# Agent Kernel pods (Response Handler pushes to /internal/push) may connect. The app serves
+# both on one port, so the restriction is per-peer, not per-path.
+networkPolicy:
+  enabled: true
+  # Namespaces hosting the Gateway API data plane (proxy pods), matched by label. The default
+  # matches Envoy Gateway's install namespace.
+  gatewayNamespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: envoy-gateway-system
+
+# Queue-depth autoscaling for the agent-runner tier. Prerequisite: KEDA installed in the
+# cluster (this chart does not install it).
+keda:
+  enabled: false
+  minReplicaCount: 1
+  # Empty derives partitions / input.noOfConsumers (nats: transport.nats.partitions,
+  # kafka: kafka.partitions), the point past which extra replicas find no free partition.
+  maxReplicaCount: ""
+  pollingInterval: 30
+  cooldownPeriod: 300
+  # Pending messages per replica before scaling out.
+  lagThreshold: "5"
+  # NATS monitoring endpoint the scaler reads; empty uses the in-cluster subchart's headless
+  # service (<release>-nats-headless:8222).
+  natsMonitoringEndpoint: ""
+  # Region for the aws-sqs-queue scaler (transport.type sqs).
+  awsRegion: ""
+
+# Prometheus Operator ServiceMonitor for the io-handler Service. The application must expose
+# the metrics path for this to return anything; see the Observability section of the README.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  path: /metrics
+
+# ---------------------------------------------------------------------------------------------
+# Backing services.
+# ---------------------------------------------------------------------------------------------
+
+# In-cluster Valkey (official valkey-io/valkey-helm subchart): sessions, response store, and
+# the WebSocket connection store. Disable to point session.url/responseStore.url at an
+# external instance.
+valkey:
+  enabled: true
+
+# In-cluster NATS (official nats-io/k8s subchart). Disable to point transport.nats.url at an
+# external cluster.
+nats:
+  enabled: true
+  config:
+    jetstream:
+      enabled: true
+
+# Declarative JetStream objects as NACK CRs: the production posture (autoProvision false).
+# Prerequisite: the NACK controller and its CRDs. Renders the two streams plus one consumer
+# per partition, matching exactly what the transport verifies at startup.
+natsResources:
+  enabled: false
+
+# In-cluster Kafka as Strimzi CRs (cluster, node pool, topics). Prerequisite: the Strimzi
+# operator watching this namespace; this chart does not install it.
+kafka:
+  enabled: false
+  clusterName: ""
+  version: ""
+  replicas: 3
+  storage:
+    size: 20Gi
+    class: ""
+  # Partitions for the input and output topics; the per-session ordering unit. Sized up front:
+  # adding partitions later briefly breaks in-flight session ordering.
+  partitions: 32
+  topicReplicas: 3

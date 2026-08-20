@@ -1,0 +1,59 @@
+{{- if .Values.natsResources.enabled }}
+{{/*
+Declarative JetStream objects (NACK CRs): the production posture, paired with
+transport.nats.autoProvision false so a missing object fails loudly instead of being created
+with defaults. Shapes mirror exactly what the transport verifies at startup: two work-queue
+streams, and per stream one durable consumer per partition filtering
+<prefix>.<partition>.> with max_ack_pending 1 (one in-flight message per partition keeps a
+session's turns ordered). Partitioning is computed client-side, so no subject transform is
+needed. Prerequisite: the NACK controller, configured with this cluster's NATS URL.
+*/}}
+{{- $root := . }}
+{{- $streams := list
+      (dict "stream" .Values.transport.nats.inputStream
+            "prefix" .Values.transport.nats.inputSubjectPrefix
+            "maxReceiveCount" .Values.transport.input.maxReceiveCount)
+      (dict "stream" .Values.transport.nats.outputStream
+            "prefix" .Values.transport.nats.outputSubjectPrefix
+            "maxReceiveCount" .Values.transport.output.maxReceiveCount) }}
+{{- range $spec := $streams }}
+---
+apiVersion: jetstream.nats.io/v1beta2
+kind: Stream
+metadata:
+  name: {{ $spec.stream | lower | replace "_" "-" }}
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" $root "component" "nats-resources") | nindent 4 }}
+spec:
+  name: {{ $spec.stream }}
+  subjects:
+    - {{ printf "%s.>" $spec.prefix | quote }}
+  # A terminal ack removes the message (SQS parity); maxAge is the safety net for messages
+  # nothing ever consumes.
+  retention: workqueue
+  storage: file
+  maxAge: {{ $root.Values.transport.nats.maxAge }}s
+  duplicateWindow: {{ $root.Values.transport.nats.duplicateWindow }}s
+{{- range $partition := until (int $root.Values.transport.nats.partitions) }}
+---
+apiVersion: jetstream.nats.io/v1beta2
+kind: Consumer
+metadata:
+  name: {{ printf "%s-p%d" $spec.stream $partition | lower | replace "_" "-" }}
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" $root "component" "nats-resources") | nindent 4 }}
+spec:
+  streamName: {{ $spec.stream }}
+  durableName: {{ printf "%s-p%d" $spec.stream $partition }}
+  filterSubject: {{ printf "%s.%d.>" $spec.prefix $partition | quote }}
+  ackPolicy: explicit
+  # The visibility timeout: a message unacknowledged past this is redelivered.
+  ackWait: {{ $root.Values.transport.nats.ackWait }}s
+  # The server-side backstop, one past the client's own permanent-failure ceiling.
+  maxDeliver: {{ add $spec.maxReceiveCount 1 }}
+  # One in-flight message per partition: the per-session ordering guarantee.
+  maxAckPending: 1
+  deliverPolicy: all
+{{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,33 @@
+{{- if and .Values.networkPolicy.enabled .Values.wsGateway.enabled }}
+{{/*
+Gateway pods serve WebSocket upgrades and /internal/push on one port, so the restriction is
+per-peer: only the Gateway API data plane (client traffic) and Agent Kernel pods of this
+release (Response Handler pushes) may reach them. Everything else in the cluster is cut off
+from /internal/push, which stays additionally guarded by the push token.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-ws-gateway
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "ws-gateway") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "ws-gateway") | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- with .Values.networkPolicy.gatewayNamespaceSelector }}
+        - namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "agent-kernel.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - port: {{ .Values.wsGateway.port }}
+          protocol: TCP
+{{- end }}

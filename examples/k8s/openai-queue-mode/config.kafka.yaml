@@ -1,0 +1,47 @@
+# Two-process pipeline over Kafka: the config baked into the image when deploy/package.sh
+# runs with TRANSPORT=kafka.
+#
+# Same split as config.nats.yaml: this file declares WHAT runs, the Helm chart injects WHERE
+# as AK_* env vars. Kafka expects its topics to exist (Agent Kernel never creates them); the
+# chart's kafka.enabled renders them as Strimzi KafkaTopic CRs.
+
+execution:
+  mode: rest_sync              # rest_sync (wait for the reply) | rest_async (accept, then poll)
+
+  queues:
+    type: kafka
+
+    kafka:
+      # The chart overrides this with the in-cluster Strimzi bootstrap service
+      # (AK_EXECUTION__QUEUES__KAFKA__BOOTSTRAP_SERVERS).
+      bootstrap_servers: "ak-kafka-kafka-bootstrap:9092"
+      input_topic: agent-input
+      output_topic: agent-output
+      group_id: agent-kernel     # consumers append their queue name: agent-kernel-input, ...
+      dlq_suffix: ".dlq"         # permanently failed records land on <topic>.dlq
+
+    input:
+      max_receive_count: 3
+      no_of_consumers: 2         # keep replicas * consumers <= topic partitions
+    output:
+      no_of_consumers: 1
+
+  response_store:
+    type: valkey
+    valkey:
+      url: "valkey://ak-valkey:6379"
+      prefix: "ak:responses:"
+    retry_count: 60
+    delay: 1
+
+# Kafka has no broker-native delivery counting or dedup, so the transport keeps that
+# bookkeeping in the session store's backend: on Kubernetes always a shared one.
+session:
+  type: valkey
+  valkey:
+    url: "valkey://ak-valkey:6379"
+    prefix: "ak:sessions:"
+
+logging:
+  ak:
+    level: INFO

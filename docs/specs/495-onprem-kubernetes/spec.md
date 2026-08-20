@@ -783,10 +783,15 @@ ak-deployment/ak-k8s/
 │       ├── configmap-env.yaml         # AK_* env injection (table below)
 │       ├── scaledobject.yaml          # KEDA; scaler chosen by transport (kafka lag / nats pending)
 │       ├── servicemonitor.yaml        # optional
-│       ├── nats-resources.yaml        # NACK Stream/Consumer CRs (incl. subject transform,
-│       │                              #   duplicate_window, max_deliver): nats.enabled
-│       └── kafka-cluster.yaml         # Strimzi Kafka/KafkaNodePool/KafkaTopic CRs: kafka.enabled
-└── ci/                            # chart-testing config + kind smoke values
+│       ├── nats-resources.yaml        # NACK Stream/Consumer CRs (duplicate_window, max_deliver,
+│       │                              #   per-partition consumers; no subject transform: §7's
+│       │                              #   client-side partitioning): natsResources.enabled, its
+│       │                              #   own gate because nats.enabled also covers dev installs
+│       │                              #   with auto_provision and no NACK controller
+│       ├── kafka-cluster.yaml         # Strimzi Kafka/KafkaNodePool/KafkaTopic CRs: kafka.enabled
+│       └── hpa-io.yaml                # plain HPA for the io tier (R10)
+└── ci/                            # chart-testing config + kind smoke values (smoke values live
+                                   #   in chart/ci/, where chart-testing discovers them)
 ```
 
 - **Env-var contract** (the ECS Terraform split preserved: app config declares modes, infra

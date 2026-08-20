@@ -1,0 +1,97 @@
+{{/*
+The io tier: Request Handler (REST API) + Response Handler threads, IOHandler.run(). Its API
+stays plain REST on broker transports; WebSocket traffic terminates on the ws-gateway tier.
+On the in_memory transport this single Deployment runs the whole pipeline in-process (the
+single-process profile), co-hosting the WebSocket handlers when the app passes an
+auth_validator.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-io
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "io-handler") | nindent 4 }}
+spec:
+  {{- if not .Values.ioHandler.autoscaling.enabled }}
+  replicas: {{ .Values.ioHandler.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "io-handler") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/env: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
+        {{- with .Values.ioHandler.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "io-handler") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: io-handler
+          image: {{ include "agent-kernel.image" (dict "root" . "image" .Values.ioHandler.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.ioHandler.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ioHandler.port }}
+              protocol: TCP
+          env:
+            - name: AK_API__PORT
+              value: {{ .Values.ioHandler.port | quote }}
+            {{- if .Values.wsGateway.enabled }}
+            # The Response Handler authenticates its pushes to the gateway pods with this.
+            - name: AK_WEBSOCKET_API__PUSH_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agent-kernel.pushTokenSecretName" . }}
+                  key: push-auth-token
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.ioHandler.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "agent-kernel.fullname" . }}-env
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          {{- with .Values.ioHandler.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.ioHandler.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ioHandler.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ioHandler.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,50 @@
+# Two-process pipeline over NATS JetStream: the config baked into the image when
+# deploy/package.sh runs with TRANSPORT=nats (the default).
+#
+# This file declares WHAT runs (mode, logging) plus workable in-cluster connection defaults;
+# the Helm chart injects WHERE it runs as AK_* env vars, which override the matching fields
+# here (see ak-deployment/ak-k8s/README.md). The values below match the chart's dev flavor so
+# the image also runs without any injection.
+
+execution:
+  mode: rest_sync              # rest_sync (wait for the reply) | rest_async (accept, then poll)
+
+  queues:
+    type: nats
+
+    nats:
+      # The chart overrides this with the in-cluster service (AK_EXECUTION__QUEUES__NATS__URL).
+      url: "nats://ak-nats:4222"
+      input_stream: AGENT_REQUESTS
+      input_subject_prefix: chat.req
+      output_stream: AGENT_REPLIES
+      output_subject_prefix: chat.out
+      partitions: 4              # 32 in production; 4 keeps micro-cluster provisioning quick
+      ack_wait: 300              # visibility timeout: must exceed your longest agent turn
+      duplicate_window: 300      # repeated dedup ids are dropped by the stream in this window
+      auto_provision: true       # dev posture; production manages the objects as NACK CRs
+
+    input:
+      max_receive_count: 3       # deliveries before a message is permanently failed
+      no_of_consumers: 2         # runner threads per pod; keep replicas * consumers <= partitions
+    output:
+      no_of_consumers: 1
+
+  # Required on every broker transport: the two processes exchange replies through this store.
+  response_store:
+    type: valkey
+    valkey:
+      url: "valkey://ak-valkey:6379"
+      prefix: "ak:responses:"
+    retry_count: 60              # with delay: how long a rest_sync caller waits (60 x 1s)
+    delay: 1
+
+session:
+  type: valkey
+  valkey:
+    url: "valkey://ak-valkey:6379"
+    prefix: "ak:sessions:"
+
+logging:
+  ak:
+    level: INFO

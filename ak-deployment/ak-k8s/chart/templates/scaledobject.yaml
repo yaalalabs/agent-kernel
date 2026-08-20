@@ -1,0 +1,44 @@
+{{- if and .Values.keda.enabled .Values.agentRunner.enabled }}
+{{/*
+Queue-depth autoscaling for the runner tier (KEDA is a documented prerequisite). The trigger
+follows the transport: Kafka consumer lag, NATS JetStream stream pending, or SQS queue length.
+LLM-bound work idles the CPU while requests back up, so queue depth is the signal here; the io
+tier scales on plain CPU (ioHandler.autoscaling).
+*/}}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-agent-runner
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "agent-runner") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "agent-kernel.fullname" . }}-agent-runner
+  minReplicaCount: {{ .Values.keda.minReplicaCount }}
+  maxReplicaCount: {{ include "agent-kernel.kedaMaxReplicas" . }}
+  pollingInterval: {{ .Values.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
+  triggers:
+    {{- if eq .Values.transport.type "kafka" }}
+    - type: kafka
+      metadata:
+        bootstrapServers: {{ include "agent-kernel.kafkaBootstrap" . }}
+        consumerGroup: {{ printf "%s-input" .Values.transport.kafka.groupId }}
+        topic: {{ .Values.transport.kafka.inputTopic }}
+        lagThreshold: {{ .Values.keda.lagThreshold | quote }}
+    {{- else if eq .Values.transport.type "nats" }}
+    - type: nats-jetstream
+      metadata:
+        natsServerMonitoringEndpoint: {{ default (printf "%s-nats-headless:8222" .Release.Name) .Values.keda.natsMonitoringEndpoint }}
+        account: "$G"
+        stream: {{ .Values.transport.nats.inputStream }}
+        lagThreshold: {{ .Values.keda.lagThreshold | quote }}
+    {{- else if eq .Values.transport.type "sqs" }}
+    - type: aws-sqs-queue
+      metadata:
+        queueURL: {{ .Values.transport.sqs.inputUrl }}
+        queueLength: {{ .Values.keda.lagThreshold | quote }}
+        awsRegion: {{ required "keda.awsRegion is required for the sqs scaler" .Values.keda.awsRegion }}
+        identityOwner: operator
+    {{- end }}
+{{- end }}
