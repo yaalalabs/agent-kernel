@@ -1,7 +1,7 @@
 ---
 slug: /aws-queue-mode-scalability
 title: "Scaling Agent Kernel on AWS: Decoupling Request Handling from Agent Execution"
-authors: [yaala]
+authors: [lkumara]
 tags: [agent-kernel, aws, scalability, sqs, lambda, ecs, queue-mode, enterprise-ai]
 image: /img/card.png
 description: Agent Kernel now decouples request handling from agent execution on AWS with a durable SQS queue pipeline, so traffic spikes scale your infrastructure instead of overwhelming it, with zero agent-code changes.
