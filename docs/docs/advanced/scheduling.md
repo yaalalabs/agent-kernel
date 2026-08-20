@@ -390,3 +390,14 @@ task at create/amend time and the provider substitutes the occurrence placeholde
 - [`examples/api/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/api/schedule-openai) —
   a runnable REST API with the `local` provider and `in_memory` store, showing deferral, the management
   routes, and an agent that schedules work itself.
+- [`examples/aws-containerized/openai-schedule`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/aws-containerized/openai-schedule) —
+  the same capability on AWS ECS with the `eventbridge` provider and a DynamoDB store: a REST-service
+  task serving the management routes, an agent-runner task consuming the Input Queue, and Terraform
+  provisioning the schedule group, execution role and schedule table.
+- [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/aws-serverless/schedule-openai) —
+  the AWS Lambda equivalent: request-handler, agent-runner and response-handler Lambdas with the
+  `eventbridge` provider and a DynamoDB store.
+
+See the [AWS containerized](../deployment/aws-containerized.md#scheduling-eventbridge-scheduler) and
+[AWS serverless](../deployment/aws-serverless.md#scheduling-eventbridge-scheduler) deployment guides for
+the `enable_scheduling` / `create_dynamodb_schedule_table` Terraform variables.

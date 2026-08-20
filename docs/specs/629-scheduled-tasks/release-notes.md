@@ -59,7 +59,7 @@ What ships with it:
   an `AKConfigError` rather than reporting a successful cancellation whose timer keeps firing.
 - **Ownership everywhere.** Every task belongs to a `user_id`; a creation without one is a 400 and
   every later read or change is checked against it.
-- **New optional extra**: `pip install "agentkernel[schedule]"` (croniter, for cron parsing). The
+- **New optional extra**: `pip install "agentkernel[cron]"` (croniter, for cron parsing). The
   EventBridge provider rides the existing `aws` extra.
 
 Docs: [Scheduled Tasks](https://kernel.yaala.ai/docs/advanced/scheduling). Runnable example:
