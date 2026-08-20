@@ -234,8 +234,11 @@ class PydanticAIRunner(BaseRunner):
         value, and `_store_framework_context`. Neither is in a `finally`, so a client disconnect
         leaves the stored context and history untouched.
 
-        Note: a streaming run stops at the first ``output_type`` match, so structured outputs
-        may truncate differently than the non-streaming ``run()`` path.
+        **Structured outputs now behave exactly as they do on the ``run()`` path**, which they did not
+        before. ``run_stream_events`` is a wrapper over ``run()`` itself — it passes an
+        ``event_stream_handler`` and awaits the same call — whereas ``run_stream`` treated the first
+        output matching ``output_type`` as final and could therefore truncate where ``run()`` would not.
+        Replacing it removed that streamed-vs-sync divergence rather than preserving it.
 
         :param agent: The Pydantic AI agent to run.
         :param session: The session to use for the agent.
@@ -257,9 +260,11 @@ class PydanticAIRunner(BaseRunner):
             produced = copy.deepcopy(incoming)
 
             # Locals, never on self — see the docstring. `open_parts` maps a live part index to the
-            # (kind, id) it opened with; `run_result` is the final event's result, kept for the
-            # history write-back once the stream has drained.
+            # (kind, id) it opened with, `carried` holds a stream kept open across a part boundary, and
+            # `run_result` is the final event's result, kept for the history write-back once the stream
+            # has drained.
             open_parts: dict[int, tuple[str, str]] = {}
+            carried: dict[str, str] = {}
             run_result: Any = None
 
             async with agent.agent.run_stream_events(content, message_history=history, deps=produced) as events:
@@ -268,17 +273,27 @@ class PydanticAIRunner(BaseRunner):
                     if kind == "agent_run_result":
                         run_result = getattr(event, "result", None)
                         continue
-                    for stream_event in self._map_event(kind, event, open_parts):
+                    for stream_event in self._map_event(kind, event, open_parts, carried):
                         yield stream_event
 
             # Closing whatever the stream never closed itself. Reached only on a clean drain: a client
-            # disconnect raises GeneratorExit at a yield above and unwinds past this.
+            # disconnect raises GeneratorExit at a yield above and unwinds past this. `carried` is
+            # drained too — a stream held open for a continuation that never arrived is still a stream
+            # a client is waiting to see closed.
             for index in list(open_parts):
-                for stream_event in self._close_part(index, open_parts):
+                for stream_event in self._close_part(index, open_parts, carried):
                     yield stream_event
+            for part_kind, stream_id in list(carried.items()):
+                del carried[part_kind]
+                yield MessageEnd(message_id=stream_id) if part_kind == "text" else ReasoningEnd(message_id=stream_id)
 
             if fw_session is not None and run_result is not None:
                 fw_session.messages = to_jsonable_python(run_result.all_messages())
+            elif fw_session is not None:
+                # The write-back is the only thing that carries the conversation into the next turn, so
+                # its absence must not be silent: without the terminal event there is nothing to read
+                # `all_messages()` off, and the next request would start with no history and no clue why.
+                _log.warning("Pydantic AI stream drained without an agent_run_result event; conversation history was not persisted")
 
             # Only after the stream drains normally, so a disconnect or mid-stream error leaves the stored
             # context intact. Deliberately not in a finally.
@@ -290,7 +305,7 @@ class PydanticAIRunner(BaseRunner):
             if context is not None:
                 context.reset()
 
-    def _map_event(self, kind: str | None, event: Any, open_parts: dict[int, tuple[str, str]]) -> list[StreamEvent]:
+    def _map_event(self, kind: str | None, event: Any, open_parts: dict[int, tuple[str, str]], carried: dict[str, str]) -> list[StreamEvent]:
         """Translate one Pydantic AI run event into AK events.
 
         Discriminates on `event_kind`, which is the SDK's own field — only AK's event model uses
@@ -301,24 +316,35 @@ class PydanticAIRunner(BaseRunner):
         :param kind: The event's `event_kind` discriminator.
         :param event: The run event.
         :param open_parts: The caller's live index → (kind, id) map, mutated here.
+        :param carried: The caller's kind → id map of streams held open across a part boundary.
         :return: The AK events this run event produces, empty when it maps to nothing.
         """
         if kind == "part_start":
-            return self._open_part(event, open_parts)
+            return self._open_part(event, open_parts, carried)
         if kind == "part_delta":
             return self._delta_part(event, open_parts)
         if kind == "part_end":
-            return self._close_part(event.index, open_parts)
+            return self._close_part(event.index, open_parts, carried, getattr(event, "next_part_kind", None))
         if kind == "function_tool_result":
             return self._tool_result(event)
         return []
 
-    def _open_part(self, event: Any, open_parts: dict[int, tuple[str, str]]) -> list[StreamEvent]:
-        """Open a part's stream, closing any part already live at that index first.
+    def _open_part(self, event: Any, open_parts: dict[int, tuple[str, str]], carried: dict[str, str]) -> list[StreamEvent]:
+        """Open a part's stream, or continue the one the previous part held open.
 
-        The SDK states that a second `part_start` on one index replaces the first, so the old stream
-        is terminated rather than left open — a consumer that already rendered its deltas needs the
-        boundary.
+        **Adjacent parts of the same kind are one message, not two.** A model can split its prose
+        across several `text` parts, and rendering each as its own assistant bubble is wrong — so the
+        SDK marks the seam with `previous_part_kind` / `next_part_kind` "to know whether to group parts
+        of the same kind together". When this part continues the previous one, its id is reused and no
+        new boundary is emitted; only the content goes out, as a delta. Pydantic AI's own AG-UI adapter
+        does exactly this (`pydantic_ai/ui/ag_ui/_event_stream.py`, `follows_text`), and matching it is
+        what keeps a split response looking the same through AK as through the first-party path.
+
+        Tool-call parts are excluded: each carries its own `tool_call_id`, so there is nothing to group.
+
+        A second `part_start` on an index already live is a *replacement*, which the SDK says fully
+        supersedes the first — so that path terminates the old stream rather than continuing it. A
+        consumer that already rendered its deltas needs the boundary.
         """
         index = event.index
         part = getattr(event, "part", None)
@@ -326,24 +352,21 @@ class PydanticAIRunner(BaseRunner):
 
         events: list[StreamEvent] = []
         if index in open_parts:
-            events.extend(self._close_part(index, open_parts))
+            events.extend(self._close_part(index, open_parts, carried))
 
-        if part_kind == "text":
-            message_id = getattr(part, "id", None) or uuid4().hex
-            open_parts[index] = ("text", message_id)
-            events.append(MessageStart(message_id=message_id))
+        if part_kind in ("text", "thinking"):
+            continuing = getattr(event, "previous_part_kind", None) == part_kind and part_kind in carried
+            message_id = carried.pop(part_kind) if continuing else (getattr(part, "id", None) or uuid4().hex)
+            open_parts[index] = (part_kind, message_id)
+            if not continuing:
+                events.append(MessageStart(message_id=message_id) if part_kind == "text" else ReasoningStart(message_id=message_id))
             content = getattr(part, "content", None)
             if content:
-                events.append(TextDelta(message_id=message_id, content=content))
-            return events
-
-        if part_kind == "thinking":
-            message_id = getattr(part, "id", None) or uuid4().hex
-            open_parts[index] = ("thinking", message_id)
-            events.append(ReasoningStart(message_id=message_id))
-            content = getattr(part, "content", None)
-            if content:
-                events.append(ReasoningDelta(message_id=message_id, content=content))
+                events.append(
+                    TextDelta(message_id=message_id, content=content)
+                    if part_kind == "text"
+                    else ReasoningDelta(message_id=message_id, content=content)
+                )
             return events
 
         if part_kind == "tool-call":
@@ -388,12 +411,29 @@ class PydanticAIRunner(BaseRunner):
         arguments = self._as_json(getattr(delta, "args_delta", None), "arguments")
         return [ToolCallArgs(tool_call_id=stream_id, delta=arguments)] if arguments else []
 
-    def _close_part(self, index: int, open_parts: dict[int, tuple[str, str]]) -> list[StreamEvent]:
-        """Close the stream an index opened, if it is still live."""
+    def _close_part(
+        self, index: int, open_parts: dict[int, tuple[str, str]], carried: dict[str, str], next_part_kind: str | None = None
+    ) -> list[StreamEvent]:
+        """Close the stream an index opened, unless the next part continues it.
+
+        When the part directly following is of the same kind, the stream stays open and its id is
+        parked in `carried` for the next `part_start` to pick up — emitting the boundary here and
+        another one there would split one message in two. `next_part_kind` defaults to None so the
+        drain path, which has no event to read it from, always closes.
+
+        :param index: The part index to close.
+        :param open_parts: The caller's live index → (kind, id) map, mutated here.
+        :param carried: The caller's kind → id map; a continued stream is parked here.
+        :param next_part_kind: The kind of the part that follows, when the SDK reported one.
+        :return: The AK events that close this stream, empty when it is held open or was never live.
+        """
         opened = open_parts.pop(index, None)
         if opened is None:
             return []
         part_kind, stream_id = opened
+        if part_kind in ("text", "thinking") and next_part_kind == part_kind:
+            carried[part_kind] = stream_id
+            return []
         if part_kind == "text":
             return [MessageEnd(message_id=stream_id)]
         if part_kind == "thinking":

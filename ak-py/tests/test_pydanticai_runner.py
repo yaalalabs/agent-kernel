@@ -87,28 +87,28 @@ def _mock_stream_events_agent(events, on_stream=None, messages=None):
     return mock_agent
 
 
-def _text_start(index=0, content="", part_id=None):
-    return PartStartEvent(index=index, part=TextPart(content=content, id=part_id))
+def _text_start(index=0, content="", part_id=None, previous_part_kind=None):
+    return PartStartEvent(index=index, part=TextPart(content=content, id=part_id), previous_part_kind=previous_part_kind)
 
 
 def _text_delta(index=0, content="x"):
     return PartDeltaEvent(index=index, delta=TextPartDelta(content_delta=content))
 
 
-def _text_end(index=0):
-    return PartEndEvent(index=index, part=TextPart(content=""))
+def _text_end(index=0, next_part_kind=None):
+    return PartEndEvent(index=index, part=TextPart(content=""), next_part_kind=next_part_kind)
 
 
-def _thinking_start(index=0, content=""):
-    return PartStartEvent(index=index, part=ThinkingPart(content=content))
+def _thinking_start(index=0, content="", previous_part_kind=None):
+    return PartStartEvent(index=index, part=ThinkingPart(content=content), previous_part_kind=previous_part_kind)
 
 
 def _thinking_delta(index=0, content="reasoning"):
     return PartDeltaEvent(index=index, delta=ThinkingPartDelta(content_delta=content))
 
 
-def _thinking_end(index=0):
-    return PartEndEvent(index=index, part=ThinkingPart(content=""))
+def _thinking_end(index=0, next_part_kind=None):
+    return PartEndEvent(index=index, part=ThinkingPart(content=""), next_part_kind=next_part_kind)
 
 
 def _tool_start(index=0, name="lookup", args=None, tool_call_id="t1"):
@@ -581,6 +581,37 @@ class TestPydanticAIRunnerStreamEvents:
         assert _shape(events) == ["message_start", "text_delta", "message_end"]
 
     @pytest.mark.asyncio
+    async def test_a_missing_terminal_event_is_logged_rather_than_losing_history_silently(self, caplog):
+        """The write-back is the only thing carrying the conversation into the next turn. Without the
+        terminal event there is nothing to read `all_messages()` off, and the next request would start
+        with no history — so the absence has to be audible."""
+        session = Session("stream-session")
+        agent = _mock_stream_events_agent([_text_start(content="hi"), _text_end()])
+
+        # Drop the terminal AgentRunResultEvent the double normally appends.
+        original = agent.agent.run_stream_events
+
+        @asynccontextmanager
+        async def without_result(*args, **kwargs):
+            async with original(*args, **kwargs) as events:
+
+                async def filtered():
+                    async for event in events:
+                        if getattr(event, "event_kind", None) != "agent_run_result":
+                            yield event
+
+                yield filtered()
+
+        agent.agent.run_stream_events = without_result
+
+        with caplog.at_level(logging.WARNING, logger="ak.pydanticai.runner"):
+            collected = [event async for event in PydanticAIRunner().stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        assert collected  # the response still streamed
+        assert session.get(FRAMEWORK).messages == []
+        assert any("conversation history was not persisted" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
     async def test_the_history_write_back_reads_the_terminal_result_event(self):
         """`all_messages()` now comes off the `agent_run_result` event captured as it passed, not off
         the context manager's value."""
@@ -588,6 +619,94 @@ class TestPydanticAIRunnerStreamEvents:
         events, _ = await _collect(PydanticAIRunner(), [_text_start(content="hi"), _text_end()], session=session, messages=[{"kind": "request"}])
         assert events
         assert session.get(FRAMEWORK).messages == [{"kind": "request"}]
+
+
+class TestPydanticAIRunnerAdjacentParts:
+    """A model can split one response across several parts of the same kind, and each must not become
+    its own assistant bubble. The SDK marks the seam with `previous_part_kind` / `next_part_kind`
+    precisely so a UI can group them, and Pydantic AI's own AG-UI adapter uses exactly those fields
+    (`pydantic_ai/ui/ag_ui/_event_stream.py`, `follows_text`). Matching it is what makes a split
+    response look the same through AK as through the first-party path."""
+
+    @pytest.mark.asyncio
+    async def test_adjacent_text_parts_are_one_message(self):
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _text_start(index=0, content="one "),
+                _text_end(index=0, next_part_kind="text"),
+                _text_start(index=1, content="two", previous_part_kind="text"),
+                _text_end(index=1),
+            ],
+        )
+        assert _shape(events) == ["message_start", "text_delta", "text_delta", "message_end"]
+        assert len({event.message_id for event in events}) == 1
+        assert "".join(e.content for e in events if e.type == "text_delta") == "one two"
+
+    @pytest.mark.asyncio
+    async def test_adjacent_thinking_parts_are_one_trace(self):
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _thinking_start(index=0, content="rea"),
+                _thinking_end(index=0, next_part_kind="thinking"),
+                _thinking_start(index=1, content="soning", previous_part_kind="thinking"),
+                _thinking_end(index=1),
+            ],
+        )
+        assert _shape(events) == ["reasoning_start", "reasoning_delta", "reasoning_delta", "reasoning_end"]
+        assert len({event.message_id for event in events}) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_thinking_part_between_two_text_parts_breaks_the_merge(self):
+        """Only *adjacent same-kind* parts group. Reasoning in between means the answer resumes as a
+        new message, which is what actually happened."""
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _text_start(index=0, content="a"),
+                _text_end(index=0, next_part_kind="thinking"),
+                _thinking_start(index=1, content="t", previous_part_kind="text"),
+                _thinking_end(index=1, next_part_kind="text"),
+                _text_start(index=2, content="b", previous_part_kind="thinking"),
+                _text_end(index=2),
+            ],
+        )
+        assert _shape(events) == [
+            "message_start",
+            "text_delta",
+            "message_end",
+            "reasoning_start",
+            "reasoning_delta",
+            "reasoning_end",
+            "message_start",
+            "text_delta",
+            "message_end",
+        ]
+        assert len({event.message_id for event in events}) == 3
+
+    @pytest.mark.asyncio
+    async def test_a_promised_continuation_that_never_arrives_is_closed_on_drain(self):
+        """`next_part_kind` is a promise about the next part, not a guarantee the run makes it there.
+        Held-open streams are drained too, or a client waits forever for a message that never closes."""
+        events, _ = await _collect(PydanticAIRunner(), [_text_start(index=0, content="hi"), _text_end(index=0, next_part_kind="text")])
+        assert _shape(events) == ["message_start", "text_delta", "message_end"]
+
+    @pytest.mark.asyncio
+    async def test_tool_call_parts_are_not_grouped(self):
+        """Each call carries its own tool_call_id, so there is nothing to group — and grouping them
+        would merge two distinct calls into one."""
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _tool_start(index=0, tool_call_id="t1"),
+                PartEndEvent(index=0, part=ToolCallPart(tool_name="lookup", args=None, tool_call_id="t1"), next_part_kind="tool-call"),
+                _tool_start(index=1, tool_call_id="t2"),
+                _tool_end(index=1, tool_call_id="t2"),
+            ],
+        )
+        assert _shape(events) == ["tool_call_start", "tool_call_end", "tool_call_start", "tool_call_end"]
+        assert [e.tool_call_id for e in events] == ["t1", "t1", "t2", "t2"]
 
 
 class TestPydanticAISessionSerialization:
