@@ -1,0 +1,53 @@
+[project]
+name = "aws-serverless-schedule-openai"
+version = "0.1.0"
+description = "Demo of scheduled and recurring chats in Agent Kernel on AWS Lambda, using EventBridge Scheduler and DynamoDB"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+# Per-Lambda dependency sets. The request/response handlers only enqueue and dequeue work, so they
+# omit the (heavy) OpenAI Agents SDK; only the agent runner needs it. deploy.sh installs each
+# package with `uv export --extra <name>`.
+#
+# The `schedule` extra (croniter) is only on the agent runner: cron parsing happens when a task is
+# validated at creation, which is this function's job. The request handler's management routes
+# (list/read/amend/cancel) reach the DynamoDB store and EventBridge Scheduler through the `aws`
+# extra and never parse a cron expression — except on an amendment that changes one, which is why
+# `schedule` is included there too.
+request_handler = [
+    "agentkernel[aws,schedule]>=0.8.1",
+]
+response_handler = [
+    "agentkernel[aws]>=0.8.1",
+]
+agent_runner = [
+    "agentkernel[aws,openai,schedule]>=0.8.1",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.8.1",
+    "black==26.5.1",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

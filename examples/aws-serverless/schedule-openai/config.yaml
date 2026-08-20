@@ -1,0 +1,45 @@
+logging:
+  ak:
+    level: DEBUG
+
+session:
+  type: dynamodb
+  dynamodb:
+    table_name: ""   # injected by Terraform via AK_SESSION__DYNAMODB__TABLE_NAME
+
+# The presence of this block enables the scheduling capability. Both `type` values must be
+# declared here: Terraform injects the group/role/queue/table coordinates but never a `type`, so
+# omitting them would silently leave scheduling on the in-process `local` provider and the
+# `in_memory` store — neither of which survives a Lambda invocation.
+schedule:
+  provider:
+    type: eventbridge
+    eventbridge:
+      group_name: ""   # injected via AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME
+      role_arn: ""     # injected via AK_SCHEDULE__PROVIDER__EVENTBRIDGE__ROLE_ARN
+      queue_arn: ""    # injected via AK_SCHEDULE__PROVIDER__EVENTBRIDGE__QUEUE_ARN
+  store:
+    type: dynamodb
+    dynamodb:
+      table_name: ""   # injected via AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME
+      ttl: 0           # 0 disables expiry: a task that vanished would stop firing silently
+  # agents: [assistant]   # restrict the schedule tools to named agents; omitted = all agents
+
+# Scheduling requires the queue pipeline: EventBridge Scheduler delivers each occurrence into the
+# Input Queue, which is where the agent-runner Lambda picks it up.
+execution:
+  mode: rest_sync
+  queues:
+    input:
+      # url injected via AK_EXECUTION__QUEUES__INPUT__URL
+      max_receive_count: 3
+    output:
+      # url injected via AK_EXECUTION__QUEUES__OUTPUT__URL
+      max_receive_count: 3
+  response_store:
+    type: dynamodb
+    retry_count: 10
+    delay: 3
+    dynamodb:
+      table_name: ""   # injected via AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME
+      ttl: 300

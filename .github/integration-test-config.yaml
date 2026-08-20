@@ -52,6 +52,12 @@ weekly:
     - type: aws-containerized
       path: examples/aws-containerized/openai-dynamodb-scalable
       deploy_dir: deploy
+    # Scheduled/recurring chats: EventBridge Scheduler + DynamoDB schedule store.
+    # The test suite cancels every schedule it creates (and any the agent registered) on teardown —
+    # terraform destroy cannot delete a schedule group that still holds schedules.
+    - type: aws-containerized
+      path: examples/aws-containerized/openai-schedule
+      deploy_dir: deploy
 
     # AWS Serverless
     - type: aws-serverless
@@ -68,6 +74,11 @@ weekly:
       deploy_dir: deploy
     - type: aws-serverless
       path: examples/aws-serverless/openai-auth
+      deploy_dir: deploy
+    # Scheduled/recurring chats, all three Lambdas in zip mode. Management routes are the custom
+    # Lambda.register routes (the serverless router is not FastAPI), so the suite drives those.
+    - type: aws-serverless
+      path: examples/aws-serverless/schedule-openai
       deploy_dir: deploy
 
     # Memory options
