@@ -487,7 +487,7 @@ class TestTriggerRecording:
     def test_recording_advances_the_occurrence_fields(self, manager, store):
         task = _create(manager)
 
-        manager.record_trigger(task.task_id, request_id="r1", occurred_at="2030-06-01T09:00:00Z")
+        manager.record_trigger(task.task_id, "u1", request_id="r1", occurred_at="2030-06-01T09:00:00Z")
 
         recorded = store.get(task.task_id)
         assert recorded.trigger_count == 1
@@ -498,23 +498,23 @@ class TestTriggerRecording:
     def test_recording_stamps_the_current_time_when_the_provider_reports_none(self, manager, store):
         task = _create(manager)
 
-        manager.record_trigger(task.task_id)
+        manager.record_trigger(task.task_id, "u1")
 
         assert store.get(task.task_id).last_triggered_at is not None
 
     def test_recording_completes_a_one_time_task(self, manager, store):
         task = _create(manager, spec=ScheduleSpec(at=FUTURE_AT))
 
-        manager.record_trigger(task.task_id, request_id="r1")
+        manager.record_trigger(task.task_id, "u1", request_id="r1")
 
         assert store.get(task.task_id).status is ScheduleStatus.COMPLETED
 
     def test_recording_an_unknown_task_is_ignored(self, manager):
-        manager.record_trigger("missing", request_id="r1")
+        manager.record_trigger("missing", "u1", request_id="r1")
 
     def test_recording_never_raises_into_the_run(self, provider, store, monkeypatch):
         manager = ScheduleManager(provider=provider, store=store)
         task = _create(manager)
         monkeypatch.setattr(store, "record_trigger", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("store down")))
 
-        manager.record_trigger(task.task_id, request_id="r1")
+        manager.record_trigger(task.task_id, "u1", request_id="r1")

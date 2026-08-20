@@ -44,11 +44,15 @@ def _user_id(event) -> str:
 def list_schedules(event, context):
     """GET /api/v1/schedules?user_id=...&limit=...&cursor=... — cursor-paginated listing."""
     params = event.get("queryStringParameters") or {}
-    page = _manager().list_tasks(
-        user_id=_user_id(event),
-        limit=int(params["limit"]) if params.get("limit") else None,
-        cursor=params.get("cursor"),
-    )
+    try:
+        page = _manager().list_tasks(
+            user_id=_user_id(event),
+            limit=int(params["limit"]) if params.get("limit") else None,
+            cursor=params.get("cursor"),
+        )
+    except ValueError as e:
+        # A malformed `limit` or `cursor` is the caller's mistake, not a server fault.
+        return 400, {"error": str(e)}
     return {
         "schedules": [task.model_dump(mode="json") for task in page.tasks],
         "next_cursor": page.next_cursor,
@@ -66,7 +70,13 @@ def get_schedule(event, context):
     task_id = params.get("task_id")
     if not task_id:
         return 400, {"error": "task_id query parameter is required"}
-    task = _manager().get_task(task_id, user_id=_user_id(event))
+    try:
+        task = _manager().get_task(task_id, user_id=_user_id(event))
+    except PermissionError as e:
+        return 403, {"error": str(e)}
+    except ValueError as e:
+        # A missing user_id query parameter, same as the other routes report it.
+        return 400, {"error": str(e)}
     if task is None:
         return 404, {"error": f"Unknown scheduled task {task_id}"}
     return task.model_dump(mode="json")

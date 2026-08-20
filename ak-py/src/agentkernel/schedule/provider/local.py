@@ -21,6 +21,12 @@ from .base import ScheduleProvider
 # contract reads the same whichever provider produced it.
 OCCURRENCE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
+# When the lazily-discarded heap entries are worth a rebuild (see `_compact_heap`): the heap may
+# hold this multiple of the armed occurrences before it is rebuilt from them. The floor keeps a
+# handful of tasks churning their schedules from rebuilding on every amendment.
+_COMPACTION_FACTOR = 2
+_MIN_COMPACTION_HEAP_SIZE = 16
+
 
 @dataclass(frozen=True)
 class _ArmedTask:
@@ -92,6 +98,7 @@ class LocalScheduleProvider(ScheduleProvider):
         """
         with self._condition:
             self._armed.pop(provider_ref, None)
+            self._compact_heap()
             self._condition.notify_all()
 
     def get(self, provider_ref: str) -> Optional[dict]:
@@ -124,8 +131,27 @@ class LocalScheduleProvider(ScheduleProvider):
         with self._condition:
             self._armed[task.task_id] = _ArmedTask(task=task, body_template=body_template, fire_time=fire_time, fire_at=fire_time.timestamp())
             heapq.heappush(self._heap, (fire_time.timestamp(), next(self._sequence), task.task_id))
+            self._compact_heap()
             self._condition.notify_all()
         self._log.debug(f"Armed scheduled task {task.task_id} for {fire_time.isoformat()}")
+
+    def _compact_heap(self) -> None:
+        """Drop the heap entries no armed occurrence still points at, once they outnumber the live ones.
+
+        Re-arming and disarming leave their previous entry behind — removing it from the middle of a
+        heap costs a scan, so :meth:`_take_due_occurrence` discards it lazily when it surfaces
+        instead. A task amended repeatedly to future instants therefore parks one dead entry per
+        amendment until that instant passes, which an amendment loop would grow without bound. The
+        rebuild bounds it: it is O(n) in the heap, but amortized over the amendments that caused the
+        growth, and ``_armed`` already holds every occurrence the heap is derived from.
+
+        Callers hold the condition's lock.
+        """
+        if len(self._heap) <= max(_MIN_COMPACTION_HEAP_SIZE, _COMPACTION_FACTOR * len(self._armed)):
+            return
+        self._log.debug(f"Compacting local schedule heap: {len(self._heap)} entries for {len(self._armed)} armed occurrences")
+        self._heap = [(armed.fire_at, next(self._sequence), task_id) for task_id, armed in self._armed.items()]
+        heapq.heapify(self._heap)
 
     def _start_thread(self) -> None:
         """Start the scheduler thread on first use. Daemon: it must never hold up a shutdown."""

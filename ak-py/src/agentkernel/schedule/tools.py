@@ -330,6 +330,13 @@ def _describe_cron_flavor(cron_doc: str) -> None:
     update_schedule.__doc__ = _UPDATE_SCHEDULE_DOC.replace(_CRON_TOKEN, cron_doc)
 
 
+# Rendered once at import, in the standard flavor, so nothing reading a docstring before the tools
+# are built — help(), a doc generator, an app attaching one of these functions itself — ever sees
+# the raw placeholder. Reads no config: the configured provider's flavor is only known once
+# get_schedule_tools() runs, which re-renders both from the pristine templates.
+_describe_cron_flavor(_CRON_STANDARD_DOC)
+
+
 def get_schedule_tools() -> list[SystemTool]:
     """Build the schedule system tools; called by ``SystemToolFactory`` when the block is present.
 
