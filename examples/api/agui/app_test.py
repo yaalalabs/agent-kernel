@@ -13,6 +13,11 @@ import pytest_asyncio
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
+# A real 1x1 PNG. Deliberately a valid image rather than an arbitrary blob: the multimodal pre-hook
+# sends it to a vision model, and a corrupt payload would fail for a reason unrelated to what is
+# being tested.
+PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="
+
 TOKEN = "demo-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
@@ -200,3 +205,40 @@ async def test_reasoning_is_streamed_on_its_own_events_when_enabled(base_url):
     reasoning_ids = {e["messageId"] for e in events if e["type"].startswith("REASONING_MESSAGE_")}
     answer_ids = {e["messageId"] for e in events if e["type"].startswith("TEXT_MESSAGE_")}
     assert reasoning_ids and not (reasoning_ids & answer_ids), (reasoning_ids, answer_ids)
+
+
+@pytest.mark.asyncio
+async def test_an_attached_image_is_accepted_and_the_run_completes(base_url):
+    """Multimodal over AG-UI: an `image` content part with a `data` source reaches the agent.
+
+    Asserting structurally rather than on the description's wording — the pre-hook sends the image to a
+    vision model, and what it says about one pixel is not worth pinning. What matters is that the part
+    is accepted (not a 400), the attachment is described and stored without the run failing, and the
+    stream still brackets normally.
+    """
+    payload = run_input("What did I attach?", str(uuid.uuid4()))
+    payload["messages"][0]["content"] = [
+        {"type": "text", "text": "What did I attach?"},
+        {"type": "image", "source": {"type": "data", "value": PNG_1X1, "mimeType": "image/png"}},
+    ]
+
+    events = await collect(base_url, payload)
+    types = [event["type"] for event in events]
+
+    assert types[0] == "RUN_STARTED"
+    assert "RUN_ERROR" not in types, [e for e in events if e["type"] == "RUN_ERROR"]
+    assert types[-1] == "RUN_FINISHED"
+    assert "".join(e["delta"] for e in events if e["type"] == "TEXT_MESSAGE_CONTENT").strip()
+
+
+@pytest.mark.asyncio
+async def test_an_attachment_only_turn_is_accepted(base_url):
+    """A prompt is not required when something is attached — the image is the turn's content."""
+    payload = run_input("", str(uuid.uuid4()))
+    payload["messages"][0]["content"] = [
+        {"type": "image", "source": {"type": "data", "value": PNG_1X1, "mimeType": "image/png"}},
+    ]
+
+    events = await collect(base_url, payload)
+    assert [e["type"] for e in events][-1] == "RUN_FINISHED"
+    assert "RUN_ERROR" not in [e["type"] for e in events]

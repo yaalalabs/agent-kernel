@@ -123,6 +123,69 @@ Both land in the session's volatile cache, and the model has to *pull* them thro
 deliberate: flattening client text into the system prompt is what would turn a frontend into a prompt
 injector. Ask the agent "what time is it for me?" to see it call one.
 
+## Attachments
+
+The 📎 button attaches images and documents to a turn. `multimodal.enabled` is on in `config.yaml`, so
+each one is described by a vision model and stored under the session before the agent runs — the agent
+sees the description and an id, never the bytes. Ask a follow-up question the description cannot answer
+and it calls the attachment-analysis tool with that id, which appears as a tool card like any other.
+
+What the browser sends is AG-UI's typed content: `content` becomes a list of parts rather than a
+string, an image going as an `image` part and anything else as a `document`, each with a `data` source
+carrying bare base64.
+
+```json
+"content": [
+  {"type": "text", "text": "what is this?"},
+  {"type": "image", "source": {"type": "data", "value": "<base64>", "mimeType": "image/png"}}
+]
+```
+
+Worth knowing:
+
+- **Bare base64 is what the frontend sends**, and it is the form that works on every path. A `data:`
+  URI and an `http(s)://` or `s3://` URL are also accepted, but a URL is passed through untouched —
+  never described or stored — because the hook does not fetch it. See
+  [Multimodal](../../../docs/docs/advanced/multimodal.md).
+- **Audio and video are rejected with a 400.** Agent Kernel has no equivalent request type, and
+  mapping them onto the generic file type produces misleading model output.
+- **An attachment with no prompt is a valid turn**; the image is the content. A turn with neither is a
+  400.
+- The demo caps a file at 4MB. Base64 inflates a payload by about a third and it all travels inside one
+  JSON body, so the cap fails loudly rather than letting the browser hang on a video.
+
+### Testing it in the browser
+
+Any screenshot or PDF you have to hand will do — the point is to watch two different paths.
+
+1. **The description path.** Attach an image with 📎, send `what is in this image?`, and watch the
+   answer arrive with **no tool card**. The attachment was described *before* the agent ran, so the
+   description was already in its prompt and it had nothing to look up.
+2. **The analysis path.** Now ask for something the description cannot contain — `read me the exact
+   numbers in it`, or `quote the third line` — and a tool card appears for the attachment-analysis
+   tool, with the attachment id in its arguments and the analysis as its result. That is the agent
+   deciding the summary was not enough.
+3. **Memory across turns.** Ask about the same image on a later turn *without* re-attaching it. Two
+   separate things make that work: the description was appended to the earlier turn's prompt, so it is
+   in the conversation history the session replays; and the bytes are still in the attachment store
+   under this session, so the analysis tool can be called again on the same id.
+4. **Reload the tab.** Your turns come back with `📎 <filename>` on them — the filenames are part of
+   the transcript the frontend keeps in `sessionStorage`. That is the *tab's* memory, not the server's;
+   a new tab starts a new `threadId` and therefore a new conversation.
+
+Two things worth trying because they should *not* work:
+
+- Attach an `.mp3` or `.mov`. The run is refused with a 400 naming the type before the stream opens —
+  not a silent drop, which would read as the agent ignoring you.
+- Attach something over 4MB. It is refused at the moment you pick it, before you have typed anything,
+  and the reason appears in the transcript — the run is never attempted, so no prompt is swallowed.
+
+Two things that look like bugs but are not. `storage_type` defaults to `in_memory`, so restarting
+`app.py` drops the stored bytes: a follow-up question about an image attached before the restart can
+still be answered from the description in the history, but the analysis tool will not find the id. And
+if the 📎 button does nothing at all, the frontend was not rebuilt — run `./build.sh` (or
+`cd frontend && npm run build`).
+
 ## Install and run
 
 Install Python dependencies:
@@ -175,6 +238,9 @@ Open <http://localhost:5173> and try:
 - `what time is it for me?` — the agent reads the context the browser attached
 - `how many tasks are left?` — a tool card appears for `count_open_tasks`, arguments and result
   included, and the status strip reads `Calling count_open_tasks` while it runs
+- attach a screenshot with 📎 and ask `what is in this image?` — it is described before the agent runs,
+  so the answer comes from the description; ask for a detail the description misses and the agent
+  analyses the attachment itself, which shows up as another tool card
 - with `AK_DEMO_REASONING_MODEL` set, `which of my tasks should I do first?` — the thinking block
   fills in first, then the answer, on two different message ids
 
@@ -198,6 +264,42 @@ A run:
             "context": [],
             "forwardedProps": null
           }'
+
+A run with an attachment — `content` becomes a list of parts instead of a string:
+
+    IMG=$(base64 -i screenshot.png | tr -d '\n')     # Linux: base64 -w0 screenshot.png
+
+    curl -N -X POST http://localhost:8000/agui \
+      -H "Authorization: Bearer demo-token" \
+      -H "Content-Type: application/json" \
+      -d '{
+            "threadId": "thread-2",
+            "runId": "run-1",
+            "state": null,
+            "messages": [{"id": "m1", "role": "user", "content": [
+              {"type": "text", "text": "what is in this image?"},
+              {"type": "image", "source": {"type": "data", "value": "'"$IMG"'", "mimeType": "image/png"}}
+            ]}],
+            "tools": [],
+            "context": [],
+            "forwardedProps": null
+          }'
+
+Swap `"type": "image"` for `"type": "document"` for a PDF or text file, and set `mimeType` to match.
+A `url` source works too — `{"type": "url", "value": "https://..."}` — but a URL is passed through
+untouched rather than described or stored, so the agent only sees the link.
+
+## Tests
+
+    .venv/bin/pytest -s
+
+`.venv/bin/pytest` rather than `uv run pytest`, for the reason given above — the suite starts `app.py`,
+so a re-resolve would test the published `agentkernel` instead of the one you built.
+
+Requires `OPENAI_API_KEY`. The suite speaks AG-UI to the app over real HTTP, so it covers the whole
+outbound chain: a real adapter, the AG-UI mapping, the SDK encoder and a live model. The two multimodal
+cases assert structurally — the image part is accepted, the run brackets and finishes — rather than on
+what a vision model says about a given picture, so they check the wiring without flaking on wording.
 
 ## Notes and limits
 

@@ -5,7 +5,8 @@ description = "Demo of an Agent Kernel agent driven over the AG-UI protocol, wit
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,agui,api]>=0.8.1",
+    "agentkernel[openai,agui,api,multimodal]>=0.8.1",
+    "python-multipart>=0.0.12",
 ]
 
 [dependency-groups]
