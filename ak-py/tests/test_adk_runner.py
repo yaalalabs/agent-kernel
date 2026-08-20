@@ -5,6 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from agentkernel.core import Session
+from agentkernel.core.event import TextDelta
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestImage, AgentRequestText
 from agentkernel.framework.adk.adk import GoogleADKRunner, GoogleADKSession
 
@@ -50,6 +51,37 @@ def _final_event(text: str | None):
     part.text = text
     event.content = MagicMock(parts=[part])
     return event
+
+
+def _shape(events):
+    """The event sequence by discriminator. `message_id` is a fresh uuid4, so it cannot be asserted."""
+    return [event.type for event in events]
+
+
+def _nonpartial_event(text=None, calls=(), responses=()):
+    """An ADK event with `partial` falsy — where the aggregated text and the tool activity arrive."""
+    event = MagicMock()
+    event.partial = False
+    event.content = MagicMock(parts=[MagicMock(text=text)]) if text is not None else None
+    event.get_function_calls = MagicMock(return_value=list(calls))
+    event.get_function_responses = MagicMock(return_value=list(responses))
+    return event
+
+
+def _call(name="lookup", args=None, call_id="c1"):
+    call = MagicMock()
+    call.id = call_id
+    call.name = name
+    call.args = args
+    return call
+
+
+def _response(name="lookup", response=None, call_id="c1"):
+    resp = MagicMock()
+    resp.id = call_id
+    resp.name = name
+    resp.response = response
+    return resp
 
 
 def _non_final_event():
@@ -266,9 +298,9 @@ class TestGoogleADKRunnerFrameworkContext:
 
         setup_patch, adk_session = _stream_setup([_partial_event("tok")], {"seeded": 9, "added": "new"})
         with setup_patch:
-            deltas = [delta async for delta in runner.stream(agent, session, requests)]
+            events = [event async for event in runner.stream(agent, session, requests)]
 
-        assert deltas == ["tok"]
+        assert _shape(events) == ["message_start", "text_delta", "message_end"]
         adk_session.get_state.assert_awaited_once()
         assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 9, "added": "new"}
 
@@ -284,8 +316,9 @@ class TestGoogleADKRunnerFrameworkContext:
         setup_patch, adk_session = _stream_setup([_partial_event("tok")], {"seeded": 9})
         with setup_patch:
             agen = runner.stream(agent, session, requests)
-            first = await agen.__anext__()
-            assert first == "tok"
+            opened = await agen.__anext__()
+            assert opened.type == "message_start"
+            assert await agen.__anext__() == TextDelta(message_id=opened.message_id, content="tok")
             await agen.aclose()  # simulate client disconnect at the yield
 
         adk_session.get_state.assert_not_called()
@@ -300,9 +333,9 @@ class TestGoogleADKRunnerFrameworkContext:
 
         setup_patch, adk_session = _stream_setup([_partial_event("tok")], {"leak": 1})
         with setup_patch:
-            deltas = [delta async for delta in runner.stream(agent, session, requests)]
+            events = [event async for event in runner.stream(agent, session, requests)]
 
-        assert deltas == ["tok"]
+        assert _shape(events) == ["message_start", "text_delta", "message_end"]
         adk_session.get_state.assert_not_called()
         assert session.get(FRAMEWORK_CONTEXT) is None
 
@@ -319,11 +352,121 @@ class TestGoogleADKRunnerFrameworkContext:
         adk_session.get_state = AsyncMock(side_effect=RuntimeError("state read failed"))
 
         with setup_patch, caplog.at_level(logging.ERROR, logger="ak.core.runner"):
-            deltas = [delta async for delta in runner.stream(agent, session, requests)]
+            events = [event async for event in runner.stream(agent, session, requests)]
 
-        assert deltas == ["tok"]
+        assert _shape(events) == ["message_start", "text_delta", "message_end"]
         assert session.get(FRAMEWORK_CONTEXT) == {"seeded": 1}
         assert any("framework_context write-back was skipped" in r.message for r in caplog.records)
+
+
+def _stream_setup_multi(event_lists):
+    """Patch _setup_session_context so successive stream() calls drain different event lists."""
+    setups = []
+    for events in event_lists:
+        adk_session = MagicMock()
+        adk_session.get_state = AsyncMock(return_value={})
+
+        async def run_async(_events=events, **kwargs):
+            for event in _events:
+                yield event
+
+        adk_runner = MagicMock()
+        adk_runner.run_async = run_async
+        setups.append(("user", adk_runner, _ctx_mock(), adk_session))
+    return patch.object(GoogleADKRunner, "_setup_session_context", AsyncMock(side_effect=setups))
+
+
+async def _collect(events):
+    """Drive GoogleADKRunner.stream over a scripted ADK event list and return the AK events."""
+    runner = GoogleADKRunner()
+    setup_patch, _ = _stream_setup(events, {})
+    with setup_patch:
+        return [event async for event in runner.stream(_mock_agent(), Session("s"), [AgentRequestText(prompt="hi")])]
+
+
+class TestGoogleADKRunnerStreamEvents:
+    """The event mapping added in PR 5. ADK supplies no message boundaries, so they are derived."""
+
+    @pytest.mark.asyncio
+    async def test_partials_are_bracketed_and_the_aggregate_closes_them(self):
+        """The non-partial event carries the whole message, so its text must not be re-emitted."""
+        events = await _collect([_partial_event("he"), _partial_event("llo"), _nonpartial_event("hello")])
+
+        assert _shape(events) == ["message_start", "text_delta", "text_delta", "message_end"]
+        assert [e.content for e in events if e.type == "text_delta"] == ["he", "llo"]
+        # One id throughout: the deltas and both boundaries belong to one message.
+        assert len({e.message_id for e in events}) == 1
+
+    @pytest.mark.asyncio
+    async def test_an_unclosed_message_is_closed_when_the_stream_drains(self):
+        """ADK normally ends with a non-partial event; if it does not, the message must still close."""
+        events = await _collect([_partial_event("tok")])
+        assert _shape(events) == ["message_start", "text_delta", "message_end"]
+
+    @pytest.mark.asyncio
+    async def test_text_with_no_partials_is_emitted_as_a_whole_message(self):
+        """Otherwise a turn that never streamed would lose its only text."""
+        events = await _collect([_nonpartial_event("all at once")])
+        assert _shape(events) == ["message_start", "text_delta", "message_end"]
+        assert events[1].content == "all at once"
+
+    @pytest.mark.asyncio
+    async def test_a_tool_only_turn_emits_no_message_boundaries(self):
+        """No text means no message. An empty assistant bubble is what spec.md:229-233 forbids."""
+        events = await _collect(
+            [
+                _nonpartial_event(calls=[_call(args={"q": "x"})]),
+                _nonpartial_event(responses=[_response(response={"ok": True})]),
+            ]
+        )
+        assert _shape(events) == ["tool_call_start", "tool_call_args", "tool_call_end", "tool_call_result"]
+
+    @pytest.mark.asyncio
+    async def test_a_tool_call_and_its_result_share_the_call_id(self):
+        events = await _collect(
+            [_nonpartial_event(calls=[_call(args={"q": "x"}, call_id="c9")], responses=[_response(response={"n": 1}, call_id="c9")])]
+        )
+        assert {e.tool_call_id for e in events} == {"c9"}
+        assert [e.delta for e in events if e.type == "tool_call_args"] == ['{"q": "x"}']
+        assert [e.content for e in events if e.type == "tool_call_result"] == ['{"n": 1}']
+
+    @pytest.mark.asyncio
+    async def test_a_call_with_no_id_emits_nothing(self):
+        """It could never be correlated to its response, and a call that never resolves is worse."""
+        events = await _collect([_nonpartial_event(calls=[_call(call_id=None)], responses=[_response(call_id=None)])])
+        assert events == []
+
+    @pytest.mark.asyncio
+    async def test_unserialisable_tool_args_still_leave_the_call_bracketed(self):
+        class Unserialisable:
+            def __repr__(self):
+                raise RuntimeError("nope")
+
+        events = await _collect([_nonpartial_event(calls=[_call(args={"q": Unserialisable()})])])
+        assert _shape(events) == ["tool_call_start", "tool_call_end"]
+
+    @pytest.mark.asyncio
+    async def test_two_concurrent_streams_do_not_share_a_message_id(self):
+        """The guard for §10: one GoogleADKRunner instance serves every agent and every session, so
+        the derived `message_id` must be a local. On `self` it would be shared and the second run
+        would hijack the first run's deltas."""
+        runner = GoogleADKRunner()
+        requests = [AgentRequestText(prompt="hi")]
+
+        with _stream_setup_multi([[_partial_event("a1"), _partial_event("a2")], [_partial_event("b1")]]):
+            a = runner.stream(_mock_agent(), Session("sa"), requests)
+            b = runner.stream(_mock_agent(), Session("sb"), requests)
+
+            a_start = await a.__anext__()
+            b_start = await b.__anext__()
+            a_delta = await a.__anext__()
+
+            assert a_start.message_id != b_start.message_id
+            # The load-bearing assertion: A's delta still belongs to A after B opened a message.
+            assert a_delta.message_id == a_start.message_id
+
+            await a.aclose()
+            await b.aclose()
 
 
 class TestGoogleADKRunnerErrorHandling:

@@ -4,10 +4,12 @@ import asyncio
 import base64
 import functools
 import inspect
+import json
 import logging
 import time
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
+from uuid import uuid4
 
 from google.adk.agents import BaseAgent
 from google.adk.agents.run_config import RunConfig, StreamingMode
@@ -35,6 +37,16 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
 from ...core.config import AKConfig
+from ...core.event import (
+    MessageEnd,
+    MessageStart,
+    StreamEvent,
+    TextDelta,
+    ToolCallArgs,
+    ToolCallEnd,
+    ToolCallResult,
+    ToolCallStart,
+)
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
@@ -251,13 +263,33 @@ class GoogleADKRunner(BaseRunner):
         except Exception as e:
             return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
 
-    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
-        Streams the Google ADK agent response token by token using SSE mode.
+        Streams the Google ADK agent response as Agent Kernel stream events.
+
+        **ADK is the one adapter that has to invent its message boundaries.** It supplies no
+        message-start signal and no message id — only a run of `partial=True` events carrying text
+        fragments, then a single `partial=False` event carrying the whole aggregated message. So the
+        id is generated here and the boundaries are derived:
+
+        - the first `partial=True` event *with text* opens the message, and its id is a `uuid4`;
+        - each later partial is a `TextDelta` on that id;
+        - the `partial=False` event closes it. Its text is deliberately **not** re-emitted — it is
+          the concatenation of the deltas already sent, so forwarding it would duplicate the reply.
+
+        `message_id` is a **local**, never an attribute. `GoogleADKRunner` is constructed once per
+        module and `_wrap` hands that same instance to every agent, so one object serves every agent
+        and every concurrent session; on `self`, one session's message would close another's or two
+        sessions would share an id and a client would splice their text together (spec §10).
+
+        Tool calls are read off the non-partial events, which is where ADK puts them. Their ids come
+        from `FunctionCall.id` rather than being generated — unlike `message_id`, ADK does supply
+        these, and a generated one could not be correlated to the matching response.
+
         :param agent: The ADK agent to run.
         :param session: The session to use for the agent.
         :param requests: The requests to the agent.
-        :return: An async generator yielding string token deltas.
+        :return: An async generator yielding StreamEvent objects.
         """
         prompt, parts = self._process_requests(requests)
 
@@ -271,19 +303,43 @@ class GoogleADKRunner(BaseRunner):
 
         if hasattr(runner, "run_async"):
             with ctx:
+                message_id: str | None = None  # the open message, if any — a local, never on self
                 async for event in runner.run_async(
                     user_id=user_id,
                     session_id=session.id,
                     new_message=new_message,
                     run_config=run_config,
                 ):
-                    if not getattr(event, "partial", False):
+                    for tool_event in self._tool_events(event):
+                        yield tool_event
+
+                    chunk = self._event_text(event)
+
+                    if getattr(event, "partial", False):
+                        if not chunk:
+                            continue
+                        if message_id is None:
+                            message_id = uuid4().hex
+                            yield MessageStart(message_id=message_id)
+                        yield TextDelta(message_id=message_id, content=chunk)
                         continue
-                    if not event.content or not event.content.parts:
-                        continue
-                    chunk = "".join(getattr(part, "text", "") or "" for part in event.content.parts)
-                    if chunk:
-                        yield chunk
+
+                    if message_id is not None:
+                        # The aggregated text is already out as deltas; this event only closes them.
+                        yield MessageEnd(message_id=message_id)
+                        message_id = None
+                    elif chunk:
+                        # No partial ever arrived, so nothing has been sent — emit the whole message
+                        # rather than dropping the turn's only text.
+                        whole = uuid4().hex
+                        yield MessageStart(message_id=whole)
+                        yield TextDelta(message_id=whole, content=chunk)
+                        yield MessageEnd(message_id=whole)
+
+                # Closing a message the stream never closed itself. Reached only on a clean drain: a
+                # client disconnect raises GeneratorExit at a yield above and unwinds past this.
+                if message_id is not None:
+                    yield MessageEnd(message_id=message_id)
 
                 # Only after the stream drains normally, so a disconnect or mid-stream error leaves the stored
                 # context intact. Deliberately not in a finally.
@@ -293,6 +349,79 @@ class GoogleADKRunner(BaseRunner):
                         self._store_framework_context(session, incoming, produced)
                     except Exception as e:
                         self._log_framework_context_stream_failure(session, e)
+
+    @staticmethod
+    def _event_text(event: Any) -> str:
+        """
+        Join the text parts of one ADK event, ignoring parts that carry something else.
+
+        A part holds exactly one kind of payload, so a function-call part has `text` unset and
+        contributes nothing here.
+
+        :param event: One event from `Runner.run_async`.
+        :return: The event's text, empty when it carries none.
+        """
+        if not event.content or not event.content.parts:
+            return ""
+        return "".join(getattr(part, "text", "") or "" for part in event.content.parts)
+
+    def _tool_events(self, event: Any) -> list[StreamEvent]:
+        """
+        Translate an ADK event's function calls and responses into AK tool-call events.
+
+        A call arrives with its arguments already complete, so it is opened, filled and closed
+        together — ADK exposes no per-token argument stream to forward.
+
+        An entry without an `id` yields nothing: a call that cannot be correlated to its response
+        would leave a client holding a tool call that never resolves, which is worse than silence.
+        This is the one place ADK does *not* generate an id, because a generated one would not match
+        the response's.
+
+        :param event: One event from `Runner.run_async`.
+        :return: The AK events this event's tool activity produces, empty when it has none.
+        """
+        events: list[StreamEvent] = []
+
+        for call in event.get_function_calls():
+            call_id = getattr(call, "id", None)
+            if not call_id:
+                self._log.debug(f"ADK function call '{getattr(call, 'name', '?')}' carries no id; not emitted")
+                continue
+            events.append(ToolCallStart(tool_call_id=call_id, name=getattr(call, "name", None) or ""))
+            arguments = self._as_json(getattr(call, "args", None), "arguments")
+            if arguments:
+                events.append(ToolCallArgs(tool_call_id=call_id, delta=arguments))
+            events.append(ToolCallEnd(tool_call_id=call_id))
+
+        for response in event.get_function_responses():
+            call_id = getattr(response, "id", None)
+            if not call_id:
+                self._log.debug(f"ADK function response '{getattr(response, 'name', '?')}' carries no id; not emitted")
+                continue
+            events.append(ToolCallResult(tool_call_id=call_id, content=self._as_json(getattr(response, "response", None), "result")))
+
+        return events
+
+    def _as_json(self, value: Any, what: str) -> str:
+        """
+        Serialise an ADK tool payload, which arrives as a parsed dict rather than the model's JSON.
+
+        The `except` is deliberately broad. `default=str` hands any unencodable value to its own
+        `__str__`, which is arbitrary user code and can raise anything at all — and this runs
+        mid-stream, where an escaping exception turns an in-flight response into a failed run. The
+        payload is the expendable part: dropping it still leaves the call bracketed and correlated.
+
+        :param value: The `args` or `response` dict, or None.
+        :param what: What is being serialised, for the log line.
+        :return: The JSON text, or "" when there is nothing to serialise or it could not be encoded.
+        """
+        if value is None:
+            return ""
+        try:
+            return json.dumps(value, default=str)
+        except Exception as e:
+            self._log.warning(f"ADK tool {what} could not be serialised; it is emitted empty: {e!r}")
+            return ""
 
 
 class GoogleADKAgent(AKBaseAgent):

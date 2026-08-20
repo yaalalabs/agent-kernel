@@ -1015,6 +1015,7 @@ Run with `cd ak-py && uv run pytest`.
 | `tests/test_openai_runner.py:210-212` | `assert deltas == ["hi"]` → assert on the event sequence | 4 |
 | `tests/test_langgraph_runner.py:133, 167` | same | 4 |
 | `tests/test_adk_runner.py:269, 303, 322` | same, plus the derived `MessageStart`/`MessageEnd` | 5 |
+| `tests/test_tool_adk.py:677, 713` | same — two tests assert on ADK's `stream()` output; see the note below the "must NOT change" list | 5 |
 | `tests/test_pydanticai_runner.py:159` | same, plus `framework_context` round trip preserved across the rewrite | 6 |
 | — | **PR 6 additionally** deletes the transitional branch and adds a test asserting a `str`-yielding runner now fails — asserting the `ValidationError` in §4 rule 6, not merely an absence of output | 6 |
 
@@ -1033,7 +1034,15 @@ Named explicitly because they are the compatibility claim:
   their `MockRunner`/`DummyRunner` doubles already declare `supports_streaming` as a property; adding
   the base-class property must make those valid overrides, not break them.
 
-If a file in this list needs an edit, the projection in §4 is wrong.
+If a file in this list needs an edit **for PR 1's reasons**, the projection in §4 is wrong.
+
+**`test_tool_adk.py` is on this list for `supports_streaming` only, and PR 5 changes it anyway.** It
+also holds two tests that assert on `Runner.stream`'s output directly — `test_stream_yields_partial_event_text`
+and what was `test_stream_skips_non_partial_events` (`:677, :713`) — so it belongs in the *changing*
+table above for PR 5, beside `test_adk_runner.py`. The omission came from deriving that table by
+grepping test filenames per adapter rather than by searching for assertions on `stream()`; the same
+class of mistake as the docs-inventory gap recorded in `plan.md`'s header. Nothing else on this list
+is affected: their doubles never assert on real adapter output.
 
 ### Conformance kit
 

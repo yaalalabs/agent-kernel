@@ -414,7 +414,29 @@ branch until PR 6 deletes it.
   3. Map function calls and responses onto the tool-call events.
   4. Update `tests/test_adk_runner.py`, including a test that two concurrent `stream()` calls on the
     same runner instance do not share a `message_id`.
-- **Verify:** `uv run pytest tests/test_adk_runner.py`, then the full suite.
+  5. Decisions and corrections taken while implementing:
+     - **`tests/test_tool_adk.py` also changes, and §10's test tables did not say so.** It holds two
+       tests asserting on `stream()`'s output directly (`test_stream_yields_partial_event_text` and
+       `test_stream_skips_non_partial_events`), while §10 lists the file under *must NOT change* —
+       true only for the `supports_streaming` property it was listed for. `spec.md` now records both
+       the correction and the cause: the changing-tests table was derived by grepping test filenames
+       per adapter instead of searching for assertions on `stream()`.
+     - **Non-partial text is emitted when no partial ever arrived**, which goes beyond step 1's
+       letter. ADK normally sends partials then one aggregated non-partial event whose text must be
+       suppressed as a duplicate — but a turn that never streamed would then produce an empty reply,
+       and `test_stream_skips_non_partial_events` was asserting exactly that. The fallback is guarded
+       on nothing having been sent, so it cannot double up, and that test now pins the new behaviour.
+     - **Tool-call ids come from `FunctionCall.id`, not from `uuid4()`.** ADK generates only the
+       `message_id`, because that is the one correlation id it supplies nothing for. A generated
+       tool-call id could not be matched to the `FunctionResponse`, so a call with no id emits
+       nothing — the same rule PR 4 applied to OpenAI.
+     - **A message left open when the stream drains is closed after the loop.** Placed after the
+       `async for` and before the write-back, so a client disconnect raises `GeneratorExit` at a
+       yield and unwinds past it — no synthetic `MessageEnd` on a disconnect, matching §9.
+     - **The concurrency test was negative-tested.** Caching the derived id on the runner instance
+       makes it fail on `a_start.message_id != b_start.message_id`; without that check the test would
+       have passed against the very bug §10 warns about.
+- **Verify:** `uv run pytest tests/test_adk_runner.py tests/test_tool_adk.py`, then the full suite.
 
 
 

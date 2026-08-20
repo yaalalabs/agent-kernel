@@ -675,7 +675,11 @@ class TestGoogleADKRunnerToolContext:
 
     @pytest.mark.asyncio
     async def test_stream_yields_partial_event_text(self):
-        """stream() yields text only from partial events via run_async with SSE mode."""
+        """The partials carry the text; the non-partial event only closes the message.
+
+        Its own text is the concatenation of the deltas already sent, so re-emitting it would
+        duplicate the reply.
+        """
         runner = GoogleADKRunner()
         session = Session("stream-partial-session")
         requests = [AgentRequestText(prompt="hello")]
@@ -703,15 +707,19 @@ class TestGoogleADKRunnerToolContext:
         with patch.object(
             GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock(), MagicMock())
         ):
-            chunks = []
-            async for delta in runner.stream(mock_agent, session, requests):
-                chunks.append(delta)
+            events = [event async for event in runner.stream(mock_agent, session, requests)]
 
-        assert chunks == ["hello "]
+        assert [event.type for event in events] == ["message_start", "text_delta", "message_end"]
+        assert events[1].content == "hello "
 
     @pytest.mark.asyncio
-    async def test_stream_skips_non_partial_events(self):
-        """stream() does not yield text from non-partial events."""
+    async def test_stream_emits_non_partial_only_text_as_a_whole_message(self):
+        """A turn that never streamed still has to reach the client.
+
+        A non-partial event's text is normally suppressed as a duplicate of the deltas, but when no
+        partial ever arrived there are no deltas to duplicate — and dropping it would make the turn's
+        only text vanish. Guarded on nothing having been sent, so it cannot double up.
+        """
         runner = GoogleADKRunner()
         session = Session("stream-non-partial-session")
         requests = [AgentRequestText(prompt="hello")]
@@ -732,11 +740,10 @@ class TestGoogleADKRunnerToolContext:
         with patch.object(
             GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock(), MagicMock())
         ):
-            chunks = []
-            async for delta in runner.stream(mock_agent, session, requests):
-                chunks.append(delta)
+            events = [event async for event in runner.stream(mock_agent, session, requests)]
 
-        assert chunks == []
+        assert [event.type for event in events] == ["message_start", "text_delta", "message_end"]
+        assert events[1].content == "full response"
 
 
 # Edge cases
