@@ -362,7 +362,7 @@ into message boundaries. That is exactly an adapter's job — translating one fr
 AK's vocabulary — and it keeps `Runtime`, `ResponseBuilder` and `to_agui` stateless. The claim is
 *no inferred state downstream of the adapter*, not no state anywhere.
   - The handler is the one exception, and only for things AG-UI itself defines rather than infers: the
-  run lifecycle, and the pre-run copy of `shared_state` it compares against to decide whether to emit
+  run lifecycle, and the pre-run copy of `agui_state` it compares against to decide whether to emit
   `StateSnapshot` (see State). Neither reconstructs anything the event stream failed to say.
 - Pydantic AI's rewrite carries a second cost: the `async with run_stream(...)` block also holds the
 session-message bookkeeping and the `framework_context` store
@@ -449,13 +449,13 @@ and reaches the agent through a read-only `get_forwarded_props()` system tool.
   per-request by nature — AG-UI re-sends it on every run, so a previous copy is never wanted — and
   `Runtime` already clears the volatile cache after every run (`core/runtime.py:229-230`). The
   correct lifetime comes for free, with nothing extra to document about expiry. Contrast
-  `shared_state`, which earns a top-level key precisely because it must survive the run.
+  `agui_state`, which earns a top-level key precisely because it must survive the run.
   - **Reached by tool, not by injection, and that is the safer shape** — the same call this design
   already makes for `RunAgentInput.context` above, which is fed to the model as tool output rather
   than as instructions. Client data should arrive where the model treats it as information, not as
   orders.
   - **Read-only: there is no `update_forwarded_props`.** AG-UI has no event to carry the field back,
-  so a write tool would mutate something nothing reads. `shared_state` has an update tool only
+  so a write tool would mutate something nothing reads. `agui_state` has an update tool only
   because `StateSnapshot` exists to carry the result. Reviewers will ask why the two are
   asymmetric; this is the reason.
   - Gated on `agui.client_context.enabled`, attached through `SystemToolFactory` by the same
@@ -498,7 +498,7 @@ follow-up, for the reasons at the end of this section.
     - Nesting it as `framework_context["agui_state"]` does not help: `_store_framework_context`
       merges at the *top* level, so the nested dict is one unit and is dropped or restored wholesale.
   - The ownership reason: they are different concepts sharing a shape. `framework_context` is
-    *caller* context; `shared_state` is the *UI's*. An application already keeping tenant data in
+    *caller* context; `agui_state` is the *UI's*. An application already keeping tenant data in
     `framework_context` must not collide with AG-UI writing form state into the same dict.
   - This is one more named compartment inside the existing session record, not a second session or a
     second store entry — the same way each framework adapter already keeps its state under its own
@@ -551,14 +551,14 @@ follow-up, for the reasons at the end of this section.
   - Two consequences to document: mounting AG-UI **without** either block yields no tools, which is
     the intended explicit opt-in; and setting `enabled: True` **without** mounting AG-UI puts the
     tools on every agent for nothing.
-- **The owner is always named, but only where it has to be** — `client_state` in config,
+- **The owner is always named, but only where it has to be** — `agui.state` in config,
   `Session.Keys.AGUI_STATE` in the session, `get_agui_state` / `update_agui_state` as tools.
   - AG-UI calls the concept *shared state*. AK deliberately does not: a bare `shared_state` says
     nothing about **whose** state it is or what it is shared *with*, and beside `session`,
     `execution` and `multimodal` it reads as a general-purpose store it is not. That AG-UI uses the
     generic term is not a reason for AK to inherit it.
   - The config key is plain `state` because the `agui` block already supplies the owner —
-    `agui.shared_state` stutters, and the objection to a bare `state` was that it is generic at *top*
+    `agui.agui_state` stutters, and the objection to a bare `state` was that it is generic at *top*
     level, which nesting removes. The session key and the tools are not nested and carry no such
     parent, so they spell it out: `AGUI_STATE`, `get_agui_state`, `update_agui_state`.
   - The rule, so a reviewer does not read the difference as an inconsistency: **name the owner
@@ -779,7 +779,7 @@ Shape of the graph:
   base-class default. It was separated to keep the integration PR small, but a six-line change is
   not a review unit — and it belongs with the streaming contract it declares.
   - *The state capability folded into PR 3.* It was separate while the session key and tools were
-  surface-neutral. Naming them `shared_state` (see State) settled that they are not: the key, the
+  surface-neutral. Naming them `agui_state` (see State) settled that they are not: the key, the
   tools and the config all say AG-UI, so reviewing them apart from AG-UI bought nothing. This
   removes the awkwardness of a PR whose config belonged to a feature it was not allowed to mention.
 - **The adapter work stays split three ways because the work differs in kind, not just in file.**

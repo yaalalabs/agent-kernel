@@ -62,8 +62,8 @@ def parse_run_input(body: dict) -> "RunAgentInput":
 
     :param body: The raw JSON body, as the client sent it (camelCase field names).
     :return: The constructed `ag_ui.core.RunAgentInput`, carrying exactly one message.
-    :raises HTTPException: 400 when there is no user message or a content type is unrecognised;
-                           422 when the body is malformed in any other way.
+    :raises HTTPException: 400 when there is no user message, the message carries no content, or a
+                           content type is unrecognised; 422 when the body is malformed in any other way.
     """
     from ag_ui.core import RunAgentInput
     from pydantic import ValidationError
@@ -76,6 +76,7 @@ def parse_run_input(body: dict) -> "RunAgentInput":
     if user_message is None:
         raise HTTPException(status_code=400, detail="RunAgentInput.messages carries no user message; there is no turn to run")
 
+    _reject_empty_content(user_message)
     _reject_unknown_content_types(user_message)
 
     filtered = {**body, "messages": [user_message]}
@@ -87,6 +88,22 @@ def parse_run_input(body: dict) -> "RunAgentInput":
         return RunAgentInput.model_validate(filtered)
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=f"Malformed RunAgentInput: {e.errors()}")
+
+
+def _reject_empty_content(user_message: dict) -> None:
+    """Reject a user message that carries no content at all.
+
+    An empty list or a blank string maps to zero AK requests, and the agent then runs on nothing
+    while the client sees an ordinary `RunStarted` … `RunFinished` — the silent drop this module
+    exists to prevent, applied to the whole turn rather than to one attachment.
+
+    Deliberately narrow: parts that are individually empty (a `text` part whose text is "") are a
+    content-shape judgement and are left alone. Raised here rather than from `to_requests` so that a
+    rejected request has not already had `apply_to_session` write its state onto the session.
+    """
+    content = user_message.get("content")
+    if (isinstance(content, str) and not content.strip()) or (isinstance(content, list) and not content):
+        raise HTTPException(status_code=400, detail="The user message carries no content; there is no turn to run")
 
 
 def _reject_unknown_content_types(user_message: dict) -> None:
@@ -131,7 +148,7 @@ def apply_to_session(session: Session, run_input: "RunAgentInput") -> None:
         if isinstance(run_input.forwarded_props, dict):
             session.get_volatile_cache().set(AGUI_FORWARDED_PROPS_KEY, run_input.forwarded_props)
         else:
-            _log.debug(f"Ignoring forwardedProps of type {type(run_input.forwarded_props).__name__}; the read tool returns an object")
+            _log.warning(f"Ignoring forwardedProps of type {type(run_input.forwarded_props).__name__}; the read tool returns an object")
 
     if run_input.context:
         entries = [{"description": entry.description, "value": entry.value} for entry in run_input.context]

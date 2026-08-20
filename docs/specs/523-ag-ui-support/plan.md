@@ -286,8 +286,8 @@ round-trip state.
        `GET /` explains how to build. No CI job sets up Node for this example, and `app_test.py`
        exercises the AG-UI routes and the asset route's 404 paths, never the built page, so nothing in
        CI depends on the build. Where
-       npm *is* present, `npm run build` type-checks before bundling, so a type error fails the build
-       instead of shipping.
+       npm *is* present, `npm run build` type-checks before bundling, but a failed build only warns —
+       so a frontend error cannot fail the example's CI job either.
      - "Show a tool call live" **cannot be met at PR 3** — see Verify — and the example does not try
        to fake it. It renders reasoning, tool calls and the live status strip as first-class
        components, tested against hand-written event sequences; they simply stay empty until PRs 4-6
@@ -300,7 +300,7 @@ round-trip state.
 Manually: run the example, confirm streamed text renders and a `StateSnapshot` arrives. **Tool calls
 cannot render yet** — no adapter emits `ToolCallStart` until PR 4, so text arrives here via the
 transitional normalization in §4 and the tool-call half of the example is exercised at PR 4. The
-example's `index.html` still handles the tool-call events, so PR 4 lights it up with no example change.
+example's `reduceEvent.ts` still handles the tool-call events, so PR 4 lights it up with no example change.
   - **The `dict` tool parameter would have shipped broken, and nothing in the plan would have caught
     it.** `update_agui_state(updates: dict)` — the signature §6 specified — makes the OpenAI Agents
      SDK raise `UserError: additionalProperties should not be set for object types` when it builds its
@@ -498,7 +498,7 @@ and is retained only to make that uniformity explicit rather than accidental.
 | `core-concepts/runtime.md` | 55-56 | **missed by the original search.** The `stream()` pipeline bullets describe passing each token delta through `on_stream_chunk` and yielding `StreamChunk(delta=...)` per token | PR 7 |
 | `advanced/multimodal.md` | — | all five source forms now work; state which are described/stored and which pass through | PR 7 |
 | `integrations/overview.md` | — | add AG-UI to the integration list | PR 7 |
-| new page under `advanced/` | — | AG-UI: routes, config, the fidelity matrix, `shared_state`, `forwardedProps`, `context`, and the tool-call redaction limit. The matrix is the row that forced this table's Owner column to PR 7 — its content is decided by PRs 4-6 | PR 7 |
+| new page under `advanced/` | — | AG-UI: routes, config, the fidelity matrix, `agui_state`, `forwardedProps`, `context`, and the tool-call redaction limit. The matrix is the row that forced this table's Owner column to PR 7 — its content is decided by PRs 4-6 | PR 7 |
 | `docs/sidebars.js` | `tutorialSidebar` → `Advanced` category | add the new AG-UI page. The sidebar enumerates every page explicitly rather than autogenerating from the filesystem, so a new `.md` file alone is invisible in the nav | PR 7 |
 | `advanced/threads.md` | — | verified: no change. It documents the `Authoriser` AG-UI now shares, but AG-UI adds no thread behaviour | — |
 

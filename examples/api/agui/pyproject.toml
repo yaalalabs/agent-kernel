@@ -1,7 +1,7 @@
 [project]
 name = "agui-openai"
 version = "0.1.0"
-description = "Demo of an Agent Kernel agent driven over the AG-UI protocol, with a single-file frontend"
+description = "Demo of an Agent Kernel agent driven over the AG-UI protocol, with a React frontend"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

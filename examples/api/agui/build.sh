@@ -27,13 +27,17 @@ else
   uv pip install --no-cache 'ag-ui-protocol>=0.1.16'
 fi
 
-# The React frontend. Optional on purpose: the AG-UI routes and app_test.py do not need it, and no CI
-# job sets up a Node toolchain for this example, so a missing npm must warn rather than fail.
-# `npm run build` type-checks before it bundles, so where npm *is* present (a GitHub runner image
-# ships one) a frontend type error fails this script rather than shipping.
+# The React frontend. Optional on purpose: the AG-UI routes and app_test.py do not need it, so a
+# missing npm must warn rather than fail. A *failed* build warns too, and that is the deliberate part:
+# this example is registered in .github/test-config.yaml and GitHub runner images ship npm, so failing
+# hard here would let a frontend type error — or a flaky npm install — break the example's CI job over
+# something no test touches. Run `npm run build` or `npm run typecheck` directly for a gating check.
+# `npm ci` rather than `npm install`, so the committed package-lock.json is what gets installed.
 if command -v npm >/dev/null 2>&1; then
   echo "Building the frontend..."
-  (cd frontend && npm install --no-audit --no-fund && npm run build)
+  if ! (cd frontend && npm ci --no-audit --no-fund && npm run build); then
+    echo "WARNING: the frontend build failed. The /agui routes still work; GET / will explain how to build."
+  fi
 else
   echo "npm not found — skipping the frontend build. The /agui routes still work; GET / will explain."
 fi

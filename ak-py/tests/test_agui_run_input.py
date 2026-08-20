@@ -8,13 +8,22 @@ reject requests over messages it was going to throw away; getting the second wro
 look like it ignored the attachment the user just sent.
 """
 
+from typing import get_args
+
 import pytest
+from ag_ui.core import InputContent, InputContentSource
 from fastapi import HTTPException
 
 from agentkernel.core.base import Session
 from agentkernel.core.client_state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY
 from agentkernel.core.model import AgentRequestFile, AgentRequestImage, AgentRequestText
-from agentkernel.integration.agui.run_input import apply_to_session, parse_run_input, to_requests
+from agentkernel.integration.agui.run_input import (
+    _KNOWN_CONTENT_TYPES,
+    _KNOWN_SOURCE_TYPES,
+    apply_to_session,
+    parse_run_input,
+    to_requests,
+)
 
 PNG_B64 = "iVBORw0KGgo="
 
@@ -128,6 +137,43 @@ class TestHistoryIsDropped:
         with pytest.raises(HTTPException) as exc:
             parse_run_input(body([]))
         assert exc.value.status_code == 400
+
+
+class TestEmptyContent:
+    """A message that carries no content maps to zero AK requests. Left unchecked the agent runs on
+    nothing and the client sees an ordinary RunStarted…RunFinished, which is the silent drop this
+    module exists to prevent applied to the whole turn."""
+
+    @pytest.mark.parametrize("content", [[], "", "   ", "\n\t"], ids=["empty-list", "empty-string", "spaces", "whitespace"])
+    def test_a_message_with_no_content_is_400(self, content):
+        with pytest.raises(HTTPException) as exc:
+            parse_run_input(body([user_message(content)]))
+        assert exc.value.status_code == 400
+        assert "no content" in exc.value.detail
+
+    def test_the_rejection_precedes_any_session_write(self):
+        """Ordering, not wording. Runs the handler's own sequence — parse, then apply — to show the
+        400 fires first, so a rejected turn cannot leave its inbound state behind. Raising from
+        `to_requests` instead would land after `apply_to_session` had already written."""
+        session = Session("session-1")
+        with pytest.raises(HTTPException):
+            run_input = parse_run_input(body([user_message([])], state={"tasks": ["leaked"]}))
+            apply_to_session(session, run_input)  # unreachable: the line above raises
+        assert session.get_agui_state() is None
+
+    @pytest.mark.parametrize(
+        "content",
+        ["hello", [{"type": "text", "text": "hello"}]],
+        ids=["string", "parts"],
+    )
+    def test_real_content_still_passes(self, content):
+        assert to_requests(parse_run_input(body([user_message(content)]))) == [AgentRequestText(prompt="hello")]
+
+    def test_an_individually_empty_part_is_left_alone(self):
+        """Deliberately narrow. An empty `text` part is a content-shape judgement, not an absent
+        turn, so it is not this check's business."""
+        run_input = parse_run_input(body([user_message([{"type": "text", "text": ""}])]))
+        assert to_requests(run_input) == [AgentRequestText(prompt="")]
 
 
 class TestVersionSkewLeniency:
@@ -316,3 +362,22 @@ class TestBinaryContent:
             to_requests(run_input)
         assert exc.value.status_code == 400
         assert "id" in exc.value.detail
+
+
+class TestSDKUnionsAreMirrored:
+    """`run_input` hand-copies the SDK's discriminators so `ag_ui` stays a type-only import. The
+    outbound direction has `test_every_union_member_has_an_explicit_decision` as its drift guard;
+    these are the inbound equivalent. Without them a content type the SDK gains becomes a 400 for
+    something the pinned SDK accepts, and nothing fails."""
+
+    @staticmethod
+    def _discriminators(annotated):
+        """Unwrap `Annotated[Union[...], FieldInfo]` to the `type` literal each member declares."""
+        union, _field_info = get_args(annotated)
+        return {member.model_fields["type"].default for member in get_args(union)}
+
+    def test_known_content_types_match_the_sdk(self):
+        assert _KNOWN_CONTENT_TYPES == self._discriminators(InputContent)
+
+    def test_known_source_types_match_the_sdk(self):
+        assert _KNOWN_SOURCE_TYPES == self._discriminators(InputContentSource)

@@ -117,8 +117,8 @@ Install dependencies and build the frontend using:
 
     ./build.sh
 
-The frontend build is skipped with a warning when `npm` is absent — the `/agui` routes and
-`app_test.py` do not need it, and `GET /` then explains how to build it. To work on the frontend with
+The frontend build warns and continues if `npm` is absent or the build itself fails — the `/agui`
+routes and `app_test.py` do not need it, and `GET /` then explains how to build it. To work on the frontend with
 hot reload, run the Python app and Vite side by side; Vite proxies `/agui` through to :8000:
 
     python app.py
@@ -129,8 +129,9 @@ Run the frontend's tests with:
     cd frontend && npm test        # needs Node 22.18+; Node strips the types, nothing compiles them
     cd frontend && npm run typecheck
 
-`npm run build` runs the type check first, so `./build.sh` fails on a type error rather than shipping
-one. There is no separate lint step: `make lint-examples-check` at the repo root covers Python only.
+`npm run build` runs the type check first, so run it (or `npm run typecheck`) directly for a gating
+check — `./build.sh` deliberately only warns, so that a frontend error cannot fail this example's CI
+job. There is no separate lint step: `make lint-examples-check` at the repo root covers Python only.
 
 Install local dependencies in development mode using:
 

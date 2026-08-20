@@ -154,7 +154,7 @@ _CLIENT_CONTEXT_GUIDANCE = (
 
 
 def get_agui_state_tools() -> list[SystemTool]:
-    """Build the shared-state tools; called by ``SystemToolFactory`` when ``client_state`` is enabled.
+    """Build the shared-state tools; called by ``SystemToolFactory`` when ``agui.state`` is enabled.
 
     The block's whole system-prompt section rides on the first tool's ``description`` and the rest
     carry none, which is the sandbox/multimodal pattern: ``get_system_prompt_suffix()`` joins the

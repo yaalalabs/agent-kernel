@@ -5,7 +5,7 @@ agui:
   default_agent: planner # serves POST /agui in addition to POST /agui/planner
   # agents: [planner]    # omitted = every streaming-capable agent is reachable
   state:
-    enabled: true # attaches get_agui_state / update_agui_state to the agents below
+    enabled: true # attaches get_agui_state / update_agui_state; add `agents: [...]` to scope it
   client_context:
     enabled: true # attaches the read-only get_forwarded_props / get_agui_context
 

@@ -314,8 +314,8 @@ with accessors modelled exactly on the `framework_context` trio (`core/base.py:1
 
 ```python
 def get_agui_state(self) -> dict | None:      # live dict, never auto-creates
-def set_shared_state(self, state: dict) -> dict # rejects non-dicts with TypeError
-def clear_shared_state(self) -> None
+def set_agui_state(self, state: dict) -> dict # rejects non-dicts with TypeError
+def clear_agui_state(self) -> None
 ```
 
 Absent reads back as `None`, matching `get_framework_context`. Nothing outside `Session` spells the
@@ -325,7 +325,7 @@ raw key string.
 `AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"` and `AGUI_CONTEXT_KEY = "agui_context"`, because
 `Runtime` already clears that cache after every run (`core/runtime.py:230, 275`) and both fields are
 per-request by nature — AG-UI re-sends them on every run, so a previous copy is never wanted.
-Contrast `shared_state`, which earns a top-level key precisely because it must survive the run.
+Contrast `agui_state`, which earns a top-level key precisely because it must survive the run.
 
 Both constants are defined in **`core/client_state.py`** (§6) — not in `core/base.py`, and not in
 `integration/agui/`. Each has two users: a read tool in `core/` and `run_input.py` in `integration/`,
@@ -384,12 +384,12 @@ Two further branches of the shape already used twice:
 agui_cfg = getattr(AKConfig.get(), "agui", None)
 state_cfg = getattr(agui_cfg, "state", None) if agui_cfg else None
 if state_cfg and state_cfg.enabled and SystemToolFactory._agent_allowed(state_cfg, agent_name):
-    from .shared_state import get_agui_state_tools
+    from .client_state import get_agui_state_tools
     tools.extend(get_agui_state_tools())
 
 cc_cfg = getattr(agui_cfg, "client_context", None) if agui_cfg else None
 if cc_cfg and cc_cfg.enabled and SystemToolFactory._agent_allowed(cc_cfg, agent_name):
-    from .shared_state import get_client_context_tools   # get_forwarded_props + get_agui_context
+    from .client_state import get_client_context_tools   # get_forwarded_props + get_agui_context
     tools.extend(get_client_context_tools())
 ```
 
@@ -691,7 +691,7 @@ SDK models set `alias_generator=to_camel`, so every field below is `snake_case` 
 |---|---|
 | `thread_id` | `session_id` |
 | `run_id`, `parent_run_id` | echoed on `RunStarted` / `RunFinished` for correlation; never stored |
-| `state` | `session.set_shared_state(...)`, only when not `None` |
+| `state` | `session.set_agui_state(...)`, only when not `None` |
 | `forwarded_props` | `session.get_volatile_cache().set(AGUI_FORWARDED_PROPS_KEY, ...)` |
 | `context` | `session.get_volatile_cache().set(AGUI_CONTEXT_KEY, [...])`, read back by `get_agui_context()` |
 | final `user` message content | `AgentRequestText` / `AgentRequestImage` / `AgentRequestFile` (see below) |
@@ -920,12 +920,14 @@ posture.
 | Audio / video content in the request body | `HTTPException(400)` with an explanatory message. AK has no equivalent request type |
 | Unrecognised `role`, or unknown content/source `type`, **in history** | Ignored. Unreachable by construction: the pre-filter keeps only the final `user` message, so history never reaches pydantic |
 | No `user` message in `messages` | `HTTPException(400)`. There is no turn to run |
+| A `user` message whose content is an empty list or a blank string | `HTTPException(400)`. It maps to zero AK requests, so the agent would run on nothing while the client saw an ordinary run. Raised in `parse_run_input`, before `apply_to_session` writes anything |
 | Unknown `content[].type` or `source.type` **in the final user message** | `HTTPException(400)` naming the unknown value. Same treatment as audio/video, and for the same reason — a silent drop reads as the agent ignoring the attachment |
 | `BinaryInputContent` carrying only `id` | `HTTPException(400)`. The id references a store AK does not have; `data` and `url` are both handled |
 | Unknown top-level field in `RunAgentInput` | Ignored. Free from the SDK's `extra="allow"` |
 | `state`, `tools`, `context` or `forwardedProps` absent | Defaulted (`None` / `[]` / `[]` / `None`). The SDK declares all four as required; AK ignores `tools` and treats the rest as optional |
 | `RunAgentInput` malformed in any other way (e.g. no `threadId`) | `HTTPException(422)`, matching what FastAPI returns for a malformed typed body |
-| `RunAgentInput.state` present but not a JSON object | `HTTPException(400)`. `Session.set_shared_state` would raise `TypeError`, which is a 500 |
+| `RunAgentInput.state` present but not a JSON object | `HTTPException(400)`. `Session.set_agui_state` would raise `TypeError`, which is a 500 |
+| `RunAgentInput.forwardedProps` present but not a JSON object | Ignored with a `WARNING`. Nothing reads the field back, so a 400 would reject a run over data the agent never needed — but a discarded client field is not a debug-level event |
 | `update_agui_state` called with malformed JSON | Returns `{"error": ...}` to the model; nothing is written. A tool never raises into the framework |
 | `_extract_attachment` meets a malformed `data:` URI | Falls through to the bare-base64 path rather than raising, so one bad attachment cannot fail the run |
 

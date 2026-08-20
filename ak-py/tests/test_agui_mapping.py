@@ -41,7 +41,7 @@ from agentkernel.core.event import (
     ToolCallResult,
     ToolCallStart,
 )
-from agentkernel.integration.agui.mapping import to_agui
+from agentkernel.integration.agui.mapping import _AGUI_MESSAGE_ROLES, to_agui
 
 # Every member of the StreamEvent union, with the AG-UI class it must produce. A member that AG-UI
 # genuinely has no equivalent for belongs in DELIBERATELY_UNMAPPED instead — it is empty today
@@ -155,6 +155,14 @@ class TestRoleDegradation:
 
     def test_an_unknown_role_falls_back_to_assistant(self):
         assert to_agui(MessageStart(message_id="m1", role="bot")).role == "assistant"
+
+    def test_the_role_set_mirrors_the_sdk(self):
+        """`_AGUI_MESSAGE_ROLES` hand-copies `TextMessageRole` so `ag_ui` stays a type-only import in
+        `mapping.py`. If the SDK adds a role, the frozenset silently degrades it to `assistant`
+        instead of passing it through, and the two tests above would still pass."""
+        from ag_ui.core.events import TextMessageRole
+
+        assert _AGUI_MESSAGE_ROLES == set(get_args(TextMessageRole))
 
 
 def test_every_mapped_event_serialises_through_the_sdk_encoder():
