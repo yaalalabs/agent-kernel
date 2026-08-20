@@ -33,13 +33,32 @@ def _ctx_mock():
     return ctx
 
 
-def _partial_event(text: str):
-    """An ADK SSE event the runner treats as a streamable text delta."""
-    event = MagicMock()
+def _part(text, thought=False):
+    """One `types.Part`. `thought` must be set explicitly: a bare MagicMock attribute is truthy, so
+    leaving it off would classify every fixture's text as reasoning."""
     part = MagicMock()
     part.text = text
-    event.content = MagicMock(parts=[part])
+    part.thought = thought
+    return part
+
+
+def _partial_event(text=None, thought=None):
+    """An ADK SSE event the runner treats as streamable text, reasoning, or both.
+
+    The two `get_function_*` methods are set explicitly rather than left to `MagicMock`, whose default
+    happens to iterate empty — the runner reads both on every event, so relying on that default would
+    make these fixtures work for a reason nobody reading them could see.
+    """
+    event = MagicMock()
+    parts = []
+    if thought is not None:
+        parts.append(_part(thought, thought=True))
+    if text is not None:
+        parts.append(_part(text))
+    event.content = MagicMock(parts=parts)
     event.partial = True
+    event.get_function_calls = MagicMock(return_value=[])
+    event.get_function_responses = MagicMock(return_value=[])
     return event
 
 
@@ -58,11 +77,16 @@ def _shape(events):
     return [event.type for event in events]
 
 
-def _nonpartial_event(text=None, calls=(), responses=()):
+def _nonpartial_event(text=None, thought=None, calls=(), responses=()):
     """An ADK event with `partial` falsy — where the aggregated text and the tool activity arrive."""
     event = MagicMock()
     event.partial = False
-    event.content = MagicMock(parts=[MagicMock(text=text)]) if text is not None else None
+    parts = []
+    if thought is not None:
+        parts.append(_part(thought, thought=True))
+    if text is not None:
+        parts.append(_part(text))
+    event.content = MagicMock(parts=parts) if parts else None
     event.get_function_calls = MagicMock(return_value=list(calls))
     event.get_function_responses = MagicMock(return_value=list(responses))
     return event
@@ -411,6 +435,79 @@ class TestGoogleADKRunnerStreamEvents:
         assert events[1].content == "all at once"
 
     @pytest.mark.asyncio
+    async def test_reasoning_never_reaches_the_answer_stream(self):
+        """ADK marks reasoning with `Part.thought`, not with a separate event.
+
+        Joining every part's text makes a thinking model's summary the assistant's answer — which §4
+        rule 5 forbids, because `delta` is what REST clients concatenate as the reply and what
+        `ThreadRecorder` persists. This is the guard for that.
+        """
+        events = await _collect([_partial_event(thought="weighing it up"), _nonpartial_event(thought="weighing it up")])
+
+        assert _shape(events) == ["reasoning_start", "reasoning_delta", "reasoning_end"]
+        assert events[1].content == "weighing it up"
+
+    @pytest.mark.asyncio
+    async def test_reasoning_closes_before_the_answer_opens(self):
+        """Thinking is over once the model starts answering, so the trace closes there."""
+        events = await _collect(
+            [
+                _partial_event(thought="let me check"),
+                _partial_event(thought=" the docs"),
+                _partial_event(text="The answer is 42"),
+                _nonpartial_event(text="The answer is 42"),
+            ]
+        )
+
+        assert _shape(events) == [
+            "reasoning_start",
+            "reasoning_delta",
+            "reasoning_delta",
+            "reasoning_end",
+            "message_start",
+            "text_delta",
+            "message_end",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_reasoning_and_the_answer_do_not_share_an_id(self):
+        events = await _collect([_partial_event(thought="hmm"), _partial_event(text="hi"), _nonpartial_event(text="hi")])
+        reasoning = {e.message_id for e in events if e.type.startswith("reasoning")}
+        answer = {e.message_id for e in events if e.type in ("message_start", "text_delta", "message_end")}
+        assert len(reasoning) == 1 and len(answer) == 1
+        assert reasoning != answer
+
+    @pytest.mark.asyncio
+    async def test_the_aggregate_re_emits_neither_stream(self):
+        """Its parts repeat what the partials already sent — both halves of it."""
+        events = await _collect([_partial_event(thought="hmm", text="hi"), _nonpartial_event(thought="hmm", text="hi")])
+        assert [e.content for e in events if e.type == "reasoning_delta"] == ["hmm"]
+        assert [e.content for e in events if e.type == "text_delta"] == ["hi"]
+
+    @pytest.mark.asyncio
+    async def test_reasoning_resuming_after_a_tool_call_opens_a_second_trace(self):
+        """Two traces, because that is what happened — one before the call, one after."""
+        events = await _collect(
+            [
+                _partial_event(thought="need a lookup"),
+                _partial_event(text="checking"),
+                _nonpartial_event(calls=[_call(args={"q": "x"})]),
+                _partial_event(thought="now I know"),
+                _partial_event(text="it is 42"),
+                _nonpartial_event(text="it is 42"),
+            ]
+        )
+        starts = [e.message_id for e in events if e.type == "reasoning_start"]
+        assert len(starts) == 2 and starts[0] != starts[1]
+        assert _shape(events).count("reasoning_end") == 2
+
+    @pytest.mark.asyncio
+    async def test_a_thought_only_turn_closes_its_trace_on_drain(self):
+        """No answer text ever arrives to close it, so the drain has to."""
+        events = await _collect([_partial_event(thought="thinking")])
+        assert _shape(events) == ["reasoning_start", "reasoning_delta", "reasoning_end"]
+
+    @pytest.mark.asyncio
     async def test_a_tool_only_turn_emits_no_message_boundaries(self):
         """No text means no message. An empty assistant bubble is what spec.md:229-233 forbids."""
         events = await _collect(
@@ -420,6 +517,24 @@ class TestGoogleADKRunnerStreamEvents:
             ]
         )
         assert _shape(events) == ["tool_call_start", "tool_call_args", "tool_call_end", "tool_call_result"]
+
+    @pytest.mark.asyncio
+    async def test_a_tool_call_on_a_text_event_is_emitted_after_the_message_closes(self):
+        """One model response can carry prose and a tool call in the same `Content`.
+
+        The message must close before the tool call opens. OpenAI cannot interleave them — its
+        `response.output_item.done` closes the message before the `function_call` item is added — so
+        ADK matching that ordering is what keeps one consumer working against both adapters.
+        """
+        events = await _collect([_partial_event("Let me check"), _nonpartial_event("Let me check", calls=[_call(args={"q": "x"})])])
+        assert _shape(events) == [
+            "message_start",
+            "text_delta",
+            "message_end",
+            "tool_call_start",
+            "tool_call_args",
+            "tool_call_end",
+        ]
 
     @pytest.mark.asyncio
     async def test_a_tool_call_and_its_result_share_the_call_id(self):

@@ -786,7 +786,28 @@ first; two need it for the second.
 - **Boundaries must be derived wherever the framework gives no usable message-start signal, and that
   is ADK *and* LangGraph** — not ADK alone, as this section first claimed.
   - **ADK** has neither a start signal nor an id: a `message_id: str | None` **local** inside
-    `stream`, set on the first `partial=True` event and cleared on the first `partial=False`.
+    `stream`, set on the first `partial=True` event and cleared on the first `partial=False`. Two
+    consequences of ADK's event shape, both settled in PR 5:
+    - **Tool events are emitted after the message boundaries.** One `Content` can hold prose and a
+      function call together, so emitting the call first would nest it inside an open text message.
+      OpenAI cannot produce that shape — `response.output_item.done` closes the message before the
+      `function_call` item is added — so ADK matches its ordering and one consumer works against both.
+      The ordering is asserted, not incidental.
+    - **Reasoning is a flag on a part, not an event**, so ADK derives *two* boundary streams rather
+      than one. `types.Part.thought` marks a thinking model's summary, which arrives interleaved with
+      the answer on the same events; joining them would put chain-of-thought into
+      `StreamChunk.delta`, which §4 rule 5 exists to prevent — `delta` is what plain-text clients
+      concatenate as the answer and what `ThreadRecorder` persists. The reasoning trace opens on the
+      first thought text and closes when answer text arrives, so a trace resuming after a tool call
+      is a second trace. ADK never emits thoughts unless the caller's own agent enables them
+      (`BuiltInPlanner(thinking_config=…)`); AK does not turn them on.
+    - **A tool result reads as `{"result": 42}` here and as `42` from OpenAI**, and that is left
+      alone. ADK wraps any non-dict return in `{'result': …}`
+      (`google/adk/flows/llm_flows/functions.py:1252`) while leaving a dict return untouched, so each
+      adapter's `ToolCallResult.content` is literally what its own model was shown — the difference
+      belongs to the frameworks, not to the mapping. Unwrapping a lone `result` key was rejected: it
+      would make a tool that genuinely returns `{"result": x}` indistinguishable from one returning
+      `x`. PR 7's fidelity matrix should carry this rather than re-deriving it.
   - **LangGraph** has an id but its `on_chat_model_start` / `on_chat_model_end` fire around *every*
     model call whether or not prose was streamed, so mapping them directly brackets a tool-calling
     turn into a message with nothing in it — the empty assistant bubble §4 rule 4 exists to prevent.

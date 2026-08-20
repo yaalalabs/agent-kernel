@@ -40,6 +40,9 @@ from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
     MessageStart,
+    ReasoningDelta,
+    ReasoningEnd,
+    ReasoningStart,
     StreamEvent,
     TextDelta,
     ToolCallArgs,
@@ -276,11 +279,27 @@ class GoogleADKRunner(BaseRunner):
         - each later partial is a `TextDelta` on that id;
         - the `partial=False` event closes it. Its text is deliberately **not** re-emitted — it is
           the concatenation of the deltas already sent, so forwarding it would duplicate the reply.
+        - **unless no partial ever arrived**, in which case that text is the turn's only text and is
+          emitted as a whole message. Guarded on nothing having been sent, so it cannot double up.
 
-        `message_id` is a **local**, never an attribute. `GoogleADKRunner` is constructed once per
-        module and `_wrap` hands that same instance to every agent, so one object serves every agent
-        and every concurrent session; on `self`, one session's message would close another's or two
-        sessions would share an id and a client would splice their text together (spec §10).
+        **Tool events are emitted after the boundaries, not before.** One `Content` can hold prose and
+        a function call together, and emitting the call first would nest it inside an open text
+        message. OpenAI cannot produce that shape, so matching its ordering is what lets one consumer
+        work against both adapters.
+
+        **There are two such streams, not one.** Reasoning is a flag on a part rather than an event of
+        its own (`types.Part.thought`), so a thinking model's summary arrives interleaved with the
+        answer on the same events and gets the same treatment on a separate id: opened by the first
+        thought text, and closed as soon as answer text arrives — thinking is over once the model
+        starts answering. Reasoning that resumes after a tool call opens a second trace. Keeping the
+        two apart is not cosmetic: §4 rule 5 keeps `ReasoningDelta` out of `StreamChunk.delta`, and
+        `delta` is what plain-text clients concatenate as the answer and what `ThreadRecorder`
+        persists, so merging them would put chain-of-thought in the saved reply.
+
+        Both ids are **locals**, never attributes. `GoogleADKRunner` is constructed once per module and
+        `_wrap` hands that same instance to every agent, so one object serves every agent and every
+        concurrent session; on `self`, one session's message would close another's or two sessions
+        would share an id and a client would splice their text together (spec §10).
 
         Tool calls are read off the non-partial events, which is where ADK puts them. Their ids come
         from `FunctionCall.id` rather than being generated — unlike `message_id`, ADK does supply
@@ -303,28 +322,36 @@ class GoogleADKRunner(BaseRunner):
 
         if hasattr(runner, "run_async"):
             with ctx:
-                message_id: str | None = None  # the open message, if any — a local, never on self
+                # Both open streams, if any. Locals, never on self — see the docstring.
+                message_id: str | None = None
+                reasoning_id: str | None = None
                 async for event in runner.run_async(
                     user_id=user_id,
                     session_id=session.id,
                     new_message=new_message,
                     run_config=run_config,
                 ):
-                    for tool_event in self._tool_events(event):
-                        yield tool_event
+                    chunk, thinking = self._event_text(event)
 
-                    chunk = self._event_text(event)
+                    if getattr(event, "partial", False) and thinking:
+                        if reasoning_id is None:
+                            reasoning_id = uuid4().hex
+                            yield ReasoningStart(message_id=reasoning_id)
+                        yield ReasoningDelta(message_id=reasoning_id, content=thinking)
+
+                    if chunk and reasoning_id is not None:
+                        # The answer has started, so the thinking is over. Reasoning that resumes
+                        # after a tool call opens a second trace, which is what actually happened.
+                        yield ReasoningEnd(message_id=reasoning_id)
+                        reasoning_id = None
 
                     if getattr(event, "partial", False):
-                        if not chunk:
-                            continue
-                        if message_id is None:
-                            message_id = uuid4().hex
-                            yield MessageStart(message_id=message_id)
-                        yield TextDelta(message_id=message_id, content=chunk)
-                        continue
-
-                    if message_id is not None:
+                        if chunk:
+                            if message_id is None:
+                                message_id = uuid4().hex
+                                yield MessageStart(message_id=message_id)
+                            yield TextDelta(message_id=message_id, content=chunk)
+                    elif message_id is not None:
                         # The aggregated text is already out as deltas; this event only closes them.
                         yield MessageEnd(message_id=message_id)
                         message_id = None
@@ -336,8 +363,19 @@ class GoogleADKRunner(BaseRunner):
                         yield TextDelta(message_id=whole, content=chunk)
                         yield MessageEnd(message_id=whole)
 
-                # Closing a message the stream never closed itself. Reached only on a clean drain: a
-                # client disconnect raises GeneratorExit at a yield above and unwinds past this.
+                    # After the boundaries, so a tool call sharing an event with prose lands outside
+                    # the message rather than inside it. Run for every event, not just the
+                    # non-partial ones: a partial is not *proven* never to carry a call, and
+                    # dropping one silently would be worse than emitting it a beat early.
+                    for tool_event in self._tool_events(event):
+                        yield tool_event
+
+                # Closing whatever the stream never closed itself — a thought-only turn leaves the
+                # reasoning trace open, since no answer text ever arrived to end it. Reached only on a
+                # clean drain: a client disconnect raises GeneratorExit at a yield above and unwinds
+                # past this.
+                if reasoning_id is not None:
+                    yield ReasoningEnd(message_id=reasoning_id)
                 if message_id is not None:
                     yield MessageEnd(message_id=message_id)
 
@@ -351,21 +389,34 @@ class GoogleADKRunner(BaseRunner):
                         self._log_framework_context_stream_failure(session, e)
 
     @staticmethod
-    def _event_text(event: Any) -> str:
+    def _event_text(event: Event) -> tuple[str, str]:
         """
-        Join the text parts of one ADK event, ignoring parts that carry something else.
+        Split one ADK event's text into the answer and the model's reasoning.
+
+        **Reasoning is a flag on a part, not an event of its own.** A thinking model with summaries
+        enabled sends them as parts carrying `thought=True`, interleaved with the answer's parts on the
+        same events. Joining them all would make the summary part of the reply — which §4 rule 5
+        forbids, because `delta` is what plain-text clients concatenate as the answer and what
+        `ThreadRecorder` persists. They are separated here and never rejoined.
 
         A part holds exactly one kind of payload, so a function-call part has `text` unset and
-        contributes nothing here.
+        contributes to neither string.
 
         :param event: One event from `Runner.run_async`.
-        :return: The event's text, empty when it carries none.
+        :return: (answer, reasoning), either or both empty.
         """
         if not event.content or not event.content.parts:
-            return ""
-        return "".join(getattr(part, "text", "") or "" for part in event.content.parts)
+            return "", ""
+        answer: list[str] = []
+        reasoning: list[str] = []
+        for part in event.content.parts:
+            text = getattr(part, "text", "") or ""
+            if not text:
+                continue
+            (reasoning if getattr(part, "thought", False) else answer).append(text)
+        return "".join(answer), "".join(reasoning)
 
-    def _tool_events(self, event: Any) -> list[StreamEvent]:
+    def _tool_events(self, event: Event) -> list[StreamEvent]:
         """
         Translate an ADK event's function calls and responses into AK tool-call events.
 

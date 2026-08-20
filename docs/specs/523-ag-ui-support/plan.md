@@ -436,6 +436,32 @@ branch until PR 6 deletes it.
      - **The concurrency test was negative-tested.** Caching the derived id on the runner instance
        makes it fail on `a_start.message_id != b_start.message_id`; without that check the test would
        have passed against the very bug §10 warns about.
+  6. **A self-review caught a tool call nested inside an open text message.** One `Content` can hold
+    prose and a function call, and the first version emitted tool events before the boundary handling,
+     so that case produced `TEXT_MESSAGE_START → CONTENT → TOOL_CALL_* → TEXT_MESSAGE_END`. OpenAI
+     cannot produce that shape, so the two adapters disagreed on the same protocol. Not a proven
+     breach — the `ag_ui` SDK ships no verifier and the example frontend copes — but a divergence a
+     consumer can trip over, fixed by moving one `for` loop below the branches. Two things fell out of
+     it: both `continue`s disappeared, leaving the loop as a decision table, and `_tool_events` stayed
+     wired for *every* event rather than only the non-partial ones, because a partial is not proven
+     never to carry a call and dropping one silently is worse than emitting it early. The ordering is
+     now asserted by a test that was confirmed failing first. The same review also found the `stream`
+     docstring claiming non-partial text is never re-emitted while the code emits it as a fallback,
+     and a test fixture relying on `MagicMock`'s default empty iteration; §10 records the tool-result
+     shape difference the review raised and why it is left alone.
+  7. **ADK was emitting a thinking model's reasoning as the assistant's answer.** `_event_text` joined
+    the text of every part, but reasoning in ADK is `types.Part.thought` — a flag, not an event — so a
+     summary became `TextDelta` and therefore `StreamChunk.delta`, which §4 rule 5 exists to keep it
+     out of. Not merely a missing feature: `delta` is what plain-text clients render and what
+     `ThreadRecorder` persists, so chain-of-thought was going into the saved reply. Fixed by splitting
+     each event's parts into answer and reasoning and deriving a second boundary stream, closed when
+     answer text arrives. **Found by a question about ADK's event model, after the self-review had
+     already passed** — the review checked which *events* ADK sends and never asked what a `Part` can
+     carry, which is the same class of gap as §10's test-table omission. Two things worth keeping:
+     the projection was verified through `Runtime.stream`, not just the event list, because rule 5 is
+     about `delta` and the event list cannot show it; and three `test_tool_adk.py` fixtures had to set
+     `thought = False` explicitly, since a bare `MagicMock` attribute is truthy and would classify
+     every fixture's text as reasoning — a real `types.Part` defaults it to `None`.
 - **Verify:** `uv run pytest tests/test_adk_runner.py tests/test_tool_adk.py`, then the full suite.
 
 

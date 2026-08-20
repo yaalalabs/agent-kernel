@@ -688,12 +688,14 @@ class TestGoogleADKRunnerToolContext:
         partial_event = MagicMock()
         part = MagicMock()
         part.text = "hello "
+        part.thought = False
         partial_event.content = MagicMock(parts=[part])
         partial_event.partial = True
 
         final_event = MagicMock()
         part2 = MagicMock()
         part2.text = "hello world"
+        part2.thought = False
         final_event.content = MagicMock(parts=[part2])
         final_event.partial = False
 
@@ -728,6 +730,7 @@ class TestGoogleADKRunnerToolContext:
         event = MagicMock()
         part = MagicMock()
         part.text = "full response"
+        part.thought = False
         event.content = MagicMock(parts=[part])
         event.partial = False
 
