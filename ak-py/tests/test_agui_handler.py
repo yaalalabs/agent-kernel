@@ -30,7 +30,7 @@ from fastapi.testclient import TestClient
 from agentkernel.auth import Authoriser
 from agentkernel.auth.handler import AuthValidator, ValidationResult
 from agentkernel.core.base import Agent, Runner, Session
-from agentkernel.core.client_state import update_agui_state
+from agentkernel.core.client_state import AGUIClientState
 from agentkernel.core.config import _AGUIConfig, _GuardrailConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallStart
 from agentkernel.core.hooks import PreHook
@@ -413,7 +413,7 @@ class TestStateSnapshot:
     def test_a_tool_updating_state_emits_a_snapshot(self, monkeypatch):
         """The deep-copy regression guard. With a live reference instead of a copy, the comparison is
         the mutated dict against itself and this is the only test that notices."""
-        script = [MessageStart(message_id="m1"), lambda: update_agui_state('{"step": 2}'), MessageEnd(message_id="m1")]
+        script = [MessageStart(message_id="m1"), lambda: AGUIClientState.update_agui_state('{"step": 2}'), MessageEnd(message_id="m1")]
         with serving(monkeypatch, [ScriptedAgent("assistant", script)]) as (client, _):
             response = client.post("/agui/assistant", headers=AUTH, json=body(state={"step": 1}))
             assert types_of(response) == ["RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_END", "STATE_SNAPSHOT", "RUN_FINISHED"]
@@ -422,13 +422,13 @@ class TestStateSnapshot:
 
     def test_a_tool_creating_state_from_nothing_emits_a_snapshot(self, monkeypatch):
         """None != {...}: the common first-run case, and the one a `dict` comparison alone misses."""
-        script = [lambda: update_agui_state('{"created": true}')]
+        script = [lambda: AGUIClientState.update_agui_state('{"created": true}')]
         with serving(monkeypatch, [ScriptedAgent("assistant", script)]) as (client, _):
             response = client.post("/agui/assistant", headers=AUTH, json=body())
             assert types_of(response) == ["RUN_STARTED", "STATE_SNAPSHOT", "RUN_FINISHED"]
 
     def test_the_snapshot_comes_before_the_terminal_event(self, monkeypatch):
-        script = [lambda: update_agui_state('{"a": 1}')]
+        script = [lambda: AGUIClientState.update_agui_state('{"a": 1}')]
         with serving(monkeypatch, [ScriptedAgent("assistant", script)]) as (client, _):
             types = types_of(client.post("/agui/assistant", headers=AUTH, json=body()))
             assert types.index("STATE_SNAPSHOT") < types.index("RUN_FINISHED")
@@ -436,7 +436,7 @@ class TestStateSnapshot:
     def test_a_failed_run_emits_no_snapshot(self, monkeypatch):
         """Runtime.stream only persists the session once the stream drains, so on an error path the
         change was never stored — announcing it would leave the client holding discarded state."""
-        script = [lambda: update_agui_state('{"step": 2}'), RuntimeError("boom")]
+        script = [lambda: AGUIClientState.update_agui_state('{"step": 2}'), RuntimeError("boom")]
         with serving(monkeypatch, [ScriptedAgent("assistant", script)]) as (client, _):
             types = types_of(client.post("/agui/assistant", headers=AUTH, json=body()))
             assert "STATE_SNAPSHOT" not in types
@@ -444,7 +444,7 @@ class TestStateSnapshot:
 
     def test_state_survives_into_the_next_run(self, monkeypatch):
         """It earns a durable session key precisely because it must outlive the run."""
-        script = [lambda: update_agui_state('{"turns": 1}')]
+        script = [lambda: AGUIClientState.update_agui_state('{"turns": 1}')]
         with serving(monkeypatch, [ScriptedAgent("assistant", script)]) as (client, runtime):
             client.post("/agui/assistant", headers=AUTH, json=body())
             assert runtime.sessions().load("session-1").get_agui_state() == {"turns": 1}
@@ -456,10 +456,10 @@ class TestClientContextDelivery:
         seen = {}
 
         def capture():
-            from agentkernel.core.client_state import get_agui_context, get_forwarded_props
+            from agentkernel.core.client_state import AGUIClientState
 
-            seen["props"] = get_forwarded_props()
-            seen["context"] = get_agui_context()
+            seen["props"] = AGUIClientState.get_forwarded_props()
+            seen["context"] = AGUIClientState.get_agui_context()
 
         with serving(monkeypatch, [ScriptedAgent("assistant", [capture])]) as (client, _):
             client.post(
@@ -477,9 +477,9 @@ class TestClientContextDelivery:
         seen = {}
 
         def capture():
-            from agentkernel.core.client_state import get_forwarded_props
+            from agentkernel.core.client_state import AGUIClientState
 
-            seen["props"] = get_forwarded_props()
+            seen["props"] = AGUIClientState.get_forwarded_props()
 
         agents = [ScriptedAgent("assistant", [capture])]
         with serving(monkeypatch, agents, store=CopyingSessionStore()) as (client, _):
@@ -491,9 +491,9 @@ class TestClientContextDelivery:
         seen = []
 
         def capture():
-            from agentkernel.core.client_state import get_forwarded_props
+            from agentkernel.core.client_state import AGUIClientState
 
-            seen.append(get_forwarded_props())
+            seen.append(AGUIClientState.get_forwarded_props())
 
         with serving(monkeypatch, [ScriptedAgent("assistant", [capture])]) as (client, _):
             client.post("/agui/assistant", headers=AUTH, json=body(forwardedProps={"page": "/invoices"}))

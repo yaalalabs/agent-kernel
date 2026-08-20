@@ -218,6 +218,14 @@ class Session:
         """
         Returns the live AG-UI state dict, so a tool can edit it in place.
         Never auto-creates the key: absent means "the client has never sent state".
+
+        Deliberately its own key rather than a compartment inside framework_context, which the trio
+        above carries. That dict is per-run and adapter-owned: _store_framework_context merges the
+        framework's post-run state over it at the *top* level, so a nested agui_state would be
+        restored or dropped wholesale, and an application already keeping its own keys there would
+        collide with the UI writing into the same dict. This state instead has to survive the run
+        intact, because the handler diffs it afterwards to decide whether to emit a StateSnapshot.
+
         :return: The stored AG-UI state dict, or None when the key is absent.
         """
         return cast(dict | None, self.get(Session.Keys.AGUI_STATE.value))

@@ -173,10 +173,11 @@ round-trip state.
 - **Steps:**
   1. **Session key first** — `Session.Keys.AGUI_STATE` and its three accessors (§5). Independently
     testable, and everything else leans on it.
-  2. `core/client_state.py` — the four tool functions (`get_agui_state`, `update_agui_state`,
-    `get_forwarded_props`, `get_agui_context`), their two `SystemTool` builders, and the two
-     volatile-cache key constants this module owns (§5, §6). Docstrings are the LLM-facing tool
-     schema; write them as such.
+  2. `core/client_state.py` — `AGUIClientState` carrying the four tools (`get_agui_state`,
+    `update_agui_state`, `get_forwarded_props`, `get_agui_context`) and their two `SystemTool`
+     builders, plus the two volatile-cache key constants this module owns at module scope, since
+     `run_input.py` shares them (§5, §6). Docstrings are the LLM-facing tool schema; write them as
+     such.
   3. Config: `_AGUIConfig` with the nested `state` and `client_context` blocks (§Config changes),
     then the two `SystemToolFactory` branches (§7). Both flags default `False`.
   4. `integration/agui/run_input.py` (§9) — there is **no** `authoriser.py`: AG-UI uses the shared

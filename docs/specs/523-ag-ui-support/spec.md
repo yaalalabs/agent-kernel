@@ -341,13 +341,20 @@ in its directory listing — see design.md.
 AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"   # volatile-cache keys, owned here (§5)
 AGUI_CONTEXT_KEY = "agui_context"
 
-def get_agui_state() -> dict:          # returns {} when unset
-def update_agui_state(updates: str) -> dict    # `updates` is a JSON object; shallow merge, returns the merged dict
-def get_forwarded_props() -> dict      # returns {} when unset
-def get_agui_context() -> list[dict]   # returns [] when unset; {description, value} pairs
+class AGUIClientState:                 # a namespace, not state: every tool reads ToolContext.get()
+    @staticmethod
+    def get_agui_state() -> dict:                   # returns {} when unset
+    @staticmethod
+    def update_agui_state(updates: str) -> dict     # `updates` is a JSON object; shallow merge, returns the merged dict
+    @staticmethod
+    def get_forwarded_props() -> dict                # returns {} when unset
+    @staticmethod
+    def get_agui_context() -> list[dict]             # returns [] when unset; {description, value} pairs
 
-def get_agui_state_tools() -> list[SystemTool]      # gated by agui.state
-def get_client_context_tools() -> list[SystemTool] # gated by agui.client_context; returns BOTH
+    @classmethod
+    def state_tools(cls) -> list[SystemTool]          # gated by agui.state
+    @classmethod
+    def client_context_tools(cls) -> list[SystemTool] # gated by agui.client_context; returns BOTH
                                                     # get_forwarded_props and get_agui_context
 ```
 
@@ -362,9 +369,11 @@ def get_client_context_tools() -> list[SystemTool] # gated by agui.client_contex
   outright — `UserError: additionalProperties should not be set for object types` — so with a `dict`
   parameter *every* agent with `agui.state.enabled` fails to construct, not just at call time.
   Verified by probing the SDK: only **parameters** are affected, so the three readers keep their
-  `dict` / `list[dict]` return types. The tool parses the string and returns `{"error": ...}` on
-  malformed input rather than raising, matching the sandbox tools' contract. A binding test in
-  `test_client_state_tools.py` guards it.
+  `dict` / `list[dict]` return types. The tools being `staticmethod`s on `AGUIClientState` changes
+  nothing here — verified: a static method binds to the same name and schema as a module function,
+  where an *unbound* method would have leaked `self` as a required parameter.
+  The tool parses the string and returns `{"error": ...}` on malformed input rather than raising,
+  matching the sandbox tools' contract. A binding test in `test_client_state_tools.py` guards it.
 - One config block, two tools. `agui.client_context` gates both `get_forwarded_props` and
   `get_agui_context`: they are the same capability — read-only, client-supplied, pull-based context
   the model may consult but must not obey — and splitting them into two flags would make an operator
@@ -384,13 +393,13 @@ Two further branches of the shape already used twice:
 agui_cfg = getattr(AKConfig.get(), "agui", None)
 state_cfg = getattr(agui_cfg, "state", None) if agui_cfg else None
 if state_cfg and state_cfg.enabled and SystemToolFactory._agent_allowed(state_cfg, agent_name):
-    from .client_state import get_agui_state_tools
-    tools.extend(get_agui_state_tools())
+    from .client_state import AGUIClientState
+    tools.extend(AGUIClientState.state_tools())
 
 cc_cfg = getattr(agui_cfg, "client_context", None) if agui_cfg else None
 if cc_cfg and cc_cfg.enabled and SystemToolFactory._agent_allowed(cc_cfg, agent_name):
-    from .client_state import get_client_context_tools   # get_forwarded_props + get_agui_context
-    tools.extend(get_client_context_tools())
+    from .client_state import AGUIClientState            # get_forwarded_props + get_agui_context
+    tools.extend(AGUIClientState.client_context_tools())
 ```
 
 `_agent_allowed` (`core/tool.py:167-176`) is reused unchanged — it reads exactly `enabled` and

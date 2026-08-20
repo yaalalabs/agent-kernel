@@ -200,15 +200,15 @@ class SystemToolFactory:
         agui_config = getattr(AKConfig.get(), "agui", None)
         state_config = getattr(agui_config, "state", None)
         if state_config and state_config.enabled and SystemToolFactory._agent_allowed(state_config, agent_name):
-            from .client_state import get_agui_state_tools
+            from .client_state import AGUIClientState
 
-            tools.extend(get_agui_state_tools())
+            tools.extend(AGUIClientState.state_tools())
 
         client_context_config = getattr(agui_config, "client_context", None)
         if client_context_config and client_context_config.enabled and SystemToolFactory._agent_allowed(client_context_config, agent_name):
-            from .client_state import get_client_context_tools
+            from .client_state import AGUIClientState
 
-            tools.extend(get_client_context_tools())
+            tools.extend(AGUIClientState.client_context_tools())
 
         return tools
 
