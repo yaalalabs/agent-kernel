@@ -14,6 +14,12 @@ Assertions are structural (event ordering, frame shape, the presence of a state 
 semantic, so they do not depend on the model's exact wording. The one place the model's behaviour is
 load-bearing is `test_state_round_trip`, which needs the agent to actually call `update_agui_state` —
 that call *is* the capability, so a failure there is a real signal rather than flakiness to tolerate.
+
+Elsewhere the prompts name the tool they need, and `test_client_context_reaches_the_agent_as_tool_output`
+is the reason: it asked a bare question and CI failed on the agent answering "I don't know" instead of
+looking. There the call is a means, not the end — what the test uniquely proves is that context reaches
+the agent *as tool output* rather than flattened into the prompt, and whether the model infers its way
+to the tool is a separate property, one the example's own instructions are responsible for.
 Requires OPENAI_API_KEY.
 """
 
@@ -168,8 +174,13 @@ async def test_state_round_trip(base_url):
 
 @pytest.mark.asyncio
 async def test_client_context_reaches_the_agent_as_tool_output(base_url):
-    """context entries are pulled through a read-only tool, never injected into the prompt."""
+    """context entries are pulled through a read-only tool, never injected into the prompt.
+
+    The prompt names the tool on purpose — see the module docstring. Reaching the value at all is
+    what proves the chain; whether a bare question would have got there is the example's problem.
+    """
     context = [{"description": "the user's favourite colour", "value": "vermilion"}]
-    events = await collect(base_url, run_input("What is my favourite colour?", str(uuid.uuid4()), context=context))
+    prompt = "Check the context the frontend attached, then tell me my favourite colour."
+    events = await collect(base_url, run_input(prompt, str(uuid.uuid4()), context=context))
     text = "".join(e["delta"] for e in events if e["type"] == "TEXT_MESSAGE_CONTENT")
     assert "vermilion" in text.lower(), text

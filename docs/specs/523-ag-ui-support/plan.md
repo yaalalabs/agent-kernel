@@ -267,6 +267,21 @@ round-trip state.
        the query has no dataflow left to follow either. A regression test sends `/assets/%2e%2e`
        percent-encoded, because httpx normalises a literal `/assets/..` to `/` before it leaves the
        client and would have passed against anything.
+     - **A wired capability the demo agent would not reach for.** CI failed on
+       `test_client_context_reaches_the_agent_as_tool_output` with the agent replying "I don't know your
+       favourite colour". Every link was sound and unit-tested — cache write, tool attachment, prompt
+       suffix, cache read — so the failure was the model declining to call `get_agui_context`: the
+       planner's instructions framed it as a task-list assistant and told it to keep replies to one
+       short sentence. That made it a broken **demo**, not only a broken test, because the README
+       twice invites the reader to ask "what time is it for me?". Fixed in two places: the example's
+       instructions now put attached context in remit, and the e2e prompt names the tool. Naming it is
+       not a weakened assertion — for shared state the *call* is the capability, so model behaviour is
+       legitimately load-bearing there; for client context the capability is that entries arrive as
+       tool output instead of being flattened into the prompt, and the call is only how you observe
+       it. Note what `test_state_round_trip` never proved: the instructions name `update_agui_state`
+       themselves, so its passing said nothing about the system-prompt suffix reaching the model.
+       PR 4 can replace the string match with an assertion on a `ToolCallStart` named
+       `get_agui_context`, which would have made this failure unambiguous.
      - The Node toolchain is **optional**: `build.sh` warns and continues when `npm` is absent, and
        `GET /` explains how to build. No CI job sets up Node for this example, and `app_test.py`
        exercises the AG-UI routes and the asset route's 404 paths, never the built page, so nothing in

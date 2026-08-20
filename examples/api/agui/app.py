@@ -16,6 +16,9 @@ planner_agent = Agent(
     "Whenever the user adds, completes, renames or removes a task, read the current state, then write "
     "the full new list back with update_agui_state. The user only sees a change once you have written "
     "it — describing it in your reply changes nothing on their screen.\n"
+    "When the user asks about something they never told you in this conversation — their local time, "
+    "the page they are on, a preference — call get_agui_context and get_forwarded_props first. Do not "
+    "say you do not know until you have looked.\n"
     "Keep replies to one short sentence.",
 )
 
