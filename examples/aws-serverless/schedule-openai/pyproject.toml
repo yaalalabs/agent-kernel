@@ -11,19 +11,19 @@ dependencies = []
 # omit the (heavy) OpenAI Agents SDK; only the agent runner needs it. deploy.sh installs each
 # package with `uv export --extra <name>`.
 #
-# The `schedule` extra (croniter) is only on the agent runner: cron parsing happens when a task is
+# The `cron` extra (croniter) is only on the agent runner: cron parsing happens when a task is
 # validated at creation, which is this function's job. The request handler's management routes
 # (list/read/amend/cancel) reach the DynamoDB store and EventBridge Scheduler through the `aws`
 # extra and never parse a cron expression — except on an amendment that changes one, which is why
-# `schedule` is included there too.
+# `cron` is included there too.
 request_handler = [
-    "agentkernel[aws,schedule]>=0.8.1",
+    "agentkernel[aws,cron]>=0.8.1",
 ]
 response_handler = [
     "agentkernel[aws]>=0.8.1",
 ]
 agent_runner = [
-    "agentkernel[aws,openai,schedule]>=0.8.1",
+    "agentkernel[aws,openai,cron]>=0.8.1",
 ]
 
 [dependency-groups]

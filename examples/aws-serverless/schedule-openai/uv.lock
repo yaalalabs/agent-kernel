@@ -19,7 +19,7 @@ resolution-markers = [
 [[package]]
 name = "agentkernel"
 version = "0.8.1"
-source = { registry = "https://pypi.org/simple" }
+source = { registry = "../../../ak-py/dist" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -27,14 +27,17 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dd/90/7313ae5b04001b18844012ec4276dedaeb241aa6c0005e4eb64ded2e8491/agentkernel-0.8.1.tar.gz", hash = "sha256:9a28ea5dad43dcd39829d6cb2165eae1c042ac3a658900e588980d4735f64db0", size = 312414, upload-time = "2026-08-05T09:28:29.804Z" }
+sdist = { path = "agentkernel-0.8.1.tar.gz" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/18/ce/c51ae35a01e6d1ee251eac1a8b143eb905e853a369d16065eff8305249f3/agentkernel-0.8.1-py3-none-any.whl", hash = "sha256:74348ca1823800bd97cb023f7157653cad0d27cf601da90ee66168a773eaba8a", size = 437690, upload-time = "2026-08-05T09:28:28.326Z" },
+    { path = "agentkernel-0.8.1-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
 aws = [
     { name = "boto3" },
+]
+cron = [
+    { name = "croniter" },
 ]
 openai = [
     { name = "openai-agents" },
@@ -297,10 +300,10 @@ source = { virtual = "." }
 
 [package.optional-dependencies]
 agent-runner = [
-    { name = "agentkernel", extra = ["aws", "openai"] },
+    { name = "agentkernel", extra = ["aws", "cron", "openai"] },
 ]
 request-handler = [
-    { name = "agentkernel", extra = ["aws"] },
+    { name = "agentkernel", extra = ["aws", "cron"] },
 ]
 response-handler = [
     { name = "agentkernel", extra = ["aws"] },
@@ -317,8 +320,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agentkernel", extras = ["aws"], marker = "extra == 'response-handler'", specifier = ">=0.8.1" },
-    { name = "agentkernel", extras = ["aws", "openai", "schedule"], marker = "extra == 'agent-runner'", specifier = ">=0.8.1" },
-    { name = "agentkernel", extras = ["aws", "schedule"], marker = "extra == 'request-handler'", specifier = ">=0.8.1" },
+    { name = "agentkernel", extras = ["aws", "cron"], marker = "extra == 'request-handler'", specifier = ">=0.8.1" },
+    { name = "agentkernel", extras = ["aws", "openai", "cron"], marker = "extra == 'agent-runner'", specifier = ">=0.8.1" },
 ]
 provides-extras = ["request-handler", "response-handler", "agent-runner"]
 
@@ -792,6 +795,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c6/7e/37732ea80eebc30e976e4cdab15c190bc42d96959a42e38ddf6f8c60468f/coverage-7.15.4-cp315-cp315t-win_amd64.whl", hash = "sha256:288bde2a2d7ab6b6c2d7252fcde8b524387f2d970bdba9658fc6f8bbcaef0f9b", size = 225895, upload-time = "2026-08-06T13:50:17.928Z" },
     { url = "https://files.pythonhosted.org/packages/c6/08/1e00f7923eaaba45fb3d51dd794125fc766304b1df264f3a9c6557bfb30e/coverage-7.15.4-cp315-cp315t-win_arm64.whl", hash = "sha256:68be5e1de60ff13c9095bbec0e5a7fa45b33b101752215b91345ea1f61c4a278", size = 225213, upload-time = "2026-08-06T13:50:19.981Z" },
     { url = "https://files.pythonhosted.org/packages/b4/d9/e70c286c979378f061d8266e279b686ab0b0b688e1fe0af864684f23a77d/coverage-7.15.4-py3-none-any.whl", hash = "sha256:964730a1e9de9c0cf11be6a1a3c79ce419c34882842abd256086ba4698705e84", size = 214332, upload-time = "2026-08-06T13:50:22.192Z" },
+]
+
+[[package]]
+name = "croniter"
+version = "6.2.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-dateutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/57/2e2a65aee2a70483cb28e2b7e15a072d00a523207593b44400d4717bb100/croniter-6.2.4.tar.gz", hash = "sha256:fc124f751b1b04805c2a04b061898b436b45ab2320b045e1e052ea895de65189", size = 166267, upload-time = "2026-07-10T09:52:59.955Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cd/ba/d678e5bd329646ca51d3c92addbc77804e86d21f4b6b6a027218e6abb010/croniter-6.2.4-py3-none-any.whl", hash = "sha256:8ef3d544107a5c05a150a2d78f8bf5a8eb9c5c4d93405a736b824109574e3f4d", size = 46677, upload-time = "2026-07-10T09:52:58.425Z" },
 ]
 
 [[package]]

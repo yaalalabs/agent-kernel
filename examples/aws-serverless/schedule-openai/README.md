@@ -150,7 +150,7 @@ Terraform to build. Pass `local` (`./deploy.sh local`) to install `agentkernel` 
 ### Why the agent runner is an image
 
 Lambda caps a zip-deployed function at **250 MB unzipped**. The agent runner carries
-`agentkernel[aws,openai,schedule]` including the OpenAI Agents SDK, which does not fit — hence
+`agentkernel[aws,openai,cron]` including the OpenAI Agents SDK, which does not fit — hence
 `package_type = "Image"` for that one function. The request and response handlers stay small by
 design: their `pyproject.toml` extras omit the OpenAI SDK entirely, since they only enqueue and
 dequeue work, so they stay on zip mode. `deploy.sh` prints their zipped and unzipped sizes and

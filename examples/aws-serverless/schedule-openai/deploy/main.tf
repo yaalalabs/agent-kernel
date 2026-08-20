@@ -84,7 +84,7 @@ module "serverless_agents" {
 
   # ---- Agent runner ----
   # Runs fired occurrences and hosts the create_schedule/update_schedule/delete_schedule tools.
-  # Image mode: agentkernel[aws,openai,schedule] carries the OpenAI Agents SDK and does not fit
+  # Image mode: agentkernel[aws,openai,cron] carries the OpenAI Agents SDK and does not fit
   # inside Lambda's 250 MB unzipped zip limit. Terraform builds ../dist_agent_runner (deps under
   # data/ plus the Dockerfile deploy.sh copies in) and pushes it to an ECR repository it creates.
   agent_runner = {

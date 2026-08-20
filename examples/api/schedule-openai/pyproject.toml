@@ -5,9 +5,9 @@ description = "Demo of scheduled and recurring chat execution with OpenAI Agents
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    # 'cron' pulls in croniter for cron-expression schedules; config.yaml's `schedule.provider.type:
-    # local` and `schedule.store.type: in_memory` are in-process only and for this dev example — not
-    # for production use.
+    # 'cron' pulls in croniter for cron-expression schedules; config.yaml's
+    # `schedule.provider.type: local` and `schedule.store.type: in_memory` are
+    # in-process implementations.
     "agentkernel[openai,api,cron]>=0.8.1",
 ]
 

@@ -5,7 +5,7 @@ description = "Demo of scheduled and recurring chats in Agent Kernel on AWS ECS,
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[openai,api,aws,schedule]>=0.8.1"
+    "agentkernel[openai,api,aws,cron]>=0.8.1"
 ]
 
 [dependency-groups]
