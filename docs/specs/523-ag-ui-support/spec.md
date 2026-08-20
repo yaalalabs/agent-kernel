@@ -397,21 +397,48 @@ never produce four paragraphs.
 
 Two changes, and the second is the one a reviewer is most likely to miss.
 
-**8a. Classify in `_extract_attachment` (`:241-262`).** Return a fourth element saying whether the
-hook can consume the attachment:
+**8a. Classify in `_extract_attachment` (`:241-262`).** Carry a flag saying whether the hook can
+consume the attachment. The implementation splits this across a frozen dataclass and a resolver
+helper rather than returning the flat 5-tuple this section originally sketched:
 
 ```python
+@dataclass(frozen=True)
+class _ExtractedAttachment:
+    data: str
+    att_type: str
+    name: str
+    mime_type: str
+    consumable: bool
+
 @staticmethod
-def _extract_attachment(req) -> tuple[Optional[str], str, str, str, bool]:
-    # ... existing type dispatch ...
-    # returns (data, att_type, name, mime_type, consumable)
+def _extract_attachment(req) -> Optional[_ExtractedAttachment]:
+    # type dispatch; delegates source parsing to _resolve_source
+
+@staticmethod
+def _resolve_source(source, declared_mime, default_mime) -> Optional[tuple[str, str, bool]]:
+    # returns (data, mime_type, consumable), or None when the source carries no bytes
 ```
 
-- `data:<mime>;base64,<b64>` → split into `(b64, …, mime_type=<mime from the URI>, True)`. This also
-  removes the hardcoded `"image/jpeg"` fallback for the `data:` case.
+The dataclass is the normative shape: named fields beat a 5-tuple at the call site, and one
+`Optional` return beats a `(None, "", "", "")` sentinel for "no attachment here". Splitting the
+source parsing out of the type dispatch is what lets both request types share one set of rules.
+
+- `data:<mime>;base64,<b64>` → split into `(b64, mime_type=<mime from the URI>, True)`. The URI's own
+  mime wins over the request's `mime_type` and over the default, which is what stops a PNG being
+  stored as JPEG. This also removes the hardcoded `"image/jpeg"` fallback for the `data:` case.
 - Bare base64 → returned unchanged, `consumable=True`.
 - `http://`, `https://`, `s3://` → `consumable=False`; the hook neither describes nor stores it.
   Fetching would put network I/O and SSRF exposure inside a system pre-hook.
+- **A `data:` URI with an empty payload** (`data:image/png;base64,`) → `None`, so the caller drops the
+  request. It holds exactly as many bytes as `image_data=""`, which was already dropped, and retaining
+  it would hand an adapter a payloadless URI. The two spellings of "no bytes" must not diverge.
+- **A `data:` URI with no base64 marker** (`data:text/plain,hello`) → `consumable=False`, retained for
+  the adapter rather than decoded. Its payload is real content that simply is not base64, so storing
+  it as base64 would store the wrong bytes. Per RFC 2397 the marker is the header's *final* parameter,
+  so a header merely containing the text `;base64` does not qualify.
+- **Scheme and header matching is case-insensitive**, since URI schemes (RFC 3986 §3.1), media types
+  and parameter names all are. Only the leading bytes and the short header are folded — a payload can
+  be megabytes of base64, and lowercasing it would copy the lot.
 
 **8b. Retain unconsumed attachments in the filter loop (`:150-157`).** The loop currently strips
 **every** `AgentRequestImage`/`AgentRequestFile` unconditionally. `_process_attachments` must record

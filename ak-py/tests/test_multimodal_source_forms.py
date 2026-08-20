@@ -251,6 +251,34 @@ class TestMixedAndEdgeCases:
         assert result == [requests[0]]
         describe.assert_not_awaited()
 
+    @pytest.mark.parametrize("source", ["data:image/png;base64,", "data:;base64,", "DATA:image/png;BASE64,"])
+    def test_data_uri_with_an_empty_payload_is_dropped_like_no_data(self, multimodal_enabled, source):
+        session = Session("s1")
+        requests = [AgentRequestText(prompt="hi"), AgentRequestImage(image_data=source, name="empty.png")]
+
+        result, describe = _run_hook(session, requests)
+
+        # A well-formed base64 `data:` URI carrying nothing after the comma holds exactly as many
+        # bytes as image_data="" above, so it takes the same path. Retaining it would hand an adapter
+        # a payloadless URI, which is the failure the test above exists to prevent.
+        assert result == [requests[0]]
+        assert len(_stored()) == 0
+        describe.assert_not_awaited()
+
+    def test_data_uri_that_is_not_base64_is_retained_with_its_payload(self, multimodal_enabled):
+        session = Session("s1")
+        # The other half of the same condition, and it must not be dropped: the payload is real
+        # content, just not base64, so decoding it would store the wrong bytes. The adapter decides.
+        plain = AgentRequestFile(file_data="data:text/plain,hello%20world", name="note.txt")
+        requests = [AgentRequestText(prompt="hi"), plain]
+
+        result, describe = _run_hook(session, requests)
+
+        assert result == [requests[0], plain]
+        assert result[1] is plain
+        assert len(_stored()) == 0
+        describe.assert_not_awaited()
+
     def test_text_requests_are_never_recorded_as_consumed(self, multimodal_enabled):
         session = Session("s1")
         text = AgentRequestText(prompt="hi")

@@ -128,6 +128,21 @@ base64. No AG-UI code involved.
     retain the ones it declined (§8b). **This is the half that is easy to miss** — without it a URL
      attachment is deleted instead of merely undescribed.
   3. Write the new test file, covering all five forms.
+  4. **Post-review additions.** Three things came out of PR #648's review:
+     - **A `data:` URI with an empty payload is now dropped, not retained.** `_resolve_source` returns
+       `Optional[...]`, so `data:image/png;base64,` resolves to `None` and takes the existing
+       "no bytes" path — the same one `image_data=""` already took. Previously `not payload` was
+       OR-ed with the base64-marker check, so a payloadless URI was classified non-consumable and
+       forwarded to the adapter. Splitting that condition also separates two unrelated cases: an empty
+       payload (no bytes, drop) and a non-base64 `data:` URI (real content, retain). Both halves are
+       now tested, and the empty-payload test was confirmed to fail before the fix.
+     - **§8a rewritten to the implemented shape.** It sketched a flat 5-tuple; the code uses a frozen
+       `_ExtractedAttachment` dataclass plus a `_resolve_source` helper, which is the better shape and
+       is now what the spec says. The two undocumented behaviours the reviewer flagged — non-base64
+       `data:` URIs retained, and case-insensitive scheme/header matching — are recorded there too.
+     - **The thread-off qualifier in design.md**, which the "all five forms work" claim was missing.
+       See design.md; the thread path is a separate follow-up, and PR 7's `advanced/multimodal.md`
+       must say which path each source form works on.
 - **Verify:** `uv run pytest tests/test_multimodal_source_forms.py`, then the full suite. Existing
 multimodal tests must pass unchanged — they exercise bare base64, which is untouched.
 

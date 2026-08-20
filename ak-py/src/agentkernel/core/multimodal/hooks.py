@@ -10,7 +10,7 @@ This module provides a PreHook that:
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import litellm
 
@@ -25,10 +25,6 @@ from ..model import (
     AgentRequestText,
 )
 from .storage import AttachmentStorageManager
-
-if TYPE_CHECKING:
-    pass
-
 
 # (attachment_id, description) as injected into the request text.
 _AttachmentDescription = tuple[str, str]
@@ -286,15 +282,21 @@ class MultimodalPreHook(PreHook):
         :return: The extracted attachment, or None if the request carries no attachment data.
         """
         if isinstance(req, AgentRequestImage) and req.image_data:
-            data, mime_type, consumable = MultimodalPreHook._resolve_source(req.image_data, req.mime_type, "image/jpeg")
+            resolved = MultimodalPreHook._resolve_source(req.image_data, req.mime_type, "image/jpeg")
+            if resolved is None:
+                return None
+            data, mime_type, consumable = resolved
             return _ExtractedAttachment(data, "image", req.name, mime_type, consumable)
         if isinstance(req, AgentRequestFile) and req.file_data:
-            data, mime_type, consumable = MultimodalPreHook._resolve_source(req.file_data, req.mime_type, "application/octet-stream")
+            resolved = MultimodalPreHook._resolve_source(req.file_data, req.mime_type, "application/octet-stream")
+            if resolved is None:
+                return None
+            data, mime_type, consumable = resolved
             return _ExtractedAttachment(data, "file", req.name, mime_type, consumable)
         return None
 
     @staticmethod
-    def _resolve_source(source: str, declared_mime: Optional[str], default_mime: str) -> tuple[str, str, bool]:
+    def _resolve_source(source: str, declared_mime: Optional[str], default_mime: str) -> Optional[tuple[str, str, bool]]:
         """
         Resolve one attachment source string into its bytes, its mime type, and whether it is usable.
 
@@ -303,6 +305,10 @@ class MultimodalPreHook(PreHook):
           declares. The URI wins over `declared_mime` and over `default_mime`, neither of which is
           consulted unless the URI omits its own — this is what stops a PNG being stored as JPEG.
         - Anything else is treated as bare base64, keeping `declared_mime` or `default_mime`.
+
+        A `data:` URI with nothing after the comma resolves to `None`: it carries no bytes, so it is
+        the same case as an empty `image_data`, and the caller drops it rather than handing an adapter
+        a payloadless URI.
 
         A `data:` URI that is not base64-encoded is passed through rather than decoded, since its
         bytes are not what this hook would store. Per RFC 2397 the marker is the final parameter of
@@ -315,7 +321,7 @@ class MultimodalPreHook(PreHook):
         :param source: The raw source string from the request.
         :param declared_mime: The request's own mime_type, if it set one.
         :param default_mime: Fallback when neither the source nor the request declares one.
-        :return: (data, mime_type, consumable).
+        :return: (data, mime_type, consumable), or None when the source carries no bytes at all.
         """
         scheme = source[:8].lower()  # 8 == len("https://"), the longest prefix matched below
 
@@ -324,7 +330,9 @@ class MultimodalPreHook(PreHook):
 
         if scheme.startswith("data:"):
             header, _, payload = source.partition(",")
-            if not payload or not header.lower().endswith(";base64"):
+            if not payload:
+                return None
+            if not header.lower().endswith(";base64"):
                 return source, declared_mime or default_mime, False
             uri_mime = header[len("data:") :].split(";", 1)[0].lower()
             return payload, uri_mime or declared_mime or default_mime, True

@@ -673,8 +673,17 @@ surface broken and give AG-UI a private notion of what an attachment source look
   - This second change is the non-obvious half and the one a reviewer is most likely to miss.
 - Scope consequence: this is a **behaviour change to shared code that every surface sees**, so it
 gets its own PR rather than riding inside the integration — see Delivery.
-  - Today only bare base64 works with `multimodal.enabled: true`; after this, all five forms do.
-  Nothing that works today stops working, since bare base64 is untouched.
+  - Today only bare base64 works with `multimodal.enabled: true`; after this, all five forms do **on
+  the thread-off path**. Nothing that works today stops working, since bare base64 is untouched.
+    - The qualifier is load-bearing and was missed on first review. With Conversation Thread Support
+    enabled, `ConversationThreadManager.store_attachments`
+    (`integration/thread/manager.py:188-191`) stores `image_data` / `file_data` verbatim with the
+    `image/jpeg` / `application/octet-stream` fallback and does **no** source-form classification, so
+    a URL or `data:` URI is stored corrupted *before* the hook runs, and the hook's
+    `AgentRequestAttachmentRef` path then describes those corrupted bytes. Not a regression — it is
+    the same bug this section fixes, in a second place — and out of scope here, since §8 is scoped to
+    `MultimodalPreHook`. Tracked as a follow-up; PR 7's `advanced/multimodal.md` must state which
+    path each source form works on rather than repeating the unqualified claim.
   - New tests must cover each of the five source forms through the pre-hook, because the existing
   suite exercises exactly one of them.
 - AG-UI audio and video content are refused with an explanatory error. AK has no equivalent request
