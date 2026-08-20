@@ -81,6 +81,7 @@ websocket_api:
 execution:
   mode: rest_sync  # Execution mode: rest_sync, rest_async, stream, or async (WebSocket)
   queues:
+    type: sqs  # Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
@@ -271,6 +272,7 @@ Alternatively, use `config.json`:
   "execution": {
     "mode": "rest_sync",
     "queues": {
+      "type": "sqs",
       "input": {
         "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input",
         "max_receive_count": 3,
@@ -610,6 +612,7 @@ export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
 - Queues and response_store are required for `rest_sync` and `rest_async` modes
 - For `async` (WebSocket) mode, queues are optional but response_store is not used since responses are broadcast directly through the WebSocket connection
 - When queues are not configured, the request handler processes requests directly without queuing
+- `execution.queues.type` is mandatory whenever an `execution.queues` block is declared: the transport is what decides the topology, and the queue URLs a deployment injects per component are never used to infer it
 
 ### Logging Configuration (Optional)
 

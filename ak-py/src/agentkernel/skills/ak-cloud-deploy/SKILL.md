@@ -807,6 +807,7 @@ if __name__ == "__main__":
 ```yaml
 execution:
   queues:
+    type: sqs              # mandatory in a declared queues block: it is what selects the transport
     input:
       no_of_consumers: 5   # parallel input-poll threads in the Agent Runner container (default 5)
     output:

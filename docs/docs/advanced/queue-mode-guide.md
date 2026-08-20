@@ -30,11 +30,13 @@ caller and the Agent Runner. This gives you:
   after that a permanent-failure error is delivered so the caller never hangs.
 - **Deduplication**: a per-request deduplication ID prevents the same message being processed twice.
 
-The queue transport is pluggable via `execution.queues.type`:
+The queue transport is pluggable via `execution.queues.type`, which is mandatory once an
+`execution.queues` block is declared — the transport decides the deployment topology, so it is
+declared by the application rather than inferred from the queue URLs a deployment injects:
 
 | Transport | Status | Where the components run |
 |-----------|--------|--------------------------|
-| `in_memory` | ✅ the default | All five components as threads in one process (local, single-container) |
+| `in_memory` | ✅ the default when no `queues` block is declared | All five components as threads in one process (local, single-container) |
 | `sqs` | ✅ | Two-process topology on AWS; also the transport behind the Lambda and ECS deployment adapters below |
 | `kafka` | ✅ (`pip install agentkernel[kafka]`) | Kubernetes / on-prem two-process topology |
 | `nats` (recommended on-prem) | ✅ (`pip install agentkernel[nats]`) | Kubernetes / on-prem two-process topology |
@@ -68,7 +70,7 @@ transports remain the production choice for multi-process deployments.
 execution:
   mode: rest_sync          # rest_sync (default when unset) | rest_async | stream
   queues:
-    type: in_memory        # the default; spelled out for clarity
+    type: in_memory        # mandatory in a declared queues block
     input:
       max_receive_count: 3 # deliveries before a message is permanently failed
       no_of_consumers: 2   # agent-runner worker threads (parallel sessions)

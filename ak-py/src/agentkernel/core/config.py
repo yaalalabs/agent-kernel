@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field, model_validator
 from .model import ExecutionMode
 from .util.config_yaml_util import YamlBaseSettingsModified
 
+# The transport a config with no `execution.queues` block runs on: the in-process pipeline, whose
+# single-process topology needs no queue coordinates. QueueTransportFactory resolves the same name.
+DEFAULT_QUEUE_TRANSPORT_TYPE = "in_memory"
+
 
 def _get_ak_version() -> str:
     try:
@@ -492,12 +496,13 @@ class _NatsQueueConfig(BaseModel):
 
 
 class _QueuesConfig(BaseModel):
-    type: Optional[str] = Field(
-        default=None,
+    type: str = Field(
         description=(
             "Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport "
-            "subclass. When unset, a configured input.url implies sqs (pre-#495 compatibility); "
-            "otherwise in_memory."
+            "subclass. Mandatory whenever this block is declared: the transport decides the "
+            "deployment topology, so it is declared by the application rather than inferred from "
+            "whichever queue coordinates a deployment happens to inject. Omitting the whole block "
+            f"leaves the single-process '{DEFAULT_QUEUE_TRANSPORT_TYPE}' transport."
         ),
     )
     input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input queue configuration for queue execution mode")
@@ -535,7 +540,12 @@ class _ExecutionConfig(BaseModel):
         default=None,
         description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, stream for token streaming (WebSocket serverless or containerized direct streaming)",
     )
-    queues: Optional[_QueuesConfig] = Field(default_factory=_QueuesConfig, description="Queue URLs for async execution mode")
+    # The default carries the transport type explicitly: `type` is mandatory inside a declared
+    # queues block, and a config that declares no block at all still runs single-process.
+    queues: Optional[_QueuesConfig] = Field(
+        default_factory=lambda: _QueuesConfig(type=DEFAULT_QUEUE_TRANSPORT_TYPE),
+        description="Queue transport and queue settings for queue-based execution",
+    )
     response_store: Optional[_ResponseStoreConfig] = Field(
         default=None,
         description="Response storage configuration for async execution mode",

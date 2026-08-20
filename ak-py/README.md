@@ -654,8 +654,8 @@ Configure queue-backed and serverless execution behavior.
   - **Transport Type**
     - **Field**: `execution.queues.type`
     - **Options**: `in_memory`, `sqs`, `kafka`, `nats`, or a dotted path to a `QueueTransport` subclass
-    - **Default**: `None`
-    - **Description**: Queue transport used by the pipeline. When unset, a configured `execution.queues.input.url` implies `sqs` (pre-#495 compatibility); otherwise defaults to `in_memory` — a zero-dependency, in-process transport for local development and single-process deployments.
+    - **Default**: none — **mandatory whenever an `execution.queues` block is declared**
+    - **Description**: Queue transport used by the pipeline, and the only thing that selects it: queue coordinates are injected per component by a deployment, so they are never used to infer the transport. Declaring the block without a `type` is a configuration error. Omitting the block entirely leaves `in_memory` — a zero-dependency, in-process transport for local development and single-process deployments.
     - **Environment Variable**: `AK_EXECUTION__QUEUES__TYPE`
 
   - **Input Queue URL**

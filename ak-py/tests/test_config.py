@@ -2,8 +2,9 @@ import subprocess
 import sys
 
 import pytest
+from pydantic import ValidationError
 
-from agentkernel.core.config import AKConfig, _ScheduleConfig, _ThreadStoreConfig, _ThreadValkeyConfig
+from agentkernel.core.config import DEFAULT_QUEUE_TRANSPORT_TYPE, AKConfig, _ScheduleConfig, _ThreadStoreConfig, _ThreadValkeyConfig
 
 
 @pytest.fixture(autouse=True)
@@ -168,9 +169,14 @@ def test_batch_size_default():
     assert cfg.execution.queues.batch_size is None
 
 
-def test_batch_size_env_override(monkeypatch):
+def test_batch_size_env_override(tmp_path, monkeypatch):
+    """A deployment tunes the declared block through env vars; the type stays the config's."""
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("execution:\n" "  queues:\n" "    type: sqs\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
     monkeypatch.setenv("AK_EXECUTION__QUEUES__BATCH_SIZE", "5")
     cfg = AKConfig()
+    assert cfg.execution.queues.type == "sqs"
     assert cfg.execution.queues.batch_size == 5
 
 
@@ -320,10 +326,23 @@ def test_import_does_not_load_config(tmp_path):
 
 
 def test_queues_transport_defaults(monkeypatch):
+    """No queues block at all still runs: the single-process transport is the default topology."""
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
     cfg = AKConfig.get()
-    assert cfg.execution.queues.type is None
+    assert cfg.execution.queues.type == DEFAULT_QUEUE_TRANSPORT_TYPE
     assert cfg.execution.queues.in_memory is None
+
+
+def test_declared_queues_block_requires_a_transport_type(tmp_path, monkeypatch):
+    """The transport is declared, never inferred: a block without a type is a config error."""
+    yaml_text = "execution:\n" "  queues:\n" "    input:\n" "      url: https://sqs.test/input\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    AKConfig._reset()
+    with pytest.raises(ValidationError, match="execution.queues.type"):
+        AKConfig.get()
 
 
 def test_queues_transport_yaml_and_env(tmp_path, monkeypatch):

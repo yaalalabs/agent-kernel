@@ -268,6 +268,10 @@ schedule:
     type: eventbridge
   store:
     type: dynamodb
+
+execution:
+  queues:
+    type: sqs             # what tells every component it is on SQS; the URLs are injected per component
 ```
 
 :::note AWS cron accepts only one day field
