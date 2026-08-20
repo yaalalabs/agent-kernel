@@ -314,9 +314,28 @@ class OpenAIRunner(BaseRunner):
     def _map_run_item(name: str, item: Any) -> list[StreamEvent]:
         """Translate one `RunItemStreamEvent` into AK events.
 
-        Only the two tool names are mapped. `message_output_created` and `reasoning_item_created`
-        are deliberately ignored: the raw events above already opened, filled and closed both, and
-        emitting again here would duplicate every message.
+        Four of the SDK's eleven names are mapped: the two tool names, and the two handoff names.
+
+        **A handoff is mapped as a tool call, because that is what it is.** The SDK implements a
+        handoff as a tool the model calls, then lifts it out of the tool stream into its own pair of
+        events — which is why it needs naming here at all. Every other adapter surfaces the same
+        concept as an ordinary tool call and needs no special case: ADK's `TransferToAgentTool` is a
+        `FunctionTool`, and Pydantic AI has no handoff primitive, so delegation is a tool that calls
+        another agent. Emitting anything else here would make one adapter disagree with the rest
+        about one protocol concept.
+
+        The shapes line up exactly, so the two branches below serve both pairs: `handoff_requested`
+        carries a `ResponseFunctionToolCall` (`call_id`, `name`, `arguments`), and `handoff_occured`
+        carries `{call_id, output}` built by `ItemHelpers.tool_call_output_item`, so the result
+        correlates to the call on the same `call_id`. `handoff_occured` is misspelled in the SDK and
+        cannot be corrected there without a breaking change, so it is spelled that way here too.
+
+        Five names are ignored and stay unmapped, all hosted-tool or MCP protocol traffic rather
+        than agent work a user would recognise: `tool_search_called`, `tool_search_output_created`,
+        `mcp_approval_requested`, `mcp_approval_response` and `mcp_list_tools`. Two more —
+        `message_output_created` and `reasoning_item_created` — are ignored for a different reason:
+        the raw events above already opened, filled and closed both, so emitting again here would
+        duplicate every message.
 
         An item whose `call_id` cannot be read yields nothing. `ToolCallItem.raw_item` is a union of
         nine shapes plus a bare `dict`, and a tool call with no id cannot be correlated to its
@@ -326,7 +345,7 @@ class OpenAIRunner(BaseRunner):
         :param item: The `RunItem` the event wraps.
         :return: The AK events this item produces, empty when it maps to nothing.
         """
-        if name not in ("tool_called", "tool_output"):
+        if name not in ("tool_called", "tool_output", "handoff_requested", "handoff_occured"):
             return []
 
         raw = getattr(item, "raw_item", None)
@@ -335,7 +354,7 @@ class OpenAIRunner(BaseRunner):
             _log.debug(f"OpenAI '{name}' item carries no call_id; not emitted")
             return []
 
-        if name == "tool_called":
+        if name in ("tool_called", "handoff_requested"):
             tool_name = OpenAIRunner._raw_field(raw, "name") or ""
             arguments = OpenAIRunner._raw_field(raw, "arguments")
             events: list[StreamEvent] = [ToolCallStart(tool_call_id=call_id, name=tool_name)]

@@ -759,8 +759,8 @@ binding one.
 
 | Adapter | Change | PR |
 |---|---|---|
-| OpenAI | `stream_events()` already yields `RunItemStreamEvent` with `tool_called`/`tool_output`; stop filtering to `ResponseTextDeltaEvent` (`framework/openai/openai.py:226-229`) and map the rest | 4 |
-| LangGraph | Add branches for `on_chat_model_start`/`on_chat_model_end`/`on_tool_start`/`on_tool_end` to the `if` at `framework/langgraph/langgraph.py:452-461` | 4 |
+| OpenAI | `stream_events()` already yields `RunItemStreamEvent` with `tool_called`/`tool_output`; stop filtering to `ResponseTextDeltaEvent` (`framework/openai/openai.py:226-229`) and map the rest, including the two handoff names — see the run-item ledger below | 4 |
+| LangGraph | Add branches for `on_chat_model_stream`/`on_chat_model_end`/`on_tool_start`/`on_tool_end` to the `if` at `framework/langgraph/langgraph.py:452-461`. **Not `on_chat_model_start`** — the message start is derived instead, see the boundary-derivation bullet below | 4 |
 | Google ADK | Stop `continue`-ing on non-partial events (`framework/adk/adk.py:281-282`); derive `MessageStart` in-adapter on the first partial of a run and `MessageEnd` on the first non-partial | 5 |
 | Pydantic AI | Replace `run_stream(...)` + `stream_text(delta=True)` (`framework/pydanticai/pydanticai.py:200-202`) with `run_stream_events()` | 6 |
 
@@ -800,6 +800,36 @@ first; two need it for the second.
     boundary events beats deriving them; nothing should be added there.
 - Whichever the adapter, **the memory is a local inside `stream`**, never an attribute — see the rule
   above this list.
+
+**OpenAI's run-item ledger — every one of the SDK's eleven `RunItemStreamEvent` names has a decision.**
+Recorded in full because a partial list invites the same question about whichever name a reader notices
+next; the unmapped ones each carry a `call_id`, so only the name filter stops them.
+
+| Names | Decision |
+|---|---|
+| `tool_called`, `tool_output` | **Mapped** to `ToolCall*` |
+| `handoff_requested`, `handoff_occured` | **Mapped to `ToolCall*` as well** — see below |
+| `message_output_created`, `reasoning_item_created` | Ignored: the raw `response.output_item.added`/`.done` events already bracket both, so mapping these too would emit every message twice |
+| `tool_search_called`, `tool_search_output_created`, `mcp_approval_requested`, `mcp_approval_response`, `mcp_list_tools` | Ignored: hosted-tool and MCP protocol traffic rather than agent work a user would recognise. Not a permanent limit — they simply have no AK event yet |
+
+**A handoff is a tool call, and mapping it as one is what keeps the four adapters agreeing.** The SDK
+implements a handoff as a tool the model calls, then lifts it out of the tool stream into its own event
+pair — which is the only reason it needs naming here. No other adapter needs a special case, because
+in each of them a handoff *stays* a tool call: ADK's `TransferToAgentTool` is a `FunctionTool`, so a
+transfer arrives as a `function_call` part named `transfer_to_agent`; Pydantic AI has no handoff
+primitive at all, so delegation is a tool that calls another agent. Emitting `StepStart`/`StepEnd` from
+OpenAI alone — the first instinct, and what a reviewer proposed — would have left one adapter
+disagreeing with three about one protocol concept, which is the defect §4 rule 4 already caught once.
+- The shapes need no new code: `handoff_requested` carries a `ResponseFunctionToolCall` (`call_id`,
+  `name`, `arguments`), and `handoff_occured` carries `{call_id, output}` built by
+  `ItemHelpers.tool_call_output_item`, so the result correlates to the call on the same `call_id`.
+- **`handoff_occured` is misspelled in the SDK** and carries a source comment saying it cannot be
+  corrected without a breaking change, so AK matches the typo. A test pins it, because spelling it
+  correctly would silently drop every handoff result.
+- **LangGraph's coverage is conditional, and that belongs in PR 7's fidelity matrix**: a handoff built
+  as a tool fires `on_tool_start`/`on_tool_end` and is already mapped, but a bare `Command(goto=...)`
+  edge transition fires `on_chain_*`, which this PR declined as too noisy. So LangGraph surfaces a
+  handoff only when the application built it as a tool.
 
 **Pydantic AI's rewrite must re-plumb two things** currently inside the `async with run_stream(...)`
 block (`framework/pydanticai/pydanticai.py:205-211`): `fw_session.messages = to_jsonable_python(...)`

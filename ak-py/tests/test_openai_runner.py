@@ -296,6 +296,22 @@ def _function_call(call_id: str = "call-1", name: str = "lookup", arguments: str
     return ResponseFunctionToolCall(arguments=arguments, call_id=call_id, name=name, type="function_call")
 
 
+def _handoff_call(call_id: str = "ho-1", name: str = "transfer_to_billing"):
+    """The raw item behind `handoff_requested`: a real tool call, which is how the SDK models a handoff."""
+    from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
+
+    return ResponseFunctionToolCall(arguments='{"reason": "billing"}', call_id=call_id, name=name, type="function_call")
+
+
+def _handoff_output(call_id: str = "ho-1", output: str = "Handed off to billing"):
+    """The raw item behind `handoff_occured`, in the shape `ItemHelpers.tool_call_output_item` builds:
+    the call's own id plus the transfer message. Built through the SDK helper rather than hand-written,
+    so the test pins the SDK's shape."""
+    from agents.items import ItemHelpers
+
+    return ItemHelpers.tool_call_output_item(_handoff_call(call_id=call_id), output)
+
+
 async def _collect(runner, events):
     """Drive OpenAIRunner.stream over a scripted SDK event list and return the AK events."""
     session = Session("s")
@@ -387,10 +403,58 @@ class TestOpenAIRunnerStreamEvents:
             [
                 _run_item_event("message_output_created", _message_item()),
                 _run_item_event("reasoning_item_created", _reasoning_item()),
-                _run_item_event("handoff_requested", _function_call()),
             ],
         )
         assert events == []
+
+    @pytest.mark.parametrize(
+        "name",
+        ["tool_search_called", "tool_search_output_created", "mcp_approval_requested", "mcp_approval_response", "mcp_list_tools"],
+    )
+    @pytest.mark.asyncio
+    async def test_hosted_tool_and_mcp_items_stay_unmapped(self, name):
+        """The five run-item names AK deliberately does not carry (spec §10). They are hosted-tool and
+        MCP protocol traffic, not agent work a user would recognise. Pinned so adding one is a decision
+        rather than an accident: each of these carries a call_id, so without the filter they would emit."""
+        events = await _collect(OpenAIRunner(), [_run_item_event(name, _function_call())])
+        assert events == []
+
+
+class TestOpenAIRunnerHandoffs:
+    """A handoff is mapped as a tool call, because the SDK implements it as one and then lifts it out
+    of the tool stream into its own event pair. Every other adapter surfaces the same concept as an
+    ordinary tool call — ADK's TransferToAgentTool is a FunctionTool, and Pydantic AI has no handoff
+    primitive at all — so anything else here would make one adapter disagree with the rest."""
+
+    @pytest.mark.asyncio
+    async def test_a_handoff_opens_fills_and_closes_like_any_tool_call(self):
+        events = await _collect(OpenAIRunner(), [_run_item_event("handoff_requested", _handoff_call())])
+        assert events == [
+            ToolCallStart(tool_call_id="ho-1", name="transfer_to_billing"),
+            ToolCallArgs(tool_call_id="ho-1", delta='{"reason": "billing"}'),
+            ToolCallEnd(tool_call_id="ho-1"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_the_handoff_result_correlates_to_the_call_on_the_same_id(self):
+        """The correlation is free: the SDK builds handoff_occured's raw_item with
+        ItemHelpers.tool_call_output_item, which copies the call's own call_id."""
+        events = await _collect(
+            OpenAIRunner(),
+            [
+                _run_item_event("handoff_requested", _handoff_call()),
+                _run_item_event("handoff_occured", _handoff_output()),
+            ],
+        )
+        assert [e.tool_call_id for e in events] == ["ho-1"] * 4
+        assert events[-1] == ToolCallResult(tool_call_id="ho-1", content="Handed off to billing")
+
+    @pytest.mark.asyncio
+    async def test_the_sdks_misspelling_is_what_is_matched(self):
+        """`handoff_occured` is misspelled in the SDK and cannot be fixed there without a breaking
+        change. Spelling it correctly here would silently drop every handoff result."""
+        assert await _collect(OpenAIRunner(), [_run_item_event("handoff_occurred", _handoff_output())]) == []
+        assert await _collect(OpenAIRunner(), [_run_item_event("handoff_occured", _handoff_output())]) != []
 
 
 class TestOpenAIRunnerErrorHandling:

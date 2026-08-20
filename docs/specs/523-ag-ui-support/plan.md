@@ -379,6 +379,16 @@ fidelity.
        moved. §10 was corrected too: it claimed ADK was the only adapter needing memory, conflating
        correlation ids with boundary derivation. A set rather than one flag because a tool that calls a
        model nests a second `run_id`; there is a test for that.
+     - **Handoffs map, and OpenAI was the only adapter that had to be told.** Raised in review: the
+       handoff run items fell through unmapped and nothing recorded whether that was a decision. It was
+       not. They are now mapped as `ToolCall*`, which needed only the two names added to the filter —
+       `handoff_requested` carries a `ResponseFunctionToolCall` and `handoff_occured` carries
+       `{call_id, output}`, so the result correlates on the call's own id. The reason for *that* target
+       rather than `StepStart`/`StepEnd`, which is what the review proposed, is cross-adapter
+       consistency: a handoff stays an ordinary tool call in every other framework — ADK's
+       `TransferToAgentTool` is a `FunctionTool`, Pydantic AI has no handoff primitive so delegation is
+       a tool calling an agent — so steps would have left OpenAI disagreeing with three adapters about
+       one concept. §10 now carries the full eleven-name ledger rather than the handoff row alone.
      - **One bug found by its own test.** `_tool_arguments` re-serialises LangChain's parsed input dict
        with `json.dumps(default=str)`, and `default=str` runs arbitrary `__str__` — so the encoder can
        raise anything, not just `TypeError`/`ValueError`. The first `except` was too narrow and let an
@@ -540,6 +550,7 @@ and is retained only to make that uniformity explicit rather than accidental.
 | `advanced/multimodal.md` | — | all five source forms now work; state which are described/stored and which pass through | PR 7 |
 | `integrations/overview.md` | — | add AG-UI to the integration list | PR 7 |
 | new page under `advanced/` | — | AG-UI: routes, config, the fidelity matrix, `agui_state`, `forwardedProps`, `context`, and the tool-call redaction limit. The matrix is the row that forced this table's Owner column to PR 7 — its content is decided by PRs 4-6 | PR 7 |
+| the fidelity matrix's handoff row | — | LangGraph surfaces a handoff only when the application built it as a *tool* (`on_tool_start`/`on_tool_end`); a bare `Command(goto=...)` edge fires `on_chain_*`, which PR 4 declined as too noisy. OpenAI, ADK and Pydantic AI surface it unconditionally, as a tool call | PR 7 |
 | `docs/sidebars.js` | `tutorialSidebar` → `Advanced` category | add the new AG-UI page. The sidebar enumerates every page explicitly rather than autogenerating from the filesystem, so a new `.md` file alone is invisible in the nav | PR 7 |
 | `advanced/threads.md` | — | verified: no change. It documents the `Authoriser` AG-UI now shares, but AG-UI adds no thread behaviour | — |
 
