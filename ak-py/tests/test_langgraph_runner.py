@@ -5,6 +5,15 @@ import pytest
 from pydantic import BaseModel
 
 from agentkernel.core import Session
+from agentkernel.core.event import (
+    MessageEnd,
+    MessageStart,
+    TextDelta,
+    ToolCallArgs,
+    ToolCallEnd,
+    ToolCallResult,
+    ToolCallStart,
+)
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
 from agentkernel.framework.langgraph.langgraph import LangGraphRunner
 
@@ -127,12 +136,12 @@ class TestLangGraphRunnerFrameworkContext:
         session = Session("s")
         session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
         requests = [AgentRequestText(prompt="hi")]
-        event = {"event": "on_chat_model_stream", "data": {"chunk": _chunk("tok")}}
+        event = {"event": "on_chat_model_stream", "run_id": "run-1", "data": {"chunk": _chunk("tok")}}
         agent = _mock_stream_agent([event], {"user_id": "99"})
 
-        deltas = [delta async for delta in runner.stream(agent, session, requests)]
+        events = [event async for event in runner.stream(agent, session, requests)]
 
-        assert deltas == ["tok"]
+        assert events == [TextDelta(message_id="run-1", content="tok")]
         assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "99"}
 
     @pytest.mark.asyncio
@@ -141,12 +150,12 @@ class TestLangGraphRunnerFrameworkContext:
         session = Session("s")
         session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
         requests = [AgentRequestText(prompt="hi")]
-        event = {"event": "on_chat_model_stream", "data": {"chunk": _chunk("tok")}}
+        event = {"event": "on_chat_model_stream", "run_id": "run-1", "data": {"chunk": _chunk("tok")}}
         agent = _mock_stream_agent([event], {"user_id": "99"})
 
         agen = runner.stream(agent, session, requests)
         first = await agen.__anext__()
-        assert first == "tok"
+        assert first == TextDelta(message_id="run-1", content="tok")
         await agen.aclose()  # simulate client disconnect at the yield
 
         agent.agent.aget_state.assert_not_called()
@@ -159,16 +168,115 @@ class TestLangGraphRunnerFrameworkContext:
         session = Session("s")
         session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
         requests = [AgentRequestText(prompt="hi")]
-        event = {"event": "on_chat_model_stream", "data": {"chunk": _chunk("tok")}}
+        event = {"event": "on_chat_model_stream", "run_id": "run-1", "data": {"chunk": _chunk("tok")}}
         agent = _mock_stream_agent([event], {})
         agent.agent.aget_state = AsyncMock(side_effect=RuntimeError("state read failed"))
 
         with caplog.at_level(logging.ERROR, logger="ak.core.runner"):
-            deltas = [delta async for delta in runner.stream(agent, session, requests)]
+            events = [event async for event in runner.stream(agent, session, requests)]
 
-        assert deltas == ["tok"]
+        assert events == [TextDelta(message_id="run-1", content="tok")]
         assert session.get(FRAMEWORK_CONTEXT) == {"user_id": "42"}
         assert any("framework_context write-back was skipped" in r.message for r in caplog.records)
+
+
+async def _collect(events):
+    """Drive LangGraphRunner.stream over a scripted astream_events list and return the AK events."""
+    runner = LangGraphRunner()
+    session = Session("s")
+    requests = [AgentRequestText(prompt="hi")]
+    agent = _mock_stream_agent(events, {})
+    return [event async for event in runner.stream(agent, session, requests)]
+
+
+class TestLangGraphRunnerStreamEvents:
+    """The event mapping added in PR 4. Every id is `run_id`, which LangChain assigns per invocation."""
+
+    @pytest.mark.asyncio
+    async def test_a_message_is_bracketed_around_its_deltas(self):
+        events = await _collect(
+            [
+                {"event": "on_chat_model_start", "run_id": "run-1", "data": {}},
+                {"event": "on_chat_model_stream", "run_id": "run-1", "data": {"chunk": _chunk("he")}},
+                {"event": "on_chat_model_stream", "run_id": "run-1", "data": {"chunk": _chunk("llo")}},
+                {"event": "on_chat_model_end", "run_id": "run-1", "data": {}},
+            ]
+        )
+        assert events == [
+            MessageStart(message_id="run-1"),
+            TextDelta(message_id="run-1", content="he"),
+            TextDelta(message_id="run-1", content="llo"),
+            MessageEnd(message_id="run-1"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_two_model_calls_do_not_share_a_message_id(self):
+        """A nested model call inside a tool gets its own run_id, so the ids must not collide."""
+        events = await _collect(
+            [
+                {"event": "on_chat_model_start", "run_id": "outer", "data": {}},
+                {"event": "on_chat_model_start", "run_id": "inner", "data": {}},
+                {"event": "on_chat_model_end", "run_id": "inner", "data": {}},
+                {"event": "on_chat_model_end", "run_id": "outer", "data": {}},
+            ]
+        )
+        assert [e.message_id for e in events] == ["outer", "inner", "inner", "outer"]
+
+    @pytest.mark.asyncio
+    async def test_a_list_content_chunk_yields_only_its_text_blocks(self):
+        """Providers that interleave text with tool-use blocks send a list; blocks without text are skipped."""
+        chunk = _chunk([{"text": "a"}, {"type": "tool_use"}, {"text": "b"}])
+        events = await _collect([{"event": "on_chat_model_stream", "run_id": "run-1", "data": {"chunk": chunk}}])
+        assert events == [TextDelta(message_id="run-1", content="a"), TextDelta(message_id="run-1", content="b")]
+
+    @pytest.mark.asyncio
+    async def test_an_empty_chunk_is_dropped_rather_than_forwarded(self):
+        events = await _collect([{"event": "on_chat_model_stream", "run_id": "run-1", "data": {"chunk": _chunk("")}}])
+        assert events == []
+
+    @pytest.mark.asyncio
+    async def test_a_tool_call_opens_fills_and_closes_on_its_run_id(self):
+        events = await _collect([{"event": "on_tool_start", "run_id": "tool-1", "name": "lookup", "data": {"input": {"q": "x"}}}])
+        assert events == [
+            ToolCallStart(tool_call_id="tool-1", name="lookup"),
+            ToolCallArgs(tool_call_id="tool-1", delta='{"q": "x"}'),
+            ToolCallEnd(tool_call_id="tool-1"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_tool_arguments_that_cannot_be_serialised_yield_no_args_event(self):
+        """A fragment a client cannot parse is worse than no fragment; the call is still bracketed."""
+
+        class Unserialisable:
+            def __repr__(self):
+                raise RuntimeError("nope")
+
+        events = await _collect([{"event": "on_tool_start", "run_id": "tool-1", "name": "lookup", "data": {"input": {"q": Unserialisable()}}}])
+        assert events == [ToolCallStart(tool_call_id="tool-1", name="lookup"), ToolCallEnd(tool_call_id="tool-1")]
+
+    @pytest.mark.asyncio
+    async def test_a_tool_result_prefers_the_tool_messages_content(self):
+        message = MagicMock()
+        message.content = "42"
+        events = await _collect([{"event": "on_tool_end", "run_id": "tool-1", "data": {"output": message}}])
+        assert events == [ToolCallResult(tool_call_id="tool-1", content="42")]
+
+    @pytest.mark.asyncio
+    async def test_a_bare_tool_output_is_stringified(self):
+        events = await _collect([{"event": "on_tool_end", "run_id": "tool-1", "data": {"output": 42}}])
+        assert events == [ToolCallResult(tool_call_id="tool-1", content="42")]
+
+    @pytest.mark.asyncio
+    async def test_chain_and_prompt_events_map_to_nothing(self):
+        """on_chain_* fires for every runnable in the graph, not only the nodes a user calls steps."""
+        events = await _collect(
+            [
+                {"event": "on_chain_start", "run_id": "c1", "name": "agent", "data": {}},
+                {"event": "on_prompt_end", "run_id": "p1", "data": {}},
+                {"event": "on_chain_end", "run_id": "c1", "name": "agent", "data": {}},
+            ]
+        )
+        assert events == []
 
 
 class TestLangGraphRunnerStructuredOutput:

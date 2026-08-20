@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import copy
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from agents import Agent, Runner, function_tool
+from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
+from openai.types.responses.response_output_item_done_event import ResponseOutputItemDoneEvent
+from openai.types.responses.response_reasoning_summary_text_delta_event import ResponseReasoningSummaryTextDeltaEvent
 from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
 from ...core import Agent as BaseAgent
@@ -13,6 +17,19 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
+from ...core.event import (
+    MessageEnd,
+    MessageStart,
+    ReasoningDelta,
+    ReasoningEnd,
+    ReasoningStart,
+    StreamEvent,
+    TextDelta,
+    ToolCallArgs,
+    ToolCallEnd,
+    ToolCallResult,
+    ToolCallStart,
+)
 from ...core.model import (
     AgentReply,
     AgentReplyAny,
@@ -27,6 +44,8 @@ from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "openai"
+
+_log = logging.getLogger("ak.openai.runner")
 
 
 class OpenAISession:
@@ -202,13 +221,31 @@ class OpenAIRunner(BaseRunner):
             if context is not None:
                 context.reset()
 
-    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
-        Streams the OpenAI agent response token by token.
+        Streams the OpenAI agent response as Agent Kernel stream events.
+
+        Two of the SDK's three stream-event kinds are read, because neither alone is enough:
+
+        - **Raw response events** carry the message and reasoning boundaries and the text deltas.
+          They are the only source for a *start*, since the SDK's `message_output_created` item
+          event fires once the message is already complete — too late to open one.
+        - **Run item events** carry the tool calls. `tool_called` arrives with its arguments
+          already whole, so the call is opened, its arguments emitted as a single fragment, and the
+          call closed in one go. Streaming arguments progressively is possible but not free: the
+          raw `response.function_call_arguments.delta` event carries only `item_id`, never
+          `call_id`, so it would need a per-run map from one to the other. Not worth a UI showing
+          arguments being typed.
+
+        Every correlation id is read off the SDK's own events — `item.id` for a message or
+        reasoning trace, `call_id` for a tool call — so nothing is generated and nothing is
+        remembered between events. See spec §10: a `Runner` instance is shared across sessions, so
+        per-run memory would have to be a local, and needing none at all is better.
+
         :param agent: The OpenAI agent to run.
         :param session: The session to use for the agent.
         :param requests: The requests to the agent.
-        :return: An async generator yielding string token deltas.
+        :return: An async generator yielding StreamEvent objects.
         """
         context: ToolContext | None = None
         try:
@@ -224,9 +261,12 @@ class OpenAIRunner(BaseRunner):
             result = Runner.run_streamed(agent.agent, input_data, session=session_to_use, context=produced)
 
             async for event in result.stream_events():
-                if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-                    if event.data.delta:
-                        yield event.data.delta
+                if event.type == "raw_response_event":
+                    for stream_event in self._map_raw_response(event.data):
+                        yield stream_event
+                elif event.type == "run_item_stream_event":
+                    for stream_event in self._map_run_item(event.name, event.item):
+                        yield stream_event
 
             # Only after the stream drains normally, so a disconnect or framework error leaves the stored
             # context intact. Deliberately not in a finally.
@@ -237,6 +277,86 @@ class OpenAIRunner(BaseRunner):
         finally:
             if context is not None:
                 context.reset()
+
+    @staticmethod
+    def _map_raw_response(data: Any) -> list[StreamEvent]:
+        """Translate one raw OpenAI response event into AK events.
+
+        `response.output_item.added` and `.done` bracket every output item, so one pair of branches
+        serves both prose and reasoning; the item's own `type` decides which. A delta with empty
+        content is dropped rather than emitted, because a consumer concatenating `delta` gains
+        nothing from it and AG-UI would forward an empty frame.
+
+        :param data: The `event.data` payload of a `raw_response_event`.
+        :return: The AK events this raw event produces, empty when it maps to nothing.
+        """
+        if isinstance(data, ResponseOutputItemAddedEvent):
+            item = data.item
+            if item.type == "message":
+                return [MessageStart(message_id=item.id, role=item.role)]
+            if item.type == "reasoning":
+                return [ReasoningStart(message_id=item.id)]
+            return []
+        if isinstance(data, ResponseOutputItemDoneEvent):
+            item = data.item
+            if item.type == "message":
+                return [MessageEnd(message_id=item.id)]
+            if item.type == "reasoning":
+                return [ReasoningEnd(message_id=item.id)]
+            return []
+        if isinstance(data, ResponseTextDeltaEvent):
+            return [TextDelta(message_id=data.item_id, content=data.delta)] if data.delta else []
+        if isinstance(data, ResponseReasoningSummaryTextDeltaEvent):
+            return [ReasoningDelta(message_id=data.item_id, content=data.delta)] if data.delta else []
+        return []
+
+    def _map_run_item(self, name: str, item: Any) -> list[StreamEvent]:
+        """Translate one `RunItemStreamEvent` into AK events.
+
+        Only the two tool names are mapped. `message_output_created` and `reasoning_item_created`
+        are deliberately ignored: the raw events above already opened, filled and closed both, and
+        emitting again here would duplicate every message.
+
+        An item whose `call_id` cannot be read yields nothing. `ToolCallItem.raw_item` is a union of
+        nine shapes plus a bare `dict`, and a tool call with no id cannot be correlated to its
+        result — a start that never ends is worse for a client than silence.
+
+        :param name: The `RunItemStreamEvent.name` discriminator.
+        :param item: The `RunItem` the event wraps.
+        :return: The AK events this item produces, empty when it maps to nothing.
+        """
+        if name not in ("tool_called", "tool_output"):
+            return []
+
+        raw = getattr(item, "raw_item", None)
+        call_id = self._raw_field(raw, "call_id")
+        if not call_id:
+            _log.debug(f"OpenAI '{name}' item carries no call_id; not emitted")
+            return []
+
+        if name == "tool_called":
+            tool_name = self._raw_field(raw, "name") or ""
+            arguments = self._raw_field(raw, "arguments")
+            events: list[StreamEvent] = [ToolCallStart(tool_call_id=call_id, name=tool_name)]
+            if arguments:
+                events.append(ToolCallArgs(tool_call_id=call_id, delta=arguments))
+            events.append(ToolCallEnd(tool_call_id=call_id))
+            return events
+
+        # The raw item's "output" is the string the model is shown; `item.output` is the tool's
+        # own return value, which may be any object. Prefer the former, so what a UI renders is
+        # what the model read.
+        content = self._raw_field(raw, "output")
+        if content is None:
+            content = getattr(item, "output", None)
+        return [ToolCallResult(tool_call_id=call_id, content="" if content is None else str(content))]
+
+    @staticmethod
+    def _raw_field(raw: Any, field: str) -> Any:
+        """Read one field off a `RunItem.raw_item`, which is a model on some paths and a dict on others."""
+        if isinstance(raw, dict):
+            return raw.get(field)
+        return getattr(raw, field, None)
 
 
 class OpenAIAgent(BaseAgent):

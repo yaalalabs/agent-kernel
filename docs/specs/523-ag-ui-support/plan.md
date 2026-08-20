@@ -340,8 +340,37 @@ fidelity.
     branches. Ids come from `on_chat_model_start`'s run id.
   3. Update both test files: `assert deltas == ["hi"]` becomes an assertion on the event sequence.
     `framework_context` round-trip assertions stay as they are.
+  4. Decisions taken while implementing, recorded because PRs 5 and 6 copy this shape:
+     - **Boundaries can only come from OpenAI's raw events, not its run items.** `message_output_created`
+       fires once the message is already complete, so it cannot open one. The raw
+       `response.output_item.added` / `.done` pair brackets both prose and reasoning — one pair of
+       branches, the item's own `type` picking which — and the run-item events are then read *only*
+       for `tool_called` / `tool_output`. Mapping `message_output_created` as well would emit every
+       message twice; there is a test asserting it stays ignored.
+     - **Tool arguments arrive whole, deliberately.** `tool_called` carries complete arguments, so the
+       call is opened, filled and closed together. Streaming them per-token was rejected on a verified
+       fact: `response.function_call_arguments.delta` carries only `item_id`, **never** `call_id`, so
+       progressive args would need a per-run `item_id → call_id` map — and §10 states OpenAI needs no
+       memory. A UI showing arguments being typed is not worth making that sentence false.
+     - **Reasoning is mapped too**, beyond step 1's letter: three branches keyed off `item_id`, no
+       state. `mapping.py` already translates all three to `REASONING_MESSAGE_*`, so without this the
+       example's reasoning rendering would stay dead for OpenAI.
+     - **LangGraph ids are `event["run_id"]`**, which `langchain_core/runnables/schema.py:124` declares
+       required — so it is read directly rather than defensively. A nested model call inside a tool gets
+       its own id, which is what makes start/end pairing work with no adapter memory; a test pins that
+       two concurrent calls do not share one.
+     - **`StepStart`/`StepEnd` are not emitted.** `on_chain_*` fires for every runnable in a LangGraph,
+       not only the nodes a reader would call steps, so choosing which to name is its own decision
+       rather than part of this mapping.
+     - **One bug found by its own test.** `_tool_arguments` re-serialises LangChain's parsed input dict
+       with `json.dumps(default=str)`, and `default=str` runs arbitrary `__str__` — so the encoder can
+       raise anything, not just `TypeError`/`ValueError`. The first `except` was too narrow and let an
+       exception escape mid-stream, failing a live run over expendable data. Now broad, logged, and the
+       call stays bracketed without its arguments.
 - **Verify:** `uv run pytest tests/test_openai_runner.py tests/test_langgraph_runner.py`, then the
-full suite.
+full suite. The two adapters stop using §4's transitional `str` branch, so
+`test_runtime_stream_events.py` must stay green on its own mock runner — it is what still covers that
+branch until PR 6 deletes it.
 
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
@@ -24,6 +25,16 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
+from ...core.event import (
+    MessageEnd,
+    MessageStart,
+    StreamEvent,
+    TextDelta,
+    ToolCallArgs,
+    ToolCallEnd,
+    ToolCallResult,
+    ToolCallStart,
+)
 from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.tool import SystemToolFactory
 from ...core.util.error_util import user_facing_error_message
@@ -417,13 +428,24 @@ class LangGraphRunner(BaseRunner):
             if context is not None:
                 context.reset()
 
-    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
-        Streams the LangGraph agent response token by token.
+        Streams the LangGraph agent response as Agent Kernel stream events.
+
+        Every correlation id is `event["run_id"]`, which LangChain assigns per runnable invocation
+        and declares as a required field of its `StreamEvent` (`langchain_core/runnables/schema.py`).
+        One chat-model call and one tool call each get their own, so a start pairs with its end
+        without the adapter remembering anything — a nested model call inside a tool gets a distinct
+        id rather than colliding with the outer one.
+
+        Tool arguments arrive whole in `on_tool_start`, so the call is opened, its arguments emitted
+        as one fragment and the call closed together. LangChain exposes no per-token argument
+        stream, so there is nothing finer to forward.
+
         :param agent: The LangGraph agent to run.
         :param session: The session to use for the agent.
         :param requests: The requests to the agent.
-        :return: An async generator yielding string token deltas.
+        :return: An async generator yielding StreamEvent objects.
         """
         context: ToolContext | None = None
         try:
@@ -449,14 +471,8 @@ class LangGraphRunner(BaseRunner):
                 config=config,
                 version="v2",
             ):
-                if event["event"] == "on_chat_model_stream":
-                    content = event["data"]["chunk"].content
-                    if isinstance(content, str) and content:
-                        yield content
-                    elif isinstance(content, list):
-                        for item in content:
-                            if isinstance(item, dict) and item.get("text"):
-                                yield item["text"]
+                for stream_event in self._map_event(event):
+                    yield stream_event
 
             # astream_events yields events, not a final state, so read the state back once the stream drains
             # normally. A disconnect or mid-stream error unwinds first, leaving the stored context intact.
@@ -470,6 +486,94 @@ class LangGraphRunner(BaseRunner):
         finally:
             if context is not None:
                 context.reset()
+
+    @staticmethod
+    def _map_event(event: dict) -> list[StreamEvent]:
+        """Translate one LangChain `astream_events` event into AK events.
+
+        Every other event name — `on_chain_*`, `on_prompt_*`, retriever and parser events — maps to
+        nothing. Graph nodes would be the natural source for `StepStart`/`StepEnd`, but `on_chain_*`
+        fires for every runnable in the graph, not only the nodes a user would recognise as steps,
+        so naming them is a decision on its own rather than part of this mapping.
+
+        :param event: One event from `astream_events(version="v2")`.
+        :return: The AK events this event produces, empty when it maps to nothing.
+        """
+        kind = event["event"]
+        run_id = event["run_id"]
+
+        if kind == "on_chat_model_start":
+            return [MessageStart(message_id=run_id)]
+        if kind == "on_chat_model_end":
+            return [MessageEnd(message_id=run_id)]
+        if kind == "on_chat_model_stream":
+            return [TextDelta(message_id=run_id, content=text) for text in LangGraphRunner._chunk_text(event)]
+        if kind == "on_tool_start":
+            events: list[StreamEvent] = [ToolCallStart(tool_call_id=run_id, name=event.get("name") or "")]
+            arguments = LangGraphRunner._tool_arguments(event)
+            if arguments:
+                events.append(ToolCallArgs(tool_call_id=run_id, delta=arguments))
+            events.append(ToolCallEnd(tool_call_id=run_id))
+            return events
+        if kind == "on_tool_end":
+            return [ToolCallResult(tool_call_id=run_id, content=LangGraphRunner._tool_output(event))]
+        return []
+
+    @staticmethod
+    def _chunk_text(event: dict) -> list[str]:
+        """Pull the prose out of an `on_chat_model_stream` chunk.
+
+        A chunk's `content` is a plain string for most providers and a list of content blocks for
+        those that interleave text with other block types (Anthropic's tool-use blocks, for one), so
+        both shapes are read and blocks without text are skipped. Empty fragments are dropped rather
+        than forwarded as empty events.
+        """
+        content = event["data"]["chunk"].content
+        if isinstance(content, str):
+            return [content] if content else []
+        if isinstance(content, list):
+            return [item["text"] for item in content if isinstance(item, dict) and item.get("text")]
+        return []
+
+    @staticmethod
+    def _tool_arguments(event: dict) -> str:
+        """Serialise an `on_tool_start` input dict into a JSON arguments fragment.
+
+        `ToolCallArgs.delta` is documented as a raw fragment as frameworks emit it, and LangChain
+        hands over a parsed dict rather than the model's original JSON text — so it is re-serialised
+        here. A value the encoder cannot handle yields no arguments event at all, which is better
+        than a fragment a client cannot parse.
+
+        The `except` is deliberately broad. `default=str` hands any unencodable value to its own
+        `__str__`, which is arbitrary user code and can raise anything at all — and this runs
+        mid-stream, where an escaping exception turns an in-flight response into a failed run. The
+        arguments are the most expendable part of a tool call: dropping them still leaves the call
+        bracketed and its result correlated.
+        """
+        data = event.get("data") or {}
+        tool_input = data.get("input")
+        if tool_input is None:
+            return ""
+        try:
+            return json.dumps(tool_input, default=str)
+        except Exception as e:
+            _logger.debug(f"LangGraph tool input could not be serialised; emitting no arguments: {e!r}")
+            return ""
+
+    @staticmethod
+    def _tool_output(event: dict) -> str:
+        """Read an `on_tool_end` output as text.
+
+        LangChain wraps a tool's return value in a `ToolMessage` on most paths but hands the bare
+        value back on others, so the message's `content` is preferred and the value itself is the
+        fallback.
+        """
+        data = event.get("data") or {}
+        output = data.get("output")
+        content = getattr(output, "content", None)
+        if content is not None:
+            return content if isinstance(content, str) else str(content)
+        return "" if output is None else str(output)
 
 
 class LangGraphModule(BaseModule):
