@@ -84,6 +84,46 @@ matching flag is set.
 
 ## Breaking changes
 
+**`execution.queues.type` is now mandatory inside a declared `queues` block.**
+The transport used to be inferred when `type` was absent: a configured `input.url` implied `sqs`,
+anything else `in_memory`. Queue coordinates are injected per component by a deployment, though — a
+Lambda that consumes its input queue through an event source mapping is never given the input URL —
+so the inference made one process resolve `sqs` while its sibling resolved `in_memory`. The
+transport decides the deployment topology, so the application now declares it.
+
+Any existing `config.yaml` that declares an `execution.queues` block without `type` fails to load:
+
+```
+pydantic_core._pydantic_core.ValidationError: 1 validation error for AKConfig
+execution.queues.type
+  Field required [type=missing, input_value={'input': {'url': 'https:...'}}, input_type=dict]
+```
+
+Before:
+
+```yaml
+execution:
+  mode: rest_sync
+  queues:
+    input:
+      url: https://sqs.us-east-1.amazonaws.com/123456789012/ak-input.fifo
+```
+
+After:
+
+```yaml
+execution:
+  mode: rest_sync
+  queues:
+    type: sqs          # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport
+    input:
+      url: https://sqs.us-east-1.amazonaws.com/123456789012/ak-input.fifo
+```
+
+Omitting the `queues` block entirely is unaffected and still runs the single-process `in_memory`
+transport, so an application that never declared one needs no change. See the
+[Queue Mode Guide](https://kernel.yaala.ai/docs/advanced/queue-mode-guide) for the per-transport values.
+
 **`Authoriser` now lives in `agentkernel.auth`.**
 `Authoriser` was defined inside the thread integration, which made it look thread-specific. It is
 the generic authorization hook for *any* resource-management route (threads today, scheduled tasks
