@@ -9,6 +9,10 @@ chart-dirs:
   - ak-deployment/ak-k8s
 charts:
   - ak-deployment/ak-k8s/chart
+# ct adds these itself, so lint/install work on a runner with no helm repo definitions.
+chart-repos:
+  - valkey=https://valkey-io.github.io/valkey-helm/
+  - nats=https://nats-io.github.io/k8s/helm/charts/
 validate-maintainers: false
 check-version-increment: false
 target-branch: develop

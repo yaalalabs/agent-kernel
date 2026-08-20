@@ -52,7 +52,12 @@ jobs:
         uses: helm/chart-testing-action@v2
 
       - name: Build chart dependencies
-        run: helm dependency build "$CHART_DIR"
+        # A clean runner has no repo definitions; dependency build needs them even with
+        # Chart.lock present.
+        run: |
+          helm repo add valkey https://valkey-io.github.io/valkey-helm/
+          helm repo add nats https://nats-io.github.io/k8s/helm/charts/
+          helm dependency build "$CHART_DIR"
 
       - name: ct lint
         run: ct lint --config ak-deployment/ak-k8s/ci/ct.yaml
@@ -131,6 +136,8 @@ jobs:
       - name: Install chart
         run: |
           kubectl create secret generic openai --from-literal=api-key="${{ secrets.OPENAI_API_KEY }}"
+          helm repo add valkey https://valkey-io.github.io/valkey-helm/
+          helm repo add nats https://nats-io.github.io/k8s/helm/charts/
           helm dependency build "$CHART_DIR"
           if [[ "${{ matrix.flavor }}" == "dev" ]]; then
             VALUES=(-f "$CHART_DIR/values-dev.yaml" -f "$CHART_DIR/ci/kind-smoke-values.yaml")
