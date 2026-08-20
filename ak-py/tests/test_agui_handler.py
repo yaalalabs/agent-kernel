@@ -19,6 +19,7 @@ Four of these guard failures with no other symptom:
 """
 
 import json
+import logging
 from contextlib import contextmanager
 from copy import deepcopy
 from typing import Any, Optional
@@ -324,6 +325,30 @@ class TestRequestRejection:
             assert response.status_code == 400
             assert "data: " not in response.text
 
+    def test_a_rejected_request_leaves_the_session_untouched(self, monkeypatch):
+        """A 400 from the mapping must not have written to the session first.
+
+        `to_requests` rejects audio, video and a `binary` part carrying only an id. If
+        `apply_to_session` has already run, the rejected request's `state` and `forwardedProps` are
+        stored — and because `Runtime.stream` never runs, nothing clears the volatile cache, so the
+        *next* run on that thread reads them.
+        """
+        from agentkernel.core.client_state import AGUI_FORWARDED_PROPS_KEY
+
+        with serving(monkeypatch, [ScriptedAgent()]) as (client, runtime):
+            message = {
+                "id": "m1",
+                "role": "user",
+                "content": [{"type": "audio", "source": {"type": "data", "value": "AAA", "mimeType": "audio/mpeg"}}],
+            }
+            rejected = body(messages=[message], state={"leaked": True}, forwardedProps={"leaked": True})
+
+            assert client.post("/agui/assistant", headers=AUTH, json=rejected).status_code == 400
+
+            session = runtime.sessions().load("session-1")
+            assert session.get_agui_state() is None
+            assert session.get_volatile_cache().get(AGUI_FORWARDED_PROPS_KEY) is None
+
 
 class TestMediaType:
     """Routed through the SDK's EventEncoder rather than a hard-coded string. Against the pinned SDK
@@ -499,6 +524,54 @@ class TestClientContextDelivery:
             client.post("/agui/assistant", headers=AUTH, json=body(forwardedProps={"page": "/invoices"}))
             client.post("/agui/assistant", headers=AUTH, json=body())
         assert seen == [{"page": "/invoices"}, {}]
+
+
+class TestUnreadableInboundFields:
+    """`apply_to_session` writes state/props/context unconditionally, but the tools that read them are
+    attached only when the config blocks are enabled — and both default to False. Silence there means
+    an app author watches the model ignore data it was sent, with nothing to go on."""
+
+    LOGGER = "ak.integration.agui"
+
+    def test_it_warns_for_each_field_no_tool_can_read(self, monkeypatch, caplog):
+        with serving(monkeypatch, [ScriptedAgent()]) as (client, _):
+            payload = body(state={"a": 1}, forwardedProps={"page": "/x"}, context=[{"description": "d", "value": "v"}])
+            with caplog.at_level(logging.WARNING, logger=self.LOGGER):
+                assert client.post("/agui/assistant", headers=AUTH, json=payload).status_code == 200
+
+        warned = " ".join(r.message for r in caplog.records)
+        assert "'state'" in warned and "agui.state" in warned
+        assert "'forwardedProps'" in warned and "'context'" in warned and "agui.client_context" in warned
+
+    def test_it_stays_silent_when_the_blocks_are_enabled(self, monkeypatch, caplog):
+        cfg = _AGUIConfig()
+        cfg.state.enabled = True
+        cfg.client_context.enabled = True
+        with serving(monkeypatch, [ScriptedAgent()], cfg) as (client, _):
+            payload = body(state={"a": 1}, forwardedProps={"page": "/x"}, context=[{"description": "d", "value": "v"}])
+            with caplog.at_level(logging.WARNING, logger=self.LOGGER):
+                assert client.post("/agui/assistant", headers=AUTH, json=payload).status_code == 200
+
+        assert [r.message for r in caplog.records if "is not enabled" in r.message] == []
+
+    def test_it_stays_silent_when_the_client_sent_nothing(self, monkeypatch, caplog):
+        """The common shape: `state: null`, `forwardedProps: null`, `context: []`."""
+        with serving(monkeypatch, [ScriptedAgent()]) as (client, _):
+            with caplog.at_level(logging.WARNING, logger=self.LOGGER):
+                assert client.post("/agui/assistant", headers=AUTH, json=body()).status_code == 200
+
+        assert [r.message for r in caplog.records if "is not enabled" in r.message] == []
+
+    def test_the_agents_scope_decides_not_just_the_flag(self, monkeypatch, caplog):
+        """Both blocks take an optional `agents` list, so enabled-for-someone-else is still ignored."""
+        cfg = _AGUIConfig()
+        cfg.client_context.enabled = True
+        cfg.client_context.agents = ["someone-else"]
+        with serving(monkeypatch, [ScriptedAgent()], cfg) as (client, _):
+            with caplog.at_level(logging.WARNING, logger=self.LOGGER):
+                assert client.post("/agui/assistant", headers=AUTH, json=body(forwardedProps={"page": "/x"})).status_code == 200
+
+        assert any("'forwardedProps'" in r.message for r in caplog.records)
 
 
 class TestOptionalDependency:

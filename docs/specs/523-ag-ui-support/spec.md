@@ -821,11 +821,11 @@ One new top-level block in `core/config.py`, added to `AKConfig` beside `thread`
 
 ```python
 class _AGUIStateConfig(BaseModel):
-    enabled: bool = Field(default=False, description="Expose the shared-state tools to agents")
+    enabled: bool = Field(default=False, description="Expose the AG-UI state tools to agents")
     agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 class _AGUIClientContextConfig(BaseModel):
-    enabled: bool = Field(default=False, description="Expose the read-only client-context tools to agents")
+    enabled: bool = Field(default=False, description="Expose the read-only AG-UI client-context tools (forwarded props and context) to agents")
     agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 class _AGUIConfig(BaseModel):
@@ -938,6 +938,8 @@ posture.
 | `RunAgentInput.state` present but not a JSON object | `HTTPException(400)`. `Session.set_agui_state` would raise `TypeError`, which is a 500 |
 | `RunAgentInput.forwardedProps` present but not a JSON object | Ignored with a `WARNING`. Nothing reads the field back, so a 400 would reject a run over data the agent never needed — but a discarded client field is not a debug-level event |
 | `update_agui_state` called with malformed JSON | Returns `{"error": ...}` to the model; nothing is written. A tool never raises into the framework |
+| `state` / `forwardedProps` / `context` sent while the matching config block is off for this agent | Stored anyway, and a `WARNING` per field names the flag that would expose it. `apply_to_session` is deliberately ungated — the write is cheap and the alternative is threading per-agent config into the inbound mapping — but silence would leave an app author watching the model ignore data it was sent, with no error and no `StateSnapshot` to go on. Both flags default to `False`, so this is the **default** configuration, not an edge case |
+| Concurrent runs on one `thread_id` | **Out of contract; the client owns run sequencing.** Overlapping runs on one thread may observe each other's writes: `SessionStore.load` returns the live object for the in-memory store and for redis/valkey with `session.cache`, and `Runtime.stream` clears the volatile cache in its `finally` — so run A finishing can wipe run B's `forwardedProps` before B's stream starts, and B then reads `{}`. Nothing serialises the handler's writes against an in-flight run, because the session lock is not reentrant and the handler cannot hold it across `Runtime.stream`. This is pre-existing session-store behaviour that AG-UI is the first surface to expose with a client-supplied id, tracked separately rather than fixed here. AG-UI is request/response per run and the shipped example serialises (`Composer disabled={running}`); note the example's `threadId` comes from `localStorage`, so two browser tabs do share one thread |
 | `_extract_attachment` meets a malformed `data:` URI | Falls through to the bare-base64 path rather than raising, so one bad attachment cannot fail the run |
 
 ---

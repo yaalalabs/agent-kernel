@@ -72,7 +72,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         except ImportError as e:
             raise ValueError(
                 "AG-UI support requires the 'ag-ui-protocol' package, which ships in Agent Kernel's "
-                "'agui' extra. Install it with: pip install 'ak[agui]'"
+                "'agui' extra. Install it with: pip install \"agentkernel[agui]\""
             ) from e
 
         if authoriser is None:
@@ -98,6 +98,43 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         """Whether `agui.agents` exposes this name. An absent list exposes every agent."""
         exposed = AKConfig.get().agui.agents
         return exposed is None or agent_name in exposed
+
+    def _warn_if_unreadable(self, agent: Agent, run_input: Any) -> None:
+        """Warn when the client sent state or context this agent has no tool to read.
+
+        `apply_to_session` writes the inbound `state`, `forwardedProps` and `context` unconditionally,
+        but the tools that read them are attached only when `agui.state` / `agui.client_context` are
+        enabled — and both default to `False`. Without this the fields are accepted, stored, and
+        silently unreachable: no error, no `StateSnapshot`, and an app author left watching the model
+        ignore data it was sent.
+
+        Scoping is per agent, not global, because both blocks take an optional `agents` list — so the
+        factory's own filter decides, rather than a second copy of the rule that would drift from it.
+
+        :param agent: The agent this run resolved to.
+        :param run_input: The parsed `RunAgentInput`.
+        """
+        from ...core.tool import SystemToolFactory
+
+        agui = getattr(AKConfig.get(), "agui", None)
+
+        def enabled(block_name: str) -> bool:
+            block = getattr(agui, block_name, None)
+            return bool(block and block.enabled and SystemToolFactory._agent_allowed(block, agent.name))
+
+        ignored = []
+        if run_input.state is not None and not enabled("state"):
+            ignored.append(("state", "agui.state"))
+        if run_input.forwarded_props is not None and not enabled("client_context"):
+            ignored.append(("forwardedProps", "agui.client_context"))
+        if run_input.context and not enabled("client_context"):
+            ignored.append(("context", "agui.client_context"))
+
+        for field, flag in ignored:
+            self._log.warning(
+                f"Agent '{agent.name}' received '{field}' but {flag} is not enabled for it, so no tool can read it "
+                f"and the value is ignored. Set {flag}.enabled to expose it."
+            )
 
     def _resolve_agent(self, agent_name: str) -> Agent:
         """Resolve a path agent name to a streaming-capable, exposed agent.
@@ -175,9 +212,15 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             raise HTTPException(status_code=400, detail="Request body must be a RunAgentInput object")
 
         run_input = parse_run_input(body)
+        # Mapped before anything touches the session: `to_requests` still raises 400 for audio, video
+        # and a `binary` part carrying only an id, and `Runtime.stream` never runs for a rejected
+        # request — so a write that happened first would never be cleared, and the next run on this
+        # thread would read the rejected request's state and props. `to_requests` is pure, so the
+        # order is free.
+        requests = to_requests(run_input)
         session = Runtime.current().sessions().load(run_input.thread_id)
         apply_to_session(session, run_input)
-        requests = to_requests(run_input)
+        self._warn_if_unreadable(agent, run_input)
 
         # Deep copy, not a reference: get_agui_state() hands back the live dict, so keeping the
         # reference would compare the object with itself after a tool mutated it and report

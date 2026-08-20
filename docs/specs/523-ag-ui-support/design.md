@@ -58,22 +58,19 @@ WebSocket / MCP / A2A is the opposite direction, and satisfies the principle tha
 
 ## Architecture
 
-A run is served inline: the handler calls the `ChatService` execution core, and encodes each event
-as it arrives.
+A run is served inline: the handler drives `Runtime.stream` directly, and encodes each event as it
+arrives. (**Reversed during PR 3** — see Execution below; this said `ChatService.execute_stream`.)
 
 ```mermaid
 flowchart LR
     UI["Web UI"]
     H["AG-UI handler<br/><i>integration/agui</i>"]
-    CS["ChatService<br/>execute_stream"]
-    RT["Runtime<br/><i>pre-hooks · runner · post-hooks</i>"]
+    RT["Runtime.stream<br/><i>pre-hooks · runner · post-hooks</i>"]
 
     UI -- "POST RunAgentInput" --> H
-    H -- "calls" --> CS
-    CS --> RT
-    RT -. "event objects" .-> CS
-    CS -. "AG-UI events" .-> H
-    H -. "SSE event stream" .-> UI
+    H -- "calls" --> RT
+    RT -. "StreamChunk.event" .-> H
+    H -. "SSE event stream<br/><i>to_agui</i>" .-> UI
 ```
 
 
@@ -373,8 +370,15 @@ and the `framework_context` store must still run only after the stream drains no
 
 ### Execution
 
-- The handler always streams. It calls the `ChatService` execution core (`execute_stream`) and
-encodes each event as it arrives.
+- The handler always streams. It drives `Runtime.stream` directly and encodes each event as it
+arrives.
+  - **This reverses an earlier requirement in this document**, which routed the run through the
+  `ChatService` execution core (`execute_stream`). `ChatService` exists to build AK's own chat
+  response shapes, and AG-UI needs the raw event stream plus the session object it can read
+  `state` back from — so going through it meant unwrapping work it had just done. spec.md §9
+  records the mechanics; the practical consequence is that AG-UI owns its own run lifecycle
+  (`RunStarted`, exactly one terminal event, the change-only `StateSnapshot`) rather than
+  inheriting `ChatService`'s.
 - **AG-UI does not read or require** `execution.mode`**.** Its routes are its own, so it neither
 consults the process-wide mode nor forces it to `stream`.
   - `Runtime.stream` and the adapters' `Runner.stream` are independent of that setting — it selects
@@ -459,8 +463,8 @@ and reaches the agent through a read-only `get_forwarded_props()` system tool.
   because `StateSnapshot` exists to carry the result. Reviewers will ask why the two are
   asymmetric; this is the reason.
   - Gated on `agui.client_context.enabled`, attached through `SystemToolFactory` by the same
-  mechanism as the shared-state tools — see State for the registration rules and why both flags are
-  top-level rather than nested under `agui`.
+  mechanism as the AG-UI state tools — see State for the registration rules and why the flags live
+  under `agui`.
   - **Known risk, accepted**: the model may simply never call the tool, and the forwarded context is
   then silently unused. Injection did not have that failure mode. First mitigation is the tool's
   docstring, which AK writes and can therefore get right in one place. If that proves too weak, the
@@ -718,6 +722,13 @@ purpose is driving a user interface is not demonstrated by test assertions alone
   - **One static HTML file, no build step**: vanilla JS against the SSE endpoint, no `package.json`,
   no `node_modules`, no lockfile to maintain. The original objection was to introducing a
   JavaScript build into a Python repository, not to the demo itself.
+    - **This requirement was reversed during PR 3.** The example ships as a Vite + React +
+    TypeScript app with a committed `package-lock.json`. A single file with runtime-compiled
+    templates turned out to be React in name only — no components to read, no JSX, and nothing
+    testable — so the event stream could not be exercised in isolation. The build is optional:
+    `build.sh` warns and continues when `npm` is absent, `GET /` explains how to build, and no CI
+    job installs Node for this example, which preserves what the original objection was protecting.
+    See `plan.md` iteration 3 for the full reasoning and the measurements behind it.
   - It must render a tool call live, not just streamed text — that is precisely what AK's existing
   REST SSE surface cannot show, and therefore what the example exists to prove.
   - It must also demonstrate a **state round-trip**: send `state`, have the agent mutate it through
@@ -756,18 +767,30 @@ than rejected, so a frontend newer than the server still runs.
 
 ## Delivery
 
-The six PRs are **review units, not release units** — they merge together and ship as a single AK
+The seven PRs are **review units, not release units** — they merge together and ship as a single AK
 release. The ordering exists so each is reviewable on its own, and two independent roots allow
 parallel progress.
+
+**This reverses an earlier requirement in this document**, which planned six PRs with the
+documentation riding in PR 3. Docs became PR 7 for a structural reason rather than a scheduling one:
+`design.md` requires a per-adapter fidelity matrix stating which events each adapter can fill, and PRs
+4-6 are what make them fillable — so PR 3 would have owned a document whose content is decided by the
+three PRs after it. Two further consequences were verified rather than predicted: docs written at PR 1
+would describe the transitional `str` tolerance that PR 6 deletes before anything reaches `develop`,
+and the surface inventory turned out to be incomplete. `plan.md`'s header carries all four reasons.
+Because the stack merges as one release, a trailing docs PR still satisfies the rule that no merged PR
+leaves the docs describing behaviour it changed — but PR 7 is a **hard condition on the merge**, not a
+follow-up.
 
 | PR | Scope | Green gate | Depends on |
 |---|---|---|---|
 | 1 | **The streaming contract.** Event types with boundaries, widened `Runner.stream`, the additive `StreamChunk.event` field and the `delta` projection, plus `Runner.supports_streaming` (default `True`, declared `False` on `CrewAIRunner` and `SmolagentsRunner`). `ResponseBuilder` and the thread recorder are untouched, and `Runtime.stream` accepts `str | StreamEvent` transitionally so the adapters keep working. No adapter emits an event object yet; `Runtime.stream` synthesizes them from `str` until PR 6 | existing suite green, **zero test edits**; new tests assert all six runners declare honestly | — |
 | 2 | **Attachment source forms.** `_extract_attachment` classifies the source and splits `data:` URIs; the filter loop retains URL-sourced requests it did not consume. Shared multimodal code, no AG-UI in it | new tests across all five source forms; existing suite unchanged | — |
-| 3 | **The integration.** `integration/agui/` package, handler and routes (on the shared `AuthorisedRESTRequestHandler` and `Authoriser` — no AG-UI authoriser of its own), discovery, `to_agui` mapping and its exhaustiveness test, attachment mapping (no normalization — see PR 2), `Session.Keys.AGUI_STATE` with its accessors and the four system tools, `SystemToolFactory` branches, `StateSnapshot` emission, `forwardedProps` and `context` → volatile cache, the `agui` config block, the `agui` extra pinned `>=0.1.16`, single-file example frontend, docs | new tests pass | PR 1, PR 2 |
+| 3 | **The integration.** `integration/agui/` package, handler and routes (on the shared `AuthorisedRESTRequestHandler` and `Authoriser` — no AG-UI authoriser of its own), discovery, `to_agui` mapping and its exhaustiveness test, attachment mapping (no normalization — see PR 2), `Session.Keys.AGUI_STATE` with its accessors and the four system tools, `SystemToolFactory` branches, `StateSnapshot` emission, `forwardedProps` and `context` → volatile cache, the `agui` config block, the `agui` extra pinned `>=0.1.16`, the example frontend (Vite + React + TypeScript — see the reversal above) | new tests pass | PR 1, PR 2 |
 | 4 | **OpenAI and LangGraph.** Both already iterate their framework's full event stream with explicit boundaries; both stop discarding | per-adapter tests | PR 1 |
 | 5 | **Google ADK.** Stop skipping non-partial events, plus the in-adapter derivation of message start from `partial` | per-adapter tests, including the derivation | PR 1 |
 | 6 | **Pydantic AI, and the end of the transition.** Rewrite `stream` onto `run_stream_events()`, re-plumbing session-message bookkeeping and the `framework_context` store. Also carries the **final step**: deleting the transitional `str` tolerance PR 1 added to `Runtime.stream` | per-adapter tests; `framework_context` round-trip unchanged; **tolerance removed and a test asserts a `str`-yielding runner now fails** | PR 1 (adapter work); PRs 4 and 5 merged (final step only) |
+| 7 | **Documentation and skills.** Every docs and skills surface describing the end state: the streaming contract, the SSE wire shape, the tool-call redaction limit, attachment source forms, the new AG-UI page carrying the **per-adapter fidelity matrix**, and five example READMEs. Writes nothing about the transition, which never reaches `develop` | docs build; no surface left describing the old contract | PRs 1-6, all merged |
 
 Shape of the graph:
 
