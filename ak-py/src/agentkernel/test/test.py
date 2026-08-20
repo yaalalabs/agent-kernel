@@ -3,34 +3,36 @@ import re
 import sys
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Optional
+from threading import RLock
+from typing import ClassVar
 
-from datasets import Dataset
-from ragas import evaluate
-from ragas.metrics import answer_relevancy, answer_similarity
-from rapidfuzz import fuzz
+from agentkernel.core.util.factory import AKConfigError, require_extra, resolve_dotted
 
 from .config import AKTestConfig
+from .core.akevaluators import AKEvaluationCase, AKEvaluationResult, AKEvaluator
+
+_BUILTIN_EVALUATORS = ["deepeval"]
 
 
 class Mode(StrEnum):
-    FUZZY = "fuzzy"
-    JUDGE = "judge"
+    SCORE = "score"
+    LLM = "llm"
     FALLBACK = "fallback"
 
 
 class Test:
     _prompt_regex = re.compile(r"\((.+?)\) >> $")  # captures terminal prompt
     _prompt: str = ""
-    _ragas_llm: Optional[Any] = None
-    _ragas_embeddings: Optional[Any] = None
 
-    def __init__(self, path, match_threshold=50, mode: Mode = None):
+    _evaluator: ClassVar[tuple[str, AKEvaluator] | None] = None
+    _evaluator_lock: ClassVar[RLock] = RLock()
+
+    def __init__(self, path, match_threshold: float = 0.5, mode: Mode = None):
         """
         Initializes an instance of the Test with a specified command-line interface (CLI) path.
         :param path: Python file path as a string
-        :param match_threshold: Fuzzy matching threshold for the response comparison.
-        :param mode: Test comparison mode - 'fuzzy', 'judge', or 'fallback'. If None, uses config value.
+        :param match_threshold: Matching threshold in [0.0, 1.0] for the response comparison.
+        :param mode: Test comparison mode - 'score', 'llm', or 'fallback'. If None, uses config value.
         """
         working_dir = Path.cwd()
         self.path = working_dir / path
@@ -125,156 +127,138 @@ class Test:
         self.last_agent_response = ansi_escape.sub("", response)
         return self.last_agent_response
 
-    @staticmethod
-    def _fuzzy_compare(actual: str, expected: list[str], threshold: int = 50):
-        """
-        Compare an actual string against expected strings using fuzzy string matching.
+    @classmethod
+    def _resolve_evaluator(cls) -> AKEvaluator:
+        configured = AKTestConfig.get().evaluator
+        cached = cls._evaluator
+        if cached is not None and cached[0] == configured:
+            return cached[1]
+        with cls._evaluator_lock:
+            cached = cls._evaluator
+            if cached is not None and cached[0] == configured:
+                return cached[1]
+            evaluator_cls = cls._resolve_evaluator_class(configured)
+            instance = evaluator_cls(AKTestConfig.get())
+            cls._evaluator = (configured, instance)
+            return instance
 
-        Uses fuzzy string matching to determine if the actual string is similar enough
-        to any of the expected strings. The comparison passes if any expected string
-        has a similarity score above the specified threshold.
-
-        :param actual: The string to be compared.
-        :param expected: A list of acceptable strings to compare against.
-        :param threshold: The minimum similarity score (0-100) required for a match. Default is 50.
-        :raises AssertionError: If the actual string doesn't match any expected string above the threshold score.
-        :return: None - Returns implicitly when a match is found above the threshold.
-        """
-        if not expected:
-            raise ValueError("Expected strings list cannot be empty for fuzzy comparison.")
-        for item in expected:
-            score = fuzz.ratio(actual, item)
-            if score > threshold:
-                return
-        raise AssertionError(f"Response didn't pass the threshold score. Expected: {expected}, Received: {actual}")
-
-    @staticmethod
-    def _judge_compare(user_input: str, actual: str, expected: list[str] = None, threshold: float = 0.5):
-        """
-        Judge the model response using Ragas metrics.
-
-        If one or more expected answers are provided, uses Ragas "answer_similarity"
-        to compare the actual answer against each expected (ground truth). Passes if the
-        similarity score with ANY expected is >= threshold.
-
-        If no expected answers are provided, falls back to Ragas "answer_relevancy",
-        which checks if the answer is relevant to the provided user_input (question).
-
-        :param user_input: The user input string (question) used by Ragas.
-        :param actual: The model answer to be evaluated.
-        :param expected: A list of expected answers to be considered as ground truth.
-        :param threshold: Minimum score in [0.0, 1.0] required to pass. Default is 0.5.
-        :raises AssertionError: If no similarity/relevancy score meets the threshold.
-        :return: None - Returns implicitly when the score is above the threshold.
-        """
-        # Initialize Ragas clients using LiteLLM lazily
-        if Test._ragas_llm is None or Test._ragas_embeddings is None:
-            from litellm import completion
-            from ragas.embeddings import LiteLLMEmbeddings
-            from ragas.llms import LiteLLMStructuredLLM
-
-            judge_config = AKTestConfig.get().judge
-            Test._ragas_llm = LiteLLMStructuredLLM(client=completion, model=judge_config.model, provider=judge_config.provider)
-            Test._ragas_embeddings = LiteLLMEmbeddings(model=judge_config.embedding_model)
-
-        llm = Test._ragas_llm
-        embeddings = Test._ragas_embeddings
-
-        if expected:
-            # Try semantic similarity against each expected (ground truth). Pass if ANY meets threshold.
-            for gt in expected:
-                data = Dataset.from_dict(
-                    {
-                        "question": [user_input],
-                        "answer": [actual],
-                        "ground_truth": [gt],
-                    }
-                )
-                result = evaluate(data, metrics=[answer_similarity], llm=llm, embeddings=embeddings)
-                score = result["answer_similarity"][0]
-                if score >= threshold:
-                    return
-            raise AssertionError(
-                f"Response didn't pass judge answer_similarity against any expected. "
-                f"Question: {user_input}\nAnswer: {actual}\nExpected: {expected}"
+    @classmethod
+    def _resolve_evaluator_class(cls, configured: str) -> type[AKEvaluator]:
+        if configured == "deepeval":
+            with require_extra("test", "evaluator: deepeval"):
+                from .core.akevaluators.deepeval import DeepevalAKEvaluator
+            return DeepevalAKEvaluator
+        if "." not in configured:
+            raise AKConfigError(
+                f"unknown evaluator '{configured}'; expected one of {_BUILTIN_EVALUATORS} or a dotted path to an AKEvaluator subclass"
             )
-        else:
-            # No expected answers provided: use answer_relevancy which requires a user question
-            if not user_input:
-                raise AssertionError("user_input (question) is required for judge answer_relevancy metric")
-            data = Dataset.from_dict(
-                {
-                    "question": [user_input],
-                    "answer": [actual],
-                }
-            )
-            result = evaluate(data, metrics=[answer_relevancy], llm=llm, embeddings=embeddings)
-            score = result["answer_relevancy"][0]
-            if score < threshold:
-                raise AssertionError(
-                    f"Response didn't pass judge answer_relevancy. Score: {score:.3f}, Threshold: {threshold:.3f}.\n"
-                    f"Question: {user_input}\nAnswer: {actual}"
-                )
-            return
+        return resolve_dotted(configured, base=AKEvaluator)
+
+    @classmethod
+    def _reset_evaluator(cls) -> None:
+        cls._evaluator = None
 
     @staticmethod
-    def compare(actual: str, expected: list[str] = None, user_input: str = "", threshold: int = 50, mode: Mode = None):
+    def compare(
+        actual: str,
+        expected: list[str] = None,
+        user_input: str = "",
+        threshold: float = 0.5,
+        mode: Mode = None,
+        return_metrics: bool = False,
+    ) -> AKEvaluationResult | None:
         """
         Compare an actual string against a list of expected strings using the specified mode.
 
         Supports three comparison modes:
-        - 'FUZZY': Only fuzzy string matching
-        - 'JUDGE': LLM-based evaluation using Ragas (answer_similarity when expected answers are provided, otherwise answer_relevancy)
-        - 'FALLBACK': Try fuzzy first, fallback to LLM evaluation if fuzzy fails
+        - 'SCORE': Deterministic scoring via the configured evaluator's score_based_evaluation
+        - 'LLM': LLM-as-judge scoring via the configured evaluator's llm_based_evaluation
+        - 'FALLBACK': Try score first, fall back to llm evaluation if score fails
 
         :param actual: The string to be compared.
         :param expected: A list of acceptable strings to compare against.
         :param user_input: The user input string (question). Used for LLM evaluation.
-        :param threshold: The minimum similarity score (0-100) is required for a fuzzy match. Default is 50.
-        :param mode: Comparison mode - 'fuzzy', 'judge', or 'fallback'. Default is 'fallback'.
-        :raises AssertionError: If the actual string doesn't match any expected string.
-        :return: None - Returns implicitly when a match is found.
+        :param threshold: The minimum score in [0.0, 1.0] required to pass. Default is 0.5.
+        :param mode: Comparison mode - 'score', 'llm', or 'fallback'. Default is 'fallback'.
+        :param return_metrics: If True, return the decisive AKEvaluationResult instead of raising on failure.
+        :raises AssertionError: If the actual string doesn't match any expected string and return_metrics is False.
+        :return: The decisive AKEvaluationResult if return_metrics is True, else None.
         """
-        # Validate mode
-        if mode not in [Mode.FUZZY, Mode.JUDGE, Mode.FALLBACK, None]:
-            raise ValueError(f"Invalid mode: {mode}. Must be one of: {Mode.FUZZY}, {Mode.JUDGE}, {Mode.FALLBACK}")
+        if mode is not None and mode not in (Mode.SCORE, Mode.LLM, Mode.FALLBACK):
+            raise ValueError(f"Invalid mode: {mode}. Must be one of: {Mode.SCORE}, {Mode.LLM}, {Mode.FALLBACK}")
+        if not expected:
+            raise ValueError("Expected strings list cannot be empty for comparison.")
 
-        # preference order: mode arg > config > fallback
-        if mode:
-            selected_mode = mode
-        else:
-            selected_mode = AKTestConfig.get().mode
-            if not selected_mode:
-                selected_mode = Mode.FALLBACK
+        selected_mode = mode or Mode(AKTestConfig.get().mode)
+        evaluator = Test._resolve_evaluator()
 
-        if selected_mode == Mode.JUDGE:
-            Test._judge_compare(user_input=user_input, actual=actual, expected=expected, threshold=threshold / 100)
-        elif selected_mode == Mode.FUZZY:
-            Test._fuzzy_compare(actual=actual, expected=expected, threshold=threshold)
-        elif selected_mode == Mode.FALLBACK:
-            # Try fuzzy first, fallback to judge if fuzzy fails
-            try:
-                Test._fuzzy_compare(actual=actual, expected=expected, threshold=threshold)
-            except AssertionError:
-                try:
-                    Test._judge_compare(user_input=user_input, actual=actual, expected=expected, threshold=threshold / 100)
-                except AssertionError:
-                    raise AssertionError(f"Response didn't pass fuzzy matching or judge evaluation. Expected: {expected}, Received: {actual}")
+        attempts: list[AKEvaluationResult] = []
+        decisive: AKEvaluationResult | None = None
 
-    async def expect(self, expected: list[str]):
+        for exp in expected:
+            case = AKEvaluationCase(user_input=user_input, actual=actual, expected=exp)
+
+            if selected_mode == Mode.SCORE:
+                result, result_mode = evaluator.score_based_evaluation(case), Mode.SCORE
+            elif selected_mode == Mode.LLM:
+                result, result_mode = evaluator.llm_based_evaluation(case), Mode.LLM
+            else:  # FALLBACK
+                score_result = evaluator.score_based_evaluation(case)
+                if score_result.score is not None and score_result.score >= threshold:
+                    result, result_mode = score_result, Mode.SCORE
+                else:
+                    attempts.append(Test._stamp(score_result, Mode.SCORE, threshold, exp))
+                    result, result_mode = evaluator.llm_based_evaluation(case), Mode.LLM
+
+            stamped = Test._stamp(result, result_mode, threshold, exp)
+            if stamped.passed:
+                decisive = stamped
+                decisive.attempts = attempts
+                break
+            attempts.append(stamped)
+            decisive = stamped  # stands as decisive unless a later alternative passes
+
+        if not decisive.passed:
+            decisive.attempts = attempts[:-1]  # every non-decisive attempt, decisive excluded
+            message = Test._failure_message(selected_mode, expected, actual)
+            if return_metrics:
+                return decisive
+            raise AssertionError(message)
+
+        return decisive if return_metrics else None
+
+    @staticmethod
+    def _stamp(result: AKEvaluationResult, mode: Mode, threshold: float, expected: str) -> AKEvaluationResult:
+        result.mode = mode.value
+        result.threshold = threshold
+        result.expected = expected
+        result.passed = result.score is not None and result.score >= threshold
+        return result
+
+    @staticmethod
+    def _failure_message(mode: Mode, expected: list[str], actual: str) -> str:
+        if mode == Mode.SCORE:
+            return f"Response didn't pass the score threshold. Expected: {expected}, Received: {actual}"
+        if mode == Mode.LLM:
+            return f"Response didn't pass llm evaluation against any expected. Expected: {expected}, Received: {actual}"
+        return f"Response didn't pass score matching or llm evaluation. Expected: {expected}, Received: {actual}"
+
+    async def expect(self, expected: list[str], return_metrics: bool = False) -> AKEvaluationResult | None:
         """
         Asserts that the last response received from the CLI matches the expected message.
         Uses the mode specified during Test initialization.
         :param expected: The expected message variants.
+        :param return_metrics: If True, return the decisive AKEvaluationResult instead of raising on failure.
         """
         if self.last_agent_response is None:
             raise AssertionError("No response available to compare. Ensure send() was called before expect().")
-        self.compare(
+        return self.compare(
             actual=self.last_agent_response,
             expected=expected,
             user_input=self.last_user_input,
             threshold=self.match_threshold,
             mode=self.mode,
+            return_metrics=return_metrics,
         )
 
     async def _drain_stderr(self):

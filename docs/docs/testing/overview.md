@@ -81,32 +81,32 @@ Best for:
 
 Agent Kernel supports three comparison modes for validating agent responses:
 
-#### Fuzzy Mode
-Uses fuzzy string matching (via RapidFuzz) with configurable thresholds:
+#### Score Mode
+Deterministic, offline string-match scoring (via DeepEval's `Scorer.quasi_exact_match_score`) with configurable thresholds:
 
 ```python
 from agentkernel.test import Test, Mode
 
-# Use fuzzy mode only
-test = Test("demo.py", match_threshold=80)
+# Use score mode only
+test = Test("demo.py", match_threshold=0.8)
 await test.send("Who won the 1996 cricket world cup?")
 
 # expected is a list - test passes if ANY match exceeds threshold
 Test.compare(
     actual=test.last_agent_response,
     expected=["Sri Lanka won", "Sri Lanka won the 1996 cricket world cup"],
-    threshold=80,
-    mode=Mode.FUZZY
+    threshold=0.8,
+    mode=Mode.SCORE
 )
 ```
 
-**Note:** The `expected` parameter is a list. The test passes if the actual response matches **any** of the expected values above the threshold.
+**Note:** The `expected` parameter is a list. The test passes if the actual response's normalised text exactly equals **any** of the expected values (score `1.0`) — there is no partial credit.
 
-#### Judge Mode
-Uses LLM-based evaluation (via Ragas) for semantic similarity:
+#### Llm Mode
+Uses LLM-as-judge evaluation (via DeepEval's `GEval`) for semantic similarity:
 
 ```python
-# Use judge mode only - expected is a list
+# Use llm mode only - expected is a list
 Test.compare(
     actual=test.last_agent_response,
     expected=[
@@ -115,17 +115,17 @@ Test.compare(
         "The 1996 cricket world cup was won by Sri Lanka"
     ],
     user_input="Who won the 1996 cricket world cup?",
-    threshold=50,  # Threshold is percentage converted to 0.0-1.0 scale
-    mode=Mode.JUDGE
+    threshold=0.5,
+    mode=Mode.LLM
 )
 ```
 
 **Note:** The `expected` parameter is a list. The test passes if the actual response has semantic similarity above the threshold with **any** of the expected answers.
 
-When expected answers are provided, uses `answer_similarity` metric. When no expected answers are provided, uses `answer_relevancy` metric to check if the answer is relevant to the question.
+`expected` is required in llm mode — `GEval` judges whether the actual response conveys the same information as each expected answer; there is no reference-free relevancy fallback.
 
 #### Fallback Mode (Default)
-Tries fuzzy matching first, falls back to judge evaluation if fuzzy fails:
+Tries score matching first, falls back to llm evaluation if score fails:
 
 ```python
 # Default fallback mode - multiple expected answers
@@ -137,12 +137,12 @@ Test.compare(
         "The winner was Sri Lanka"
     ],
     user_input="Who won the 1996 cricket world cup?",
-    threshold=50,
+    threshold=0.5,
     mode=Mode.FALLBACK  # or None to use config default
 )
 ```
 
-**Note:** The `expected` parameter is a list of acceptable responses. The test passes if **any** expected value matches (fuzzy or judge evaluation).
+**Note:** The `expected` parameter is a list of acceptable responses. The test passes if **any** expected value matches (score or llm evaluation).
 
 ### Configuring Test Mode
 
@@ -150,8 +150,9 @@ Set the default test mode via a `test-config.yaml` file in the directory you run
 
 ```yaml
 # test-config.yaml
-mode: fallback  # Options: fuzzy, judge, fallback
-judge:
+mode: fallback  # Options: score, llm, fallback
+evaluator: deepeval  # Built-in short name, or a dotted path to your own AKEvaluator subclass
+llm:
   model: gpt-4o-mini
   provider: openai
   embedding_model: text-embedding-3-small
@@ -166,10 +167,10 @@ export AK_TEST_CONFIG_PATH_OVERRIDE=/path/to/test-config.yaml
 Or via environment variables:
 
 ```bash
-export AK_TEST__MODE=judge
-export AK_TEST__JUDGE__MODEL=gpt-4o-mini
-export AK_TEST__JUDGE__PROVIDER=openai
-export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
+export AK_TEST__MODE=llm
+export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__PROVIDER=openai
+export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 ### Session Management
@@ -187,7 +188,7 @@ await test.send("Who won the 1996 cricket world cup?")
 
 - Use pytest fixtures for test setup and teardown
 - Implement ordered tests for conversation flows
-- Configure appropriate fuzzy matching thresholds
+- Configure appropriate score matching thresholds
 - Test agent selection commands when using multi-agent setups
 - Include both positive and negative test cases
 - Test session persistence and state management

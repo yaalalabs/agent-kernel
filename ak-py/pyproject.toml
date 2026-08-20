@@ -150,12 +150,7 @@ test = [
     "pytest-cov>=6.2.1",
     "pytest-html>=4.1.1",
     "pytest-order>=1.3.0",
-    "rapidfuzz>=3.14.1",
-    "ragas>=0.4.1",
-    # ragas imports langchain_community.chat_models.vertexai, removed in langchain-community 0.4.2
-    "langchain_community==0.4.1",
-    "datasets>=2.14.0",
-    "pandas>=2.0.0",
+    "deepeval>=4.1.4",
     "litellm>=1.89.2",
 ]
 a2a = [
@@ -193,6 +188,13 @@ dev = [
 
 [tool.uv]
 package = true
+# crewai's chromadb~=1.1.0 pin requires posthog<6.0.0 (unconditional across the whole crewai 1.x
+# line, verified against 1.0.0 through the current 1.15.17); deepeval (python>=3.10) requires
+# posthog>=7.0.0,<8.0.0. Both libraries only use posthog for anonymous telemetry (which AK disables
+# for deepeval via DEEPEVAL_TELEMETRY_OPT_OUT and can disable for chromadb via
+# ANONYMIZED_TELEMETRY=False), so forcing the newer posthog is low-risk. Mirrored in every example
+# pyproject.toml that combines the crewai and test extras.
+override-dependencies = ["posthog>=7.0.0,<8.0.0"]
 
 [tool.isort]
 profile = "black"

@@ -335,7 +335,7 @@ session:
 
 # Testing
 test:
-  mode: fuzzy          # fuzzy | judge | fallback
+  mode: score          # score | llm | fallback
 ```
 
 #### build.sh

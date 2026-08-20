@@ -30,22 +30,22 @@
       ]
     },
     {
-      "id": "test-mode-fuzzy",
-      "name": "Configure fuzzy test mode",
-      "input": "Set up fuzzy matching for my agent tests",
+      "id": "test-mode-score",
+      "name": "Configure score test mode",
+      "input": "Set up deterministic string-match mode for my agent tests",
       "expected_outputs": [
         "test:",
-        "mode: fuzzy"
+        "mode: score"
       ]
     },
     {
-      "id": "test-mode-judge",
-      "name": "Configure judge test mode",
-      "input": "Set up LLM judge for my agent tests",
+      "id": "test-mode-llm",
+      "name": "Configure llm test mode",
+      "input": "Set up LLM-based evaluation for my agent tests",
       "expected_outputs": [
         "test:",
-        "mode: judge",
-        "judge:",
+        "mode: llm",
+        "llm:",
         "model:"
       ]
     },

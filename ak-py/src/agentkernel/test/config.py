@@ -7,7 +7,7 @@ from pydantic_settings import SettingsConfigDict
 from agentkernel.core.util.config_yaml_util import YamlBaseSettingsModified
 
 
-class _JudgeConfig(BaseModel):
+class _LlmConfig(BaseModel):
     model: str = Field(default="gpt-4o-mini", description="LLM Model name")
     provider: str = Field(default="openai", description="LLM Provider name")
     embedding_model: str = Field(default="text-embedding-3-small", description="Embedding Model name")
@@ -19,7 +19,7 @@ class AKTestConfig(YamlBaseSettingsModified):
     Loaded from test-config.yaml in the current working directory (override the
     path with AK_TEST_CONFIG_PATH_OVERRIDE). A missing file is the normal case
     and applies the defaults silently. Environment variables use the same names
-    as before the split (AK_TEST__MODE, AK_TEST__JUDGE__MODEL, ...).
+    as before the split (AK_TEST__MODE, AK_TEST__LLM__MODEL, ...).
     """
 
     yaml_file_env_var: ClassVar[str] = "AK_TEST_CONFIG_PATH_OVERRIDE"
@@ -29,8 +29,12 @@ class AKTestConfig(YamlBaseSettingsModified):
     _instance: ClassVar[Optional["AKTestConfig"]] = None
     _instance_lock: ClassVar[RLock] = RLock()
 
-    mode: str = Field(default="fallback", pattern="^(fallback|judge|fuzzy)$")
-    judge: _JudgeConfig = Field(description="Judge configuration", default_factory=_JudgeConfig)
+    mode: str = Field(default="fallback", pattern="^(fallback|llm|score)$")
+    evaluator: str = Field(
+        default="deepeval",
+        description="Built-in evaluator short name ('deepeval') or a dotted path to an AKEvaluator subclass",
+    )
+    llm: _LlmConfig = Field(description="LLM configuration for the llm evaluation mode", default_factory=_LlmConfig)
 
     model_config = SettingsConfigDict(
         env_file=".env",

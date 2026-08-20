@@ -41,18 +41,19 @@ async def test_follow_up_question(test_client):
 
 Agent Kernel supports three comparison modes for validating responses:
 
-### Fuzzy Mode
+### Score Mode
 
-Uses fuzzy string matching with configurable thresholds:
+Deterministic, offline string-match scoring — no LLM call. The built-in evaluator (DeepEval)
+uses `Scorer.quasi_exact_match_score`, a normalised whole-string equality check:
 
 ```python
 from agentkernel.test import Test, Mode
 
 @pytest.mark.order(1)
-async def test_fuzzy_matching(test_client):
+async def test_score_matching(test_client):
     await test_client.send("Who won the 1996 cricket world cup?")
-    # Use fuzzy mode with 80% threshold
-    # expected is a list - test passes if ANY match exceeds threshold
+    # Use score mode with an 0.8 threshold
+    # expected is a list - test passes if ANY match scores above threshold
     Test.compare(
         actual=test_client.last_agent_response,
         expected=[
@@ -60,22 +61,25 @@ async def test_fuzzy_matching(test_client):
             "Sri Lanka won the 1996 world cup",
             "The 1996 cricket world cup was won by Sri Lanka"
         ],
-        threshold=80,
-        mode=Mode.FUZZY
+        threshold=0.8,
+        mode=Mode.SCORE
     )
 ```
 
-**Note:** The `expected` parameter accepts a list of acceptable responses. The test passes if the actual response matches **any** of the expected values above the threshold.
+**Note:** The `expected` parameter accepts a list of acceptable responses. The test passes if the
+actual response's normalised text exactly equals **any** of the expected values (score `1.0`) —
+there is no partial credit.
 
-### Judge Mode
+### Llm Mode
 
-Uses LLM-based evaluation (Ragas) for semantic similarity:
+Uses LLM-as-judge evaluation for semantic similarity. The built-in evaluator (DeepEval) uses the
+`GEval` metric:
 
 ```python
 @pytest.mark.order(2)
-async def test_judge_evaluation(test_client):
+async def test_llm_evaluation(test_client):
     await test_client.send("Who won the 1996 cricket world cup?")
-    # Use judge mode for semantic evaluation
+    # Use llm mode for semantic evaluation
     # expected is a list - test passes if ANY has sufficient semantic similarity
     Test.compare(
         actual=test_client.last_agent_response,
@@ -85,20 +89,20 @@ async def test_judge_evaluation(test_client):
             "The 1996 cricket world cup was won by Sri Lanka"
         ],
         user_input="Who won the 1996 cricket world cup?",
-        threshold=50,  # Converted to 0.5 on 0.0-1.0 scale
-        mode=Mode.JUDGE
+        threshold=0.5,
+        mode=Mode.LLM
     )
 ```
 
-**Judge Mode Metrics:**
-- With expected answers: Uses `answer_similarity` metric against each expected answer. Passes if **any** exceeds threshold.
-- Without expected answers: Uses `answer_relevancy` metric (requires `user_input`)
+**Llm Mode Metrics:**
+- Uses `GEval`, an LLM rubric judging whether the actual response conveys the same information as
+  each expected answer. Passes if **any** exceeds threshold. `expected` is required.
 
-**Note:** When multiple expected answers are provided, the judge evaluates similarity against each one and passes if **any** score meets the threshold.
+**Note:** When multiple expected answers are provided, the llm evaluator compares against each one and passes if **any** score meets the threshold.
 
 ### Fallback Mode (Default)
 
-Tries fuzzy matching first, falls back to judge evaluation:
+Tries score matching first, falls back to llm evaluation:
 
 ```python
 @pytest.mark.order(3)
@@ -113,12 +117,12 @@ async def test_fallback_mode(test_client):
             "The winner was Sri Lanka"
         ],
         user_input="Who won the 1996 cricket world cup?",
-        threshold=50,
+        threshold=0.5,
         mode=Mode.FALLBACK  # or None to use config default
     )
 ```
 
-**Note:** With multiple expected answers, fuzzy mode tries each one and passes if **any** match exceeds the threshold. If all fuzzy matches fail, judge mode evaluates against each expected answer.
+**Note:** With multiple expected answers, score mode tries each one and passes if **any** match exceeds the threshold. If all score matches fail, llm mode evaluates against each expected answer.
 
 ### Configuring Test Mode
 
@@ -126,20 +130,21 @@ Set the default mode via a `test-config.yaml` file in the directory the tests ru
 
 ```yaml
 # test-config.yaml
-mode: fallback  # Options: fuzzy, judge, fallback
-judge:
+mode: fallback  # Options: score, llm, fallback
+evaluator: deepeval  # Built-in short name, or a dotted path to your own AKEvaluator subclass
+llm:
   model: gpt-4o-mini
   provider: openai
   embedding_model: text-embedding-3-small
 ```
 
-Or environment variables:
+Or via environment variables:
 
 ```bash
-export AK_TEST__MODE=judge
-export AK_TEST__JUDGE__MODEL=gpt-4o-mini
-export AK_TEST__JUDGE__PROVIDER=openai
-export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
+export AK_TEST__MODE=llm
+export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__PROVIDER=openai
+export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 ### Using expect() with Mode
@@ -171,7 +176,7 @@ Use session-scoped fixtures to maintain CLI state across multiple tests:
 ```python
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def test_client():
-    test = Test("demo.py", match_threshold=70)
+    test = Test("demo.py", match_threshold=0.7)
     await test.start()
     try:
         yield test
@@ -250,7 +255,7 @@ async def test_api_endpoint(api_server):
         actual=response,
         expected=["Sri Lanka won the 1996 cricket world cup"],
         user_input="Who won the 1996 cricket world cup?",
-        mode=Mode.JUDGE  # Use judge mode for API testing
+        mode=Mode.LLM  # Use llm mode for API testing
     )
 ```
 
@@ -344,9 +349,10 @@ Configure the default test comparison mode in `test-config.yaml`. The file is re
 
 ```yaml
 # test-config.yaml
-mode: fallback  # Options: fuzzy, judge, fallback (default: fallback)
-judge:
-  model: gpt-4o-mini  # LLM model for judge mode
+mode: fallback  # Options: score, llm, fallback (default: fallback)
+evaluator: deepeval  # Built-in short name, or a dotted path to your own AKEvaluator subclass
+llm:
+  model: gpt-4o-mini  # LLM model for llm mode
   provider: openai  # LLM provider
   embedding_model: text-embedding-3-small  # Embedding model
 ```
@@ -354,22 +360,22 @@ judge:
 Or via environment variables:
 
 ```bash
-export AK_TEST__MODE=judge
-export AK_TEST__JUDGE__MODEL=gpt-4o-mini
-export AK_TEST__JUDGE__PROVIDER=openai
-export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
+export AK_TEST__MODE=llm
+export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__PROVIDER=openai
+export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 ### Custom Match Thresholds
 
-Configure fuzzy matching for different test scenarios:
+Configure score matching for different test scenarios, on the `[0.0, 1.0]` scale:
 
 ```python
 # More strict matching for exact responses
-strict_test = Test("demo.py", match_threshold=90)
+strict_test = Test("demo.py", match_threshold=0.9)
 
 # More lenient for AI-generated content
-lenient_test = Test("demo.py", match_threshold=60)
+lenient_test = Test("demo.py", match_threshold=0.6)
 ```
 
 ### Environment Variables
@@ -396,28 +402,28 @@ def setup_test_env():
 - Implement proper setup and teardown
 
 ### Assertions
-- Use `Mode.FUZZY` for exact string matching requirements
-- Use `Mode.JUDGE` for semantic similarity validation
+- Use `Mode.SCORE` for exact string matching requirements
+- Use `Mode.LLM` for semantic similarity validation
 - Use `Mode.FALLBACK` (default) for robust validation
 - Test both positive and negative cases
 - Include edge cases and error conditions
 
 ### Test Mode Selection
-- **Fuzzy Mode**: Best for deterministic outputs, exact formatting requirements
-- **Judge Mode**: Best for AI-generated content, paraphrased responses
+- **Score Mode**: Best for deterministic outputs, exact formatting requirements
+- **Llm Mode**: Best for AI-generated content, paraphrased responses
 - **Fallback Mode**: Best for general use, provides flexibility
 
 ### Performance
 - Use session-scoped fixtures for expensive setup
 - Consider parallel test execution for independent tests
 - Mock external dependencies when possible
-- Note: Judge mode requires LLM calls, which may slow tests
+- Note: Llm mode requires LLM calls, which may slow tests
 
 ### Maintenance
 - Keep tests updated with agent changes
 - Use version control for test scenarios
 - Document test requirements and expectations
-- Configure judge model/provider based on your needs
+- Configure the llm model/provider based on your needs
 
 ## Troubleshooting
 
@@ -428,17 +434,17 @@ def setup_test_env():
 - Check for proper async/await usage
 - Verify timeout settings
 
-**Fuzzy matching failures:**
+**Score matching failures:**
 - Adjust match threshold based on response variability
 - Check for extra whitespace or formatting
-- Consider using `Mode.JUDGE` for AI-generated content
+- Consider using `Mode.LLM` for AI-generated content
 - Use Test.compare() for debugging
 
-**Judge mode failures:**
+**Llm mode failures:**
 - Ensure LLM API keys are configured (e.g., OPENAI_API_KEY)
-- Check judge configuration (model, provider, embedding_model)
-- Verify threshold is appropriate (0-100 range, converted to 0.0-1.0)
-- Ensure `user_input` is provided when using answer_relevancy
+- Check the llm configuration (model, provider, embedding_model)
+- Verify threshold is appropriate (`[0.0, 1.0]` range)
+- Ensure `expected` is provided — llm mode has no reference-free fallback
 
 **Process cleanup issues:**
 - Always use try-finally blocks

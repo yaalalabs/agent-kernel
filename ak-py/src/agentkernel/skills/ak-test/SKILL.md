@@ -3,7 +3,7 @@ name: ak-test
 description: >
   Set up testing and debug common issues in Agent Kernel projects. This skill guides
   you through configuring the built-in test framework, writing agent tests, choosing
-  test modes (fuzzy, judge, fallback), and troubleshooting common errors.
+  test modes (score, llm, fallback), and troubleshooting common errors.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -39,20 +39,20 @@ Update `config.yaml`:
 
 ```yaml
 test:
-  mode: fuzzy       # Options: fuzzy | judge | fallback
+  mode: score       # Options: score | llm | fallback
 ```
 
 | Mode | How it Works | Best For |
 |------|-------------|----------|
-| **fuzzy** | String similarity matching (rapidfuzz) | Deterministic responses, exact answers |
-| **judge** | LLM evaluates if response is semantically correct | Open-ended responses, creative agents |
-| **fallback** | Tries fuzzy first, falls back to judge if fuzzy fails | General-purpose testing |
+| **score** | Deterministic string-match scoring (DeepEval `Scorer.quasi_exact_match_score`) | Deterministic responses, exact answers |
+| **llm** | LLM evaluates if response is semantically correct (DeepEval `GEval`) | Open-ended responses, creative agents |
+| **fallback** | Tries score first, falls back to llm if score fails | General-purpose testing |
 
-For judge mode, configure the judge model:
+For llm mode, configure the llm model:
 ```yaml
 test:
-  mode: judge
-  judge:
+  mode: llm
+  llm:
     model: gpt-4o-mini
 ```
 

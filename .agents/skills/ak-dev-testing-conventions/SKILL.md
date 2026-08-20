@@ -273,14 +273,14 @@ Configured via `config.yaml`:
 
 ```yaml
 test:
-  mode: fuzzy    # fuzzy | judge | fallback
-  judge:
+  mode: score    # score | llm | fallback
+  llm:
     model: gpt-4o-mini
 ```
 
-- **fuzzy**: Uses `rapidfuzz` string similarity matching (default threshold)
-- **judge**: Ragas-based LLM evaluation — uses the `answer_similarity` metric against expected answers (ground truth), or `answer_relevancy` against the question when no expected answers are given (see `ak-py/src/agentkernel/test/test.py`)
-- **fallback**: Tries fuzzy first, falls back to judge if fuzzy fails
+- **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `score_based_evaluation` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call)
+- **llm**: LLM-as-judge scoring via `llm_based_evaluation` — the built-in `DeepevalAKEvaluator` uses DeepEval's `GEval` metric against the expected answer(s) (ground truth). Evaluation backends are pluggable (`agentkernel.test.core.akevaluators.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
+- **fallback**: Tries score first, falls back to llm if score fails
 
 ### Test.compare() for API Tests
 
