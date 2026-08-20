@@ -18,10 +18,6 @@ dev = [
 
 [tool.uv]
 package = false
-# crewai's chromadb~=1.1.0 pin requires posthog<6.0.0; deepeval (via agentkernel[test]) requires
-# posthog>=7.0.0,<8.0.0. Both only use posthog for anonymous telemetry, so forcing the newer
-# version is low-risk. Mirrors the same override in ak-py/pyproject.toml.
-override-dependencies = ["posthog>=7.0.0,<8.0.0"]
 
 [tool.isort]
 profile = "black"

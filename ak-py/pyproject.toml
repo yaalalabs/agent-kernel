@@ -188,13 +188,6 @@ dev = [
 
 [tool.uv]
 package = true
-# crewai's chromadb~=1.1.0 pin requires posthog<6.0.0 (unconditional across the whole crewai 1.x
-# line, verified against 1.0.0 through the current 1.15.17); deepeval (python>=3.10) requires
-# posthog>=7.0.0,<8.0.0. Both libraries only use posthog for anonymous telemetry (which AK disables
-# for deepeval via DEEPEVAL_TELEMETRY_OPT_OUT and can disable for chromadb via
-# ANONYMIZED_TELEMETRY=False), so forcing the newer posthog is low-risk. Mirrored in every example
-# pyproject.toml that combines the crewai and test extras.
-override-dependencies = ["posthog>=7.0.0,<8.0.0"]
 
 [tool.isort]
 profile = "black"
