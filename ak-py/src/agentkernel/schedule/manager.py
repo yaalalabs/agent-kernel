@@ -14,7 +14,7 @@ from typing import Any, ClassVar, Dict, Optional
 
 from ..core.config import AKConfig
 from ..core.model import BaseChatRequest, ScheduleSpec
-from ..core.runtime import Runtime
+from ..core.service import AgentService
 from ..core.util.factory import AKConfigError
 from ..core.util.pagination import DEFAULT_PAGE_SIZE, clamp_limit, decode_cursor, encode_cursor
 from ..pipeline.transport.base import QueueTransportFactory
@@ -129,7 +129,7 @@ class ScheduleManager:
         # agent is checked: an unnamed one resolves to whatever default the firing process has, and
         # that process is not necessarily this one.
         if agent:
-            Runtime.ensure_agent_available(agent)
+            AgentService().ensure_agent_available(agent)
         OccurrenceCalculator.validate(spec)
 
         now = utc_now_iso()

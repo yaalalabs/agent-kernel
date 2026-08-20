@@ -209,15 +209,17 @@ class AgentHandler:
     def initialize(self, session_id: str, agent: Optional[str]):
         """Initialize AgentService with session and agent selection.
 
+        The availability rule is checked before selecting, so an unservable request fails
+        without a session being created or loaded for it.
+
         :param session_id: Session identifier for the agent
         :param agent: Optional agent name/identifier to select
         :return: None
-        :raises ValueError: If no agent is available after selection
+        :raises ValueError: If no agent matching the request is available
         """
         self.service = AgentService()
+        self.service.ensure_agent_available(agent)
         self.service.select(session_id, agent)
-        if not self.service.agent:
-            raise ValueError("No agent available")
 
     @staticmethod
     def _run_async_sync(coro) -> Any:
