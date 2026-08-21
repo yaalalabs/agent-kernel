@@ -9,8 +9,9 @@ Mount it beside a chat handler on any REST surface::
 
     RESTAPI.run(handlers=[AgentRESTRequestHandler(), ScheduleRESTRequestHandler(authoriser=...)])
 
-The pipeline's single-process topology mounts it on its own when a ``schedule`` block is present
-(see ``IOHandler.run``).
+Nothing mounts it implicitly: an app that wants the management surface passes it to the REST
+entry point it already uses, exactly as it does for a Slack or thread handler. Mounting it also
+validates the configured provider and store, so a broken pairing fails the app build.
 """
 
 import logging
@@ -77,7 +78,13 @@ class ScheduleRESTRequestHandler(AuthorisedRESTRequestHandler):
     def get_router(self) -> APIRouter:
         """
         Returns the APIRouter instance.
+
+        Validates the scheduling configuration as the routes are mounted, so an unusable
+        provider/store/transport pairing fails the app build rather than the first request.
+
+        :raises AKConfigError: If the configured provider, store, or transport pairing is unusable.
         """
+        ScheduleManager.validate_configuration()
         router = APIRouter()
 
         @router.get("/api/v1/schedules")

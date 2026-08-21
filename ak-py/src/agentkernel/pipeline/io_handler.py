@@ -44,9 +44,8 @@ class IOHandler:
         :param handlers: Optional REST handlers mounted alongside the pipeline's own chat route,
             which is always served (it is the queue producer, not a replaceable default).
             Mounting an optional surface is the application's job here, as it is for the Slack
-            and thread handlers: an app exposing the schedule management routes passes
-            ``ScheduleRESTRequestHandler(authoriser=MyAuthoriser())``.
-        :raises AKConfigError: If the topology, or the scheduling configuration, is unusable.
+            and thread handlers.
+        :raises AKConfigError: If the topology is unusable.
         """
         config = AKConfig.get()
         mode = config.execution.mode
@@ -160,14 +159,3 @@ class IOHandler:
                     "multi-process REST queue modes need a shared response store (redis, valkey or dynamodb): "
                     "the in_memory store is single-process only"
                 )
-
-        if config.schedule is not None:
-            from ..schedule.manager import ScheduleManager
-
-            # Checked last, so a broken transport topology reports itself first. The result is
-            # discarded on purpose: building the manager here turns an unusable provider/transport
-            # pairing or an incomplete provider configuration into a startup failure, where an
-            # operator sees it, rather than a 500 on the first request that schedules anything. It
-            # is deliberately not tied to the management routes, which the application mounts (or
-            # does not) itself: an agent-tools-only app runs the same scheduling backends.
-            ScheduleManager.get()

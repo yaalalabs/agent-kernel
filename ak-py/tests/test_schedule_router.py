@@ -15,7 +15,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agentkernel.auth import Authoriser
+from agentkernel.core.config import AKConfig, _ScheduleConfig
 from agentkernel.core.model import ScheduleSpec
+from agentkernel.core.util.factory import AKConfigError
 from agentkernel.schedule.handler import ScheduleRESTRequestHandler
 from agentkernel.schedule.manager import ScheduleManager
 from agentkernel.schedule.model import ScheduleStatus
@@ -291,3 +293,39 @@ class TestRoutesAuthorised:
         response = _client(StaticAuthoriser()).delete(f"{SCHEDULES_PATH}/{task.task_id}", headers={"Authorization": "Bearer good-token"})
 
         assert response.status_code == 403
+
+
+class TestMountTimeValidation:
+    """Mounting the routes is what validates the configured backends (no other layer does)."""
+
+    @pytest.fixture
+    def scheduling(self):
+        """Configure the capability on the live AKConfig singleton, which ScheduleManager reads."""
+
+        def _configure(**fields):
+            AKConfig.get().schedule = _ScheduleConfig.model_validate(fields)
+            return AKConfig.get().schedule
+
+        yield _configure
+        AKConfig.get().schedule = None
+        ScheduleManager.reset()
+
+    def test_mounting_builds_the_manager(self, scheduling):
+        scheduling()
+
+        ScheduleRESTRequestHandler().get_router()
+
+        assert ScheduleManager._instance is not None
+
+    def test_unusable_configuration_fails_the_mount(self, scheduling):
+        scheduling(provider={"type": "not-a-provider"})
+
+        with pytest.raises(AKConfigError, match="unknown schedule provider type"):
+            ScheduleRESTRequestHandler().get_router()
+
+    def test_mounting_without_the_capability_configured_is_allowed(self):
+        """Routes mount on an unconfigured app and report 404 per request, as the thread routes do."""
+        routes = {route.path for route in ScheduleRESTRequestHandler().get_router().routes}
+
+        assert ScheduleManager._instance is None
+        assert routes == {"/api/v1/schedules", "/api/v1/schedules/{task_id}"}

@@ -73,6 +73,20 @@ class ScheduleManager:
             return cls._instance
 
     @classmethod
+    def validate_configuration(cls) -> None:
+        """Build the shared instance eagerly, turning an unusable configuration into a startup
+        failure rather than a 500 on the first request that schedules anything.
+
+        A no-op when the capability is not configured. Called where the capability's own surface
+        is set up — the management routes as they are mounted — so no other layer has to know the
+        scheduling backends exist. An app that mounts no routes and reaches the capability only
+        through the agent tools builds its backends on first use instead.
+
+        :raises AKConfigError: If the configured provider, store, or transport pairing is unusable.
+        """
+        cls.get()
+
+    @classmethod
     def reset(cls) -> None:
         """Drop the shared instance so the next get() rebuilds from config. Intended for testing."""
         with cls._lock:
