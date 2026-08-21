@@ -14,7 +14,13 @@ from agentkernel.test.config import AKTestConfig
 
 from .base import AKEvaluationCase, AKEvaluationError, AKEvaluationResult, AKEvaluator, AKMissingInput
 
-_DEFAULT_LLM_CRITERIA = "Determine whether the actual output conveys the same information as the expected output."
+_DEFAULT_LLM_CRITERIA = (
+    "Determine whether the actual output correctly conveys the information in the expected output. "
+    "The expected output may be a short phrase, fact, or keyword rather than a full sentence — score "
+    "the actual output as correct if it clearly states or implies that information, even when it also "
+    "includes additional context, explanation, or detail beyond it. Do not penalize the actual output "
+    "merely for being longer or more detailed than the expected output."
+)
 
 
 class DeepevalAKEvaluator(AKEvaluator):
