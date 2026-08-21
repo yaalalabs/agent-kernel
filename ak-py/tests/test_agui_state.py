@@ -9,9 +9,9 @@ per-block prompt-suffix accounting — four tools must never produce four paragr
 import pytest
 
 from agentkernel.core.base import Session
-from agentkernel.integration.agui.state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY, AGUI_STATE_KEY, AGUIState
 from agentkernel.core.config import _AGUIClientContextConfig, _AGUIConfig, _AGUIStateConfig
 from agentkernel.core.tool import SystemToolFactory, ToolContext
+from agentkernel.integration.agui.state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY, AGUI_STATE_KEY, AGUIState
 
 STATE_TOOL_NAMES = ["get_agui_state", "update_agui_state"]
 CLIENT_CONTEXT_TOOL_NAMES = ["get_forwarded_props", "get_agui_context"]

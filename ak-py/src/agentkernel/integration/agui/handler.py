@@ -12,12 +12,12 @@ from ...auth.authoriser import Authoriser, AuthValidatorAuthoriser
 from ...auth.handler import AuthValidator
 from ...core.base import Agent
 from ...core.chat_service import AgentHandler, ChatService
-from .state import AGUI_STATE_KEY
 from ...core.config import AKConfig
 from ...core.runtime import Runtime
 from ...core.service import AgentService
 from .mapping import AGUIMapper
 from .run_input import AGUIRunInput
+from .state import AGUI_STATE_KEY
 
 
 class AGUIRequestHandler(AuthorisedRESTRequestHandler):

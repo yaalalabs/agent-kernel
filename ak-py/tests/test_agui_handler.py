@@ -31,7 +31,6 @@ from fastapi.testclient import TestClient
 from agentkernel.auth import Authoriser
 from agentkernel.auth.handler import AuthValidator, ValidationResult
 from agentkernel.core.base import Agent, Runner, Session
-from agentkernel.integration.agui.state import AGUI_STATE_KEY, AGUIState
 from agentkernel.core.config import _AGUIConfig, _GuardrailConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallStart
 from agentkernel.core.hooks import PreHook
@@ -40,6 +39,7 @@ from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
 from agentkernel.integration.agui import AGUIRequestHandler
+from agentkernel.integration.agui.state import AGUI_STATE_KEY, AGUIState
 
 GOOD_TOKEN = "good-token"
 AUTH = {"Authorization": f"Bearer {GOOD_TOKEN}"}
