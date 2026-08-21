@@ -46,7 +46,6 @@ class Session:
         VOLATILE_CACHE = "v_cache"
         NON_VOLATILE_CACHE = "nv_cache"
         FRAMEWORK_CONTEXT = "framework_context"
-        AGUI_STATE = "agui_state"
 
     current_session: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("current_session", default=None)
 
@@ -213,43 +212,6 @@ class Session:
         Deletes the per-run framework context, so nothing is injected on the next turn.
         """
         self.delete(Session.Keys.FRAMEWORK_CONTEXT.value)
-
-    def get_agui_state(self) -> dict | None:
-        """
-        Returns the live AG-UI state dict, so a tool can edit it in place.
-        Never auto-creates the key: absent means "the client has never sent state".
-
-        Deliberately its own key rather than a compartment inside framework_context, which the trio
-        above carries. That dict is per-run and adapter-owned: _store_framework_context merges the
-        framework's post-run state over it at the *top* level, so a nested agui_state would be
-        restored or dropped wholesale, and an application already keeping its own keys there would
-        collide with the UI writing into the same dict. This state instead has to survive the run
-        intact, because the handler diffs it afterwards to decide whether to emit a StateSnapshot.
-
-        :return: The stored AG-UI state dict, or None when the key is absent.
-        """
-        return cast(dict | None, self.get(Session.Keys.AGUI_STATE.value))
-
-    def set_agui_state(self, state: dict) -> dict:
-        """
-        Seeds or replaces the AG-UI state carried across turns of a session.
-        :param state: The state dict to store. Must be picklable, since sessions are persisted with pickle.
-        :return: The stored state dict.
-        :raises TypeError: If state is not a dict.
-        """
-        if not isinstance(state, dict):
-            raise TypeError(
-                f"Session '{self._id}' agui_state must be a dict, got "
-                f"{type(state).__name__}. The reserved agui_state key carries the AG-UI "
-                f"shared state object; wrap the value in a dict before setting it."
-            )
-        return cast(dict, self.set(Session.Keys.AGUI_STATE.value, state))
-
-    def clear_agui_state(self) -> None:
-        """
-        Deletes the AG-UI state, so the next run starts with none.
-        """
-        self.delete(Session.Keys.AGUI_STATE.value)
 
     def set(self, key: str, value: Any) -> Any:
         """

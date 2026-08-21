@@ -9,7 +9,7 @@ per-block prompt-suffix accounting — four tools must never produce four paragr
 import pytest
 
 from agentkernel.core.base import Session
-from agentkernel.core.client_state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY, AGUIClientState
+from agentkernel.core.client_state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY, AGUI_STATE_KEY, AGUIClientState
 from agentkernel.core.config import _AGUIClientContextConfig, _AGUIConfig, _AGUIStateConfig
 from agentkernel.core.tool import SystemToolFactory, ToolContext
 
@@ -44,35 +44,36 @@ class TestStateTools:
         assert AGUIClientState.get_agui_state() == {}
         # Reading must not create the key: absent and empty are different to the handler's snapshot
         # comparison, where unset -> set is the common first-run case.
-        assert session.get_agui_state() is None
+        assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) is None
 
     def test_update_creates_the_state_when_absent(self, session):
         assert AGUIClientState.update_agui_state('{"step": 1}') == {"step": 1}
-        assert session.get_agui_state() == {"step": 1}
+        assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) == {"step": 1}
 
     def test_update_shallow_merges(self, session):
-        session.set_agui_state({"step": 1, "name": "ada"})
+        session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"step": 1, "name": "ada"})
         assert AGUIClientState.update_agui_state('{"step": 2}') == {"step": 2, "name": "ada"}
 
     def test_update_stores_an_explicit_none_rather_than_deleting(self, session):
         """Deletion is the client's job via a fresh `state` on the next request."""
-        session.set_agui_state({"step": 1})
+        session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"step": 1})
         assert AGUIClientState.update_agui_state('{"step": null}') == {"step": None}
 
     def test_update_replaces_a_nested_value_wholesale(self, session):
         """Shallow, matching _store_framework_context: a nested dict is replaced, not merged."""
-        session.set_agui_state({"form": {"a": 1, "b": 2}})
+        session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"form": {"a": 1, "b": 2}})
         assert AGUIClientState.update_agui_state('{"form": {"a": 9}}') == {"form": {"a": 9}}
 
     def test_update_mutates_the_live_session_dict(self, session):
-        """The handler compares a pre-run deep copy against session.get_agui_state(). If an update
+        """The handler compares a pre-run deep copy against the live nv_cache dict. If an update
         rebound the key to a new object instead of mutating the live dict this would still pass, but
         the reverse mistake — the handler holding the live reference — is what §9 warns about, so the
         liveness this asserts is the half the handler is entitled to rely on."""
-        live = session.set_agui_state({"step": 1})
+        live = {"step": 1}
+        session.get_non_volatile_cache().set(AGUI_STATE_KEY, live)
         AGUIClientState.update_agui_state('{"step": 2}')
         assert live == {"step": 2}
-        assert session.get_agui_state() is live
+        assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) is live
 
     def test_read_returns_what_update_wrote(self, session):
         AGUIClientState.update_agui_state('{"a": 1}')
@@ -80,13 +81,13 @@ class TestStateTools:
 
     def test_malformed_json_is_returned_as_an_error_rather_than_raised(self, session):
         """A tool never raises into the framework — the model has to be able to retry."""
-        session.set_agui_state({"step": 1})
+        session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"step": 1})
         assert "error" in AGUIClientState.update_agui_state("{not json")
-        assert session.get_agui_state() == {"step": 1}  # and nothing was written
+        assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) == {"step": 1}  # and nothing was written
 
     def test_json_that_is_not_an_object_is_returned_as_an_error(self, session):
         assert "error" in AGUIClientState.update_agui_state("[1, 2]")
-        assert session.get_agui_state() is None
+        assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) is None
 
 
 class TestClientContextTools:
@@ -115,8 +116,8 @@ class TestClientContextTools:
         assert AGUIClientState.get_agui_context() == []
 
     def test_shared_state_survives_the_volatile_cache_being_cleared(self, session):
-        """The contrast that earns state its own top-level key: it must outlive the run."""
-        session.set_agui_state({"step": 1})
+        """State lives in nv_cache so it outlives the run; volatile clear must not touch it."""
+        session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"step": 1})
         session.get_volatile_cache().clear()
         assert AGUIClientState.get_agui_state() == {"step": 1}
 

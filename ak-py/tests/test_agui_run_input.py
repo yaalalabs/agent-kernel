@@ -15,7 +15,7 @@ from ag_ui.core import InputContent, InputContentSource
 from fastapi import HTTPException
 
 from agentkernel.core.base import Session
-from agentkernel.core.client_state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY
+from agentkernel.core.client_state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY, AGUI_STATE_KEY
 from agentkernel.core.model import AgentRequestFile, AgentRequestImage, AgentRequestText
 from agentkernel.integration.agui.run_input import _KNOWN_CONTENT_TYPES, _KNOWN_SOURCE_TYPES, AGUIRunInput
 
@@ -153,7 +153,7 @@ class TestEmptyContent:
         with pytest.raises(HTTPException):
             run_input = AGUIRunInput.parse(body([user_message([])], state={"tasks": ["leaked"]}))
             AGUIRunInput.set_agui_session_keys(session, run_input)  # unreachable: the line above raises
-        assert session.get_agui_state() is None
+        assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) is None
 
     @pytest.mark.parametrize(
         "content",
@@ -203,19 +203,20 @@ class TestSessionSideEffects:
 
     def test_state_is_stored(self, session):
         AGUIRunInput.set_agui_session_keys(session, AGUIRunInput.parse(body(state={"step": 1})))
-        assert session.get_agui_state() == {"step": 1}
+        assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) == {"step": 1}
+        assert session.get("agui_state") is None
 
     def test_absent_state_does_not_clobber_what_is_stored(self, session):
-        session.set_agui_state({"step": 7})
+        session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"step": 7})
         AGUIRunInput.set_agui_session_keys(session, AGUIRunInput.parse(body(state=None)))
-        assert session.get_agui_state() == {"step": 7}
+        assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) == {"step": 7}
 
     def test_an_empty_state_object_does_clobber(self, session):
         """{} is a state the client sent, unlike None. Treating them alike would make it impossible
         for a client to reset the state."""
-        session.set_agui_state({"step": 7})
+        session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"step": 7})
         AGUIRunInput.set_agui_session_keys(session, AGUIRunInput.parse(body(state={})))
-        assert session.get_agui_state() == {}
+        assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) == {}
 
     def test_a_non_object_state_is_400(self, session):
         with pytest.raises(HTTPException) as exc:
@@ -238,11 +239,12 @@ class TestSessionSideEffects:
         assert AGUIRunInput.to_requests(run_input) == [AgentRequestText(prompt="hello")]
 
     def test_framework_context_is_never_written(self, session):
-        """AG-UI state is its own session key. Writing framework_context would put AG-UI data into
-        every adapter's native context and corrupt the per-framework round trip."""
+        """AG-UI state lives in nv_cache, not framework_context. Writing the latter would put AG-UI
+        data into every adapter's native context and corrupt the per-framework round trip."""
         run_input = AGUIRunInput.parse(body(state={"step": 1}, forwardedProps={"a": 1}, context=[{"description": "d", "value": "v"}]))
         AGUIRunInput.set_agui_session_keys(session, run_input)
         assert session.get_framework_context() is None
+        assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) == {"step": 1}
 
 
 class TestContentMapping:

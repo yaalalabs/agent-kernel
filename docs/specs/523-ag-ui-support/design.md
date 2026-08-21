@@ -461,8 +461,8 @@ and reaches the agent through a read-only `get_forwarded_props()` system tool.
   - **The volatile cache is the right home**, not a new `Session.Keys` member. `forwardedProps` is
   per-request by nature — AG-UI re-sends it on every run, so a previous copy is never wanted — and
   `Runtime` already clears the volatile cache after every run (`core/runtime.py:229-230`). The
-  correct lifetime comes for free, with nothing extra to document about expiry. Contrast
-  `agui_state`, which earns a top-level key precisely because it must survive the run.
+  Correct lifetime comes for free, with nothing extra to document about expiry. Contrast
+  `agui_state`, which lives in the **non-volatile cache** precisely because it must survive the run.
   - **Reached by tool, not by injection, and that is the safer shape** — the same call this design
   already makes for `RunAgentInput.context` above, which is fed to the model as tool output rather
   than as instructions. Client data should arrive where the model treats it as information, not as
@@ -484,7 +484,7 @@ and reaches the agent through a read-only `get_forwarded_props()` system tool.
   failure mode below — a client sends the field, gets no error, and the context silently never
   reaches the agent.
 - `RunAgentInput.state` is a distinct concept from `forwardedProps` — different lifetime, and it has
-a return path — and lands in its own top-level session key. See State.
+a return path — and lands in the **non-volatile cache**. See State.
 
 
 
@@ -492,8 +492,8 @@ a return path — and lands in its own top-level session key. See State.
 
 - `RunAgentInput.state` is accepted, and `StateSnapshot` is emitted. `StateDelta` is deferred to a
 follow-up, for the reasons at the end of this section.
-- AG-UI state lives in **its own session key**, a new `Session.Keys.AGUI_STATE`, not in
-  `framework_context`.
+- AG-UI state lives in the **non-volatile cache** under `AGUI_STATE_KEY = "agui_state"` (defined in
+  `core/client_state.py`), not in `framework_context` and not as a new `Session.Keys` member.
   - The security reason is the general one stated under Identity and request handling: no
     client-supplied field enters `framework_context`, because `state` arrives from the browser and
     `framework_context` is what the application set and its tools trust. `state` is simply one of
@@ -513,14 +513,16 @@ follow-up, for the reasons at the end of this section.
   - The ownership reason: they are different concepts sharing a shape. `framework_context` is
     *caller* context; `agui_state` is the *UI's*. An application already keeping tenant data in
     `framework_context` must not collide with AG-UI writing form state into the same dict.
-  - This is one more named compartment inside the existing session record, not a second session or a
-    second store entry — the same way each framework adapter already keeps its state under its own
-    key.
-- The session key and the tool functions live in **core**, and are **named for AG-UI**: the tools,
-  the prompt sections, `Session.Keys.AGUI_STATE`, the two volatile-cache keys, and the `agui.state` /
+  - **Why nv_cache rather than a reserved `Session.Keys` member.** Sandbox, WalledAI and multimodal
+    already stash durable per-session data in `nv_cache` behind a string key. Adding `AGUI_STATE` to
+    `Session.Keys` and `get/set/clear_agui_state` on `Session` would poison core with an
+    integration-specific API. The non-volatile cache is persisted with the session (`Runtime` does
+    not clear it), so the lifetime matches a top-level key without naming AG-UI on `Session`.
+- The cache keys and the tool functions live in **core**, and are **named for AG-UI**: the tools,
+  the prompt sections, `AGUI_STATE_KEY` plus the two volatile-cache keys, and the `agui.state` /
   `agui.client_context` blocks that gate them. AG-UI is the only surface that populates any of it, and
   naming these for the thing they actually do beats naming them for a generality no second surface has
-  asked for. A session key's value is persisted, which makes the storage name a migration to change.
+  asked for. A cache-key value is persisted with the session, which makes the storage name a migration to change.
   - **The filename is the one exception**: `core/client_state.py`, not `core/agui_state.py`. That is
     about placement, not behaviour. `core/` is framework- and surface-agnostic, so a filename there
     naming one integration reads as a layering breach to anyone scanning the directory — a cost paid
@@ -530,7 +532,7 @@ follow-up, for the reasons at the end of this section.
     *forced* because `core/` may not import `integration/`. `SystemToolFactory.get_all()` already
     reaches outside core for the sandbox branch (`from ..sandbox.tools import ...`). Core owns these
     because they are core capabilities — a reason, not a constraint.
-  - A wider rename — capability names for the tools, prompt sections, session key and config too —
+  - A wider rename — capability names for the tools, prompt sections, cache keys and config too —
     was implemented and then **reverted**. Recorded so it is not re-proposed: the tools genuinely do
     AG-UI work, so protocol-neutral names described them less accurately, not more.
 - Agent-facing surface is **system tools**, following multimodal's `AnalyzeAttachmentsTool` and
@@ -565,15 +567,15 @@ follow-up, for the reasons at the end of this section.
     the intended explicit opt-in; and setting `enabled: True` **without** mounting AG-UI puts the
     tools on every agent for nothing.
 - **The owner is always named, but only where it has to be** — `agui.state` in config,
-  `Session.Keys.AGUI_STATE` in the session, `get_agui_state` / `update_agui_state` as tools.
+  `AGUI_STATE_KEY` in the non-volatile cache, `get_agui_state` / `update_agui_state` as tools.
   - AG-UI calls the concept *shared state*. AK deliberately does not: a bare `shared_state` says
     nothing about **whose** state it is or what it is shared *with*, and beside `session`,
     `execution` and `multimodal` it reads as a general-purpose store it is not. That AG-UI uses the
     generic term is not a reason for AK to inherit it.
   - The config key is plain `state` because the `agui` block already supplies the owner —
     `agui.agui_state` stutters, and the objection to a bare `state` was that it is generic at *top*
-    level, which nesting removes. The session key and the tools are not nested and carry no such
-    parent, so they spell it out: `AGUI_STATE`, `get_agui_state`, `update_agui_state`.
+    level, which nesting removes. The cache key and the tools are not nested and carry no such
+    parent, so they spell it out: `agui_state`, `get_agui_state`, `update_agui_state`.
   - The rule, so a reviewer does not read the difference as an inconsistency: **name the owner
     exactly once per identifier.** The config path says it in the block; the key and the tools say it
     in themselves.
@@ -583,7 +585,7 @@ follow-up, for the reasons at the end of this section.
 
   | Field | Stored | Agent reaches it via | Lifetime |
   |---|---|---|---|
-  | `state` | `Session.Keys.AGUI_STATE` | `get_agui_state` / `update_agui_state` | survives the run |
+  | `state` | non-volatile cache, `AGUI_STATE_KEY` | `get_agui_state` / `update_agui_state` | survives the run |
   | `forwardedProps` | volatile cache, reserved key | `get_forwarded_props` | cleared after the run |
   | `context` | volatile cache, reserved key | `get_agui_context` | cleared after the run |
   | `tools` · `messages` · system prompts | nowhere | — | documented non-goals |
@@ -601,10 +603,10 @@ follow-up, for the reasons at the end of this section.
   - *Holding it during the run* is unavoidable. `update_agui_state` writes somewhere and
     `get_agui_state` reads it back; the session is the only place available.
   - *Keeping it afterwards* is what is being chosen. `Runtime` clears only the volatile cache
-    (`core/runtime.py:229-230`) and stores the whole session, so a top-level key persists
-    automatically — the same reason `framework_context` does. **Not** persisting would take extra
+    (`core/runtime.py:229-230`) and stores the whole session, so an `nv_cache` entry persists
+    automatically — the same reason other durable cache keys do. **Not** persisting would take extra
     code.
-  - The decision: `AGUI_STATE` is a top-level key and **does** persist. The alternative — putting
+  - The decision: state lives in **nv_cache** and **does** persist. The alternative — putting
     it in the volatile cache, cleared every run — is the purer reading of the protocol, since the
     client owns state and re-sends it each request, and it would make the "absent `state` must not
     clobber" rule moot because nothing would be stored to clobber.
@@ -796,7 +798,7 @@ follow-up.
 |---|---|---|---|
 | 1 | **The streaming contract.** Event types with boundaries, widened `Runner.stream`, the additive `StreamChunk.event` field and the `delta` projection, plus `Runner.supports_streaming` (default `True`, declared `False` on `CrewAIRunner` and `SmolagentsRunner`). `ResponseBuilder` and the thread recorder are untouched, and `Runtime.stream` accepts `str | StreamEvent` transitionally so the adapters keep working. No adapter emits an event object yet; `Runtime.stream` synthesizes them from `str` until PR 6 | existing suite green, **zero test edits**; new tests assert all six runners declare honestly | — |
 | 2 | **Attachment source forms.** `_extract_attachment` classifies the source and splits `data:` URIs; the filter loop retains URL-sourced requests it did not consume. Shared multimodal code, no AG-UI in it | new tests across all five source forms; existing suite unchanged | — |
-| 3 | **The integration.** `integration/agui/` package, handler and routes (on the shared `AuthorisedRESTRequestHandler` and `Authoriser` — no AG-UI authoriser of its own), discovery, `to_agui` mapping and its exhaustiveness test, attachment mapping (no normalization — see PR 2), `Session.Keys.AGUI_STATE` with its accessors and the four system tools, `SystemToolFactory` branches, `StateSnapshot` emission, `forwardedProps` and `context` → volatile cache, the `agui` config block, the `agui` extra pinned `>=0.1.16`, the example frontend (Vite + React + TypeScript — see the reversal above) | new tests pass | PR 1, PR 2 |
+| 3 | **The integration.** `integration/agui/` package, handler and routes (on the shared `AuthorisedRESTRequestHandler` and `Authoriser` — no AG-UI authoriser of its own), discovery, `to_agui` mapping and its exhaustiveness test, attachment mapping (no normalization — see PR 2), AG-UI state in `nv_cache` plus the four system tools, `SystemToolFactory` branches, `StateSnapshot` emission, `forwardedProps` and `context` → volatile cache, the `agui` config block, the `agui` extra pinned `>=0.1.16`, the example frontend (Vite + React + TypeScript — see the reversal above) | new tests pass | PR 1, PR 2 |
 | 4 | **OpenAI and LangGraph.** Both already iterate their framework's full event stream with explicit boundaries; both stop discarding | per-adapter tests | PR 1 |
 | 5 | **Google ADK.** Stop skipping non-partial events, plus the in-adapter derivation of message start from `partial` | per-adapter tests, including the derivation | PR 1 |
 | 6 | **Pydantic AI, and the end of the transition.** Rewrite `stream` onto `run_stream_events()`, re-plumbing session-message bookkeeping and the `framework_context` store. Also carries the **final step**: deleting the transitional `str` tolerance PR 1 added to `Runtime.stream` | per-adapter tests; `framework_context` round-trip unchanged; **tolerance removed and a test asserts a `str`-yielding runner now fails** | PR 1 (adapter work); PRs 4 and 5 merged (final step only) |
@@ -811,8 +813,8 @@ Shape of the graph:
   - *Capability declaration folded into PR 1.* `supports_streaming` is one line per adapter plus a
   base-class default. It was separated to keep the integration PR small, but a six-line change is
   not a review unit — and it belongs with the streaming contract it declares.
-  - *The state capability folded into PR 3.* It was separate while the session key and tools were
-  surface-neutral. Naming them `agui_state` (see State) settled that they are not: the key, the
+  - *The state capability folded into PR 3.* It was separate while storage and tools were
+  surface-neutral. Naming them `agui_state` (see State) settled that they are not: the cache key, the
   tools and the config all say AG-UI, so reviewing them apart from AG-UI bought nothing. This
   removes the awkwardness of a PR whose config belonged to a feature it was not allowed to mention.
 - **The adapter work stays split three ways because the work differs in kind, not just in file.**

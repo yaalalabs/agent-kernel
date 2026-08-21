@@ -298,37 +298,30 @@ Closing it requires an **event-aware post-hook** — a contract wider than `(str
 is a core hook change and is filed as its own issue. Nothing in this spec should be built to
 anticipate it; when it lands, the projection in this section is the single place that changes.
 
-### 5. AG-UI state on the session — `core/base.py`
+### 5. AG-UI state on the session — `core/client_state.py`
 
-A fourth member on the existing enum (`core/base.py:40-48`):
-
-```python
-class Keys(Enum):
-    VOLATILE_CACHE = "v_cache"
-    NON_VOLATILE_CACHE = "nv_cache"
-    FRAMEWORK_CONTEXT = "framework_context"
-    AGUI_STATE = "agui_state"
-```
-
-with accessors modelled exactly on the `framework_context` trio (`core/base.py:186-213`):
+`Session.Keys` stays the three core members (`v_cache`, `nv_cache`, `framework_context`). AG-UI
+state gets **no** enum member and **no** `Session` accessors — the same pattern as sandbox /
+WalledAI / multimodal durable stash.
 
 ```python
-def get_agui_state(self) -> dict | None:      # live dict, never auto-creates
-def set_agui_state(self, state: dict) -> dict # rejects non-dicts with TypeError
-def clear_agui_state(self) -> None
+AGUI_STATE_KEY = "agui_state"                       # non-volatile cache
+AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"   # volatile cache
+AGUI_CONTEXT_KEY = "agui_context"                   # volatile cache
 ```
 
-Absent reads back as `None`, matching `get_framework_context`. Nothing outside `Session` spells the
-raw key string.
+`get_agui_state` / `update_agui_state` read and write `session.get_non_volatile_cache()` under
+`AGUI_STATE_KEY`. `KeyValueCache.get` returns the live dict (or `None` when absent), so tools
+mutate in place and the handler's pre-run `deepcopy` still works. Absent reads back as `None` from
+the cache; the tool returns `{}` when unset.
 
-`forwardedProps` and `context` get **no** enum member. Both live in the volatile cache, under
-`AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"` and `AGUI_CONTEXT_KEY = "agui_context"`, because
+`forwardedProps` and `context` live in the volatile cache under the other two keys, because
 `Runtime` already clears that cache after every run (`core/runtime.py:230, 275`) and both fields are
 per-request by nature — AG-UI re-sends them on every run, so a previous copy is never wanted.
-Contrast `agui_state`, which earns a top-level key precisely because it must survive the run.
+Contrast `agui_state`, which lives in **nv_cache** precisely because it must survive the run.
 
-Both constants are defined in **`core/client_state.py`** (§6) — not in `core/base.py`, and not in
-`integration/agui/`. Each has two users: a read tool in `core/` and `run_input.py` in `integration/`,
+All three constants are defined in **`core/client_state.py`** (§6) — not in `core/base.py`, and not in
+`integration/agui/`. Each has two users: a read/write tool in `core/` and `run_input.py` in `integration/`,
 and `core/` may not import from `integration/`, so `core/client_state.py` is the only placement that
 lets both import them. `run_input.py` imports them from there rather than redeclaring the strings.
 The constants, the tools and the config blocks all keep AG-UI's names, because AG-UI is what writes
@@ -338,6 +331,7 @@ in its directory listing — see design.md.
 ### 6. System tools — `core/client_state.py` (new)
 
 ```python
+AGUI_STATE_KEY = "agui_state"                       # non-volatile cache (§5)
 AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"   # volatile-cache keys, owned here (§5)
 AGUI_CONTEXT_KEY = "agui_context"
 
@@ -583,12 +577,12 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 - **"When the state changed" means this, precisely.** `design.md` names the mechanism — a pre-run
   copy the handler compares against — but the comparison has to be spelled out or it will be
   implemented wrong:
-  - The handler takes a **deep copy** of `session.get_agui_state()` *after* `run_input.py` has applied
-    any inbound `state`, and before the run starts. Copying after the inbound mapping is what stops an
-    echo: state the client just sent is state the client already has, and re-emitting it would make
-    every run produce a `StateSnapshot`.
-  - **The deep copy is load-bearing, not defensive.** `get_agui_state` returns the *live* dict,
-    matching `get_framework_context` (`core/base.py:186-192`, whose docstring says "live … so hooks
+  - The handler takes a **deep copy** of `session.get_non_volatile_cache().get(AGUI_STATE_KEY)` *after*
+    `run_input.py` has applied any inbound `state`, and before the run starts. Copying after the inbound
+    mapping is what stops an echo: state the client just sent is state the client already has, and
+    re-emitting it would make every run produce a `StateSnapshot`.
+  - **The deep copy is load-bearing, not defensive.** `KeyValueCache.get` returns the *live* dict,
+    matching how `get_framework_context` works (`core/base.py`, whose docstring says "live … so hooks
     can edit it in place"). Keeping the reference means comparing the object with itself after
     `update_agui_state` has mutated it, so the comparison reports "unchanged" on every run and
     `StateSnapshot` never fires. This is the single easiest way to implement this section wrong, and
@@ -706,7 +700,7 @@ SDK models set `alias_generator=to_camel`, so every field below is `snake_case` 
 |---|---|
 | `thread_id` | `session_id` |
 | `run_id`, `parent_run_id` | echoed on `RunStarted` / `RunFinished` for correlation; never stored |
-| `state` | `session.set_agui_state(...)`, only when not `None` |
+| `state` | `session.get_non_volatile_cache().set(AGUI_STATE_KEY, ...)`, only when not `None` |
 | `forwarded_props` | `session.get_volatile_cache().set(AGUI_FORWARDED_PROPS_KEY, ...)` |
 | `context` | `session.get_volatile_cache().set(AGUI_CONTEXT_KEY, [...])`, read back by `get_agui_context()` |
 | final `user` message content | `AgentRequestText` / `AgentRequestImage` / `AgentRequestFile` (see below) |
@@ -941,7 +935,7 @@ posture.
 | Unknown top-level field in `RunAgentInput` | Ignored. Free from the SDK's `extra="allow"` |
 | `state`, `tools`, `context` or `forwardedProps` absent | Defaulted (`None` / `[]` / `[]` / `None`). The SDK declares all four as required; AK ignores `tools` and treats the rest as optional |
 | `RunAgentInput` malformed in any other way (e.g. no `threadId`) | `HTTPException(422)`, matching what FastAPI returns for a malformed typed body |
-| `RunAgentInput.state` present but not a JSON object | `HTTPException(400)`. `Session.set_agui_state` would raise `TypeError`, which is a 500 |
+| `RunAgentInput.state` present but not a JSON object | `HTTPException(400)`. Raised in `set_agui_session_keys` before writing the cache |
 | `RunAgentInput.forwardedProps` present but not a JSON object | Ignored with a `WARNING`. Nothing reads the field back, so a 400 would reject a run over data the agent never needed — but a discarded client field is not a debug-level event |
 | `update_agui_state` called with malformed JSON | Returns `{"error": ...}` to the model; nothing is written. A tool never raises into the framework |
 | `state` / `forwardedProps` / `context` sent while the matching config block is off for this agent | Stored anyway, and a `WARNING` per field names the flag that would expose it. `set_agui_session_keys` is deliberately ungated — the write is cheap and the alternative is threading per-agent config into the inbound mapping — but silence would leave an app author watching the model ignore data it was sent, with no error and no `StateSnapshot` to go on. Both flags default to `False`, so this is the **default** configuration, not an edge case |
@@ -961,7 +955,7 @@ Run with `cd ak-py && uv run pytest`.
 | `tests/test_stream_events.py` | Discriminated-union round trip: every member serialises with its `type` and re-parses to the same class; every field is JSON-serialisable |
 | `tests/test_runtime_stream_events.py` | `Runtime.stream` populates `delta` and `event` together; a hook that redacts rewrites **both** (the §4 rule 1 check); a hook returning `None` drops the whole chunk; non-text events skip hooks; **`ReasoningDelta` reaches the hook chain but never reaches `delta`** (rule 5); and for the transitional branch — **a `str`-yielding runner's tokens are redacted and dropped by `on_stream_chunk` exactly as a `TextDelta`-yielding one's are** (rule 4), wrapped in one synthetic `MessageStart`/`MessageEnd` pair sharing a single `message_id`, and **a run whose hooks drop every token emits neither boundary** rather than an empty message. The hook assertions are the regression guard: no test in the suite references `on_stream_chunk` today, so nothing else would catch the chain being bypassed |
 | `tests/test_multimodal_source_forms.py` | All five source forms through `MultimodalPreHook`: bare base64 stored as today; `data:` split with its real mime type; `http`/`https`/`s3` neither described nor stored **and still present in the returned request list** |
-| `tests/test_agui_run_input.py` | `thread_id`→`session_id`; `state` stored, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` **and** an unknown `content[].type` in history are both ignored rather than 422, while the same unknown content type in the final user message is a 400; a body with no `user` message is a 400; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every inbound mapping** |
+| `tests/test_agui_run_input.py` | `thread_id`→`session_id`; `state` stored in nv_cache, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` **and** an unknown `content[].type` in history are both ignored rather than 422, while the same unknown content type in the final user message is a 400; a body with no `user` message is a 400; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every inbound mapping** |
 | `tests/test_agui_mapping.py` | Exhaustiveness: enumerate every member of the `StreamEvent` union and assert `AGUIMapper.to_agui` returns either an AG-UI event or an explicit `None` from a known-unmapped allowlist. A new event type with no decision fails this test |
 | `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; a runner that raises after a `TextDelta` producing `RunError` with **no** synthesised `TextMessageEnd`, which a handler balancing the boundaries would fail; and four `StateSnapshot` cases — unset→set emits, inbound `state` alone does **not** emit, no change does not emit, and a tool calling `update_agui_state` **does** emit (the last is the regression guard for the deep-copy trap in §9: with a live reference instead of a copy it silently never fires) |
 | `tests/test_client_state_tools.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.client_context.enabled`, and respects `agents` scoping |

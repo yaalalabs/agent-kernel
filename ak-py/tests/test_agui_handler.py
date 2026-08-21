@@ -3,7 +3,7 @@ Tests for the AG-UI surface (spec #523 §9, `integration/agui/handler.py`).
 
 Four of these guard failures with no other symptom:
 
-- **The StateSnapshot deep copy.** `get_agui_state()` hands back the live dict, so a handler holding
+- **The StateSnapshot deep copy.** The nv_cache entry for AG-UI state is the live dict, so a handler holding
   the reference compares the object with itself and reports "unchanged" on every run. The surface
   still works; it just never syncs state back. `test_a_tool_updating_state_emits_a_snapshot` is what
   fails when that regresses.
@@ -31,7 +31,7 @@ from fastapi.testclient import TestClient
 from agentkernel.auth import Authoriser
 from agentkernel.auth.handler import AuthValidator, ValidationResult
 from agentkernel.core.base import Agent, Runner, Session
-from agentkernel.core.client_state import AGUIClientState
+from agentkernel.core.client_state import AGUI_STATE_KEY, AGUIClientState
 from agentkernel.core.config import _AGUIConfig, _GuardrailConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta, ToolCallStart
 from agentkernel.core.hooks import PreHook
@@ -346,7 +346,7 @@ class TestRequestRejection:
             assert client.post("/agui/assistant", headers=AUTH, json=rejected).status_code == 400
 
             session = runtime.sessions().load("session-1")
-            assert session.get_agui_state() is None
+            assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) is None
             assert session.get_volatile_cache().get(AGUI_FORWARDED_PROPS_KEY) is None
 
 
@@ -468,11 +468,11 @@ class TestStateSnapshot:
             assert types[-1] == "RUN_ERROR"
 
     def test_state_survives_into_the_next_run(self, monkeypatch):
-        """It earns a durable session key precisely because it must outlive the run."""
+        """State lives in nv_cache so it outlives the run."""
         script = [lambda: AGUIClientState.update_agui_state('{"turns": 1}')]
         with serving(monkeypatch, [ScriptedAgent("assistant", script)]) as (client, runtime):
             client.post("/agui/assistant", headers=AUTH, json=body())
-            assert runtime.sessions().load("session-1").get_agui_state() == {"turns": 1}
+            assert runtime.sessions().load("session-1").get_non_volatile_cache().get(AGUI_STATE_KEY) == {"turns": 1}
 
 
 class TestClientContextDelivery:

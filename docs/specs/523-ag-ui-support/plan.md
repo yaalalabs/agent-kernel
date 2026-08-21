@@ -171,11 +171,11 @@ round-trip state.
 `ak-py/pyproject.toml`, `integration/agui/` (new, 4 modules), `examples/api/agui/` (new),
 `.github/test-config.yaml`, plus four new test files
 - **Steps:**
-  1. **Session key first** — `Session.Keys.AGUI_STATE` and its three accessors (§5). Independently
-    testable, and everything else leans on it.
+  1. **Cache keys first** — `AGUI_STATE_KEY` in nv_cache plus the two volatile-cache keys in
+    `core/client_state.py` (§5). Independently testable, and everything else leans on them.
   2. `core/client_state.py` — `AGUIClientState` carrying the four tools (`get_agui_state`,
     `update_agui_state`, `get_forwarded_props`, `get_agui_context`) and their two `SystemTool`
-     builders, plus the two volatile-cache key constants this module owns at module scope, since
+     builders, plus the three cache-key constants this module owns at module scope, since
      `run_input.py` shares them (§5, §6). Docstrings are the LLM-facing tool schema; write them as
      such.
   3. Config: `_AGUIConfig` with the nested `state` and `client_context` blocks (§Config changes),
@@ -192,15 +192,15 @@ round-trip state.
     pending: the multimodal `InputContent` types first appear in 0.1.16 (§ the `agui` extra).
   7b. **Only the filename left the protocol behind.** `core/agui_state.py` became
     `core/client_state.py`; everything inside stayed AG-UI-named — the four tools, the two prompt
-    sections, `Session.Keys.AGUI_STATE`, the volatile-cache keys, and the `agui.state` /
+    sections, `AGUI_STATE_KEY` plus the volatile-cache keys, and the `agui.state` /
     `agui.client_context` blocks. The reason is placement, not behaviour: `core/` is framework- and
     surface-agnostic, so a filename there naming one integration reads as a layering breach to anyone
     scanning the directory, while the internal names are only read by someone already in the file who
     wants to know exactly what the tools touch — and they touch AG-UI's fields.
-    A wider rename — capability names for the tools, prompt sections, session key and config as well —
+    A wider rename — capability names for the tools, prompt sections, cache keys and config as well —
     was implemented and then **reverted**. Recorded so it is not re-proposed: the tools genuinely do
-    AG-UI work, so protocol-neutral names described them less accurately, not more. The persisted
-    session-key value never moved, so no migration is implied.
+    AG-UI work, so protocol-neutral names described them less accurately, not more. State lives in
+    `nv_cache` rather than a `Session.Keys` member, so no session-key migration is implied.
     One claim in design.md is withdrawn rather than reversed: it said placement in `core/` was
     *forced* because `core/` may not import `integration/`. It is not — `SystemToolFactory.get_all()`
     already reaches outside core for the sandbox branch. Core owns these because they are core
@@ -480,7 +480,7 @@ and is retained only to make that uniformity explicit rather than accidental.
 |---|---|---|---|
 | `ak-dev-architecture/SKILL.md` | 63 | `Runner.stream` is no longer `AsyncGenerator[str, None]`; add `supports_streaming` | PR 7 |
 | `ak-dev-architecture/SKILL.md` | 95, 224, 810-814 | `Runtime.stream` — the event write-back and the `delta`/`event` pair | PR 7 |
-| `ak-dev-architecture/SKILL.md` | 42 | `Session.Keys` list gains `AGUI_STATE` and its accessors | PR 7 |
+| `ak-dev-architecture/SKILL.md` | 42 | Document AG-UI state in `nv_cache` (not a new `Session.Keys` member) | PR 7 |
 | `ak-dev-new-framework-integration/SKILL.md` | 132, 151-156, 160 | "just implement `Runner.stream()`" now means yielding events, with the adapter-state rule | PR 7 |
 | `ak-dev-new-framework-integration/SKILL.md` | 378 | checklist item gains `supports_streaming` | PR 7 |
 | `ak-dev-testing-conventions/SKILL.md` | 120-123 | the `DummyRunner.stream` snippet yields events, not token strings. **End state only** — a note that bare strings still work is false after PR 6 and would have a reader write a broken double | PR 7 |

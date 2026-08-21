@@ -12,6 +12,7 @@ from ...auth.authoriser import Authoriser, AuthValidatorAuthoriser
 from ...auth.handler import AuthValidator
 from ...core.base import Agent
 from ...core.chat_service import AgentHandler, ChatService
+from ...core.client_state import AGUI_STATE_KEY
 from ...core.config import AKConfig
 from ...core.runtime import Runtime
 from ...core.service import AgentService
@@ -146,7 +147,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         AGUIRunInput.set_agui_session_keys(session, run_input)
         self._warn_if_unreadable(agent, run_input)
 
-        state_before = deepcopy(session.get_agui_state())
+        state_before = deepcopy(session.get_non_volatile_cache().get(AGUI_STATE_KEY))
         encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]
         stream = self._events(encoder, handler, requests, run_input, state_before, user_id)
         return StreamingResponse(stream, media_type=encoder.get_content_type())
@@ -188,7 +189,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             yield encoder.encode(RunErrorEvent(message=error))
             return
 
-        state_after = session.get_agui_state()
+        state_after = session.get_non_volatile_cache().get(AGUI_STATE_KEY)
         if state_after != state_before:
             yield encoder.encode(StateSnapshotEvent(snapshot=state_after))
 

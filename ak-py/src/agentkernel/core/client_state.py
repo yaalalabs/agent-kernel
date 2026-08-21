@@ -5,6 +5,7 @@ import json
 from .model import SystemTool
 from .tool import ToolContext
 
+AGUI_STATE_KEY = "agui_state"
 AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"
 AGUI_CONTEXT_KEY = "agui_context"
 
@@ -23,7 +24,7 @@ class AGUIClientState:
         Returns:
             The current shared state object.
         """
-        return ToolContext.get().session.get_agui_state() or {}
+        return ToolContext.get().session.get_non_volatile_cache().get(AGUI_STATE_KEY) or {}
 
     @staticmethod
     def update_agui_state(updates: str) -> dict:
@@ -46,10 +47,11 @@ class AGUIClientState:
         if not isinstance(parsed, dict):
             return {"error": f"updates must be a JSON object, got {type(parsed).__name__}"}
 
-        session = ToolContext.get().session
-        state = session.get_agui_state()
+        cache = ToolContext.get().session.get_non_volatile_cache()
+        state = cache.get(AGUI_STATE_KEY)
         if state is None:
-            state = session.set_agui_state({})
+            state = {}
+            cache.set(AGUI_STATE_KEY, state)
         state.update(parsed)
         return state
 

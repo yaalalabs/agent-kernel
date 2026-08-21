@@ -8,7 +8,7 @@ from urllib.parse import unquote, urlparse
 from fastapi import HTTPException
 
 from ...core.base import Session
-from ...core.client_state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY
+from ...core.client_state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY, AGUI_STATE_KEY
 from ...core.model import AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 
 if TYPE_CHECKING:
@@ -63,7 +63,7 @@ class AGUIRunInput:
         if run_input.state is not None:
             if not isinstance(run_input.state, dict):
                 raise HTTPException(status_code=400, detail=f"RunAgentInput.state must be a JSON object, got {type(run_input.state).__name__}")
-            session.set_agui_state(run_input.state)
+            session.get_non_volatile_cache().set(AGUI_STATE_KEY, run_input.state)
 
         if run_input.forwarded_props is not None:
             if isinstance(run_input.forwarded_props, dict):
