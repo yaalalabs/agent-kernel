@@ -298,7 +298,7 @@ Closing it requires an **event-aware post-hook** — a contract wider than `(str
 is a core hook change and is filed as its own issue. Nothing in this spec should be built to
 anticipate it; when it lands, the projection in this section is the single place that changes.
 
-### 5. AG-UI state on the session — `core/client_state.py`
+### 5. AG-UI state on the session — `integration/agui/state.py`
 
 `Session.Keys` stays the three core members (`v_cache`, `nv_cache`, `framework_context`). AG-UI
 state gets **no** enum member and **no** `Session` accessors — the same pattern as sandbox /
@@ -320,22 +320,20 @@ the cache; the tool returns `{}` when unset.
 per-request by nature — AG-UI re-sends them on every run, so a previous copy is never wanted.
 Contrast `agui_state`, which lives in **nv_cache** precisely because it must survive the run.
 
-All three constants are defined in **`core/client_state.py`** (§6) — not in `core/base.py`, and not in
-`integration/agui/`. Each has two users: a read/write tool in `core/` and `run_input.py` in `integration/`,
-and `core/` may not import from `integration/`, so `core/client_state.py` is the only placement that
-lets both import them. `run_input.py` imports them from there rather than redeclaring the strings.
+All three constants are defined in **`integration/agui/state.py`** (§6) — not in `core/base.py`.
+`run_input.py` / `handler.py` import them as siblings; `SystemToolFactory` lazy-imports
+`AGUIState` from the same module when the config flags are on (same pattern as sandbox tools).
 The constants, the tools and the config blocks all keep AG-UI's names, because AG-UI is what writes
-and gates them. Only the **filename** is surface-neutral, so that `core/` carries no integration name
-in its directory listing — see design.md.
+and gates them — see design.md.
 
-### 6. System tools — `core/client_state.py` (new)
+### 6. System tools — `integration/agui/state.py`
 
 ```python
 AGUI_STATE_KEY = "agui_state"                       # non-volatile cache (§5)
 AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"   # volatile-cache keys, owned here (§5)
 AGUI_CONTEXT_KEY = "agui_context"
 
-class AGUIClientState:                 # a namespace, not state: every tool reads ToolContext.get()
+class AGUIState:                 # a namespace, not state: every tool reads ToolContext.get()
     @staticmethod
     def get_agui_state() -> dict:                   # returns {} when unset
     @staticmethod
@@ -363,11 +361,11 @@ class AGUIClientState:                 # a namespace, not state: every tool read
   outright — `UserError: additionalProperties should not be set for object types` — so with a `dict`
   parameter *every* agent with `agui.state.enabled` fails to construct, not just at call time.
   Verified by probing the SDK: only **parameters** are affected, so the three readers keep their
-  `dict` / `list[dict]` return types. The tools being `staticmethod`s on `AGUIClientState` changes
+  `dict` / `list[dict]` return types. The tools being `staticmethod`s on `AGUIState` changes
   nothing here — verified: a static method binds to the same name and schema as a module function,
   where an *unbound* method would have leaked `self` as a required parameter.
   The tool parses the string and returns `{"error": ...}` on malformed input rather than raising,
-  matching the sandbox tools' contract. A binding test in `test_client_state_tools.py` guards it.
+  matching the sandbox tools' contract. A binding test in `test_agui_state.py` guards it.
 - One config block, two tools. `agui.client_context` gates both `get_forwarded_props` and
   `get_agui_context`: they are the same capability — read-only, client-supplied, pull-based context
   the model may consult but must not obey — and splitting them into two flags would make an operator
@@ -387,13 +385,13 @@ Two further branches of the shape already used twice:
 agui_cfg = getattr(AKConfig.get(), "agui", None)
 state_cfg = getattr(agui_cfg, "state", None) if agui_cfg else None
 if state_cfg and state_cfg.enabled and SystemToolFactory._agent_allowed(state_cfg, agent_name):
-    from .client_state import AGUIClientState
-    tools.extend(AGUIClientState.state_tools())
+    from ..integration.agui.state import AGUIState
+    tools.extend(AGUIState.state_tools())
 
 cc_cfg = getattr(agui_cfg, "client_context", None) if agui_cfg else None
 if cc_cfg and cc_cfg.enabled and SystemToolFactory._agent_allowed(cc_cfg, agent_name):
-    from .client_state import AGUIClientState            # get_forwarded_props + get_agui_context
-    tools.extend(AGUIClientState.client_context_tools())
+    from ..integration.agui.state import AGUIState            # get_forwarded_props + get_agui_context
+    tools.extend(AGUIState.client_context_tools())
 ```
 
 `_agent_allowed` (`core/tool.py:167-176`) is reused unchanged — it reads exactly `enabled` and
@@ -506,6 +504,7 @@ dangling reference is never passed to the agent.
 integration/agui/
 ├── __init__.py        # exports AGUIRequestHandler
 ├── handler.py         # AGUIRequestHandler(AuthorisedRESTRequestHandler)
+├── state.py           # AGUIState tools + cache keys; SystemToolFactory imports this module directly
 ├── mapping.py         # AGUIMapper.to_agui(event) -> ag_ui event | None
 └── run_input.py       # AGUIRunInput.parse / to_requests / set_agui_session_keys
 ```
@@ -709,7 +708,7 @@ SDK models set `alias_generator=to_camel`, so every field below is `snake_case` 
 **`context` is delivered as tool output, never as instructions.** `design.md` requires the
 anti-injection posture, and the mechanism is the one `forwardedProps` already uses: the entries land
 in the volatile cache and the model pulls them through a read-only `get_agui_context()` system tool
-in `core/client_state.py`, gated by the same `agui.client_context` config block. `Context` is
+in `integration/agui/state.py`, gated by the same `agui.client_context` config block. `Context` is
 `{description: str, value: str}` (verified against the SDK), so the tool returns a list of those
 pairs unchanged — no flattening into the prompt, which is exactly what would turn client text into
 instructions. That makes **four** system tools in total, not three.
@@ -958,7 +957,7 @@ Run with `cd ak-py && uv run pytest`.
 | `tests/test_agui_run_input.py` | `thread_id`→`session_id`; `state` stored in nv_cache, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` **and** an unknown `content[].type` in history are both ignored rather than 422, while the same unknown content type in the final user message is a 400; a body with no `user` message is a 400; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every inbound mapping** |
 | `tests/test_agui_mapping.py` | Exhaustiveness: enumerate every member of the `StreamEvent` union and assert `AGUIMapper.to_agui` returns either an AG-UI event or an explicit `None` from a known-unmapped allowlist. A new event type with no decision fails this test |
 | `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; a runner that raises after a `TextDelta` producing `RunError` with **no** synthesised `TextMessageEnd`, which a handler balancing the boundaries would fail; and four `StateSnapshot` cases — unset→set emits, inbound `state` alone does **not** emit, no change does not emit, and a tool calling `update_agui_state` **does** emit (the last is the regression guard for the deep-copy trap in §9: with a live reference instead of a copy it silently never fires) |
-| `tests/test_client_state_tools.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.client_context.enabled`, and respects `agents` scoping |
+| `tests/test_agui_state.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.client_context.enabled`, and respects `agents` scoping |
 
 ### Existing test files that change
 

@@ -2,15 +2,15 @@
 
 import json
 
-from .model import SystemTool
-from .tool import ToolContext
+from ...core.model import SystemTool
+from ...core.tool import ToolContext
 
 AGUI_STATE_KEY = "agui_state"
 AGUI_FORWARDED_PROPS_KEY = "agui_forwarded_props"
 AGUI_CONTEXT_KEY = "agui_context"
 
 
-class AGUIClientState:
+class AGUIState:
     """The four AG-UI tools and the builders that hand them to SystemToolFactory."""
 
     @staticmethod

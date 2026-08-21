@@ -8,7 +8,7 @@ from urllib.parse import unquote, urlparse
 from fastapi import HTTPException
 
 from ...core.base import Session
-from ...core.client_state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY, AGUI_STATE_KEY
+from .state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY, AGUI_STATE_KEY
 from ...core.model import AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
 
 if TYPE_CHECKING:

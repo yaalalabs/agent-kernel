@@ -493,7 +493,7 @@ a return path — and lands in the **non-volatile cache**. See State.
 - `RunAgentInput.state` is accepted, and `StateSnapshot` is emitted. `StateDelta` is deferred to a
 follow-up, for the reasons at the end of this section.
 - AG-UI state lives in the **non-volatile cache** under `AGUI_STATE_KEY = "agui_state"` (defined in
-  `core/client_state.py`), not in `framework_context` and not as a new `Session.Keys` member.
+  `integration/agui/state.py`), not in `framework_context` and not as a new `Session.Keys` member.
   - The security reason is the general one stated under Identity and request handling: no
     client-supplied field enters `framework_context`, because `state` arrives from the browser and
     `framework_context` is what the application set and its tools trust. `state` is simply one of
@@ -518,20 +518,17 @@ follow-up, for the reasons at the end of this section.
     `Session.Keys` and `get/set/clear_agui_state` on `Session` would poison core with an
     integration-specific API. The non-volatile cache is persisted with the session (`Runtime` does
     not clear it), so the lifetime matches a top-level key without naming AG-UI on `Session`.
-- The cache keys and the tool functions live in **core**, and are **named for AG-UI**: the tools,
-  the prompt sections, `AGUI_STATE_KEY` plus the two volatile-cache keys, and the `agui.state` /
-  `agui.client_context` blocks that gate them. AG-UI is the only surface that populates any of it, and
-  naming these for the thing they actually do beats naming them for a generality no second surface has
-  asked for. A cache-key value is persisted with the session, which makes the storage name a migration to change.
-  - **The filename is the one exception**: `core/client_state.py`, not `core/agui_state.py`. That is
-    about placement, not behaviour. `core/` is framework- and surface-agnostic, so a filename there
-    naming one integration reads as a layering breach to anyone scanning the directory — a cost paid
-    by every reader, where the internal names are only read by someone already in the file. The
-    filename describes the capability's shape; the module docstring says whose capability it is.
-  - One earlier claim in this document was wrong and is withdrawn: that placement in `core/` was
-    *forced* because `core/` may not import `integration/`. `SystemToolFactory.get_all()` already
-    reaches outside core for the sandbox branch (`from ..sandbox.tools import ...`). Core owns these
-    because they are core capabilities — a reason, not a constraint.
+- The cache keys and the tool functions live in **`integration/agui/state.py`**, and are
+  **named for AG-UI**: the tools, the prompt sections, `AGUI_STATE_KEY` plus the two volatile-cache
+  keys, and the `agui.state` / `agui.client_context` blocks that gate them. AG-UI is the only surface
+  that populates any of it, and naming these for the thing they actually do beats naming them for a
+  generality no second surface has asked for. A cache-key value is persisted with the session, which
+  makes the storage name a migration to change.
+  - **Placement:** the module sits with the AG-UI integration, not under `core/`. Putting an
+    AG-UI-named module in `core/` read as a layering breach in the directory listing; keeping it in
+    `integration/agui/` matches ownership. `SystemToolFactory.get_all()` lazy-imports it the same
+    way it already reaches outside core for sandbox (`from ..sandbox.tools import ...` /
+    `from ..integration.agui.state import AGUIState`).
   - A wider rename — capability names for the tools, prompt sections, cache keys and config too —
     was implemented and then **reverted**. Recorded so it is not re-proposed: the tools genuinely do
     AG-UI work, so protocol-neutral names described them less accurately, not more.

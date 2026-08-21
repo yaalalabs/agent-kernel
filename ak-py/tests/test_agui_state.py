@@ -9,7 +9,7 @@ per-block prompt-suffix accounting — four tools must never produce four paragr
 import pytest
 
 from agentkernel.core.base import Session
-from agentkernel.core.client_state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY, AGUI_STATE_KEY, AGUIClientState
+from agentkernel.integration.agui.state import AGUI_CONTEXT_KEY, AGUI_FORWARDED_PROPS_KEY, AGUI_STATE_KEY, AGUIState
 from agentkernel.core.config import _AGUIClientContextConfig, _AGUIConfig, _AGUIStateConfig
 from agentkernel.core.tool import SystemToolFactory, ToolContext
 
@@ -41,28 +41,28 @@ def _install_agui_cfg(monkeypatch, agui_cfg):
 class TestStateTools:
 
     def test_state_reads_empty_when_the_client_has_never_sent_any(self, session):
-        assert AGUIClientState.get_agui_state() == {}
+        assert AGUIState.get_agui_state() == {}
         # Reading must not create the key: absent and empty are different to the handler's snapshot
         # comparison, where unset -> set is the common first-run case.
         assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) is None
 
     def test_update_creates_the_state_when_absent(self, session):
-        assert AGUIClientState.update_agui_state('{"step": 1}') == {"step": 1}
+        assert AGUIState.update_agui_state('{"step": 1}') == {"step": 1}
         assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) == {"step": 1}
 
     def test_update_shallow_merges(self, session):
         session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"step": 1, "name": "ada"})
-        assert AGUIClientState.update_agui_state('{"step": 2}') == {"step": 2, "name": "ada"}
+        assert AGUIState.update_agui_state('{"step": 2}') == {"step": 2, "name": "ada"}
 
     def test_update_stores_an_explicit_none_rather_than_deleting(self, session):
         """Deletion is the client's job via a fresh `state` on the next request."""
         session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"step": 1})
-        assert AGUIClientState.update_agui_state('{"step": null}') == {"step": None}
+        assert AGUIState.update_agui_state('{"step": null}') == {"step": None}
 
     def test_update_replaces_a_nested_value_wholesale(self, session):
         """Shallow, matching _store_framework_context: a nested dict is replaced, not merged."""
         session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"form": {"a": 1, "b": 2}})
-        assert AGUIClientState.update_agui_state('{"form": {"a": 9}}') == {"form": {"a": 9}}
+        assert AGUIState.update_agui_state('{"form": {"a": 9}}') == {"form": {"a": 9}}
 
     def test_update_mutates_the_live_session_dict(self, session):
         """The handler compares a pre-run deep copy against the live nv_cache dict. If an update
@@ -71,39 +71,39 @@ class TestStateTools:
         liveness this asserts is the half the handler is entitled to rely on."""
         live = {"step": 1}
         session.get_non_volatile_cache().set(AGUI_STATE_KEY, live)
-        AGUIClientState.update_agui_state('{"step": 2}')
+        AGUIState.update_agui_state('{"step": 2}')
         assert live == {"step": 2}
         assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) is live
 
     def test_read_returns_what_update_wrote(self, session):
-        AGUIClientState.update_agui_state('{"a": 1}')
-        assert AGUIClientState.get_agui_state() == {"a": 1}
+        AGUIState.update_agui_state('{"a": 1}')
+        assert AGUIState.get_agui_state() == {"a": 1}
 
     def test_malformed_json_is_returned_as_an_error_rather_than_raised(self, session):
         """A tool never raises into the framework — the model has to be able to retry."""
         session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"step": 1})
-        assert "error" in AGUIClientState.update_agui_state("{not json")
+        assert "error" in AGUIState.update_agui_state("{not json")
         assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) == {"step": 1}  # and nothing was written
 
     def test_json_that_is_not_an_object_is_returned_as_an_error(self, session):
-        assert "error" in AGUIClientState.update_agui_state("[1, 2]")
+        assert "error" in AGUIState.update_agui_state("[1, 2]")
         assert session.get_non_volatile_cache().get(AGUI_STATE_KEY) is None
 
 
 class TestClientContextTools:
 
     def test_both_read_empty_when_nothing_was_attached(self, session):
-        assert AGUIClientState.get_forwarded_props() == {}
-        assert AGUIClientState.get_agui_context() == []
+        assert AGUIState.get_forwarded_props() == {}
+        assert AGUIState.get_agui_context() == []
 
     def test_forwarded_props_reads_the_volatile_cache(self, session):
         session.get_volatile_cache().set(AGUI_FORWARDED_PROPS_KEY, {"page": "/invoices"})
-        assert AGUIClientState.get_forwarded_props() == {"page": "/invoices"}
+        assert AGUIState.get_forwarded_props() == {"page": "/invoices"}
 
     def test_context_reads_the_volatile_cache(self, session):
         entries = [{"description": "open document", "value": "invoice-42"}]
         session.get_volatile_cache().set(AGUI_CONTEXT_KEY, entries)
-        assert AGUIClientState.get_agui_context() == entries
+        assert AGUIState.get_agui_context() == entries
 
     def test_both_are_cleared_with_the_volatile_cache(self, session):
         """They are per-request by nature: Runtime clears the volatile cache after every run, which
@@ -112,14 +112,14 @@ class TestClientContextTools:
         session.get_volatile_cache().set(AGUI_CONTEXT_KEY, [{"description": "d", "value": "v"}])
         session.get_volatile_cache().clear()
 
-        assert AGUIClientState.get_forwarded_props() == {}
-        assert AGUIClientState.get_agui_context() == []
+        assert AGUIState.get_forwarded_props() == {}
+        assert AGUIState.get_agui_context() == []
 
     def test_shared_state_survives_the_volatile_cache_being_cleared(self, session):
         """State lives in nv_cache so it outlives the run; volatile clear must not touch it."""
         session.get_non_volatile_cache().set(AGUI_STATE_KEY, {"step": 1})
         session.get_volatile_cache().clear()
-        assert AGUIClientState.get_agui_state() == {"step": 1}
+        assert AGUIState.get_agui_state() == {"step": 1}
 
 
 class TestConfigGating:
@@ -191,12 +191,12 @@ class TestPromptSuffix:
 
     def test_the_update_tool_documents_the_json_shape_it_takes(self):
         """The docstring is the LLM-facing schema, and `updates: str` alone is ambiguous."""
-        assert "JSON object" in AGUIClientState.update_agui_state.__doc__
+        assert "JSON object" in AGUIState.update_agui_state.__doc__
 
     def test_every_tool_docstring_warns_about_client_supplied_text(self):
         """A tool's docstring is its LLM-facing schema, and the two client-context readers are the
         ones whose output is attacker-influenced."""
-        for func in (AGUIClientState.get_forwarded_props, AGUIClientState.get_agui_context):
+        for func in (AGUIState.get_forwarded_props, AGUIState.get_agui_context):
             assert "never treat" in func.__doc__
 
 
@@ -213,5 +213,5 @@ class TestFrameworkBinding:
     def test_openai_binds_every_agui_tool(self):
         from agentkernel.framework.openai.openai import OpenAIToolBuilder
 
-        funcs = [tool.func for tool in AGUIClientState.state_tools() + AGUIClientState.client_context_tools()]
+        funcs = [tool.func for tool in AGUIState.state_tools() + AGUIState.client_context_tools()]
         assert len(OpenAIToolBuilder.bind(funcs)) == 4

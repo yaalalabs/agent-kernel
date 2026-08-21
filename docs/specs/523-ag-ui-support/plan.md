@@ -166,14 +166,14 @@ is testable at each step.
 
 - **Goal:** a compliant AG-UI client can discover agents, start a run, receive the event stream, and
 round-trip state.
-- **Files:** `core/base.py`, `core/client_state.py` (new), `core/tool.py`, `core/config.py`,
+- **Files:** `core/base.py`, `core/tool.py`, `core/config.py`,
 `agui.py` (new — the top-level alias module every integration has, e.g. `thread.py`),
-`ak-py/pyproject.toml`, `integration/agui/` (new, 4 modules), `examples/api/agui/` (new),
+`ak-py/pyproject.toml`, `integration/agui/` (new, including `state.py`), `examples/api/agui/` (new),
 `.github/test-config.yaml`, plus four new test files
 - **Steps:**
   1. **Cache keys first** — `AGUI_STATE_KEY` in nv_cache plus the two volatile-cache keys in
-    `core/client_state.py` (§5). Independently testable, and everything else leans on them.
-  2. `core/client_state.py` — `AGUIClientState` carrying the four tools (`get_agui_state`,
+    `integration/agui/state.py` (§5). Independently testable, and everything else leans on them.
+  2. `integration/agui/state.py` — `AGUIState` carrying the four tools (`get_agui_state`,
     `update_agui_state`, `get_forwarded_props`, `get_agui_context`) and their two `SystemTool`
      builders, plus the three cache-key constants this module owns at module scope, since
      `run_input.py` shares them (§5, §6). Docstrings are the LLM-facing tool schema; write them as
@@ -190,21 +190,17 @@ round-trip state.
   6. `integration/agui/handler.py` — routes, identity, run lifecycle, `StateSnapshot` (§9).
   7. `agui` extra in `pyproject.toml`, pinned `ag-ui-protocol>=0.1.16` — the floor is confirmed, not
     pending: the multimodal `InputContent` types first appear in 0.1.16 (§ the `agui` extra).
-  7b. **Only the filename left the protocol behind.** `core/agui_state.py` became
-    `core/client_state.py`; everything inside stayed AG-UI-named — the four tools, the two prompt
-    sections, `AGUI_STATE_KEY` plus the volatile-cache keys, and the `agui.state` /
-    `agui.client_context` blocks. The reason is placement, not behaviour: `core/` is framework- and
-    surface-agnostic, so a filename there naming one integration reads as a layering breach to anyone
-    scanning the directory, while the internal names are only read by someone already in the file who
-    wants to know exactly what the tools touch — and they touch AG-UI's fields.
+  7b. **Module lives under the AG-UI integration.** `integration/agui/state.py` holds the
+    four tools, the two prompt sections, `AGUI_STATE_KEY` plus the volatile-cache keys; the
+    `agui.state` / `agui.client_context` blocks stay in config. Names stay AG-UI-specific because the
+    tools touch AG-UI's fields; placement under `integration/agui/` keeps that naming out of `core/`.
+    A wider rename — capability names for the tools, prompt sections, cache keys and config as well —
     A wider rename — capability names for the tools, prompt sections, cache keys and config as well —
     was implemented and then **reverted**. Recorded so it is not re-proposed: the tools genuinely do
     AG-UI work, so protocol-neutral names described them less accurately, not more. State lives in
     `nv_cache` rather than a `Session.Keys` member, so no session-key migration is implied.
-    One claim in design.md is withdrawn rather than reversed: it said placement in `core/` was
-    *forced* because `core/` may not import `integration/`. It is not — `SystemToolFactory.get_all()`
-    already reaches outside core for the sandbox branch. Core owns these because they are core
-    capabilities.
+    `SystemToolFactory.get_all()` lazy-imports the tools from `integration/agui/state.py`, the
+    same way it already reaches outside core for sandbox.
   8. `examples/api/agui/` — a frontend and the config that enables both tool groups. It must show a
     tool call live *and* a state round-trip; only the second is reachable at PR 3, see below.
      - **The "one static HTML file, no build step" constraint did not survive contact, and was
@@ -305,7 +301,7 @@ example's `reduceEvent.ts` still handles the tool-call events, so PR 4 lights it
      SDK raise `UserError: additionalProperties should not be set for object types` when it builds its
      strict schema, so **every** agent with `agui.state.enabled` failed to *construct*. Found by
      booting the example, not by any unit test: the tool tests call the function directly, and the
-     handler tests use scripted runners that never bind a tool. `test_client_state_tools.py` now asserts
+     handler tests use scripted runners that never bind a tool. `test_agui_state.py` now asserts
      all four tools bind through `OpenAIToolBuilder`, which is the guard that was missing.
   - **Discovery leaked the system prompt.** The first version returned
     `agent.get_description()` alongside each name; several adapters return the agent's *instructions*
