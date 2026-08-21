@@ -122,7 +122,7 @@ Test.compare(
 
 **Note:** The `expected` parameter is a list. The test passes if the actual response has semantic similarity above the threshold with **any** of the expected answers.
 
-`expected` is required in llm mode — `GEval` judges whether the actual response conveys the same information as each expected answer; there is no reference-free relevancy fallback.
+`expected` is required in llm mode — `GEval` judges whether the actual response conveys the same information as each expected answer, and is written to still pass a verbose response that contains a short `expected` phrase; there is no reference-free relevancy fallback.
 
 #### Fallback Mode (Default)
 Tries score matching first, falls back to llm evaluation if score fails:

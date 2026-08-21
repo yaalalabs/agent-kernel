@@ -92,7 +92,9 @@ phrase does not match under score mode alone.
 
 Uses LLM-as-judge evaluation for semantic similarity. The built-in evaluator (DeepEval) uses the
 `GEval` metric, judging whether the actual response conveys the same information as the expected
-answer:
+answer. The rubric is written to give credit when `expected` is a short phrase or keyword embedded
+in a longer, otherwise-correct response — llm mode (and the llm fallback in `fallback` mode) is the
+intended way to match the verbose-but-correct case that score mode's exact match rejects:
 
 ```python
 # Initialize with llm mode

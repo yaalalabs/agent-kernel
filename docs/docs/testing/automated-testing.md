@@ -96,7 +96,8 @@ async def test_llm_evaluation(test_client):
 
 **Llm Mode Metrics:**
 - Uses `GEval`, an LLM rubric judging whether the actual response conveys the same information as
-  each expected answer. Passes if **any** exceeds threshold. `expected` is required.
+  each expected answer, without penalizing extra detail beyond a short `expected` phrase. Passes if
+  **any** exceeds threshold. `expected` is required.
 
 **Note:** When multiple expected answers are provided, the llm evaluator compares against each one and passes if **any** score meets the threshold.
 
