@@ -166,12 +166,17 @@ async def test_a_tool_call_is_streamed_as_tool_call_events(base_url):
     assert "TOOL_CALL_START" in types, types
     assert "TOOL_CALL_END" in types, types
 
-    # The call and its result correlate on one id, which is what lets a client attach the result to
-    # the card it already rendered.
-    call_ids = {event["toolCallId"] for event in events if event["type"].startswith("TOOL_CALL_")}
-    assert len(call_ids) >= 1
     started = [e for e in events if e["type"] == "TOOL_CALL_START"]
-    assert any(e["toolCallName"] == "count_open_tasks" for e in started), [e.get("toolCallName") for e in started]
+    call = next((e for e in started if e["toolCallName"] == "count_open_tasks"), None)
+    assert call is not None, [e.get("toolCallName") for e in started]
+
+    # The result must carry the *same* id as the call, which is what lets a client attach it to the
+    # card it already rendered. Matching the specific call's id rather than counting a set of every
+    # TOOL_CALL_* id: that set is non-empty even when the two disagree, so it cannot fail on the
+    # decorrelation it is meant to catch. Scoped to this call, not `== 1`, because the model is free
+    # to reach for a shared-state tool in the same turn.
+    result_ids = {e["toolCallId"] for e in events if e["type"] == "TOOL_CALL_RESULT"}
+    assert call["toolCallId"] in result_ids, (call["toolCallId"], result_ids)
 
 
 @pytest.mark.skipif(not os.getenv("AK_DEMO_REASONING_MODEL"), reason="reasoning is opt-in; set AK_DEMO_REASONING_MODEL")
@@ -180,9 +185,11 @@ async def test_reasoning_is_streamed_on_its_own_events_when_enabled(base_url):
     """Skipped by default, and deliberately so: the CI model emits no reasoning, and pointing this
     example at a reasoning model on every PR would make it slower and pricier for no coverage gain.
 
-    Asserting the *separation* rather than the content — reasoning must arrive on REASONING_MESSAGE_*
-    and never inside TEXT_MESSAGE_CONTENT, which is what keeps chain-of-thought out of the answer a
-    plain-text client concatenates (§4 rule 5).
+    Asserting that the two streams are *addressed* separately: reasoning arrives on
+    REASONING_MESSAGE_* and carries message ids disjoint from the answer's, so a client renders the
+    thinking block without splicing it into the reply. That reasoning text never rides in
+    `StreamChunk.delta` (§4 rule 5) is a stronger claim than disjoint ids can support, and is pinned
+    where it belongs, in `ak-py/tests/test_runtime_stream_events.py`.
     """
     events = await collect(base_url, run_input("Plan the order to do two errands in, briefly.", str(uuid.uuid4())))
     types = [event["type"] for event in events]

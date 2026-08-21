@@ -88,7 +88,7 @@ AWS Lambda serverless deployment examples:
 - **`langgraph/`** - LangGraph agents running on AWS Lambda
 - **`openai/`** - OpenAI agents running on AWS Lambda
 - **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
-- **`streaming-openai/`** - OpenAI agents with WebSocket token-level streaming (`execution.mode: stream`)
+- **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: stream`)
 
 ### 📁 Azure Containerized Examples (`/examples/azure-containerized`)
 

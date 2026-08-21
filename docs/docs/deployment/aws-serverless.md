@@ -137,7 +137,7 @@ The request handler receives the incoming API request, the agent runner executes
 
 In **WebSocket async mode**, the full agent response is buffered and sent as a single `CHAT_RESPONSE` message once the agent finishes.
 
-In **WebSocket stream mode**, each generated token is sent as a separate `STREAM_CHUNK` message as soon as it is produced, enabling token-level real-time streaming to the client. With queues enabled, `ServerlessStreamAgentRunner` publishes one SQS message per chunk; the response handler then broadcasts each chunk individually via WebSocket. Without queues, the request handler Lambda streams chunks directly through the WebSocket connection.
+In **WebSocket stream mode**, each stream event is sent as a separate `STREAM_CHUNK` message as soon as it is produced, giving the client the answer's text deltas, the agent's reasoning, and its tool calls as they happen. With queues enabled, `ServerlessStreamAgentRunner` publishes one SQS message per chunk; the response handler then broadcasts each chunk individually via WebSocket. Without queues, the request handler Lambda streams chunks directly through the WebSocket connection.
 
 ## Prerequisites
 
@@ -975,7 +975,7 @@ The AWS serverless runtime supports these execution modes:
 
 - `rest_sync` - Synchronous REST: sends request to SQS queue and immediately waits for the matching response from the response store
 - `rest_async` - Asynchronous REST: submits request to SQS queue via POST and returns immediately with ACCEPTED status and a request_id, then poll for response via GET using the same request_id
-- `stream` - Token-level WebSocket streaming: sends each generated token as a separate `STREAM_CHUNK` message via WebSocket as soon as it is produced. Uses `ServerlessStreamAgentRunner` when queues are configured, or direct in-Lambda streaming when queues are disabled. Requires WebSocket API and `websocket_api` configuration.
+- `stream` - Event-level WebSocket streaming: sends each stream event as a separate `STREAM_CHUNK` message via WebSocket as soon as it is produced. Uses `ServerlessStreamAgentRunner` when queues are configured, or direct in-Lambda streaming when queues are disabled. Requires WebSocket API and `websocket_api` configuration.
 - `async` - Full-response WebSocket: buffers the complete agent response and broadcasts it as a single `CHAT_RESPONSE` message via WebSocket once the agent finishes. Requires WebSocket API and `websocket_api` configuration. Response store is not used.
 
 **Queue Mode Interaction**:
@@ -1054,7 +1054,7 @@ export AK_EXECUTION__RESPONSE_STORE__DELAY=5
 
 ### WebSocket Configuration
 
-For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), you need to configure WebSocket API settings in your `config.yaml`. Both modes use the same WebSocket infrastructure; the only difference is how the agent response is delivered to the client (one full message vs per-token chunks).
+For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), you need to configure WebSocket API settings in your `config.yaml`. Both modes use the same WebSocket infrastructure; the only difference is how the agent response is delivered to the client (one full message vs one chunk per stream event).
 
 ```yaml
 websocket_api:

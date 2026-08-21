@@ -32,7 +32,7 @@ graph TB
 The Runtime:
 - **Maintains** global agent registry
 - **Manages** sessions across requests
-- **Executes** agents through `run()` (single reply) and `stream()` (token-level `StreamChunk`s)
+- **Executes** agents through `run()` (single reply) and `stream()` (one `StreamChunk` per typed stream event)
 - **Applies** pre/post hooks around every execution, including system hooks (input/output guardrails, multimodal preprocessing)
 - **Coordinates** execution across modes (CLI, API, Lambda, queue consumers)
 - **Enables** service integration (MCP, A2A)
@@ -325,7 +325,7 @@ runtime = Runtime.current()
 - Runtime is the global orchestrator
 - Maintains agent registry
 - Manages sessions
-- `run()` executes with the full hook pipeline; `stream()` yields token-level `StreamChunk`s
+- `run()` executes with the full hook pipeline; `stream()` yields one `StreamChunk` per stream event
 - Provides centralized configuration
 - Supports multiple execution modes
 - Use `Runtime.current()` to access the active runtime instance

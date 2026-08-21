@@ -212,7 +212,7 @@ Pydantic-based configuration:
   - `AgentReplyText`, 
   - `AgentReplyImage`
   - `AgentReplyAny`: `content: dict`: returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`, Pydantic AI `output_type`); `str(reply)` returns the JSON-serialized content. Non-streaming only.
-  - `StreamChunk`: `delta: str | None`, `done: bool`, `error: str | None`, `session_id: str | None`: yielded by `Runtime.stream()` / `AgentService.stream_multi()` for token-level streaming
+  - `StreamChunk`: `delta: str | None`, `event: StreamEvent | None`, `done: bool`, `error: str | None`, `session_id: str | None`: one frame of a streamed response, yielded per stream event by `Runtime.stream()` / `AgentService.stream_multi()`. `delta` carries assistant prose only and is what plain-text consumers concatenate; `event` carries the full typed event, for consumers that render reasoning, tool calls and message boundaries. `Runtime.stream` is the only place that populates both, so a `StreamChunk(delta=...)` built directly still serialises as it always did
 - Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
@@ -536,9 +536,12 @@ ak-py/src/agentkernel/
 │   │   │   └── ecs_io_handler.py        # ECSIOHandler: entrypoint: wires both threads
 │   │   └── core/            # Shared AWS-only: SQSHandler, ResponseStore, websocket_service.py (WebSocketConnectionStore, DynamoDB, AWSWebSocketHandler, API Gateway Management API push, extends WebSocketHandlerABC)
 │   └── azure/               # Azure Functions handler
-├── integration/             # Integrations (messaging platforms + conversation threads)
+├── integration/             # Integrations (messaging platforms + conversation threads + AG-UI)
 │   ├── thread/              # Conversation Thread Support: AgentThreadRequestHandler, ThreadRecorder,
 │   │                        #   ConversationThreadManager, models, naming, store/ backends (alias: agentkernel.thread)
+│   ├── agui/                # AG-UI protocol surface: AGUIRequestHandler (routes), mapping.py
+│   │                        #   (StreamEvent -> AG-UI events), run_input.py (RunAgentInput parsing)
+│   │                        #   (alias: agentkernel.agui)
 │   ├── slack/
 │   ├── whatsapp/
 │   ├── messenger/

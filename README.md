@@ -43,7 +43,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 | 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
 | 🔍 **Production Observability** | LangFuse, OpenLLMetry, and Pydantic Logfire tracing wired in. Every agent, tool, and LLM call — visible. |
-| 🤝 **Open Standards** | Native **MCP** (Model Context Protocol) and **A2A** (Agent-to-Agent) support. |
+| 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), and **AG-UI** (streamed events to your own frontend) support. |
 | 🆓 **Apache 2.0** | No licensing fees. No vendor lock-in. Production-ready open source. |
 
 > ⭐ **If Agent Kernel is solving real problems for you, please star the repo — it's the single best way to help us grow.**
@@ -145,6 +145,7 @@ Build once. Ship to every channel your users live on. No bespoke bot code.
 
 - **MCP (Model Context Protocol)** — Connect agents to external tools, data sources, and services. Optionally expose your agents *as* MCP tools.
 - **A2A (Agent-to-Agent)** — Native message passing, handoffs, and coordination between agents in a shared ecosystem.
+- **AG-UI** — Serve an agent to your own frontend as a stream of typed events: the answer as it arrives, the agent's reasoning, each tool call with its arguments and result, plus a shared state object the UI and the agent both read and write. Unlike the channels above, this is a protocol your UI speaks rather than a hosted chat platform.
 
 ### ⚡ Built-In Execution Modes
 
