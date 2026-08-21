@@ -1,0 +1,26 @@
+{{- if .Values.ioHandler.autoscaling.enabled }}
+{{/*
+Plain HPA for the io tier: it is request-bound, so CPU is the right signal (the runner tier
+scales on queue depth via the KEDA ScaledObject instead).
+*/}}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-io
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "io-handler") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "agent-kernel.fullname" . }}-io
+  minReplicas: {{ .Values.ioHandler.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.ioHandler.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.ioHandler.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

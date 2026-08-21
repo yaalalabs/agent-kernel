@@ -200,8 +200,11 @@ class WebSocketHandlerABC(ABC):
     # Message sending operations
     def broadcast(
         self,
-        endpoint_url: str,
-        message: Dict[str, Any],
+        # Optional because delivery does not always need a return address: the AWS adapters
+        # route by it, while the pipeline's store-lookup delivery resolves targets from the
+        # shared connection store and ignores it.
+        endpoint_url: Optional[str] = None,
+        message: Optional[Dict[str, Any]] = None,
         user_id: Optional[str] = None,
         connection_ids: Optional[List[str]] = None,
         message_type: Optional["WebSocketHandlerABC.MessageType"] = None,

@@ -1,0 +1,4 @@
+# Dependency archives fetched by `helm dependency build`; Chart.lock pins their versions, so
+# the archives themselves are reproducible and never committed.
+charts/
+*.tgz
