@@ -270,40 +270,11 @@ class GoogleADKRunner(BaseRunner):
         """
         Streams the Google ADK agent response as Agent Kernel stream events.
 
-        **ADK is the one adapter that has to invent its message boundaries.** It supplies no
-        message-start signal and no message id — only a run of `partial=True` events carrying text
-        fragments, then a single `partial=False` event carrying the whole aggregated message. So the
-        id is generated here and the boundaries are derived:
-
-        - the first `partial=True` event *with text* opens the message, and its id is a `uuid4`;
-        - each later partial is a `TextDelta` on that id;
-        - the `partial=False` event closes it. Its text is deliberately **not** re-emitted — it is
-          the concatenation of the deltas already sent, so forwarding it would duplicate the reply.
-        - **unless no partial ever arrived**, in which case that text is the turn's only text and is
-          emitted as a whole message. Guarded on nothing having been sent, so it cannot double up.
-
-        **Tool events are emitted after the boundaries, not before.** One `Content` can hold prose and
-        a function call together, and emitting the call first would nest it inside an open text
-        message. OpenAI cannot produce that shape, so matching its ordering is what lets one consumer
-        work against both adapters.
-
-        **There are two such streams, not one.** Reasoning is a flag on a part rather than an event of
-        its own (`types.Part.thought`), so a thinking model's summary arrives interleaved with the
-        answer on the same events and gets the same treatment on a separate id: opened by the first
-        thought text, and closed as soon as answer text arrives — thinking is over once the model
-        starts answering. Reasoning that resumes after a tool call opens a second trace. Keeping the
-        two apart is not cosmetic: §4 rule 5 keeps `ReasoningDelta` out of `StreamChunk.delta`, and
-        `delta` is what plain-text clients concatenate as the answer and what `ThreadRecorder`
-        persists, so merging them would put chain-of-thought in the saved reply.
-
-        Both ids are **locals**, never attributes. `GoogleADKRunner` is constructed once per module and
-        `_wrap` hands that same instance to every agent, so one object serves every agent and every
-        concurrent session; on `self`, one session's message would close another's or two sessions
-        would share an id and a client would splice their text together (spec §10).
-
-        Tool calls are read off the non-partial events, which is where ADK puts them. Their ids come
-        from `FunctionCall.id` rather than being generated — unlike `message_id`, ADK does supply
-        these, and a generated one could not be correlated to the matching response.
+        ADK has no message-start signal or message id — only `partial=True` text fragments, then a
+        `partial=False` aggregated event — so ids are generated here and boundaries are derived from
+        partials. Non-partial text is not re-emitted unless no partials arrived. Reasoning
+        (`Part.thought`) uses a separate id; tool calls use `FunctionCall.id` and are emitted after
+        message boundaries. Open ids are locals — the runner is shared across sessions.
 
         :param agent: The ADK agent to run.
         :param session: The session to use for the agent.
@@ -322,8 +293,7 @@ class GoogleADKRunner(BaseRunner):
 
         if hasattr(runner, "run_async"):
             with ctx:
-                # Both open streams, if any. Locals, never on self — see the docstring.
-                message_id: str | None = None
+                message_id: str | None = None  # open message id; local, never on self
                 reasoning_id: str | None = None
                 async for event in runner.run_async(
                     user_id=user_id,
@@ -340,8 +310,6 @@ class GoogleADKRunner(BaseRunner):
                         yield ReasoningDelta(message_id=reasoning_id, content=thinking)
 
                     if chunk and reasoning_id is not None:
-                        # The answer has started, so the thinking is over. Reasoning that resumes
-                        # after a tool call opens a second trace, which is what actually happened.
                         yield ReasoningEnd(message_id=reasoning_id)
                         reasoning_id = None
 
@@ -352,35 +320,23 @@ class GoogleADKRunner(BaseRunner):
                                 yield MessageStart(message_id=message_id)
                             yield TextDelta(message_id=message_id, content=chunk)
                     elif message_id is not None:
-                        # The aggregated text is already out as deltas; this event only closes them.
                         yield MessageEnd(message_id=message_id)
                         message_id = None
                     elif chunk:
-                        # No partial ever arrived, so nothing has been sent — emit the whole message
-                        # rather than dropping the turn's only text.
                         whole = uuid4().hex
                         yield MessageStart(message_id=whole)
                         yield TextDelta(message_id=whole, content=chunk)
                         yield MessageEnd(message_id=whole)
 
-                    # After the boundaries, so a tool call sharing an event with prose lands outside
-                    # the message rather than inside it. Run for every event, not just the
-                    # non-partial ones: a partial is not *proven* never to carry a call, and
-                    # dropping one silently would be worse than emitting it a beat early.
                     for tool_event in self._tool_events(event):
                         yield tool_event
 
-                # Closing whatever the stream never closed itself — a thought-only turn leaves the
-                # reasoning trace open, since no answer text ever arrived to end it. Reached only on a
-                # clean drain: a client disconnect raises GeneratorExit at a yield above and unwinds
-                # past this.
                 if reasoning_id is not None:
                     yield ReasoningEnd(message_id=reasoning_id)
                 if message_id is not None:
                     yield MessageEnd(message_id=message_id)
 
-                # Only after the stream drains normally, so a disconnect or mid-stream error leaves the stored
-                # context intact. Deliberately not in a finally.
+                # After a normal drain only — disconnect/error leaves stored context intact.
                 if incoming is not None:
                     try:
                         produced = await adk_session.get_state()
@@ -391,19 +347,10 @@ class GoogleADKRunner(BaseRunner):
     @staticmethod
     def _event_text(event: Event) -> tuple[str, str]:
         """
-        Split one ADK event's text into the answer and the model's reasoning.
-
-        **Reasoning is a flag on a part, not an event of its own.** A thinking model with summaries
-        enabled sends them as parts carrying `thought=True`, interleaved with the answer's parts on the
-        same events. Joining them all would make the summary part of the reply — which §4 rule 5
-        forbids, because `delta` is what plain-text clients concatenate as the answer and what
-        `ThreadRecorder` persists. They are separated here and never rejoined.
-
-        A part holds exactly one kind of payload, so a function-call part has `text` unset and
-        contributes to neither string.
+        Split one ADK event's text into answer and reasoning (`Part.thought`).
 
         :param event: One event from `Runner.run_async`.
-        :return: (answer, reasoning), either or both empty.
+        :return: `(answer, reasoning)`, either or both empty.
         """
         if not event.content or not event.content.parts:
             return "", ""
@@ -418,18 +365,13 @@ class GoogleADKRunner(BaseRunner):
 
     def _tool_events(self, event: Event) -> list[StreamEvent]:
         """
-        Translate an ADK event's function calls and responses into AK tool-call events.
+        Translate an ADK event's function calls and responses into AK tool events.
 
-        A call arrives with its arguments already complete, so it is opened, filled and closed
-        together — ADK exposes no per-token argument stream to forward.
-
-        An entry without an `id` yields nothing: a call that cannot be correlated to its response
-        would leave a client holding a tool call that never resolves, which is worse than silence.
-        This is the one place ADK does *not* generate an id, because a generated one would not match
-        the response's.
+        Arguments arrive complete (no per-token stream). Entries without an `id` are skipped —
+        a generated id would not match the response.
 
         :param event: One event from `Runner.run_async`.
-        :return: The AK events this event's tool activity produces, empty when it has none.
+        :return: The AK events this event's tool activity produces, or an empty list.
         """
         events: list[StreamEvent] = []
 
@@ -455,16 +397,13 @@ class GoogleADKRunner(BaseRunner):
 
     def _as_json(self, value: Any, what: str) -> str:
         """
-        Serialise an ADK tool payload, which arrives as a parsed dict rather than the model's JSON.
+        Serialise an ADK tool payload dict to JSON.
 
-        The `except` is deliberately broad. `default=str` hands any unencodable value to its own
-        `__str__`, which is arbitrary user code and can raise anything at all — and this runs
-        mid-stream, where an escaping exception turns an in-flight response into a failed run. The
-        payload is the expendable part: dropping it still leaves the call bracketed and correlated.
+        On encode failure returns `""` so a mid-stream exception does not fail the run.
 
         :param value: The `args` or `response` dict, or None.
         :param what: What is being serialised, for the log line.
-        :return: The JSON text, or "" when there is nothing to serialise or it could not be encoded.
+        :return: JSON text, or `""` if missing/unencodable.
         """
         if value is None:
             return ""
