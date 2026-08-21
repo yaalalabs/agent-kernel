@@ -1,8 +1,7 @@
-from agents import Agent
-
 from agentkernel.openai import OpenAIModule
 from agentkernel.pipeline import IOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
+from agents import Agent
 
 assistant_agent = Agent(
     name="assistant",
