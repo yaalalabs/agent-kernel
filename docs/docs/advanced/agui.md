@@ -88,10 +88,10 @@ With `agui.state.enabled`, agents gain two tools:
 - `get_agui_state()` — read the current object
 - `update_agui_state(updates)` — shallow-merge the given keys; `updates` is a JSON object string
 
-The state lives under a reserved session key for the **session's lifetime**, so it survives across
-turns and is separate from any framework's own context. It is deliberately *not* stored inside
-`framework_context`: that dict is per-run and adapter-owned, and the adapter's write-back would
-overwrite anything a tool put there mid-run.
+The state lives in the session's **non-volatile cache** under `"agui_state"` for the **session's
+lifetime**, so it survives across turns and is separate from any framework's own context. It is
+deliberately *not* stored inside `framework_context`: that dict is per-run and adapter-owned, and the
+adapter's write-back would overwrite anything a tool put there mid-run.
 
 AG-UI has no "read the current state" request, and a `StateSnapshot` is only sent on change — so a
 reloading client cannot ask the server what it holds. Keeping its own copy and echoing it back as
