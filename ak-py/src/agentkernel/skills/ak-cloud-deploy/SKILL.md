@@ -276,6 +276,23 @@ on the in-process `local` provider and `in_memory` store (any `AK_SCHEDULE__*` v
 always pair the flags with the matching types. The reverse is safe: declaring the types without the
 flags fails at startup with an `AKConfigError` on the missing `group_name` / `role_arn` / `queue_arn`.
 
+The blocks above enable deferring and the agent tools. The `/api/v1/schedules` management routes are
+**not** mounted from config — on ECS queue mode, pass the handler to the IO container's entrypoint,
+where it is served alongside the queue-producing chat route:
+
+```python
+# app_rest_service.py
+from agentkernel.aws import ECSIOHandler
+from agentkernel.schedule import ScheduleRESTRequestHandler
+
+if __name__ == "__main__":
+    # add authoriser=... to scope listings to the caller; without one the routes are open
+    ECSIOHandler.run(handlers=[ScheduleRESTRequestHandler()])
+```
+
+Remember to list the schedule paths in `gateway_endpoints` — the gateway only proxies paths it is
+told about.
+
 New outputs on both AWS stacks (null unless the matching flag is set): `schedule_group_name`,
 `schedule_group_arn`, `scheduler_execution_role_arn`, `schedule_table_name`, `schedule_table_arn`.
 

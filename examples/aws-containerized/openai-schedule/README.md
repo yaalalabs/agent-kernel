@@ -90,24 +90,28 @@ That is safe here because no two occurrences ever produce the same body: the tri
 Application senders are unaffected — they always send an explicit `MessageDeduplicationId`, which
 takes precedence over content-based dedup.
 
-## Why `app_rest_service.py` is not just `ECSIOHandler.run()`
+## Where the management routes are served
 
-`ECSIOHandler.run()` builds the FastAPI app from `AWSRestAPI`'s default handlers, which cover chat
-only. To serve the management routes this example subclasses `AWSRestAPI` to add
-`ScheduleRESTRequestHandler`, then composes the same two peer threads ECSIOHandler runs
-(`ThreadRunner` + `ECSOutputConsumer`). All public API, ~30 lines.
-
-The management routes are served **in the REST service**, not through the queues: they read the
-shared DynamoDB task store and call Scheduler directly, so a listing or cancellation needs no round
-trip.
-
-The routes are **open** in this example. To protect them, pass an `Authoriser`:
+Nothing is mounted from config, so `app_rest_service.py` hands the handler to `ECSIOHandler.run()`,
+which serves it alongside the API's own queue-producing chat route — the same shape the pipeline's
+`IOHandler` uses:
 
 ```python
-class ScheduleAwareRestAPI(AWSRestAPI):
-    @classmethod
-    def get_default_handlers(cls):
-        return AWSRestAPI.get_default_handlers() + [ScheduleRESTRequestHandler(authoriser=MyAuthoriser())]
+from agentkernel.aws import ECSIOHandler
+from agentkernel.schedule import ScheduleRESTRequestHandler
+
+ECSIOHandler.run(handlers=[ScheduleRESTRequestHandler()])
+```
+
+That is the whole entrypoint: `ECSIOHandler` still starts both peer threads (the REST API and the
+output-queue consumer). The routes run **in the REST service**, not through the queues — they read
+the shared DynamoDB task store and call Scheduler directly, so a listing or cancellation needs no
+round trip.
+
+The routes are **open** in this example. To protect them, pass an `Authoriser` to the handler:
+
+```python
+ECSIOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=MyAuthoriser())])
 ```
 
 With one configured, listings are forced to the resolved user and touching another user's schedule
