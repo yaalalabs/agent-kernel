@@ -191,18 +191,20 @@ class AgentHandler:
         """
         self.service: Optional[AgentService] = None
 
-    def initialize(self, session_id: str, agent: Optional[str]):
+    def initialize(self, session_id: Optional[str], agent: Optional[str]):
         """Initialize AgentService with session and agent selection.
+
+        The availability rule is checked before selecting, so an unservable request fails
+        without a session being created or loaded for it.
 
         :param session_id: Session identifier for the agent
         :param agent: Optional agent name/identifier to select
         :return: None
-        :raises ValueError: If no agent is available after selection
+        :raises ValueError: If no agent matching the request is available
         """
         self.service = AgentService()
+        self.service.ensure_agent_available(agent)
         self.service.select(session_id, agent)
-        if not self.service.agent:
-            raise ValueError("No agent available")
 
     @staticmethod
     def _run_async_sync(coro) -> Any:
@@ -335,6 +337,22 @@ class ChatService:
         self._log = logging.getLogger("ak.chatservice")
         self.rest_api_mode = rest_api_mode
 
+    def prepare_agent_handler(self, session_id: Optional[str], agent: Optional[str]) -> AgentHandler:
+        """Select the agent and load the session, without running.
+
+        Surfaces that need the session object between load and run — AG-UI writes
+        state and client context onto it — call this instead of execute_stream, which
+        hides the handler. execute / execute_stream use it internally.
+
+        :param session_id: Session identifier to load, or None to create a new session.
+        :param agent: Agent name to select, or None for the default agent.
+        :return: The initialized AgentHandler holding the selected agent and session.
+        :raises ValueError: If no matching agent is available.
+        """
+        handler = AgentHandler()
+        handler.initialize(session_id, agent)
+        return handler
+
     async def execute(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> tuple[AgentReply, Optional[str]]:
         """Validate, build (unless prebuilt), select the agent, and run the request.
 
@@ -348,8 +366,7 @@ class ChatService:
         :raises ValueError: If validation fails or no agent is available
         """
         requests = await self._prepare_async(req, requests)
-        handler = AgentHandler()
-        handler.initialize(req.session_id, req.agent)
+        handler = self.prepare_agent_handler(req.session_id, req.agent)
         result = await handler.run_async(requests, acting_user_id=req.user_id)
         return result, handler.get_response_session_id(req.session_id)
 
@@ -362,8 +379,7 @@ class ChatService:
         :raises ValueError: If validation fails or no agent is available
         """
         requests = self._prepare_sync(req, requests)
-        handler = AgentHandler()
-        handler.initialize(req.session_id, req.agent)
+        handler = self.prepare_agent_handler(req.session_id, req.agent)
         result = handler.run_sync(requests, acting_user_id=req.user_id)
         return result, handler.get_response_session_id(req.session_id)
 
@@ -380,8 +396,7 @@ class ChatService:
         :raises ValueError: If validation fails or no agent is available
         """
         requests = await self._prepare_async(req, requests)
-        handler = AgentHandler()
-        handler.initialize(req.session_id, req.agent)
+        handler = self.prepare_agent_handler(req.session_id, req.agent)
 
         async def _stream() -> AsyncGenerator[StreamChunk, None]:
             try:
@@ -404,8 +419,7 @@ class ChatService:
         :raises ValueError: If validation fails or no agent is available
         """
         requests = self._prepare_sync(req, requests)
-        handler = AgentHandler()
-        handler.initialize(req.session_id, req.agent)
+        handler = self.prepare_agent_handler(req.session_id, req.agent)
 
         def _stream() -> Generator[StreamChunk, None, None]:
             try:

@@ -1,33 +1,8 @@
-"""
-The AG-UI surface: discovery, the run routes, and the run lifecycle.
-
-AG-UI is a streaming protocol, so this handler owns three things no other AK surface does — a run
-identity (`RunStarted` … `RunFinished` / `RunError`), an event vocabulary (see `mapping.py`), and a
-shared state object it syncs back with `StateSnapshot`.
-
-**Authorization narrows the inherited contract rather than reimplementing it.**
-`AuthorisedRESTRequestHandler` owns the Bearer parsing and the 401 mapping, and returns `None` when
-no authoriser is configured — which leaves routes open. That is right for thread reads and wrong
-here, so the constructor refuses to build without one. The open branch is then unreachable.
-
-**The handler drives `Runtime.stream` directly rather than `ChatService.execute_stream`, and the
-reason is not stylistic.** `execute_stream` loads the session itself, by id. AG-UI has to write three
-things onto the session *before* the run — `state`, `forwardedProps` and `context` — and read the
-state back *after* it, so it needs the same session object throughout. Under any persistent session
-store `load()` returns a fresh object per call, and `store()` deliberately excludes the volatile
-cache (`Session.get_all(volatile=False)`), so props written on a handler-loaded copy could never
-reach a run that loaded its own: `get_forwarded_props()` would return `{}` on every request, silently,
-everywhere except the in-memory store. Owning the load is what makes the client-context tools work at
-all.
-
-Everything that can fail is resolved before the `StreamingResponse` is constructed — identity, the
-agent, the body, the session — so a bad request is an HTTP status, not a well-formed stream whose
-first event is an error.
-"""
+"""AG-UI surface: discovery, run routes, and the run lifecycle."""
 
 import logging
 from copy import deepcopy
-from typing import Any, AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -35,40 +10,27 @@ from fastapi.responses import StreamingResponse
 from ...api.handler import AuthorisedRESTRequestHandler
 from ...auth.authoriser import Authoriser, AuthValidatorAuthoriser
 from ...auth.handler import AuthValidator
-from ...core.base import Agent, Session
+from ...core.base import Agent
+from ...core.chat_service import AgentHandler, ChatService
 from ...core.config import AKConfig
-from ...core.model import AgentRequest
 from ...core.runtime import Runtime
-from .mapping import to_agui
-from .run_input import apply_to_session, parse_run_input, to_requests
+from ...core.service import AgentService
+from .mapping import AGUIMapper
+from .run_input import AGUIRunInput
 
 
 class AGUIRequestHandler(AuthorisedRESTRequestHandler):
-    """
-    API router exposing Agent Kernel agents over the AG-UI protocol.
-    Endpoints (under `agui.prefix`, default `/agui`):
-    - GET /agui/agents: list the agents reachable over AG-UI
-    - POST /agui/{agent_name}: run an agent, streaming AG-UI events
-    - POST /agui: run `agui.default_agent`, registered only when one is configured
-
-    Every route requires a Bearer token the configured Authoriser resolves to a user; unlike the
-    thread routes, there is no open mode. An agent that `agui.agents` does not expose is treated
-    exactly as an unknown agent, so the surface never confirms that a name exists.
-    """
+    """AG-UI routes: GET /agents, POST /{agent_name}, and POST / when `agui.default_agent` is set."""
 
     def __init__(self, authoriser: Optional[Authoriser] = None, auth_validator: Optional[AuthValidator] = None):
         """
-        Initializes an AGUIRequestHandler instance.
-        :param authoriser: User-supplied Authoriser protecting the AG-UI routes.
-        :param auth_validator: An existing AuthValidator to use instead, adapted to an Authoriser.
-                               Passed explicitly because RESTAPI.add_auth_handlers keeps no
-                               retrievable registry of the validators it turns into dependencies.
-        :raises ValueError: If the `agui` extra is not installed, if neither an authoriser nor an
-                            auth validator is given, or if `agui.default_agent` names an agent that
-                            `agui.agents` does not expose.
+        :param authoriser: Authoriser for the AG-UI routes.
+        :param auth_validator: Wrapped as an Authoriser when `authoriser` is omitted.
+        :raises ValueError: If the `agui` extra is missing, no authoriser or validator is given,
+                            or `agui.default_agent` is not in `agui.agents`.
         """
         try:
-            import ag_ui.core  # noqa: F401 — presence check; the modules that use it import lazily
+            import ag_ui.core  # noqa: F401
         except ImportError as e:
             raise ValueError(
                 "AG-UI support requires the 'ag-ui-protocol' package, which ships in Agent Kernel's "
@@ -85,6 +47,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         super().__init__(authoriser)
         self._log = logging.getLogger("ak.integration.agui")
+        self._chat_service = ChatService()
 
         config = AKConfig.get().agui
         if config.default_agent is not None and not self._is_exposed(config.default_agent):
@@ -95,25 +58,10 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
     @staticmethod
     def _is_exposed(agent_name: str) -> bool:
-        """Whether `agui.agents` exposes this name. An absent list exposes every agent."""
         exposed = AKConfig.get().agui.agents
         return exposed is None or agent_name in exposed
 
     def _warn_if_unreadable(self, agent: Agent, run_input: Any) -> None:
-        """Warn when the client sent state or context this agent has no tool to read.
-
-        `apply_to_session` writes the inbound `state`, `forwardedProps` and `context` unconditionally,
-        but the tools that read them are attached only when `agui.state` / `agui.client_context` are
-        enabled — and both default to `False`. Without this the fields are accepted, stored, and
-        silently unreachable: no error, no `StateSnapshot`, and an app author left watching the model
-        ignore data it was sent.
-
-        Scoping is per agent, not global, because both blocks take an optional `agents` list — so the
-        factory's own filter decides, rather than a second copy of the rule that would drift from it.
-
-        :param agent: The agent this run resolved to.
-        :param run_input: The parsed `RunAgentInput`.
-        """
         from ...core.tool import SystemToolFactory
 
         agui = getattr(AKConfig.get(), "agui", None)
@@ -137,17 +85,13 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             )
 
     def _resolve_agent(self, agent_name: str) -> Agent:
-        """Resolve a path agent name to a streaming-capable, exposed agent.
-
-        :param agent_name: The agent name taken from the route path.
-        :return: The resolved Agent.
-        :raises HTTPException: 404 when the agent is unknown *or* not exposed — deliberately
-                              indistinguishable, so the surface does not confirm a name exists.
-                              400 when the agent's runner cannot stream.
-        """
-        agent = Runtime.current().agents().get(agent_name)
-        if agent is None or not self._is_exposed(agent_name):
+        try:
+            AgentService().ensure_agent_available(agent_name)
+        except ValueError:
             raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+        if not self._is_exposed(agent_name):
+            raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+        agent = Runtime.current().agents()[agent_name]
         if not agent.runner.supports_streaming:
             raise HTTPException(
                 status_code=400,
@@ -159,18 +103,11 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         return agent
 
     def get_router(self) -> APIRouter:
-        """
-        Returns the APIRouter instance carrying the AG-UI routes.
-        """
         config = AKConfig.get().agui
         router = APIRouter(prefix=config.prefix)
 
         @router.get("/agents")
         def list_agents(request: Request) -> dict:
-            # Names only, matching AgentRESTRequestHandler.list_agents. Deliberately not
-            # agent.get_description(): several adapters return the agent's instructions from it (e.g.
-            # framework/openai/openai.py:270), which would publish the system prompt — including the
-            # injected system-tool guidance — to every authorised caller.
             self._resolve_user(request)
             agents = Runtime.current().agents()
             return {"agents": [name for name, agent in agents.items() if agent.runner.supports_streaming and self._is_exposed(name)]}
@@ -189,16 +126,6 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         return router
 
     async def _run(self, agent_name: str, request: Request) -> StreamingResponse:
-        """Validate a run request and return the AG-UI event stream for it.
-
-        Every rejection happens here rather than inside the generator, so the client sees an HTTP
-        status for a bad request instead of a 200 whose first event is an error.
-
-        :param agent_name: The agent to run.
-        :param request: The incoming FastAPI request.
-        :return: A StreamingResponse of encoded AG-UI events.
-        :raises HTTPException: 401, 404 or 400 — see _resolve_agent and run_input.parse_run_input.
-        """
         from ag_ui.encoder import EventEncoder
 
         user_id = self._resolve_user(request)
@@ -211,65 +138,49 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         if not isinstance(body, dict):
             raise HTTPException(status_code=400, detail="Request body must be a RunAgentInput object")
 
-        run_input = parse_run_input(body)
-        # Mapped before anything touches the session: `to_requests` still raises 400 for audio, video
-        # and a `binary` part carrying only an id, and `Runtime.stream` never runs for a rejected
-        # request — so a write that happened first would never be cleared, and the next run on this
-        # thread would read the rejected request's state and props. `to_requests` is pure, so the
-        # order is free.
-        requests = to_requests(run_input)
-        session = Runtime.current().sessions().load(run_input.thread_id)
-        apply_to_session(session, run_input)
+        run_input = AGUIRunInput.parse(body)
+        requests = AGUIRunInput.to_requests(run_input)
+        handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name)
+        session = handler.service.session
+        assert session is not None
+        AGUIRunInput.set_agui_session_keys(session, run_input)
         self._warn_if_unreadable(agent, run_input)
 
-        # Deep copy, not a reference: get_agui_state() hands back the live dict, so keeping the
-        # reference would compare the object with itself after a tool mutated it and report
-        # "unchanged" on every run. Taken after the inbound state is applied, so state the client
-        # just sent is not echoed straight back at it.
         state_before = deepcopy(session.get_agui_state())
-
-        # EventEncoder's own signature is `accept: str = None`, so an absent header is passed
-        # through as-is rather than coerced to "" — the value it would negotiate from, if it ever did.
         encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]
-        stream = self._events(encoder, agent, session, requests, run_input, state_before, user_id)
+        stream = self._events(encoder, handler, requests, run_input, state_before, user_id)
         return StreamingResponse(stream, media_type=encoder.get_content_type())
 
     async def _events(
         self,
         encoder: Any,
-        agent: Agent,
-        session: Session,
-        requests: List[AgentRequest],
+        handler: AgentHandler,
+        requests: list,
         run_input: Any,
         state_before: Optional[dict],
         user_id: Optional[str],
     ) -> AsyncGenerator[str, None]:
-        """Emit one AG-UI run: RunStarted, the translated events, and exactly one terminal event.
-
-        A client disconnect deliberately emits nothing: the generator is closed and there is nobody
-        left to write to, so no terminal event is attempted — which is why nothing is yielded from a
-        `finally` block here.
-        """
         from ag_ui.core import RunErrorEvent, RunFinishedEvent, RunStartedEvent, StateSnapshotEvent
 
         yield encoder.encode(RunStartedEvent(thread_id=run_input.thread_id, run_id=run_input.run_id, parent_run_id=run_input.parent_run_id))
 
+        session = handler.service.session
+        assert session is not None
+        assert handler.service.agent is not None
+        agent_name = handler.service.agent.name
         error: Optional[str] = None
         try:
-            async for chunk in Runtime.current().stream(agent, session, requests, acting_user_id=user_id):
+            async for chunk in handler.run_stream_async(requests, acting_user_id=user_id):
                 if chunk.error:
-                    # An error chunk is always terminal (a halted pre-hook, or a failure the
-                    # runtime caught), so record it and let the loop end on its own rather than
-                    # closing the runtime's generator early.
                     error = chunk.error
                     continue
                 if chunk.event is None:
                     continue
-                agui_event = to_agui(chunk.event)
+                agui_event = AGUIMapper.to_agui(chunk.event)
                 if agui_event is not None:
                     yield encoder.encode(agui_event)
         except Exception as e:
-            self._log.exception(f"AG-UI run failed for agent '{agent.name}'")
+            self._log.exception(f"AG-UI run failed for agent '{agent_name}'")
             yield encoder.encode(RunErrorEvent(message=str(e)))
             return
 
@@ -277,9 +188,6 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             yield encoder.encode(RunErrorEvent(message=error))
             return
 
-        # Only on the success path. Runtime.stream persists the session after the loop drains, so on
-        # an error path the state change was never stored — announcing it would leave the client
-        # holding state the server discarded.
         state_after = session.get_agui_state()
         if state_after != state_before:
             yield encoder.encode(StateSnapshotEvent(snapshot=state_after))

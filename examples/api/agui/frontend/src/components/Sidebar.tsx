@@ -9,13 +9,7 @@ type Props = {
   runId: string | null;
 };
 
-/**
- * The right-hand column: the shared state, the Bearer token, and the run envelope.
- *
- * The state panel is the round trip made visible — the agent writes with `update_agui_state`, the
- * server streams a snapshot, and the next run echoes it back. Neither side owns the list. Editing the
- * token is the quickest way to see the 401 path, since these routes have no anonymous mode.
- */
+/** Shared state, Bearer token, and run envelope. */
 export default function Sidebar({ state, onReset, token, onTokenChange, threadId, runId }: Props) {
   const tasks = state?.tasks ?? [];
 

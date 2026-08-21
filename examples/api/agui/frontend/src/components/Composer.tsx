@@ -6,7 +6,7 @@ type Props = {
   disabled: boolean;
 };
 
-/** The input. Disabled while a run is streaming, and on a file:// origin. */
+/** Prompt input, disabled while a run is in flight. */
 export default function Composer({ onSend, disabled }: Props) {
   const [value, setValue] = useState("");
 

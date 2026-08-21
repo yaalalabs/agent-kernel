@@ -283,12 +283,10 @@ round-trip state.
        themselves, so its passing said nothing about the system-prompt suffix reaching the model.
        PR 4 can replace the string match with an assertion on a `ToolCallStart` named
        `get_agui_context`, which would have made this failure unambiguous.
-     - The Node toolchain is **optional**: `build.sh` warns and continues when `npm` is absent, and
-       `GET /` explains how to build. No CI job sets up Node for this example, and `app_test.py`
-       exercises the AG-UI routes and the asset route's 404 paths, never the built page, so nothing in
-       CI depends on the build. Where
-       npm *is* present, `npm run build` type-checks before bundling, but a failed build only warns —
-       so a frontend error cannot fail the example's CI job either.
+     - The Node toolchain is **optional**: `build.sh` installs Python only. The UI is `npm run dev`
+       (Vite on :5173, proxying `/agui`), or an optional `npm run build` served at `GET /`. No CI job
+       sets up Node for this example, and `app_test.py` exercises the AG-UI routes and the asset
+       route's 404 paths, never the built page, so nothing in CI depends on a frontend build.
      - "Show a tool call live" **cannot be met at PR 3** — see Verify — and the example does not try
        to fake it. It renders reasoning, tool calls and the live status strip as first-class
        components, tested against hand-written event sequences; they simply stay empty until PRs 4-6
@@ -314,10 +312,10 @@ example's `reduceEvent.ts` still handles the tool-call events, so PR 4 lights it
      from it (`framework/openai/openai.py:270`), so the payload contained the whole system prompt
      including the injected system-tool guidance. Now names only, matching
      `AgentRESTRequestHandler.list_agents`.
-  - **§9's `ChatService.execute_stream` choice was wrong and is reversed in the spec.** It cannot
+  - **§9's `ChatService.execute_stream` choice was wrong.** It cannot
     deliver `forwardedProps` or `context` under any persistent session store — see §9 for the two
-     facts that combine to make it silently return `{}`. The handler drives `Runtime.stream` instead,
-     guarded by a test using a deep-copying session store.
+     facts that combine to make it silently return `{}`. The handler uses `ChatService.prepare_agent_handler` then
+     `AgentHandler.run_stream_async` instead, guarded by a test using a deep-copying session store.
   - **An example test is registered in CI** (`.github/test-config.yaml`, `type: api`), because
     iteration 1 established that `uv run pytest` in `ak-py` is not evidence the examples are green.
      It is also the only test anywhere that drives a real adapter through `Runtime.stream`, `to_agui`

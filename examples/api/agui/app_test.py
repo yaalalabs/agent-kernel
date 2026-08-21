@@ -1,27 +1,4 @@
-"""
-AG-UI protocol test for the agui example.
-
-The shared `agentkernel.test` JSON request/response client cannot drive Server-Sent Events, and
-AG-UI's request envelope is not Agent Kernel's chat body, so this test starts `app.py` and speaks
-AG-UI to it directly with httpx.
-
-It is the only end-to-end check that the whole outbound chain holds — a real framework adapter, the
-runtime's event loop, `to_agui`, the SDK's `EventEncoder`, and a real HTTP surface. `ak-py`'s
-`tests/test_agui_*.py` cover the same units against scripted runners; nothing there proves they
-compose.
-
-Assertions are structural (event ordering, frame shape, the presence of a state snapshot) rather than
-semantic, so they do not depend on the model's exact wording. The one place the model's behaviour is
-load-bearing is `test_state_round_trip`, which needs the agent to actually call `update_agui_state` —
-that call *is* the capability, so a failure there is a real signal rather than flakiness to tolerate.
-
-Elsewhere the prompts name the tool they need, and `test_client_context_reaches_the_agent_as_tool_output`
-is the reason: it asked a bare question and CI failed on the agent answering "I don't know" instead of
-looking. There the call is a means, not the end — what the test uniquely proves is that context reaches
-the agent *as tool output* rather than flattened into the prompt, and whether the model infers its way
-to the tool is a separate property, one the example's own instructions are responsible for.
-Requires OPENAI_API_KEY.
-"""
+"""AG-UI example tests. Requires OPENAI_API_KEY."""
 
 import asyncio
 import json
@@ -67,7 +44,6 @@ def run_input(prompt: str, thread_id: str, state=None, context=None) -> dict:
 
 
 async def collect(url: str, payload: dict, path: str = "/agui") -> list[dict]:
-    """POST a run and parse every AG-UI event out of the SSE body."""
     events: list[dict] = []
     async with httpx.AsyncClient(timeout=90.0) as client:
         async with client.stream("POST", f"{url}{path}", json=payload, headers=AUTH) as response:
@@ -89,7 +65,6 @@ async def test_discovery_lists_the_streaming_agent(base_url):
 
 @pytest.mark.asyncio
 async def test_routes_reject_a_missing_or_bad_token(base_url):
-    """AG-UI has no open mode, so 401 is a live path on every route."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         assert (await client.get(f"{base_url}/agui/agents")).status_code == 401
         bad = {"Authorization": "Bearer nope"}
@@ -98,9 +73,7 @@ async def test_routes_reject_a_missing_or_bad_token(base_url):
 
 @pytest.mark.asyncio
 async def test_the_asset_route_serves_nothing_outside_assets(base_url):
-    """The route matches names against the assets directory, so neither traversal nor an unknown
-    name can reach a file. `..` must be sent percent-encoded — httpx normalises a literal
-    `/assets/..` to `/` before it leaves the client, which would test nothing."""
+    """Percent-encode `..`; httpx would otherwise normalise `/assets/..` to `/`."""
     async with httpx.AsyncClient(timeout=30.0) as client:
         for path in ("/assets/%2e%2e", "/assets/nope.js"):
             assert (await client.get(f"{base_url}{path}")).status_code == 404, path
@@ -116,12 +89,10 @@ async def test_run_lifecycle_brackets_the_response(base_url):
     assert types.count("RUN_STARTED") == 1
     assert types.count("RUN_FINISHED") + types.count("RUN_ERROR") == 1
 
-    # The assistant message is bracketed and its content accumulates to something.
     assert "TEXT_MESSAGE_START" in types and "TEXT_MESSAGE_END" in types
     text = "".join(e["delta"] for e in events if e["type"] == "TEXT_MESSAGE_CONTENT")
     assert text.strip()
 
-    # Every frame carries its discriminator, and correlated events share a message id.
     message_ids = {e["messageId"] for e in events if e["type"].startswith("TEXT_MESSAGE_")}
     assert len(message_ids) == 1
 
@@ -141,7 +112,6 @@ async def test_an_unknown_agent_is_404(base_url):
 
 @pytest.mark.asyncio
 async def test_audio_content_is_rejected_before_the_stream_opens(base_url):
-    """A 400 with an explanation, not a 200 whose first event is an error."""
     payload = run_input("listen", str(uuid.uuid4()))
     payload["messages"][0]["content"] = [
         {"type": "audio", "source": {"type": "data", "value": "AAA", "mimeType": "audio/mpeg"}}
@@ -154,8 +124,6 @@ async def test_audio_content_is_rejected_before_the_stream_opens(base_url):
 
 @pytest.mark.asyncio
 async def test_state_round_trip(base_url):
-    """The capability this example exists to demonstrate: the agent amends the shared state, the
-    server streams the amended copy back, and the next run starts from what the client echoes."""
     thread_id = str(uuid.uuid4())
 
     events = await collect(
@@ -167,18 +135,12 @@ async def test_state_round_trip(base_url):
     titles = [task["title"] for task in snapshots[-1]["snapshot"]["tasks"]]
     assert any("milk" in title.lower() for title in titles), titles
 
-    # A run that changes nothing must not emit a snapshot — otherwise every turn re-syncs.
     quiet = await collect(base_url, run_input("Just say ok.", thread_id, state=snapshots[-1]["snapshot"]))
     assert not [e for e in quiet if e["type"] == "STATE_SNAPSHOT"]
 
 
 @pytest.mark.asyncio
 async def test_client_context_reaches_the_agent_as_tool_output(base_url):
-    """context entries are pulled through a read-only tool, never injected into the prompt.
-
-    The prompt names the tool on purpose — see the module docstring. Reaching the value at all is
-    what proves the chain; whether a bare question would have got there is the example's problem.
-    """
     context = [{"description": "the user's favourite colour", "value": "vermilion"}]
     prompt = "Check the context the frontend attached, then tell me my favourite colour."
     events = await collect(base_url, run_input(prompt, str(uuid.uuid4()), context=context))

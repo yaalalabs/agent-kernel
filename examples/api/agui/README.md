@@ -10,8 +10,9 @@ list is the point of the demo: the model amends it by calling `update_agui_state
 the amended copy back as a `StateSnapshot`, the browser renders it in the right-hand panel, and the
 browser echoes it on the next run. Neither side owns the list; both read and write it.
 
-`frontend/` is a small **React + TypeScript** app (Vite), built to `frontend/dist` and served by `app.py` at
-`GET /` — the same origin as the AG-UI routes, so the browser needs no CORS handling.
+`frontend/` is a small **React + TypeScript** app (Vite). The usual way to run it is `npm run dev`
+on :5173, which proxies `/agui` through to the Python app. `npm run build` is optional: it emits
+`frontend/dist`, which `app.py` serves at `GET /` so the UI and the AG-UI routes share one origin.
 
 The shape worth reading:
 
@@ -113,25 +114,27 @@ injector. Ask the agent "what time is it for me?" to see it call one.
 
 ## Install and run
 
-Install dependencies and build the frontend using:
+Install Python dependencies:
 
     ./build.sh
 
-The frontend build warns and continues if `npm` is absent or the build itself fails — the `/agui`
-routes and `app_test.py` do not need it, and `GET /` then explains how to build it. To work on the frontend with
-hot reload, run the Python app and Vite side by side; Vite proxies `/agui` through to :8000:
+Then run the Python app and the Vite frontend side by side. Vite proxies `/agui` through to :8000:
 
     python app.py
-    cd frontend && npm run dev     # http://localhost:5173
+    cd frontend && npm install && npm run dev     # http://localhost:5173
+
+`./build.sh` does not build the frontend — the `/agui` routes and `app_test.py` do not need it, and
+no CI job installs Node for this example. `GET /` on :8000 explains how to start the UI if
+`frontend/dist` is missing.
 
 Run the frontend's tests with:
 
     cd frontend && npm test        # needs Node 22.18+; Node strips the types, nothing compiles them
     cd frontend && npm run typecheck
 
-`npm run build` runs the type check first, so run it (or `npm run typecheck`) directly for a gating
-check — `./build.sh` deliberately only warns, so that a frontend error cannot fail this example's CI
-job. There is no separate lint step: `make lint-examples-check` at the repo root covers Python only.
+`npm run build` type-checks and then emits `frontend/dist`, which `app.py` serves at `GET /` if you
+want the UI on the same origin as the routes. There is no separate lint step:
+`make lint-examples-check` at the repo root covers Python only.
 
 Install local dependencies in development mode using:
 
@@ -151,11 +154,7 @@ its interpreter directly:
 
     .venv/bin/python app.py
 
-Run the app:
-
-    python app.py
-
-Then open <http://localhost:8000> and try:
+Open <http://localhost:5173> and try:
 
 - `add milk and bread to my tasks` — watch the panel fill in
 - `mark milk done` — watch it update

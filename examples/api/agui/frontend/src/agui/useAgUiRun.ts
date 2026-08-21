@@ -9,12 +9,7 @@ import { uuid } from "./uuid.ts";
 
 const saved = restore();
 
-/**
- * One AG-UI conversation: the run envelope, the view folded out of the event stream, and the reload
- * persistence. Components below this only render — every state transition happens in `reduceEvent`.
- * Typing the request body as the SDK's `RunAgentInput` checks the outbound half of the protocol the
- * same way the reducer checks the inbound half.
- */
+/** One AG-UI conversation: send a turn, fold the event stream, persist across reload. */
 export function useAgUiRun(token: string) {
   const [threadId] = useState(() => saved.threadId || uuid());
   const [view, apply] = useReducer(reduceEvent, {
@@ -25,8 +20,6 @@ export function useAgUiRun(token: string) {
   const [running, setRunning] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
 
-  // Run boundaries and state changes only. `view.lines` is deliberately not a dependency: a response
-  // is hundreds of events, and a message a reload interrupts mid-stream is legitimately incomplete.
   useEffect(() => {
     persist({ threadId, state: view.state, lines: view.lines });
   }, [running, view.state]);
@@ -74,7 +67,6 @@ export function useAgUiRun(token: string) {
     }
   }
 
-  /** A new thread id means a new session, so the agent's memory and the shared state start clean. */
   function reset() {
     forget();
     location.reload();

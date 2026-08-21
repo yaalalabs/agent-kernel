@@ -2,7 +2,6 @@
 * { box-sizing: border-box; }
 body { font: 15px/1.5 system-ui, sans-serif; margin: 0; }
 #root { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto 1fr; height: 100vh; }
-/* Spans both columns so it reads as the page's title, not the transcript's. */
 header { grid-column: 1 / -1; padding: 12px 16px; border-bottom: 1px solid var(--border); }
 header h1 { font-size: 16px; margin: 0; }
 header p { font-size: 12px; opacity: 0.6; margin: 2px 0 0; }
@@ -19,13 +18,11 @@ button:disabled { opacity: 0.5; cursor: default; }
 .msg.user::before { content: "you "; font-weight: 600; }
 .error { color: #c00; margin-bottom: 14px; white-space: pre-wrap; }
 
-/* Reasoning: visibly the agent's own working, not its answer. */
 .thinking { margin-bottom: 14px; padding: 8px 10px; border-left: 3px solid var(--dim);
             background: #8881; font-style: italic; opacity: 0.8; white-space: pre-wrap; }
 .thinking .tag { display: block; font-style: normal; font-size: 11px; text-transform: uppercase;
                  letter-spacing: 0.06em; opacity: 0.7; margin-bottom: 2px; }
 
-/* Tool calls: a card per call, arguments and result kept apart. */
 .tool { margin-bottom: 14px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
         font-family: ui-monospace, monospace; font-size: 13px; }
 .tool .head { padding: 6px 10px; background: #8881; display: flex; gap: 8px; align-items: baseline; }
@@ -35,7 +32,6 @@ button:disabled { opacity: 0.5; cursor: default; }
 .tool .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6; }
 .spinner { font-size: 11px; opacity: 0.7; margin-left: auto; }
 
-/* The status strip: what the agent is doing right now, from the event stream. */
 .status { display: flex; gap: 8px; align-items: center; padding: 8px 16px;
           border-top: 1px solid var(--border); font-size: 13px; min-height: 37px; }
 .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex: none; }
@@ -47,7 +43,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .task { display: flex; gap: 6px; align-items: baseline; }
 .task.done { text-decoration: line-through; opacity: 0.55; }
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; margin: 0 0 8px; }
-aside > div + div { margin-top: 24px; } /* each panel wraps its own h2, so space the panels */
+aside > div + div { margin-top: 24px; }
 .muted { opacity: 0.55; }
 .note { font-size: 12px; opacity: 0.7; margin-top: 8px; }
 .trace { font-family: ui-monospace, monospace; font-size: 11px; opacity: 0.55; word-break: break-all; }

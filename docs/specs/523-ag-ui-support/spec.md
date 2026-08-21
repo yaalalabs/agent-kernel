@@ -512,8 +512,8 @@ dangling reference is never passed to the agent.
 integration/agui/
 ├── __init__.py        # exports AGUIRequestHandler
 ├── handler.py         # AGUIRequestHandler(AuthorisedRESTRequestHandler)
-├── mapping.py         # to_agui(event) -> ag_ui event | None
-└── run_input.py       # RunAgentInput -> AgentRequest list, state, forwardedProps, context
+├── mapping.py         # AGUIMapper.to_agui(event) -> ag_ui event | None
+└── run_input.py       # AGUIRunInput.parse / to_requests / set_agui_session_keys
 ```
 
 **There is no `authoriser.py`, and this reverses an earlier decision in this spec.** It used to
@@ -574,7 +574,7 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
   treated exactly as an unknown agent (404), so the surface never reveals that a name exists but is
   not exposed. `default_agent` is validated against the same list at startup.
 - The run body is a `StreamingResponse` over an async generator that emits `RunStarted`, then
-  `to_agui(chunk.event)` for each chunk whose `event` is not `None` and maps to something, then
+  `AGUIMapper.to_agui(chunk.event)` for each chunk whose `event` is not `None` and maps to something, then
   `StateSnapshot` when the state changed, then exactly one of `RunFinished` / `RunError`.
 - **The handler tracks no per-run message state and never synthesises a closing `TextMessageEnd`.** A
   run that fails mid-message ends with an unmatched `TextMessageStart`, and that is correct: `RunError`
@@ -633,42 +633,48 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
       not extend to silently discarding the input the user just sent.
   - *Outbound* — `to_agui` returns `None` for any AK event it cannot fully populate, and the handler
     skips `None`, which is what "never emits an event type it cannot fully populate" means in code.
-- **The handler drives `Runtime.stream` directly, and this reverses an earlier decision in this
-  spec.** It used to specify `ChatService.execute_stream`, on the Slack precedent in
-  `ak-dev-architecture`'s routing rubric — right for Slack, which never touches the session itself.
-  AG-UI does: it writes `state`, `forwardedProps` and `context` onto the session *before* the run and
-  reads the state back *after* it, so it needs the same session object throughout.
-  `execute_stream` loads its own session by id (`core/service.py:74` via `AgentHandler.initialize`),
-  and two facts make that fatal rather than merely redundant:
+- **The handler uses `ChatService.prepare_agent_handler`, then `AgentHandler.run_stream_async`.** It used to specify
+  `ChatService.execute_stream`, then reversed to `Runtime.stream` because `execute_stream` loads its
+  own session by id (`core/service.py` via `AgentHandler.initialize`) and never hands it back.
+  AG-UI writes `state`, `forwardedProps` and `context` onto the session *before* the run and reads
+  the state back *after* it, so it needs the same session object throughout. Two facts make
+  `execute_stream` fatal rather than merely redundant:
   - `load()` returns a **fresh object** on every call for every store except in-memory (and
     redis/valkey when a `session.cache` is configured, which is off by default).
   - `store()` **excludes the volatile cache** by construction — `Session.get_all(volatile=False)`
-    (`core/session/redis.py:90`, `core/base.py:151`) — so the props cannot be handed over by
-    persisting them either.
+    (`core/session/redis.py`, `core/base.py`) — so the props cannot be handed over by persisting them
+    either.
 
   Together: `get_forwarded_props()` and `get_agui_context()` would return `{}` on every request under
-  every persistent store, silently, and an in-memory test suite would never notice. Owning the load
-  is what makes the client-context tools work at all. `test_agui_handler.py` guards it with a session
-  store whose `load()` deep-copies, reproducing persistent-store behaviour.
+  every persistent store, silently, and an in-memory test suite would never notice. `ChatService.prepare_agent_handler`
+  is the select-and-load step `execute_stream` already does, returned as an `AgentHandler` so this
+  handler can `AGUIRunInput.set_agui_session_keys` onto `handler.service.session` and then stream through
+  `handler.run_stream_async`. `test_agui_handler.py` guards it with a session store whose `load()`
+  deep-copies, reproducing persistent-store behaviour.
 
-  What the handler takes on instead is small and it needed all of it anyway: resolve the agent (it
-  already does, for the 404 and the `supports_streaming` 400), load the session, and call
-  `Runtime.stream`. It builds its own requests from `RunAgentInput` rather than from
+  Passing a pre-loaded `session=` into `execute_stream` was considered and rejected: it would keep
+  object identity but leave the handler calling `Runtime.sessions().load` itself.
+
+  Agent resolution uses `AgentService.ensure_agent_available` (the same precheck `AgentHandler.initialize`
+  uses) before exposure and `supports_streaming` gates, so an unknown name fails without a session
+  being loaded. The handler still builds its own requests from `RunAgentInput` rather than from
   `RequestBuilder`, and it wants its own error shape (`RunError`, not an error `StreamChunk`).
 
 **`mapping.py`**
 
 ```python
-def to_agui(event: StreamEvent) -> BaseEvent | None:
-    match event.type:
-        case "message_start": return TextMessageStartEvent(...)
-        case "text_delta":    return TextMessageContentEvent(...)
-        ...
-        case _:               return None
+class AGUIMapper:
+    @staticmethod
+    def to_agui(event: StreamEvent) -> BaseEvent | None:
+        match event.type:
+            case "message_start": return TextMessageStartEvent(...)
+            case "text_delta":    return TextMessageContentEvent(...)
+            ...
+            case _:               return None
 ```
 
 A `match` on the discriminator, not a dict — matching how adapters translate typed unions
-(`framework/openai/openai.py:108-140`). Pure function, no class, no state.
+(`framework/openai/openai.py:108-140`). Namespace class of static methods, no instance state.
 
 **All twelve AK events map**, so the "known-unmapped allowlist" in the exhaustiveness test is empty
 and the `case _` branch is a forward-compatibility guard rather than a live path. Three of the twelve
@@ -691,7 +697,7 @@ needed a decision the sketch above does not make, each verified against the pinn
   literal, and a custom adapter's unexpected role would otherwise raise mid-stream and turn a working
   run into a `RunError`.
 
-**`run_input.py`** maps `RunAgentInput` onto AK types, and is where the trust boundary is enforced:
+**`run_input.py`** (`AGUIRunInput`) maps `RunAgentInput` onto AK types, and is where the trust boundary is enforced:
 
 SDK models set `alias_generator=to_camel`, so every field below is `snake_case` in Python and
 `camelCase` on the wire (`forwarded_props` ↔ `forwardedProps`). This table uses the Python names.
@@ -929,7 +935,7 @@ posture.
 | Audio / video content in the request body | `HTTPException(400)` with an explanatory message. AK has no equivalent request type |
 | Unrecognised `role`, or unknown content/source `type`, **in history** | Ignored. Unreachable by construction: the pre-filter keeps only the final `user` message, so history never reaches pydantic |
 | No `user` message in `messages` | `HTTPException(400)`. There is no turn to run |
-| A `user` message whose content is an empty list or a blank string | `HTTPException(400)`. It maps to zero AK requests, so the agent would run on nothing while the client saw an ordinary run. Raised in `parse_run_input`, before `apply_to_session` writes anything |
+| A `user` message whose content is an empty list or a blank string | `HTTPException(400)`. It maps to zero AK requests, so the agent would run on nothing while the client saw an ordinary run. Raised in `AGUIRunInput.parse`, before `AGUIRunInput.set_agui_session_keys` writes anything |
 | Unknown `content[].type` or `source.type` **in the final user message** | `HTTPException(400)` naming the unknown value. Same treatment as audio/video, and for the same reason — a silent drop reads as the agent ignoring the attachment |
 | `BinaryInputContent` carrying only `id` | `HTTPException(400)`. The id references a store AK does not have; `data` and `url` are both handled |
 | Unknown top-level field in `RunAgentInput` | Ignored. Free from the SDK's `extra="allow"` |
@@ -938,7 +944,7 @@ posture.
 | `RunAgentInput.state` present but not a JSON object | `HTTPException(400)`. `Session.set_agui_state` would raise `TypeError`, which is a 500 |
 | `RunAgentInput.forwardedProps` present but not a JSON object | Ignored with a `WARNING`. Nothing reads the field back, so a 400 would reject a run over data the agent never needed — but a discarded client field is not a debug-level event |
 | `update_agui_state` called with malformed JSON | Returns `{"error": ...}` to the model; nothing is written. A tool never raises into the framework |
-| `state` / `forwardedProps` / `context` sent while the matching config block is off for this agent | Stored anyway, and a `WARNING` per field names the flag that would expose it. `apply_to_session` is deliberately ungated — the write is cheap and the alternative is threading per-agent config into the inbound mapping — but silence would leave an app author watching the model ignore data it was sent, with no error and no `StateSnapshot` to go on. Both flags default to `False`, so this is the **default** configuration, not an edge case |
+| `state` / `forwardedProps` / `context` sent while the matching config block is off for this agent | Stored anyway, and a `WARNING` per field names the flag that would expose it. `set_agui_session_keys` is deliberately ungated — the write is cheap and the alternative is threading per-agent config into the inbound mapping — but silence would leave an app author watching the model ignore data it was sent, with no error and no `StateSnapshot` to go on. Both flags default to `False`, so this is the **default** configuration, not an edge case |
 | Concurrent runs on one `thread_id` | **Out of contract; the client owns run sequencing.** Overlapping runs on one thread may observe each other's writes: `SessionStore.load` returns the live object for the in-memory store and for redis/valkey with `session.cache`, and `Runtime.stream` clears the volatile cache in its `finally` — so run A finishing can wipe run B's `forwardedProps` before B's stream starts, and B then reads `{}`. Nothing serialises the handler's writes against an in-flight run, because the session lock is not reentrant and the handler cannot hold it across `Runtime.stream`. This is pre-existing session-store behaviour that AG-UI is the first surface to expose with a client-supplied id, tracked separately rather than fixed here. AG-UI is request/response per run and the shipped example serialises (`Composer disabled={running}`); note the example's `threadId` comes from `localStorage`, so two browser tabs do share one thread |
 | `_extract_attachment` meets a malformed `data:` URI | Falls through to the bare-base64 path rather than raising, so one bad attachment cannot fail the run |
 
@@ -956,7 +962,7 @@ Run with `cd ak-py && uv run pytest`.
 | `tests/test_runtime_stream_events.py` | `Runtime.stream` populates `delta` and `event` together; a hook that redacts rewrites **both** (the §4 rule 1 check); a hook returning `None` drops the whole chunk; non-text events skip hooks; **`ReasoningDelta` reaches the hook chain but never reaches `delta`** (rule 5); and for the transitional branch — **a `str`-yielding runner's tokens are redacted and dropped by `on_stream_chunk` exactly as a `TextDelta`-yielding one's are** (rule 4), wrapped in one synthetic `MessageStart`/`MessageEnd` pair sharing a single `message_id`, and **a run whose hooks drop every token emits neither boundary** rather than an empty message. The hook assertions are the regression guard: no test in the suite references `on_stream_chunk` today, so nothing else would catch the chain being bypassed |
 | `tests/test_multimodal_source_forms.py` | All five source forms through `MultimodalPreHook`: bare base64 stored as today; `data:` split with its real mime type; `http`/`https`/`s3` neither described nor stored **and still present in the returned request list** |
 | `tests/test_agui_run_input.py` | `thread_id`→`session_id`; `state` stored, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` **and** an unknown `content[].type` in history are both ignored rather than 422, while the same unknown content type in the final user message is a 400; a body with no `user` message is a 400; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every inbound mapping** |
-| `tests/test_agui_mapping.py` | Exhaustiveness: enumerate every member of the `StreamEvent` union and assert `to_agui` returns either an AG-UI event or an explicit `None` from a known-unmapped allowlist. A new event type with no decision fails this test |
+| `tests/test_agui_mapping.py` | Exhaustiveness: enumerate every member of the `StreamEvent` union and assert `AGUIMapper.to_agui` returns either an AG-UI event or an explicit `None` from a known-unmapped allowlist. A new event type with no decision fails this test |
 | `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; a runner that raises after a `TextDelta` producing `RunError` with **no** synthesised `TextMessageEnd`, which a handler balancing the boundaries would fail; and four `StateSnapshot` cases — unset→set emits, inbound `state` alone does **not** emit, no change does not emit, and a tool calling `update_agui_state` **does** emit (the last is the regression guard for the deep-copy trap in §9: with a live reference instead of a copy it silently never fires) |
 | `tests/test_client_state_tools.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.client_context.enabled`, and respects `agents` scoping |
 

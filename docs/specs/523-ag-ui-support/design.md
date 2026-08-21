@@ -58,19 +58,22 @@ WebSocket / MCP / A2A is the opposite direction, and satisfies the principle tha
 
 ## Architecture
 
-A run is served inline: the handler drives `Runtime.stream` directly, and encodes each event as it
-arrives. (**Reversed during PR 3** — see Execution below; this said `ChatService.execute_stream`.)
+A run is served inline: the handler uses `ChatService.prepare_agent_handler` (select + load), writes onto that
+session, streams via `AgentHandler.run_stream_async`, and encodes each event as it arrives.
+(`execute_stream` is still unused — it hides the session; see Execution.)
 
 ```mermaid
 flowchart LR
     UI["Web UI"]
     H["AG-UI handler<br/><i>integration/agui</i>"]
+    CS["ChatService.prepare_agent_handler"]
     RT["Runtime.stream<br/><i>pre-hooks · runner · post-hooks</i>"]
 
     UI -- "POST RunAgentInput" --> H
-    H -- "calls" --> RT
+    H -- "prepare_agent_handler" --> CS
+    CS -- "run_stream_async" --> RT
     RT -. "StreamChunk.event" .-> H
-    H -. "SSE event stream<br/><i>to_agui</i>" .-> UI
+    H -. "SSE event stream<br/><i>AGUIMapper.to_agui</i>" .-> UI
 ```
 
 
@@ -125,9 +128,10 @@ SDK's `EventEncoder` and typed from `encoder.get_content_type()` rather than a h
   "negotiated from the request's `Accept` header"; that describes the SDK's intent, not its
   behaviour. AK still routes through the encoder — it owns the wire framing, and AK inherits real
   negotiation for free if the SDK ever implements it — but the surface replies SSE either way.
-- Translation is a **pure function**, `to_agui(event)` in `integration/agui/mapping.py`: a branch per
-AK event discriminator, returning `None` where AG-UI has no equivalent. No class, no state — the
-event model carries the boundaries that would otherwise have to be inferred.
+- Translation is a **pure function**, `AGUIMapper.to_agui(event)` in `integration/agui/mapping.py`: a
+branch per AK event discriminator, returning `None` where AG-UI has no equivalent. A namespace class
+of static methods, no instance state — the event model carries the boundaries that would otherwise
+have to be inferred.
   - Spelled as a discriminator chain rather than a lookup dict, matching how every adapter already
   translates a typed union into another vocabulary (`framework/openai/openai.py:108-140`). Several
   branches need more than one line, which a dict of type-to-type would fight.
@@ -370,15 +374,20 @@ and the `framework_context` store must still run only after the stream drains no
 
 ### Execution
 
-- The handler always streams. It drives `Runtime.stream` directly and encodes each event as it
-arrives.
-  - **This reverses an earlier requirement in this document**, which routed the run through the
-  `ChatService` execution core (`execute_stream`). `ChatService` exists to build AK's own chat
-  response shapes, and AG-UI needs the raw event stream plus the session object it can read
-  `state` back from — so going through it meant unwrapping work it had just done. spec.md §9
-  records the mechanics; the practical consequence is that AG-UI owns its own run lifecycle
-  (`RunStarted`, exactly one terminal event, the change-only `StateSnapshot`) rather than
-  inheriting `ChatService`'s.
+- The handler always streams. It uses `ChatService.prepare_agent_handler` to select the agent and load the session,
+  writes AG-UI fields onto that session, then streams via `AgentHandler.run_stream_async` and encodes
+  each event as it arrives.
+  - **This revises an earlier requirement in this document**, which first routed the run through
+  `ChatService.execute_stream`, then reversed to `Runtime.stream` directly. `execute_stream` hides
+  the session it loaded, and AG-UI has to write `state` / `forwardedProps` / `context` onto that
+  object *before* the run and read state back *after* — so going through `execute_stream` meant a
+  second `load()` under persistent stores, and `get_forwarded_props()` returning `{}`. `prepare_agent_handler` is
+  the select-and-load step `execute_stream` already does, returned so AG-UI can write in between.
+  The handler still owns the AG-UI run lifecycle (`RunStarted`, exactly one terminal event, the
+  change-only `StateSnapshot`) rather than inheriting `ChatService`'s error-chunk shape.
+  - Do not pass a pre-loaded `session=` into `execute_stream`: that would keep object identity but
+  leave the handler calling `Runtime.sessions().load` itself, which is the layering the review
+  asked to stop.
 - **AG-UI does not read or require** `execution.mode`**.** Its routes are its own, so it neither
 consults the process-wide mode nor forces it to `stream`.
   - `Runtime.stream` and the adapters' `Runner.stream` are independent of that setting — it selects
@@ -726,8 +735,9 @@ purpose is driving a user interface is not demonstrated by test assertions alone
     TypeScript app with a committed `package-lock.json`. A single file with runtime-compiled
     templates turned out to be React in name only — no components to read, no JSX, and nothing
     testable — so the event stream could not be exercised in isolation. The build is optional:
-    `build.sh` warns and continues when `npm` is absent, `GET /` explains how to build, and no CI
-    job installs Node for this example, which preserves what the original objection was protecting.
+    `build.sh` installs Python only; the UI is `npm run dev` (or an optional `npm run build` served
+    at `GET /`). No CI job installs Node for this example, which preserves what the original
+    objection was protecting.
     See `plan.md` iteration 3 for the full reasoning and the measurements behind it.
   - It must render a tool call live, not just streamed text — that is precisely what AK's existing
   REST SSE surface cannot show, and therefore what the example exists to prove.

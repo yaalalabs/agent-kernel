@@ -10,8 +10,8 @@ Four of these guard failures with no other symptom:
 - **The unbalanced TextMessageStart.** A run that fails mid-message must end with `RunError` and no
   synthesised `TextMessageEnd` — a handler that balanced the boundaries would assert a completion
   that did not happen, and would pass every other test here.
-- **The session the run executes in.** The handler must hand `Runtime.stream` the same session object
-  it wrote `forwardedProps` onto. `test_client_context_reaches_a_tool_with_a_copying_store` uses a
+- **The session the run executes in.** The handler must stream through the same session object
+  `ChatService.prepare_agent_handler` loaded, after writing `forwardedProps` onto it. `test_client_context_reaches_a_tool_with_a_copying_store` uses a
   store whose `load()` returns a fresh copy — the behaviour of every persistent store — so it fails
   if the handler ever lets the run load its own.
 - **The 404 for an unexposed agent.** It must be indistinguishable from an unknown one, or the
@@ -329,7 +329,7 @@ class TestRequestRejection:
         """A 400 from the mapping must not have written to the session first.
 
         `to_requests` rejects audio, video and a `binary` part carrying only an id. If
-        `apply_to_session` has already run, the rejected request's `state` and `forwardedProps` are
+        `set_agui_session_keys` has already run, the rejected request's `state` and `forwardedProps` are
         stored — and because `Runtime.stream` never runs, nothing clears the volatile cache, so the
         *next* run on that thread reads them.
         """
@@ -527,7 +527,7 @@ class TestClientContextDelivery:
 
 
 class TestUnreadableInboundFields:
-    """`apply_to_session` writes state/props/context unconditionally, but the tools that read them are
+    """`set_agui_session_keys` writes state/props/context unconditionally, but the tools that read them are
     attached only when the config blocks are enabled — and both default to False. Silence there means
     an app author watches the model ignore data it was sent, with nothing to go on."""
 

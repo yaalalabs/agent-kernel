@@ -1,6 +1,5 @@
-/** Run-scoped ids, which only need to be unique within one conversation. */
+/** Run-scoped id, unique within one conversation. */
 export function uuid(): string {
-  // randomUUID is exposed only in a secure context, so it is absent from a page opened off disk.
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
 
   const bytes = crypto.getRandomValues(new Uint8Array(16));

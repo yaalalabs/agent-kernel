@@ -1,8 +1,3 @@
-/**
- * Tests for the AG-UI event reducer and the SSE frame parser, run with `npm test` on Node's built-in
- * runner — no test framework, which these modules earn by importing neither React nor the DOM. Node
- * strips the types rather than compiling them, so this needs Node 22.18 or newer.
- */
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -11,12 +6,6 @@ import { sseEvents } from "./sse.ts";
 import type { AgUiAction, TextLine, ToolLine, View } from "./types.ts";
 import { uuid } from "./uuid.ts";
 
-/**
- * Events enter as `unknown` and are cast, which is the condition under test rather than a shortcut:
- * several cases below feed events that are deliberately malformed or from a protocol version that does
- * not exist, and surviving those is the reducer's contract. Typing this strictly would make them
- * unwritable.
- */
 const fold = (events: unknown[], from: View = EMPTY_VIEW): View =>
   events.reduce<View>((view, event) => reduceEvent(view, event as AgUiAction), from);
 
@@ -27,7 +16,6 @@ const statusOf = (events: unknown[]) => {
   return status && [status.what, status.detail];
 };
 
-/** Read a line at a known index, asserting the kind — so a wrong kind fails here, not on a field. */
 const textAt = (view: View, index: number): TextLine => {
   const line = view.lines[index];
   assert.ok(line && line.kind !== "tool", `line ${index} should carry text`);
@@ -123,7 +111,6 @@ test("the status strip follows the protocol's boundary events", () => {
 });
 
 test("TOOL_CALL_END names the tool from the call already held", () => {
-  // The event carries only tool_call_id, so reading event.toolCallName here yields undefined.
   const status = statusOf([
     { type: "TOOL_CALL_START", toolCallId: "t1", toolCallName: "update_agui_state" },
     { type: "TOOL_CALL_END", toolCallId: "t1" },
@@ -144,7 +131,6 @@ test("STATE_SNAPSHOT updates the state and adds no transcript line", () => {
 });
 
 test("a client tolerates what a given adapter does not send", () => {
-  // Content with no preceding start still renders: which events an agent emits depends on its runner.
   assert.equal(textAt(fold([{ type: "TEXT_MESSAGE_CONTENT", messageId: "m9", delta: "orphan" }]), 0).text, "orphan");
   assert.deepEqual(fold([{ type: "TOOL_CALL_ARGS", toolCallId: "nope", delta: "x" }]).lines, [], "args for a call never announced");
   assert.deepEqual(fold([{ type: "ACTIVITY_SNAPSHOT" }, { type: "SOMETHING_FROM_0_3" }]), EMPTY_VIEW, "unknown types leave the view alone");
@@ -173,7 +159,6 @@ test("a full run of mixed events folds into a coherent view", () => {
   assert.deepEqual(kinds(view), ["thinking", "tool", "assistant"]);
   assert.deepEqual(view.state, { tasks: [{ title: "milk", done: false }] });
   assert.equal(view.status, null, "a finished run leaves the strip idle");
-  // The streamed argument fragments must reassemble into valid JSON, as a real model's would.
   assert.equal(typeof JSON.parse(toolAt(view, 1).args), "object");
 });
 
@@ -188,7 +173,7 @@ test("SSE frames survive reads that split mid-JSON", async () => {
     .join("");
 
   const raw = new TextEncoder().encode(body);
-  const cuts = [0, 30, 31, 120, raw.length]; // several land inside a JSON object
+  const cuts = [0, 30, 31, 120, raw.length];
   const chunks = cuts.slice(1).map((cut, i) => raw.slice(cuts[i], cut));
 
   let next = 0;

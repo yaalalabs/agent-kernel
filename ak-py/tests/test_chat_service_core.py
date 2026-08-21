@@ -326,3 +326,65 @@ class TestActingUserPropagation:
         await service.execute(self._request("s-acting-6", user_id="u-6"))
         await service.execute(self._request("s-acting-6"))
         assert runner.seen == ["u-6", None]
+
+
+class TestPrepareAgentHandler:
+    def test_returns_the_initialized_handler(self):
+        handler = _mock_handler()
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            prepared = ChatService().prepare_agent_handler("s1", "a1")
+        assert prepared is handler
+        handler.initialize.assert_called_once_with("s1", "a1")
+
+    def test_unknown_agent_raises(self):
+        handler = _mock_handler()
+        handler.initialize.side_effect = ValueError("No agent available")
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(ValueError, match="No agent available"):
+                ChatService().prepare_agent_handler("s1", "missing")
+
+
+class TestEnsureAgentAvailable:
+    def test_named_miss_raises(self):
+        from agentkernel.core.service import AgentService
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        runtime = Runtime(InMemorySessionStore())
+        with runtime:
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService().ensure_agent_available("missing")
+
+    def test_unnamed_with_empty_registry_raises(self):
+        from agentkernel.core.service import AgentService
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        runtime = Runtime(InMemorySessionStore())
+        with runtime:
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService().ensure_agent_available(None)
+
+    def test_named_hit_does_not_select_or_load(self):
+        from agentkernel.core.service import AgentService
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        capturing_runner = _ActingUserRunner()
+        agent = _ActingUserAgent(capturing_runner)
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(agent)
+        with runtime:
+            service = AgentService()
+            service.ensure_agent_available(ACTING_USER_AGENT)
+            assert service.agent is None
+            assert service.session is None
+
+    def test_initialize_does_not_load_a_session_for_an_unknown_agent(self):
+        from agentkernel.core.chat_service import AgentHandler
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        store = InMemorySessionStore()
+        runtime = Runtime(store)
+        with runtime:
+            with patch.object(store, "load", wraps=store.load) as load:
+                with pytest.raises(ValueError, match="No agent available"):
+                    AgentHandler().initialize("s1", "missing")
+                load.assert_not_called()

@@ -2,13 +2,6 @@ import { useEffect, useRef } from "react";
 
 import type { Line, TextLine, ToolLine } from "../agui/types.ts";
 
-/**
- * The message list, and the three ways a line can render. Choosing the renderer off `line.kind` is
- * why `Line` is a discriminated union: each branch hands on a line already narrowed to the fields its
- * renderer reads, so a tool card cannot be passed a line of prose.
- */
-
-/** The agent's own working, styled to read as clearly *not* the answer. */
 function Thinking({ line }: { line: TextLine }) {
   return (
     <div className="thinking">
@@ -18,7 +11,6 @@ function Thinking({ line }: { line: TextLine }) {
   );
 }
 
-/** One call, growing in three stages: the name, then the streamed args, then the result. */
 function ToolCall({ line }: { line: ToolLine }) {
   return (
     <div className="tool">
@@ -51,6 +43,7 @@ function LineView({ line }: { line: Line }) {
   return <div className={`msg ${line.kind}`}>{line.text}</div>;
 }
 
+/** Message list, scrolled to the latest line. */
 export default function Transcript({ lines }: { lines: Line[] }) {
   const box = useRef<HTMLDivElement>(null);
 

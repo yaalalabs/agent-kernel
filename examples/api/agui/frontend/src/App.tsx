@@ -15,7 +15,7 @@ const FILE_ORIGIN_HINT: TextLine = {
     "http://localhost:8000. Served from a file:// URL there is no server to send runs to.",
 };
 
-/** The layout and the page header. On a file:// origin there is no server to POST to, so say so up front. */
+/** Layout and page header. Warns if the page was opened from a file:// URL. */
 export default function App() {
   const [token, setToken] = useState("demo-token");
   const { threadId, runId, view, running, send, reset } = useAgUiRun(token);

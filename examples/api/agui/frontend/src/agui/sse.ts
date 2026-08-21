@@ -1,10 +1,6 @@
 import type { AGUIEvent } from "@ag-ui/core";
 
-/**
- * AG-UI's transport is Server-Sent Events, parsed by hand here because `EventSource` cannot issue a
- * POST. The server sends one `data: {json}` line per event, separated by blank lines; a network read
- * can split anywhere, so the trailing partial frame is held back until the rest of it arrives.
- */
+/** Parse SSE `data:` frames from a fetch Response. */
 export async function* sseEvents(response: Response): AsyncGenerator<AGUIEvent> {
   if (!response.body) throw new Error("The AG-UI response carried no body to stream.");
 
@@ -22,7 +18,7 @@ export async function* sseEvents(response: Response): AsyncGenerator<AGUIEvent> 
 
     for (const frame of frames) {
       for (const line of frame.split("\n")) {
-        if (line.startsWith("data:")) yield JSON.parse(line.slice(5)) as AGUIEvent; // asserted, not validated
+        if (line.startsWith("data:")) yield JSON.parse(line.slice(5)) as AGUIEvent;
       }
     }
   }
