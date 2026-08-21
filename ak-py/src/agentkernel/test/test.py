@@ -31,7 +31,8 @@ class Test:
         """
         Initializes an instance of the Test with a specified command-line interface (CLI) path.
         :param path: Python file path as a string
-        :param match_threshold: Matching threshold in [0.0, 1.0] for the response comparison.
+        :param match_threshold: Matching threshold for the response comparison, typically in [0.0, 1.0]
+            but dependent on the configured evaluator's scoring scale.
         :param mode: Test comparison mode - 'score', 'llm', or 'fallback'. If None, uses config value.
         """
         working_dir = Path.cwd()
@@ -178,7 +179,9 @@ class Test:
         :param actual: The string to be compared.
         :param expected: A list of acceptable strings to compare against.
         :param user_input: The user input string (question). Used for LLM evaluation.
-        :param threshold: The minimum score in [0.0, 1.0] required to pass. Default is 0.5.
+        :param threshold: The minimum score required to pass. Typically in [0.0, 1.0], but the valid/meaningful
+            range depends on the configured evaluator's scoring scale, since different underlying frameworks
+            (score-based or LLM-judge) may score outside that range. Not validated here. Default is 0.5.
         :param mode: Comparison mode - 'score', 'llm', or 'fallback'. Default is 'fallback'.
         :param return_metrics: If True, return the decisive AKEvaluationResult instead of raising on failure.
         :raises AssertionError: If the actual string doesn't match any expected string and return_metrics is False.

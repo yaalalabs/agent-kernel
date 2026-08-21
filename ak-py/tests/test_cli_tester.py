@@ -228,8 +228,9 @@ def test_compare_legacy_mode_names_rejected(legacy_mode):
 
 
 def test_compare_threshold_outside_zero_one_is_not_rejected(monkeypatch):
-    # No range validation: an out-of-[0.0, 1.0] threshold is accepted as-is, it just changes
-    # whether a 0.0/1.0-scored comparison can pass.
+    # No range validation: threshold isn't restricted to [0.0, 1.0] because the meaningful range
+    # depends on the configured evaluator/framework's scoring scale. An out-of-range threshold is
+    # accepted as-is, it just changes whether a 0.0/1.0-scored comparison can pass.
     _use_evaluator(monkeypatch, "_FakeEvaluator")
     with pytest.raises(AssertionError):
         CliTest.compare("Hello", ["Hello"], threshold=1.5, mode=Mode.SCORE)
