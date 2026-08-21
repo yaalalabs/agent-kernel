@@ -3,11 +3,13 @@ slug: /aws-queue-mode-scalability
 title: "Scaling Agent Kernel on AWS: Decoupling Request Handling from Agent Execution"
 authors: [lkumara]
 tags: [agent-kernel, aws, scalability, sqs, lambda, ecs, queue-mode, enterprise-ai]
-image: /img/card.png
+image: /img/blog/queue-mode-banner.png
 description: Agent Kernel now decouples request handling from agent execution on AWS with a durable SQS queue pipeline, so traffic spikes scale your infrastructure instead of overwhelming it, with zero agent-code changes.
 ---
 
 # Scaling Agent Kernel on AWS: Decoupling Request Handling from Agent Execution
+
+![Agent Kernel Queue Mode on AWS: a client's request travels Request Handler → Input SQS FIFO queue → Agent Runner → Output SQS FIFO queue → Response Handler, which either stores the reply in DynamoDB for rest_sync/rest_async or pushes it down a WebSocket for async/stream, deployed as three Lambda functions or two ECS services](/img/blog/queue-mode-banner.png)
 
 **A busy restaurant never asks the person taking your order to also cook your meal.**
 
