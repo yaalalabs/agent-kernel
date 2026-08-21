@@ -5,6 +5,7 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
+from uuid import uuid4
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -28,6 +29,9 @@ from ...core.config import AKConfig
 from ...core.event import (
     MessageEnd,
     MessageStart,
+    ReasoningDelta,
+    ReasoningEnd,
+    ReasoningStart,
     StreamEvent,
     TextDelta,
     ToolCallArgs,
@@ -456,6 +460,7 @@ class LangGraphRunner(BaseRunner):
 
             incoming = self._load_framework_context(session)
             started: set[str] = set()  # run ids with an open MessageStart; local, never on self
+            reasoning: dict[str, str] = {}  # run id -> open reasoning stream id; local for the same reason
             input_state: dict[str, Any] = {}
             if incoming:
                 input_state.update(incoming)
@@ -466,7 +471,7 @@ class LangGraphRunner(BaseRunner):
                 config=config,
                 version="v2",
             ):
-                for stream_event in self._map_event(event, started):
+                for stream_event in self._map_event(event, started, reasoning):
                     yield stream_event
 
             # astream_events yields events, not a final state, so read the state back once the stream drains
@@ -483,7 +488,7 @@ class LangGraphRunner(BaseRunner):
                 context.reset()
 
     @staticmethod
-    def _map_event(event: dict, started: set[str]) -> list[StreamEvent]:
+    def _map_event(event: dict, started: set[str], reasoning: dict[str, str]) -> list[StreamEvent]:
         """
         Translate one LangChain `astream_events` event into AK events.
 
@@ -493,27 +498,50 @@ class LangGraphRunner(BaseRunner):
         correctly, and must stay a per-stream local — a `Runner` is shared across sessions.
         Chain/prompt/etc. events are ignored (`on_chain_*` is too coarse for `StepStart`/`StepEnd`).
 
+        Reasoning is a second boundary stream with its own id (message id is already `run_id`).
+        A reasoning id is generated on first use and stored in `reasoning` per `run_id`. Per chunk,
+        reasoning opens first; answer text closes any open reasoning stream before the message
+        opens (same order as the ADK adapter).
+
         :param event: One event from `astream_events(version="v2")`.
         :param started: Run ids whose `MessageStart` has been emitted. Mutated in place.
+        :param reasoning: Run id to its open reasoning stream's id. Mutated in place.
         :return: The AK events this event produces, or an empty list when unmapped.
         """
         kind = event["event"]
         run_id = event["run_id"]
 
         if kind == "on_chat_model_end":
-            if run_id not in started:
-                return []
-            started.discard(run_id)
-            return [MessageEnd(message_id=run_id)]
+            closing: list[StreamEvent] = []
+            thinking_id = reasoning.pop(run_id, None)
+            if thinking_id is not None:
+                closing.append(ReasoningEnd(message_id=thinking_id))
+            if run_id in started:
+                started.discard(run_id)
+                closing.append(MessageEnd(message_id=run_id))
+            return closing
         if kind == "on_chat_model_stream":
-            texts = LangGraphRunner._chunk_text(event)
-            if not texts:
+            texts, thoughts = LangGraphRunner._chunk_content(event)
+            if not texts and not thoughts:
                 return []
             events: list[StreamEvent] = []
-            if run_id not in started:
-                started.add(run_id)
-                events.append(MessageStart(message_id=run_id))
-            events.extend(TextDelta(message_id=run_id, content=text) for text in texts)
+
+            if thoughts:
+                thinking_id = reasoning.get(run_id)
+                if thinking_id is None:
+                    thinking_id = uuid4().hex
+                    reasoning[run_id] = thinking_id
+                    events.append(ReasoningStart(message_id=thinking_id))
+                events.extend(ReasoningDelta(message_id=thinking_id, content=thought) for thought in thoughts)
+
+            if texts:
+                thinking_id = reasoning.pop(run_id, None)
+                if thinking_id is not None:
+                    events.append(ReasoningEnd(message_id=thinking_id))
+                if run_id not in started:
+                    started.add(run_id)
+                    events.append(MessageStart(message_id=run_id))
+                events.extend(TextDelta(message_id=run_id, content=text) for text in texts)
             return events
         if kind == "on_tool_start":
             call: list[StreamEvent] = [ToolCallStart(tool_call_id=run_id, name=event.get("name") or "")]
@@ -527,22 +555,44 @@ class LangGraphRunner(BaseRunner):
         return []
 
     @staticmethod
-    def _chunk_text(event: dict) -> list[str]:
+    def _chunk_content(event: dict) -> tuple[list[str], list[str]]:
         """
-        Pull prose out of an `on_chat_model_stream` chunk.
+        Split one `on_chat_model_stream` chunk into (answer text, reasoning text).
 
-        `content` is a plain string for most providers, or a list of blocks (e.g. Anthropic
-        text interleaved with tool-use). Non-text blocks and empty fragments are skipped.
+        Reads `content_blocks` (not raw `content`) so provider-specific reasoning placement is
+        normalised. Reasoning text comes from the block's `reasoning` key, with `summary[].text`
+        as fallback for `output_version="v1"`. Empty fragments are dropped.
 
         :param event: An `on_chat_model_stream` event from `astream_events`.
-        :return: Non-empty text fragments from the chunk.
+        :return: Answer fragments and reasoning fragments (either may be empty).
         """
-        content = event["data"]["chunk"].content
-        if isinstance(content, str):
-            return [content] if content else []
-        if isinstance(content, list):
-            return [item["text"] for item in content if isinstance(item, dict) and item.get("text")]
-        return []
+        answer: list[str] = []
+        thoughts: list[str] = []
+        for block in event["data"]["chunk"].content_blocks:
+            kind = block.get("type")
+            if kind == "text":
+                if block.get("text"):
+                    answer.append(block["text"])
+            elif kind == "reasoning":
+                thought = block.get("reasoning") or LangGraphRunner._summary_text(block)
+                if thought:
+                    thoughts.append(thought)
+        return answer, thoughts
+
+    @staticmethod
+    def _summary_text(block: dict) -> str:
+        """Flatten a reasoning block's `summary` list into text.
+
+        The shape `content_blocks` leaves alone at `output_version="v1"`: a list of
+        `{"type": "summary_text", "text": ...}` parts rather than a single `reasoning` string.
+
+        :param block: One reasoning content block.
+        :return: The concatenated summary text, empty when the block carries no usable summary.
+        """
+        summary = block.get("summary")
+        if not isinstance(summary, list):
+            return ""
+        return "".join(part["text"] for part in summary if isinstance(part, dict) and part.get("text"))
 
     @staticmethod
     def _tool_arguments(event: dict) -> str:

@@ -898,6 +898,21 @@ disagreeing with three about one protocol concept, which is the defect §4 rule 
   as a tool fires `on_tool_start`/`on_tool_end` and is already mapped, but a bare `Command(goto=...)`
   edge transition fires `on_chain_*`, which this PR declined as too noisy. So LangGraph surfaces a
   handoff only when the application built it as a tool.
+- **LangGraph reasoning reaches AK through `content_blocks`, not `content` — and this section
+  originally got it wrong.** The fidelity matrix first recorded LangGraph as producing no reasoning, as
+  though it were a framework limitation. It is not: LangChain has a first-class reasoning block, and
+  `ChatOpenAI` puts reasoning in `additional_kwargs` while leaving raw `content` an **empty list**, so
+  a filter over `content` can never find it. `content_blocks` is the normalising accessor that
+  surfaces it, and reading it is the whole fix. Two details it took a failed attempt to learn:
+  - **The summary must be requested on the model.** AK maps the reasoning *summary*, so
+    `reasoning={"effort": ..., "summary": "auto"}` is required; without it the provider streams no
+    summary text and no adapter change can produce a thinking block. Changing only the adapter is
+    why the first attempt appeared to fail and was abandoned.
+  - **`content_blocks` normalisation is conditional.** It folds a `summary[]` block into a `reasoning`
+    key at the default `output_version`, but passes it through untouched at `"v1"`, and it surfaces
+    `additional_kwargs` reasoning only when `response_metadata["model_provider"]` is known. The
+    adapter therefore reads `reasoning` with a `summary[]` fallback, and the unit tests set the
+    provider explicitly rather than relying on a default.
 
 **Pydantic AI's rewrite must re-plumb two things** currently inside the `async with run_stream(...)`
 block (`framework/pydanticai/pydanticai.py:205-211`): `fw_session.messages = to_jsonable_python(...)`

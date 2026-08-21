@@ -136,7 +136,7 @@ thinking block.
 | Adapter | Reachable | Assistant message | Reasoning | Tool calls | Steps |
 |---|---|---|---|---|---|
 | OpenAI Agents SDK | ✅ | ✅ | ✅ | ✅ | ❌ |
-| LangGraph | ✅ | ✅ | ❌ | ✅ | ❌ |
+| LangGraph | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Google ADK | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Pydantic AI | ✅ | ✅ | ✅ | ✅ | ❌ |
 | CrewAI | ❌ | — | — | — | — |
@@ -149,9 +149,11 @@ Reading the table:
   routes exclude them: a `POST` to one returns a 400 naming the framework rather than a generic
   error. Both SDKs support streaming; AK simply has not wired those APIs yet. That is a pending
   adapter capability, not a permanent SDK limit.
-- **Reasoning is available on three of the four**, and only when the model actually produces it. AK
-  maps the model's reasoning *summary*, so a reasoning-capable model still emits nothing unless the
-  summary is requested. LangGraph reports none at all.
+- **Reasoning is available on all four streaming adapters**, and only when the model actually produces
+  it. AK maps the model's reasoning *summary*, so a reasoning-capable model still emits nothing unless
+  the summary is requested — on LangGraph that means `ChatOpenAI(..., reasoning={"effort": ...,
+  "summary": "auto"})`, and the equivalent on other providers. An empty thinking block is far more
+  often an unrequested summary than a missing capability.
 - **No adapter emits `StepStart` / `StepEnd` today.** LangGraph's `on_chain_*` fires for every
   runnable in a graph rather than only the nodes a reader would call steps, so choosing which to name
   is its own decision; the others have no equivalent signal. A client's step handling is therefore
