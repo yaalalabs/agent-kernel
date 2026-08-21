@@ -1625,8 +1625,6 @@ export AK_TEST__LLM__PROVIDER=openai
 export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```
 
-> **Migration note:** Earlier versions read test configuration from a `test:` section in `config.yaml`. That section is now ignored — move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`. A later release renamed the comparison modes (`fuzzy`→`score`, `judge`→`llm`) and `judge:`/`AK_TEST__JUDGE__*` to `llm:`/`AK_TEST__LLM__*` — a leftover `judge:` key or `AK_TEST__JUDGE__*` variable now raises a configuration error instead of being silently dropped — and added the `evaluator` key (default `deepeval`).
-
 ## Extensibility
 
 ### Custom Framework Adapters
