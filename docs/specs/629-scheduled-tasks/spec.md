@@ -473,7 +473,7 @@ All intentional; each traced to a design requirement:
 | Invalid spec: both/neither `at`/`cron` (pydantic), bad cron, unknown timezone, `at` not ISO / has UTC offset / in the past, cron with both day fields (EventBridge) | `ValueError` → 400 (chat + PUT), error JSON (tools) |
 | Creation without `user_id` | `ValueError` → 400 (chat); error JSON (tools, from the acting-user check) |
 | Provider create/update failure (`botocore ClientError`, local send failure at registration) | `ScheduleError` → 500 via the wrappers; create rolls the store record back (hard delete), update restores the previous record |
-| Provider/transport mismatch (`eventbridge` + non-`sqs` transport) | `AKConfigError` at `ScheduleManager` construction: IOHandler startup failure when the block is present; otherwise first scheduling use → 500 |
+| Provider/transport mismatch (`eventbridge` + non-`sqs` transport) | `AKConfigError` at `ScheduleManager` construction: app-build failure when the management routes are mounted; otherwise first scheduling use → 500 |
 | Missing `schedule.provider.eventbridge.{group_name,role_arn,queue_arn}` | `AKConfigError` at factory time (same surfacing as above) |
 | `croniter` not installed | `ImportError` with the extra hint via `require_extra("schedule", ...)` at manager build (`core/util/factory.py:50-64`) |
 | Store create/update/list failure | Propagates → 500 / error JSON |
