@@ -178,7 +178,9 @@ Implement `score_based_evaluation(case)` and `llm_based_evaluation(case)`, both 
 returning `AKEvaluationResult`. Raise `AKMetricNotSupported` from a method your backend can't
 provide, and `AKEvaluationError` on a backend failure (missing credentials, transport error) —
 never return a `0.0` for either. See `agentkernel.test.core.akevaluators` for the interface and
-payload models.
+payload models, and [`examples/cli/custom-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/custom-evaluator)
+for a complete working example (a stdlib-only token-overlap scorer plus a raw `litellm` judge, no
+DeepEval dependency at all).
 
 ## Advanced Features
 

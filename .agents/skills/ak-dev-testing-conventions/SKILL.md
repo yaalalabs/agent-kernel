@@ -269,18 +269,33 @@ async def test_agent_response(test_client):
 
 ### Test Modes
 
-Configured via `config.yaml`:
+Configured via `test-config.yaml` — a separate, un-nested file resolved from the cwd (or
+`AK_TEST_CONFIG_PATH_OVERRIDE`), loaded only when the test harness runs. It is not part of
+`config.yaml`; a leftover `test:` section there is ignored:
 
 ```yaml
-test:
-  mode: score    # score | llm | fallback
-  llm:
-    model: gpt-4o-mini
+mode: score    # score | llm | fallback (default: fallback)
+evaluator: deepeval   # built-in short name, or a dotted path to your own AKEvaluator subclass
+llm:
+  model: gpt-4o-mini
+  provider: openai
 ```
 
 - **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `score_based_evaluation` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call)
 - **llm**: LLM-as-judge scoring via `llm_based_evaluation` — the built-in `DeepevalAKEvaluator` uses DeepEval's `GEval` metric against the expected answer(s) (ground truth). Evaluation backends are pluggable (`agentkernel.test.core.akevaluators.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
 - **fallback**: Tries score first, falls back to llm if score fails
+
+`evaluator` is resolved by `Test._resolve_evaluator` (`agentkernel/test/test.py`), the same
+bring-your-own-dotted-path pattern `resolve_dotted`/`require_extra` (`core/util/factory.py`) use
+for session stores, sandbox providers, and trace backends — a custom evaluator subclasses
+`AKEvaluator` (`agentkernel.test.core.akevaluators`) and implements `score_based_evaluation`/
+`llm_based_evaluation`, each returning an `AKEvaluationResult`. See
+`examples/cli/custom-evaluator/` for a full worked example, and
+`docs/specs/555-pluggable-test-evaluators/` for the design/spec behind this interface.
+
+`Test.compare`/`Test.expect` also take `return_metrics: bool = False` — when `True`, they return
+the `AKEvaluationResult` instead of raising `AssertionError` on a failing comparison (other errors,
+e.g. `AKEvaluationError`/`AKMetricNotSupported`, still propagate).
 
 ### Test.compare() for API Tests
 

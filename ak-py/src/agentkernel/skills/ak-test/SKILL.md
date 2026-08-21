@@ -35,11 +35,12 @@ Run `uv sync` to install test dependencies.
 
 #### 2. Choose a Test Mode
 
-Update `config.yaml`:
+Create `test-config.yaml` in the directory you run tests from — it is a separate, un-nested file
+(no top-level `test:` key), loaded only when the test harness runs. A `test:` section left over in
+`config.yaml` is ignored:
 
 ```yaml
-test:
-  mode: score       # Options: score | llm | fallback
+mode: score       # Options: score | llm | fallback (default: fallback)
 ```
 
 | Mode | How it Works | Best For |
@@ -50,11 +51,26 @@ test:
 
 For llm mode, configure the llm model:
 ```yaml
-test:
-  mode: llm
-  llm:
-    model: gpt-4o-mini
+mode: llm
+llm:
+  model: gpt-4o-mini
+  provider: openai
 ```
+
+**Evaluator backend:** `evaluator` selects the scoring backend used by both `score` and `llm`
+modes — `deepeval` (the default) is the only built-in. Set it to a dotted path (e.g.
+`my_evaluator.MyEvaluator`) to bring your own `AKEvaluator` subclass instead:
+
+```yaml
+mode: fallback
+evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to your test file
+```
+
+A custom evaluator implements `score_based_evaluation(case)` and `llm_based_evaluation(case)`,
+both synchronous, returning an `AKEvaluationResult` — import the interface from
+`agentkernel.test.core.akevaluators` (`AKEvaluator`, `AKEvaluationCase`, `AKEvaluationResult`,
+`AKMissingInput`, `AKEvaluationError`). See `examples/cli/custom-evaluator/` for a full worked
+example.
 
 #### 3. Write CLI Agent Tests
 
@@ -102,6 +118,9 @@ async def test_follow_up(test_client):
 - Use `scope="session"` fixtures so the agent stays running across tests
 - `expect()` takes a list of acceptable answer patterns
 - The test framework uses the configured mode to compare responses
+- Pass `return_metrics=True` to `expect()` (or `Test.compare()`) to get back an
+  `AKEvaluationResult` (score, evaluator, metric, reason) instead of raising `AssertionError` on a
+  mismatch — useful for asserting on the score itself rather than just pass/fail
 
 #### 4. Write API Agent Tests
 
