@@ -165,9 +165,7 @@ class PydanticAIRunner(BaseRunner):
             fw_session = self._session(session)
             history = ModelMessagesTypeAdapter.validate_python(fw_session.messages) if fw_session and fw_session.messages else None
 
-            # `deps` is Pydantic AI's only caller-dependency slot and AK owns it, so tools and instruction
-            # functions read and mutate the context via RunContext.deps.
-            # A deep copy is passed in so tools mutating it in place don't also mutate `incoming`.
+            # Deep copy so in-place tool mutations do not alter `incoming`.
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
             result = await agent.agent.run(content, message_history=history, deps=produced)
@@ -193,52 +191,11 @@ class PydanticAIRunner(BaseRunner):
         """
         Streams the Pydantic AI agent response as Agent Kernel stream events.
 
-        **`run_stream_events()` replaces `run_stream()` + `stream_text(delta=True)`.** The old pair
-        could only ever yield prose: `stream_text` is text-only by construction, so tool calls and a
-        thinking model's reasoning were unreachable no matter what the consumer wanted. The
-        replacement yields the run's whole event stream, and it must be used as an async context
-        manager — the background run task is cleaned up on exit, and it does not start until the
-        first iteration.
-
-        **Every stream is driven by the part events, and the ids come from the framework.** Pydantic
-        AI brackets each part of a response with `part_start` / `part_delta` / `part_end`, which is
-        one shape serving all three of AK's streams — the part's own `part_kind` decides which:
-
-        - `text` → `MessageStart` / `TextDelta` / `MessageEnd`
-        - `thinking` → `ReasoningStart` / `ReasoningDelta` / `ReasoningEnd`, kept apart from the
-          answer because §4 rule 5 keeps reasoning out of `StreamChunk.delta`
-        - `tool-call` → `ToolCallStart` / `ToolCallArgs` / `ToolCallEnd`, and `function_tool_result`
-          supplies the matching `ToolCallResult`
-
-        **`index` alone cannot be the id, which is the one place this deviates from §10's sketch.**
-        `PartStartEvent.index` is the part's position *within one response*, so a run that calls a
-        tool and then answers restarts at 0 and two unrelated messages would collide on one id — an
-        AG-UI client would splice them into one bubble. The SDK is explicit that a repeated index
-        *replaces* the part rather than continuing it. So `open_parts` maps each live index to the AK
-        id allocated when it opened: a text or thinking part takes the provider's `part.id` when there
-        is one and a generated id otherwise, and a tool call takes its own `tool_call_id`, which is
-        never generated because the result has to correlate to it. A repeat at the same index closes
-        the old stream before opening a new one, so nothing is left dangling.
-
-        `open_parts` is a **local**, and passed in rather than held on `self`: one runner instance
-        serves every agent and every concurrent session, so on `self` one run would close another's
-        message or two runs would share an id (spec §10).
-
-        **`function_tool_call` is deliberately ignored.** The part events above already opened, filled
-        and closed the call, so mapping it too would emit every tool call twice — the same reason
-        OpenAI ignores `message_output_created`.
-
-        The two things that used to live inside the old `async with` block still run only after the
-        stream drains normally: the session-message bookkeeping, which now reads `all_messages()` off
-        the `agent_run_result` event captured as it passed rather than off the context manager's
-        value, and `_store_framework_context`. Neither is in a `finally`, so a client disconnect
-        leaves the stored context and history untouched.
-
-        **Structured outputs now behave exactly as they do on the ``run()`` path**, which they did not
-        before. ``run_stream_events`` is a wrapper over ``run()`` itself — it passes an
-        ``event_stream_handler`` and awaits the same call — whereas ``run_stream`` treated the first
-        output matching ``output_type`` as final and could therefore truncate where ``run()`` would not.
-        Replacing it removed that streamed-vs-sync divergence rather than preserving it.
+        Uses `run_stream_events()` so text, thinking, and tool-call parts are all reachable.
+        Part events drive the streams (`text` / `thinking` / `tool-call`); ids come from the
+        part or `tool_call_id` (or a generated id for text/thinking). `open_parts` / `carried`
+        are locals — the runner is shared across sessions. `function_tool_call` is ignored
+        because the part events already cover the call.
 
         :param agent: The Pydantic AI agent to run.
         :param session: The session to use for the agent.
@@ -259,12 +216,8 @@ class PydanticAIRunner(BaseRunner):
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
 
-            # Locals, never on self — see the docstring. `open_parts` maps a live part index to the
-            # (kind, id) it opened with, `carried` holds a stream kept open across a part boundary, and
-            # `run_result` is the final event's result, kept for the history write-back once the stream
-            # has drained.
-            open_parts: dict[int, tuple[str, str]] = {}
-            carried: dict[str, str] = {}
+            open_parts: dict[int, tuple[str, str]] = {}  # live index -> (kind, id); local, never on self
+            carried: dict[str, str] = {}  # kind -> id when a stream continues across a part boundary
             run_result: Any = None
 
             async with agent.agent.run_stream_events(content, message_history=history, deps=produced) as events:
@@ -276,10 +229,6 @@ class PydanticAIRunner(BaseRunner):
                     for stream_event in self._map_event(kind, event, open_parts, carried):
                         yield stream_event
 
-            # Closing whatever the stream never closed itself. Reached only on a clean drain: a client
-            # disconnect raises GeneratorExit at a yield above and unwinds past this. `carried` is
-            # drained too — a stream held open for a continuation that never arrived is still a stream
-            # a client is waiting to see closed.
             for index in list(open_parts):
                 for stream_event in self._close_part(index, open_parts, carried):
                     yield stream_event
@@ -290,13 +239,9 @@ class PydanticAIRunner(BaseRunner):
             if fw_session is not None and run_result is not None:
                 fw_session.messages = to_jsonable_python(run_result.all_messages())
             elif fw_session is not None:
-                # The write-back is the only thing that carries the conversation into the next turn, so
-                # its absence must not be silent: without the terminal event there is nothing to read
-                # `all_messages()` off, and the next request would start with no history and no clue why.
                 _log.warning("Pydantic AI stream drained without an agent_run_result event; conversation history was not persisted")
 
-            # Only after the stream drains normally, so a disconnect or mid-stream error leaves the stored
-            # context intact. Deliberately not in a finally.
+            # After a normal drain only — disconnect/error leaves stored context intact.
             try:
                 self._store_framework_context(session, incoming, produced)
             except Exception as e:
@@ -306,18 +251,16 @@ class PydanticAIRunner(BaseRunner):
                 context.reset()
 
     def _map_event(self, kind: str | None, event: Any, open_parts: dict[int, tuple[str, str]], carried: dict[str, str]) -> list[StreamEvent]:
-        """Translate one Pydantic AI run event into AK events.
+        """
+        Translate one Pydantic AI run event into AK events.
 
-        Discriminates on `event_kind`, which is the SDK's own field — only AK's event model uses
-        `type`. An event kind with no branch maps to nothing: `function_tool_call` because the part
-        events already carried the call, and `final_result`, `output_tool_call`, `output_tool_result`,
-        `enqueued_messages` and the two `deferred_tool_*` kinds because AK has no event for them.
+        Unmapped kinds (including `function_tool_call`) produce nothing.
 
         :param kind: The event's `event_kind` discriminator.
         :param event: The run event.
-        :param open_parts: The caller's live index → (kind, id) map, mutated here.
-        :param carried: The caller's kind → id map of streams held open across a part boundary.
-        :return: The AK events this run event produces, empty when it maps to nothing.
+        :param open_parts: Live index → `(kind, id)` map. Mutated in place.
+        :param carried: Kind → id map of streams held open across a part boundary.
+        :return: The AK events this run event produces, or an empty list.
         """
         if kind == "part_start":
             return self._open_part(event, open_parts, carried)
@@ -330,21 +273,16 @@ class PydanticAIRunner(BaseRunner):
         return []
 
     def _open_part(self, event: Any, open_parts: dict[int, tuple[str, str]], carried: dict[str, str]) -> list[StreamEvent]:
-        """Open a part's stream, or continue the one the previous part held open.
+        """
+        Open a part's stream, or continue one held open from the previous part.
 
-        **Adjacent parts of the same kind are one message, not two.** A model can split its prose
-        across several `text` parts, and rendering each as its own assistant bubble is wrong — so the
-        SDK marks the seam with `previous_part_kind` / `next_part_kind` "to know whether to group parts
-        of the same kind together". When this part continues the previous one, its id is reused and no
-        new boundary is emitted; only the content goes out, as a delta. Pydantic AI's own AG-UI adapter
-        does exactly this (`pydantic_ai/ui/ag_ui/_event_stream.py`, `follows_text`), and matching it is
-        what keeps a split response looking the same through AK as through the first-party path.
+        Adjacent parts of the same kind reuse the id (no new boundary). A second `part_start`
+        on a live index replaces the previous part and closes it first.
 
-        Tool-call parts are excluded: each carries its own `tool_call_id`, so there is nothing to group.
-
-        A second `part_start` on an index already live is a *replacement*, which the SDK says fully
-        supersedes the first — so that path terminates the old stream rather than continuing it. A
-        consumer that already rendered its deltas needs the boundary.
+        :param event: A `part_start` run event.
+        :param open_parts: Live index → `(kind, id)` map. Mutated in place.
+        :param carried: Kind → id map of streams held open across a part boundary.
+        :return: The AK events that open (or continue) this part.
         """
         index = event.index
         part = getattr(event, "part", None)
@@ -370,7 +308,6 @@ class PydanticAIRunner(BaseRunner):
             return events
 
         if part_kind == "tool-call":
-            # Never generated: the result correlates on this id, so a made-up one could not match.
             tool_call_id = getattr(part, "tool_call_id", None)
             if not tool_call_id:
                 _log.debug("Pydantic AI tool-call part carries no tool_call_id; not emitted")
@@ -382,15 +319,17 @@ class PydanticAIRunner(BaseRunner):
                 events.append(ToolCallArgs(tool_call_id=tool_call_id, delta=arguments))
             return events
 
-        # builtin-tool-call, builtin-tool-return, compaction, file — no AK event carries these.
         return events
 
     def _delta_part(self, event: Any, open_parts: dict[int, tuple[str, str]]) -> list[StreamEvent]:
-        """Forward one delta onto the stream its index opened.
+        """
+        Forward one delta onto the stream its index opened.
 
-        A delta for an index that never opened is dropped rather than guessed at: without the part
-        that started it there is no id to correlate to, and inventing one would strand the fragment
-        in a message no boundary describes.
+        Deltas for an index that never opened are dropped.
+
+        :param event: A `part_delta` run event.
+        :param open_parts: Live index → `(kind, id)` map.
+        :return: The AK delta events, or an empty list.
         """
         index = event.index
         opened = open_parts.get(index)
@@ -414,18 +353,14 @@ class PydanticAIRunner(BaseRunner):
     def _close_part(
         self, index: int, open_parts: dict[int, tuple[str, str]], carried: dict[str, str], next_part_kind: str | None = None
     ) -> list[StreamEvent]:
-        """Close the stream an index opened, unless the next part continues it.
-
-        When the part directly following is of the same kind, the stream stays open and its id is
-        parked in `carried` for the next `part_start` to pick up — emitting the boundary here and
-        another one there would split one message in two. `next_part_kind` defaults to None so the
-        drain path, which has no event to read it from, always closes.
+        """
+        Close the stream an index opened, unless the next part continues it.
 
         :param index: The part index to close.
-        :param open_parts: The caller's live index → (kind, id) map, mutated here.
-        :param carried: The caller's kind → id map; a continued stream is parked here.
-        :param next_part_kind: The kind of the part that follows, when the SDK reported one.
-        :return: The AK events that close this stream, empty when it is held open or was never live.
+        :param open_parts: Live index → `(kind, id)` map. Mutated in place.
+        :param carried: Kind → id map; a continued stream is parked here.
+        :param next_part_kind: Kind of the following part, when known.
+        :return: Closing AK events, or empty when held open / never live.
         """
         opened = open_parts.pop(index, None)
         if opened is None:
@@ -441,12 +376,11 @@ class PydanticAIRunner(BaseRunner):
         return [ToolCallEnd(tool_call_id=stream_id)]
 
     def _tool_result(self, event: Any) -> list[StreamEvent]:
-        """Map a `function_tool_result` onto `ToolCallResult`.
+        """
+        Map a `function_tool_result` onto `ToolCallResult`.
 
-        The id is read off the result part, where both `ToolReturnPart` and `RetryPromptPart` carry a
-        required `tool_call_id` — a retry is a result too, and hiding it would leave the call looking
-        unanswered. The part's own content is preferred over the event's, so what a UI renders is what
-        the model was handed.
+        :param event: A `function_tool_result` run event.
+        :return: A single `ToolCallResult`, or empty if there is no `tool_call_id`.
         """
         part = getattr(event, "part", None)
         tool_call_id = getattr(part, "tool_call_id", None)
@@ -460,7 +394,12 @@ class PydanticAIRunner(BaseRunner):
 
     @staticmethod
     def _as_text(value: Any) -> str:
-        """Render a tool result as the text a client shows. Strings pass through untouched."""
+        """
+        Render a tool result as text for the client.
+
+        :param value: The tool result payload.
+        :return: String content for `ToolCallResult`.
+        """
         if value is None:
             return ""
         if isinstance(value, str):
@@ -472,13 +411,14 @@ class PydanticAIRunner(BaseRunner):
 
     @staticmethod
     def _as_json(value: Any, what: str) -> str:
-        """Serialise a tool-argument payload, which arrives as a string on some providers and a parsed
-        dict on others.
+        """
+        Serialise a tool-argument payload (string or dict) to JSON text.
 
-        The `except` is deliberately broad, for the reason the ADK adapter documents: `default=str`
-        hands any unencodable value to arbitrary `__str__`, and this runs mid-stream where an escaping
-        exception turns an in-flight response into a failed run. The arguments are the expendable
-        part — dropping them still leaves the call bracketed and correlated.
+        On encode failure returns `""` so a mid-stream exception does not fail the run.
+
+        :param value: Arguments as a string, dict, or None.
+        :param what: What is being serialised, for the log line.
+        :return: JSON/string fragment, or `""` if missing/unencodable.
         """
         if value is None:
             return ""
