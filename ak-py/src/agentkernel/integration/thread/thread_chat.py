@@ -205,7 +205,7 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         :param name: The requested agent name, or None for the default agent
         :raises ValueError: If no matching agent is available
         """
-        AgentService().ensure_agent_available(name)
+        AgentService.ensure_agent_available(name)
 
 
 class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):

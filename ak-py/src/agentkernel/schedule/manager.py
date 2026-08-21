@@ -143,7 +143,7 @@ class ScheduleManager:
         # agent is checked: an unnamed one resolves to whatever default the firing process has, and
         # that process is not necessarily this one.
         if agent:
-            AgentService().ensure_agent_available(agent)
+            AgentService.ensure_agent_available(agent)
         OccurrenceCalculator.validate(spec)
 
         now = utc_now_iso()
