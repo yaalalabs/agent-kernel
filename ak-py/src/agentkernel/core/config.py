@@ -80,6 +80,20 @@ class _FirestoreConfig(BaseModel):
     )
 
 
+class _SessionConnectionStoreConfig(BaseModel):
+    table_name: Optional[str] = Field(
+        default=None,
+        description="DynamoDB only: name of the EXISTING WebSocket connections table (partition key 'user_id', "
+        "sort key 'connection_id', GSI 'connection_id-index' on connection_id, TTL attribute 'expiry_time'); "
+        "the store never creates it. Required for WebSocket modes on dynamodb sessions; unused by other backends.",
+    )
+    ttl: float = Field(
+        default=86400.0,
+        description="Seconds after which a connection mapping expires following its last write: the safety net "
+        "for gateway pods that die without cleaning up (normal cleanup happens on disconnect and stale pushes).",
+    )
+
+
 class _SessionStoreConfig(BaseModel):
     type: str = Field(
         default="in_memory",
@@ -91,6 +105,10 @@ class _SessionStoreConfig(BaseModel):
     dynamodb: Optional[_DynamoDBConfig] = None
     cosmosdb: Optional[_CosmosDBConfig] = None
     firestore: Optional[_FirestoreConfig] = None
+    connection_store: _SessionConnectionStoreConfig = Field(
+        description="The WebSocket gateway's connection store, provided on this session backend (spec #495 §9)",
+        default_factory=_SessionConnectionStoreConfig,
+    )
 
 
 class _RoutesConfig(BaseModel):
@@ -109,6 +127,17 @@ class _WebSocketAPIConfig(BaseModel):
     endpoint_url: Optional[str] = Field(default=None, description="WebSocket API endpoint URL")
     chat_route: Optional[str] = Field(default=None, description="WebSocket chat route")
     connection_table: Optional[_DynamoDBConfig] = Field(default=None, description="DynamoDB configuration for storing WebSocket connections")
+    push_auth_token: Optional[str] = Field(
+        default=None,
+        description="Shared secret authenticating pod-to-pod pushes to the pipeline's internal push endpoint "
+        "(required for WebSocket modes on a broker transport; unused by API-Gateway-based deployments)",
+    )
+    push_port: Optional[int] = Field(
+        default=None,
+        description="Port other pods push WebSocket deliveries to (defaults to api.port). Only for custom "
+        "gateways that mount PushEndpointHandler on their own separate listener; the built-in WebSocketGateway "
+        "serves everything on api.port and rejects a differing value at startup",
+    )
 
 
 class _A2AConfig(BaseModel):

@@ -127,6 +127,49 @@ class DynamoDBDriver(BaseDriver):
             self._log.error("Failed to delete item from table %s: %s", self._table_name, e)
             raise
 
+    def query_items(self, pk_value: Any) -> list[dict]:
+        """
+        Query for all items under a given partition key, following
+        ``LastEvaluatedKey`` pagination.
+
+        :param pk_value: Partition key value.
+        :return: A list of raw item dicts. Value attribute extraction stays in the stores.
+        """
+        items: list[dict] = []
+        try:
+            kwargs = {"KeyConditionExpression": DDBKey(self._partition_key).eq(pk_value)}
+            resp = self.table.query(**kwargs)
+            items.extend(resp.get("Items", []))
+            while "LastEvaluatedKey" in resp:
+                resp = self.table.query(ExclusiveStartKey=resp["LastEvaluatedKey"], **kwargs)
+                items.extend(resp.get("Items", []))
+        except Exception as e:
+            self._log.error("Failed to query items for %s=%s: %s", self._partition_key, pk_value, e)
+            raise
+        return items
+
+    def query_index(self, index_name: str, key_name: str, key_value: Any) -> list[dict]:
+        """
+        Query a global secondary index by its key, following ``LastEvaluatedKey`` pagination.
+
+        :param index_name: The GSI name.
+        :param key_name: The index's partition key attribute name.
+        :param key_value: The key value to query for.
+        :return: A list of raw item dicts.
+        """
+        items: list[dict] = []
+        try:
+            kwargs = {"IndexName": index_name, "KeyConditionExpression": DDBKey(key_name).eq(key_value)}
+            resp = self.table.query(**kwargs)
+            items.extend(resp.get("Items", []))
+            while "LastEvaluatedKey" in resp:
+                resp = self.table.query(ExclusiveStartKey=resp["LastEvaluatedKey"], **kwargs)
+                items.extend(resp.get("Items", []))
+        except Exception as e:
+            self._log.error("Failed to query index %s for %s=%s: %s", index_name, key_name, key_value, e)
+            raise
+        return items
+
     def query_sort_keys(self, pk_value: Any) -> list[str]:
         """
         Query for all sort key values under a given partition key, following

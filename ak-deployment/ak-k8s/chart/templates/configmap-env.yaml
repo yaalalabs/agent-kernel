@@ -1,0 +1,62 @@
+{{/*
+The AK_* environment contract, shared by every Agent Kernel container. The application image
+declares WHAT runs (config.yaml: execution.mode, agents); this ConfigMap injects WHERE it runs
+(broker, response store, session store), the same split the ECS Terraform deployment uses.
+Env vars override the corresponding config.yaml fields (AK_ prefix, __ nesting).
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-env
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "config") | nindent 4 }}
+data:
+  AK_EXECUTION__MODE: {{ .Values.execution.mode | quote }}
+  AK_LOGGING__AK__LEVEL: {{ .Values.logging.level | quote }}
+  AK_EXECUTION__QUEUES__TYPE: {{ .Values.transport.type | quote }}
+  {{- with .Values.transport.batchSize }}
+  AK_EXECUTION__QUEUES__BATCH_SIZE: {{ . | quote }}
+  {{- end }}
+  AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT: {{ .Values.transport.input.maxReceiveCount | quote }}
+  AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS: {{ .Values.transport.input.noOfConsumers | quote }}
+  AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT: {{ .Values.transport.output.maxReceiveCount | quote }}
+  AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS: {{ .Values.transport.output.noOfConsumers | quote }}
+  {{- if eq .Values.transport.type "nats" }}
+  AK_EXECUTION__QUEUES__NATS__URL: {{ default (include "agent-kernel.natsUrl" .) .Values.transport.nats.url | quote }}
+  AK_EXECUTION__QUEUES__NATS__INPUT_STREAM: {{ .Values.transport.nats.inputStream | quote }}
+  AK_EXECUTION__QUEUES__NATS__INPUT_SUBJECT_PREFIX: {{ .Values.transport.nats.inputSubjectPrefix | quote }}
+  AK_EXECUTION__QUEUES__NATS__OUTPUT_STREAM: {{ .Values.transport.nats.outputStream | quote }}
+  AK_EXECUTION__QUEUES__NATS__OUTPUT_SUBJECT_PREFIX: {{ .Values.transport.nats.outputSubjectPrefix | quote }}
+  AK_EXECUTION__QUEUES__NATS__PARTITIONS: {{ .Values.transport.nats.partitions | quote }}
+  AK_EXECUTION__QUEUES__NATS__ACK_WAIT: {{ .Values.transport.nats.ackWait | quote }}
+  AK_EXECUTION__QUEUES__NATS__DUPLICATE_WINDOW: {{ .Values.transport.nats.duplicateWindow | quote }}
+  AK_EXECUTION__QUEUES__NATS__MAX_AGE: {{ .Values.transport.nats.maxAge | quote }}
+  AK_EXECUTION__QUEUES__NATS__AUTO_PROVISION: {{ .Values.transport.nats.autoProvision | quote }}
+  {{- else if eq .Values.transport.type "kafka" }}
+  AK_EXECUTION__QUEUES__KAFKA__BOOTSTRAP_SERVERS: {{ include "agent-kernel.kafkaBootstrap" . | quote }}
+  AK_EXECUTION__QUEUES__KAFKA__INPUT_TOPIC: {{ .Values.transport.kafka.inputTopic | quote }}
+  AK_EXECUTION__QUEUES__KAFKA__OUTPUT_TOPIC: {{ .Values.transport.kafka.outputTopic | quote }}
+  AK_EXECUTION__QUEUES__KAFKA__GROUP_ID: {{ .Values.transport.kafka.groupId | quote }}
+  AK_EXECUTION__QUEUES__KAFKA__DLQ_SUFFIX: {{ .Values.transport.kafka.dlqSuffix | quote }}
+  {{- else if eq .Values.transport.type "sqs" }}
+  AK_EXECUTION__QUEUES__INPUT__URL: {{ required "transport.sqs.inputUrl is required when transport.type is sqs" .Values.transport.sqs.inputUrl | quote }}
+  AK_EXECUTION__QUEUES__OUTPUT__URL: {{ required "transport.sqs.outputUrl is required when transport.type is sqs" .Values.transport.sqs.outputUrl | quote }}
+  {{- end }}
+  AK_EXECUTION__RESPONSE_STORE__TYPE: {{ .Values.responseStore.type | quote }}
+  AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT: {{ .Values.responseStore.retryCount | quote }}
+  AK_EXECUTION__RESPONSE_STORE__DELAY: {{ .Values.responseStore.delay | quote }}
+  {{- if eq .Values.responseStore.type "valkey" }}
+  AK_EXECUTION__RESPONSE_STORE__VALKEY__URL: {{ default (include "agent-kernel.valkeyUrl" .) .Values.responseStore.url | quote }}
+  AK_EXECUTION__RESPONSE_STORE__VALKEY__PREFIX: {{ .Values.responseStore.prefix | quote }}
+  {{- else if eq .Values.responseStore.type "redis" }}
+  AK_EXECUTION__RESPONSE_STORE__REDIS__URL: {{ required "responseStore.url is required when responseStore.type is redis" .Values.responseStore.url | quote }}
+  AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX: {{ .Values.responseStore.prefix | quote }}
+  {{- end }}
+  AK_SESSION__TYPE: {{ .Values.session.type | quote }}
+  {{- if eq .Values.session.type "valkey" }}
+  AK_SESSION__VALKEY__URL: {{ default (include "agent-kernel.valkeyUrl" .) .Values.session.url | quote }}
+  AK_SESSION__VALKEY__PREFIX: {{ .Values.session.prefix | quote }}
+  {{- else if eq .Values.session.type "redis" }}
+  AK_SESSION__REDIS__URL: {{ required "session.url is required when session.type is redis" .Values.session.url | quote }}
+  AK_SESSION__REDIS__PREFIX: {{ .Values.session.prefix | quote }}
+  {{- end }}

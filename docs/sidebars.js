@@ -88,6 +88,13 @@ const sidebars = {
             'deployment/gcp-containerized',
           ],
         },
+        {
+          type: 'category',
+          label: 'On-Prem / Kubernetes',
+          items: [
+            'deployment/onprem-kubernetes',
+          ],
+        },
       ],
     },
     {

@@ -206,25 +206,52 @@ flowchart LR
   REST queue modes require a shared backend (redis/valkey/dynamodb) because the enqueueing or
   polling pod and the consuming pod can differ: this combination fails fast at startup
   (spec-stage check).
-- WS delivery = **direct pod-to-pod push** (decided: Q3, Option D): the 1:1 port of the AWS
-  model with the pod taking API Gateway's place and pod-local memory taking DynamoDB's place.
-  No shared store in the delivery path:
-  - On connect, the IO pod registers the connection in a **pod-local in-memory registry**
-    (default `WebSocketConnectionStoreABC` implementation).
-  - Chat requests enqueued from a WS carry `endpoint_url` = the originating pod's internal push
-    address (downward-API pod IP + port, headless Service); the attribute flows
-    input → output unchanged: exactly today's plumbing.
-  - The Response Handler POSTs the reply/chunk to that address's internal push endpoint; the
-    owning pod resolves `user_id` → local connections and writes the frames. A stale address
-    (pod restarted/gone) behaves like AWS `GoneException`: bounded retry, then the
-    permanent-failure path.
-  - The internal push endpoint is authenticated (chart-injected shared secret) and restricted by
-    NetworkPolicy; the single-process topology delivers in-process, no hop.
-  - Documented semantic difference vs AWS: replies reach the user's connections on the
-    originating pod only. Cross-pod fan-out to all of a user's devices would need a shared
-    connection store: the `WebSocketConnectionStoreABC` interface already permits plugging one
-    (e.g. Redis/Valkey over the shared drivers), but that is not v1 scope.
-- No sticky sessions; clients reconnect on redeploys (research `kubernetes-deployment.md` §1.3).
+- WS delivery = **gateway tier + shared connection store** (decided: Q3 revised 2026-08-18,
+  superseding Option D): the full port of the AWS model, with a dedicated WebSocket Gateway
+  component taking API Gateway's place and a session-store-backed connection table taking
+  DynamoDB's place:
+  - **`WebSocketGateway`** is its own entry point (and, on k8s, its own Deployment): it owns the
+    sockets and nothing else. On connect it authenticates, keeps the raw socket in a pod-local
+    registry, and records `connection_id -> (user_id, its own push endpoint)` in the **shared
+    connection store**. Chat frames are **enqueued directly to the transport** (no REST hop to
+    the IO service: the queue is the interface), stamped with `request_id` and the authenticated
+    `user_id`. Custom routes keep the `register(route)` decorator surface.
+  - **Connection store selection follows the session storage configuration** (the Q5 rule,
+    generalized; refined 2026-08-19): the `WSConnectionStore` ABC lives beside `SessionStore`
+    in `core/session/base.py`, and `SessionStore.get_connection_store()` returns each backend's
+    own implementation: the session store file carries (or explicitly declines) it, the
+    implementation encapsulates all database operations over the existing shared drivers, and
+    any database with a driver can therefore become a connection store (in_memory and
+    redis/valkey ship implementations; dynamodb/cosmosdb/firestore raise actionably and are the
+    natural place to add native ones later; DynamoDB shipped 2026-08-19 against an existing
+    table named by `session.connection_store.table_name`, same schema as the AWS adapters'
+    connections table). Queue retry/dedup bookkeeping keeps its own Q5 factory over the shared
+    drivers: a generic `SessionStore.create_table`/`KeyValueTable` mechanism was tried and
+    removed once the connection store went per-backend, having no consumer left that the plain
+    factory does not serve.
+  - The Response Handler resolves the user's **current** connections from the store and POSTs
+    each frame to the owning gateway pod's authenticated internal push endpoint (the
+    `PostToConnection` analogue; NetworkPolicy-restricted, chart-injected shared secret). A 404
+    (client gone, pod restarted) deletes the stale mapping and behaves like AWS
+    `GoneException`; a delivery that reaches no connection at all takes the bounded
+    retry/permanent-failure path.
+  - Replies therefore reach **all of a user's connections, on whichever gateway pod holds
+    them**, and survive a client reconnecting to a different gateway pod mid-request: AWS
+    semantic parity, closing the origin-pod-only limitation the superseded Option D recorded.
+    IO and runner pods can roll without dropping a single client connection.
+  - Messages no longer carry a return address: the presence of the authenticated `user_id`
+    attribute (stamped only by the gateway) is what marks a WS-entered request; `endpoint_url`
+    stamping disappears from the pipeline (the attribute constant remains for the SQS/ECS wire
+    format).
+  - The single-process topology co-hosts the gateway handlers inside `IOHandler` (an
+    `in_memory` transport cannot cross processes) with an in-memory connection store and
+    in-process delivery, no hop; the standalone `WebSocketGateway.run()` entry point is
+    broker-only and fails fast on `in_memory`, pointing at `IOHandler.run(auth_validator=...)`
+    for local testing (delegation was considered and rejected 2026-08-19: rejection is
+    cleaner).
+- No sticky sessions; clients reconnect on gateway redeploys (research
+  `kubernetes-deployment.md` §1.3): the gateway tier is thin and rarely redeployed, so this is
+  much rarer than under Option D, where every IO roll dropped connections.
 
 ### R7. Entry points and back-compat
 
@@ -355,6 +382,25 @@ observability subcharts) and **Q3** (WS delivery uses direct pod-to-pod push: Op
 review aid: with `endpoint_url` carrying the originating pod's own address and a pod-local
 in-memory connection registry; chosen so Redis/Valkey stays optional platform-wide; Redis
 pub/sub, NATS-core subjects, and per-pod broadcast consumers were considered and rejected).
+
+Review 2026-08-18 **revised Q3** after the Option D implementation landed (uncommitted): WS
+handling moves to a dedicated **WebSocket Gateway** tier with a **shared connection store**
+selected via the session storage configuration (see R6). Rationale: fully decouples WS
+knowledge from the IO handler (whose API stays plain REST), lets IO/runner pods roll without
+dropping client connections, and restores AWS semantic parity (delivery to all of a user's
+current connections, wherever they are). The "Redis/Valkey stays optional" concern that drove
+Option D is weaker than judged at design time: broker topologies already require a shared
+session backend, so the connection table is a new keyspace on existing infrastructure, not a
+new service; single-process `in_memory` topologies keep a zero-dependency in-memory table. The
+same review generalized Q5 into session-backed feature stores: the session stores themselves
+provide `SessionStore.get_connection_store()`, with per-backend implementations over the shared
+drivers, so adding a session store type carries the obligation visibly in its own file. (A
+sibling `SessionStore.create_table`/`KeyValueTable` mechanism for bookkeeping was part of the
+first cut and was removed on 2026-08-19: bookkeeping keeps its original Q5 factory.) A 2026-08-19 follow-up review settled the
+final shape (per-backend `WSConnectionStore` rather than a generic table shim, keeping every
+database implementable) and confirmed the gateway entry point stays broker-only: implicit
+delegation to the single-process topology on `in_memory` was tried and reverted the same day
+in favor of a clean rejection naming `IOHandler.run(auth_validator=...)`.
 
 No questions remain open. The design is settled pending final read-through; `spec.md` is the next
 stage.

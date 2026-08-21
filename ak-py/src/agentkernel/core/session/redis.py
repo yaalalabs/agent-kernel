@@ -3,7 +3,8 @@ import logging
 from ..base import Session
 from ..config import AKConfig
 from ..util.driver.redis import RedisDriver
-from .base import SessionCache, SessionStore
+from .base import SessionCache, SessionStore, WSConnectionStore
+from .redis_like import RedisLikeWSConnectionStore
 from .serde import BinarySerde
 
 
@@ -81,6 +82,15 @@ class RedisSessionStore(SessionStore):
         self._driver.clear_prefix()
         if self._cache:
             self._cache.clear()
+
+    def get_connection_store(self) -> WSConnectionStore:
+        """
+        The WebSocket gateway's connection store on this store's Redis, under the
+        ``ak:ws_connections:`` prefix, sharing the session connection URL.
+        """
+        cfg = AKConfig.get().session.redis
+        connection_cfg = AKConfig.get().session.connection_store
+        return RedisLikeWSConnectionStore(RedisDriver(url=cfg.url, prefix="ak:ws_connections:", ttl=int(connection_cfg.ttl), decode_responses=True))
 
     def store(self, session: Session) -> None:
         """

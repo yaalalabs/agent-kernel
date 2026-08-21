@@ -47,8 +47,8 @@ Delivery sub-modes (`execution.mode`):
 |------|---------------------|---------------------------|
 | **REST Sync** (also when unset) | POST → wait | Same HTTP response (server awaits the response store) |
 | **REST Async** | POST → get a `request_id` | Later GET with the `request_id` |
-| **Stream** | POST | SSE token chunks (REST surface); WebSocket `STREAM_CHUNK`s (AWS) |
-| **Async** | WebSocket frame | WebSocket `CHAT_RESPONSE` push (AWS) |
+| **Stream** | POST or WebSocket frame | SSE token chunks (REST surface); WebSocket `STREAM_CHUNK` frames (the pipeline's `/ws` route, or API Gateway on AWS) |
+| **Async** | WebSocket frame | WebSocket `CHAT_RESPONSE` push (the pipeline's `/ws` route, or API Gateway on AWS) |
 
 :::note
 [Conversation-thread](./threads) recording does not apply in queue mode: threads are served by
@@ -103,7 +103,10 @@ ak.pipeline.io_handler - INFO - IOHandler starting: mode=rest_sync, transport=in
 ```
 
 All three REST delivery modes work locally: `rest_sync`, `rest_async` accept-then-poll, and
-`stream` over SSE: switchable per run with `AK_EXECUTION__MODE`. See
+`stream` over SSE: switchable per run with `AK_EXECUTION__MODE`. The WebSocket modes work
+locally too: boot with `IOHandler.run(auth_validator=...)` instead of `RESTAPI.run()` (the gateway
+handlers are co-hosted in the single process) and see
+[WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-asyncstream). See
 [`examples/api/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai)
 for curl walkthroughs of each, and [Local Deployment](../deployment/local) for the local flow
 diagram.
@@ -215,6 +218,10 @@ A runnable version, including a single-server JetStream stack and a harness that
 streams safely (a work-queue stream cannot be browsed with a second consumer, so it reads by
 sequence), is in
 [`examples/transport/nats`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/transport/nats).
+To run the same two-process topology on a cluster, the [Helm chart](../deployment/onprem-kubernetes)
+deploys it with in-cluster NATS, NACK-managed streams, and KEDA autoscaling
+([`examples/k8s/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode)
+walks it end to end on a micro-cluster).
 
 JetStream is the closest fit of any backend here, because the server provides most of what the
 pipeline needs rather than the client rebuilding it: `ack_wait` is the visibility timeout,
@@ -236,6 +243,110 @@ Three things to know:
   and per-partition consumers at startup. In production, leave it off so a missing stream or consumer
   fails loudly at startup, naming the object, instead of being silently created with defaults
   alongside your NACK CRs.
+
+---
+
+## WebSocket Delivery on the Pipeline (Async/Stream)
+
+On AWS, the WebSocket modes lean on API Gateway plus a DynamoDB connections table. The pipeline
+ports that model to Kubernetes with a dedicated **WebSocket Gateway** tier: gateway pods own the
+client sockets, a **shared connection store** (on your session backend) is the connections-table
+analogue, and an authenticated pod-to-pod push endpoint is the `PostToConnection` analogue. The
+IO handler's API stays plain REST; it never learns WebSocket handling.
+
+On a multi-pod deployment the gateway is its own container:
+
+```python
+from agentkernel.pipeline import WebSocketGateway
+
+WebSocketGateway.run(auth_validator=MyValidator())  # claims must include a 'userId'
+```
+
+The standalone gateway is broker-only: on the `in_memory` transport a separate gateway
+process cannot share the in-process queue, so it fails fast. For local testing, boot the
+single-process topology instead, which co-hosts the same gateway handlers:
+
+```python
+from agentkernel.pipeline import IOHandler
+
+IOHandler.run(auth_validator=MyValidator())  # REST + /ws + runner + responder in one process
+```
+
+The flow:
+
+1. Connect to `ws://gateway:port/ws?token=<jwt>`. The validator authenticates the token; the
+   gateway keeps the raw socket in pod-local memory and records
+   `connection -> (user, this pod's push endpoint)` in the connection store.
+2. Send chat frames: `{"route": "chat", "request_id": "...", "body": {"prompt": "...",
+   "session_id": "..."}}` (the route key is `websocket_api.chat_route`, default `chat`; an
+   omitted `route` also means chat). Each frame is acknowledged with a `CHAT_QUEUED` frame and
+   **enqueued directly to the transport**, stamped with the request id and the authenticated
+   user id: no return address travels on the message, and no REST hop is involved.
+3. Whichever pod's Response Handler consumes the reply looks the user up in the connection
+   store and POSTs one frame per connection to the owning gateway pod's `/internal/push`:
+   full replies as `CHAT_RESPONSE` frames in `async` mode, one `STREAM_CHUNK` frame per token
+   chunk in `stream` mode (terminated by a chunk with `done: true`). On the `in_memory`
+   transport the recorded endpoint is the sentinel `local` and delivery short-circuits
+   in-process.
+
+Because delivery is resolved from the store at push time, replies reach **all of the user's
+current connections, on whichever gateway pods hold them**, and survive a reconnect to a
+different gateway pod mid-request. IO and runner pods can roll and scale without dropping a
+single client connection; only gateway redeploys drop sockets (clients reconnect).
+
+**The connection store follows your session storage configuration.** Each session store
+provides its own `WSConnectionStore` implementation via `SessionStore.get_connection_store()`,
+encapsulating the database operations over the same drivers sessions use: `redis`/`valkey`
+sessions carry the connection store on the same infrastructure, `dynamodb` sessions use an
+**existing** connections table you name in config (partition key `user_id`, sort key
+`connection_id`, a `connection_id-index` GSI, TTL on `expiry_time`: the same schema as the AWS
+deployment adapters' connections table, so one table can serve both), `in_memory` sessions
+give a process-local one (single-process only), and cosmosdb/firestore raise an actionable
+error today. A broker-transport WebSocket topology therefore requires redis, valkey or
+dynamodb sessions, and fails fast at startup otherwise.
+
+```yaml
+session:
+  type: dynamodb                     # or redis / valkey (no extra config needed there)
+  connection_store:
+    table_name: my-ws-connections   # dynamodb only: the existing connections table
+    # ttl: 86400                     # mapping-expiry safety net, all backends
+```
+
+```yaml
+session:
+  type: valkey                       # also carries the connection table (and Kafka bookkeeping)
+  valkey:
+    url: valkey://valkey:6379
+websocket_api:
+  push_auth_token: <shared-secret>   # authenticates pod-to-pod pushes; the chart provisions it as a Secret
+  # push_port: 8000                  # optional; defaults to api.port
+execution:
+  mode: async                        # or stream
+  queues:
+    type: nats                       # any broker transport; in_memory co-hosts in IOHandler instead
+```
+
+Custom routes use the same decorator surface as the ECS WebSocket API, keyed by the frame's
+`route` field:
+
+```python
+from agentkernel.pipeline import PipelineWebSocketHandler
+
+@PipelineWebSocketHandler.register("status")
+def status_route(msg):                      # msg = {"message": <raw frame dict>, "user_id": ...}
+    return {"status": "SUCCESS", "up": True}  # a dict reply is sent back as SYSTEM_RESPONSE
+```
+
+Failure semantics mirror AWS: a push that finds a socket gone (the owning pod answers 404)
+deletes the stale mapping and keeps delivering to the user's other connections, like a
+`GoneException`; a reply that reaches no connection at all retries up to `max_receive_count`
+and is then dropped with an error log: bounded, never a crash loop.
+
+On broker transports the REST chat routes refuse the WebSocket-delivered modes explicitly:
+`async` always answers over `/ws`, and `stream` answers over `/ws` whenever the shared response
+store cannot stream chunks (SSE `stream` remains available on the single-process `in_memory`
+topology, where WebSocket co-hosting is optional).
 
 ---
 
@@ -605,7 +716,8 @@ this automatically. See the [AWS Containerized deployment docs](../deployment/aw
 | `sqs` | ✅ | Two-process topology on AWS, wire-compatible with the Lambda/ECS adapters below |
 | `kafka` | ✅ | confluent-kafka client, per-session ordering by record key, DLQ topics, Strimzi-provisioned clusters. Needs the `kafka` extra and an `execution.queues.kafka` block; see the notes below |
 | `nats` (recommended on-prem) | ✅ | JetStream work-queue streams, partitioned per-session ordering, server-side delivery counts and dedup. Needs the `nats` extra and an `execution.queues.nats` block |
-| Kubernetes Helm chart (baremetal + EKS) | Upcoming | Two-Deployment topology, KEDA autoscaling |
+| WebSocket delivery (`async`/`stream`) | ✅ | Gateway tier (`WebSocketGateway.run(auth_validator=...)`; co-hosted by `IOHandler` on `in_memory`) + session-backed shared connection store; see [WebSocket Delivery on the Pipeline](#websocket-delivery-on-the-pipeline-asyncstream) |
+| Kubernetes Helm chart (baremetal + EKS) | ✅ | Two-Deployment topology (io-handler + agent-runner, optional ws-gateway), KEDA queue-depth autoscaling, NACK/Strimzi-provisioned brokers; see [On-Prem / Kubernetes](../deployment/onprem-kubernetes) |
 
 **AWS deployment components:**
 

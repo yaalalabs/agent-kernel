@@ -204,6 +204,30 @@ class _RedisLikeDriver(BaseDriver):
         raw = self.client.hkeys(name=key)
         return [k.decode("utf-8") if isinstance(k, (bytes, bytearray)) else k for k in raw]
 
+    def hdel(self, key: str, field: str) -> None:
+        """
+        Deletes a field from the hash stored at the given key.
+
+        :param key: The hash key.
+        :param field: The field to delete.
+        """
+        self._log.debug(f"HDEL {key} field={field}")
+        self.client.hdel(key, field)
+
+    def hgetall(self, key: str) -> dict[str, str]:
+        """
+        Retrieves all fields and values of the hash stored at the given key.
+
+        :param key: The hash key.
+        :return: A dict of field names to values, decoded to strings.
+        """
+        self._log.debug(f"HGETALL {key}")
+
+        def _decoded(value: Any) -> str:
+            return value.decode("utf-8") if isinstance(value, (bytes, bytearray)) else value
+
+        return {_decoded(field): _decoded(value) for field, value in self.client.hgetall(name=key).items()}
+
     # -------------------------------------------------------------------- lists
     def rpush(self, key: str, value: Any) -> None:
         """

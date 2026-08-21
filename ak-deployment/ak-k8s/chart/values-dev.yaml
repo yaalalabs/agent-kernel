@@ -1,0 +1,58 @@
+# Dev / micro-cluster flavor: single replicas, in-cluster NATS and Valkey, JetStream objects
+# auto-provisioned at startup, no Gateway API (port-forward to the io Service), TLS off.
+# Sized for k3d, kind, microk8s, or k3s on one machine:
+#
+#   helm install ak ./chart -f ./chart/values-dev.yaml \
+#     --set image.repository=<your app image> --set image.tag=<tag>
+#
+# The smallest possible install is the single-process profile at the bottom of this file.
+
+ioHandler:
+  replicaCount: 1
+
+agentRunner:
+  replicaCount: 1
+
+transport:
+  type: nats
+  input:
+    # Keep replicas * noOfConsumers <= partitions.
+    noOfConsumers: 2
+  output:
+    noOfConsumers: 1
+  nats:
+    # Dev posture: Agent Kernel creates the streams and partition consumers at startup.
+    # Production keeps this false and manages them declaratively (natsResources.enabled).
+    autoProvision: true
+    # 32 in production; a handful keeps first-boot provisioning quick on a micro-cluster.
+    partitions: 4
+
+valkey:
+  enabled: true
+
+nats:
+  enabled: true
+  config:
+    jetstream:
+      enabled: true
+    cluster:
+      enabled: false
+
+# ------------------------------------------------------------------------------------------
+# Single-process profile: the smallest install. One io-handler pod runs the whole pipeline
+# over in-process queues; no broker, no shared stores, no second Deployment. Durability and
+# scale-out need the broker topology above. Uncomment to use:
+#
+# transport:
+#   type: in_memory
+# agentRunner:
+#   enabled: false
+# responseStore:
+#   type: in_memory
+# session:
+#   type: in_memory
+# valkey:
+#   enabled: false
+# nats:
+#   enabled: false
+# ------------------------------------------------------------------------------------------
