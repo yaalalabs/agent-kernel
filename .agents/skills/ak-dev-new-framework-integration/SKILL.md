@@ -167,15 +167,21 @@ Three rules the existing adapters all follow, each of which was a bug in an earl
   `MessageEnd` only for a message that opened — otherwise every such turn renders as an empty
   assistant bubble.
 
-**If the framework has no native token streaming** (e.g. CrewAI, smolagents), implement `stream()` as a generator that always raises, so it satisfies the abstract method contract but fails fast with a clear message:
+**If you are not implementing streaming yet** — including when the underlying SDK *does* stream
+(CrewAI and smolagents today: their AK adapters still stub this out) — or the framework truly has
+no streaming API, implement `stream()` as a generator that always raises, so it satisfies the
+abstract method contract but fails fast with a clear message that names the *adapter* gap, not a
+false claim that the framework cannot stream:
 
 ```python
 async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
     """
-    <Name> does not support SSE streaming.
+    <Name> streaming is not implemented in this adapter yet.
     :raises NotImplementedError: Always raised — use rest_sync mode instead.
     """
-    raise NotImplementedError("<Name> does not support SSE streaming. Use rest_sync mode.")
+    raise NotImplementedError(
+        "<Name> streaming is not implemented in the Agent Kernel adapter yet. Use rest_sync mode."
+    )
     yield  # make this an async generator to satisfy the type contract
 
 @property

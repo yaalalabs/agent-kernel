@@ -74,18 +74,19 @@ class Runner(ABC):
   post-hook filtering, and forwards the chunk. A runner that yields a bare `str` is rejected with a
   `ValidationError` rather than being coerced.
 - `supports_streaming` is how a surface knows in advance. CrewAI and smolagents leave `stream()`
-  raising and declare `False`, so `execution.mode: stream` and the AG-UI surface reject the request
-  with an explanation instead of opening a stream that dies on its first event.
+  raising and declare `False` (their SDKs support streaming; the AK adapters are not wired yet), so
+  `execution.mode: stream` and the AG-UI surface reject the request with an explanation instead of
+  opening a stream that dies on its first event.
 
 ## Framework Runners
 
-| Runner | Framework | Native token streaming |
-|--------|-----------|------------------------|
+| Runner | Framework | AK `Runner.stream()` |
+|--------|-----------|----------------------|
 | `OpenAIRunner` | OpenAI Agents SDK | ✅ (`Runner.run_streamed`) |
 | `LangGraphRunner` | LangGraph | ✅ (`astream_events`) |
 | `GoogleADKRunner` | Google ADK | ✅ (SSE streaming mode) |
-| `CrewAIRunner` | CrewAI | ❌ raises `NotImplementedError` |
-| `SmolagentsRunner` | Smolagents | ❌ raises `NotImplementedError` |
+| `CrewAIRunner` | CrewAI | ❌ not wired yet (SDK streams; adapter raises) |
+| `SmolagentsRunner` | Smolagents | ❌ not wired yet (SDK streams; adapter raises) |
 
 Each runner follows the same shape internally:
 

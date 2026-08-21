@@ -133,10 +133,11 @@ thinking block.
 
 Reading the table:
 
-- **CrewAI and smolagents are not reachable over AG-UI.** Their adapters leave `Runner.stream()`
-  raising and declare `supports_streaming = False`, so both discovery and the run routes exclude them:
-  a `POST` to one returns a 400 naming the framework rather than a generic error. This is a pending
-  capability, not a permanent limit — giving those two adapters streaming is its own piece of work.
+- **CrewAI and smolagents are not reachable over AG-UI.** Their Agent Kernel adapters leave
+  `Runner.stream()` raising and declare `supports_streaming = False`, so both discovery and the run
+  routes exclude them: a `POST` to one returns a 400 naming the framework rather than a generic
+  error. Both SDKs support streaming; AK simply has not wired those APIs yet. That is a pending
+  adapter capability, not a permanent SDK limit.
 - **Reasoning is available on three of the four**, and only when the model actually produces it. AK
   maps the model's reasoning *summary*, so a reasoning-capable model still emits nothing unless the
   summary is requested. LangGraph reports none at all.
