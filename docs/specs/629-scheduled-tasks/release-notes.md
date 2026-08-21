@@ -13,8 +13,9 @@ registers it as a scheduled task and answers **HTTP 202**; when an occurrence is
 provider delivers the stored prompt into the input queue as a plain chat request and the normal
 execution path runs it.
 
-The presence of a `schedule` block in `config.yaml` is the whole switch — no handler to mount, no
-code change. Its defaults are what local development needs:
+The presence of a `schedule` block in `config.yaml` is what enables deferring and the agent tools —
+no code change. The management routes are a separate opt-in the application mounts itself. The
+block's defaults are what local development needs:
 
 ```yaml
 schedule:
@@ -43,12 +44,13 @@ What ships with it:
 - **Four task stores.** `in_memory`, `redis`, `valkey`, and `dynamodb`. Unlike threads, schedule
   records have **no default TTL** — a task that silently expired would stop firing with no audit
   trail.
-- **Management routes**, mounted automatically when the block is present: `GET /api/v1/schedules`
-  (cursor-paginated), and `GET` / `PUT` / `DELETE /api/v1/schedules/{task_id}` to read, amend and
-  cancel. `PUT` is full-replacement. There is deliberately **no POST** — creation is the chat
-  block or the agent tool, so callers and agents share one path. Protect them with an `Authoriser`
-  (`IOHandler.run(authoriser=...)`); listings are then forced to the resolved user and cross-user
-  access is 403.
+- **Management routes**, mounted by the application (nothing is mounted from config): `GET
+  /api/v1/schedules` (cursor-paginated), and `GET` / `PUT` / `DELETE /api/v1/schedules/{task_id}` to
+  read, amend and cancel. `PUT` is full-replacement. There is deliberately **no POST** — creation is
+  the chat block or the agent tool, so callers and agents share one path. Mount them the way the
+  Slack and thread handlers are mounted, passing an optional `Authoriser` to protect them
+  (`IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=...)])`); listings are then forced
+  to the resolved user and cross-user access is 403.
 - **Five agent tools**, injected with their guidance into the system prompt when the block is
   present: `create_schedule`, `list_schedules`, `get_schedule`, `update_schedule`,
   `delete_schedule`. Each acts as the *acting user*, so an agent can never reach another user's
@@ -91,7 +93,8 @@ Lambda that consumes its input queue through an event source mapping is never gi
 so the inference made one process resolve `sqs` while its sibling resolved `in_memory`. The
 transport decides the deployment topology, so the application now declares it.
 
-Any existing `config.yaml` that declares an `execution.queues` block without `type` fails to load:
+Two existing shapes now fail to load. The first is a `config.yaml` that declares an
+`execution.queues` block without `type`:
 
 ```
 pydantic_core._pydantic_core.ValidationError: 1 validation error for AKConfig
@@ -120,8 +123,29 @@ execution:
       url: https://sqs.us-east-1.amazonaws.com/123456789012/ak-input.fifo
 ```
 
-Omitting the `queues` block entirely is unaffected and still runs the single-process `in_memory`
-transport, so an application that never declared one needs no change. See the
+The second is the one to watch, because **every pre-#646 queue-mode deployment on AWS is in it**: a
+`config.yaml` with *no* `queues` block at all, running where the deployment injects
+`AK_EXECUTION__QUEUES__*` environment variables. The field's `default_factory` only runs when nothing
+supplies the field, so a single injected `AK_EXECUTION__QUEUES__INPUT__URL` is enough to materialize
+`execution.queues` as a partial dict, skip the default, and fail the same validation:
+
+```
+ValidationError: 1 validation error for AKConfig
+execution.queues.type
+  Field required [type=missing, input_value={'input': {'url': 'https://sqs.test/input'}}, ...]
+```
+
+Both AWS Terraform stacks inject `AK_EXECUTION__QUEUES__INPUT__URL` / `OUTPUT__URL` /
+`MAX_RECEIVE_COUNT` / `BATCH_SIZE` under `queue_mode = true`
+(`containerized/modules/{rest-service,agent-runner}/main.tf`, `serverless/modules/*/main.tf`) and
+never inject `AK_EXECUTION__QUEUES__TYPE` — only the Helm chart does
+(`ak-k8s/chart/templates/configmap-env.yaml:16`). Left unchanged, such a container crashloops on a
+pydantic traceback at boot.
+
+**So: any application receiving `AK_EXECUTION__QUEUES__*` environment variables must declare
+`execution.queues.type` in its `config.yaml`, whether or not it previously declared a `queues`
+block.** Only an application with neither a `queues` block nor those environment variables is
+unaffected — it still runs the single-process `in_memory` transport and needs no change. See the
 [Queue Mode Guide](https://kernel.yaala.ai/docs/advanced/queue-mode-guide) for the per-transport values.
 
 **`Authoriser` now lives in `agentkernel.auth`.**
@@ -194,11 +218,14 @@ parity with every other deployment mode. Non-error responses are byte-identical.
   the pipeline waiter/poller, and on ECS, where the queue runners forward it as a `status_code`
   attribute. Streaming surfaces yield the acknowledgement as a single terminal chunk — deliberately
   not an error chunk, since deferring was the requested outcome.
-- **`IOHandler` mounts the schedule management routes automatically** whenever a `schedule` block is
-  present, and calls `ScheduleManager.get()` eagerly at startup, so an unusable provider/transport
-  pairing or an incomplete provider config fails the boot rather than the first request.
-  `RESTAPI.run()`'s delegation rule is untouched; an app needing an `Authoriser` in this topology
-  calls `IOHandler.run(authoriser=...)` directly.
+- **`IOHandler.run` gained a `handlers` parameter**, so an app on the pipeline topology mounts the
+  schedule management routes itself — `IOHandler.run(handlers=[ScheduleRESTRequestHandler()])` — and
+  they are served alongside the pipeline's own chat route (the queue producer, which is not a
+  replaceable default). Mounting is what validates the backends: `get_router()` calls
+  `ScheduleManager.validate_configuration()`, so an unusable provider/store/transport pairing or an
+  incomplete provider config fails the app build rather than the first request. `RESTAPI.run()`'s
+  delegation rule is untouched (no-explicit-handlers only), so an app wanting the routes in this
+  topology calls `IOHandler.run(handlers=[...])` directly.
 - **Deferred requests create no thread.** `AgentThreadRequestHandler` checks for the `schedule` block
   before `ThreadRecorder.pre_run`, so a deferral neither creates a thread nor records messages. The
   occurrences that later fire do.

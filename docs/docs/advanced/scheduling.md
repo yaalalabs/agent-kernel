@@ -13,7 +13,7 @@ the normal execution path runs it.
 
 | Concern | What it means |
 | --- | --- |
-| **Enablement** | The presence of a `schedule` block in `config.yaml`. No code change, no handler to mount. |
+| **Enablement** | The presence of a `schedule` block in `config.yaml` enables deferring and the agent tools — no code change. The management routes are a separate opt-in: the app mounts `ScheduleRESTRequestHandler`. |
 | **Creation** | Three paths, one implementation: the `schedule` block on a chat request, the `create_schedule` agent tool, or a direct `ScheduleManager` call. There is deliberately **no** `POST /api/v1/schedules`. |
 | **Provider** | Owns the timers and fires each occurrence — `local` (in-process thread) or `eventbridge` (AWS EventBridge Scheduler). |
 | **Store** | Persists the task records — `in_memory`, `redis`, `valkey`, or `dynamodb`. |
@@ -60,15 +60,23 @@ execution:
     type: in_memory
 ```
 
-Nothing in `app.py` mentions scheduling. `RESTAPI.run()` picks up the block, mounts the management
-routes, and resolves the provider/store pairing at startup:
+That block alone is enough to defer chat requests and to give every agent the schedule tools. The
+management routes are mounted by the app, the way the Slack and thread handlers are — mounting them is
+also what resolves the provider/store pairing, so an unusable combination fails the app build rather
+than the first request:
 
 ```python
-from agentkernel.api import RESTAPI
+from agentkernel.pipeline import IOHandler
+from agentkernel.schedule import ScheduleRESTRequestHandler
 
 if __name__ == "__main__":
-    RESTAPI.run()
+    # config.yaml selects the in_memory transport, so this boots the whole single-process pipeline;
+    # the passed handlers are mounted alongside the pipeline's own chat route.
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
 ```
+
+An app that mounts nothing still defers and still gets the agent tools — it just serves no
+`/api/v1/schedules` routes.
 
 Cron parsing needs the `cron` extra:
 
@@ -219,12 +227,13 @@ schedule:
 ## Authorization
 
 The management routes are **open** until an `Authoriser` is configured. Supply a subclass that validates
-the Bearer token against your authentication provider and resolves the caller's `user_id`, then boot
-through the IO handler:
+the Bearer token against your authentication provider and resolves the caller's `user_id`, then pass it to
+the handler you mount:
 
 ```python
 from agentkernel.auth import Authoriser
 from agentkernel.pipeline import IOHandler
+from agentkernel.schedule import ScheduleRESTRequestHandler
 
 
 class MyAuthoriser(Authoriser):
@@ -233,7 +242,7 @@ class MyAuthoriser(Authoriser):
 
 
 if __name__ == "__main__":
-    IOHandler.run(authoriser=MyAuthoriser())
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=MyAuthoriser())])
 ```
 
 With an `Authoriser` configured, listings are forced to the resolved user and reading or changing another
@@ -243,7 +252,7 @@ a second implementation:
 ```python
 from agentkernel.auth import AuthValidatorAuthoriser
 
-IOHandler.run(authoriser=AuthValidatorAuthoriser(MyValidator()))
+IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=AuthValidatorAuthoriser(MyValidator()))])
 ```
 
 :::caution Open until configured

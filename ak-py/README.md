@@ -573,12 +573,14 @@ The presence of a `schedule` block enables deferred and recurring chat execution
 `schedule` block (`at` for one-time, `cron` for recurring, plus `timezone` and `session_mode`) is not run —
 it is registered as a scheduled task and acknowledged with HTTP 202. When an occurrence is due, the provider
 delivers the stored prompt into the input queue as a plain chat request, so scheduling requires the queue
-execution pipeline. Agent Kernel also mounts the management routes (`GET`/`PUT`/`DELETE /api/v1/schedules`,
-optionally protected by a pluggable `Authoriser`) and injects five agent tools (`create_schedule`,
-`list_schedules`, `get_schedule`, `update_schedule`, `delete_schedule`). Every scheduling request needs a
-`user_id`: it is the owner the task is stored under and the identity later reads and changes are checked
-against. A bare `schedule:` block works for local development — its defaults are the `local` provider and
-the `in_memory` store. See `examples/api/schedule-openai`.
+execution pipeline. The block also injects five agent tools (`create_schedule`, `list_schedules`,
+`get_schedule`, `update_schedule`, `delete_schedule`). The management routes
+(`GET`/`PUT`/`DELETE /api/v1/schedules`) are not mounted from config: the application mounts
+`ScheduleRESTRequestHandler` itself — `IOHandler.run(handlers=[ScheduleRESTRequestHandler()])` —
+passing an optional pluggable `Authoriser` to the handler to protect them. Every scheduling request
+needs a `user_id`: it is the owner the task is stored under and the identity later reads and changes
+are checked against. A bare `schedule:` block works for local development — its defaults are the
+`local` provider and the `in_memory` store. See `examples/api/schedule-openai`.
 
 - **Provider Type**
   - **Field**: `schedule.provider.type`

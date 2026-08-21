@@ -899,9 +899,11 @@ See `examples/api/thread-openai` and `examples/api/multimodal/thread-openai`.
 **What it does:** Lets a chat request run later, once or repeatedly. A request carrying a `schedule`
 block is not executed — it is registered as a scheduled task and acknowledged with **HTTP 202**. When
 an occurrence is due, the provider delivers the stored prompt into the input queue as a plain chat
-request and the normal execution path runs it. Agent Kernel also mounts the management routes and
-injects five agent tools (`create_schedule`, `list_schedules`, `get_schedule`, `update_schedule`,
-`delete_schedule`) so the agent can defer work itself.
+request and the normal execution path runs it. The block also injects five agent tools
+(`create_schedule`, `list_schedules`, `get_schedule`, `update_schedule`, `delete_schedule`) so the
+agent can defer work itself. The management routes are **not** mounted from config — the application
+mounts `ScheduleRESTRequestHandler` when it wants them, exactly as it mounts the Slack and thread
+handlers.
 
 **Ask:** Which provider — `local` (in-process thread, development) or `eventbridge` (AWS EventBridge
 Scheduler, production)? And which task store — in-memory (default, dev), Redis, Valkey, or DynamoDB
@@ -921,8 +923,8 @@ dependencies = [
 ```
 The `cron` extra brings `croniter`, needed for cron parsing.
 
-2. Update `config.yaml`. The presence of the `schedule` block is what enables the capability — there is
-   no handler to mount and nothing to change in `app.py`:
+2. Update `config.yaml`. The presence of the `schedule` block is what enables deferring and the agent
+   tools; the management routes are mounted by the app in step 3:
 ```yaml
 schedule:
   provider:
@@ -937,12 +939,17 @@ execution:
     type: in_memory      # required: the provider fires occurrences into the input queue
 ```
 
-3. `app.py` stays as it is — `RESTAPI.run()` picks up the block and mounts the management routes:
+3. Mount the management routes in `app.py`. Nothing is mounted from config, so an app that skips this
+   step still defers requests and still gets the agent tools — it just serves no `/api/v1/schedules`
+   routes:
 ```python
-from agentkernel.api import RESTAPI
+from agentkernel.pipeline import IOHandler
+from agentkernel.schedule import ScheduleRESTRequestHandler
 
 if __name__ == "__main__":
-    RESTAPI.run()
+    # config.yaml selects the in_memory queue transport, so this boots the whole single-process
+    # pipeline. The passed handlers are mounted alongside the pipeline's own chat route.
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
 ```
 
 4. When enabled:
@@ -1034,13 +1041,14 @@ schedule:
 | `in_memory` store + a broker transport | The records would be split across the runner and IO-handler processes |
 | `eventbridge` provider + a non-`sqs` transport | Delivery is baked into the schedule registration as an SQS target |
 
-**Protecting the management routes with an Authoriser:** the schedule routes are mounted by the IO
-handler, so pass the `Authoriser` there rather than to `RESTAPI.run()`:
+**Protecting the management routes with an Authoriser:** the routes are mounted by the application,
+so pass the `Authoriser` to the `ScheduleRESTRequestHandler` constructor:
 
 ```python
 from typing import Optional
 from agentkernel.auth import Authoriser
 from agentkernel.pipeline import IOHandler
+from agentkernel.schedule import ScheduleRESTRequestHandler
 
 class DemoAuthoriser(Authoriser):
     def authorise(self, token: str) -> Optional[str]:
@@ -1048,7 +1056,7 @@ class DemoAuthoriser(Authoriser):
         return {"alice-token": "alice", "bob-token": "bob"}.get(token)
 
 if __name__ == "__main__":
-    IOHandler.run(authoriser=DemoAuthoriser())
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=DemoAuthoriser())])
 ```
 
 With an Authoriser configured, listings are scoped to the resolved `user_id` and reading or changing

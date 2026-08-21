@@ -128,7 +128,7 @@ Let agents run code and shell commands in an isolated, permission-bounded enviro
 
 Let a chat run later, or on a schedule — the platform owns the timers, the persistence, and the management API.
 
-- **Enable it in config** — a `schedule` block is the whole switch; no handler to mount, no code change.
+- **Enable it in config** — a `schedule` block turns on deferring and the agent tools with no code change; mount `ScheduleRESTRequestHandler` when you also want the management routes.
 - **One creation path, three callers** — a `schedule` block on any chat request (acknowledged with HTTP 202), the agent's own `create_schedule` tool, or a direct `ScheduleManager` call.
 - **Pluggable timers and stores** — `local` (in-process, for development) or AWS EventBridge Scheduler for production; task records in memory, Redis, Valkey, or DynamoDB.
 - **Managed over REST** — list, read, amend, pause and cancel via `/api/v1/schedules`, scoped to the owning user by a pluggable `Authoriser`.
