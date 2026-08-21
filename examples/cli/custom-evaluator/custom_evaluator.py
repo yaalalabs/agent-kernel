@@ -1,10 +1,4 @@
-"""A bring-your-own AKEvaluator that uses neither DeepEval nor RAGAS.
-
-Wired in via test-config.yaml's `evaluator: custom_evaluator.TokenOverlapEvaluator` - the same
-dotted-path resolution every other pluggable backend in Agent Kernel uses (sandbox providers,
-session stores, ...). See docs/specs/555-pluggable-test-evaluators and
-agentkernel.test.core.akevaluators for the interface this implements.
-"""
+# A bring-your-own AKEvaluator example for the CLI. This is a simple token-overlap evaluator that also demonstrates how to
 
 import re
 
