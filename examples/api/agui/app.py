@@ -39,7 +39,7 @@ DIST = Path(__file__).parent / "frontend" / "dist"
 BUILD_HINT = (
     "<h1>Frontend not built</h1>"
     "<p>The demo UI is a Vite app. From <code>frontend/</code> run <code>npm install &amp;&amp; npm run dev</code> "
-    "and open <a href=\"http://localhost:5173\">http://localhost:5173</a> — it proxies <code>/agui</code> to this process.</p>"
+    'and open <a href="http://localhost:5173">http://localhost:5173</a> — it proxies <code>/agui</code> to this process.</p>'
     "<p>To serve the UI from this origin instead, run <code>npm run build</code> there; this page then loads <code>frontend/dist</code>.</p>"
     "<p>The AG-UI routes under <code>/agui</code> work regardless — this page is only the demo UI.</p>"
 )
