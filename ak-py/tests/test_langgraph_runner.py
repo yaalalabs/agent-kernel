@@ -190,7 +190,7 @@ async def _collect(events):
 
 
 class TestLangGraphRunnerStreamEvents:
-    """The event mapping added in PR 4. Every id is `run_id`, which LangChain assigns per invocation."""
+    """LangGraphRunner.stream event mapping (ids are LangChain run_ids)."""
 
     @pytest.mark.asyncio
     async def test_a_message_is_bracketed_around_its_deltas(self):
@@ -211,12 +211,8 @@ class TestLangGraphRunnerStreamEvents:
 
     @pytest.mark.asyncio
     async def test_a_tool_call_only_turn_emits_no_message_boundaries(self):
-        """LangChain fires the chat-model start and end whether or not any prose was streamed.
-
-        On a tool-calling turn the content chunks are empty — the call rides on `chunk.tool_calls` —
-        so bracketing unconditionally would send `MessageStart` + `MessageEnd` with nothing between,
-        which spec.md:229-233 spells out as an empty assistant bubble in any AG-UI client.
-        """
+        """Empty chat-model turns must not emit MessageStart/End (tool-only turns would otherwise
+        bracket an empty assistant message)."""
         events = await _collect(
             [
                 {"event": "on_chat_model_start", "run_id": "m1", "data": {}},
@@ -230,11 +226,8 @@ class TestLangGraphRunnerStreamEvents:
 
     @pytest.mark.asyncio
     async def test_two_model_calls_do_not_share_a_message_id(self):
-        """A nested model call inside a tool gets its own run_id, so the ids must not collide.
-
-        Also the guard that `started` is keyed per run id rather than being one flag: the inner call's
-        end must close only the inner message, leaving the outer one open to close afterwards.
-        """
+        """Nested model calls use distinct run_ids; `started` is keyed per id so an inner end
+        does not close the outer message."""
         events = await _collect(
             [
                 {"event": "on_chat_model_stream", "run_id": "outer", "data": {"chunk": _chunk("o")}},
@@ -254,7 +247,7 @@ class TestLangGraphRunnerStreamEvents:
 
     @pytest.mark.asyncio
     async def test_a_list_content_chunk_yields_only_its_text_blocks(self):
-        """Providers that interleave text with tool-use blocks send a list; blocks without text are skipped."""
+        """List content blocks: keep text, skip non-text blocks."""
         chunk = _chunk([{"text": "a"}, {"type": "tool_use"}, {"text": "b"}])
         events = await _collect([{"event": "on_chat_model_stream", "run_id": "run-1", "data": {"chunk": chunk}}])
         assert events == [
@@ -279,7 +272,7 @@ class TestLangGraphRunnerStreamEvents:
 
     @pytest.mark.asyncio
     async def test_tool_arguments_that_cannot_be_serialised_yield_no_args_event(self):
-        """A fragment a client cannot parse is worse than no fragment; the call is still bracketed."""
+        """Unserialisable tool input → no ToolCallArgs; call still bracketed."""
 
         class Unserialisable:
             def __repr__(self):
@@ -302,7 +295,7 @@ class TestLangGraphRunnerStreamEvents:
 
     @pytest.mark.asyncio
     async def test_chain_and_prompt_events_map_to_nothing(self):
-        """on_chain_* fires for every runnable in the graph, not only the nodes a user calls steps."""
+        """on_chain_* / on_prompt_* are not mapped to steps."""
         events = await _collect(
             [
                 {"event": "on_chain_start", "run_id": "c1", "name": "agent", "data": {}},

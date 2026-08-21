@@ -432,15 +432,9 @@ class LangGraphRunner(BaseRunner):
         """
         Streams the LangGraph agent response as Agent Kernel stream events.
 
-        Every correlation id is `event["run_id"]`, which LangChain assigns per runnable invocation
-        and declares as a required field of its `StreamEvent` (`langchain_core/runnables/schema.py`).
-        One chat-model call and one tool call each get their own, so a start pairs with its end
-        without the adapter remembering anything — a nested model call inside a tool gets a distinct
-        id rather than colliding with the outer one.
-
-        Tool arguments arrive whole in `on_tool_start`, so the call is opened, its arguments emitted
-        as one fragment and the call closed together. LangChain exposes no per-token argument
-        stream, so there is nothing finer to forward.
+        Correlation ids are LangChain `run_id`s (one per runnable invocation), so nested model
+        calls do not collide. Tool arguments arrive whole on `on_tool_start` and are emitted as a
+        single fragment — LangChain has no per-token argument stream.
 
         :param agent: The LangGraph agent to run.
         :param session: The session to use for the agent.
@@ -461,7 +455,7 @@ class LangGraphRunner(BaseRunner):
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
             incoming = self._load_framework_context(session)
-            started: set[str] = set()  # run ids with an open message; a local, never on self — see _map_event
+            started: set[str] = set()  # run ids with an open MessageStart; local, never on self
             input_state: dict[str, Any] = {}
             if incoming:
                 input_state.update(incoming)
@@ -490,32 +484,18 @@ class LangGraphRunner(BaseRunner):
 
     @staticmethod
     def _map_event(event: dict, started: set[str]) -> list[StreamEvent]:
-        """Translate one LangChain `astream_events` event into AK events.
+        """
+        Translate one LangChain `astream_events` event into AK events.
 
-        Every other event name — `on_chain_*`, `on_prompt_*`, retriever and parser events — maps to
-        nothing. Graph nodes would be the natural source for `StepStart`/`StepEnd`, but `on_chain_*`
-        fires for every runnable in the graph, not only the nodes a user would recognise as steps,
-        so naming them is a decision on its own rather than part of this mapping.
-
-        **`MessageStart` is deferred until text actually arrives, and `started` is what defers it.**
-        LangChain fires `on_chat_model_start` and `on_chat_model_end` around every model call whether
-        or not any prose was streamed, so a tool-calling turn — where the content chunks are empty and
-        the call rides on `chunk.tool_calls` — would otherwise be bracketed into a message with
-        nothing in it. That is an empty assistant bubble in any AG-UI client, which is the same defect
-        `Runtime.stream`'s `legacy_started` exists to prevent on the transitional path. So the id is
-        taken from the *stream* event, `on_chat_model_start` maps to nothing, and `MessageEnd` is
-        emitted only for a call that opened.
-
-        A set keyed by `run_id`, not one flag: LangChain assigns an id per invocation, and a tool that
-        itself calls a model produces a second one, so a single flag would let one call's end close
-        another's message. The caller owns the set and passes it in, because it must be a **local** to
-        one `stream` call — a `Runner` instance is shared across every agent and every concurrent
-        session (see spec §10), so remembering this on `self` would let one session's message
-        suppress another's.
+        `MessageStart` is deferred until text arrives: LangChain fires chat-model start/end even
+        on tool-only turns, and unconditional bracketing would emit an empty assistant message.
+        `started` is keyed by `run_id` (not a single flag) so nested calls close correctly, and
+        must stay a per-stream local — a `Runner` is shared across sessions. Chain/prompt/etc.
+        events are ignored (`on_chain_*` is too coarse for `StepStart`/`StepEnd`).
 
         :param event: One event from `astream_events(version="v2")`.
         :param started: Run ids whose `MessageStart` has been emitted. Mutated in place.
-        :return: The AK events this event produces, empty when it maps to nothing.
+        :return: The AK events this event produces, or an empty list when unmapped.
         """
         kind = event["event"]
         run_id = event["run_id"]
@@ -548,12 +528,14 @@ class LangGraphRunner(BaseRunner):
 
     @staticmethod
     def _chunk_text(event: dict) -> list[str]:
-        """Pull the prose out of an `on_chat_model_stream` chunk.
+        """
+        Pull prose out of an `on_chat_model_stream` chunk.
 
-        A chunk's `content` is a plain string for most providers and a list of content blocks for
-        those that interleave text with other block types (Anthropic's tool-use blocks, for one), so
-        both shapes are read and blocks without text are skipped. Empty fragments are dropped rather
-        than forwarded as empty events.
+        `content` is a plain string for most providers, or a list of blocks (e.g. Anthropic
+        text interleaved with tool-use). Non-text blocks and empty fragments are skipped.
+
+        :param event: An `on_chat_model_stream` event from `astream_events`.
+        :return: Non-empty text fragments from the chunk.
         """
         content = event["data"]["chunk"].content
         if isinstance(content, str):
@@ -564,18 +546,15 @@ class LangGraphRunner(BaseRunner):
 
     @staticmethod
     def _tool_arguments(event: dict) -> str:
-        """Serialise an `on_tool_start` input dict into a JSON arguments fragment.
+        """
+        Serialise an `on_tool_start` input dict into a JSON arguments fragment.
 
-        `ToolCallArgs.delta` is documented as a raw fragment as frameworks emit it, and LangChain
-        hands over a parsed dict rather than the model's original JSON text — so it is re-serialised
-        here. A value the encoder cannot handle yields no arguments event at all, which is better
-        than a fragment a client cannot parse.
+        LangChain hands over a parsed dict rather than the model's original JSON, so it is
+        re-serialised here. On encode failure the call is still bracketed with no arguments —
+        safer mid-stream than letting an exception fail the run.
 
-        The `except` is deliberately broad. `default=str` hands any unencodable value to its own
-        `__str__`, which is arbitrary user code and can raise anything at all — and this runs
-        mid-stream, where an escaping exception turns an in-flight response into a failed run. The
-        arguments are the most expendable part of a tool call: dropping them still leaves the call
-        bracketed and its result correlated.
+        :param event: An `on_tool_start` event from `astream_events`.
+        :return: JSON string for `ToolCallArgs.delta`, or `""` if missing/unencodable.
         """
         data = event.get("data") or {}
         tool_input = data.get("input")
@@ -589,11 +568,13 @@ class LangGraphRunner(BaseRunner):
 
     @staticmethod
     def _tool_output(event: dict) -> str:
-        """Read an `on_tool_end` output as text.
+        """
+        Read an `on_tool_end` output as text.
 
-        LangChain wraps a tool's return value in a `ToolMessage` on most paths but hands the bare
-        value back on others, so the message's `content` is preferred and the value itself is the
-        fallback.
+        Prefer `ToolMessage.content` when present; otherwise fall back to `str(output)`.
+
+        :param event: An `on_tool_end` event from `astream_events`.
+        :return: Text for `ToolCallResult.content`.
         """
         data = event.get("data") or {}
         output = data.get("output")

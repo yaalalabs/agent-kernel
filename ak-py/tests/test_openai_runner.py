@@ -35,12 +35,7 @@ class CalendarEvent(BaseModel):
 
 
 def _delta_event(text: str, item_id: str = "msg-1"):
-    """Build a stream event the OpenAI runner recognizes as a text delta.
-
-    `item_id` defaults to the same id `_message_item()` uses, because in a real response the two
-    *are* the same value — a delta names the output item it belongs to. Fixtures that disagree would
-    let a delta keyed off the wrong field pass unnoticed.
-    """
+    """Raw response text-delta event for the given item_id."""
     from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
     event = MagicMock()
@@ -232,7 +227,7 @@ class TestOpenAIRunnerFrameworkContext:
 
 
 def _message_item(item_id: str = "msg-1"):
-    """A real ResponseOutputMessage, so the test pins the SDK's shape rather than a mock's."""
+    """SDK ResponseOutputMessage fixture."""
     from openai.types.responses.response_output_message import ResponseOutputMessage
 
     return ResponseOutputMessage(id=item_id, content=[], role="assistant", status="completed", type="message")
@@ -279,7 +274,7 @@ def _reasoning_delta_event(text: str, item_id: str = "rsn-1"):
 
 
 def _run_item_event(name: str, raw_item, output=None):
-    """A RunItemStreamEvent. `name` is assigned after construction: MagicMock(name=...) names the mock."""
+    """RunItemStreamEvent mock (name set after construct — MagicMock(name=...) names the mock)."""
     item = MagicMock()
     item.raw_item = raw_item
     item.output = output
@@ -297,16 +292,14 @@ def _function_call(call_id: str = "call-1", name: str = "lookup", arguments: str
 
 
 def _handoff_call(call_id: str = "ho-1", name: str = "transfer_to_billing"):
-    """The raw item behind `handoff_requested`: a real tool call, which is how the SDK models a handoff."""
+    """SDK tool-call shape used for handoff_requested."""
     from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
 
     return ResponseFunctionToolCall(arguments='{"reason": "billing"}', call_id=call_id, name=name, type="function_call")
 
 
 def _handoff_output(call_id: str = "ho-1", output: str = "Handed off to billing"):
-    """The raw item behind `handoff_occured`, in the shape `ItemHelpers.tool_call_output_item` builds:
-    the call's own id plus the transfer message. Built through the SDK helper rather than hand-written,
-    so the test pins the SDK's shape."""
+    """SDK handoff_occured raw_item via ItemHelpers.tool_call_output_item."""
     from agents.items import ItemHelpers
 
     return ItemHelpers.tool_call_output_item(_handoff_call(call_id=call_id), output)
@@ -335,7 +328,7 @@ async def _collect(runner, events):
 
 
 class TestOpenAIRunnerStreamEvents:
-    """The event mapping added in PR 4. Every id is read off the SDK's own event, never generated."""
+    """OpenAIRunner.stream event mapping (ids from the SDK)."""
 
     @pytest.mark.asyncio
     async def test_a_message_is_bracketed_around_its_deltas(self):
@@ -372,13 +365,13 @@ class TestOpenAIRunnerStreamEvents:
 
     @pytest.mark.asyncio
     async def test_a_tool_result_falls_back_to_the_items_own_output(self):
-        """raw_item carries the string the model saw; without one, the tool's return value stands in."""
+        """Prefer raw_item.output; fall back to item.output."""
         events = await _collect(OpenAIRunner(), [_run_item_event("tool_output", {"call_id": "call-1"}, output=42)])
         assert events == [ToolCallResult(tool_call_id="call-1", content="42")]
 
     @pytest.mark.asyncio
     async def test_a_tool_item_with_no_call_id_emits_nothing(self):
-        """A start that can never be correlated to an end is worse for a client than silence."""
+        """No call_id → emit nothing."""
         events = await _collect(OpenAIRunner(), [_run_item_event("tool_called", {"name": "lookup"})])
         assert events == []
 
@@ -397,7 +390,7 @@ class TestOpenAIRunnerStreamEvents:
 
     @pytest.mark.asyncio
     async def test_item_created_run_events_are_ignored_so_messages_are_not_doubled(self):
-        """The raw events already bracketed the message; mapping these too would emit it twice."""
+        """message_output_created / reasoning_item_created are covered by raw events already."""
         events = await _collect(
             OpenAIRunner(),
             [
@@ -413,18 +406,13 @@ class TestOpenAIRunnerStreamEvents:
     )
     @pytest.mark.asyncio
     async def test_hosted_tool_and_mcp_items_stay_unmapped(self, name):
-        """The five run-item names AK deliberately does not carry (spec §10). They are hosted-tool and
-        MCP protocol traffic, not agent work a user would recognise. Pinned so adding one is a decision
-        rather than an accident: each of these carries a call_id, so without the filter they would emit."""
+        """Hosted-tool and MCP run-item names stay unmapped (not user-facing agent work)."""
         events = await _collect(OpenAIRunner(), [_run_item_event(name, _function_call())])
         assert events == []
 
 
 class TestOpenAIRunnerHandoffs:
-    """A handoff is mapped as a tool call, because the SDK implements it as one and then lifts it out
-    of the tool stream into its own event pair. Every other adapter surfaces the same concept as an
-    ordinary tool call — ADK's TransferToAgentTool is a FunctionTool, and Pydantic AI has no handoff
-    primitive at all — so anything else here would make one adapter disagree with the rest."""
+    """Handoffs map as tool calls: the SDK models them as tools, then lifts them into handoff_* events."""
 
     @pytest.mark.asyncio
     async def test_a_handoff_opens_fills_and_closes_like_any_tool_call(self):
@@ -437,8 +425,7 @@ class TestOpenAIRunnerHandoffs:
 
     @pytest.mark.asyncio
     async def test_the_handoff_result_correlates_to_the_call_on_the_same_id(self):
-        """The correlation is free: the SDK builds handoff_occured's raw_item with
-        ItemHelpers.tool_call_output_item, which copies the call's own call_id."""
+        """Result correlates on the same call_id."""
         events = await _collect(
             OpenAIRunner(),
             [
@@ -451,8 +438,7 @@ class TestOpenAIRunnerHandoffs:
 
     @pytest.mark.asyncio
     async def test_the_sdks_misspelling_is_what_is_matched(self):
-        """`handoff_occured` is misspelled in the SDK and cannot be fixed there without a breaking
-        change. Spelling it correctly here would silently drop every handoff result."""
+        """Match the SDK spelling `handoff_occured` — the correctly spelled name would drop results."""
         assert await _collect(OpenAIRunner(), [_run_item_event("handoff_occurred", _handoff_output())]) == []
         assert await _collect(OpenAIRunner(), [_run_item_event("handoff_occured", _handoff_output())]) != []
 

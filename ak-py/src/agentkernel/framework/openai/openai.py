@@ -225,22 +225,15 @@ class OpenAIRunner(BaseRunner):
         """
         Streams the OpenAI agent response as Agent Kernel stream events.
 
-        Two of the SDK's three stream-event kinds are read, because neither alone is enough:
+        Two SDK stream-event kinds are read — neither alone is enough:
 
-        - **Raw response events** carry the message and reasoning boundaries and the text deltas.
-          They are the only source for a *start*, since the SDK's `message_output_created` item
-          event fires once the message is already complete — too late to open one.
-        - **Run item events** carry the tool calls. `tool_called` arrives with its arguments
-          already whole, so the call is opened, its arguments emitted as a single fragment, and the
-          call closed in one go. Streaming arguments progressively is possible but not free: the
-          raw `response.function_call_arguments.delta` event carries only `item_id`, never
-          `call_id`, so it would need a per-run map from one to the other. Not worth a UI showing
-          arguments being typed.
+        - **Raw response events** carry message/reasoning boundaries and text deltas. They are the
+          only source for a *start* (`message_output_created` fires too late).
+        - **Run item events** carry tool calls (and handoffs). Arguments arrive whole on
+          `tool_called`, so the call is opened, filled, and closed in one go.
 
-        Every correlation id is read off the SDK's own events — `item.id` for a message or
-        reasoning trace, `call_id` for a tool call — so nothing is generated and nothing is
-        remembered between events. See spec §10: a `Runner` instance is shared across sessions, so
-        per-run memory would have to be a local, and needing none at all is better.
+        Correlation ids come from the SDK (`item.id`, `call_id`); nothing is generated or stored
+        on the shared `Runner` between events.
 
         :param agent: The OpenAI agent to run.
         :param session: The session to use for the agent.
@@ -280,15 +273,14 @@ class OpenAIRunner(BaseRunner):
 
     @staticmethod
     def _map_raw_response(data: Any) -> list[StreamEvent]:
-        """Translate one raw OpenAI response event into AK events.
+        """
+        Translate one raw OpenAI response event into AK events.
 
-        `response.output_item.added` and `.done` bracket every output item, so one pair of branches
-        serves both prose and reasoning; the item's own `type` decides which. A delta with empty
-        content is dropped rather than emitted, because a consumer concatenating `delta` gains
-        nothing from it and AG-UI would forward an empty frame.
+        `response.output_item.added` / `.done` bracket both prose and reasoning (item `type`
+        decides which). Empty deltas are dropped.
 
         :param data: The `event.data` payload of a `raw_response_event`.
-        :return: The AK events this raw event produces, empty when it maps to nothing.
+        :return: The AK events this raw event produces, or an empty list when unmapped.
         """
         if isinstance(data, ResponseOutputItemAddedEvent):
             item = data.item
@@ -312,38 +304,18 @@ class OpenAIRunner(BaseRunner):
 
     @staticmethod
     def _map_run_item(name: str, item: Any) -> list[StreamEvent]:
-        """Translate one `RunItemStreamEvent` into AK events.
+        """
+        Translate one `RunItemStreamEvent` into AK events.
 
-        Four of the SDK's eleven names are mapped: the two tool names, and the two handoff names.
-
-        **A handoff is mapped as a tool call, because that is what it is.** The SDK implements a
-        handoff as a tool the model calls, then lifts it out of the tool stream into its own pair of
-        events — which is why it needs naming here at all. Every other adapter surfaces the same
-        concept as an ordinary tool call and needs no special case: ADK's `TransferToAgentTool` is a
-        `FunctionTool`, and Pydantic AI has no handoff primitive, so delegation is a tool that calls
-        another agent. Emitting anything else here would make one adapter disagree with the rest
-        about one protocol concept.
-
-        The shapes line up exactly, so the two branches below serve both pairs: `handoff_requested`
-        carries a `ResponseFunctionToolCall` (`call_id`, `name`, `arguments`), and `handoff_occured`
-        carries `{call_id, output}` built by `ItemHelpers.tool_call_output_item`, so the result
-        correlates to the call on the same `call_id`. `handoff_occured` is misspelled in the SDK and
-        cannot be corrected there without a breaking change, so it is spelled that way here too.
-
-        Five names are ignored and stay unmapped, all hosted-tool or MCP protocol traffic rather
-        than agent work a user would recognise: `tool_search_called`, `tool_search_output_created`,
-        `mcp_approval_requested`, `mcp_approval_response` and `mcp_list_tools`. Two more —
-        `message_output_created` and `reasoning_item_created` — are ignored for a different reason:
-        the raw events above already opened, filled and closed both, so emitting again here would
-        duplicate every message.
-
-        An item whose `call_id` cannot be read yields nothing. `ToolCallItem.raw_item` is a union of
-        nine shapes plus a bare `dict`, and a tool call with no id cannot be correlated to its
-        result — a start that never ends is worse for a client than silence.
+        Maps `tool_called` / `tool_output` and the handoff pair (`handoff_requested` /
+        `handoff_occured` — SDK spelling). Handoffs share tool-call shapes (`call_id`, `name`,
+        `arguments` / output), so they reuse the same branches. Hosted-tool and MCP names, plus
+        `message_output_created` / `reasoning_item_created` (already covered by raw events), stay
+        unmapped. Items without a `call_id` emit nothing.
 
         :param name: The `RunItemStreamEvent.name` discriminator.
         :param item: The `RunItem` the event wraps.
-        :return: The AK events this item produces, empty when it maps to nothing.
+        :return: The AK events this item produces, or an empty list when unmapped.
         """
         if name not in ("tool_called", "tool_output", "handoff_requested", "handoff_occured"):
             return []
@@ -363,9 +335,7 @@ class OpenAIRunner(BaseRunner):
             events.append(ToolCallEnd(tool_call_id=call_id))
             return events
 
-        # The raw item's "output" is the string the model is shown; `item.output` is the tool's
-        # own return value, which may be any object. Prefer the former, so what a UI renders is
-        # what the model read.
+        # Prefer raw_item.output (what the model saw) over item.output (native tool return).
         content = OpenAIRunner._raw_field(raw, "output")
         if content is None:
             content = getattr(item, "output", None)
@@ -373,7 +343,13 @@ class OpenAIRunner(BaseRunner):
 
     @staticmethod
     def _raw_field(raw: Any, field: str) -> Any:
-        """Read one field off a `RunItem.raw_item`, which is a model on some paths and a dict on others."""
+        """
+        Read one field off a `RunItem.raw_item` (Pydantic model on some paths, dict on others).
+
+        :param raw: The item's `raw_item` value.
+        :param field: Field name to read.
+        :return: The field value, or `None` if missing.
+        """
         if isinstance(raw, dict):
             return raw.get(field)
         return getattr(raw, field, None)
