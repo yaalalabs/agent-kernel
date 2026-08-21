@@ -1,10 +1,28 @@
+# Mounting AGUIRequestHandler in app.py is what turns AG-UI on; this block only
+# parameterizes it. There is no `execution: mode: stream` here — AG-UI always
+# delivers a run as a stream of events, so it does not consult execution mode.
 agui:
-  default_agent: planner # also serves POST /agui
-  # agents: [planner]    # omitted = every streaming-capable agent
+  default_agent: planner # also serves POST /agui, in addition to POST /agui/planner
+  # agents: [planner]    # omitted = every streaming-capable agent is reachable
+
   state:
-    enabled: true # get_agui_state / update_agui_state + StateSnapshot
+    # Shared JSON both the frontend and the agent read and write.
+    # On: attaches get_agui_state / update_agui_state. The agent amends the dict
+    # (this demo's task list); the surface then streams a StateSnapshot so the UI
+    # re-renders. That round trip is how a change becomes visible — describing it
+    # in the reply does not update the screen.
+    # Off: inbound `state` is still stored on the session, but the agent has no
+    # tool to read or write it, so no snapshot is ever emitted.
+    enabled: true
+
   client_context:
-    enabled: true # get_forwarded_props / get_agui_context
+    # Read-only extras the frontend attaches to a request: forwardedProps (page,
+    # locale, selected record) and context entries ({description, value}).
+    # On: attaches get_forwarded_props / get_agui_context. The model pulls them as
+    # tool output when the user refers to something not in the conversation —
+    # never as instructions injected into the prompt.
+    # Off: those fields are stored for the run, but the model has no tool to read them.
+    enabled: true
 
 api:
   custom_router_prefix: "" # demo UI at GET / instead of GET /custom/
