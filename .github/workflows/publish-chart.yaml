@@ -1,0 +1,74 @@
+name: Publish Helm Chart
+
+# Publishes ak-deployment/ak-k8s/chart as an OCI artifact, the chart-tier sibling of the
+# Terraform module publishing in sync-terraform.yaml. Also generates the per-release
+# images.txt manifest (every image the chart references, for air-gapped mirroring) and
+# attaches it to the GitHub release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name to publish (e.g., v1.0.0)'
+        required: true
+        type: string
+
+env:
+  CHART_DIR: ak-deployment/ak-k8s/chart
+  OCI_REGISTRY: oci://ghcr.io/yaalalabs/charts
+
+jobs:
+  publish-chart:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag_name }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Package chart
+        id: package
+        run: |
+          TAG_NAME="${{ inputs.tag_name }}"
+          CHART_VERSION="${TAG_NAME#v}"
+          helm dependency build "$CHART_DIR"
+          helm package "$CHART_DIR" --version "$CHART_VERSION" --app-version "$CHART_VERSION" --destination .
+          echo "chart_version=$CHART_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Push chart to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+          helm push "agent-kernel-${{ steps.package.outputs.chart_version }}.tgz" "$OCI_REGISTRY"
+
+      - name: Generate images.txt manifest
+        run: |
+          # Every image any flavor can reference: template each values file with the optional
+          # tiers enabled, and collect the image fields. Strimzi-managed Kafka images are
+          # pulled by the operator and are versioned with it, so they appear in Strimzi's own
+          # manifests, not here.
+          {
+            for VALUES in values.yaml values-dev.yaml values-baremetal.yaml values-eks.yaml; do
+              helm template images "$CHART_DIR" -f "$CHART_DIR/$VALUES" \
+                --set wsGateway.enabled=true --set wsGateway.auth.token=manifest \
+                --set keda.enabled=true --set keda.awsRegion=manifest
+            done
+          } | grep -E '^\s+image:' | sed -E 's/.*image:\s*"?([^"]+)"?\s*$/\1/' | sort -u > images.txt
+          echo "Images referenced by the chart:"
+          cat images.txt
+
+      - name: Attach images.txt to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ inputs.tag_name }}" images.txt --clobber
+
+      - name: Summary
+        run: |
+          echo "✅ Published $OCI_REGISTRY/agent-kernel:${{ steps.package.outputs.chart_version }} and attached images.txt to release ${{ inputs.tag_name }}"

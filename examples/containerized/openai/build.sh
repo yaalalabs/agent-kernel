@@ -11,9 +11,7 @@ image_name=yaalalabs/ak-openai-demo
 if [[ ${1-} != "local" ]]; then
   uv sync --all-extras
 else
-  # For local development of agentkernel, you can force reinstall from local dist
-  uv sync --find-links ../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --no-deps --no-index --find-links ../../../ak-py/dist agentkernel[api,openai,test,azure] || true
+  uv sync --find-links ../../../ak-py/dist --upgrade-package agentkernel || true
 fi
 
 create_docker_image() {
@@ -23,8 +21,7 @@ create_docker_image() {
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist
     else
-      uv pip install -r requirements.txt --target=dist  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --no-deps --no-index --target=dist --find-links ../../../ak-py/dist agentkernel[openai,api,test] || true
+      uv pip install -r requirements.txt --target=dist --find-links ../../../ak-py/dist --upgrade-package agentkernel || true
     fi
     cp -r app.py tool.py dist/
     

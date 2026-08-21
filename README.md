@@ -38,7 +38,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 |---|---|
 | 🔌 **Framework-Agnostic** | Run OpenAI Agents SDK, LangGraph, CrewAI, and Google ADK side by side. Swap with 2 import lines. |
 | ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
-| 🔁 **Queue-Pipeline Execution** | Every chat request runs through a queued pipeline: in-process by default (zero services, full retry/FIFO/dedup semantics locally), SQS, Kafka, and NATS JetStream transports for distributed deployments; Kubernetes chart upcoming. |
+| 🔁 **Queue-Pipeline Execution** | Every chat request runs through a queued pipeline: in-process by default (zero services, full retry/FIFO/dedup semantics locally), SQS, Kafka, and NATS JetStream transports for distributed deployments; a Helm chart ships the topology to any Kubernetes cluster. |
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
 | 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
@@ -163,7 +163,7 @@ Same agent code. Pick your runtime. Full Terraform modules included.
 | **AWS** | [Lambda](https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws) | [ECS / Fargate](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) |
 | **Azure** | [Functions](https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm) | [Container Apps](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) |
 | **GCP** | [Cloud Run Serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/serverless) | [Cloud Run Containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/containerized) |
-| **On-Prem** | ✅ Docker image | ✅ REST API bundle |
+| **On-Prem / Kubernetes** | ✅ Docker image | [Helm chart](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s) (baremetal + EKS, Kafka/NATS queue mode, KEDA autoscaling) |
 
 ---
 
@@ -182,7 +182,7 @@ ak skill install
 | `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, hooks, multimodal, conversation threads |
 | `ak-add-integration` | Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail |
 | `ak-cloud-deploy` | AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run with full Terraform |
-| `ak-test` | Fuzzy, judge, and fallback test modes + a debugging playbook |
+| `ak-test` | Score, llm, and fallback test modes (pluggable evaluators) + a debugging playbook |
 
 See the [`use-cases/`](use-cases/) directory for complete end-to-end examples built using these skills — each starting from a `SPEC.md` and generating a fully deployed agent.
 
@@ -194,7 +194,7 @@ See the [`use-cases/`](use-cases/) directory for complete end-to-end examples bu
 pytest tests/
 ```
 
-Built-in fuzzy, semantic, and fallback comparison modes. CI/CD ready. Test agent behavior, not just code.
+Built-in score, llm, and fallback comparison modes, backed by a pluggable evaluator (DeepEval by default, or bring your own). CI/CD ready. Test agent behavior, not just code.
 
 ---
 

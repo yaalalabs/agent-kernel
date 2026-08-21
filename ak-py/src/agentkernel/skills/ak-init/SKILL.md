@@ -332,10 +332,15 @@ session:
 # trace:
 #   enabled: true
 #   type: langfuse     # langfuse | openllmetry | logfire
+```
 
-# Testing
-test:
-  mode: fuzzy          # fuzzy | judge | fallback
+#### test-config.yaml
+
+Test harness configuration is **not** part of `config.yaml` — it lives in its own file, loaded
+only when tests run (a `test:` section left in `config.yaml` is ignored):
+
+```yaml
+mode: score          # score | llm | fallback (default: fallback)
 ```
 
 #### build.sh

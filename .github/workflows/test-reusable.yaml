@@ -151,6 +151,50 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: ./build.sh && uv run pytest -s
 
+  transport-integration-tests:
+    # The QueueTransportContract against REAL brokers (spec #495 Testing): the unit suite runs
+    # the same contract against in-memory fakes; this job points it at live NATS and Kafka
+    # containers (the transport examples' compose stacks), which catches what fakes cannot:
+    # consumer-group membership, server-side ack_wait timing, metadata propagation, real
+    # partitioners.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Start brokers
+        run: |
+          docker compose -f examples/transport/nats/docker-compose.yaml up -d --wait nats
+          docker compose -f examples/transport/kafka/docker-compose.yaml up -d --wait kafka
+
+      - name: Run transport contract against live brokers
+        working-directory: ak-py
+        env:
+          AK_TEST_NATS_URL: nats://localhost:4222
+          AK_TEST_KAFKA_BOOTSTRAP: localhost:9092
+        run: |
+          ./build.sh
+          uv run pytest tests/test_transport_contract_live.py --no-cov -v
+
+      - name: Stop brokers
+        if: always()
+        run: |
+          docker compose -f examples/transport/nats/docker-compose.yaml down -v
+          docker compose -f examples/transport/kafka/docker-compose.yaml down -v
+
   e2e-tests:
     needs: [setup, build-ak-py]
     if: ${{ inputs.run_e2e_tests && fromJson(needs.setup.outputs.matrix).include[0] != null }}

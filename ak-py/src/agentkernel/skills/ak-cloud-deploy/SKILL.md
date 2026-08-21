@@ -1,11 +1,14 @@
 ---
 name: ak-cloud-deploy
 description: >
-  Deploy an Agent Kernel project to AWS, Azure, or GCP using Terraform modules.
+  Deploy an Agent Kernel project to AWS, Azure, or GCP using Terraform modules, or to any
+  Kubernetes cluster (on-prem, baremetal, EKS) using the official Helm chart.
   Supports serverless and containerized modes for all three clouds. AWS supports
   execution modes (rest_sync, rest_async, async, stream), queue-based scalable processing,
   and custom API Gateway authorizers. GCP supports Cloud Run serverless (scale-to-zero)
-  and containerized (always-on) with Redis or Firestore session backends.
+  and containerized (always-on) with Redis or Firestore session backends. Kubernetes runs
+  the queue pipeline over NATS JetStream, Kafka, or SQS with KEDA autoscaling and an
+  optional WebSocket gateway tier.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -32,7 +35,7 @@ If missing, suggest `ak-init` first.
 
 ### Step 2: Ask Deployment Questions
 
-1. Cloud provider: AWS, Azure, or GCP?
+1. Target platform: AWS, Azure, GCP, or Kubernetes (on-prem / baremetal / EKS via the Helm chart; see the On-Prem / Kubernetes section)?
 2. Runtime mode:
 - Serverless
 - Containerized
@@ -57,6 +60,10 @@ Use official modules:
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
 Use current module version (`0.8.1`) unless user requests another.
+
+Kubernetes does not use Terraform: the Helm chart lives at `ak-deployment/ak-k8s/chart` in the
+Agent Kernel repository and is published as an OCI artifact
+(`oci://ghcr.io/yaalalabs/charts/agent-kernel`).
 
 All modules are provider-agnostic: they declare `required_providers` but do not configure them internally. Configure each provider (`aws`/`docker`, `azurerm`, or `google`/`google-beta`/`docker`) in the root module and pass it explicitly via the module's `providers = { ... }` argument, as shown in the examples below. Azure's containerized module builds and pushes its image via a nested submodule with its own internal `docker` provider, so no `docker` provider needs to be configured or passed by the caller there.
 
@@ -1147,6 +1154,101 @@ module "containerized_agent" {
 
 **Key difference from GCP Serverless:** `min_instance_count = 1` keeps at least one instance running at all times, eliminating cold starts.
 
+## On-Prem / Kubernetes (Helm Chart)
+
+Deploys the queue pipeline to any Kubernetes cluster: an `io-handler` Deployment (REST API +
+Response Handler), an `agent-runner` Deployment (the consumers executing the agents), and an
+optional `ws-gateway` Deployment for WebSocket modes. Backing services (Valkey, NATS) are
+condition-gated dependencies of the chart; flavors (dev, baremetal, EKS) are values files.
+
+Reference: the chart at `ak-deployment/ak-k8s/` and the end-to-end example at
+`examples/k8s/openai-queue-mode/` in the Agent Kernel repository.
+
+**Entry files** (one image per component; the chart's `command` defaults match these names):
+
+```python
+# app_io_handler.py: the io-handler image
+from agentkernel.pipeline import IOHandler
+
+def main():
+    IOHandler.run()
+
+if __name__ == "__main__":
+    main()
+```
+
+```python
+# app_agent_runner.py: the agent-runner image (registers the agent modules)
+from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import AgentRunner
+from agents import Agent
+
+# ... define agents ...
+OpenAIModule([...])
+
+def main():
+    AgentRunner.run()
+
+if __name__ == "__main__":
+    main()
+```
+
+```python
+# app_ws_gateway.py: only for async/stream modes
+from agentkernel.pipeline import WebSocketGateway
+
+def main():
+    WebSocketGateway.run(auth_validator=YourAuthValidator())  # claims must include 'userId'
+
+if __name__ == "__main__":
+    main()
+```
+
+**Config split:** the image's `config.yaml` declares WHAT runs (`execution.mode`, agents,
+logging); the chart injects WHERE it runs (broker, response store, session store) as `AK_*`
+env vars that override matching `config.yaml` fields. Point `execution.queues.type` at
+`nats` (recommended on-prem), `kafka`, or `sqs`, and use a shared response/session store
+(`valkey`) on any multi-pod topology.
+
+**Images:** `python:3.12-slim` base, dependencies staged with pip's `--target` layout, one
+Dockerfile per component (mirror `examples/k8s/openai-queue-mode/deploy/package.sh`, which
+also cross-installs Linux wheels so builds work from macOS).
+
+**Install:**
+
+```bash
+helm dependency build ak-deployment/ak-k8s/chart
+helm install ak ak-deployment/ak-k8s/chart -f ak-deployment/ak-k8s/chart/values-dev.yaml \
+  --set ioHandler.image.repository=<io image> \
+  --set agentRunner.image.repository=<runner image> --set image.tag=<tag> \
+  --set 'extraEnv[0].name=OPENAI_API_KEY' \
+  --set 'extraEnv[0].valueFrom.secretKeyRef.name=openai' \
+  --set 'extraEnv[0].valueFrom.secretKeyRef.key=api-key'
+```
+
+- `values-dev.yaml`: micro-clusters (k3d/kind/microk8s/k3s), single replicas, auto-provisioned
+  JetStream, port-forward entry; also documents the single-process profile (one pod,
+  `in_memory` transport, zero backing services).
+- `values-baremetal.yaml`: Envoy Gateway + MetalLB + cert-manager, NACK-managed JetStream
+  objects (`autoProvision: false`), OpenEBS hostpath storage.
+- `values-eks.yaml`: AWS Load Balancer Controller gateway classes, EBS gp3, Pod Identity;
+  `sqs`, `kafka`, and `nats` all valid.
+- WebSocket modes: `--set execution.mode=stream --set wsGateway.enabled=true` plus a
+  `wsGateway.auth.token`; the gateway needs a shared session store for its connection table.
+- Autoscaling: `keda.enabled=true` scales the agent-runner on queue depth (KEDA prerequisite).
+
+**Verify:**
+
+```bash
+kubectl port-forward service/ak-agent-kernel-io 8000:80
+curl -s -X POST http://localhost:8000/api/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt": "Hello", "session_id": "s1", "agent": "<agent>"}'
+```
+
+**Teardown:** `helm uninstall ak` (cluster prerequisites like Gateway API CRDs, KEDA, NACK,
+and Strimzi are installed per cluster, never by the chart, so they remain).
+
 ## Config and Packaging Notes
 
 ### Packaging
@@ -1213,6 +1315,9 @@ terraform plan
 terraform apply
 ```
 
+Kubernetes deployments use `helm install` / `helm upgrade` instead; see the
+On-Prem / Kubernetes section above.
+
 ## Teardown
 
 ```bash
@@ -1220,9 +1325,11 @@ cd deploy
 terraform destroy
 ```
 
+Kubernetes: `helm uninstall <release>`.
+
 ## What to Do Next
 
 - Add capabilities (`ak-add-capabilities`) before production rollout.
 - Add tests (`ak-test`) against deployed endpoints.
 - Add integrations (`ak-add-integration`) for Slack/WhatsApp/Telegram/Teams.
-- Iterate on tools and agents (`ak-build`) and re-run `terraform apply`.
+- Iterate on tools and agents (`ak-build`) and re-run `terraform apply` (or `helm upgrade`).

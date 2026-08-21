@@ -72,10 +72,12 @@ async def test_support_agent(http_client):
         [
             " Hello Andy! I noticed that you made a mobile check deposit of $250. Could you tell me how satisfied you were with the mobile check deposit process?"
         ],
-        threshold=10,
+        threshold=0.1,
     )
 
     response = await http_client.send("I was extremely happy")
     Test.compare(
-        response, ["That's great to hear! What did you like most about the mobile check deposit process?"], threshold=10
+        response,
+        ["That's great to hear! What did you like most about the mobile check deposit process?"],
+        threshold=0.1,
     )

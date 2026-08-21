@@ -9,8 +9,7 @@ create_deployment_package() {
     if [[ ${1-} != "local" ]]; then
       uv pip install -r requirements.txt --target=dist/data
     else
-      uv pip install -r requirements.txt --target=dist/data  --find-links ../../../ak-py/dist
-      uv pip install --force-reinstall --no-deps --no-index --target=dist/data --find-links ../../../ak-py/dist agentkernel[api,openai,redis,test] || true
+      uv pip install -r requirements.txt --target=dist/data --find-links ../../../ak-py/dist --upgrade-package agentkernel || true
     fi
     cp -r app.py config.yaml dist/data
     popd || exit 1

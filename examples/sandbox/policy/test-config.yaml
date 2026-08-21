@@ -2,6 +2,6 @@
 # See https://kernel.yaala.ai/docs/testing/overview for details.
 #
 # The sandbox executes real code and the prompts pin sentinel replies, so every expected
-# answer is an exact value ("42", "OFFLINE", "BLOCKED"). Fuzzy string matching keeps the
-# comparison deterministic: no LLM judge is involved in evaluating results.
-mode: fuzzy
+# answer is an exact value ("42", "OFFLINE", "BLOCKED"). Deterministic exact-match matching keeps the
+# comparison offline: no LLM judge is involved in evaluating results.
+mode: score

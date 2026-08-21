@@ -2,6 +2,9 @@ import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+pytest.importorskip("crewai")
+
 from crewai import Agent as CrewAgent
 from pydantic import BaseModel
 

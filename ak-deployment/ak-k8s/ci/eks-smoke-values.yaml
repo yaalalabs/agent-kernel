@@ -1,0 +1,38 @@
+# CI overlay layered ON TOP of values-eks.yaml for the kind smoke. Only what kind cannot
+# provide is swapped (EBS gp3 becomes kind's default storage class); the flavor's distinctions
+# stay live: the aws-alb Gateway objects (CRDs installed by the job, unreconciled without the
+# AWS Load Balancer Controller, so entry is a port-forward), clustered 3-replica NATS, and the
+# NACK-reconciled JetStream objects with autoProvision off.
+#
+# Lives here rather than in chart/ci/ deliberately: chart-testing installs the chart once per
+# chart/ci/*-values.yaml file, and this overlay is incomplete without values-eks.yaml under it.
+
+image:
+  tag: dev
+  pullPolicy: Never
+
+ioHandler:
+  replicaCount: 1
+  image:
+    repository: ak-example-io-handler
+
+agentRunner:
+  replicaCount: 1
+  image:
+    repository: ak-example-agent-runner
+
+transport:
+  input:
+    noOfConsumers: 2
+  output:
+    noOfConsumers: 1
+  nats:
+    partitions: 4
+
+nats:
+  config:
+    jetstream:
+      fileStore:
+        pvc:
+          size: 1Gi
+          storageClassName: standard   # kind's default; gp3 in the real flavor

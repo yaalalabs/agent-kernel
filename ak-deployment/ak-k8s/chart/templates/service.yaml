@@ -1,0 +1,42 @@
+{{/*
+ClusterIP in front of the io tier: the backend for the Gateway API route (or the LB fallback)
+and the in-cluster REST address.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-io
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "io-handler") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "io-handler") | nindent 4 }}
+{{- if .Values.wsGateway.enabled }}
+---
+{{/*
+Headless Service for the gateway pods: reply pushes are pod-direct (the connection store
+records each pod's own IP), so this Service exists for DNS identity and as the WebSocket
+route's load-balanced entry, not for push routing.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-ws-gateway
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "ws-gateway") | nindent 4 }}
+spec:
+  clusterIP: None
+  ports:
+    - name: http
+      port: {{ .Values.wsGateway.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "ws-gateway") | nindent 4 }}
+{{- end }}

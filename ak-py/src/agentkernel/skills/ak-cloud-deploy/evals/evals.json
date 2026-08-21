@@ -1,6 +1,6 @@
 {
   "skill": "ak-cloud-deploy",
-  "description": "Evaluations for the ak-cloud-deploy (AWS/Azure deployment) skill with sync/async and scalable modes",
+  "description": "Evaluations for the ak-cloud-deploy (AWS/Azure/GCP/Kubernetes deployment) skill with sync/async and scalable modes",
   "version": "0.8.1",
   "evals": [
     {
@@ -187,7 +187,8 @@
         "session:",
         "type: dynamodb",
         "table_name:",
-        "agentkernel[", "aws"
+        "agentkernel[",
+        "aws"
       ]
     },
     {
@@ -210,7 +211,8 @@
         "type: valkey",
         "create_valkey_cluster",
         "true",
-        "agentkernel[", "valkey"
+        "agentkernel[",
+        "valkey"
       ]
     },
     {
@@ -295,7 +297,28 @@
         "session:",
         "type: firestore",
         "create_firestore_db",
-        "agentkernel[", "gcp"
+        "agentkernel[",
+        "gcp"
+      ]
+    },
+    {
+      "id": "deploy-kubernetes-helm",
+      "name": "Deploy to Kubernetes with the Helm chart",
+      "input": "Deploy my agent to our on-prem Kubernetes cluster",
+      "expected_outputs": [
+        "from agentkernel.pipeline import IOHandler",
+        "IOHandler.run()",
+        "from agentkernel.pipeline import AgentRunner",
+        "AgentRunner.run()",
+        "app_io_handler.py",
+        "app_agent_runner.py",
+        "helm install",
+        "ak-deployment/ak-k8s",
+        "values-dev.yaml"
+      ],
+      "must_not_contain": [
+        "terraform apply",
+        "yaalalabs/ak-serverless/aws"
       ]
     }
   ]

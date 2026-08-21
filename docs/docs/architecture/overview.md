@@ -169,7 +169,7 @@ All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAM
 Built-in support for:
 - Multi-cloud session persistence (AWS, Azure, GCP)
 - Token-level streaming (SSE over REST, WebSocket on AWS serverless)
-- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Kafka and NATS JetStream for on-prem / Kubernetes (Kubernetes deployment chart upcoming)
+- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Kafka and NATS JetStream for on-prem / Kubernetes (deployed by the [Helm chart](../deployment/onprem-kubernetes))
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
 - Observability and tracing (Langfuse, OpenLLMetry, Logfire)

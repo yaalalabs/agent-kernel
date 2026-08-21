@@ -27,6 +27,11 @@ _LAZY_EXPORTS = {
     "QueueTransport": ".transport.base",
     "QueueTransportFactory": ".transport.base",
     "TransportConsumer": ".transport.base",
+    "LocalConnectionRegistry": ".ws.registry",
+    "PipelineWebSocketHandler": ".ws.handler",
+    "PodPushWebSocketHandler": ".ws.push",
+    "PushEndpointHandler": ".ws.endpoint",
+    "WebSocketGateway": ".ws.gateway",
 }
 
 __all__ = sorted(_LAZY_EXPORTS)
@@ -41,6 +46,11 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     from .thread_runner import ThreadRunner
     from .transport.base import QueueTransport, QueueTransportFactory, TransportConsumer
     from .transport.in_memory import InMemoryTransport
+    from .ws.endpoint import PushEndpointHandler
+    from .ws.gateway import WebSocketGateway
+    from .ws.handler import PipelineWebSocketHandler
+    from .ws.push import PodPushWebSocketHandler
+    from .ws.registry import LocalConnectionRegistry
 
 
 def __getattr__(name: str) -> Any:
