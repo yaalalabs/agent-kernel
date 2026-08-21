@@ -110,10 +110,11 @@ After this PR, a laptop `RESTAPI.run()` with a `schedule:` block defers chats, f
 
 Spec sections: "Management REST handler", "Agent system tools", "Example".
 
-### Iteration 4.1: ScheduleRESTRequestHandler + pipeline mounting
+### Iteration 4.1: ScheduleRESTRequestHandler + pipeline handler pass-through
 
-- **Files:** `schedule/handler.py` (new), `pipeline/io_handler.py` (generic `authoriser` param, conditional handler composition, eager `ScheduleManager.get()` at startup).
-- **Verify:** `tests/test_schedule_router.py` (404/401/403/PUT/DELETE matrix); IOHandler startup fail-fast case.
+- **Files:** `schedule/handler.py` (new), `pipeline/io_handler.py` (`handlers` param served alongside the pipeline's own `RequestHandler`, eager `ScheduleManager.get()` in topology validation).
+- **Verify:** `tests/test_schedule_router.py` (404/401/403/PUT/DELETE matrix); IOHandler startup fail-fast case; the routes appear only when the app mounts the handler.
+- **Amended after review (2026-08-21):** was "generic `authoriser` param, conditional handler composition" — the config-driven auto-mount is gone; mounting is the application's on every surface (see design.md).
 
 ### Iteration 4.2: System tools
 

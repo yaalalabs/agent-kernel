@@ -5,25 +5,28 @@ OpenAI Agents SDK. A chat request that carries a `schedule` block is not run —
 scheduled task and acknowledged with HTTP 202. When an occurrence is due, the provider delivers the
 stored prompt into the input queue as a plain chat request, and the normal execution path runs it.
 
-The `schedule` block in `config.yaml` is what enables the capability (see `app.py`: nothing there
-mentions scheduling). It selects two backends: the **provider** that owns the timers and the
-**store** that persists the task records. This example uses the defaults — the `local` provider (an
-in-process scheduler thread) and the `in_memory` store — which need nothing but the process itself.
-Neither survives a restart; this demo currently supports only the `local` provider and `in_memory` store.
+The `schedule` block in `config.yaml` is what enables the capability. It selects two backends: the
+**provider** that owns the timers and the **store** that persists the task records. This example
+uses the defaults — the `local` provider (an in-process scheduler thread) and the `in_memory` store
+— which need nothing but the process itself. Neither survives a restart; this demo currently
+supports only the `local` provider and `in_memory` store.
 That pairing is also a hard requirement rather than a default: the `local` provider's timers and the
 `in_memory` store's records are reachable only from the process that owns them, so `ScheduleManager`
 refuses at startup if either is combined with a broker transport (`sqs`/`kafka`/`nats`) or a shared store.
 A broker transport puts the management routes in a different process from the scheduler thread, where a
 cancellation would report success while the timer kept firing.
 
-Because the `schedule` block is present, `RESTAPI.run()` also mounts the management routes
-(`GET`/`PUT`/`DELETE /api/v1/schedules`). They are open here. To protect them, supply your own
-`Authoriser` — a subclass that validates the Bearer token against your authentication provider and
-resolves the caller's `user_id` — and boot through the IO handler instead:
+The management routes (`GET`/`PUT`/`DELETE /api/v1/schedules`) are mounted by the app, exactly like
+a Slack handler — `app.py` passes `ScheduleRESTRequestHandler()` to `IOHandler.run()`. Deferring a
+chat and the agent's own scheduling tools need no handler at all; only the management routes do.
+
+They are open here. To protect them, supply your own `Authoriser` — a subclass that validates the
+Bearer token against your authentication provider and resolves the caller's `user_id`:
 
     from agentkernel.pipeline import IOHandler
+    from agentkernel.schedule import ScheduleRESTRequestHandler
 
-    IOHandler.run(authoriser=MyAuthoriser())
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=MyAuthoriser())])
 
 With an Authoriser configured, listings are scoped to the resolved user and reading or changing
 another user's schedule is rejected.

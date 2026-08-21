@@ -28,7 +28,7 @@ def _restore_signals_and_shutdown_state():
     ThreadRunner.shutdown_exit_code = 1
 
 
-def _cfg(mode=None, response_store_type=None, push_auth_token=None):
+def _cfg(mode=None, response_store_type=None, push_auth_token=None, schedule=None):
     class _ResponseStore:
         type = response_store_type
 
@@ -39,6 +39,7 @@ def _cfg(mode=None, response_store_type=None, push_auth_token=None):
 
     class _Cfg:
         websocket_api = _WebSocketAPI
+        schedule = None
 
         class execution:
             response_store = _ResponseStore() if response_store_type is not None else None
@@ -48,6 +49,7 @@ def _cfg(mode=None, response_store_type=None, push_auth_token=None):
             port = 8000
 
     _Cfg.execution.mode = mode
+    _Cfg.schedule = schedule
     return _Cfg
 
 
@@ -92,38 +94,49 @@ class TestTopologyValidation:
         IOHandler._validate_topology(ExecutionMode.STREAM, "in_memory", _cfg(ExecutionMode.STREAM))
 
 
-class TestScheduleRouteMounting:
-    """The single-process topology mounts the schedule management routes on its own."""
+class TestSchedulingStartup:
+    """Scheduling is validated at boot; mounting its routes is the application's job."""
 
     @pytest.fixture
     def scheduling(self):
-        """Configure the scheduling capability on the live AKConfig singleton."""
+        """Configure the capability on the live AKConfig singleton, which ScheduleManager reads."""
 
         def _configure(**fields):
             AKConfig.get().schedule = _ScheduleConfig.model_validate(fields)
+            return AKConfig.get().schedule
 
         yield _configure
         AKConfig.get().schedule = None
         ScheduleManager.reset()
 
-    def test_routes_are_absent_without_a_schedule_block(self):
-        assert [type(handler).__name__ for handler in IOHandler._build_handlers(None)] == ["RequestHandler"]
+    def test_no_schedule_block_builds_no_manager(self):
+        IOHandler._validate_topology(ExecutionMode.REST_SYNC, "in_memory", _cfg(ExecutionMode.REST_SYNC))
 
-    def test_routes_are_mounted_when_the_capability_is_configured(self, scheduling):
-        scheduling()
+        assert ScheduleManager._instance is None
 
-        handlers = IOHandler._build_handlers(None)
+    def test_configured_scheduling_is_built_at_boot(self, scheduling):
+        # Building the manager here, rather than on the first request, is what makes an unusable
+        # configuration a startup failure — it is not tied to the routes being mounted, since an
+        # agent-tools-only app runs the same backends.
+        IOHandler._validate_topology(ExecutionMode.REST_SYNC, "in_memory", _cfg(ExecutionMode.REST_SYNC, schedule=scheduling()))
 
-        assert [type(handler).__name__ for handler in handlers] == ["RequestHandler", "ScheduleRESTRequestHandler"]
-        assert {route.path for route in handlers[1].get_router().routes} == {"/api/v1/schedules", "/api/v1/schedules/{task_id}"}
+        assert ScheduleManager._instance is not None
 
     def test_unusable_scheduling_configuration_fails_the_boot(self, scheduling):
-        # Building the manager at startup is what turns this into a boot failure rather than a
-        # 500 on the first request that tries to schedule anything.
-        scheduling(provider={"type": "not-a-provider"})
+        config = _cfg(ExecutionMode.REST_SYNC, schedule=scheduling(provider={"type": "not-a-provider"}))
 
         with pytest.raises(AKConfigError, match="unknown schedule provider type"):
-            IOHandler._build_handlers(None)
+            IOHandler._validate_topology(ExecutionMode.REST_SYNC, "in_memory", config)
+
+    def test_routes_are_mounted_by_the_application(self, scheduling):
+        """The handler is the app's to construct, like a Slack handler — nothing auto-mounts it."""
+        from agentkernel.schedule import ScheduleRESTRequestHandler
+
+        scheduling()
+
+        routes = {route.path for route in ScheduleRESTRequestHandler().get_router().routes}
+
+        assert routes == {"/api/v1/schedules", "/api/v1/schedules/{task_id}"}
 
 
 class TestSignalHandlers:

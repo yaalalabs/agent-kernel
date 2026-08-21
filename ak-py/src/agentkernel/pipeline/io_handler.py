@@ -4,7 +4,6 @@ from typing import Optional
 import uvicorn
 
 from ..api.handler import RESTRequestHandler
-from ..auth.authoriser import Authoriser
 from ..auth.handler import AuthValidator
 from ..core.config import AKConfig
 from ..core.model import ExecutionMode
@@ -34,7 +33,7 @@ class IOHandler:
     _log = logging.getLogger("ak.pipeline.io_handler")
 
     @classmethod
-    def run(cls, auth_validator: Optional[AuthValidator] = None, authoriser: Optional[Authoriser] = None) -> None:
+    def run(cls, auth_validator: Optional[AuthValidator] = None, handlers: Optional[list[RESTRequestHandler]] = None) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
 
         :param auth_validator: Only meaningful on the ``in_memory`` transport, where it co-hosts
@@ -42,8 +41,11 @@ class IOHandler:
             modes; mandatory there for ASYNC. Broker topologies authenticate at their standalone
             gateway instead (``WebSocketGateway.run(auth_validator=...)``). Claims must include
             a ``userId``.
-        :param authoriser: Optional Authoriser protecting the resource-management routes this
-                           topology mounts on the application's behalf (the schedule routes today).
+        :param handlers: Optional REST handlers mounted alongside the pipeline's own chat route,
+            which is always served (it is the queue producer, not a replaceable default).
+            Mounting an optional surface is the application's job here, as it is for the Slack
+            and thread handlers: an app exposing the schedule management routes passes
+            ``ScheduleRESTRequestHandler(authoriser=MyAuthoriser())``.
         :raises AKConfigError: If the topology, or the scheduling configuration, is unusable.
         """
         config = AKConfig.get()
@@ -69,7 +71,7 @@ class IOHandler:
 
         from ..api.http import RESTAPI  # local import: RESTAPI.run() lazily imports this module
 
-        handlers = cls._build_handlers(authoriser)
+        handlers = [RequestHandler(), *(handlers or [])]
         if ws_cohosted:
             from .ws.endpoint import PushEndpointHandler
             from .ws.handler import PipelineWebSocketHandler
@@ -118,33 +120,6 @@ class IOHandler:
         ThreadRunner.run(tasks=tasks, max_workers=len(tasks))
 
     @classmethod
-    def _build_handlers(cls, authoriser: Optional[Authoriser]) -> list[RESTRequestHandler]:
-        """Compose the REST handlers this topology serves.
-
-        The schedule management routes ride along whenever the capability is configured, so a
-        single-process app gets them without mounting anything itself. The manager is built here
-        rather than on the first request, which turns an unusable provider/transport pairing or an
-        incomplete provider configuration into a startup failure — joining the topology
-        fail-fasts, where an operator sees it immediately.
-
-        :param authoriser: Optional Authoriser protecting the resource-management routes mounted here.
-        :return: The handlers the app is assembled from.
-        :raises AKConfigError: If the scheduling capability is configured unusably.
-        """
-        handlers: list[RESTRequestHandler] = [RequestHandler()]
-        if AKConfig.get().schedule is None:
-            return handlers
-
-        from ..schedule.handler import ScheduleRESTRequestHandler
-        from ..schedule.manager import ScheduleManager
-
-        # Result discarded on purpose: building it here is the fail-fast (see above).
-        ScheduleManager.get()
-        cls._log.info("Scheduling capability configured: mounting the schedule management routes")
-        handlers.append(ScheduleRESTRequestHandler(authoriser=authoriser))
-        return handlers
-
-    @classmethod
     def _install_signal_handlers(cls, server: uvicorn.Server) -> None:
         """Restore container-grade shutdown for the pipeline topology (spec §8).
 
@@ -185,3 +160,14 @@ class IOHandler:
                     "multi-process REST queue modes need a shared response store (redis, valkey or dynamodb): "
                     "the in_memory store is single-process only"
                 )
+
+        if config.schedule is not None:
+            from ..schedule.manager import ScheduleManager
+
+            # Checked last, so a broken transport topology reports itself first. The result is
+            # discarded on purpose: building the manager here turns an unusable provider/transport
+            # pairing or an incomplete provider configuration into a startup failure, where an
+            # operator sees it, rather than a 500 on the first request that schedules anything. It
+            # is deliberately not tied to the management routes, which the application mounts (or
+            # does not) itself: an agent-tools-only app runs the same scheduling backends.
+            ScheduleManager.get()
