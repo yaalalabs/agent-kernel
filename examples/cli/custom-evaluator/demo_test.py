@@ -33,10 +33,13 @@ async def test_score_mode_gives_partial_credit(test_client):
 
 @pytest.mark.order(3)
 async def test_llm_mode_uses_the_custom_judge(test_client):
+    # High threshold forces the score stage to miss, so fallback reaches the judge.
     await test_client.send("Which country hosted the 1996 cricket world cup? Just give the answer and don't repeat the question.")
-    result = await test_client.expect(
-        ["The tournament was co-hosted by India, Pakistan and Sri Lanka."],
+    result = Test.compare(
+        actual=test_client.last_agent_response,
+        expected=["The tournament was co-hosted by India, Pakistan and Sri Lanka."],
+        user_input=test_client.last_user_input,
         return_metrics=True,
     )
-    assert result.metric in ("jaccard_token_overlap", "litellm_raw_judge")
+    assert result.metric == "litellm_raw_judge"
     assert result.passed
