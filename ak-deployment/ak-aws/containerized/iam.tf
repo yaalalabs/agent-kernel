@@ -103,34 +103,9 @@ resource "aws_iam_policy" "rest_service_scheduler_policy" {
   tags = var.tags
 }
 
-resource "aws_iam_policy" "rest_service_schedule_store_policy" {
-  count = var.create_dynamodb_schedule_table ? 1 : 0
-
-  name        = "${local.prefix}-rest-svc-schedule-store"
-  description = "Allow REST Service ECS task to read/write the DynamoDB schedule store"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "dynamodb:DescribeTable",
-          "dynamodb:GetItem",
-          "dynamodb:PutItem",
-          "dynamodb:UpdateItem",
-          "dynamodb:DeleteItem",
-          "dynamodb:Query",
-          "dynamodb:Scan"
-        ]
-        # No /index/* : listings Scan, this table has no GSI.
-        Resource = local.dynamodb_schedule_table_arn
-      }
-    ]
-  })
-
-  tags = var.tags
-}
+# The REST service's schedule-store policy lives in modules/rest-service (beside its thread and
+# memory table policies, and matching the agent-runner module), so it is attached through that
+# module's own task role rather than here.
 
 resource "aws_iam_role_policy_attachment" "rest_service_sqs_attachment" {
   count      = var.queue_mode ? 1 : 0
@@ -148,12 +123,6 @@ resource "aws_iam_role_policy_attachment" "rest_service_scheduler_attachment" {
   count      = var.enable_scheduling ? 1 : 0
   role       = module.rest_service.task_role_name
   policy_arn = aws_iam_policy.rest_service_scheduler_policy[0].arn
-}
-
-resource "aws_iam_role_policy_attachment" "rest_service_schedule_store_attachment" {
-  count      = var.create_dynamodb_schedule_table ? 1 : 0
-  role       = module.rest_service.task_role_name
-  policy_arn = aws_iam_policy.rest_service_schedule_store_policy[0].arn
 }
 
 # REST service WebSocket IAM policies (async / stream modes)

@@ -430,7 +430,10 @@ class ScheduleManager:
         The occurrence rule is replaced as a unit: an amendment naming any of at/cron/timezone/
         session_mode rebuilds the whole spec from what that amendment carries, so an omitted field
         falls back to its default rather than to the stored value. An amendment naming none of them
-        leaves the rule untouched, which is how a prompt-only or pause/resume amendment works.
+        leaves the rule untouched, which is how a prompt-only or pause/resume amendment works for a
+        caller holding this manager. The REST and agent-tool surfaces above never take that branch:
+        both send the full amendable representation, so an amendment through them that names neither
+        at nor cron fails the spec's one-of rule rather than keeping the stored rule.
 
         :param previous: The stored record being amended.
         :param amendment: The amendable fields.

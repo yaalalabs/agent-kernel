@@ -189,8 +189,17 @@ curl -X PUT http://localhost:8000/api/v1/schedules/{task_id} \
        "session_mode": "new", "status": "paused"}'
 ```
 
-An amendment that names **none** of `at` / `cron` / `timezone` / `session_mode` leaves the occurrence
-rule untouched — that is how a prompt-only change works.
+There is no partial amendment over this route: `ScheduleAmendment` defaults `timezone` and
+`session_mode`, so a body always carries occurrence fields, and one naming neither `at` nor `cron`
+fails the one-of rule with a **400**. A prompt-only or pause-only change therefore still has to
+resend the occurrence rule — read the task first with `GET` if you do not already hold it. The
+`update_schedule` agent tool has the same contract.
+
+:::note Partial amendments are a `ScheduleManager` affordance, not a route one
+`ScheduleManager.update(task_id, {"prompt": ...})` — an amendment dict naming none of
+`at`/`cron`/`timezone`/`session_mode` — does leave the occurrence rule untouched. That path is open
+to code holding the manager directly, not to `PUT`, whose body is a full representation by design.
+:::
 
 ### Cancelling
 
