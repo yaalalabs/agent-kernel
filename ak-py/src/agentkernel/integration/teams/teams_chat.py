@@ -151,7 +151,7 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
 
         text = self._strip_mentions(activity)
         attachments = [a for a in (activity.attachments or []) if (a.content_type or "") != "text/html"]
-        user_name = activity.from_property.name if activity.from_property else "User"
+        user_name = (activity.from_property.name if activity.from_property else None) or "User"
 
         # Skip empty messages
         if not text and not attachments:
@@ -488,7 +488,9 @@ class AgentTeamsRequestHandler(RESTRequestHandler):
     async def _bot_framework_token(self) -> Optional[str]:
         """Return the bot's own Bot Framework token, used for Bot Connector attachment URLs."""
         if self._bot_credentials is None:
-            self._bot_credentials = MicrosoftAppCredentials(self._app_id, self._app_password)
+            # channel_auth_tenant matters for a single-tenant app registration: without it the token is
+            # minted against /botframework.com and the authority rejects it with AADSTS700016.
+            self._bot_credentials = MicrosoftAppCredentials(self._app_id, self._app_password, channel_auth_tenant=self._tenant_id or None)
         try:
             return await asyncio.to_thread(self._bot_credentials.get_access_token)
         except Exception as e:

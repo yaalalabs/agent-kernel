@@ -198,6 +198,20 @@ async def test_acknowledgement_is_sent_on_the_webhook_turn():
 
 
 @pytest.mark.asyncio
+async def test_a_sender_without_a_display_name_is_addressed_as_user():
+    """Direct Line sends `from` with an id and no name, which would read as "Hi None, ..."."""
+    handler = _handler(ack="I'm looking into that for you...")
+    activity = _activity()
+    activity.from_property.name = None
+    turn_context = FakeTurnContext(activity)
+
+    await handler._on_turn(turn_context)
+    await asyncio.gather(*list(handler._background_tasks))
+
+    assert turn_context.texts == ["Hi User, I'm looking into that for you..."]
+
+
+@pytest.mark.asyncio
 async def test_empty_activity_is_dropped_without_a_reply():
     chat_service = FakeChatService()
     handler = _handler(chat_service)
@@ -484,6 +498,30 @@ def test_resolve_tenant_prefers_the_activity_over_the_configuration():
     assert handler._resolve_tenant(activity) == "configured-tenant"
 
     assert _handler(tenant_id="")._resolve_tenant(activity) is None
+
+
+@pytest.mark.asyncio
+async def test_bot_framework_credentials_carry_the_bots_own_tenant(monkeypatch):
+    """A single-tenant registration cannot mint a connector token against the default authority."""
+    built = []
+
+    class RecordingCredentials:
+        def __init__(self, app_id, password, channel_auth_tenant=None):
+            built.append((app_id, password, channel_auth_tenant))
+
+        def get_access_token(self):
+            return "bf-token"
+
+    monkeypatch.setattr("agentkernel.integration.teams.teams_chat.MicrosoftAppCredentials", RecordingCredentials)
+
+    handler = _handler(tenant_id="bot-home-tenant")
+    assert await handler._bot_framework_token() == "bf-token"
+    assert built == [("app-id", "app-password", "bot-home-tenant")]
+
+    # A multi-tenant registration has no tenant of its own and must keep the SDK default authority.
+    built.clear()
+    await _handler(tenant_id="")._bot_framework_token()
+    assert built == [("app-id", "app-password", None)]
 
 
 # --------------------------------------------------------------------------------------
