@@ -173,7 +173,7 @@ This allows `from agentkernel.<platform> import Agent<Platform>RequestHandler`.
 
 ### 5. Add Configuration
 
-Add a configuration section to `ak-py/src/agentkernel/core/config.py`. Follow the existing platform config idiom (e.g. `_TelegramConfig`), which uses `Field` with empty-string defaults. Note: Teams currently has no config section in `AKConfig`, so do not use it as a reference for this step — use Telegram or Slack instead.
+Add a configuration section to `ak-py/src/agentkernel/core/config.py`. Follow the existing platform config idiom (e.g. `_TelegramConfig`), which uses `Field` with empty-string defaults.
 
 ```python
 class _<Platform>Config(BaseModel):

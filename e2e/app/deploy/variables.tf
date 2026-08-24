@@ -169,3 +169,23 @@ variable "instagram_account_id" {
   type        = string
   default     = ""
 }
+
+variable "teams_app_id" {
+  description = "Azure Bot / Entra ID application (client) ID. Empty disables the Teams integration"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "teams_app_password" {
+  description = "Azure Bot / Entra ID application client secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "teams_tenant_id" {
+  description = "Entra ID tenant ID. Empty for a multi-tenant bot; only needed to download attachments whose URL is not pre-authenticated"
+  type        = string
+  default     = ""
+}

@@ -1,4 +1,4 @@
-.PHONY: dev-setup lint lint-check lint-examples lint-examples-check lint-all lint-check-all help
+.PHONY: dev-setup lint lint-check lint-examples lint-examples-check lint-all lint-check-all deploy-inject deploy-revert help
 
 EXAMPLE_DIRS := examples
 
@@ -27,6 +27,8 @@ help:
 	@echo "  lint-examples-check - Dry run to check code formatting in examples"
 	@echo "  lint-all            - Formats python code in both ak-py and examples"
 	@echo "  lint-check-all      - Dry run to check code formatting in both ak-py and examples"
+	@echo "  deploy-inject       - Injects local module sources/backend.tf into deployment examples"
+	@echo "  deploy-revert       - Reverts deployment examples back to registry module sources"
 	@echo "  help                - Show this help message"
 
 dev-setup:
@@ -87,3 +89,9 @@ lint-all: lint lint-examples
 
 lint-check-all: lint-check lint-examples-check
 	@echo "All lint checks completed!"
+
+deploy-inject:
+	@python3 scripts/deploy/inject_dependencies.py
+
+deploy-revert:
+	@python3 scripts/deploy/inject_dependencies.py --revert

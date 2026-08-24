@@ -1,11 +1,11 @@
 [project]
 name = "ak-e2e-messaging-app"
 version = "0.1.0"
-description = "Agent Kernel end-to-end test deployment: one OpenAI agent exposed via Slack and Telegram on AWS ECS"
+description = "Agent Kernel end-to-end test deployment: one OpenAI agent exposed via every messaging integration on AWS ECS"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,openai,slack,telegram,gmail,whatsapp,messenger,instagram]>=0.8.1",
+    "agentkernel[api,openai,slack,telegram,gmail,whatsapp,messenger,instagram,teams]>=0.8.1",
     "aiohttp>=3.14.1",
 ]
 
