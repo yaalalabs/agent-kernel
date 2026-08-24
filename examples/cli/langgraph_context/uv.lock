@@ -17,10 +17,7 @@ resolution-markers = [
 ]
 
 [manifest]
-constraints = [
-    { name = "langchain-community", specifier = "<0.4.2" },
-    { name = "langgraph-prebuilt", specifier = "<=1.0.8" },
-]
+constraints = [{ name = "langgraph-prebuilt", specifier = "<=1.0.8" }]
 
 [[package]]
 name = "agentkernel"

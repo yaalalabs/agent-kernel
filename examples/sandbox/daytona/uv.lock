@@ -538,7 +538,6 @@ dev = [
     { name = "agentkernel", extra = ["test"] },
     { name = "black" },
     { name = "isort" },
-    { name = "langchain-community" },
     { name = "mypy" },
 ]
 
@@ -550,7 +549,6 @@ dev = [
     { name = "agentkernel", extras = ["test"], specifier = ">=0.8.1" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
-    { name = "langchain-community", specifier = "==0.4.1" },
     { name = "mypy", specifier = ">=1.0.0" },
 ]
 

@@ -16,9 +16,6 @@ resolution-markers = [
     "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
-[manifest]
-constraints = [{ name = "langchain-community", specifier = "<0.4.2" }]
-
 [[package]]
 name = "agentkernel"
 version = "0.8.1"
