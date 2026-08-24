@@ -2,18 +2,17 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from agentkernel.agui import AGUIRequestHandler
+from agentkernel.agui import AGUIRequestHandler, AGUIState
 from agentkernel.api import RESTAPI
 from agentkernel.auth import Authoriser
 from agentkernel.core import Session
-from agentkernel.openai import OpenAIModule
-from agents import Agent, ModelSettings, function_tool
+from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
+from agents import Agent, ModelSettings
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from openai.types.shared import Reasoning
 
 
-@function_tool
 def count_open_tasks() -> str:
     """
     Count how many tasks on the shared list are still open.
@@ -21,16 +20,15 @@ def count_open_tasks() -> str:
     Call this when the user asks how much is left rather than what the list contains.
     """
     session = Session.current()
-    tasks = (session.get_agui_state() or {}).get("tasks") if session else None
+    tasks = (AGUIState.read_state(session) or {}).get("tasks") if session else None
     tasks = tasks if isinstance(tasks, list) else []
     still_open = sum(1 for task in tasks if isinstance(task, dict) and not task.get("done"))
     return f"{still_open} of {len(tasks)} still open"
 
 
-# Reasoning is opt-in because this example runs in CI on every PR: the default model is fast and cheap
-# and emits no reasoning, so the frontend's thinking block stays empty. Point this at a
-# reasoning-capable model to fill it in — the adapter maps the model's reasoning *summary*, so the
-# summary has to be requested explicitly; a reasoning model alone emits nothing to render.
+# The default model does not reason, so the frontend's thinking block stays empty. Set this to a
+# reasoning-capable model to see it fill in — and note the summary is requested below, because a
+# reasoning model that is not asked for one still streams nothing to render.
 REASONING_MODEL = os.getenv("AK_DEMO_REASONING_MODEL")
 _reasoning_kwargs = (
     {"model": REASONING_MODEL, "model_settings": ModelSettings(reasoning=Reasoning(summary="auto"))}
@@ -50,7 +48,7 @@ planner_agent = Agent(
     "the page they are on, a preference — call get_agui_context and get_forwarded_props first. Do not "
     "say you do not know until you have looked.\n"
     "Keep replies to one short sentence.",
-    tools=[count_open_tasks],
+    tools=OpenAIToolBuilder.bind([count_open_tasks]),
     **_reasoning_kwargs,
 )
 

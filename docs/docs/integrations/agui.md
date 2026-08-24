@@ -166,4 +166,4 @@ Reading the table:
   `ToolCallResult` — `on_stream_chunk` only sees text, and `on_run` does not run on a streamed path at
   all. On an AG-UI run `on_stream_chunk` is the entire output-side defence, so if a tool's arguments or
   return value can contain data you would redact from prose, redact it inside the tool. See
-  [Hooks](../integrations/hooks#streaming-hooks-on_stream_chunk).
+  [Hooks](./hooks#streaming-hooks-on_stream_chunk).

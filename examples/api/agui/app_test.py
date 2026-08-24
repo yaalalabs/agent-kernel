@@ -157,6 +157,10 @@ async def test_a_tool_call_is_streamed_as_tool_call_events(base_url):
     tool call: the adapter's run-item mapping, `to_agui`, and the encoder. The prompt names the tool
     for the same reason the context test does — the capability is that the call *surfaces as events*,
     not that the model infers its way to it.
+
+    The result is matched to its own call's id rather than counted: a set of every `TOOL_CALL_*` id is
+    non-empty even when the two disagree, so counting cannot fail on the decorrelation this is meant
+    to catch.
     """
     thread_id = str(uuid.uuid4())
     state = {"tasks": [{"title": "milk", "done": False}, {"title": "bread", "done": True}]}
@@ -170,11 +174,6 @@ async def test_a_tool_call_is_streamed_as_tool_call_events(base_url):
     call = next((e for e in started if e["toolCallName"] == "count_open_tasks"), None)
     assert call is not None, [e.get("toolCallName") for e in started]
 
-    # The result must carry the *same* id as the call, which is what lets a client attach it to the
-    # card it already rendered. Matching the specific call's id rather than counting a set of every
-    # TOOL_CALL_* id: that set is non-empty even when the two disagree, so it cannot fail on the
-    # decorrelation it is meant to catch. Scoped to this call, not `== 1`, because the model is free
-    # to reach for a shared-state tool in the same turn.
     result_ids = {e["toolCallId"] for e in events if e["type"] == "TOOL_CALL_RESULT"}
     assert call["toolCallId"] in result_ids, (call["toolCallId"], result_ids)
 
