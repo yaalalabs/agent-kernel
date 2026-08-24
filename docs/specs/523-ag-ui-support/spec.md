@@ -913,6 +913,14 @@ disagreeing with three about one protocol concept, which is the defect §4 rule 
     `additional_kwargs` reasoning only when `response_metadata["model_provider"]` is known. The
     adapter therefore reads `reasoning` with a `summary[]` fallback, and the unit tests set the
     provider explicitly rather than relying on a default.
+  - **The reasoning id is generated, not read off the block, and that is not a deviation from the
+    correlation-id rule above.** `content_blocks` does preserve a provider id on a reasoning block
+    (`rs_…` from `ChatOpenAI`), so reading it looks like what the rule asks for. Two reasons it is not:
+    `ReasoningContentBlock.id` is `NotRequired`, so a reader would need a conditional that falls back
+    to generating anyway; and the rule exists so a *result* can be tied to the *call* that produced it,
+    which reasoning has no equivalent of — a reasoning id only has to correlate within its own stream.
+    ADK generates for the same reason. The message id cannot be reused either: it is already `run_id`,
+    and AK requires the two streams to carry different ids.
 
 **Pydantic AI's rewrite must re-plumb two things** currently inside the `async with run_stream(...)`
 block (`framework/pydanticai/pydanticai.py:205-211`): `fw_session.messages = to_jsonable_python(...)`
@@ -1095,6 +1103,7 @@ Run with `cd ak-py && uv run pytest`.
 | `tests/test_agui_run_input.py` | `thread_id`→`session_id`; `state` stored in nv_cache, `None` does not clobber; `forwardedProps` and `context` in the volatile cache; `tools`, history and system prompts dropped while the final `user` message converts; each `InputContent` type maps to its AK request type, for both `data` and `url` sources, with audio/video rejected; an unknown `role` **and** an unknown `content[].type` in history are both ignored rather than 422, while the same unknown content type in the final user message is a 400; a body with no `user` message is a 400; an unknown top-level field parses; **`session.get_framework_context()` is `None` after every inbound mapping** |
 | `tests/test_agui_mapping.py` | Exhaustiveness: enumerate every member of the `StreamEvent` union and assert `AGUIMapper.to_agui` returns either an AG-UI event or an explicit `None` from a known-unmapped allowlist. A new event type with no decision fails this test |
 | `tests/test_agui_handler.py` | Route shape; 401/404/400 paths, including an agent excluded by `agui.agents` returning 404 indistinguishably from an unknown one; discovery listing the intersection of `supports_streaming` and `agui.agents`; the response media type coming from `EventEncoder.get_content_type()` for each of the three `Accept` values in §9 (all `text/event-stream` against the pinned SDK — the test pins observed behaviour, so it fails loudly if a future release starts negotiating); `RunStarted` first and exactly one terminal event on success, pre-hook halt, and raise; a runner that raises after a `TextDelta` producing `RunError` with **no** synthesised `TextMessageEnd`, which a handler balancing the boundaries would fail; and four `StateSnapshot` cases — unset→set emits, inbound `state` alone does **not** emit, no change does not emit, and a tool calling `update_agui_state` **does** emit (the last is the regression guard for the deep-copy trap in §9: with a live reference instead of a copy it silently never fires) |
+| `tests/test_langgraph_reasoning_live.py` | **Added at PR 9.** LangGraph reasoning against a REAL reasoning model, env-gated on `AK_TEST_REASONING_MODEL` and skipped in normal runs. It guards the premise the chunk-feeding unit tests cannot: that the model streams a summary at all — it has to be *asked*, via `reasoning={"summary": "auto"}` — and that LangChain surfaces it under `content_blocks`. A bare `StateGraph`, because `langgraph.prebuilt` is unimportable against the pinned `langgraph`. Its second test talks to the model with no Agent Kernel code in the path, so a failure says whether the gap is upstream or ours |
 | `tests/test_agui_state.py` | `get_agui_state` returns `{}` when unset; `update_agui_state` shallow-merges; `get_forwarded_props` and `get_agui_context` return `{}` / `[]` when unset and their stored values otherwise; `SystemToolFactory.get_all()` attaches nothing with the flags off, the state pair with `agui.state.enabled`, **both** client-context tools with `agui.client_context.enabled`, and respects `agents` scoping |
 
 ### Existing test files that change
@@ -1103,12 +1112,13 @@ Run with `cd ak-py && uv run pytest`.
 |---|---|---|
 | `tests/test_openai_runner.py:210-212` | `assert deltas == ["hi"]` → assert on the event sequence | 4 |
 | `tests/test_langgraph_runner.py:133, 167` | same | 4 |
+| `tests/test_langgraph_runner.py` | **PR 9 changes it again**, beyond the PR 4 row above: `_chunk` becomes a real `AIMessageChunk` (a `MagicMock` hands back a mock for `content_blocks`, so the tests pinned nothing), and seven reasoning tests are added — including the `additional_kwargs` shape that fails against any adapter reading `content` | 9 |
 | `tests/test_adk_runner.py:269, 303, 322` | same, plus the derived `MessageStart`/`MessageEnd` | 5 |
 | `tests/test_tool_adk.py:677, 713` | same — two tests assert on ADK's `stream()` output; see the note below the "must NOT change" list | 5 |
 | `tests/test_pydanticai_runner.py:159` | same, plus `framework_context` round trip preserved across the rewrite | 6 |
 | — | **PR 6 additionally** deletes the transitional branch and adds a test asserting a `str`-yielding runner now fails — asserting the `ValidationError` in §4 rule 6, not merely an absence of output | 6 |
 
-These four are the *only* existing files expected to change. They assert on `Runner.stream` output
+These are the *only* existing files expected to change. They assert on `Runner.stream` output
 directly, which is the contract being changed.
 
 ### Existing test files that must NOT change

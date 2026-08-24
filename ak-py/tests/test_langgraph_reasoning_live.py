@@ -20,12 +20,20 @@ Two things this file has to get right, both of which cost an earlier attempt its
 - **A bare `StateGraph`, not `create_react_agent`.** `langgraph.prebuilt` imports `ExecutionInfo` from
   `langgraph.runtime`, which the pinned `langgraph` does not export, so importing it fails outright.
   A react loop would add nothing here: this test wants one model call that thinks and then answers.
+
+`langchain_openai` is guarded with `importorskip` because ak-py does not depend on it — it arrives only
+through `ragas`, the test-judge extra. pytest imports every test module at collection, so an unguarded
+import would fail the whole suite rather than this file if that transitive ever moves; the class-level
+`skipif` runs too late to help.
 """
 
 import os
 from types import SimpleNamespace
 
 import pytest
+
+pytest.importorskip("langchain_openai")
+
 from langchain_core.messages import AIMessageChunk
 from langchain_openai import ChatOpenAI
 from langgraph.graph import MessagesState, StateGraph
