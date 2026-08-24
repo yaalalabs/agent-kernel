@@ -10,8 +10,9 @@ import uuid
 from dataclasses import dataclass
 from typing import ClassVar, List, Optional, Tuple
 
+from ...core.config import _ScheduleProviderConfig
 from ...pipeline.envelope import QueueMessage, QueueName
-from ...pipeline.transport.base import QueueTransport
+from ...pipeline.transport.base import QueueTransport, QueueTransportFactory
 from ..model import TOKEN_OCCURRENCE_TIME, TOKEN_REQUEST_ID, ScheduledTask, ScheduleStatus
 from ..timing import OccurrenceCalculator
 from .base import ScheduleProvider
@@ -67,6 +68,19 @@ class LocalScheduleProvider(ScheduleProvider):
         self._sequence = itertools.count()  # keeps heap entries orderable when two share an instant
         self._condition = threading.Condition()
         self._thread: Optional[threading.Thread] = None
+
+    @classmethod
+    def from_config(cls, provider_config: _ScheduleProviderConfig) -> "LocalScheduleProvider":
+        """Build the provider on the configured queue transport.
+
+        The provider takes no settings of its own — it needs only somewhere to deliver triggers,
+        which the transport factory resolves from ``execution.queues`` once, here.
+
+        :param provider_config: The ``schedule.provider`` block. Unused: this provider has no
+                                settings sub-block.
+        :return: The configured provider.
+        """
+        return cls(transport=QueueTransportFactory.create())
 
     def create(self, task: ScheduledTask, body_template: str) -> str:
         """Arm the task's first occurrence and start the scheduler thread if it is not running.

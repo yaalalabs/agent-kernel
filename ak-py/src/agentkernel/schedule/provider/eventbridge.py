@@ -14,6 +14,8 @@ from typing import Any, ClassVar, Optional, Tuple
 import boto3
 from botocore.exceptions import ClientError
 
+from ...core.config import _ScheduleProviderConfig
+from ...core.util.factory import AKConfigError
 from ..errors import ScheduleError
 from ..model import TOKEN_OCCURRENCE_TIME, TOKEN_REQUEST_ID, ScheduledTask, ScheduleStatus
 from ..timing import CRON_FIELD_COUNT
@@ -53,6 +55,10 @@ class EventBridgeScheduleProvider(ScheduleProvider):
 
     supported_transports: ClassVar[Optional[frozenset[str]]] = frozenset({"sqs"})
 
+    # Constructor settings that must come from the ``schedule.provider.eventbridge`` block. All
+    # three are Terraform-provisioned, and without them a schedule cannot be registered at all.
+    _REQUIRED_CONFIG_SETTINGS: ClassVar[Tuple[str, ...]] = ("group_name", "role_arn", "queue_arn")
+
     _log = logging.getLogger("ak.schedule.provider.eventbridge")
 
     def __init__(self, group_name: str, role_arn: str, queue_arn: str):
@@ -67,6 +73,31 @@ class EventBridgeScheduleProvider(ScheduleProvider):
         self._queue_arn = queue_arn
         self._client: Optional[Any] = None
         self._client_lock = threading.Lock()
+
+    @classmethod
+    def from_config(cls, provider_config: _ScheduleProviderConfig) -> "EventBridgeScheduleProvider":
+        """Build the provider from its settings sub-block, rejecting an incomplete one.
+
+        An incomplete block fails here rather than at the first deferral: a provider that cannot
+        name its group, role and target queue can never register a schedule.
+
+        :param provider_config: The ``schedule.provider`` block, carrying the ``eventbridge``
+                                settings sub-block.
+        :return: The configured provider.
+        :raises AKConfigError: If the sub-block is absent, or any of its settings is missing.
+        """
+        eventbridge_config = provider_config.eventbridge
+        if eventbridge_config is None or not (eventbridge_config.group_name and eventbridge_config.role_arn and eventbridge_config.queue_arn):
+            missing = sorted(name for name in cls._REQUIRED_CONFIG_SETTINGS if not getattr(eventbridge_config, name, None))
+            raise AKConfigError(
+                f"schedule provider 'eventbridge' requires schedule.provider.eventbridge settings {missing}: "
+                "they are provisioned by the AWS Terraform stack (AK_SCHEDULE__PROVIDER__EVENTBRIDGE__*)"
+            )
+        return cls(
+            group_name=eventbridge_config.group_name,
+            role_arn=eventbridge_config.role_arn,
+            queue_arn=eventbridge_config.queue_arn,
+        )
 
     def create(self, task: ScheduledTask, body_template: str) -> str:
         """Register the task as a schedule and return its ARN.

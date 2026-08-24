@@ -4,7 +4,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 
-from agentkernel.core.config import DEFAULT_QUEUE_TRANSPORT_TYPE, AKConfig, _ScheduleConfig, _ThreadStoreConfig, _ThreadValkeyConfig
+from agentkernel.core.config import AKConfig, _ScheduleConfig, _ThreadStoreConfig, _ThreadValkeyConfig
 
 
 @pytest.fixture(autouse=True)
@@ -329,7 +329,7 @@ def test_queues_transport_defaults(monkeypatch):
     """No queues block at all still runs: the single-process transport is the default topology."""
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
     cfg = AKConfig.get()
-    assert cfg.execution.queues.type == DEFAULT_QUEUE_TRANSPORT_TYPE
+    assert cfg.execution.queues.type == "in_memory"
     assert cfg.execution.queues.in_memory is None
 
 

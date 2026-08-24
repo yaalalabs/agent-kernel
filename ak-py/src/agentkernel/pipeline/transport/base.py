@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, List, Optional
 
-from ...core.config import DEFAULT_QUEUE_TRANSPORT_TYPE, AKConfig
+from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ..envelope import QueueMessage, QueueName
 
@@ -110,7 +110,7 @@ class QueueTransportFactory:
         """
         queues = AKConfig.get().execution.queues
         if queues is None:
-            return DEFAULT_QUEUE_TRANSPORT_TYPE
+            return "in_memory"
         return queues.type
 
     @classmethod

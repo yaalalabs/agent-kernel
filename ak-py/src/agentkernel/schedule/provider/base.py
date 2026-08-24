@@ -9,7 +9,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import ClassVar, Optional
 
-from ...core.config import AKConfig, _ScheduleEventBridgeConfig
+from ...core.config import AKConfig, _ScheduleProviderConfig
 from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ..model import ScheduledTask
 
@@ -30,6 +30,22 @@ class ScheduleProvider(ABC):
     # fails fast at construction when the configured transport is not in the set, so an
     # undeliverable pairing surfaces at startup instead of at the first occurrence.
     supported_transports: ClassVar[Optional[frozenset[str]]] = None
+
+    @classmethod
+    def from_config(cls, provider_config: _ScheduleProviderConfig) -> "ScheduleProvider":
+        """Build the provider from the ``schedule.provider`` block.
+
+        The single construction seam the factory uses for every provider. A provider that needs
+        settings or a collaborator resolves them here, once, which is what keeps ``create``,
+        ``update``, ``delete`` and ``get`` free of configuration reads. The default needs neither
+        and ignores the block, so a bring-your-own provider is constructed by it unchanged.
+
+        :param provider_config: The ``schedule.provider`` block, including every provider's own
+                                settings sub-block.
+        :return: The configured provider.
+        :raises AKConfigError: If the provider's own settings are missing or incomplete.
+        """
+        return cls()
 
     @abstractmethod
     def create(self, task: ScheduledTask, body_template: str) -> str:
@@ -91,7 +107,7 @@ class ScheduleProviderFactory:
 
     @staticmethod
     def create() -> ScheduleProvider:
-        """Create the configured provider, resolving its dependencies from config once.
+        """Create the configured provider, delegating to its ``from_config`` seam.
 
         ``type`` is a built-in short name (local, eventbridge) or a dotted path to a user-supplied
         ``ScheduleProvider`` subclass (bring-your-own). An unknown, non-dotted value raises
@@ -110,45 +126,17 @@ class ScheduleProviderFactory:
         ScheduleProviderFactory._log.info(f"Building '{provider_type}' schedule provider")
         key = provider_type.lower()
         if key == "local":
-            from ...pipeline.transport.base import QueueTransportFactory
             from .local import LocalScheduleProvider
 
-            # The transport is resolved here, not inside the provider: a provider must not read
-            # AKConfig in its methods.
-            return LocalScheduleProvider(transport=QueueTransportFactory.create())
+            return LocalScheduleProvider.from_config(schedule_config.provider)
         if key == "eventbridge":
             with require_extra("aws", "schedule.provider.type: eventbridge"):
                 from .eventbridge import EventBridgeScheduleProvider
 
-            settings = ScheduleProviderFactory._require_eventbridge_settings(schedule_config.provider.eventbridge)
-            return EventBridgeScheduleProvider(**settings)
+            return EventBridgeScheduleProvider.from_config(schedule_config.provider)
         if "." not in provider_type:
             raise AKConfigError(
                 f"unknown schedule provider type '{provider_type}'; expected one of {_BUILTIN_SCHEDULE_PROVIDERS} "
                 "or a dotted path to a ScheduleProvider subclass"
             )
-        return resolve_dotted(provider_type, base=ScheduleProvider)()
-
-    @staticmethod
-    def _require_eventbridge_settings(eventbridge_config: Optional[_ScheduleEventBridgeConfig]) -> dict:
-        """Read the EventBridge provider's connection settings, rejecting an incomplete block.
-
-        All three are mandatory and Terraform-provisioned: without them a schedule cannot be
-        registered at all, so an incomplete block fails here rather than at the first deferral.
-
-        :param eventbridge_config: The ``schedule.provider.eventbridge`` block, when present.
-        :return: The provider's constructor arguments.
-        :raises AKConfigError: If any of the three settings is missing.
-        """
-        settings = {
-            "group_name": eventbridge_config.group_name if eventbridge_config else None,
-            "role_arn": eventbridge_config.role_arn if eventbridge_config else None,
-            "queue_arn": eventbridge_config.queue_arn if eventbridge_config else None,
-        }
-        missing = sorted(name for name, value in settings.items() if not value)
-        if missing:
-            raise AKConfigError(
-                f"schedule provider 'eventbridge' requires schedule.provider.eventbridge settings {missing}: "
-                "they are provisioned by the AWS Terraform stack (AK_SCHEDULE__PROVIDER__EVENTBRIDGE__*)"
-            )
-        return settings
+        return resolve_dotted(provider_type, base=ScheduleProvider).from_config(schedule_config.provider)
