@@ -11,6 +11,7 @@ from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
     ModelMessagesTypeAdapter,
+    OutputToolResultEvent,
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
@@ -213,7 +214,7 @@ class TestPydanticAIRunnerFrameworkContext:
 
     @pytest.mark.asyncio
     async def test_stream_normal_drain_writes_back(self):
-        """Uses the real run_stream path: a native tool mutates ctx.deps, write-back stores it."""
+        """Uses the real run_stream_events path: a native tool mutates ctx.deps, write-back stores it."""
         runner = PydanticAIRunner()
         session = Session("stream-session")
         session.set_framework_context({"cart": []})
@@ -237,8 +238,8 @@ class TestPydanticAIRunnerFrameworkContext:
     async def test_stream_disconnect_leaves_context_intact(self):
         """
         A client disconnect (GeneratorExit at a yield) skips the write-back after the delta loop.
-        Mocks run_stream because closing the generator from the test task cannot unwind Pydantic AI's
-        real anyio cancel scope.
+        Mocks run_stream_events because closing the generator from the test task cannot unwind
+        Pydantic AI's real anyio cancel scope.
         """
         runner = PydanticAIRunner()
         session = Session("stream-session")
@@ -540,6 +541,28 @@ class TestPydanticAIRunnerStreamEvents:
         assert _shape(events) == ["tool_call_start", "tool_call_end", "tool_call_result"]
         assert {e.tool_call_id for e in events} == {"t1"}
         assert [e.content for e in events if e.type == "tool_call_result"] == ["42"]
+
+    @pytest.mark.asyncio
+    async def test_an_output_tool_result_closes_its_call_too(self):
+        """A structured-output run's final-answer call must resolve, not hang.
+
+        With `output_type` set, the model's answer arrives as an ordinary tool-call part — so the
+        part events bracket it — but its result comes back as `OutputToolResultEvent` rather than
+        `FunctionToolResultEvent`. Dropping it leaves a tool card an AG-UI client can never close.
+        Pydantic AI's own AG-UI adapter emits the result for output tools through the same path it
+        uses for function tools.
+        """
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _tool_start(name="final_result", tool_call_id="o1"),
+                _tool_end(name="final_result", tool_call_id="o1"),
+                OutputToolResultEvent(part=ToolReturnPart(tool_name="final_result", content={"city": "x"}, tool_call_id="o1")),
+            ],
+        )
+        assert _shape(events) == ["tool_call_start", "tool_call_end", "tool_call_result"]
+        assert {e.tool_call_id for e in events} == {"o1"}
+        assert [e.content for e in events if e.type == "tool_call_result"] == ['{"city": "x"}']
 
     @pytest.mark.asyncio
     async def test_the_tool_call_event_is_ignored_so_calls_are_not_doubled(self):

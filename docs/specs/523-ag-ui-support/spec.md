@@ -776,8 +776,9 @@ The four adapters already respect this — `incoming`, `produced` and `context` 
 cross-session bug rather than a crash:
 
 **Two separate questions, which an earlier draft of this section conflated:** where a *correlation id*
-comes from, and whether a *message boundary* has to be derived. Three adapters need no memory for the
-first; two need it for the second.
+comes from, and whether a *message boundary* has to be derived. Two adapters need no memory for the
+first (OpenAI and LangGraph, which read an id off the event); two derive boundaries for the second
+(ADK and LangGraph).
 
 - **Correlation ids are read off the framework's own events wherever one exists** — OpenAI from its
   stream item's `id`, LangGraph from `run_id`. Pydantic AI reads `part.id` for a text or thinking part
@@ -804,6 +805,16 @@ first; two need it for the second.
     through AK and through the first-party path. Tool-call parts are excluded — each has its own
     `tool_call_id`, so there is nothing to group. A promised continuation that never arrives is closed
     when the stream drains.
+  - **Both tool-result kinds are mapped, and that is not symmetric with the call events.** Pydantic AI
+    reports a call twice — as the part events and again as `function_tool_call` — so the latter is
+    ignored to avoid doubling it. Results arrive once, but under *two* kinds: `function_tool_result`
+    for an ordinary tool and `output_tool_result` for the final-answer call a structured-output run
+    makes. Both map, because with `output_type` set the answer call is bracketed by the part events
+    like any other, so dropping its result leaves a tool card an AG-UI client can never close. Both
+    events subclass `ToolResultEvent` and carry `part: ToolReturnPart | RetryPromptPart`, so one
+    mapper handles them. Pydantic AI's own AG-UI adapter routes both through the same handler
+    (`pydantic_ai/ui/ag_ui/_event_stream.py`, `handle_output_tool_result`), overriding a base class
+    whose default is a no-op.
 - **Boundaries must be derived wherever the framework gives no usable message-start signal, and that
   is ADK *and* LangGraph** — not ADK alone, as this section first claimed.
   - **ADK** has neither a start signal nor an id: a `message_id: str | None` **local** inside

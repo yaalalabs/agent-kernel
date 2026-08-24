@@ -254,6 +254,8 @@ class PydanticAIRunner(BaseRunner):
         """
         Translate one Pydantic AI run event into AK events.
 
+        Both tool-result kinds map: a structured-output run's final answer is an ordinary tool call
+        whose result arrives as `output_tool_result`, so dropping it would leave the call dangling.
         Unmapped kinds (including `function_tool_call`) produce nothing.
 
         :param kind: The event's `event_kind` discriminator.
@@ -268,7 +270,7 @@ class PydanticAIRunner(BaseRunner):
             return self._delta_part(event, open_parts)
         if kind == "part_end":
             return self._close_part(event.index, open_parts, carried, getattr(event, "next_part_kind", None))
-        if kind == "function_tool_result":
+        if kind in ("function_tool_result", "output_tool_result"):
             return self._tool_result(event)
         return []
 

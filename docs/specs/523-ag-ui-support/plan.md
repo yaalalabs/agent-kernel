@@ -522,6 +522,14 @@ branch until PR 6 deletes it.
        lists the four files that assert on `Runner.stream` output directly, which is the set found by
         asking what reads the changed contract — not the set found by asking what the deletion breaks.
   6. Decisions and corrections taken while implementing:
+     - **`output_tool_result` is mapped alongside `function_tool_result`** — found in review. A
+       structured-output run's final answer is an ordinary tool-call part, so the part events bracket
+       it, but its result arrives under a second event kind that was falling through unmapped: the
+       run emitted `tool_call_start` / `args` / `end` and never a result, leaving a tool card an AG-UI
+       client could not close. Behavioural change #10 is what makes the path live. Reproduced, then
+       fixed with one condition — `_tool_result` needed no change, because both events subclass
+       `ToolResultEvent` and carry the same `part`. The asymmetry with `function_tool_call`, which
+       stays ignored, is recorded in §10 so the two are not "tidied" into consistency.
      - **`PartStartEvent.index` is not usable as an id, correcting §10.** It is scoped to one response
        and the SDK documents that a repeat *replaces* the part, so a tool-then-answer run would hand two
        messages the same id. Pydantic AI needs a local after all — `open_parts`, mapping a live index to
