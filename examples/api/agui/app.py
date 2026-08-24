@@ -46,7 +46,7 @@ planner_agent = Agent(
     "When the user asks how many tasks are left, call count_open_tasks rather than counting yourself.\n"
     "The user can attach images and documents. Each one arrives already described, with an id — enough "
     "to answer most questions. When they ask for something the description cannot answer, a specific "
-    "number, a quote, a detail, use the attachment-analysis tool on that id rather than guessing.\n"
+    "number, a quote, a detail, call analyze_attachments on that id rather than guessing.\n"
     "When the user asks about something they never told you in this conversation — their local time, "
     "the page they are on, a preference — call get_agui_context and get_forwarded_props first. Do not "
     "say you do not know until you have looked.\n"

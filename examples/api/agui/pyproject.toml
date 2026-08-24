@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "agentkernel[openai,agui,api,multimodal]>=0.8.1",
-    "python-multipart>=0.0.12",
 ]
 
 [dependency-groups]

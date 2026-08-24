@@ -197,9 +197,10 @@ Then run the Python app and the Vite frontend side by side. Vite proxies `/agui`
     python app.py
     cd frontend && npm install && npm run dev     # http://localhost:5173
 
-`./build.sh` does not build the frontend — the `/agui` routes and `app_test.py` do not need it, and
-no CI job installs Node for this example. `GET /` on :8000 explains how to start the UI if
-`frontend/dist` is missing.
+`./build.sh` also builds the frontend when it is run locally, so `GET /` on :8000 serves the UI. It
+skips that step in CI (`$CI` is set there): the `/agui` routes and `app_test.py` do not need the built
+assets, so no e2e job pays for the install. `GET /` explains how to start the UI if `frontend/dist` is
+missing.
 
 Run the frontend's tests with:
 
@@ -286,8 +287,10 @@ A run with an attachment — `content` becomes a list of parts instead of a stri
           }'
 
 Swap `"type": "image"` for `"type": "document"` for a PDF or text file, and set `mimeType` to match.
-A `url` source works too — `{"type": "url", "value": "https://..."}` — but a URL is passed through
-untouched rather than described or stored, so the agent only sees the link.
+A `url` source works too — `{"type": "url", "value": "https://..."}` — but it is never described or
+stored, so the analysis tool and later-turn metadata cannot use it. The URL travels to the adapter
+intact and is handed to the model, which may fetch an `http(s)` one itself; an `s3://` URL stays a
+bare link.
 
 ## Tests
 

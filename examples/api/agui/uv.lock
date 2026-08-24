@@ -83,7 +83,6 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "agentkernel", extra = ["agui", "api", "multimodal", "openai"] },
-    { name = "python-multipart" },
 ]
 
 [package.dev-dependencies]
@@ -95,10 +94,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "agentkernel", extras = ["openai", "agui", "api", "multimodal"], specifier = ">=0.8.1" },
-    { name = "python-multipart", specifier = ">=0.0.12" },
-]
+requires-dist = [{ name = "agentkernel", extras = ["openai", "agui", "api", "multimodal"], specifier = ">=0.8.1" }]
 
 [package.metadata.requires-dev]
 dev = [

@@ -744,3 +744,40 @@ the complete end state** rather than against intermediate commits — so the fid
 part of this set. It is **not** a substitute for iteration 7: it reacts to what the code says, so with
 PR 7 omitted it would be the only thing writing the contract's documentation, unreviewed and after
 the fact.
+
+## Iteration 8: the multimodal example (PR 8)
+
+Added after the seven were planned, so it maps to no original iteration. The AG-UI example ships with
+attachments demonstrable end to end: the composer stages files, the run carries typed content parts,
+and the agent answers from the description or reaches for `analyze_attachments` when the description
+cannot.
+
+- **Goal:** show the multimodal surface the stack already supports, in the example that already
+  exercises the rest of AG-UI.
+- **Files:** `examples/api/agui/**` (frontend composer and attachment reader, `app.py`, `config.yaml`,
+  `README.md`, `app_test.py`), plus `core/multimodal/tools.py` for the correction below.
+- **Decisions and corrections taken while implementing:**
+  - **Audio and video are sent under their own AG-UI part types, not as `document`** — found in
+    review. The composer mapped every non-image media type to `document`, and the server refuses on
+    the part *type* rather than the media type, so an `.mp3` arrived as a generic `AgentRequestFile`
+    and the documented 400 never fired. Reproduced, then fixed by routing on the media-type prefix and
+    widening `OutboundPart`. Sending a part the server is known to reject is deliberate: the refusal
+    is the behaviour being demonstrated.
+  - **`analyze_attachments` was unreachable under the name AK advertises** — found in the same review,
+    and it reaches past this example. `SystemTool.name` is `analyze_attachments` and the injected
+    prompt text names it, but every `ToolBuilder.bind` derives the tool name from `func.__name__`,
+    which was `_analyze_attachments`. So every multimodal deployment handed models a prompt naming a
+    tool absent from their schema; the schema's own description was the only thing keeping it working,
+    and the demo's tool card read `_analyze_attachments`. Fixed by renaming the function so the bound
+    name matches, which is what lets the example's prompt name the tool like every other one it names.
+    Making `bind()` honour `SystemTool.name` generally is the deeper fix and belongs in its own
+    change, as does auditing the sandbox tools for the same mismatch.
+  - **The frontend build is skipped in CI.** `build.sh` builds it locally, where `GET /` serves it,
+    but no e2e job reads `frontend/dist`, so building there spent install time on a result nothing
+    consumed and could never fail on.
+  - **`uv lock` cannot regenerate this example's lock while the `agui` extra is unpublished.** A plain
+    `uv lock` resolves `agentkernel>=0.8.1` against PyPI, silently drops the unknown extra, and
+    removes `ag-ui-protocol`. The lock is regenerated the way `build.sh local` does, against
+    `../../../ak-py/dist`. Separately, the `openai-guardrails` 0.3.2 → 0.3.0 move in this PR's lock is
+    a genuine consequence of adding the `multimodal` extra, not a stale-tooling artifact: resolving
+    the *base* dependencies with the same uv still yields 0.3.2.

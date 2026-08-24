@@ -10,13 +10,19 @@ import { uuid } from "./uuid.ts";
 const saved = restore();
 
 /**
- * An image goes as `image`, anything else as `document`. AG-UI has separate part types for audio and
- * video, but Agent Kernel rejects both with a 400 — it has no equivalent request type, and mapping them
- * onto the generic file type produces misleading model output — so this app never builds them.
+ * Send each attachment under the part type its media type calls for.
+ *
+ * Audio and video are sent as `audio` and `video` even though Agent Kernel refuses both with a 400 —
+ * that refusal is the point. The server decides on the part *type*, not the media type, so routing an
+ * .mp3 through `document` would slip it past the guard and hand the model a generic file, which is the
+ * misleading output the refusal exists to prevent.
  */
 function toPart(attachment: Attachment): OutboundPart {
   const source = { type: "data" as const, value: attachment.data, mimeType: attachment.mimeType };
-  return attachment.mimeType.startsWith("image/") ? { type: "image", source } : { type: "document", source };
+  if (attachment.mimeType.startsWith("image/")) return { type: "image", source };
+  if (attachment.mimeType.startsWith("audio/")) return { type: "audio", source };
+  if (attachment.mimeType.startsWith("video/")) return { type: "video", source };
+  return { type: "document", source };
 }
 
 /**

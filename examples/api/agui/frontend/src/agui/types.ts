@@ -4,7 +4,14 @@
  * this app's own, because the protocol deliberately does not specify how a client renders a
  * transcript or what an agent keeps in the shared state.
  */
-import type { AGUIEvent, DocumentInputContent, ImageInputContent, TextInputContent } from "@ag-ui/core";
+import type {
+  AGUIEvent,
+  AudioInputContent,
+  DocumentInputContent,
+  ImageInputContent,
+  TextInputContent,
+  VideoInputContent,
+} from "@ag-ui/core";
 
 /** A file the user has staged in the composer but not yet sent. `data` is bare base64, no data: prefix. */
 export type Attachment = {
@@ -15,9 +22,16 @@ export type Attachment = {
 
 /**
  * One part of a multimodal user message. AG-UI models a message's content as either a plain string or
- * a list of typed parts, and this app only ever sends the two it can produce.
+ * a list of typed parts. Audio and video are included even though Agent Kernel refuses them: sending
+ * them under their own type is what produces that refusal, where mapping them onto `document` would
+ * smuggle them through as generic files.
  */
-export type OutboundPart = TextInputContent | ImageInputContent | DocumentInputContent;
+export type OutboundPart =
+  | TextInputContent
+  | ImageInputContent
+  | AudioInputContent
+  | VideoInputContent
+  | DocumentInputContent;
 
 /** A transcript entry. Two shapes because a tool call is not text; `kind` is the discriminant. */
 export type TextLine = {
