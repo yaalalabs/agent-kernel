@@ -725,11 +725,15 @@ class _SandboxConfig(BaseModel):
 
 
 class _AGUIStateConfig(BaseModel):
+    """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
+
     enabled: bool = Field(default=False, description="Expose the AG-UI state tools to agents")
     agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
 
 
 class _AGUIClientContextConfig(BaseModel):
+    """Opt-in for the read-only AG-UI client-context tools (forwarded props and context)."""
+
     enabled: bool = Field(
         default=False,
         description="Expose the read-only AG-UI client-context tools (forwarded props and context) to agents",
@@ -749,6 +753,8 @@ class _AGUIConfig(BaseModel):
 
 
 class AKConfig(YamlBaseSettingsModified):
+    """Root configuration, loaded from config.yaml and `AK_`-prefixed environment variables."""
+
     session: _SessionStoreConfig = Field(
         description="Agent session / memory related configurations",
         default_factory=_SessionStoreConfig,

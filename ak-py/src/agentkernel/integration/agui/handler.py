@@ -59,15 +59,30 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
     @staticmethod
     def _is_exposed(agent_name: str) -> bool:
+        """Whether `agui.agents` publishes this agent.
+
+        :param agent_name: Agent name to test.
+        :return: True when `agui.agents` is unset (every agent is reachable) or names this one.
+        """
         exposed = AKConfig.get().agui.agents
         return exposed is None or agent_name in exposed
 
     def _warn_if_unreadable(self, agent: Agent, run_input: Any) -> None:
+        """Warn about inbound fields no tool can read.
+
+        `state`, `forwardedProps` and `context` are stored on the session regardless, but the tools
+        that read them are attached only when their config block is enabled. Without this the field
+        is accepted and silently unreachable, which looks like the model ignoring the data.
+
+        :param agent: The agent this run resolved to.
+        :param run_input: The parsed RunAgentInput.
+        """
         from ...core.tool import SystemToolFactory
 
         agui = getattr(AKConfig.get(), "agui", None)
 
         def enabled(block_name: str) -> bool:
+            """Whether a config block is enabled *and* in scope for this agent."""
             block = getattr(agui, block_name, None)
             return bool(block and block.enabled and SystemToolFactory._agent_allowed(block, agent.name))
 
@@ -86,6 +101,14 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
             )
 
     def _resolve_agent(self, agent_name: str) -> Agent:
+        """Resolve a path agent name to a streaming-capable, exposed agent.
+
+        :param agent_name: Agent name taken from the route path.
+        :return: The resolved Agent.
+        :raises HTTPException: 404 when the agent is unknown *or* not exposed — deliberately
+                               indistinguishable, so the surface never confirms that a hidden name
+                               exists. 400 when the agent's runner cannot stream.
+        """
         try:
             AgentService().ensure_agent_available(agent_name)
         except ValueError:
@@ -104,17 +127,38 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         return agent
 
     def get_router(self) -> APIRouter:
+        """Build the AG-UI router under `agui.prefix`.
+
+        The bare-prefix route is registered only when `agui.default_agent` is configured, so an
+        unconfigured deployment returns 404 there rather than serving an arbitrary agent.
+
+        :return: Router carrying the discovery and run routes.
+        """
         config = AKConfig.get().agui
         router = APIRouter(prefix=config.prefix)
 
         @router.get("/agents")
         def list_agents(request: Request) -> dict:
+            """List the names of agents reachable over AG-UI.
+
+            Names only, deliberately: several adapters return the agent's *instructions* from
+            get_description(), which would publish the system prompt to every authorised caller.
+
+            :param request: Incoming request, for authorisation.
+            :return: {"agents": [name, ...]}.
+            """
             self._resolve_user(request)
             agents = Runtime.current().agents()
             return {"agents": [name for name, agent in agents.items() if agent.runner.supports_streaming and self._is_exposed(name)]}
 
         @router.post("/{agent_name}")
         async def run_agent(agent_name: str, request: Request) -> StreamingResponse:
+            """Run the named agent.
+
+            :param agent_name: Agent name from the path.
+            :param request: Incoming request carrying the RunAgentInput body.
+            :return: The AG-UI event stream.
+            """
             return await self._run(agent_name, request)
 
         default_agent = config.default_agent
@@ -122,11 +166,30 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
             @router.post("")
             async def run_default_agent(request: Request) -> StreamingResponse:
+                """Run `agui.default_agent`.
+
+                :param request: Incoming request carrying the RunAgentInput body.
+                :return: The AG-UI event stream.
+                """
                 return await self._run(default_agent, request)
 
         return router
 
     async def _run(self, agent_name: str, request: Request) -> StreamingResponse:
+        """Validate a run request and hand back the event stream.
+
+        Everything that can still be reported as an HTTP status happens here, before the response
+        begins: authorisation, agent resolution, body parsing, and request mapping. `to_requests`
+        runs before the session is written so a rejected part (audio, video) cannot leave state
+        behind. Once `_events` starts yielding, the status is already sent and the only way to
+        report a failure is a `RunError` event.
+
+        :param agent_name: Agent to run.
+        :param request: Incoming request carrying the RunAgentInput body.
+        :return: A streaming response of encoded AG-UI events.
+        :raises HTTPException: 400 for an unparsable or unusable body, 404/400 from agent
+                               resolution, 500 when no session could be created.
+        """
         from ag_ui.encoder import EventEncoder
 
         user_id = self._resolve_user(request)
@@ -142,8 +205,13 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         run_input = AGUIRunInput.parse(body)
         requests = AGUIRunInput.to_requests(run_input)
         handler = self._chat_service.prepare_agent_handler(run_input.thread_id, agent_name)
-        session = handler.service.session
-        assert session is not None
+        session = handler.service.session if handler.service is not None else None
+        if session is None:
+            self._log.error(
+                f"Agent '{agent_name}' passed the AG-UI availability check but AgentService could not select it, "
+                f"so no session was created. The two agent-resolution paths disagree."
+            )
+            raise HTTPException(status_code=500, detail=f"Agent '{agent_name}' could not be selected for this run")
         AGUIRunInput.set_agui_session_keys(session, run_input)
         self._warn_if_unreadable(agent, run_input)
 
@@ -161,14 +229,36 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         state_before: Optional[dict],
         user_id: Optional[str],
     ) -> AsyncGenerator[str, None]:
+        """Yield the run's encoded AG-UI events.
+
+        `RunStarted` first, then the run's events, then exactly one of `RunFinished` or `RunError` —
+        the protocol's bracket, which holds even when the run fails, because a client waits on that
+        terminal event. Every failure is therefore reported as `RunError` rather than raised: the
+        HTTP status is long gone by the time this generator runs.
+
+        The `StateSnapshot` is emitted **only when the state actually changed**, which is why the
+        caller captures `state_before` before the run: a turn that touches nothing re-syncs nothing.
+
+        :param encoder: The SDK's EventEncoder, matched to the request's Accept header.
+        :param handler: Prepared AgentHandler holding the selected agent and loaded session.
+        :param requests: The mapped AgentRequest list to run.
+        :param run_input: The parsed RunAgentInput, for thread and run ids.
+        :param state_before: Deep copy of the AG-UI state taken before the run.
+        :param user_id: Resolved caller, forwarded as the run's acting user.
+        :return: An async generator of encoded SSE payloads.
+        """
         from ag_ui.core import RunErrorEvent, RunFinishedEvent, RunStartedEvent, StateSnapshotEvent
 
         yield encoder.encode(RunStartedEvent(thread_id=run_input.thread_id, run_id=run_input.run_id, parent_run_id=run_input.parent_run_id))
 
-        session = handler.service.session
-        assert session is not None
-        assert handler.service.agent is not None
-        agent_name = handler.service.agent.name
+        service = handler.service
+        session = service.session if service is not None else None
+        agent = service.agent if service is not None else None
+        if session is None or agent is None:
+            yield encoder.encode(RunErrorEvent(message="The agent session is no longer available for this run"))
+            return
+
+        agent_name = agent.name
         error: Optional[str] = None
         try:
             async for chunk in handler.run_stream_async(requests, acting_user_id=user_id):

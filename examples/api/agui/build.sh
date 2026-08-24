@@ -8,13 +8,14 @@ else
 fi
 
 if [[ ${1-} != "local" ]]; then
-  uv sync --all-extras
+  # Installs exactly the extras this example declares in pyproject.toml, plus the dev group.
+  uv sync
 else
-  # --no-cache: a local wheel often shares the published version, so uv would serve the cache.
-  # Drop the lock first: the unpublished `agui` extra is otherwise dropped silently against PyPI.
-  rm -f uv.lock
-  uv sync --find-links ../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --no-deps --no-index --no-cache --find-links ../../../ak-py/dist agentkernel[api,openai,agui,test]
-  # --no-deps skips the extra's own dependency; drop this line once a released agentkernel carries `agui`.
-  uv pip install --no-cache 'ag-ui-protocol>=0.1.16'
+  # Local development of agentkernel: re-resolve it (and the extras this example declares in
+  # pyproject.toml) against the freshly built local dist instead of PyPI. --upgrade-package
+  # forces re-resolution so the local wheel wins even when its version matches the published
+  # one, pulling a newly added extra's dependencies that the published release doesn't have yet.
+  # Note: this rewrites uv.lock to the local dist source for the duration; do not commit that
+  # lock — commit the PyPI-resolved lock produced by `uv lock` after the extra is published.
+  uv sync --find-links ../../../ak-py/dist --upgrade-package agentkernel
 fi

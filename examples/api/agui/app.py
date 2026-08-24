@@ -29,6 +29,11 @@ class DemoAuthoriser(Authoriser):
     _TOKENS = {"demo-token": "demo-user"}
 
     def authorise(self, token: str) -> Optional[str]:
+        """Resolve a bearer token to a user id.
+
+        :param token: Bearer token from the Authorization header.
+        :return: The acting user id, or None to reject the request.
+        """
         return self._TOKENS.get(token)
 
 
