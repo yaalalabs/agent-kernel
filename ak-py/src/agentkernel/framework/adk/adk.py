@@ -295,6 +295,7 @@ class GoogleADKRunner(BaseRunner):
             with ctx:
                 message_id: str | None = None  # open message id; local, never on self
                 reasoning_id: str | None = None
+                reasoning_streamed = False
                 async for event in runner.run_async(
                     user_id=user_id,
                     session_id=session.id,
@@ -304,10 +305,16 @@ class GoogleADKRunner(BaseRunner):
                     chunk, thinking = self._event_text(event)
 
                     if getattr(event, "partial", False) and thinking:
+                        reasoning_streamed = True
                         if reasoning_id is None:
                             reasoning_id = uuid4().hex
                             yield ReasoningStart(message_id=reasoning_id)
                         yield ReasoningDelta(message_id=reasoning_id, content=thinking)
+                    elif thinking and not reasoning_streamed:
+                        whole_reasoning = uuid4().hex
+                        yield ReasoningStart(message_id=whole_reasoning)
+                        yield ReasoningDelta(message_id=whole_reasoning, content=thinking)
+                        yield ReasoningEnd(message_id=whole_reasoning)
 
                     if chunk and reasoning_id is not None:
                         yield ReasoningEnd(message_id=reasoning_id)
@@ -328,7 +335,11 @@ class GoogleADKRunner(BaseRunner):
                         yield TextDelta(message_id=whole, content=chunk)
                         yield MessageEnd(message_id=whole)
 
-                    for tool_event in self._tool_events(event):
+                    tool_events = self._tool_events(event)
+                    if tool_events and reasoning_id is not None:
+                        yield ReasoningEnd(message_id=reasoning_id)
+                        reasoning_id = None
+                    for tool_event in tool_events:
                         yield tool_event
 
                 if reasoning_id is not None:

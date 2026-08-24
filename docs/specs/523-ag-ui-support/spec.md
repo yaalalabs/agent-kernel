@@ -798,9 +798,18 @@ first; two need it for the second.
       the answer on the same events; joining them would put chain-of-thought into
       `StreamChunk.delta`, which §4 rule 5 exists to prevent — `delta` is what plain-text clients
       concatenate as the answer and what `ThreadRecorder` persists. The reasoning trace opens on the
-      first thought text and closes when answer text arrives, so a trace resuming after a tool call
-      is a second trace. ADK never emits thoughts unless the caller's own agent enables them
-      (`BuiltInPlanner(thinking_config=…)`); AK does not turn them on.
+      first thought text and closes when **either answer text or tool activity** arrives, so a trace
+      resuming after a tool call is a second trace. Closing on tool activity is what makes that true
+      unconditionally: a thinking model calling a tool straight out of reasoning, with no answer text
+      in between, would otherwise nest the tool events inside an open trace and reuse its id — a shape
+      OpenAI cannot produce, because `response.output_item.done` closes the reasoning item before the
+      `function_call` item is added. The same cross-adapter argument as the message boundaries.
+      A thought that arrives **only** on a non-partial event is emitted as one whole trace, mirroring
+      the whole-message text fallback; it is gated on whether any thought streamed during the turn,
+      not on whether a trace is currently open, because answer text closes the trace on the very event
+      that streamed the thought and ADK repeats the full thought on the closing event. ADK never emits
+      thoughts unless the caller's own agent enables them (`BuiltInPlanner(thinking_config=…)`); AK
+      does not turn them on.
     - **A tool result reads as `{"result": 42}` here and as `42` from OpenAI**, and that is left
       alone. ADK wraps any non-dict return in `{'result': …}`
       (`google/adk/flows/llm_flows/functions.py:1252`) while leaving a dict return untouched, so each

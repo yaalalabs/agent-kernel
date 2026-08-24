@@ -404,7 +404,7 @@ branch until PR 6 deletes it.
 ## Iteration 5: Google ADK (PR 5)
 
 - **Goal:** ADK emits events, including boundaries it has to derive.
-- **Files:** `framework/adk/adk.py`, `tests/test_adk_runner.py`
+- **Files:** `framework/adk/adk.py`, `tests/test_adk_runner.py`, `tests/test_tool_adk.py`
 - **Steps:**
   1. Stop `continue`-ing on non-partial events — that branch is where function calls and responses
     arrive.
@@ -426,6 +426,20 @@ branch until PR 6 deletes it.
        suppressed as a duplicate — but a turn that never streamed would then produce an empty reply,
        and `test_stream_skips_non_partial_events` was asserting exactly that. The fallback is guarded
        on nothing having been sent, so it cannot double up, and that test now pins the new behaviour.
+     - **Tool activity closes the reasoning trace, not only answer text** — found in review. A
+       thinking model calling a tool straight out of reasoning, with nothing said in between, was
+       nesting `tool_call_*` inside an open trace and reusing its id on the resuming thought. OpenAI
+       cannot produce that shape, so the two adapters disagreed on ordering for the same concept —
+       the same divergence class step 6 fixed for message boundaries. Reproduced, then fixed by
+       closing the trace before the tool events; §10's "second trace" sentence is now unconditionally
+       true rather than true only when text intervened.
+     - **A thought that only arrives whole is emitted, mirroring the text fallback** — found in the
+       same review. Reasoning was read from partial events only, so a turn that never streamed lost
+       its thinking block while keeping its reply. The guard is *whether any thought streamed this
+       turn*, not whether a trace is open: answer text closes the trace on the very event that
+       streamed the thought, so an open-trace guard let ADK's repeated aggregate through as a
+       duplicate — caught by `test_the_aggregate_re_emits_neither_stream` failing on the first
+       attempt.
      - **Tool-call ids come from `FunctionCall.id`, not from `uuid4()`.** ADK generates only the
        `message_id`, because that is the one correlation id it supplies nothing for. A generated
        tool-call id could not be matched to the `FunctionResponse`, so a call with no id emits

@@ -502,6 +502,57 @@ class TestGoogleADKRunnerStreamEvents:
         assert _shape(events).count("reasoning_end") == 2
 
     @pytest.mark.asyncio
+    async def test_a_tool_call_straight_out_of_reasoning_closes_the_trace_first(self):
+        """A thinking model calling a tool with no answer text in between.
+
+        The trace must close before the tool events, not wrap them. OpenAI cannot produce the nested
+        shape — `response.output_item.done` closes the reasoning item before the `function_call` item
+        is added — so ADK matching it is what keeps one consumer working against both adapters, the
+        same reason the message boundaries were ordered this way.
+        """
+        events = await _collect(
+            [
+                _partial_event(thought="need a lookup"),
+                _nonpartial_event(calls=[_call(args={"q": "x"})]),
+                _partial_event(thought="now I know"),
+            ]
+        )
+        shape = _shape(events)
+        assert shape.index("reasoning_end") < shape.index("tool_call_start"), shape
+
+        starts = [e.message_id for e in events if e.type == "reasoning_start"]
+        assert len(starts) == 2 and starts[0] != starts[1], starts
+
+    @pytest.mark.asyncio
+    async def test_a_thought_that_only_arrives_whole_still_yields_a_trace(self):
+        """The reasoning mirror of the whole-message fallback below it.
+
+        A turn that never streamed partials still gets its text as one bracketed message; without
+        this, the same turn's thoughts were dropped and the thinking block stayed empty.
+        """
+        events = await _collect([_nonpartial_event(text="answer", thought="hidden thinking")])
+        assert _shape(events) == [
+            "reasoning_start",
+            "reasoning_delta",
+            "reasoning_end",
+            "message_start",
+            "text_delta",
+            "message_end",
+        ]
+        assert [e.content for e in events if e.type == "reasoning_delta"] == ["hidden thinking"]
+
+    @pytest.mark.asyncio
+    async def test_an_aggregated_thought_does_not_duplicate_what_already_streamed(self):
+        """The fallback fires only when no trace is open, so the aggregate is ignored after partials.
+
+        ADK repeats the whole thought on the closing non-partial event; emitting it again would show
+        the user their reasoning twice.
+        """
+        events = await _collect([_partial_event(thought="weigh"), _nonpartial_event(text="done", thought="weigh")])
+        assert [e.content for e in events if e.type == "reasoning_delta"] == ["weigh"]
+        assert _shape(events).count("reasoning_start") == 1
+
+    @pytest.mark.asyncio
     async def test_a_thought_only_turn_closes_its_trace_on_drain(self):
         """No answer text ever arrives to close it, so the drain has to."""
         events = await _collect([_partial_event(thought="thinking")])
