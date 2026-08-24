@@ -46,75 +46,104 @@ _CRON_EVENTBRIDGE_DOC = (
 )
 
 
-def _cron_description() -> str:
-    """Describe the cron expression the configured provider will actually honor.
+class ScheduleToolUtil:
+    """Shared helpers behind the schedule tools: run identity, the agent-facing JSON, cron-flavor docs.
 
-    Anchored on the ``eventbridge`` short name, the way the manager's topology guards anchor on
-    ``local``: it is the one built-in whose backend owns the interpretation. Everything else —
-    the local provider, and a bring-your-own provider that has its own agent instructions — is
-    described in the standard flavor.
-
-    :return: The sentence substituted into every cron placeholder.
+    Static because none of it owns state: the identity reads come from the ambient ``Session``, the
+    projections are pure, and ``describe_cron_flavor`` writes to the module's tool functions.
     """
-    schedule_config = AKConfig.get().schedule
-    if schedule_config is not None and schedule_config.provider.type.lower() == _EVENTBRIDGE_PROVIDER:
-        return _CRON_EVENTBRIDGE_DOC
-    return _CRON_STANDARD_DOC
 
+    @staticmethod
+    def cron_description() -> str:
+        """Describe the cron expression the configured provider will actually honor.
 
-def _acting_user() -> Optional[str]:
-    """The user the current run acts for, published in the session's volatile cache by ``Runtime``.
+        Anchored on the ``eventbridge`` short name, the way the manager's topology guards anchor on
+        ``local``: it is the one built-in whose backend owns the interpretation. Everything else —
+        the local provider, and a bring-your-own provider that has its own agent instructions — is
+        described in the standard flavor.
 
-    :return: The acting user id, or None when the run carries no user identity.
-    """
-    session = Session.current()
-    if session is None:
-        return None
-    return session.get_volatile_cache().get(ACTING_USER_CACHE_KEY)
+        :return: The sentence substituted into every cron placeholder.
+        """
+        schedule_config = AKConfig.get().schedule
+        if schedule_config is not None and schedule_config.provider.type.lower() == _EVENTBRIDGE_PROVIDER:
+            return _CRON_EVENTBRIDGE_DOC
+        return _CRON_STANDARD_DOC
 
+    @staticmethod
+    def acting_user() -> Optional[str]:
+        """The user the current run acts for, published in the session's volatile cache by ``Runtime``.
 
-def _current_session_id() -> Optional[str]:
-    """The session a task created in this run belongs to.
+        :return: The acting user id, or None when the run carries no user identity.
+        """
+        session = Session.current()
+        if session is None:
+            return None
+        return session.get_volatile_cache().get(ACTING_USER_CACHE_KEY)
 
-    It is the session each occurrence runs in under ``session_mode`` reuse, and the base the
-    per-occurrence session ids are derived from under ``session_mode`` new.
+    @staticmethod
+    def current_session_id() -> Optional[str]:
+        """The session a task created in this run belongs to.
 
-    :return: The current session id, or None outside a run.
-    """
-    session = Session.current()
-    return session.id if session is not None else None
+        It is the session each occurrence runs in under ``session_mode`` reuse, and the base the
+        per-occurrence session ids are derived from under ``session_mode`` new.
 
+        :return: The current session id, or None outside a run.
+        """
+        session = Session.current()
+        return session.id if session is not None else None
 
-def _error_json(error: Exception) -> str:
-    """Serialize a failure into the tool ``{"error": ...}`` JSON contract.
+    @staticmethod
+    def error_json(error: Exception) -> str:
+        """Serialize a failure into the tool ``{"error": ...}`` JSON contract.
 
-    :param error: The failure to report.
-    :return: The error JSON.
-    """
-    return json.dumps({"error": str(error)})
+        :param error: The failure to report.
+        :return: The error JSON.
+        """
+        return json.dumps({"error": str(error)})
 
+    @staticmethod
+    def task_json(task: ScheduledTask) -> Dict[str, Any]:
+        """Agent-facing view of a task: the fields an agent can act on or report to the user.
 
-def _task_json(task: ScheduledTask) -> Dict[str, Any]:
-    """Agent-facing view of a task: the fields an agent can act on or report to the user.
+        Flattened out of the stored record (whose provider reference and owner are machinery the
+        agent has no use for) so a schedule reads back the same way it was asked for.
 
-    Flattened out of the stored record (whose provider reference and owner are machinery the agent
-    has no use for) so a schedule reads back the same way it was asked for.
+        :param task: The stored task.
+        :return: The agent-facing projection.
+        """
+        return {
+            "task_id": task.task_id,
+            "prompt": task.prompt,
+            "agent": task.agent,
+            "status": task.status.value,
+            "at": task.spec.at,
+            "cron": task.spec.cron,
+            "timezone": task.spec.timezone,
+            "session_mode": task.spec.session_mode,
+            "trigger_count": task.trigger_count,
+            "last_triggered_at": task.last_triggered_at,
+        }
 
-    :param task: The stored task.
-    :return: The agent-facing projection.
-    """
-    return {
-        "task_id": task.task_id,
-        "prompt": task.prompt,
-        "agent": task.agent,
-        "status": task.status.value,
-        "at": task.spec.at,
-        "cron": task.spec.cron,
-        "timezone": task.spec.timezone,
-        "session_mode": task.spec.session_mode,
-        "trigger_count": task.trigger_count,
-        "last_triggered_at": task.last_triggered_at,
-    }
+    @staticmethod
+    def describe_cron_flavor(cron_doc: str) -> None:
+        """Point the two timing tools' LLM-facing schemas at the configured provider's cron flavor.
+
+        Only ``SystemTool.func`` reaches a framework — the adapters read its ``__doc__`` when they
+        wrap it (``framework/langgraph/langgraph.py``, and the SDK-native decorators elsewhere) —
+        so a flavor-aware tool schema means a rendered docstring. The module-level functions are
+        rewritten in place rather than replaced by fresh per-call closures because both attachment
+        paths (``Agent._attach_system_tools`` and the adapters' own wrapping) deduplicate tools by
+        function identity, which new objects would defeat. Rewriting them is safe process-wide
+        state: the configured provider is one per process, so no two agents in one process can need
+        different flavors.
+
+        Reads the tools and their pristine templates out of the module at call time, so it sits here
+        with its sibling helpers even though both are defined further down the file.
+
+        :param cron_doc: The flavor's description, substituted into every cron placeholder.
+        """
+        create_schedule.__doc__ = _CREATE_SCHEDULE_DOC.replace(_CRON_TOKEN, cron_doc)
+        update_schedule.__doc__ = _UPDATE_SCHEDULE_DOC.replace(_CRON_TOKEN, cron_doc)
 
 
 async def create_schedule(
@@ -146,16 +175,16 @@ async def create_schedule(
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = _acting_user()
+    user_id = ScheduleToolUtil.acting_user()
     if user_id is None:
         return _NO_IDENTITY
     try:
         spec = ScheduleSpec(at=at, cron=cron, timezone=timezone, session_mode=session_mode)
-        task = manager.create(user_id=user_id, prompt=prompt, spec=spec, agent=agent, session_id=_current_session_id())
-        return json.dumps(_task_json(task))
+        task = manager.create(user_id=user_id, prompt=prompt, spec=spec, agent=agent, session_id=ScheduleToolUtil.current_session_id())
+        return json.dumps(ScheduleToolUtil.task_json(task))
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("create_schedule failed: %s", exc)
-        return _error_json(exc)
+        return ScheduleToolUtil.error_json(exc)
 
 
 async def list_schedules() -> str:
@@ -169,15 +198,15 @@ async def list_schedules() -> str:
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = _acting_user()
+    user_id = ScheduleToolUtil.acting_user()
     if user_id is None:
         return _NO_IDENTITY
     try:
         page = manager.list_tasks(user_id=user_id)
-        return json.dumps({"schedules": [_task_json(task) for task in page.tasks]})
+        return json.dumps({"schedules": [ScheduleToolUtil.task_json(task) for task in page.tasks]})
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("list_schedules failed: %s", exc)
-        return _error_json(exc)
+        return ScheduleToolUtil.error_json(exc)
 
 
 async def get_schedule(task_id: str) -> str:
@@ -195,17 +224,17 @@ async def get_schedule(task_id: str) -> str:
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = _acting_user()
+    user_id = ScheduleToolUtil.acting_user()
     if user_id is None:
         return _NO_IDENTITY
     try:
         task = manager.get_task(task_id, user_id=user_id)
         if task is None:
             return json.dumps({"error": f"scheduled task {task_id} not found"})
-        return json.dumps(_task_json(task))
+        return json.dumps(ScheduleToolUtil.task_json(task))
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("get_schedule failed: %s", exc)
-        return _error_json(exc)
+        return ScheduleToolUtil.error_json(exc)
 
 
 async def update_schedule(
@@ -240,15 +269,15 @@ async def update_schedule(
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = _acting_user()
+    user_id = ScheduleToolUtil.acting_user()
     if user_id is None:
         return _NO_IDENTITY
     try:
         amendment = {"prompt": prompt, "cron": cron, "at": at, "timezone": timezone, "session_mode": session_mode, "status": status}
-        return json.dumps(_task_json(manager.update(task_id, amendment, user_id=user_id)))
+        return json.dumps(ScheduleToolUtil.task_json(manager.update(task_id, amendment, user_id=user_id)))
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("update_schedule failed: %s", exc)
-        return _error_json(exc)
+        return ScheduleToolUtil.error_json(exc)
 
 
 async def delete_schedule(task_id: str) -> str:
@@ -265,14 +294,14 @@ async def delete_schedule(task_id: str) -> str:
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = _acting_user()
+    user_id = ScheduleToolUtil.acting_user()
     if user_id is None:
         return _NO_IDENTITY
     try:
-        return json.dumps(_task_json(manager.cancel(task_id, user_id=user_id)))
+        return json.dumps(ScheduleToolUtil.task_json(manager.cancel(task_id, user_id=user_id)))
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("delete_schedule failed: %s", exc)
-        return _error_json(exc)
+        return ScheduleToolUtil.error_json(exc)
 
 
 # The docstrings of the two timing tools, captured before anything renders them. Every render
@@ -312,29 +341,11 @@ _GUIDANCE_TEMPLATE = (
 )
 
 
-def _describe_cron_flavor(cron_doc: str) -> None:
-    """Point the two timing tools' LLM-facing schemas at the configured provider's cron flavor.
-
-    Only ``SystemTool.func`` reaches a framework — the adapters read its ``__doc__`` when they wrap
-    it (``framework/langgraph/langgraph.py``, and the SDK-native decorators elsewhere) — so a
-    flavor-aware tool schema means a rendered docstring. The module-level functions are rewritten
-    in place rather than replaced by fresh per-call closures because both attachment paths
-    (``Agent._attach_system_tools`` and the adapters' own wrapping) deduplicate tools by function
-    identity, which new objects would defeat. Rewriting them is safe process-wide state: the
-    configured provider is one per process, so no two agents in one process can need different
-    flavors.
-
-    :param cron_doc: The flavor's description, substituted into every cron placeholder.
-    """
-    create_schedule.__doc__ = _CREATE_SCHEDULE_DOC.replace(_CRON_TOKEN, cron_doc)
-    update_schedule.__doc__ = _UPDATE_SCHEDULE_DOC.replace(_CRON_TOKEN, cron_doc)
-
-
 # Rendered once at import, in the standard flavor, so nothing reading a docstring before the tools
 # are built — help(), a doc generator, an app attaching one of these functions itself — ever sees
 # the raw placeholder. Reads no config: the configured provider's flavor is only known once
 # get_schedule_tools() runs, which re-renders both from the pristine templates.
-_describe_cron_flavor(_CRON_STANDARD_DOC)
+ScheduleToolUtil.describe_cron_flavor(_CRON_STANDARD_DOC)
 
 
 def get_schedule_tools() -> list[SystemTool]:
@@ -353,8 +364,8 @@ def get_schedule_tools() -> list[SystemTool]:
 
     :return: The schedule system tools.
     """
-    cron_doc = _cron_description()
-    _describe_cron_flavor(cron_doc)
+    cron_doc = ScheduleToolUtil.cron_description()
+    ScheduleToolUtil.describe_cron_flavor(cron_doc)
     return [
         SystemTool(name="create_schedule", description=_GUIDANCE_TEMPLATE.replace(_CRON_TOKEN, cron_doc), func=create_schedule),
         SystemTool(name="list_schedules", description="", func=list_schedules),
