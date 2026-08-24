@@ -31,3 +31,8 @@ output "instagram_webhook_url" {
   description = "Callback URL to register under the Meta app's Instagram webhook configuration"
   value       = "${local.webhook_base_url}/api/v1/instagram/webhook"
 }
+
+output "teams_messages_url" {
+  description = "Messaging endpoint to configure on the Azure Bot resource"
+  value       = "${local.webhook_base_url}/api/v1/teams/messages"
+}

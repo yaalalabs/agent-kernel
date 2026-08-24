@@ -327,7 +327,7 @@ if __name__ == "__main__":
 ```bash
 export AK_TEAMS__APP_ID="<azure-app-client-id>"
 export AK_TEAMS__APP_PASSWORD="<azure-app-client-secret>"
-export AK_TEAMS__TENANT_ID="<tenant-id>"   # Optional for single-tenant
+export AK_TEAMS__TENANT_ID="<tenant-id>"   # Leave empty for a multi-tenant bot
 ```
 
 **5. Setup instructions:**
@@ -335,6 +335,8 @@ export AK_TEAMS__TENANT_ID="<tenant-id>"   # Optional for single-tenant
 - Set messaging endpoint to `https://<your-domain>/teams/messages`
 - Add Microsoft Teams channel in Azure Bot configuration
 - Install or publish the Teams app in your tenant via Developer Portal
+- Attachments whose download URL is not pre-authenticated need `tenant_id` set plus the
+  `Sites.Read.All` **Office 365 SharePoint Online** application permission (admin consent)
 
 ---
 

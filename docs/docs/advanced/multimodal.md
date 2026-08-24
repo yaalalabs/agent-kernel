@@ -220,6 +220,7 @@ Multimodal attachments are supported on the following platforms:
 | Platform | Images | Files | Notes |
 |----------|--------|-------|-------|
 | **Telegram** | ✅ | ✅ | Photos + documents |
+| **Teams** | ✅ | ✅ | Inline images + uploaded files; audio/video rejected, `api.max_file_size` enforced while streaming |
 | **REST API** | ✅ | ✅ | Via `AgentRequestImage` / `AgentRequestFile` |
 | **CLI** | ❌ | ❌ | Text only |
 
@@ -229,3 +230,4 @@ Multimodal attachments are supported on the following platforms:
 - **[Execution Hooks](/docs/integrations/hooks)**: How PreHooks and PostHooks work
 - **[Configuration](/docs/core-concepts/configuration)**: Complete configuration reference
 - **[Telegram Integration](/docs/integrations/telegram)**: Telegram-specific file handling
+- **[Teams Integration](/docs/integrations/teams)**: Teams-specific attachment handling

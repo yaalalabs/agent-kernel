@@ -22,9 +22,15 @@ on:
         required: false
         type: boolean
         default: false
+      e2e_messaging_only:
+        description: 'Run only the e2e messaging tests (skips the weekly cloud test matrix)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   setup:
+    if: ${{ !inputs.e2e_messaging_only }}
     runs-on: ubuntu-latest
     environment: ci-tests
     outputs:
@@ -51,6 +57,7 @@ jobs:
           python3 .github/scripts/generate_test_matrix.py --tier weekly --format github >> $GITHUB_OUTPUT
 
   build-ak-py:
+    if: ${{ !inputs.e2e_messaging_only }}
     runs-on: ubuntu-latest
     environment: ci-tests
     steps:
@@ -367,6 +374,10 @@ jobs:
           terraform_version: 1.14.3
           terraform_wrapper: false
 
+      - name: Build ak-py from this checkout
+        working-directory: ak-py
+        run: ./build.sh
+
       - name: Build deployment package
         working-directory: e2e/app
         run: |
@@ -401,6 +412,9 @@ jobs:
           TF_VAR_instagram_verify_token: ${{ secrets.E2E_INSTAGRAM_VERIFY_TOKEN }}
           TF_VAR_instagram_app_secret: ${{ secrets.E2E_INSTAGRAM_APP_SECRET }}
           TF_VAR_instagram_account_id: ${{ vars.E2E_INSTAGRAM_ACCOUNT_ID }}
+          TF_VAR_teams_app_id: ${{ secrets.E2E_TEAMS_APP_ID }}
+          TF_VAR_teams_app_password: ${{ secrets.E2E_TEAMS_APP_PASSWORD }}
+          TF_VAR_teams_tenant_id: ${{ vars.E2E_TEAMS_TENANT_ID }}
         run: |
           terraform init -input=false
           terraform apply -input=false -auto-approve
@@ -494,4 +508,5 @@ jobs:
           E2E_WHATSAPP_SENDER_PHONE_NUMBER_ID: ${{ vars.E2E_WHATSAPP_SENDER_PHONE_NUMBER_ID }}
           E2E_WHATSAPP_BOT_NUMBER: ${{ vars.E2E_WHATSAPP_BOT_NUMBER }}
           E2E_WHATSAPP_SENDER_NUMBER: ${{ vars.E2E_WHATSAPP_SENDER_NUMBER }}
+          E2E_TEAMS_DIRECTLINE_SECRET: ${{ secrets.E2E_TEAMS_DIRECTLINE_SECRET }}
         run: uv run pytest -v -rs
