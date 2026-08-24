@@ -14,10 +14,21 @@ Mounting `AGUIRequestHandler` is what turns the surface on. The `agui` config bl
 it; there is deliberately no `enabled` flag.
 
 ```python
+from typing import Optional
+
 from agentkernel.agui import AGUIRequestHandler
 from agentkernel.api import RESTAPI
+from agentkernel.auth import Authoriser
 from agentkernel.openai import OpenAIModule
 from agents import Agent
+
+
+class MyAuthoriser(Authoriser):
+    """Validate the Bearer token and return the caller's user id, or None to reject."""
+
+    def authorise(self, token: str) -> Optional[str]:
+        return "demo-user" if token == "demo-token" else None
+
 
 agent = Agent(name="planner", instructions="You are a helpful assistant.")
 OpenAIModule([agent])

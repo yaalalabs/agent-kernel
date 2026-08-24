@@ -157,7 +157,7 @@ async for chunk in service.stream_multi(requests):
         print(chunk.delta, end="")
 ```
 
-Frameworks without native token streaming (CrewAI, Smolagents) raise `NotImplementedError` and declare `supports_streaming = False`, so a streaming surface rejects the request up front rather than provoking the raise; use the default synchronous mode (or `rest_sync` on AWS) with those frameworks.
+Frameworks whose Agent Kernel adapters do not implement streaming yet (CrewAI, Smolagents) raise `NotImplementedError` and declare `supports_streaming = False`, so a streaming surface rejects the request up front rather than provoking the raise; use the default synchronous mode (or `rest_sync` on AWS) with those frameworks. Both SDKs stream natively — the gap is the adapter, not the framework.
 
 ## Execution Flow
 

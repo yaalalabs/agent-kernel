@@ -339,7 +339,7 @@ if __name__ == "__main__":
 
 ## Streaming
 
-Set `execution.mode: stream` in `config.yaml` (or `AK_EXECUTION__MODE=stream`) to enable token-level streaming. When this mode is active, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON; no other code changes are required.
+Set `execution.mode: stream` in `config.yaml` (or `AK_EXECUTION__MODE=stream`) to enable event streaming. When this mode is active, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON; no other code changes are required.
 
 **Request:** Same JSON/multipart payload as the non-streaming endpoints.
 

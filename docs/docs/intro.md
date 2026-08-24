@@ -263,7 +263,7 @@ You can:
 - Test locally with the CLI
 - Deploy to **AWS Lambda**, **Azure Functions**, or **GCP Cloud Run** with one line-change (multi-cloud!)
 - Deploy to **AWS ECS/Fargate**, **Azure Container Apps**, or **GCP Cloud Run (always-on)** for containerized workloads
-- Expose as a REST API, with SSE token streaming via `execution.mode: stream`
+- Expose as a REST API, with SSE event streaming via `execution.mode: stream`
 - Scale out with SQS-backed queue mode and WebSocket delivery on AWS
 - Integrate with MCP, A2A, or AG-UI protocols
 

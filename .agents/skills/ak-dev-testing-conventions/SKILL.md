@@ -164,8 +164,10 @@ class StreamingDummyRunner(Runner):
 ```
 
 Only `TextDelta` and `ReasoningDelta` reach `PostHook.on_stream_chunk()`, and only `TextDelta` is
-projected into `StreamChunk.delta` — so a test that accumulates the reply must filter on the key's
-presence rather than slice by position, since the boundary frames carry no `delta` at all.
+projected into `StreamChunk.delta` — so a test that accumulates the reply must filter on
+`chunk.delta is not None` rather than slice by position. (`delta` is a model field, so the attribute
+always exists; it is `None` on every non-text frame. Key *presence* is the wire-format rule, which
+applies to the serialised SSE frames, not to the objects a test sees.)
 
 ### Async Test Patterns
 

@@ -18,7 +18,7 @@ Unlike the queue-based streaming example, there is only **one** ECS service here
 - authenticates the WebSocket `$connect` handshake,
 - runs the agent **inline** when a `chat` frame arrives (no SQS, no separate Agent Runner
   service), and
-- pushes each token delta straight back over the same connection as its own `STREAM_CHUNK`
+- pushes each stream event straight back over the same connection as its own `STREAM_CHUNK`
   message, terminated by a chunk with `"done": true`.
 
 No application code changes are needed to go from `async` to `stream` in direct mode — `app.py` is
@@ -43,7 +43,7 @@ identical to `openai-websocket`'s; only `config.yaml` (`execution.mode: stream`)
    (see `app.py`). A non-2xx response rejects the connection.
 3. The client sends a JSON frame on the `chat` route (see below). The container runs the agent
    inline via `ChatService.process_stream_chat_async` and pushes one `STREAM_CHUNK` message per
-   token delta back over the same connection, followed by a final chunk with `"done": true`.
+   stream event back over the same connection, followed by a final chunk with `"done": true`.
 4. On close, API Gateway routes `$disconnect` to the container, which removes the connection
    record.
 
@@ -65,7 +65,7 @@ Send (note the top-level `route` field — the WebSocket API's
 
 The chat frame's own HTTP response (from the WS API Gateway integration) just confirms the
 request was accepted — the reply arrives over the connection as a **sequence** of pushes, one per
-token delta, terminated by a chunk with `"done": true`:
+stream event, terminated by a chunk with `"done": true`:
 
 ```json
 {"type": "STREAM_CHUNK", "event": {"type": "message_start", "message_id": "m1", "role": "assistant"}, "session_id": "..."}
@@ -76,7 +76,9 @@ token delta, terminated by a chunk with `"done": true`:
 {"type": "STREAM_CHUNK", "done": true, "session_id": "..."}
 ```
 
-A client should append `delta` values in the order received until it sees `"done": true`. If the
+A client should append `delta` values in the order received until it sees `"done": true`, testing for
+the key rather than assuming it: every chunk carries `event`, but `delta` appears only on a
+`text_delta`, so the boundary and tool-call chunks have no `delta` at all. If the
 agent run fails, a single chunk with `"error": "<message>"` and `"done": true` is pushed instead —
 there is no partial `error` + separate `done` chunk.
 

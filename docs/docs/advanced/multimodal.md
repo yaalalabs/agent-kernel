@@ -80,7 +80,7 @@ The table above describes the **thread-off** path. When threads are enabled,
 `ConversationThreadManager.store_attachments` stores `image_data` / `file_data` verbatim before the
 hook runs and does no source-form classification — so a `data:` URI or a URL is persisted corrupted,
 and the description the agent later sees is of those corrupted bytes. Bare base64 is unaffected. This
-is tracked as a follow-up; until it lands, send bare base64 when threads are on.
+is a known limitation: send bare base64 when threads are on.
 :::
 
 ## Attachment Storage

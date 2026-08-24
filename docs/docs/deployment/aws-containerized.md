@@ -15,7 +15,7 @@ Three topologies are supported:
 | **WebSocket mode** | One (direct) or two (queue, same split as above) | `execution_mode = "async"` or `"stream"` in Terraform | Real-time, bidirectional, connection-based interactions |
 
 :::note Protocol support
-ECS containers serve JSON REST by default. **SSE token streaming** (`execution.mode: stream`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. **WebSocket mode** is also available on ECS via a WebSocket API Gateway — see [WebSocket Mode](#websocket-mode) below — as either `execution_mode = "async"` (one `CHAT_RESPONSE` push per reply) or `"stream"` (one `STREAM_CHUNK` push per stream event).
+ECS containers serve JSON REST by default. **SSE event streaming** (`execution.mode: stream`) is available in the **Simple REST** topology (single container running `RESTAPI`) with streaming-capable frameworks. **WebSocket mode** is also available on ECS via a WebSocket API Gateway — see [WebSocket Mode](#websocket-mode) below — as either `execution_mode = "async"` (one `CHAT_RESPONSE` push per reply) or `"stream"` (one `STREAM_CHUNK` push per stream event).
 :::
 
 ## Simple REST Architecture

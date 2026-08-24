@@ -14,7 +14,7 @@ token-by-token as a sequence of `STREAM_CHUNK` messages instead of one final `CH
 Chat frames are enqueued to SQS and processed by a separately-scalable Agent Runner service, same
 as `openai-websocket-scalable` — the only difference is `execution.mode: stream` in `config.yaml`
 (and `execution_mode = "stream"` in `deploy/main.tf`): the agent's reply is delivered as a sequence
-of `STREAM_CHUNK` messages, one per token delta, instead of a single `CHAT_RESPONSE` once the
+of `STREAM_CHUNK` messages, one per stream event, instead of a single `CHAT_RESPONSE` once the
 agent finishes.
 
 No application code changes are needed to go from `async` to `stream` — both `app_rest_service.py`
@@ -73,7 +73,7 @@ Connect with `wss://<endpoint>/<stage>?token=<jwt>`, then send:
 ```
 
 The chat frame's own HTTP response (from the WS API Gateway integration) just confirms the
-request was queued — the reply arrives later as a **sequence** of pushes, one per token delta,
+request was queued — the reply arrives later as a **sequence** of pushes, one per stream event,
 terminated by a chunk with `"done": true`:
 
 ```json
@@ -86,7 +86,9 @@ terminated by a chunk with `"done": true`:
 ```
 
 A client should append `delta` values in the order received (SQS FIFO ordering + `session_id` as
-the message group id keeps chunks for one request in order) until it sees `"done": true`. If the
+the message group id keeps chunks for one request in order) until it sees `"done": true`, testing for
+the key rather than assuming it: every chunk carries `event`, but `delta` appears only on a
+`text_delta`, so the boundary and tool-call chunks have no `delta` at all. If the
 agent run fails, a single chunk with `"error": "<message>"` and `"done": true` is pushed instead —
 there is no partial `error` + separate `done` chunk.
 

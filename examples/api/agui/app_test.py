@@ -160,7 +160,9 @@ async def test_a_tool_call_is_streamed_as_tool_call_events(base_url):
 
     The result is matched to its own call's id rather than counted: a set of every `TOOL_CALL_*` id is
     non-empty even when the two disagree, so counting cannot fail on the decorrelation this is meant
-    to catch.
+    to catch. Its content is asserted for the same reason — the agents SDK turns a tool exception into
+    an error-string result, so the events still arrive and correlate when the tool body is broken.
+    The fixture holds one open task of two, so a working tool reports `1 of 2`.
     """
     thread_id = str(uuid.uuid4())
     state = {"tasks": [{"title": "milk", "done": False}, {"title": "bread", "done": True}]}
@@ -174,8 +176,9 @@ async def test_a_tool_call_is_streamed_as_tool_call_events(base_url):
     call = next((e for e in started if e["toolCallName"] == "count_open_tasks"), None)
     assert call is not None, [e.get("toolCallName") for e in started]
 
-    result_ids = {e["toolCallId"] for e in events if e["type"] == "TOOL_CALL_RESULT"}
-    assert call["toolCallId"] in result_ids, (call["toolCallId"], result_ids)
+    results = [e for e in events if e["type"] == "TOOL_CALL_RESULT" and e["toolCallId"] == call["toolCallId"]]
+    assert results, (call["toolCallId"], [e.get("toolCallId") for e in events if e["type"] == "TOOL_CALL_RESULT"])
+    assert "1 of 2" in results[0]["content"], results[0]["content"]
 
 
 @pytest.mark.skipif(not os.getenv("AK_DEMO_REASONING_MODEL"), reason="reasoning is opt-in; set AK_DEMO_REASONING_MODEL")

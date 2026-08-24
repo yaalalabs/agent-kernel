@@ -62,7 +62,7 @@ Wraps a framework-specific agent. Key properties:
 Encapsulates framework-specific execution logic:
 
 - **`run(agent, session, requests) -> AgentReply`**: Async method that executes the agent with the given requests within a session context
-- **`stream(agent, session, requests) -> AsyncGenerator[StreamEvent, None]`**: Abstract async generator that yields typed **stream events** (`core/event.py`), not strings, for streaming execution (`execution.mode: stream`) and for the AG-UI surface. The twelve members are message boundaries (`MessageStart`/`TextDelta`/`MessageEnd`), reasoning (`ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`), tool calls (`ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`) and steps (`StepStart`/`StepEnd`). Frameworks without native token streaming (CrewAI, smolagents) implement it by raising `NotImplementedError`
+- **`stream(agent, session, requests) -> AsyncGenerator[StreamEvent, None]`**: Abstract async generator that yields typed **stream events** (`core/event.py`), not strings, for streaming execution (`execution.mode: stream`) and for the AG-UI surface. The twelve members are message boundaries (`MessageStart`/`TextDelta`/`MessageEnd`), reasoning (`ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`), tool calls (`ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`) and steps (`StepStart`/`StepEnd`). Frameworks whose adapters do not implement streaming yet (CrewAI, smolagents) implement it by raising `NotImplementedError` — both SDKs stream natively, so the gap is the unwired adapter
 - **`supports_streaming -> bool`**: Whether this runner streams. A runner whose adapter leaves `stream()` raising declares `False`, so a caller can reject the request instead of provoking the raise. Defaults to `True`
 - **Adapter state is a local, never an attribute.** One `Runner` instance is shared across every agent and every concurrent session, so anything an adapter remembers mid-stream (a derived message id, a "already opened" flag) must live inside the `stream()` call. On `self` it would leak between sessions
 - Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`, `PydanticAIRunner`)
@@ -540,7 +540,8 @@ ak-py/src/agentkernel/
 │   ├── thread/              # Conversation Thread Support: AgentThreadRequestHandler, ThreadRecorder,
 │   │                        #   ConversationThreadManager, models, naming, store/ backends (alias: agentkernel.thread)
 │   ├── agui/                # AG-UI protocol surface: AGUIRequestHandler (routes), mapping.py
-│   │                        #   (StreamEvent -> AG-UI events), run_input.py (RunAgentInput parsing)
+│   │                        #   (StreamEvent -> AG-UI events), run_input.py (RunAgentInput parsing),
+│   │                        #   state.py (shared-state accessors + the state/client-context tools)
 │   │                        #   (alias: agentkernel.agui)
 │   ├── slack/
 │   ├── whatsapp/

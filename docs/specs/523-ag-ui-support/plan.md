@@ -677,6 +677,29 @@ failed on the first row. Located by `grep -rln 'data: {"delta"\|"delta": ' examp
 | `docs/docs/deployment/aws-containerized.md` | "one `STREAM_CHUNK` push per token delta" → per stream event | Prose describing the wire shape without naming `StreamChunk`, `delta` or `Runner.stream` |
 | `docs/docs/frameworks/pydantic-ai.md` | a whole `:::info Streaming limitation` callout claiming a streamed run "stops at the **first `output_type` match**" | Not a streaming-*contract* surface at all — a framework page, describing a limitation of `run_stream()` that PR 6 removed by replacing it |
 
+**A third round, found by review of PR 7 itself.** Sweeping for the *shape* rather than the identifier
+turned up eight more surfaces, and two of them say something stronger than stale wording:
+
+| File | What changed | Why the inventory missed it |
+|---|---|---|
+| `core-concepts/configuration.md`, `core-concepts/overview.md` | listed the streaming frameworks as OpenAI/LangGraph/ADK — **Pydantic AI missing** since PR 6 | A capability *added* elsewhere leaves lists stale in places that name no changed symbol |
+| `api/rest-api.md`, `architecture/overview.md`, `deployment/overview.md`, `deployment/aws-serverless.md` | token-level phrasing for a frame that is now a stream event | Prose without identifiers, a fourth time |
+| `ak-deployment/ak-aws/{containerized,serverless}/README.md` | "token deltas … each as its own `STREAM_CHUNK`" / "per-token chunks" | **`ak-deployment/` was never in this inventory at all**, though `ak-dev-sync-docs-from-branch` lists it as a required surface |
+| `examples/aws-containerized/*/README.md`, `examples/aws-serverless/streaming-openai/README.md` | prose contradicting the corrected sample directly below it, and client guidance telling readers to append `delta` unconditionally | The samples were fixed by identifier search; the prose around them was not |
+
+The `ak-deployment/` omission is the lesson worth keeping: the inventory was built by grepping code
+identifiers across `docs/` and `examples/`, and a whole required surface tree was never searched.
+
+**Two deferrals, on the record:**
+
+- **User skills (`ak-py/src/agentkernel/skills/`) are not fully covered here.** The one actively wrong
+  statement was fixed — `ak-add-capabilities` described `on_stream_chunk` as handling "each token
+  delta" and `None` as dropping "a token". Adding an AG-UI section to the user skills (MCP and A2A
+  exposure are covered there; AG-UI is not) is left to the post-merge auto-sync.
+- **The breaking-change note ships in the PR description, not a changelog.** The claim above that it
+  ships "as a version/changelog note" has no home in this repo: there is no `CHANGELOG.md` at the root
+  or under `ak-py/`, and #500 shipped the same way without creating one.
+
 The second is worth more than a table row. That claim turned out to exist in **three** places — the
 adapter docstring, `examples/api/pydanticai-streaming/README.md`, and this callout — and all three were
 false the moment PR 6 landed, because `run_stream_events()` wraps `run()` and has no early stop. The

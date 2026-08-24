@@ -107,7 +107,7 @@ from agentkernel.core import Runner
 **Key Features:**
 - Framework-specific execution
 - Async/await support
-- Token-level streaming via `stream()` (OpenAI Agents SDK, LangGraph, Google ADK)
+- Event streaming via `stream()` (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI)
 - Error handling and fault-tolerant execution patterns
 
 [Learn more about Runners →](./runner)
