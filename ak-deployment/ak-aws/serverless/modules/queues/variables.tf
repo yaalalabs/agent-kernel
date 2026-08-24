@@ -19,12 +19,6 @@ variable "tags" {
   default     = {}
 }
 
-variable "input_content_based_deduplication" {
-  type        = bool
-  description = "Force content-based deduplication on the Input Queue, on top of queue_config.content_based_deduplication. Required when EventBridge Scheduler targets it: Scheduler cannot set a MessageDeduplicationId, so without it two occurrences of an otherwise identical trigger body would collapse into one. Application senders are unaffected — an explicit MessageDeduplicationId always takes precedence"
-  default     = false
-}
-
 variable "queue_config" {
   description = "Queue configuration object"
   type = object({
@@ -41,6 +35,7 @@ variable "queue_config" {
     input_queue_delay_seconds       = optional(number, 0) # The time in seconds that the delivery of all messages in the queue will be delayed
     input_queue_create_dlq          = optional(bool, false) # Whether to create a dead letter queue
     input_queue_dlq_message_retention_seconds = optional(number, 1800) # How long messages remain in DLQ (default: 1 hour)
+    input_queue_content_based_deduplication = optional(bool, false) # Force content-based deduplication on the Input Queue, on top of content_based_deduplication. Set by the root from `enable_scheduling`, not by users: EventBridge Scheduler cannot set a MessageDeduplicationId on the triggers it delivers, so without it two occurrences of an otherwise identical trigger body would collapse into one. Application senders are unaffected — an explicit MessageDeduplicationId always takes precedence
     
     # Output queue configuration
     output_queue_visibility_timeout = optional(number, 60) # Visibility timeout for messages

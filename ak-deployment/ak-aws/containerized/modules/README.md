@@ -83,6 +83,8 @@ queue_config = {
   input_queue_max_receive_count             = 5
   input_queue_create_dlq                    = false
   input_queue_dlq_message_retention_seconds = 1800
+  # Set by the root from `enable_scheduling`, not by users
+  input_queue_content_based_deduplication   = false
 
   # Output queue
   output_queue_visibility_timeout            = 60

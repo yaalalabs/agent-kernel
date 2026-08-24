@@ -11,10 +11,11 @@ module "queues" {
   env_alias     = var.env_alias
   module_name   = var.module_name
 
-  queue_config = var.queue_config
-
-  # EventBridge Scheduler cannot set a MessageDeduplicationId on the triggers it delivers.
-  input_content_based_deduplication = var.enable_scheduling
+  # EventBridge Scheduler cannot set a MessageDeduplicationId on the triggers it delivers, so
+  # scheduling forces content-based deduplication on the Input Queue.
+  queue_config = merge(var.queue_config, {
+    input_queue_content_based_deduplication = var.enable_scheduling
+  })
 
   tags = var.tags
 }
