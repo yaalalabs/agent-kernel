@@ -1,8 +1,7 @@
-import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, Iterator, Optional
+from typing import Dict, Iterator, Optional
 
 from ...core.config import AKConfig
 
@@ -73,71 +72,30 @@ class ResponseStore(ABC):
         """Release a request's chunk state, unblocking any pending reader. Chunk-streaming stores only."""
         raise NotImplementedError(f"{type(self).__name__} does not support chunk streaming")
 
-    def get_message_with_retry(self, request_id: str, get_and_delete: bool = False, async_mode: bool = False):
-        """
-        Wait until a message exists for a request ID and retrieve it.
-
-        :param request_id: Request ID
-        :param get_and_delete: Delete the message after retrieval when True
-        :param async_mode: If True, returns an awaitable that polls using
-            asyncio.sleep/asyncio.to_thread instead of blocking, so an async caller
-            can await it without holding a worker thread for the whole wait.
-        :return: message record as dict or None if not found (or an awaitable of the same, when async_mode=True)
-        """
-        if async_mode:
-            return self._get_message_with_retry_async(request_id, get_and_delete)
-        return self._poll_with_retry(self.get_message, request_id, get_and_delete)
-
     def get_record_with_retry(self, request_id: str, get_and_delete: bool = False) -> Dict | None:
         """
         Wait until a record exists for a request ID and retrieve the whole record.
 
-        The record-level counterpart of :meth:`get_message_with_retry`, for callers that must
-        honor the stored ``status_code`` instead of returning the body alone.
+        Polls the full record (:meth:`get_record`) rather than the body alone, so callers can
+        honor the stored ``status_code``; read ``record["body"]`` for the message itself.
 
         :param request_id: Request ID
         :param get_and_delete: Delete the record after retrieval when True
         :return: the stored record as dict or None if not found
         """
-        return self._poll_with_retry(self.get_record, request_id, get_and_delete)
-
-    def _poll_with_retry(self, read: Callable[[str, bool], Dict | None], request_id: str, get_and_delete: bool) -> Dict | None:
-        """
-        Poll ``read`` on the configured retry budget until it yields a value.
-
-        :param read: Reader called as ``read(request_id, get_and_delete)``
-        :param request_id: Request ID
-        :param get_and_delete: Delete the entry after retrieval when True
-        :return: The first non-None read, or None once the budget is exhausted
-        """
         retry_count, delay = self._get_retry_config()
         for attempt in range(retry_count):
             self._log.debug("Attempt %d/%d for request_id=%s", attempt + 1, retry_count, request_id)
-            result = read(request_id, get_and_delete)
-            if result is not None:
-                return result
+            record = self.get_record(request_id, get_and_delete)
+            if record is not None:
+                return record
             if attempt < retry_count - 1:
                 time.sleep(delay)
         return None
 
-    async def _get_message_with_retry_async(self, request_id: str, get_and_delete: bool = False) -> Dict | None:
-        """
-        Async counterpart of get_message_with_retry: yields the event loop via
-        asyncio.sleep between attempts instead of blocking a thread for the full wait.
-        """
-        retry_count, delay = self._get_retry_config()
-        for attempt in range(retry_count):
-            self._log.debug("Attempt %d/%d for request_id=%s", attempt + 1, retry_count, request_id)
-            message = await asyncio.to_thread(self.get_message, request_id, get_and_delete)
-            if message is not None:
-                return message
-            if attempt < retry_count - 1:
-                await asyncio.sleep(delay)
-        return None
-
     @staticmethod
     def _get_retry_config() -> tuple[int, float]:
-        """Read (retry_count, delay) for get_message_with_retry from config.
+        """Read (retry_count, delay) for get_record_with_retry from config.
 
         Falls back to _ResponseStoreConfig's defaults when no execution.response_store block is
         configured (possible on the pipeline's local default path) instead of raising.
