@@ -47,6 +47,8 @@ Run the injection script from the workspace root:
 
 ```bash
 python3 scripts/deploy/inject_dependencies.py
+# or
+make deploy-inject
 ```
 
 This will:
@@ -60,6 +62,8 @@ To revert `main.tf` files back to using Terraform registry modules:
 
 ```bash
 python3 scripts/deploy/inject_dependencies.py --revert
+# or
+make deploy-revert
 ```
 
 This will:
