@@ -5,6 +5,8 @@ from typing import Any, Callable, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict
 
+from .event import StreamEvent
+
 
 class AgentRequestText(BaseModel):
     """
@@ -171,7 +173,18 @@ class ExecutionMode(str, Enum):
 
 
 class StreamChunk(BaseModel):
+    """
+    A single frame of a streamed agent response.
+
+    `delta` carries assistant prose only, and is the field plain text consumers concatenate.
+    `event` carries the full typed event the runner emitted, for consumers that render tool calls,
+    reasoning and message boundaries. `Runtime.stream` is the only place that populates the two
+    together; `delta` is therefore a plain field rather than one derived from `event`, so a
+    `StreamChunk(delta=...)` built directly still serialises as it always has.
+    """
+
     delta: str | None = None
+    event: StreamEvent | None = None
     done: bool = False
     error: str | None = None
 

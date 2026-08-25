@@ -17,7 +17,7 @@ locals {
     var.dynamodb_thread_table_arn != null ? {
       AK_THREAD__DYNAMODB__TABLE_NAME = var.dynamodb_thread_table_name
     } : {},
-    # WebSocket modes: full response (async) vs per-token chunks (stream).
+    # WebSocket modes: full response (async) vs one chunk per stream event (stream).
     contains(["async", "stream"], var.execution_mode) ? {
       AK_EXECUTION__MODE = var.execution_mode
     } : {}

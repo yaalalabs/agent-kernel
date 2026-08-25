@@ -37,6 +37,8 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 |-----------|-------|
 | `test_base.py` | Session, Agent, Runner abstractions |
 | `test_runtime.py` | Runtime registration, execution, hooks |
+| `test_stream_events.py` | `core/event.py`'s `StreamEvent` discriminated union: every member round-trips through JSON (`type` discriminator), rejects an unknown `type`, and stays JSON/pickle-safe (no framework-native fields) |
+| `test_runtime_stream_events.py` | `Runtime.stream()`'s streaming contract (spec `docs/specs/523-ag-ui-support/`): legacy `str` yields normalised into a `MessageStart`/`TextDelta`/`MessageEnd` sequence, `PostHook.on_stream_chunk()` only sees `TextDelta`/`ReasoningDelta` content and a hook's edit is written back into the event, a hook returning `None` drops the whole chunk, `delta` is populated only for `TextDelta`, and the final chunk is a bare `StreamChunk(done=True)` |
 | `test_module.py` | Module load/unload, wrapping |
 | `test_session.py` | Session state, caches, context vars |
 | `test_session_cache.py` | LRU SessionCache |
@@ -46,6 +48,7 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_sessions_dynamodb.py` | DynamoDBSessionStore Binary wrap/unwrap, missing-item skip (mocked driver) |
 | `test_shared_drivers.py` | Shared DB drivers (`core/util/driver/`): retry scope, ping/reconnect, command surface, DynamoDB item-dict semantics |
 | `test_multimodal_redis_store.py` | RedisAttachmentStore index TTL refresh, JSON round trip, pruning (mocked driver) |
+| `test_multimodal_source_forms.py` | `MultimodalPreHook` attachment source-form classification (spec #523 §8): bare base64 and base64 `data:` URIs are described/stored/stripped; `http(s)://`/`s3://` and non-base64 `data:` URIs are retained undescribed; empty `data:` payloads are dropped |
 | `test_config.py` | AKConfig loading, env vars |
 | `test_test_config.py` | AKTestConfig (Test framework config) loading, defaults |
 | `test_tool.py` | ToolContext, cache |
@@ -59,6 +62,7 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_crewai_runner.py` | CrewAIRunner execution (mocked Crew kickoff) |
 | `test_smolagents_runner.py` | SmolagentsRunner execution, multimodal requests, error handling |
 | `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring |
+| `test_langgraph_reasoning_live.py` | LangGraph reasoning against a REAL reasoning model, env-gated (`AK_TEST_REASONING_MODEL`; skipped in normal runs). Guards the premise the chunk-feeding unit tests cannot: that the model streams a summary at all (it must be asked — `reasoning={"summary": "auto"}`) and that LangChain surfaces it under `content_blocks`. Builds a bare `StateGraph`, because `langgraph.prebuilt` is unimportable against the pinned `langgraph` |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
 | `test_chat_service_core.py` | ChatService execution core (`execute`/`execute_stream`): typed replies, prebuilt request lists, validation, error propagation, wrapper wire shapes |
@@ -127,7 +131,8 @@ class DummyRunner(Runner):
     async def stream(self, agent, session, requests):
         # Runner.stream() is abstract — implement even in test doubles.
         # Raise NotImplementedError() (with a trailing `yield`) if the test doesn't exercise streaming,
-        # or yield token strings to test Runtime.stream() / AgentService.stream_multi().
+        # or yield StreamEvent instances (or, TRANSITIONALLY, bare token strings — Runtime.stream()
+        # normalises them) to test Runtime.stream() / AgentService.stream_multi().
         raise NotImplementedError()
         yield
 
@@ -143,6 +148,32 @@ class DummyAgent(Agent):
     def get_a2a_card(self):
         return None
 ```
+
+**A double that *does* exercise streaming yields events, not strings.** `Runner.stream()` is typed
+`AsyncGenerator[StreamEvent, None]`, and `StreamChunk.event` is a discriminated union — so a bare
+`str` raises a `ValidationError` the moment `Runtime.stream()` wraps it. A double owns its own
+boundaries:
+
+```python
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
+
+
+class StreamingDummyRunner(Runner):
+    async def run(self, agent, session, requests):
+        return AgentReplyText(response="ok")
+
+    async def stream(self, agent, session, requests):
+        yield MessageStart(message_id="m-1")
+        for token in ("Hel", "lo"):
+            yield TextDelta(message_id="m-1", content=token)
+        yield MessageEnd(message_id="m-1")
+```
+
+Only `TextDelta` and `ReasoningDelta` reach `PostHook.on_stream_chunk()`, and only `TextDelta` is
+projected into `StreamChunk.delta` — so a test that accumulates the reply must filter on
+`chunk.delta is not None` rather than slice by position. (`delta` is a model field, so the attribute
+always exists; it is `None` on every non-text frame. Key *presence* is the wire-format rule, which
+applies to the serialised SSE frames, not to the objects a test sees.)
 
 ### Async Test Patterns
 

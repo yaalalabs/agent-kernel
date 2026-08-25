@@ -83,6 +83,10 @@ thread = [
     "litellm>=1.74.9",
 ]
 
+agui = [
+    "ag-ui-protocol>=0.1.16",
+]
+
 neo4j = [
     "neo4j>=5.0.0",
 ]
@@ -131,6 +135,7 @@ telegram = [
 teams = [
     "botbuilder-core>=4.17.0",
     "botbuilder-schema>=4.17.0",
+    "aiohttp>=3.9.0",
     "msal>=1.31.1",
     "httpx>=0.27.0",
 ]

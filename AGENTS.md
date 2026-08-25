@@ -68,8 +68,10 @@ When adding or touching an adapter:
   each adapter can look different internally if that's what its underlying tool naturally wants;
   forcing uniformity across adapters is itself an opinion the architecture avoids.
 - **No feature-forcing.** Don't require a capability the underlying framework/service doesn't
-  natively support (e.g. don't fake streaming for a framework with no token-level streaming API —
-  raise `NotImplementedError`, as CrewAI/smolagents `Runner.stream()` already does).
+  natively support (e.g. don't invent a fake token stream when the SDK has no streaming API —
+  raise `NotImplementedError` until a real mapping exists). CrewAI and smolagents *do* stream in
+  their SDKs; their AK adapters still raise because that wiring is not implemented yet — same
+  `NotImplementedError` shape, different reason.
 - **No hidden defaults that change behavior.** Config-driven, explicit choices (`AKConfig`) beat
   adapter-internal heuristics. If an adapter needs a default, make it the same default the native
   tool itself would use.

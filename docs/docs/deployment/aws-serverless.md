@@ -137,7 +137,7 @@ The request handler receives the incoming API request, the agent runner executes
 
 In **WebSocket async mode**, the full agent response is buffered and sent as a single `CHAT_RESPONSE` message once the agent finishes.
 
-In **WebSocket stream mode**, each generated token is sent as a separate `STREAM_CHUNK` message as soon as it is produced, enabling token-level real-time streaming to the client. With queues enabled, `ServerlessStreamAgentRunner` publishes one SQS message per chunk; the response handler then broadcasts each chunk individually via WebSocket. Without queues, the request handler Lambda streams chunks directly through the WebSocket connection.
+In **WebSocket stream mode**, each stream event is sent as a separate `STREAM_CHUNK` message as soon as it is produced, giving the client the answer's text deltas, the agent's reasoning, and its tool calls as they happen. With queues enabled, `ServerlessStreamAgentRunner` publishes one SQS message per chunk; the response handler then broadcasts each chunk individually via WebSocket. Without queues, the request handler Lambda streams chunks directly through the WebSocket connection.
 
 ## Prerequisites
 
@@ -903,12 +903,14 @@ In `async` mode the agent completes, then the full response is broadcast as a si
 
 **Receiving Responses (stream mode)**
 
-In `stream` mode each generated token arrives as a separate `STREAM_CHUNK` message. Reassemble the `delta` fields in order. The chunk with `"done": true` signals the end of the stream. If an unrecoverable error occurs, the final chunk contains an `error` field instead of `delta`. Every chunk also carries the `session_id` from the original request.
+In `stream` mode each stream event arrives as a separate `STREAM_CHUNK` message. Every chunk carries `event` — the typed event it was built from — while `delta` appears **only** on a `text_delta`, so boundary and tool-call chunks have no `delta` key at all and the terminal chunk has neither. Reassemble by testing for the key rather than by position. The chunk with `"done": true` signals the end of the stream; if an unrecoverable error occurs, the final chunk contains an `error` field instead. Every chunk also carries the `session_id` from the original request.
 
 ```json
-{"type": "STREAM_CHUNK", "delta": "Hello",  "done": false, "session_id": "user-123"}
-{"type": "STREAM_CHUNK", "delta": " world", "done": false, "session_id": "user-123"}
-{"type": "STREAM_CHUNK", "delta": "!",      "done": true,  "session_id": "user-123"}
+{"type": "STREAM_CHUNK", "event": {"type": "message_start", "message_id": "m1", "role": "assistant"}, "done": false, "session_id": "user-123"}
+{"type": "STREAM_CHUNK", "delta": "Hello",  "event": {"type": "text_delta", "message_id": "m1", "content": "Hello"},  "done": false, "session_id": "user-123"}
+{"type": "STREAM_CHUNK", "delta": " world", "event": {"type": "text_delta", "message_id": "m1", "content": " world"}, "done": false, "session_id": "user-123"}
+{"type": "STREAM_CHUNK", "event": {"type": "message_end", "message_id": "m1"}, "done": false, "session_id": "user-123"}
+{"type": "STREAM_CHUNK", "done": true, "session_id": "user-123"}
 ```
 
 Error chunk:
@@ -973,7 +975,7 @@ The AWS serverless runtime supports these execution modes:
 
 - `rest_sync` - Synchronous REST: sends request to SQS queue and immediately waits for the matching response from the response store
 - `rest_async` - Asynchronous REST: submits request to SQS queue via POST and returns immediately with ACCEPTED status and a request_id, then poll for response via GET using the same request_id
-- `stream` - Token-level WebSocket streaming: sends each generated token as a separate `STREAM_CHUNK` message via WebSocket as soon as it is produced. Uses `ServerlessStreamAgentRunner` when queues are configured, or direct in-Lambda streaming when queues are disabled. Requires WebSocket API and `websocket_api` configuration.
+- `stream` - Event-level WebSocket streaming: sends each stream event as a separate `STREAM_CHUNK` message via WebSocket as soon as it is produced. Uses `ServerlessStreamAgentRunner` when queues are configured, or direct in-Lambda streaming when queues are disabled. Requires WebSocket API and `websocket_api` configuration.
 - `async` - Full-response WebSocket: buffers the complete agent response and broadcasts it as a single `CHAT_RESPONSE` message via WebSocket once the agent finishes. Requires WebSocket API and `websocket_api` configuration. Response store is not used.
 
 **Queue Mode Interaction**:
@@ -1052,7 +1054,7 @@ export AK_EXECUTION__RESPONSE_STORE__DELAY=5
 
 ### WebSocket Configuration
 
-For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), you need to configure WebSocket API settings in your `config.yaml`. Both modes use the same WebSocket infrastructure; the only difference is how the agent response is delivered to the client (one full message vs per-token chunks).
+For WebSocket modes (`execution_mode = "async"` or `execution_mode = "stream"`), you need to configure WebSocket API settings in your `config.yaml`. Both modes use the same WebSocket infrastructure; the only difference is how the agent response is delivered to the client (one full message vs one chunk per stream event).
 
 ```yaml
 websocket_api:
@@ -1441,7 +1443,7 @@ CloudWatch metrics automatically available:
 |---------|------|--------|-------------|
 | [scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) | `rest_sync` / `rest_async` | Yes | REST API with SQS-backed queue processing |
 | [websocket-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai) | `async` | Yes | Full-response WebSocket delivery |
-| [streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) | `stream` | Yes | Token-level WebSocket streaming with `ServerlessStreamAgentRunner` |
+| [streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) | `stream` | Yes | Event streaming over WebSocket with `ServerlessStreamAgentRunner` |
 | [openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai) | `rest_sync` | No | Simple single-Lambda REST deployment |
 
 See [examples/aws-serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless) for all available examples.

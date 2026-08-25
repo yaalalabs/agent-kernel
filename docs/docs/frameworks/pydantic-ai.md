@@ -169,11 +169,12 @@ content, so text-based consumers (chat integrations, logging) work unchanged. Se
 [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced,
 and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
-:::info Streaming limitation
-Structured output applies to non-streaming execution only. In Agent Kernel's streaming mode a
-Pydantic AI run stops at the **first `output_type` match** and ends the run, so combining
-`output_type` with streaming truncates differently than the non-streaming path. Plain text
-streaming (the common case) is unaffected — it emits token-by-token deltas as usual.
+:::info Structured output and streaming now agree
+This used to be a limitation: the older `run_stream()` treated the **first `output_type` match** as the
+final output, so combining `output_type` with streaming truncated differently from the non-streaming
+path. The adapter now drives `run_stream_events()`, which wraps Pydantic AI's own `run()` — so a
+streamed run and a synchronous one produce the same structured output. Plain-text streaming is
+unaffected; it emits `TextDelta` events as usual.
 :::
 
 ## Per-run context/state

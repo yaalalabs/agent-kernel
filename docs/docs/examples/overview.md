@@ -18,6 +18,8 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
   - `multi/` - Multi-agent runtime with CrewAI and OpenAI agents exposed as A2A compatible
 - **`mcp/`** - Model Context Protocol (MCP) integration examples
   - `multi/` - Multi-agent runtime with agents exposed as MCP tools
+- **`agui/`** - AG-UI protocol example: an OpenAI Agents SDK agent driven by a React/Vite frontend
+  over a streamed AG-UI event surface, with shared state and client-context tools
 - **`slack/`** - Slack integration example
 - **`whatsapp/`** - WhatsApp integration example
 - **`instagram/`** - Instagram integration example
@@ -88,7 +90,7 @@ AWS Lambda serverless deployment examples:
 - **`langgraph/`** - LangGraph agents running on AWS Lambda
 - **`openai/`** - OpenAI agents running on AWS Lambda
 - **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
-- **`streaming-openai/`** - OpenAI agents with WebSocket token-level streaming (`execution.mode: stream`)
+- **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: stream`)
 
 ### 📁 Azure Containerized Examples (`/examples/azure-containerized`)
 

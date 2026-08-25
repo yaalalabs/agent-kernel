@@ -175,6 +175,13 @@ telegram:
   webhook_secret: ""  # Optional webhook security token
   api_version: "bot"  # Bot API version prefix
 
+teams:
+  agent: ""  # Default agent for Microsoft Teams
+  agent_acknowledgement: ""  # Message sent when a Teams message is received
+  app_id: ""  # Azure Bot / Entra ID application (client) ID
+  app_password: ""  # Azure Bot / Entra ID application client secret
+  tenant_id: ""  # Bot app registration's own tenant; empty for a multi-tenant bot
+
 # Guardrails configuration
 guardrail:
   input:
@@ -335,6 +342,13 @@ Alternatively, use `config.json`:
     "bot_token": "",
     "webhook_secret": "",
     "api_version": "bot"
+  },
+  "teams": {
+    "agent": "",
+    "agent_acknowledgement": "",
+    "app_id": "",
+    "app_password": "",
+    "tenant_id": ""
   },
   "guardrail": {
     "input": {
@@ -603,7 +617,7 @@ export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
 **Execution Modes**:
 - `rest_sync` - Synchronous REST: sends request to queue and immediately waits for response from response store (requires queues and response_store)
 - `rest_async` - Asynchronous REST: submits request to queue and returns immediately with request_id, then poll for response from response store (requires queues and response_store)
-- `stream` - Token-level streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK)
+- `stream` - Event streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI)
 - `async` - WebSocket mode for real-time bidirectional communication on AWS serverless (queues optional, response_store not used)
 
 **Notes**:
@@ -760,6 +774,16 @@ telegram:
   bot_token: ""                 # Telegram bot token from BotFather
   webhook_secret: ""            # Optional secret token for webhook security
   api_version: "bot"            # Telegram Bot API version prefix
+
+teams:
+  agent: ""                     # Default agent for Microsoft Teams interactions
+  agent_acknowledgement: ""     # Message sent as an acknowledgement when a Teams message is received
+  app_id: ""                    # Azure Bot / Entra ID application (client) ID
+  app_password: ""              # Azure Bot / Entra ID application client secret
+  tenant_id: ""                 # Entra ID tenant that owns the bot's app registration. Required
+                                # only for a single-tenant registration; empty for a multi-tenant
+                                # bot. Also the fallback tenant for the app-only token used to
+                                # download attachments whose URL is not pre-authenticated
 
 # Trace / Observability
 trace:

@@ -87,6 +87,8 @@ e2e:
     - type: api
       path: examples/api/telegram
     - type: api
+      path: examples/api/teams
+    - type: api
       path: examples/api/messenger
     - type: api
       path: examples/api/whatsapp
@@ -102,6 +104,8 @@ e2e:
       path: examples/api/pydanticai
     - type: api
       path: examples/api/pydanticai-streaming
+    - type: api
+      path: examples/api/agui
     
     # Memory examples
     - type: memory

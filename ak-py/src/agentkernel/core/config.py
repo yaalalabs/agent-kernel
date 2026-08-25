@@ -200,6 +200,20 @@ class _TelegramConfig(BaseModel):
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
 
 
+class _TeamsConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for Microsoft Teams interactions")
+    agent_acknowledgement: str = Field(
+        default="",
+        description="The message to send as an acknowledgement when a Teams message is received",
+    )
+    app_id: str = Field(default="", description="Azure Bot / Entra ID application (client) ID")
+    app_password: str = Field(default="", description="Azure Bot / Entra ID application client secret")
+    tenant_id: str = Field(
+        default="",
+        description="Entra ID tenant that owns the bot's app registration. Required only for a single-tenant registration, whose channel tokens must be issued by its own tenant; leave empty for a multi-tenant bot. Also the fallback tenant for the app-only token used to download attachments whose URL is not pre-authenticated, when the incoming activity carries none",
+    )
+
+
 class _GmailConfig(BaseModel):
     agent: str = Field(default="", description="Default agent to use for Gmail")
     token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")
@@ -710,7 +724,37 @@ class _SandboxConfig(BaseModel):
         return self
 
 
+class _AGUIStateConfig(BaseModel):
+    """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
+
+    enabled: bool = Field(default=False, description="Expose the AG-UI state tools to agents")
+    agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
+
+
+class _AGUIClientContextConfig(BaseModel):
+    """Opt-in for the read-only AG-UI client-context tools (forwarded props and context)."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Expose the read-only AG-UI client-context tools (forwarded props and context) to agents",
+    )
+    agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
+
+
+class _AGUIConfig(BaseModel):
+    """Parameterizes a mounted AGUIRequestHandler. Mounting the handler is what enables AG-UI;
+    this block never switches the surface on. The two nested blocks do switch on agent-facing tools."""
+
+    agents: Optional[list[str]] = Field(default=None, description="Agent names reachable over AG-UI; omitted = all streaming-capable agents")
+    prefix: str = Field(default="/agui", description="Route prefix for the AG-UI surface")
+    default_agent: Optional[str] = Field(default=None, description="Agent served on the bare prefix route")
+    state: _AGUIStateConfig = Field(default_factory=_AGUIStateConfig)
+    client_context: _AGUIClientContextConfig = Field(default_factory=_AGUIClientContextConfig)
+
+
 class AKConfig(YamlBaseSettingsModified):
+    """Root configuration, loaded from config.yaml and `AK_`-prefixed environment variables."""
+
     session: _SessionStoreConfig = Field(
         description="Agent session / memory related configurations",
         default_factory=_SessionStoreConfig,
@@ -727,6 +771,7 @@ class AKConfig(YamlBaseSettingsModified):
     messenger: _MessengerConfig = Field(description="Facebook Messenger related configurations", default_factory=_MessengerConfig)
     instagram: _InstagramConfig = Field(description="Instagram Business API related configurations", default_factory=_InstagramConfig)
     telegram: _TelegramConfig = Field(description="Telegram Bot related configurations", default_factory=_TelegramConfig)
+    teams: _TeamsConfig = Field(description="Microsoft Teams related configurations", default_factory=_TeamsConfig)
     gmail: _GmailConfig = Field(description="Gmail related configurations", default_factory=_GmailConfig)
     multimodal: _MultimodalConfig = Field(description="Multimodal attachment memory configurations", default_factory=_MultimodalConfig)
     thread: Optional[_ThreadStoreConfig] = Field(
@@ -734,6 +779,7 @@ class AKConfig(YamlBaseSettingsModified):
         description="Conversation Thread Support configurations (store backend, naming). The feature is served by mounting AgentThreadRequestHandler; this block only parameterizes it.",
     )
 
+    agui: _AGUIConfig = Field(description="AG-UI integration configurations", default_factory=_AGUIConfig)
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     sandbox: _SandboxConfig = Field(description="Sandbox capability configurations", default_factory=_SandboxConfig)

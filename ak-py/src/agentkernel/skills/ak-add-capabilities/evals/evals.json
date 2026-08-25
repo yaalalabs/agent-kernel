@@ -1,6 +1,6 @@
 {
   "skill": "ak-add-capabilities",
-  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, hooks, multimodal, conversation threads, sandbox) skill",
+  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, sandbox) skill",
   "version": "0.8.1",
   "evals": [
     {
@@ -179,6 +179,21 @@
         "agentkernel[",
         "a2a",
         ".well-known/agent.json"
+      ]
+    },
+    {
+      "id": "cap-agui",
+      "name": "Enable AG-UI server",
+      "input": "Expose my agent over the AG-UI protocol so a frontend can stream it",
+      "expected_outputs": [
+        "agui:",
+        "AGUIRequestHandler",
+        "agentkernel[",
+        "agui",
+        "Authoriser"
+      ],
+      "must_not_contain": [
+        "type: bedrock"
       ]
     },
     {
