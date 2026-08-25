@@ -129,6 +129,23 @@
       ]
     },
     {
+      "id": "deploy-aws-scheduling-eventbridge",
+      "name": "Deploy scheduled tasks on AWS ECS with EventBridge Scheduler",
+      "input": "Deploy my agent to AWS ECS Fargate in queue mode with scheduled tasks backed by EventBridge Scheduler and DynamoDB",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/aws",
+        "queue_mode                     = true",
+        "enable_scheduling              = true",
+        "create_dynamodb_schedule_table = true",
+        "schedule:",
+        "type: eventbridge",
+        "type: dynamodb"
+      ],
+      "must_not_contain": [
+        "azurerm"
+      ]
+    },
+    {
       "id": "deploy-aws-containerized-websocket",
       "name": "Deploy to AWS ECS Fargate over WebSocket",
       "input": "Deploy my agent to AWS ECS Fargate with a WebSocket API for real-time chat",
