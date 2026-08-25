@@ -124,7 +124,13 @@ knowledge of conversation threads (that lives in `integration/thread/`).
   - `requests=None`: `RequestBuilder` builds the list from the pydantic request (prompt required).
     `requests` supplied: the caller-built list is used as-is (prompt optional, list must be non-empty): this
     is how messaging integrations pass platform-downloaded attachments and extra `AgentRequestAny` context
-  - Each call selects the agent/session through a fresh `AgentHandler` (raises `ValueError("No agent available")`)
+  - Each call selects the agent/session via `prepare_agent_handler(session_id, agent) -> AgentHandler`, which
+    wraps `AgentService.ensure_agent_available(name)` (raises `ValueError` for an unmatched agent *before*
+    selecting or loading a session — so a request that could never be answered fails before any state
+    commits) followed by `AgentService.select(session_id, agent)`. `execute`/`execute_stream` call it
+    internally; surfaces that need the session object *between* load and run — AG-UI writes state and
+    client context onto it before the runner starts — call `ChatService.prepare_agent_handler` directly
+    instead, since `execute_stream` hides the handler
   - Two scheduling checks run at the top of each entry point, before validation and agent selection:
     `_maybe_schedule` defers a request carrying a `schedule` block (returning the 202 acknowledgement
     instead of running it) and `_record_trigger` records the occurrence of a scheduled trigger. Both reach
@@ -359,6 +365,69 @@ while `type` defaults to `in_memory`, a mounted handler plus a flag but *without
 `thread.type` runs against the non-durable in-memory backend, with no error.
 
 Attachments in thread mode additionally require `multimodal.enabled: true` with a shared attachment store (`in_memory`, `redis`, or `dynamodb`: `session_cache` is rejected, since threads need durable, cross-request-scoped attachment storage that a session-local cache can't provide).
+
+## AG-UI Integration (`ak-py/src/agentkernel/integration/agui/`)
+
+The [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui) surface for streaming an agent run to a
+compliant frontend (public alias `agentkernel.agui`, requires the `agui` extra —
+`ag-ui-protocol>=0.1.16`). Packaged as an **integration** the same way conversation threads are:
+**mounting `AGUIRequestHandler` is what enables it**, the `agui` config block only parameterizes it,
+and `core/`/`api/` contain no AG-UI code. It exists because AK's runner streaming contract was widened
+from plain text deltas to typed `StreamEvent`s (`core/event.py`, carried on `StreamChunk.event`,
+`core/model.py:187`) specifically so tool-call, step and reasoning information the framework adapters
+already receive survives to a frontend instead of being discarded at the text-only boundary.
+
+- **`AGUIRequestHandler`** (`handler.py`): extends `AuthorisedRESTRequestHandler`. Refuses to
+  construct without an `Authoriser` or `AuthValidator` (AG-UI runs agents on a caller's behalf and has
+  no anonymous mode) or without the `ag_ui.core` import (raises `ValueError` naming the `agui` extra).
+  Routes: `GET {agui.prefix}/agents` (names only — never `get_description()`, which would leak a
+  system prompt), `POST {agui.prefix}/{agent_name}`, and `POST {agui.prefix}` when
+  `agui.default_agent` is set. `_resolve_agent` 404s indistinguishably for unknown-vs-unexposed agent
+  names and 400s when `agent.runner.supports_streaming` is `False`. `_run` does everything that can
+  still become an HTTP status (auth, agent resolution, body parse, `AGUIRunInput.to_requests`) before
+  the session is written, then hands off to `_events`, an `AsyncGenerator` that always yields
+  `RunStartedEvent` first and exactly one of `RunFinishedEvent`/`RunErrorEvent` last — every failure
+  after the stream starts is reported as `RunErrorEvent` since the HTTP status is already sent
+- **`AGUIMapper.to_agui`** (`mapping.py`): translates one AK `StreamEvent` to its AG-UI event
+  (`message_start`/`text_delta`/`message_end` → `TextMessage*`, `tool_call_*` → `ToolCall*`,
+  `step_start`/`step_end` → `Step*`, `reasoning_*` → `ReasoningMessage*`); returns `None` for event
+  types AG-UI has no equivalent for, so unmapped AK event types are silently dropped rather than
+  breaking the stream
+- **`AGUIRunInput`** (`run_input.py`): parses the `RunAgentInput` request body, maps its messages to
+  `AgentRequest`s (`threadId` is AK's `session_id`; only the final `user` message is read since history
+  is rebuilt from the session store), rejects audio/video content with 400 (no AK request type covers
+  them), and writes `state`/`forwardedProps`/`context` onto the session
+- **`AGUIState`** (`state.py`): reads/snapshots/diffs the AG-UI shared state stored under a reserved
+  session key in the **non-volatile** cache (survives beyond one run, unlike `forwardedProps`/`context`
+  which live in the volatile cache); a `StateSnapshotEvent` is emitted only when the state actually
+  changed during the run
+- **System tools** (`core/tool.py`, `SystemToolFactory`): `get_agui_state`/`update_agui_state` (gated by
+  `agui.state.enabled`) and the read-only `get_forwarded_props`/`get_agui_context` (gated by
+  `agui.client_context.enabled`) are attached per-agent via the same `agents` allow-list pattern as
+  other system tools (`_agent_allowed`). When a request carries a field but its gating block is
+  disabled for that agent, `AGUIRequestHandler._warn_if_unreadable` logs a warning naming the config
+  key to set — the value is still stored on the session, just unreachable by any tool
+
+### Configuration (`_AGUIConfig` in `config.py`)
+
+```yaml
+agui:
+  agents: ["planner"]        # omitted = every streaming-capable agent is reachable
+  prefix: "/agui"
+  default_agent: "planner"   # must be one of `agents` when both are set
+  state:
+    enabled: true
+    agents: ["planner"]      # omitted = every agent
+  client_context:
+    enabled: true
+    agents: ["planner"]      # omitted = every agent
+```
+
+Only `OpenAIRunner`, `LangGraphRunner`, `ADKRunner` and `PydanticAIRunner` currently declare
+`supports_streaming = True`; `CrewAIRunner`/`SmolagentsRunner` still raise `NotImplementedError` from
+`stream()`, so their agents 400 rather than appearing at `GET /agui/agents`. See
+`examples/api/agui` for a full demo (OpenAI Agents SDK agent + React/Vite frontend against
+`@ag-ui/core`).
 
 ## Scheduling (`ak-py/src/agentkernel/schedule/`)
 

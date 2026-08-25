@@ -120,6 +120,7 @@ const sidebars = {
         'api/rest-api',
         'api/mcp-server',
         'api/a2a-server',
+        'api/agui-server',
       ],
     },
     {
