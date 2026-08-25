@@ -31,8 +31,6 @@ variable "queue_config" {
     input_queue_max_receive_count             = optional(number, 5)
     input_queue_create_dlq                    = optional(bool, false)
     input_queue_dlq_message_retention_seconds = optional(number, 1800)
-    # Not user-configurable: set from `enable_scheduling`. EventBridge cannot set MessageDeduplicationId,
-    # so this prevents identical trigger bodies from collapsing; explicit sender IDs always take precedence.
     input_queue_content_based_deduplication = optional(bool, false)
 
     # Output queue settings
