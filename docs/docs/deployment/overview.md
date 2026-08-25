@@ -62,7 +62,7 @@ Independently of *where* you deploy, `execution.mode` selects *how* requests are
 | `rest_sync` (also when `mode` is unset) | HTTP | JSON on the same connection (server awaits the store internally) | `in_memory` / SQS FIFO / Kafka / NATS | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Kubernetes (Kafka/NATS/SQS) |
 | `rest_async` | HTTP | `202 ACCEPTED` + `request_id`, client polls | `in_memory` / SQS FIFO / Kafka / NATS | In-memory / DynamoDB / Redis / Valkey | All server flavors (in-process); AWS Lambda, AWS ECS (SQS); Kubernetes (Kafka/NATS/SQS) |
 | `async` | WebSocket | Single `CHAT_RESPONSE` push when the agent finishes | Any transport | Not used | AWS Lambda, AWS ECS (API Gateway); Kubernetes and self-hosted (the pipeline's gateway tier) |
-| `stream` | SSE or WebSocket | Token-level `StreamChunk`s as they are generated | `in_memory` (SSE path) / any broker (WebSocket path) | Not used | REST API surfaces (SSE); AWS Lambda, AWS ECS (API Gateway WebSocket); Kubernetes and self-hosted (the pipeline's gateway tier) |
+| `stream` | SSE or WebSocket | One `StreamChunk` per stream event as they are generated | `in_memory` (SSE path) / any broker (WebSocket path) | Not used | REST API surfaces (SSE); AWS Lambda, AWS ECS (API Gateway WebSocket); Kubernetes and self-hosted (the pipeline's gateway tier) |
 
 Surfaces mounted with explicit handlers (the thread handler, messaging integrations, custom handlers) execute inline rather than through the pipeline.
 

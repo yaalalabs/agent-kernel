@@ -16,6 +16,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
 - **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
+- **AG-UI Server**: Built-in [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui) handler for driving any streaming-capable agent from an AG-UI frontend, with opt-in shared state and client-context tools
 - **REST API**: Built-in REST API server for agent interaction
 - **Test Automation**: Built-in test suite for testing agents
 
@@ -37,6 +38,12 @@ For LLM-based thread naming with Conversation Thread Support:
 
 ```bash
 pip install "agentkernel[thread]"
+```
+
+For the AG-UI server (`AGUIRequestHandler`):
+
+```bash
+pip install "agentkernel[agui]"
 ```
 
 For the sandbox providers (the `local_subprocess` provider needs no extra; `ec2_ssm` rides
@@ -976,6 +983,52 @@ Configure the REST API server (if using the API module).
 - **Endpoint** (not configurable)
   - The MCP server is always mounted at `/mcp` on the main API server.
   - Full URL: `http://{api.host}:{api.port}/mcp` — use `api.port` / `AK_API__PORT` to change the port.
+
+#### AG-UI Configuration
+
+Mounting `AGUIRequestHandler` (from `agentkernel.agui`, requires the `agentkernel[agui]` extra — `pip
+install "agentkernel[agui]"`) is what enables the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui)
+surface; the `agui` block only parameterizes it, and it never switches the surface on by itself.
+`AGUIRequestHandler` refuses to construct without an `Authoriser` or `AuthValidator` — AG-UI runs
+agents on a caller's behalf and has no anonymous mode. Only agents whose runner declares
+`supports_streaming = True` are reachable (currently OpenAI Agents SDK, LangGraph, Google ADK, and
+Pydantic AI — not CrewAI or Smolagents). See `examples/api/agui`.
+
+- **Agents**
+  - **Field**: `agui.agents`
+  - **Default**: unset (every streaming-capable agent is reachable)
+  - **Description**: Agent names reachable over AG-UI
+  - **Environment Variable**: `AK_AGUI__AGENTS` (comma-separated)
+
+- **Prefix**
+  - **Field**: `agui.prefix`
+  - **Default**: `/agui`
+  - **Description**: Route prefix for the AG-UI surface
+  - **Environment Variable**: `AK_AGUI__PREFIX`
+
+- **Default Agent**
+  - **Field**: `agui.default_agent`
+  - **Default**: unset
+  - **Description**: Agent served on the bare prefix route (`POST {prefix}`, in addition to `POST {prefix}/{agent_name}`); must be one of `agui.agents` when that list is set
+  - **Environment Variable**: `AK_AGUI__DEFAULT_AGENT`
+
+- **State Tools**
+  - **Field**: `agui.state.enabled`
+  - **Default**: `false`
+  - **Description**: Attach `get_agui_state` / `update_agui_state`, giving agents read/write access to AG-UI's shared JSON state (a `StateSnapshot` is streamed back only when the state actually changed)
+  - **Environment Variable**: `AK_AGUI__STATE__ENABLED`
+  - **Field**: `agui.state.agents`
+  - **Default**: unset (every agent gets the tools)
+  - **Environment Variable**: `AK_AGUI__STATE__AGENTS` (comma-separated)
+
+- **Client Context Tools**
+  - **Field**: `agui.client_context.enabled`
+  - **Default**: `false`
+  - **Description**: Attach the read-only `get_forwarded_props` / `get_agui_context` tools over a run's `forwardedProps` and `context` fields; never injected into the prompt automatically
+  - **Environment Variable**: `AK_AGUI__CLIENT_CONTEXT__ENABLED`
+  - **Field**: `agui.client_context.agents`
+  - **Default**: unset (every agent gets the tools)
+  - **Environment Variable**: `AK_AGUI__CLIENT_CONTEXT__AGENTS` (comma-separated)
 
 #### Trace (Observability) Configuration
 

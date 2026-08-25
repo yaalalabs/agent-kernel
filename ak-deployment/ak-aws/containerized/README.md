@@ -438,8 +438,9 @@ Both `queue_mode` settings are supported:
 Modes:
 
 - `async` — the full response is delivered in one WebSocket message once the agent finishes.
-- `stream` — the agent's token deltas are pushed as they're generated, each as its own
-  `STREAM_CHUNK` WebSocket message. With `queue_mode = false`, the ingress service streams
+- `stream` — the agent's stream events are pushed as they're generated, each as its own
+  `STREAM_CHUNK` WebSocket message. Every chunk carries `event`; `delta` appears only on a
+  `text_delta`, so a client must test for the key rather than assume it. With `queue_mode = false`, the ingress service streams
   the agent inline and broadcasts each chunk directly over the connection. With
   `queue_mode = true`, `ECSStreamAgentRunner` fans out each chunk as its own Output Queue
   message and `ECSOutputConsumer` broadcasts every one as a `STREAM_CHUNK`.

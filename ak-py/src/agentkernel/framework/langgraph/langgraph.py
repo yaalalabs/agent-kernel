@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
+from uuid import uuid4
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
@@ -24,13 +26,26 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
+from ...core.event import (
+    MessageEnd,
+    MessageStart,
+    ReasoningDelta,
+    ReasoningEnd,
+    ReasoningStart,
+    StreamEvent,
+    TextDelta,
+    ToolCallArgs,
+    ToolCallEnd,
+    ToolCallResult,
+    ToolCallStart,
+)
 from ...core.model import AgentReply, AgentReplyAny, AgentReplyText, AgentRequest, AgentRequestAny, AgentRequestText
 from ...core.tool import SystemToolFactory
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "langgraph"
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger("ak.langgraph.runner")
 
 
 class CheckPointer(BaseCheckpointSaver):
@@ -417,13 +432,18 @@ class LangGraphRunner(BaseRunner):
             if context is not None:
                 context.reset()
 
-    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
-        Streams the LangGraph agent response token by token.
+        Streams the LangGraph agent response as Agent Kernel stream events.
+
+        Correlation ids are LangChain `run_id`s (one per runnable invocation), so nested model
+        calls do not collide. Tool arguments arrive whole on `on_tool_start` and are emitted as a
+        single fragment — LangChain has no per-token argument stream.
+
         :param agent: The LangGraph agent to run.
         :param session: The session to use for the agent.
         :param requests: The requests to the agent.
-        :return: An async generator yielding string token deltas.
+        :return: An async generator yielding StreamEvent objects.
         """
         context: ToolContext | None = None
         try:
@@ -439,6 +459,8 @@ class LangGraphRunner(BaseRunner):
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
             incoming = self._load_framework_context(session)
+            started: set[str] = set()  # run ids with an open MessageStart; local, never on self
+            reasoning: dict[str, str] = {}  # run id -> open reasoning stream id; local for the same reason
             input_state: dict[str, Any] = {}
             if incoming:
                 input_state.update(incoming)
@@ -449,14 +471,8 @@ class LangGraphRunner(BaseRunner):
                 config=config,
                 version="v2",
             ):
-                if event["event"] == "on_chat_model_stream":
-                    content = event["data"]["chunk"].content
-                    if isinstance(content, str) and content:
-                        yield content
-                    elif isinstance(content, list):
-                        for item in content:
-                            if isinstance(item, dict) and item.get("text"):
-                                yield item["text"]
+                for stream_event in self._map_event(event, started, reasoning):
+                    yield stream_event
 
             # astream_events yields events, not a final state, so read the state back once the stream drains
             # normally. A disconnect or mid-stream error unwinds first, leaving the stored context intact.
@@ -470,6 +486,152 @@ class LangGraphRunner(BaseRunner):
         finally:
             if context is not None:
                 context.reset()
+
+    @staticmethod
+    def _map_event(event: dict, started: set[str], reasoning: dict[str, str]) -> list[StreamEvent]:
+        """
+        Translate one LangChain `astream_events` event into AK events.
+
+        `MessageStart` is deferred until text arrives: LangChain fires chat-model start/end even
+        on tool-only turns, and unconditional bracketing would emit an empty assistant message
+        (§4 rule 4). `started` is keyed by `run_id` (not a single flag) so nested calls close
+        correctly, and must stay a per-stream local — a `Runner` is shared across sessions.
+        Chain/prompt/etc. events are ignored (`on_chain_*` is too coarse for `StepStart`/`StepEnd`).
+
+        Reasoning is a second boundary stream with its own id (message id is already `run_id`).
+        A reasoning id is generated on first use and stored in `reasoning` per `run_id`. Per chunk,
+        reasoning opens first; answer text closes any open reasoning stream before the message
+        opens (same order as the ADK adapter).
+
+        :param event: One event from `astream_events(version="v2")`.
+        :param started: Run ids whose `MessageStart` has been emitted. Mutated in place.
+        :param reasoning: Run id to its open reasoning stream's id. Mutated in place.
+        :return: The AK events this event produces, or an empty list when unmapped.
+        """
+        kind = event["event"]
+        run_id = event["run_id"]
+
+        if kind == "on_chat_model_end":
+            closing: list[StreamEvent] = []
+            thinking_id = reasoning.pop(run_id, None)
+            if thinking_id is not None:
+                closing.append(ReasoningEnd(message_id=thinking_id))
+            if run_id in started:
+                started.discard(run_id)
+                closing.append(MessageEnd(message_id=run_id))
+            return closing
+        if kind == "on_chat_model_stream":
+            texts, thoughts = LangGraphRunner._chunk_content(event)
+            if not texts and not thoughts:
+                return []
+            events: list[StreamEvent] = []
+
+            if thoughts:
+                thinking_id = reasoning.get(run_id)
+                if thinking_id is None:
+                    thinking_id = uuid4().hex
+                    reasoning[run_id] = thinking_id
+                    events.append(ReasoningStart(message_id=thinking_id))
+                events.extend(ReasoningDelta(message_id=thinking_id, content=thought) for thought in thoughts)
+
+            if texts:
+                thinking_id = reasoning.pop(run_id, None)
+                if thinking_id is not None:
+                    events.append(ReasoningEnd(message_id=thinking_id))
+                if run_id not in started:
+                    started.add(run_id)
+                    events.append(MessageStart(message_id=run_id))
+                events.extend(TextDelta(message_id=run_id, content=text) for text in texts)
+            return events
+        if kind == "on_tool_start":
+            call: list[StreamEvent] = [ToolCallStart(tool_call_id=run_id, name=event.get("name") or "")]
+            arguments = LangGraphRunner._tool_arguments(event)
+            if arguments:
+                call.append(ToolCallArgs(tool_call_id=run_id, delta=arguments))
+            call.append(ToolCallEnd(tool_call_id=run_id))
+            return call
+        if kind == "on_tool_end":
+            return [ToolCallResult(tool_call_id=run_id, content=LangGraphRunner._tool_output(event))]
+        return []
+
+    @staticmethod
+    def _chunk_content(event: dict) -> tuple[list[str], list[str]]:
+        """
+        Split one `on_chat_model_stream` chunk into (answer text, reasoning text).
+
+        Reads `content_blocks` (not raw `content`) so provider-specific reasoning placement is
+        normalised. Reasoning text comes from the block's `reasoning` key, with `summary[].text`
+        as fallback for `output_version="v1"`. Empty fragments are dropped.
+
+        :param event: An `on_chat_model_stream` event from `astream_events`.
+        :return: Answer fragments and reasoning fragments (either may be empty).
+        """
+        answer: list[str] = []
+        thoughts: list[str] = []
+        for block in event["data"]["chunk"].content_blocks:
+            kind = block.get("type")
+            if kind == "text":
+                if block.get("text"):
+                    answer.append(block["text"])
+            elif kind == "reasoning":
+                thought = block.get("reasoning") or LangGraphRunner._summary_text(block)
+                if thought:
+                    thoughts.append(thought)
+        return answer, thoughts
+
+    @staticmethod
+    def _summary_text(block: dict) -> str:
+        """Flatten a reasoning block's `summary` list into text.
+
+        The shape `content_blocks` leaves alone at `output_version="v1"`: a list of
+        `{"type": "summary_text", "text": ...}` parts rather than a single `reasoning` string.
+
+        :param block: One reasoning content block.
+        :return: The concatenated summary text, empty when the block carries no usable summary.
+        """
+        summary = block.get("summary")
+        if not isinstance(summary, list):
+            return ""
+        return "".join(part["text"] for part in summary if isinstance(part, dict) and part.get("text"))
+
+    @staticmethod
+    def _tool_arguments(event: dict) -> str:
+        """
+        Serialise an `on_tool_start` input dict into a JSON arguments fragment.
+
+        LangChain hands over a parsed dict rather than the model's original JSON, so it is
+        re-serialised here. On encode failure the call is still bracketed with no arguments —
+        safer mid-stream than letting an exception fail the run.
+
+        :param event: An `on_tool_start` event from `astream_events`.
+        :return: JSON string for `ToolCallArgs.delta`, or `""` if missing/unencodable.
+        """
+        data = event.get("data") or {}
+        tool_input = data.get("input")
+        if tool_input is None:
+            return ""
+        try:
+            return json.dumps(tool_input, default=str)
+        except Exception as e:
+            _logger.warning(f"LangGraph tool input could not be serialised; the tool call is emitted with no arguments: {e!r}")
+            return ""
+
+    @staticmethod
+    def _tool_output(event: dict) -> str:
+        """
+        Read an `on_tool_end` output as text.
+
+        Prefer `ToolMessage.content` when present; otherwise fall back to `str(output)`.
+
+        :param event: An `on_tool_end` event from `astream_events`.
+        :return: Text for `ToolCallResult.content`.
+        """
+        data = event.get("data") or {}
+        output = data.get("output")
+        content = getattr(output, "content", None)
+        if content is not None:
+            return content if isinstance(content, str) else str(content)
+        return "" if output is None else str(output)
 
 
 class LangGraphModule(BaseModule):

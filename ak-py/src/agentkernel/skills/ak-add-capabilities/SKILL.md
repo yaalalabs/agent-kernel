@@ -3,9 +3,9 @@ name: ak-add-capabilities
 description: >
   Add capabilities to an existing Agent Kernel project. This skill guides you through
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
-  A2A server, pre/post hooks, multimodal support, conversation thread support, scheduled tasks
-  (deferred and recurring chat execution), and the sandbox
-  capability (isolated code execution). Session
+  A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support,
+  scheduled tasks (deferred and recurring chat execution), and the sandbox capability
+  (isolated code execution). Session
   persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, Valkey, DynamoDB (AWS), Firestore (GCP),
   and Cosmos DB (Azure) backends. Generates configuration and code changes needed.
@@ -42,7 +42,8 @@ Which capability would you like to add?
 8. **Multimodal** — Image and file attachment support
 9. **Conversation Threads** — Persistent, named conversation history keyed by `session_id`
 10. **Sandbox** — Isolated code/command execution with pluggable providers, workload profiles, policy, and per-user identity
-11. **Scheduled Tasks** — Deferred and recurring chat execution (a `schedule` block on a chat request, management routes, agent tools)
+11. **AG-UI Server** — Stream any agent to an AG-UI-compliant frontend (text, tool calls, reasoning, shared state)
+12. **Scheduled Tasks** — Deferred and recurring chat execution (a `schedule` block on a chat request, management routes, agent tools)
 
 ### Step 3: Generate Changes
 
@@ -469,6 +470,51 @@ a2a:
 
 ---
 
+#### AG-UI Server
+
+Stream any streaming-capable agent (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI — not
+CrewAI or Smolagents) to a frontend over the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui):
+text, tool calls, reasoning, and an optional shared JSON state, all as one typed event stream.
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,agui]>=0.8.1",
+]
+```
+
+2. Update `config.yaml`:
+```yaml
+agui:
+  agents: ["general"]        # omitted = every streaming-capable agent is reachable
+  prefix: "/agui"
+  default_agent: "general"   # also serves POST /agui; must be one of `agents` when both are set
+  state:
+    enabled: true             # attaches get_agui_state / update_agui_state
+  client_context:
+    enabled: true             # attaches read-only get_forwarded_props / get_agui_context
+```
+
+3. Mount `AGUIRequestHandler` with an `Authoriser` (or `AuthValidator`) — AG-UI has no anonymous
+   mode, because a run executes an agent on the caller's behalf:
+```python
+from agentkernel.agui import AGUIRequestHandler
+from agentkernel.api import RESTAPI
+from agentkernel.auth import Authoriser
+
+class MyAuthoriser(Authoriser):
+    def authorise(self, token: str) -> str | None:
+        ...  # validate the token, return the caller's user_id or None
+
+RESTAPI.run(handlers=[AGUIRequestHandler(authoriser=MyAuthoriser())])
+```
+
+4. Routes are served under `agui.prefix`: `GET {prefix}/agents`, `POST {prefix}/{agent_name}`, and
+   `POST {prefix}` when `default_agent` is set. See `examples/api/agui` for a full demo including a
+   React/Vite frontend.
+
+---
+
 #### Custom Hooks
 
 Add custom pre/post processing to your agents.
@@ -539,7 +585,7 @@ module.pre_hook(agent, [RAGPreHook()])
 module.post_hook(agent, [DisclaimerPostHook()])
 ```
 
-**Streaming token hook (optional):** override `on_stream_chunk` on a `PostHook` to inspect or modify each token delta while `execution.mode: stream` is active (e.g. redact sensitive text before it reaches the client). Return `None` to drop a token entirely. Only called when streaming; regular `on_run()` still handles the non-streaming path.
+**Streaming text hook (optional):** override `on_stream_chunk` on a `PostHook` to inspect or modify each piece of streamed text while `execution.mode: stream` is active (e.g. redact sensitive text before it reaches the client). It sees the text-carrying events only — the assistant's `TextDelta` and the model's `ReasoningDelta` — not tool calls or message boundaries. Return `None` to drop the whole chunk, its event included; a returned string is written back into the event, so `delta` and `event` cannot disagree. Only called when streaming; regular `on_run()` still handles the non-streaming path.
 
 ```python
 class RedactingPostHook(DisclaimerPostHook):

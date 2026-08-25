@@ -804,7 +804,7 @@ When `execution_mode = "async"` or `"stream"`, the module creates a WebSocket AP
 - CloudWatch log groups and stage logging
 
 **WebSocket API features**:
-- Real-time bidirectional communication (`async`: full response; `stream`: per-token chunks)
+- Real-time bidirectional communication (`async`: full response; `stream`: one chunk per stream event)
 - Connection lifecycle management
 - DynamoDB-backed connection mapping
 - Route-based message routing

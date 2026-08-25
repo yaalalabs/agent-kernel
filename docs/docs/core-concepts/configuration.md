@@ -644,7 +644,7 @@ export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
 **Execution Modes**:
 - `rest_sync` - Synchronous REST: sends request to queue and immediately waits for response from response store (requires queues and response_store)
 - `rest_async` - Asynchronous REST: submits request to queue and returns immediately with request_id, then poll for response from response store (requires queues and response_store)
-- `stream` - Token-level streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK)
+- `stream` - Event streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI)
 - `async` - WebSocket mode for real-time bidirectional communication on AWS serverless (queues optional, response_store not used)
 
 **Notes**:

@@ -4,10 +4,12 @@ import asyncio
 import base64
 import functools
 import inspect
+import json
 import logging
 import time
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
+from uuid import uuid4
 
 from google.adk.agents import BaseAgent
 from google.adk.agents.run_config import RunConfig, StreamingMode
@@ -35,6 +37,19 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
 from ...core.config import AKConfig
+from ...core.event import (
+    MessageEnd,
+    MessageStart,
+    ReasoningDelta,
+    ReasoningEnd,
+    ReasoningStart,
+    StreamEvent,
+    TextDelta,
+    ToolCallArgs,
+    ToolCallEnd,
+    ToolCallResult,
+    ToolCallStart,
+)
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
@@ -251,13 +266,20 @@ class GoogleADKRunner(BaseRunner):
         except Exception as e:
             return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
 
-    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
-        Streams the Google ADK agent response token by token using SSE mode.
+        Streams the Google ADK agent response as Agent Kernel stream events.
+
+        ADK has no message-start signal or message id — only `partial=True` text fragments, then a
+        `partial=False` aggregated event — so ids are generated here and boundaries are derived from
+        partials. Non-partial text is not re-emitted unless no partials arrived. Reasoning
+        (`Part.thought`) uses a separate id; tool calls use `FunctionCall.id` and are emitted after
+        message boundaries. Open ids are locals — the runner is shared across sessions.
+
         :param agent: The ADK agent to run.
         :param session: The session to use for the agent.
         :param requests: The requests to the agent.
-        :return: An async generator yielding string token deltas.
+        :return: An async generator yielding StreamEvent objects.
         """
         prompt, parts = self._process_requests(requests)
 
@@ -271,28 +293,136 @@ class GoogleADKRunner(BaseRunner):
 
         if hasattr(runner, "run_async"):
             with ctx:
+                message_id: str | None = None  # open message id; local, never on self
+                reasoning_id: str | None = None
+                reasoning_streamed = False
                 async for event in runner.run_async(
                     user_id=user_id,
                     session_id=session.id,
                     new_message=new_message,
                     run_config=run_config,
                 ):
-                    if not getattr(event, "partial", False):
-                        continue
-                    if not event.content or not event.content.parts:
-                        continue
-                    chunk = "".join(getattr(part, "text", "") or "" for part in event.content.parts)
-                    if chunk:
-                        yield chunk
+                    chunk, thinking = self._event_text(event)
 
-                # Only after the stream drains normally, so a disconnect or mid-stream error leaves the stored
-                # context intact. Deliberately not in a finally.
+                    if getattr(event, "partial", False) and thinking:
+                        reasoning_streamed = True
+                        if reasoning_id is None:
+                            reasoning_id = uuid4().hex
+                            yield ReasoningStart(message_id=reasoning_id)
+                        yield ReasoningDelta(message_id=reasoning_id, content=thinking)
+                    elif thinking and not reasoning_streamed:
+                        whole_reasoning = uuid4().hex
+                        yield ReasoningStart(message_id=whole_reasoning)
+                        yield ReasoningDelta(message_id=whole_reasoning, content=thinking)
+                        yield ReasoningEnd(message_id=whole_reasoning)
+
+                    if chunk and reasoning_id is not None:
+                        yield ReasoningEnd(message_id=reasoning_id)
+                        reasoning_id = None
+
+                    if getattr(event, "partial", False):
+                        if chunk:
+                            if message_id is None:
+                                message_id = uuid4().hex
+                                yield MessageStart(message_id=message_id)
+                            yield TextDelta(message_id=message_id, content=chunk)
+                    elif message_id is not None:
+                        yield MessageEnd(message_id=message_id)
+                        message_id = None
+                    elif chunk:
+                        whole = uuid4().hex
+                        yield MessageStart(message_id=whole)
+                        yield TextDelta(message_id=whole, content=chunk)
+                        yield MessageEnd(message_id=whole)
+
+                    tool_events = self._tool_events(event)
+                    if tool_events and reasoning_id is not None:
+                        yield ReasoningEnd(message_id=reasoning_id)
+                        reasoning_id = None
+                    for tool_event in tool_events:
+                        yield tool_event
+
+                if reasoning_id is not None:
+                    yield ReasoningEnd(message_id=reasoning_id)
+                if message_id is not None:
+                    yield MessageEnd(message_id=message_id)
+
+                # After a normal drain only — disconnect/error leaves stored context intact.
                 if incoming is not None:
                     try:
                         produced = await adk_session.get_state()
                         self._store_framework_context(session, incoming, produced)
                     except Exception as e:
                         self._log_framework_context_stream_failure(session, e)
+
+    @staticmethod
+    def _event_text(event: Event) -> tuple[str, str]:
+        """
+        Split one ADK event's text into answer and reasoning (`Part.thought`).
+
+        :param event: One event from `Runner.run_async`.
+        :return: `(answer, reasoning)`, either or both empty.
+        """
+        if not event.content or not event.content.parts:
+            return "", ""
+        answer: list[str] = []
+        reasoning: list[str] = []
+        for part in event.content.parts:
+            text = getattr(part, "text", "") or ""
+            if not text:
+                continue
+            (reasoning if getattr(part, "thought", False) else answer).append(text)
+        return "".join(answer), "".join(reasoning)
+
+    def _tool_events(self, event: Event) -> list[StreamEvent]:
+        """
+        Translate an ADK event's function calls and responses into AK tool events.
+
+        Arguments arrive complete (no per-token stream). Entries without an `id` are skipped —
+        a generated id would not match the response.
+
+        :param event: One event from `Runner.run_async`.
+        :return: The AK events this event's tool activity produces, or an empty list.
+        """
+        events: list[StreamEvent] = []
+
+        for call in event.get_function_calls():
+            call_id = getattr(call, "id", None)
+            if not call_id:
+                self._log.debug(f"ADK function call '{getattr(call, 'name', '?')}' carries no id; not emitted")
+                continue
+            events.append(ToolCallStart(tool_call_id=call_id, name=getattr(call, "name", None) or ""))
+            arguments = self._as_json(getattr(call, "args", None), "arguments")
+            if arguments:
+                events.append(ToolCallArgs(tool_call_id=call_id, delta=arguments))
+            events.append(ToolCallEnd(tool_call_id=call_id))
+
+        for response in event.get_function_responses():
+            call_id = getattr(response, "id", None)
+            if not call_id:
+                self._log.debug(f"ADK function response '{getattr(response, 'name', '?')}' carries no id; not emitted")
+                continue
+            events.append(ToolCallResult(tool_call_id=call_id, content=self._as_json(getattr(response, "response", None), "result")))
+
+        return events
+
+    def _as_json(self, value: Any, what: str) -> str:
+        """
+        Serialise an ADK tool payload dict to JSON.
+
+        On encode failure returns `""` so a mid-stream exception does not fail the run.
+
+        :param value: The `args` or `response` dict, or None.
+        :param what: What is being serialised, for the log line.
+        :return: JSON text, or `""` if missing/unencodable.
+        """
+        if value is None:
+            return ""
+        try:
+            return json.dumps(value, default=str)
+        except Exception as e:
+            self._log.warning(f"ADK tool {what} could not be serialised; it is emitted empty: {e!r}")
+            return ""
 
 
 class GoogleADKAgent(AKBaseAgent):

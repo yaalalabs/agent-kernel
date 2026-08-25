@@ -28,7 +28,7 @@ locals {
     var.dynamodb_schedule_table_arn != null ? {
       AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME = var.dynamodb_schedule_table_name
     } : {},
-    # WebSocket modes: full response (async) vs per-token chunks (stream).
+    # WebSocket modes: full response (async) vs one chunk per stream event (stream).
     contains(["async", "stream"], var.execution_mode) ? {
       AK_EXECUTION__MODE = var.execution_mode
     } : {}
