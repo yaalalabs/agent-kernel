@@ -120,14 +120,27 @@ class <Name>Runner(Runner):
 - Handle all `AgentRequest` subtypes (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`)
 - Return an `AgentReply` (`AgentReplyText` or `AgentReplyImage`)
 
-### 3b. Implement `stream()` for Token Streaming
+### 3b. Implement `stream()` with AK Stream Events
 
-`Runner` declares `stream()` as `@abstractmethod`, so every framework adapter **must** implement it — even if the framework doesn't support token streaming. Its signature is `AsyncGenerator[StreamEvent | str, None]` (`core/event.py`): the `| str` is TRANSITIONAL (PR 1 -> PR 6 of the AG-UI streaming migration tracked in `docs/specs/523-ag-ui-support/`) — adapters not yet migrated to the typed event model still yield raw token strings, and `Runtime.stream()` normalises them into a synthesised `MessageStart`/`TextDelta`/`MessageEnd` sequence. Follow whichever shape the framework adapters you're modelling this on currently use (check `git grep "async def stream" ak-py/src/agentkernel/framework` for the current state — most adapters still yield `str` at time of writing).
+`Runner` declares `stream()` as `@abstractmethod`, returning `AsyncGenerator[StreamEvent, None]` —
+**every** adapter must implement it, even if the framework doesn't support token streaming, and it
+must yield `StreamEvent` members (`core/event.py`: `MessageStart`/`TextDelta`/`MessageEnd`,
+`ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`, `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/
+`ToolCallResult`, `StepStart`/`StepEnd`) — never a bare `str`. A runner that yields a bare `str` is
+rejected by `StreamChunk.event` with a `pydantic.ValidationError`; there is no string-normalisation
+fallback in `Runtime.stream()`.
 
-**If the framework's SDK exposes a token-delta stream** (e.g. an async event stream with text-delta events), implement it directly:
+**If the framework's SDK exposes a token-delta stream**, map its native events onto AK events —
+bracket assistant text with `MessageStart`/`MessageEnd` (deferred until text actually arrives, so a
+tool-only turn doesn't emit an empty message), and map tool-call/tool-result events onto
+`ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult` correlated by the framework's own call
+id where one exists (never generate an id when the framework supplies one — a generated id cannot
+correlate a result to the call that produced it):
 
 ```python
 from collections.abc import AsyncGenerator
+
+from ...core.event import MessageEnd, MessageStart, StreamEvent, TextDelta
 
 async def stream(self, agent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
     tool_context = ToolContext(Runtime.current(), agent, session, requests)
@@ -140,9 +153,16 @@ async def stream(self, agent, session: Session, requests: list[AgentRequest]) ->
         message_id: str | None = None
 
         result = await self._execute_streamed(agent, fw_session, prompt)  # framework-specific
+        message_id: str | None = None  # local — the runner is shared across sessions
         async for event in result:
-            for ak_event in self._map_event(event, ...):  # framework-specific, returns StreamEvents
-                yield ak_event
+            delta = self._extract_text_delta(event)  # framework-specific
+            if delta:
+                if message_id is None:
+                    message_id = uuid4().hex
+                    yield MessageStart(message_id=message_id)
+                yield TextDelta(message_id=message_id, content=delta)
+        if message_id is not None:
+            yield MessageEnd(message_id=message_id)
     finally:
         tool_context.reset()
 ```
@@ -150,8 +170,7 @@ async def stream(self, agent, session: Session, requests: list[AgentRequest]) ->
 **If the framework has no native token streaming** (e.g. CrewAI, smolagents), override `supports_streaming` to `False` and implement `stream()` as a generator that always raises, so a caller can check the property before invoking `stream()` instead of provoking the raise, while `stream()` itself still satisfies the abstract method contract and fails fast with a clear message:
 
 ```python
-@property
-def supports_streaming(self) -> bool:
+async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
     """
     :return: False — this adapter does not implement streaming, so stream() always raises.
     """
@@ -173,7 +192,12 @@ def supports_streaming(self) -> bool:
     return False
 ```
 
-`Runtime.stream()` wraps each event (or normalises each legacy token) into a `StreamChunk`, runs `TextDelta`/`ReasoningDelta` content through `PostHook.on_stream_chunk()`, and forwards it to the caller (REST SSE endpoint or AWS Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new framework's streaming — just implement `Runner.stream()` (and, once your adapter emits typed events natively, drop the `supports_streaming` override if you had one).
+`Runtime.stream()` wraps each yielded event in a `StreamChunk` (`delta` is populated only for
+`TextDelta`, so a plain-text consumer that only reads `StreamChunk.delta` keeps working unchanged),
+runs it through `PostHook.on_stream_chunk()`, and forwards it to the caller (REST SSE endpoint or AWS
+Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new framework's
+streaming — just implement `Runner.stream()`. See `docs/specs/523-ag-ui-support/spec.md` for the full
+event-mapping rules and per-adapter correlation-id/boundary-derivation decisions.
 
 ### 3c. Wire up the per-run framework context
 

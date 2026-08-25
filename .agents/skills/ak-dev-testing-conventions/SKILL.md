@@ -129,10 +129,11 @@ class DummyRunner(Runner):
         return AgentReplyText(response=f"ok:{prompt}")
 
     async def stream(self, agent, session, requests):
-        # Runner.stream() is abstract — implement even in test doubles.
+        # Runner.stream() is abstract — implement even in test doubles, and yield `StreamEvent`
+        # members (never a bare `str` — `StreamChunk.event` rejects it with a `ValidationError`).
         # Raise NotImplementedError() (with a trailing `yield`) if the test doesn't exercise streaming,
-        # or yield StreamEvent instances (or, TRANSITIONALLY, bare token strings — Runtime.stream()
-        # normalises them) to test Runtime.stream() / AgentService.stream_multi().
+        # or yield MessageStart/TextDelta/MessageEnd (own the message's boundaries yourself) to test
+        # Runtime.stream() / AgentService.stream_multi().
         raise NotImplementedError()
         yield
 
