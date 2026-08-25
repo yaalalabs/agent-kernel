@@ -48,6 +48,7 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_sessions_dynamodb.py` | DynamoDBSessionStore Binary wrap/unwrap, missing-item skip (mocked driver) |
 | `test_shared_drivers.py` | Shared DB drivers (`core/util/driver/`): retry scope, ping/reconnect, command surface, DynamoDB item-dict semantics |
 | `test_multimodal_redis_store.py` | RedisAttachmentStore index TTL refresh, JSON round trip, pruning (mocked driver) |
+| `test_multimodal_source_forms.py` | `MultimodalPreHook` attachment source-form classification (spec #523 §8): bare base64 and base64 `data:` URIs are described/stored/stripped; `http(s)://`/`s3://` and non-base64 `data:` URIs are retained undescribed; empty `data:` payloads are dropped |
 | `test_config.py` | AKConfig loading, env vars |
 | `test_test_config.py` | AKTestConfig (Test framework config) loading, defaults |
 | `test_tool.py` | ToolContext, cache |

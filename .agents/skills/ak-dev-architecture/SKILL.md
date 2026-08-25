@@ -233,7 +233,7 @@ Provides image and file attachment support via a pluggable storage and PreHook a
 
 ### Key Components
 
-- **`MultimodalPreHook`** (`hooks.py`): System `PreHook` that intercepts `AgentRequestImage` / `AgentRequestFile` entries, calls a vision LLM (via LiteLLM) for a brief description, saves binary data to a storage backend, removes raw binaries from the request list, and injects attachment metadata (IDs + descriptions) into the last `AgentRequestText`
+- **`MultimodalPreHook`** (`hooks.py`): System `PreHook` that intercepts `AgentRequestImage` / `AgentRequestFile` entries, calls a vision LLM (via LiteLLM) for a brief description, saves binary data to a storage backend, strips consumed attachments from the request list, and injects attachment metadata (IDs + descriptions) into the last `AgentRequestText`. `_extract_attachment`/`_resolve_source` (spec #523 §8) classify each attachment's source form on the thread-off path — bare base64 and base64 `data:` URIs are described and stored as before; `http://`/`https://`/`s3://` references and non-base64 `data:` URIs are **not** fetched or stored (no network I/O/SSRF exposure in a system pre-hook) and are instead left on the request list so the adapter resolves them itself. This source-form classification does not run in thread mode: `ConversationThreadManager.store_attachments` persists `image_data`/`file_data` verbatim before the hook runs (tracked as a follow-up in `docs/specs/523-ag-ui-support/design.md`)
 - **`MultimodalPreHookFactory`** (`factory.py`): Returns `MultimodalPreHook` when `config.multimodal.enabled` is `True`, otherwise a `NoOpPreHook`
 - **`AnalyzeAttachmentsTool`** (`tools.py`): A `SystemTool` auto-registered on all agents when multimodal is enabled. Lets the agent retrieve and analyze stored attachments (images and PDFs) on demand via the `analyze_attachments(attachment_ids, prompt)` function
 - **`AttachmentStorageManager`** (`storage/storage_manager.py`): High-level API that delegates to the configured `AttachmentStore` backend. Generates UUIDs for attachment IDs and serializes `AttachmentData` dicts
@@ -254,11 +254,15 @@ Provides image and file attachment support via a pluggable storage and PreHook a
 ```
 User sends {text + image/file}
   → MultimodalPreHook.on_run()
-    → _describe_attachment_briefly()        # Vision LLM via LiteLLM
-    → AttachmentStorageManager.save_attachment()  # store binary
-    → Remove AgentRequestImage/AgentRequestFile from requests
+    → _extract_attachment() / _resolve_source()   # classify source form (thread-off only)
+    → is_base64 (bare base64 or data:<mime>;base64,<payload>):
+        → _describe_attachment_briefly()          # Vision LLM via LiteLLM
+        → AttachmentStorageManager.save_attachment()  # store binary
+        → Strip AgentRequestImage/AgentRequestFile from requests
+    → not is_base64 (http(s):// / s3:// / non-base64 data: URI):
+        → Leave the request on the list undescribed; adapter resolves it
     → Inject "[Attached Images/Files:]\n- <id>: <description>" into last AgentRequestText
-  → Agent sees text with attachment metadata only (no binary)
+  → Agent sees text with attachment metadata (+ any undescribed remote/data URIs)
   → Agent calls analyze_attachments(ids, prompt) when detailed analysis is needed
     → AttachmentStorageManager.get_attachment_data()
     → LiteLLM vision call with binary + user prompt

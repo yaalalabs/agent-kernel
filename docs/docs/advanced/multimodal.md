@@ -34,6 +34,26 @@ sequenceDiagram
 - **Automatic description**: A vision-capable LLM generates brief descriptions of each attachment.
 - **System tool for recall**: The agent can call `analyze_attachments` to retrieve previously stored images/files.
 
+## Supported Attachment Source Forms
+
+`AgentRequestImage.image_data` and `AgentRequestFile.file_data` accept a source string in any of these forms:
+
+| Source form | Example | Handling |
+|---|---|---|
+| Bare base64 | `iVBORw0KGgo...` | Described by the vision LLM and saved to storage |
+| `data:<mime>;base64,<payload>` | `data:image/png;base64,iVBORw0KGgo...` | Described and saved to storage; the mime type comes from the URI itself, not the request's `mime_type` |
+| `data:<mime>,<payload>` (no `;base64` marker) | `data:text/plain,hello%20world` | Left on the request undescribed and unsaved — its bytes are not base64, so decoding them would store the wrong thing |
+| `http://` / `https://` URL | `https://example.com/cat.png` | Left on the request undescribed and unsaved — the pre-hook never fetches remote content, to avoid network I/O and SSRF exposure in a system hook that runs on every request |
+| `s3://` reference | `s3://bucket/key.png` | Left on the request undescribed and unsaved, same as other remote references |
+
+A `data:` URI with no payload after the comma (`data:image/png;base64,`) carries no bytes and is dropped, the same as an empty `image_data`/`file_data`. Scheme and `data:` header matching is case-insensitive.
+
+Attachments that are left on the request list are **not** removed by `MultimodalPreHook` — they reach the agent/adapter as-is so it can resolve them itself (for example, `framework/openai/openai.py` already accepts all five forms natively).
+
+:::caution Thread mode does not classify source forms yet
+This classification only runs on the **thread-off** path. When [Conversation Thread Support](/docs/advanced/threads) is enabled, `ConversationThreadManager` saves `image_data`/`file_data` to storage **before** `MultimodalPreHook` runs, always treating the string as raw bytes with an `image/jpeg`/`application/octet-stream` fallback. With threads enabled, only bare base64 and base64 `data:` URIs are handled correctly today; URL and non-base64 `data:` forms are a tracked follow-up.
+:::
+
 ## Enabling Multimodal Support
 
 ### Environment Variables
