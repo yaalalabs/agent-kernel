@@ -110,6 +110,7 @@ const sidebars = {
         'integrations/gmail',
         'integrations/teams',
         'integrations/hooks',
+        'integrations/agui',
       ],
     },
     {

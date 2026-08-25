@@ -209,7 +209,7 @@ See [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/t
 
 ### Streaming Hooks (`on_stream_chunk`)
 
-When the application runs in streaming mode (`execution.mode: stream`), the agent reply arrives as a sequence of token deltas rather than one final reply. Post-execution hooks can intercept **each token** before it reaches the client by overriding `on_stream_chunk`:
+When the application runs in streaming mode (`execution.mode: stream`), or over the AG-UI surface, the agent reply arrives as a sequence of typed **events** rather than one final reply. Post-execution hooks can intercept the **text** those events carry before it reaches the client by overriding `on_stream_chunk`:
 
 ```python
 from agentkernel import PostHook
@@ -228,9 +228,18 @@ class TokenRedactionHook(PostHook):
 ```
 
 - The default implementation passes each delta through unchanged, so existing hooks keep working in streaming mode without changes.
-- Returning `None` drops the token; returning a modified string replaces it.
+- Returning `None` drops the whole chunk — the event with it, not just the text. Returning a modified string replaces it, **and the replacement is written back into the event**, so a client reading `event` sees the redacted text too. A hook cannot be bypassed by looking at the event instead of the delta.
+- The hook sees text from **two** event kinds: `TextDelta` (the answer) and `ReasoningDelta` (a thinking model's summary). Reasoning is user-visible text, so a redaction hook that skipped it would be a hole — but it is never projected into `StreamChunk.delta`, so it does not leak into plain-text surfaces or recorded threads.
 - Pre-execution hooks run **before** streaming starts; if one halts, the client receives a single error chunk (`done: true`) and the agent never runs.
-- `on_run` post-hooks are **not** called for streamed runs (there is no single final reply to transform); token-level filtering via `on_stream_chunk` is the streaming counterpart.
+- `on_run` post-hooks are **not** called for streamed runs (there is no single final reply to transform); filtering via `on_stream_chunk` is the streaming counterpart.
+
+:::warning Tool-call payloads are not filtered
+No hook can see them. `ToolCallArgs` and `ToolCallResult` carry no text through `on_stream_chunk`, and
+`on_run` does not run on a streamed path either — so on a streamed run `on_stream_chunk` is the entire
+output-side defence and tool-call arguments and results reach the client **uninspected**. If a tool's
+arguments or return value can contain data you would redact from prose, do not rely on hooks to catch
+it on a streamed surface; redact inside the tool.
+:::
 
 **Use Cases:** token-level redaction/PII masking, profanity filtering, stop-sequence enforcement, streaming analytics.
 

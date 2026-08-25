@@ -609,7 +609,7 @@ dependencies = [
 
 ### D) WebSocket Token Streaming (`stream`)
 
-Use this when the client should receive each generated token as soon as it is produced, instead of waiting for the full response.
+Use this when the client should receive each stream event as soon as it is produced, instead of waiting for the full response.
 
 Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `response_handler`, `ws_connection_handler`, `ws_routes`) — only `execution_mode` changes:
 
@@ -663,7 +663,7 @@ On an unrecoverable error, the final chunk carries `error` instead of `delta`, w
 - `create_redis_response_store` / `create_valkey_response_store` / `create_dynamodb_response_store` must be `false` for `stream` (same constraint as `async`) — Terraform validation enforces this.
 - See [examples/aws-serverless/streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) for a complete working example.
 
-**Containerized / direct streaming (no Terraform WebSocket setup)**: wherever the built-in FastAPI REST server runs — local/self-hosted, AWS ECS single-container REST, Azure Container Apps, GCP Cloud Run — SSE token streaming can be enabled by setting `execution.mode: stream` in `config.yaml`. `POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Not available on AWS Lambda or Azure Functions (serverless), which use WebSocket for streaming instead.
+**Containerized / direct streaming (no Terraform WebSocket setup)**: wherever the built-in FastAPI REST server runs — local/self-hosted, AWS ECS single-container REST, Azure Container Apps, GCP Cloud Run — SSE event streaming can be enabled by setting `execution.mode: stream` in `config.yaml`. `POST /api/v1/chat` and `/api/v1/chat-multipart` then return `text/event-stream` responses instead of JSON — no queue or WebSocket infrastructure is required for this mode. Not available on AWS Lambda or Azure Functions (serverless), which use WebSocket for streaming instead.
 
 ### E) API Gateway Custom Authorizer (AWS)
 

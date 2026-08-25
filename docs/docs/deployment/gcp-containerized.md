@@ -7,7 +7,7 @@ sidebar_position: 7
 Deploy Agent Kernel agents as always-on containerized services on **GCP Cloud Run** with `min_instance_count ≥ 1`. Uses the [`yaalalabs/ak-containerized/google`](https://registry.terraform.io/modules/yaalalabs/ak-containerized/google) Terraform module.
 
 :::note Supported execution modes
-Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous JSON REST **and SSE token streaming** (`execution.mode: stream`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK). Queue-based execution and WebSocket delivery are currently AWS-only; see the [Deployment Overview](./overview#execution-modes).
+Cloud Run runs Agent Kernel's built-in REST server, so it supports synchronous JSON REST **and SSE event streaming** (`execution.mode: stream`) with streaming-capable frameworks (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI). Queue-based execution and WebSocket delivery are currently AWS-only; see the [Deployment Overview](./overview#execution-modes).
 :::
 
 ## Overview

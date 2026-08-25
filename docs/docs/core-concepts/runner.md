@@ -32,7 +32,7 @@ graph TB
 
 A Runner:
 - **Executes** framework-specific agent logic (`run()`)
-- **Streams** token deltas for frameworks that support it (`stream()`)
+- **Streams** typed stream events for frameworks that support it (`stream()`)
 - **Converts** Agent Kernel request models to framework-native input, and framework output back to `AgentReply` models
 - **Manages** framework session state within the Agent Kernel `Session`
 - **Creates** the `ToolContext` so tools can access the runtime, agent, session, and requests
@@ -42,7 +42,7 @@ A Runner:
 ```python
 from abc import ABC, abstractmethod
 from typing import AsyncGenerator
-from agentkernel.core import Session
+from agentkernel.core import Session, StreamEvent
 from agentkernel.core.model import AgentReply, AgentRequest
 
 class Runner(ABC):
@@ -50,23 +50,29 @@ class Runner(ABC):
     async def run(self, agent: "Agent", session: Session, requests: list[AgentRequest]) -> AgentReply:
         """Execute the agent with the given requests within the session context."""
 
+    @property
+    def supports_streaming(self) -> bool:
+        """Whether this runner streams; adapters without streaming support override to False."""
+        return True
+
     @abstractmethod
-    async def stream(self, agent: "Agent", session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
-        """Yield token deltas for streaming execution (execution.mode: stream)."""
+    async def stream(self, agent: "Agent", session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+        """Yield typed stream events for streaming execution (execution.mode: stream)."""
 ```
 
 - `run()` takes a **list of typed requests** (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`, `AgentRequestAny`), not a raw prompt string, and returns an `AgentReply`.
-- `stream()` is an async generator of raw token strings. `Runtime.stream()` wraps each delta in a `StreamChunk` and passes it through post-hook filtering before it reaches the client.
+- `stream()` is an async generator of `StreamEvent`s — a `Field(discriminator="type")` union covering message boundaries (`MessageStart`/`MessageEnd`), text (`TextDelta`), tool calls (`ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`), steps (`StepStart`/`StepEnd`), and reasoning (`ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`). `Runtime.stream()` wraps each event in a `StreamChunk` and passes `TextDelta`/`ReasoningDelta` content through post-hook filtering before it reaches the client. Some adapters are still transitioning to this model and yield raw token strings instead, which `Runtime.stream()` normalises into a synthesized `MessageStart`/`TextDelta`/`MessageEnd` sequence.
+- `supports_streaming` lets a caller check whether a runner streams before calling `stream()`, instead of relying on the `NotImplementedError` raise.
 
 ## Framework Runners
 
-| Runner | Framework | Native token streaming |
-|--------|-----------|------------------------|
+| Runner | Framework | AK `Runner.stream()` |
+|--------|-----------|----------------------|
 | `OpenAIRunner` | OpenAI Agents SDK | ✅ (`Runner.run_streamed`) |
 | `LangGraphRunner` | LangGraph | ✅ (`astream_events`) |
 | `GoogleADKRunner` | Google ADK | ✅ (SSE streaming mode) |
-| `CrewAIRunner` | CrewAI | ❌ raises `NotImplementedError` |
-| `SmolagentsRunner` | Smolagents | ❌ raises `NotImplementedError` |
+| `CrewAIRunner` | CrewAI | ❌ `supports_streaming` is `False`; `stream()` raises `NotImplementedError` |
+| `SmolagentsRunner` | Smolagents | ❌ `supports_streaming` is `False`; `stream()` raises `NotImplementedError` |
 
 Each runner follows the same shape internally:
 
@@ -122,21 +128,29 @@ token-by-token text deltas and are not parsed into structured replies.
 When `execution.mode: stream` is configured, the pipeline calls `Runner.stream()` instead of `run()`:
 
 ```python
-async for delta in runner.stream(agent, session, requests):
-    print(delta, end="")   # raw token strings
+async for event in runner.stream(agent, session, requests):
+    print(event)   # a typed StreamEvent (MessageStart, TextDelta, ToolCallStart, ...)
 ```
 
-In practice you rarely call this directly; use `AgentService.stream_multi()` or the REST API, which wrap the deltas in `StreamChunk` objects (`delta`, `done`, `error`, `session_id`) and run the post-hook `on_stream_chunk()` filter on every token:
+In practice you rarely call this directly; use `AgentService.stream_multi()` or the REST API, which wrap
+each event in a `StreamChunk` (`delta`, `event`, `done`, `error`, `session_id`) and run the post-hook
+`on_stream_chunk()` filter on every `TextDelta`/`ReasoningDelta`'s content:
 
 ```python
 async for chunk in service.stream_multi(requests):
     if chunk.error:
         ...
     elif chunk.delta:
-        print(chunk.delta, end="")
+        print(chunk.delta, end="")   # assistant prose only
+    elif chunk.event:
+        ...                          # tool calls, reasoning, message/step boundaries
 ```
 
-Frameworks without native token streaming (CrewAI, Smolagents) raise `NotImplementedError`; use the default synchronous mode (or `rest_sync` on AWS) with those frameworks.
+`delta` is populated only when `chunk.event` is a `TextDelta`, so a plain-text consumer can keep
+concatenating `delta` unchanged; a consumer that wants tool calls, reasoning, or message/step
+boundaries reads the full `event`. Frameworks without native token streaming (CrewAI, Smolagents)
+declare `supports_streaming = False` and raise `NotImplementedError` from `stream()`; use the default
+synchronous mode (or `rest_sync` on AWS) with those frameworks.
 
 ## Execution Flow
 

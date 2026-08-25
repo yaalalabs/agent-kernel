@@ -107,7 +107,7 @@ from agentkernel.core import Runner
 **Key Features:**
 - Framework-specific execution
 - Async/await support
-- Token-level streaming via `stream()` (OpenAI Agents SDK, LangGraph, Google ADK)
+- Event streaming via `stream()` (OpenAI Agents SDK, LangGraph, Google ADK, Pydantic AI)
 - Error handling and fault-tolerant execution patterns
 
 [Learn more about Runners →](./runner)
@@ -177,7 +177,7 @@ agent = runtime.agents().get("my-agent")
 Around these abstractions, the kernel provides:
 
 - **Hooks**: `PreHook`/`PostHook` classes attached per-agent or system-wide. Pre-hooks can rewrite or halt requests (guardrails, RAG injection); post-hooks transform replies and can filter individual streaming tokens via `on_stream_chunk()`. [Hooks guide →](../integrations/hooks)
-- **AgentService**: the conversation object for stateful clients (CLI, A2A, MCP): owns agent selection and session lifecycle; `run_multi()` executes multi-modal requests and `stream_multi()` yields token-level `StreamChunk`s.
+- **AgentService**: the conversation object for stateful clients (CLI, A2A, MCP): owns agent selection and session lifecycle; `run_multi()` executes multi-modal requests and `stream_multi()` yields one `StreamChunk` per stream event.
 - **ChatService**: the chat request layer on top of AgentService. Its execution core (`execute`/`execute_stream`) validates, builds or accepts prebuilt request lists, and returns typed replies; it is what messaging integrations and the thread handler call. Its presentation wrappers (`process_*`) add the HTTP shapes (JSON, SSE, `HTTPException`) used by the REST API and deployment handlers.
 - **Execution modes**: the same application supports direct execution, SSE streaming (`execution.mode: stream`), and on AWS, queue-backed (`rest_sync`/`rest_async`) and WebSocket (`async`/`stream`) modes. [Execution flow →](../architecture/execution-flow)
 - **Conversation threads**: optional persistent, named conversation history with REST read APIs. [Threads →](../advanced/threads)

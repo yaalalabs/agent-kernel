@@ -16,6 +16,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
 - **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
+- **AG-UI Surface**: Built-in [AG-UI](https://github.com/ag-ui-protocol/ag-ui) routes for driving an agent from your own frontend, streaming the answer, reasoning, and tool calls as typed events alongside a shared state object
 - **REST API**: Built-in REST API server for agent interaction
 - **Test Automation**: Built-in test suite for testing agents
 
@@ -872,6 +873,54 @@ Configure the REST API server (if using the API module).
 - **Endpoint** (not configurable)
   - The MCP server is always mounted at `/mcp` on the main API server.
   - Full URL: `http://{api.host}:{api.port}/mcp` — use `api.port` / `AK_API__PORT` to change the port.
+
+#### AG-UI Configuration
+
+Parameterizes the AG-UI surface. **There is deliberately no `enabled` flag**: mounting
+`AGUIRequestHandler` is what turns the surface on, and this block only configures a mounted handler.
+Setting these keys without mounting it changes nothing.
+
+- **Agents**
+  - **Field**: `agui.agents`
+  - **Default**: `null` (every streaming-capable agent is reachable)
+  - **Description**: Agent names reachable over AG-UI. An agent left out is a 404, indistinguishable from an unknown name
+  - **Environment Variable**: `AK_AGUI__AGENTS` (comma-separated)
+
+- **Prefix**
+  - **Field**: `agui.prefix`
+  - **Default**: `/agui`
+  - **Environment Variable**: `AK_AGUI__PREFIX`
+
+- **Default Agent**
+  - **Field**: `agui.default_agent`
+  - **Default**: `null`
+  - **Description**: Agent served on the bare prefix route, registered only when one is configured
+  - **Environment Variable**: `AK_AGUI__DEFAULT_AGENT`
+
+- **State Tools Enabled**
+  - **Field**: `agui.state.enabled`
+  - **Default**: `false`
+  - **Description**: Attaches `get_agui_state` / `update_agui_state`, so the agent can read and write AG-UI's shared state. Without it the inbound `state` is accepted but no tool can reach it
+  - **Environment Variable**: `AK_AGUI__STATE__ENABLED`
+
+- **State Tools Agents**
+  - **Field**: `agui.state.agents`
+  - **Default**: `null` (all agents)
+  - **Environment Variable**: `AK_AGUI__STATE__AGENTS` (comma-separated)
+
+- **Client Context Tools Enabled**
+  - **Field**: `agui.client_context.enabled`
+  - **Default**: `false`
+  - **Description**: Attaches the read-only `get_forwarded_props` / `get_agui_context`. The agent must *pull* this data — client text is never flattened into the system prompt
+  - **Environment Variable**: `AK_AGUI__CLIENT_CONTEXT__ENABLED`
+
+- **Client Context Tools Agents**
+  - **Field**: `agui.client_context.agents`
+  - **Default**: `null` (all agents)
+  - **Environment Variable**: `AK_AGUI__CLIENT_CONTEXT__AGENTS` (comma-separated)
+
+- **Execution mode** (not consulted)
+  - AG-UI delivers every run as a stream by definition, so this surface ignores `execution.mode`.
 
 #### Trace (Observability) Configuration
 

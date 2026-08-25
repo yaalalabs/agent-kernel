@@ -40,7 +40,7 @@ Tracks state across related interactions. Key properties:
 - **`id`**: Unique session identifier
 - **Framework-specific data**: Stored via `get(key)` / `set(key, value)`: each framework stores its own state under a unique key (e.g., `"openai"`, `"langgraph"`). `session.get_framework_session()` is a convenience accessor that resolves that key for you via `Agent.current().runner.name`: returns the **live** stored object (mutate it in place, no `set()` needed) or `None` if nothing's stored yet; raises `RuntimeError` if called with no agent currently running (`Agent.current()` is `None`), so it only works from inside a hook or a tool
 - **Volatile cache** (`v_cache`): Cleared after every `Runtime.run()` invocation: use for transient per-request data
-- **Non-volatile cache** (`nv_cache`): Persisted across requests within the session: use for data that should survive multiple interactions
+- **Non-volatile cache** (`nv_cache`): Persisted across requests within the session: use for data that should survive multiple interactions. AG-UI shared state is **not** a `Session.Keys` member: the AG-UI integration stashes it here under `"agui_state"` (`integration/agui/state.py`), gated by `agui.state`, and exposes it to agents as `get_agui_state` / `update_agui_state` tools — deliberately outside `framework_context`, which is per-run and adapter-owned and would overwrite it (see the AG-UI docs page)
 - **Reserved keys** (`Session.Keys` enum): `VOLATILE_CACHE`/`NON_VOLATILE_CACHE` back the two caches; `FRAMEWORK_CONTEXT` (`"framework_context"`) holds a per-run, framework-agnostic caller context/state **dict** (must be picklable) that runners inject into the native framework call and write back on success. Unlike the caches it is **not** pre-initialized: an unset key reads back as `None` (absent ⇒ no injection, no behaviour change). The key is fronted by dedicated accessors: `session.get_framework_context()` (live dict, never auto-creates), `set_framework_context(dict)` (rejects non-dicts), `clear_framework_context()`: the way `get_volatile_cache()` fronts `v_cache`; nothing outside `Session` (runners included) spells the raw key. Scope is **pre-hooks and post-hooks**; tools use their framework-native handle (`RunContextWrapper.context`, `RunContext.deps`, ADK `tool_context.state`, …) instead
 - **Acting-user propagation** (`runtime.py`'s `ACTING_USER_CACHE_KEY = "ak.acting_user_id"`): when a caller supplies `acting_user_id` to `Runtime.run`/`Runtime.stream`, it's published into the volatile cache (`session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, acting_user_id)`) before the pre-hook/runner/post-hook span, and cleared with the rest of `v_cache` in the same `finally`. Threaded down from `ChatService.execute*` (`req.user_id`) → `AgentHandler.run*` → `AgentService.run_multi`/`stream_multi`, so hooks and tools can read who a request is acting on behalf of without it being threaded through every call signature
 - **Async context manager**: `async with session:` acquires a lock and sets the session as the current context via `contextvars`
@@ -62,7 +62,7 @@ Wraps a framework-specific agent. Key properties:
 Encapsulates framework-specific execution logic:
 
 - **`run(agent, session, requests) -> AgentReply`**: Async method that executes the agent with the given requests within a session context
-- **`stream(agent, session, requests) -> AsyncGenerator[str, None]`**: Abstract async generator that yields token deltas for streaming execution (`execution.mode: stream`). Frameworks without native token streaming (CrewAI, smolagents) implement it by raising `NotImplementedError`
+- **`stream(agent, session, requests) -> AsyncGenerator[StreamEvent | str, None]`**: Abstract async generator that yields typed `StreamEvent`s (`core/event.py`: `MessageStart`/`TextDelta`/`MessageEnd`, `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`, `StepStart`/`StepEnd`, `ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`; a `Field(discriminator="type")` union) for streaming execution (`execution.mode: stream`). The `| str` is TRANSITIONAL (PR 1 -> PR 6 of the AG-UI streaming migration, `docs/specs/523-ag-ui-support/`): adapters not yet migrated to the event model still yield raw token strings, which `Runtime.stream()` normalises into a synthesised `MessageStart`/`TextDelta`/`MessageEnd` sequence. `supports_streaming` (a `Runner` property, default `True`) lets a caller check before invoking `stream()` instead of provoking the raise; frameworks without native token streaming (CrewAI, smolagents) override it to `False` and implement `stream()` by raising `NotImplementedError`
 - Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`, `PydanticAIRunner`)
 - Runners handle: creating `ToolContext`, converting request models to framework-native formats, invoking the framework's execution API, converting responses back to `AgentReply`
 - **Per-run framework context**: the base `Runner` provides `_load_framework_context(session)` (returns a **deep copy** of the reserved `framework_context` key, or `None` when absent) and `_store_framework_context(session, incoming, produced)` (shallow-merges `produced` over `incoming`: framework-touched top-level keys win, untouched caller keys preserved: with a fail-fast picklability check). Each adapter's `run`/`stream` calls load before the native call, injects `incoming` via its native mechanism, and calls store **only after a successful native call** (inside the `try`, before the `except`; after the `async for` loop for streams, never in `finally`) so a crash/disconnect leaves the stored context intact. Both helpers go through the `Session` accessors, so the raw key name stays inside `Session`. Round-trip fidelity is per-framework (OpenAI and Pydantic AI full: injected as `context=` / `deps=`, mutated in place by tools; ADK all-but-internal-and-scope-prefixed keys, accumulate-only; smolagents pre-seeded keys only, and the context is also appended to the task prompt; LangGraph declared channels only; CrewAI unsupported: warns once per runner and skips). When an adapter seeds caller keys into a native state dict, write AK-internal keys **last** so a caller key cannot displace them (`ak_tool_context` in ADK, `messages` in LangGraph)
@@ -95,9 +95,10 @@ Global orchestrator and agent registry:
   7. Clears volatile cache in `finally` block
 - **`stream(agent, session, requests, acting_user_id=None) -> AsyncGenerator[StreamChunk, None]`**: Streaming counterpart of `run()`, sharing the same pre-hook pipeline via `_prepare_requests()`:
   1. Runs pre-hooks; if halted, yields a `StreamChunk(error=..., done=True)` and returns
-  2. Iterates `agent.runner.stream(agent, session, requests)`, passing each token delta through `PostHook.on_stream_chunk()` (a hook can drop a token by returning `None`)
-  3. Yields a `StreamChunk(delta=...)` per token, then a final `StreamChunk(done=True, session_id=...)`
-  4. Stores session and clears volatile cache in `finally`, same as `run()`
+  2. Iterates `agent.runner.stream(agent, session, requests)`; a legacy `str` (TRANSITIONAL) is wrapped into a synthesised `TextDelta` before anything else runs, and its first occurrence allocates a `uuid4().hex` `message_id` shared by a synthesised `MessageStart`/`MessageEnd` pair bracketing the run
+  3. Only `TextDelta`/`ReasoningDelta` content passes through `PostHook.on_stream_chunk()` (a hook can drop the whole chunk, event included, by returning `None`; a hook's edit is written back into the event via `model_copy` so `delta` and `event` never disagree)
+  4. Yields a `StreamChunk(delta=..., event=...)` per event — `delta` is populated only for `TextDelta` (every other event type carries `event` alone) — then a final `StreamChunk(done=True)`
+  5. Stores session and clears volatile cache in `finally`, same as `run()`
 - **System hooks**: Automatically includes `InputGuardrailFactory` as system pre-hook, `OutputGuardrailFactory` as system post-hook
 - **Context manager**: `with Runtime(sessions):` sets an isolated runtime as current
 
@@ -109,7 +110,7 @@ High-level utility encapsulating a conversation:
 - **`select(name, session_id)`**: Selects an agent and loads/creates a session
 - **`run(prompt) -> str`**: Wraps prompt in `AgentRequestText`, calls `runtime.run()`, returns text
 - **`run_multi(requests, acting_user_id=None) -> AgentReply`**: For multi-modal requests; forwards `acting_user_id` to `runtime.run()` (see Runtime and Session's Reserved keys)
-- **`stream_multi(requests, acting_user_id=None) -> AsyncGenerator[StreamChunk, None]`**: Calls `runtime.stream()`, yielding `StreamChunk` objects for token-level streaming; forwards `acting_user_id` the same way
+- **`stream_multi(requests, acting_user_id=None) -> AsyncGenerator[StreamChunk, None]`**: Calls `runtime.stream()`, yielding `StreamChunk` objects for event-level streaming; forwards `acting_user_id` the same way
 - Used directly by stateful clients that own agent/session lifecycle: the CLI, A2A, and MCP. Chat surfaces go through `ChatService`, which sits on top of it
 
 ### ChatService (`ak-py/src/agentkernel/core/chat_service.py`)
@@ -216,7 +217,7 @@ Pydantic-based configuration:
   - `AgentReplyText`, 
   - `AgentReplyImage`
   - `AgentReplyAny`: `content: dict`: returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`, Pydantic AI `output_type`); `str(reply)` returns the JSON-serialized content. Non-streaming only.
-  - `StreamChunk`: `delta: str | None`, `done: bool`, `error: str | None`, `session_id: str | None`: yielded by `Runtime.stream()` / `AgentService.stream_multi()` for token-level streaming
+  - `StreamChunk`: `delta: str | None`, `event: StreamEvent | None`, `done: bool`, `error: str | None`, `session_id: str | None`: yielded by `Runtime.stream()` / `AgentService.stream_multi()`; `event` is the full typed event the runner emitted, `delta` is populated only when `event` is a `TextDelta` (plain-text consumers concatenate `delta`, enriched consumers read `event`)
 - Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
@@ -229,7 +230,7 @@ Pydantic-based configuration:
 
 - **`PreHook`**: `on_run(session, agent, requests) -> list[AgentRequest] | AgentReply`: return modified requests to continue, or an `AgentReply` to halt execution
 - **`PostHook`**: `on_run(session, requests, agent, agent_reply) -> AgentReply`: return modified or unmodified reply
-- **`PostHook.on_stream_chunk(session, requests, agent, delta) -> str | None`**: Optional override called for each streaming token delta before it reaches the client. Default implementation passes the delta through unchanged; return `None` to drop the token
+- **`PostHook.on_stream_chunk(session, requests, agent, delta) -> str | None`**: Optional override called for each streaming `TextDelta`/`ReasoningDelta` content string before it reaches the client (other event types skip the hook chain entirely). Default implementation passes the text through unchanged; return `None` to drop the whole chunk, event included
 - Use cases: RAG injection, input/output guardrails, logging, disclaimers, prompt modification, multimodal preprocessing, streaming token filtering/redaction
 
 ## Multimodal (`ak-py/src/agentkernel/core/multimodal/`)
@@ -238,7 +239,7 @@ Provides image and file attachment support via a pluggable storage and PreHook a
 
 ### Key Components
 
-- **`MultimodalPreHook`** (`hooks.py`): System `PreHook` that intercepts `AgentRequestImage` / `AgentRequestFile` entries, calls a vision LLM (via LiteLLM) for a brief description, saves binary data to a storage backend, removes raw binaries from the request list, and injects attachment metadata (IDs + descriptions) into the last `AgentRequestText`
+- **`MultimodalPreHook`** (`hooks.py`): System `PreHook` that intercepts `AgentRequestImage` / `AgentRequestFile` entries, calls a vision LLM (via LiteLLM) for a brief description, saves binary data to a storage backend, strips consumed attachments from the request list, and injects attachment metadata (IDs + descriptions) into the last `AgentRequestText`. `_extract_attachment`/`_resolve_source` (spec #523 §8) classify each attachment's source form on the thread-off path — bare base64 and base64 `data:` URIs are described and stored as before; `http://`/`https://`/`s3://` references and non-base64 `data:` URIs are **not** fetched or stored (no network I/O/SSRF exposure in a system pre-hook) and are instead left on the request list so the adapter resolves them itself. This source-form classification does not run in thread mode: `ConversationThreadManager.store_attachments` persists `image_data`/`file_data` verbatim before the hook runs (tracked as a follow-up in `docs/specs/523-ag-ui-support/design.md`)
 - **`MultimodalPreHookFactory`** (`factory.py`): Returns `MultimodalPreHook` when `config.multimodal.enabled` is `True`, otherwise a `NoOpPreHook`
 - **`AnalyzeAttachmentsTool`** (`tools.py`): A `SystemTool` auto-registered on all agents when multimodal is enabled. Lets the agent retrieve and analyze stored attachments (images and PDFs) on demand via the `analyze_attachments(attachment_ids, prompt)` function
 - **`AttachmentStorageManager`** (`storage/storage_manager.py`): High-level API that delegates to the configured `AttachmentStore` backend. Generates UUIDs for attachment IDs and serializes `AttachmentData` dicts
@@ -259,11 +260,15 @@ Provides image and file attachment support via a pluggable storage and PreHook a
 ```
 User sends {text + image/file}
   → MultimodalPreHook.on_run()
-    → _describe_attachment_briefly()        # Vision LLM via LiteLLM
-    → AttachmentStorageManager.save_attachment()  # store binary
-    → Remove AgentRequestImage/AgentRequestFile from requests
+    → _extract_attachment() / _resolve_source()   # classify source form (thread-off only)
+    → is_base64 (bare base64 or data:<mime>;base64,<payload>):
+        → _describe_attachment_briefly()          # Vision LLM via LiteLLM
+        → AttachmentStorageManager.save_attachment()  # store binary
+        → Strip AgentRequestImage/AgentRequestFile from requests
+    → not is_base64 (http(s):// / s3:// / non-base64 data: URI):
+        → Leave the request on the list undescribed; adapter resolves it
     → Inject "[Attached Images/Files:]\n- <id>: <description>" into last AgentRequestText
-  → Agent sees text with attachment metadata only (no binary)
+  → Agent sees text with attachment metadata (+ any undescribed remote/data URIs)
   → Agent calls analyze_attachments(ids, prompt) when detailed analysis is needed
     → AttachmentStorageManager.get_attachment_data()
     → LiteLLM vision call with binary + user prompt
@@ -604,9 +609,13 @@ ak-py/src/agentkernel/
 │   │   │   └── ecs_io_handler.py        # ECSIOHandler: entrypoint: wires both threads
 │   │   └── core/            # Shared AWS-only: SQSHandler, ResponseStore, websocket_service.py (WebSocketConnectionStore, DynamoDB, AWSWebSocketHandler, API Gateway Management API push, extends WebSocketHandlerABC)
 │   └── azure/               # Azure Functions handler
-├── integration/             # Integrations (messaging platforms + conversation threads)
+├── integration/             # Integrations (messaging platforms + conversation threads + AG-UI)
 │   ├── thread/              # Conversation Thread Support: AgentThreadRequestHandler, ThreadRecorder,
 │   │                        #   ConversationThreadManager, models, naming, store/ backends (alias: agentkernel.thread)
+│   ├── agui/                # AG-UI protocol surface: AGUIRequestHandler (routes), mapping.py
+│   │                        #   (StreamEvent -> AG-UI events), run_input.py (RunAgentInput parsing),
+│   │                        #   state.py (shared-state accessors + the state/client-context tools)
+│   │                        #   (alias: agentkernel.agui)
 │   ├── slack/
 │   ├── whatsapp/
 │   ├── messenger/
@@ -897,11 +906,12 @@ User Input
         → Runtime.stream(agent, session, requests)
             → async with session:                    # acquire lock, set context
             → PreHooks (agent hooks, then system)    # halt → yield StreamChunk(error, done=True)
-            → agent.runner.stream(agent, session, requests)  # async generator of token deltas
-                → for each delta: PostHook.on_stream_chunk() # can drop or modify token
-                → yield StreamChunk(delta=...)
+            → agent.runner.stream(agent, session, requests)  # async generator of StreamEvents (or legacy str, TRANSITIONAL)
+                → legacy str normalised into TextDelta, bracketed by a synthesised MessageStart/MessageEnd
+                → for each TextDelta/ReasoningDelta: PostHook.on_stream_chunk() # can drop the chunk or edit the text
+                → yield StreamChunk(delta=..., event=...)  # delta set only for TextDelta
             → session_store.store(session)           # persist state
-            → yield StreamChunk(done=True, session_id=...)
+            → yield StreamChunk(done=True)
             → clear volatile cache                   # cleanup
     → REST: SSE (`text/event-stream`) when execution.mode=stream
     → AWS Lambda serverless: each StreamChunk sent as a separate SQS/WebSocket `STREAM_CHUNK` message

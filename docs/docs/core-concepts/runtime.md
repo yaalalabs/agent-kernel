@@ -32,7 +32,7 @@ graph TB
 The Runtime:
 - **Maintains** global agent registry
 - **Manages** sessions across requests
-- **Executes** agents through `run()` (single reply) and `stream()` (token-level `StreamChunk`s)
+- **Executes** agents through `run()` (single reply) and `stream()` (typed `StreamEvent`s wrapped in `StreamChunk`s)
 - **Applies** pre/post hooks around every execution, including system hooks (input/output guardrails, multimodal preprocessing)
 - **Coordinates** execution across modes (CLI, API, Lambda, queue consumers)
 - **Enables** service integration (MCP, A2A)
@@ -52,8 +52,9 @@ The Runtime:
 
 `Runtime.stream(agent, session, requests)` is the streaming counterpart (used when `execution.mode: stream`). It shares the same pre-hook pipeline, then:
 
-- Iterates `agent.runner.stream(...)`, passing each token delta through every post-hook's `on_stream_chunk()`; a hook returning `None` drops that token (useful for redaction/filtering).
-- Yields a `StreamChunk(delta=...)` per surviving token, then a final `StreamChunk(done=True, session_id=...)`.
+- Iterates `agent.runner.stream(...)`. Adapters that still yield raw token strings (rather than typed `StreamEvent`s) have those strings normalised into a synthesized `MessageStart`/`TextDelta`/`MessageEnd` sequence.
+- Passes only `TextDelta`/`ReasoningDelta` content through every post-hook's `on_stream_chunk()`; a hook returning `None` drops the whole chunk, event included (useful for redaction/filtering). A hook's edit is written back into the event so `delta` and `event` never disagree.
+- Yields a `StreamChunk(delta=..., event=...)` per surviving event — `delta` is populated only when the event is a `TextDelta` — then a final `StreamChunk(done=True)`.
 - If a pre-hook halts, yields a single `StreamChunk(error=..., done=True)`.
 - Stores the session and clears the volatile cache in `finally`, same as `run()`.
 
@@ -319,7 +320,7 @@ runtime = Runtime.current()
 - Runtime is the global orchestrator
 - Maintains agent registry
 - Manages sessions
-- `run()` executes with the full hook pipeline; `stream()` yields token-level `StreamChunk`s
+- `run()` executes with the full hook pipeline; `stream()` yields `StreamChunk`s carrying typed `StreamEvent`s
 - Provides centralized configuration
 - Supports multiple execution modes
 - Use `Runtime.current()` to access the active runtime instance

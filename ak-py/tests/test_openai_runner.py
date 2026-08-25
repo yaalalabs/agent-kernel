@@ -6,6 +6,18 @@ import pytest
 from pydantic import BaseModel
 
 from agentkernel.core import Session
+from agentkernel.core.event import (
+    MessageEnd,
+    MessageStart,
+    ReasoningDelta,
+    ReasoningEnd,
+    ReasoningStart,
+    TextDelta,
+    ToolCallArgs,
+    ToolCallEnd,
+    ToolCallResult,
+    ToolCallStart,
+)
 from agentkernel.core.model import (
     AgentReplyAny,
     AgentReplyText,
@@ -22,8 +34,8 @@ class CalendarEvent(BaseModel):
     date: str
 
 
-def _delta_event(text: str):
-    """Build a stream event the OpenAI runner recognizes as a text delta."""
+def _delta_event(text: str, item_id: str = "msg-1"):
+    """Raw response text-delta event for the given item_id."""
     from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
     event = MagicMock()
@@ -31,7 +43,7 @@ def _delta_event(text: str):
     event.data = ResponseTextDeltaEvent(
         content_index=0,
         delta=text,
-        item_id="item",
+        item_id=item_id,
         logprobs=[],
         output_index=0,
         sequence_number=0,
@@ -177,7 +189,7 @@ class TestOpenAIRunnerFrameworkContext:
 
             agen = runner.stream(mock_agent, session, requests)
             first = await agen.__anext__()
-            assert first == "hi"
+            assert first == TextDelta(message_id="msg-1", content="hi")
             await agen.aclose()  # simulate client disconnect at the yield
 
             # Write-back is after the loop, so it is skipped and the last-known-good context is preserved.
@@ -207,11 +219,228 @@ class TestOpenAIRunnerFrameworkContext:
             mock_agent.agent = MagicMock()
 
             with caplog.at_level(logging.ERROR, logger="ak.core.runner"):
-                deltas = [delta async for delta in runner.stream(mock_agent, session, requests)]
+                events = [event async for event in runner.stream(mock_agent, session, requests)]
 
-            assert deltas == ["hi"]
+            assert events == [TextDelta(message_id="msg-1", content="hi")]
             assert session.get(FRAMEWORK_CONTEXT) == {"seed": 1}
             assert any("framework_context write-back was skipped" in r.message for r in caplog.records)
+
+
+def _message_item(item_id: str = "msg-1"):
+    """SDK ResponseOutputMessage fixture."""
+    from openai.types.responses.response_output_message import ResponseOutputMessage
+
+    return ResponseOutputMessage(id=item_id, content=[], role="assistant", status="completed", type="message")
+
+
+def _reasoning_item(item_id: str = "rsn-1"):
+    from openai.types.responses.response_reasoning_item import ResponseReasoningItem
+
+    return ResponseReasoningItem(id=item_id, summary=[], type="reasoning")
+
+
+def _item_added(item):
+    from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
+
+    event = MagicMock()
+    event.type = "raw_response_event"
+    event.data = ResponseOutputItemAddedEvent(item=item, output_index=0, sequence_number=0, type="response.output_item.added")
+    return event
+
+
+def _item_done(item):
+    from openai.types.responses.response_output_item_done_event import ResponseOutputItemDoneEvent
+
+    event = MagicMock()
+    event.type = "raw_response_event"
+    event.data = ResponseOutputItemDoneEvent(item=item, output_index=0, sequence_number=0, type="response.output_item.done")
+    return event
+
+
+def _reasoning_delta_event(text: str, item_id: str = "rsn-1"):
+    from openai.types.responses.response_reasoning_summary_text_delta_event import ResponseReasoningSummaryTextDeltaEvent
+
+    event = MagicMock()
+    event.type = "raw_response_event"
+    event.data = ResponseReasoningSummaryTextDeltaEvent(
+        delta=text,
+        item_id=item_id,
+        output_index=0,
+        sequence_number=0,
+        summary_index=0,
+        type="response.reasoning_summary_text.delta",
+    )
+    return event
+
+
+def _run_item_event(name: str, raw_item, output=None):
+    """RunItemStreamEvent mock (name set after construct — MagicMock(name=...) names the mock)."""
+    item = MagicMock()
+    item.raw_item = raw_item
+    item.output = output
+    event = MagicMock()
+    event.type = "run_item_stream_event"
+    event.name = name
+    event.item = item
+    return event
+
+
+def _function_call(call_id: str = "call-1", name: str = "lookup", arguments: str = '{"q": "x"}'):
+    from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
+
+    return ResponseFunctionToolCall(arguments=arguments, call_id=call_id, name=name, type="function_call")
+
+
+def _handoff_call(call_id: str = "ho-1", name: str = "transfer_to_billing"):
+    """SDK tool-call shape used for handoff_requested."""
+    from openai.types.responses.response_function_tool_call import ResponseFunctionToolCall
+
+    return ResponseFunctionToolCall(arguments='{"reason": "billing"}', call_id=call_id, name=name, type="function_call")
+
+
+def _handoff_output(call_id: str = "ho-1", output: str = "Handed off to billing"):
+    """SDK handoff_occured raw_item via ItemHelpers.tool_call_output_item."""
+    from agents.items import ItemHelpers
+
+    return ItemHelpers.tool_call_output_item(_handoff_call(call_id=call_id), output)
+
+
+async def _collect(runner, events):
+    """Drive OpenAIRunner.stream over a scripted SDK event list and return the AK events."""
+    session = Session("s")
+    requests = [AgentRequestText(prompt="hi")]
+
+    def fake_run_streamed(agent, input_data, session=None, context=None):
+        result = MagicMock()
+
+        async def stream_events():
+            for event in events:
+                yield event
+
+        result.stream_events = stream_events
+        return result
+
+    with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+        MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
+        mock_agent = MagicMock()
+        mock_agent.agent = MagicMock()
+        return [event async for event in runner.stream(mock_agent, session, requests)]
+
+
+class TestOpenAIRunnerStreamEvents:
+    """OpenAIRunner.stream event mapping (ids from the SDK)."""
+
+    @pytest.mark.asyncio
+    async def test_a_message_is_bracketed_around_its_deltas(self):
+        item = _message_item()
+        events = await _collect(
+            OpenAIRunner(),
+            [_item_added(item), _delta_event("he"), _delta_event("llo"), _item_done(item)],
+        )
+        assert events == [
+            MessageStart(message_id="msg-1", role="assistant"),
+            TextDelta(message_id="msg-1", content="he"),
+            TextDelta(message_id="msg-1", content="llo"),
+            MessageEnd(message_id="msg-1"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_an_empty_delta_is_dropped_rather_than_forwarded(self):
+        assert await _collect(OpenAIRunner(), [_delta_event("")]) == []
+
+    @pytest.mark.asyncio
+    async def test_a_tool_call_opens_fills_and_closes_on_its_call_id(self):
+        events = await _collect(OpenAIRunner(), [_run_item_event("tool_called", _function_call())])
+        assert events == [
+            ToolCallStart(tool_call_id="call-1", name="lookup"),
+            ToolCallArgs(tool_call_id="call-1", delta='{"q": "x"}'),
+            ToolCallEnd(tool_call_id="call-1"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_a_tool_result_correlates_to_the_call_that_produced_it(self):
+        raw = {"call_id": "call-1", "output": "42", "type": "function_call_output"}
+        events = await _collect(OpenAIRunner(), [_run_item_event("tool_output", raw, output=42)])
+        assert events == [ToolCallResult(tool_call_id="call-1", content="42")]
+
+    @pytest.mark.asyncio
+    async def test_a_tool_result_falls_back_to_the_items_own_output(self):
+        """Prefer raw_item.output; fall back to item.output."""
+        events = await _collect(OpenAIRunner(), [_run_item_event("tool_output", {"call_id": "call-1"}, output=42)])
+        assert events == [ToolCallResult(tool_call_id="call-1", content="42")]
+
+    @pytest.mark.asyncio
+    async def test_a_tool_item_with_no_call_id_emits_nothing(self):
+        """No call_id → emit nothing."""
+        events = await _collect(OpenAIRunner(), [_run_item_event("tool_called", {"name": "lookup"})])
+        assert events == []
+
+    @pytest.mark.asyncio
+    async def test_reasoning_is_bracketed_around_its_summary_deltas(self):
+        item = _reasoning_item()
+        events = await _collect(
+            OpenAIRunner(),
+            [_item_added(item), _reasoning_delta_event("think"), _item_done(item)],
+        )
+        assert events == [
+            ReasoningStart(message_id="rsn-1"),
+            ReasoningDelta(message_id="rsn-1", content="think"),
+            ReasoningEnd(message_id="rsn-1"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_item_created_run_events_are_ignored_so_messages_are_not_doubled(self):
+        """message_output_created / reasoning_item_created are covered by raw events already."""
+        events = await _collect(
+            OpenAIRunner(),
+            [
+                _run_item_event("message_output_created", _message_item()),
+                _run_item_event("reasoning_item_created", _reasoning_item()),
+            ],
+        )
+        assert events == []
+
+    @pytest.mark.parametrize(
+        "name",
+        ["tool_search_called", "tool_search_output_created", "mcp_approval_requested", "mcp_approval_response", "mcp_list_tools"],
+    )
+    @pytest.mark.asyncio
+    async def test_hosted_tool_and_mcp_items_stay_unmapped(self, name):
+        """Hosted-tool and MCP run-item names stay unmapped (not user-facing agent work)."""
+        events = await _collect(OpenAIRunner(), [_run_item_event(name, _function_call())])
+        assert events == []
+
+
+class TestOpenAIRunnerHandoffs:
+    """Handoffs map as tool calls: the SDK models them as tools, then lifts them into handoff_* events."""
+
+    @pytest.mark.asyncio
+    async def test_a_handoff_opens_fills_and_closes_like_any_tool_call(self):
+        events = await _collect(OpenAIRunner(), [_run_item_event("handoff_requested", _handoff_call())])
+        assert events == [
+            ToolCallStart(tool_call_id="ho-1", name="transfer_to_billing"),
+            ToolCallArgs(tool_call_id="ho-1", delta='{"reason": "billing"}'),
+            ToolCallEnd(tool_call_id="ho-1"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_the_handoff_result_correlates_to_the_call_on_the_same_id(self):
+        """Result correlates on the same call_id."""
+        events = await _collect(
+            OpenAIRunner(),
+            [
+                _run_item_event("handoff_requested", _handoff_call()),
+                _run_item_event("handoff_occured", _handoff_output()),
+            ],
+        )
+        assert [e.tool_call_id for e in events] == ["ho-1"] * 4
+        assert events[-1] == ToolCallResult(tool_call_id="ho-1", content="Handed off to billing")
+
+    @pytest.mark.asyncio
+    async def test_the_sdks_misspelling_is_what_is_matched(self):
+        """Match the SDK spelling `handoff_occured` — the correctly spelled name would drop results."""
+        assert await _collect(OpenAIRunner(), [_run_item_event("handoff_occurred", _handoff_output())]) == []
+        assert await _collect(OpenAIRunner(), [_run_item_event("handoff_occured", _handoff_output())]) != []
 
 
 class TestOpenAIRunnerErrorHandling:

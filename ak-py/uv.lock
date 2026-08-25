@@ -36,6 +36,18 @@ http-server = [
 ]
 
 [[package]]
+name = "ag-ui-protocol"
+version = "0.1.20"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/7a/0db4c6233ccf39654e45af0e532efa87abc0eb7828b16f9e63014881e75f/ag_ui_protocol-0.1.20.tar.gz", hash = "sha256:fadc9600f492a9dde8b2b027171bb471a899430e53291a0b882a09d3f5416145", size = 11977, upload-time = "2026-08-14T22:34:36.694Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/57/55a4a74a5580ef74d2e326f455be45256d4f11260b493174ae0a81626be4/ag_ui_protocol-0.1.20-py3-none-any.whl", hash = "sha256:a15cced52603327b0ba32e95a8aca87e9067f3e69281addfc3fecdaa16a1d485", size = 15142, upload-time = "2026-08-14T22:34:35.607Z" },
+]
+
+[[package]]
 name = "agentkernel"
 version = "0.8.1"
 source = { editable = "." }
@@ -55,6 +67,9 @@ adk = [
     { name = "google-adk" },
     { name = "litellm" },
     { name = "openinference-instrumentation-google-adk" },
+]
+agui = [
+    { name = "ag-ui-protocol" },
 ]
 api = [
     { name = "fastapi" },
@@ -209,6 +224,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "a2a-sdk", extras = ["http-server"], marker = "extra == 'a2a'", specifier = ">=0.3.6" },
+    { name = "ag-ui-protocol", marker = "extra == 'agui'", specifier = ">=0.1.16" },
     { name = "aiohttp", marker = "extra == 'teams'", specifier = ">=3.9.0" },
     { name = "azure-core", marker = "extra == 'azure'", specifier = ">=1.26.0" },
     { name = "azure-data-tables", marker = "extra == 'azure'", specifier = ">=12.4.0" },
@@ -287,7 +303,7 @@ requires-dist = [
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.0.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "cli", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona"]
+provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "cli", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona"]
 
 [package.metadata.requires-dev]
 dev = [

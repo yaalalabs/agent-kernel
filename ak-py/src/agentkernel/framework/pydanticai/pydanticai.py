@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import base64
 import copy
+import json
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
+from uuid import uuid4
 
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai import BinaryContent, DocumentUrl, FunctionToolset, ImageUrl, Tool
@@ -16,6 +19,19 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
+from ...core.event import (
+    MessageEnd,
+    MessageStart,
+    ReasoningDelta,
+    ReasoningEnd,
+    ReasoningStart,
+    StreamEvent,
+    TextDelta,
+    ToolCallArgs,
+    ToolCallEnd,
+    ToolCallResult,
+    ToolCallStart,
+)
 from ...core.model import (
     AgentReply,
     AgentReplyAny,
@@ -30,6 +46,8 @@ from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "pydanticai"
+
+_log = logging.getLogger("ak.pydanticai.runner")
 
 
 class PydanticAISession:
@@ -147,9 +165,7 @@ class PydanticAIRunner(BaseRunner):
             fw_session = self._session(session)
             history = ModelMessagesTypeAdapter.validate_python(fw_session.messages) if fw_session and fw_session.messages else None
 
-            # `deps` is Pydantic AI's only caller-dependency slot and AK owns it, so tools and instruction
-            # functions read and mutate the context via RunContext.deps.
-            # A deep copy is passed in so tools mutating it in place don't also mutate `incoming`.
+            # Deep copy so in-place tool mutations do not alter `incoming`.
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
             result = await agent.agent.run(content, message_history=history, deps=produced)
@@ -171,17 +187,20 @@ class PydanticAIRunner(BaseRunner):
             if context is not None:
                 context.reset()
 
-    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
-        Streams the Pydantic AI agent response token by token.
+        Streams the Pydantic AI agent response as Agent Kernel stream events.
 
-        Note: a streaming run stops at the first ``output_type`` match, so structured outputs
-        may truncate differently than the non-streaming ``run()`` path.
+        Uses `run_stream_events()` so text, thinking, and tool-call parts are all reachable.
+        Part events drive the streams (`text` / `thinking` / `tool-call`); ids come from the
+        part or `tool_call_id` (or a generated id for text/thinking). `open_parts` / `carried`
+        are locals — the runner is shared across sessions. `function_tool_call` is ignored
+        because the part events already cover the call.
 
         :param agent: The Pydantic AI agent to run.
         :param session: The session to use for the agent.
         :param requests: The requests to the agent.
-        :return: An async generator yielding string token deltas.
+        :return: An async generator yielding StreamEvent objects.
         """
         context: ToolContext | None = None
         try:
@@ -197,23 +216,221 @@ class PydanticAIRunner(BaseRunner):
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
 
-            async with agent.agent.run_stream(content, message_history=history, deps=produced) as result:
-                async for delta in result.stream_text(delta=True):
-                    if delta:
-                        yield delta
+            open_parts: dict[int, tuple[str, str]] = {}  # live index -> (kind, id); local, never on self
+            carried: dict[str, str] = {}  # kind -> id when a stream continues across a part boundary
+            run_result: Any = None
 
-                if fw_session is not None:
-                    fw_session.messages = to_jsonable_python(result.all_messages())
+            async with agent.agent.run_stream_events(content, message_history=history, deps=produced) as events:
+                async for event in events:
+                    kind = getattr(event, "event_kind", None)
+                    if kind == "agent_run_result":
+                        run_result = getattr(event, "result", None)
+                        continue
+                    for stream_event in self._map_event(kind, event, open_parts, carried):
+                        yield stream_event
 
-                # Only after the stream drains normally, so a disconnect or mid-stream error leaves the stored
-                # context intact. Deliberately not in a finally.
-                try:
-                    self._store_framework_context(session, incoming, produced)
-                except Exception as e:
-                    self._log_framework_context_stream_failure(session, e)
+            for index in list(open_parts):
+                for stream_event in self._close_part(index, open_parts, carried):
+                    yield stream_event
+            for part_kind, stream_id in list(carried.items()):
+                del carried[part_kind]
+                yield MessageEnd(message_id=stream_id) if part_kind == "text" else ReasoningEnd(message_id=stream_id)
+
+            if fw_session is not None and run_result is not None:
+                fw_session.messages = to_jsonable_python(run_result.all_messages())
+            elif fw_session is not None:
+                _log.warning("Pydantic AI stream drained without an agent_run_result event; conversation history was not persisted")
+
+            # After a normal drain only — disconnect/error leaves stored context intact.
+            try:
+                self._store_framework_context(session, incoming, produced)
+            except Exception as e:
+                self._log_framework_context_stream_failure(session, e)
         finally:
             if context is not None:
                 context.reset()
+
+    def _map_event(self, kind: str | None, event: Any, open_parts: dict[int, tuple[str, str]], carried: dict[str, str]) -> list[StreamEvent]:
+        """
+        Translate one Pydantic AI run event into AK events.
+
+        Both tool-result kinds map: a structured-output run's final answer is an ordinary tool call
+        whose result arrives as `output_tool_result`, so dropping it would leave the call dangling.
+        Unmapped kinds (including `function_tool_call`) produce nothing.
+
+        :param kind: The event's `event_kind` discriminator.
+        :param event: The run event.
+        :param open_parts: Live index → `(kind, id)` map. Mutated in place.
+        :param carried: Kind → id map of streams held open across a part boundary.
+        :return: The AK events this run event produces, or an empty list.
+        """
+        if kind == "part_start":
+            return self._open_part(event, open_parts, carried)
+        if kind == "part_delta":
+            return self._delta_part(event, open_parts)
+        if kind == "part_end":
+            return self._close_part(event.index, open_parts, carried, getattr(event, "next_part_kind", None))
+        if kind in ("function_tool_result", "output_tool_result"):
+            return self._tool_result(event)
+        return []
+
+    def _open_part(self, event: Any, open_parts: dict[int, tuple[str, str]], carried: dict[str, str]) -> list[StreamEvent]:
+        """
+        Open a part's stream, or continue one held open from the previous part.
+
+        Adjacent parts of the same kind reuse the id (no new boundary). A second `part_start`
+        on a live index replaces the previous part and closes it first.
+
+        :param event: A `part_start` run event.
+        :param open_parts: Live index → `(kind, id)` map. Mutated in place.
+        :param carried: Kind → id map of streams held open across a part boundary.
+        :return: The AK events that open (or continue) this part.
+        """
+        index = event.index
+        part = getattr(event, "part", None)
+        part_kind = getattr(part, "part_kind", None)
+
+        events: list[StreamEvent] = []
+        if index in open_parts:
+            events.extend(self._close_part(index, open_parts, carried))
+
+        if part_kind in ("text", "thinking"):
+            continuing = getattr(event, "previous_part_kind", None) == part_kind and part_kind in carried
+            message_id = carried.pop(part_kind) if continuing else (getattr(part, "id", None) or uuid4().hex)
+            open_parts[index] = (part_kind, message_id)
+            if not continuing:
+                events.append(MessageStart(message_id=message_id) if part_kind == "text" else ReasoningStart(message_id=message_id))
+            content = getattr(part, "content", None)
+            if content:
+                events.append(
+                    TextDelta(message_id=message_id, content=content)
+                    if part_kind == "text"
+                    else ReasoningDelta(message_id=message_id, content=content)
+                )
+            return events
+
+        if part_kind == "tool-call":
+            tool_call_id = getattr(part, "tool_call_id", None)
+            if not tool_call_id:
+                _log.debug("Pydantic AI tool-call part carries no tool_call_id; not emitted")
+                return events
+            open_parts[index] = ("tool-call", tool_call_id)
+            events.append(ToolCallStart(tool_call_id=tool_call_id, name=getattr(part, "tool_name", None) or ""))
+            arguments = self._as_json(getattr(part, "args", None), "arguments")
+            if arguments:
+                events.append(ToolCallArgs(tool_call_id=tool_call_id, delta=arguments))
+            return events
+
+        return events
+
+    def _delta_part(self, event: Any, open_parts: dict[int, tuple[str, str]]) -> list[StreamEvent]:
+        """
+        Forward one delta onto the stream its index opened.
+
+        Deltas for an index that never opened are dropped.
+
+        :param event: A `part_delta` run event.
+        :param open_parts: Live index → `(kind, id)` map.
+        :return: The AK delta events, or an empty list.
+        """
+        index = event.index
+        opened = open_parts.get(index)
+        if opened is None:
+            _log.debug(f"Pydantic AI delta for part {index} that never opened; not emitted")
+            return []
+
+        part_kind, stream_id = opened
+        delta = getattr(event, "delta", None)
+
+        if part_kind == "text":
+            content = getattr(delta, "content_delta", None)
+            return [TextDelta(message_id=stream_id, content=content)] if content else []
+        if part_kind == "thinking":
+            content = getattr(delta, "content_delta", None)
+            return [ReasoningDelta(message_id=stream_id, content=content)] if content else []
+
+        arguments = self._as_json(getattr(delta, "args_delta", None), "arguments")
+        return [ToolCallArgs(tool_call_id=stream_id, delta=arguments)] if arguments else []
+
+    def _close_part(
+        self, index: int, open_parts: dict[int, tuple[str, str]], carried: dict[str, str], next_part_kind: str | None = None
+    ) -> list[StreamEvent]:
+        """
+        Close the stream an index opened, unless the next part continues it.
+
+        :param index: The part index to close.
+        :param open_parts: Live index → `(kind, id)` map. Mutated in place.
+        :param carried: Kind → id map; a continued stream is parked here.
+        :param next_part_kind: Kind of the following part, when known.
+        :return: Closing AK events, or empty when held open / never live.
+        """
+        opened = open_parts.pop(index, None)
+        if opened is None:
+            return []
+        part_kind, stream_id = opened
+        if part_kind in ("text", "thinking") and next_part_kind == part_kind:
+            carried[part_kind] = stream_id
+            return []
+        if part_kind == "text":
+            return [MessageEnd(message_id=stream_id)]
+        if part_kind == "thinking":
+            return [ReasoningEnd(message_id=stream_id)]
+        return [ToolCallEnd(tool_call_id=stream_id)]
+
+    def _tool_result(self, event: Any) -> list[StreamEvent]:
+        """
+        Map a `function_tool_result` onto `ToolCallResult`.
+
+        :param event: A `function_tool_result` run event.
+        :return: A single `ToolCallResult`, or empty if there is no `tool_call_id`.
+        """
+        part = getattr(event, "part", None)
+        tool_call_id = getattr(part, "tool_call_id", None)
+        if not tool_call_id:
+            _log.debug("Pydantic AI tool result carries no tool_call_id; not emitted")
+            return []
+        content = getattr(part, "content", None)
+        if content is None:
+            content = getattr(event, "content", None)
+        return [ToolCallResult(tool_call_id=tool_call_id, content=self._as_text(content))]
+
+    @staticmethod
+    def _as_text(value: Any) -> str:
+        """
+        Render a tool result as text for the client.
+
+        :param value: The tool result payload.
+        :return: String content for `ToolCallResult`.
+        """
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(to_jsonable_python(value), default=str)
+        except Exception:
+            return str(value)
+
+    @staticmethod
+    def _as_json(value: Any, what: str) -> str:
+        """
+        Serialise a tool-argument payload (string or dict) to JSON text.
+
+        On encode failure returns `""` so a mid-stream exception does not fail the run.
+
+        :param value: Arguments as a string, dict, or None.
+        :param what: What is being serialised, for the log line.
+        :return: JSON/string fragment, or `""` if missing/unencodable.
+        """
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(value, default=str)
+        except Exception as e:
+            _log.warning(f"Pydantic AI tool {what} could not be serialised; it is emitted empty: {e!r}")
+            return ""
 
 
 class PydanticAIAgent(BaseAgent):

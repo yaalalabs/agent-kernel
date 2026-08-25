@@ -789,7 +789,37 @@ class _SandboxConfig(BaseModel):
         return self
 
 
+class _AGUIStateConfig(BaseModel):
+    """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
+
+    enabled: bool = Field(default=False, description="Expose the AG-UI state tools to agents")
+    agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
+
+
+class _AGUIClientContextConfig(BaseModel):
+    """Opt-in for the read-only AG-UI client-context tools (forwarded props and context)."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Expose the read-only AG-UI client-context tools (forwarded props and context) to agents",
+    )
+    agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
+
+
+class _AGUIConfig(BaseModel):
+    """Parameterizes a mounted AGUIRequestHandler. Mounting the handler is what enables AG-UI;
+    this block never switches the surface on. The two nested blocks do switch on agent-facing tools."""
+
+    agents: Optional[list[str]] = Field(default=None, description="Agent names reachable over AG-UI; omitted = all streaming-capable agents")
+    prefix: str = Field(default="/agui", description="Route prefix for the AG-UI surface")
+    default_agent: Optional[str] = Field(default=None, description="Agent served on the bare prefix route")
+    state: _AGUIStateConfig = Field(default_factory=_AGUIStateConfig)
+    client_context: _AGUIClientContextConfig = Field(default_factory=_AGUIClientContextConfig)
+
+
 class AKConfig(YamlBaseSettingsModified):
+    """Root configuration, loaded from config.yaml and `AK_`-prefixed environment variables."""
+
     session: _SessionStoreConfig = Field(
         description="Agent session / memory related configurations",
         default_factory=_SessionStoreConfig,
@@ -814,6 +844,7 @@ class AKConfig(YamlBaseSettingsModified):
         description="Conversation Thread Support configurations (store backend, naming). The feature is served by mounting AgentThreadRequestHandler; this block only parameterizes it.",
     )
 
+    agui: _AGUIConfig = Field(description="AG-UI integration configurations", default_factory=_AGUIConfig)
     schedule: Optional[_ScheduleConfig] = Field(
         default=None,
         description="Scheduling capability configurations (trigger provider, task store, tool scoping). Absent = the capability is disabled.",

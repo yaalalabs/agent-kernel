@@ -34,6 +34,26 @@ sequenceDiagram
 - **Automatic description**: A vision-capable LLM generates brief descriptions of each attachment.
 - **System tool for recall**: The agent can call `analyze_attachments` to retrieve previously stored images/files.
 
+## Supported Attachment Source Forms
+
+`AgentRequestImage.image_data` and `AgentRequestFile.file_data` accept a source string in any of these forms:
+
+| Source form | Example | Handling |
+|---|---|---|
+| Bare base64 | `iVBORw0KGgo...` | Described by the vision LLM and saved to storage |
+| `data:<mime>;base64,<payload>` | `data:image/png;base64,iVBORw0KGgo...` | Described and saved to storage; the mime type comes from the URI itself, not the request's `mime_type` |
+| `data:<mime>,<payload>` (no `;base64` marker) | `data:text/plain,hello%20world` | Left on the request undescribed and unsaved — its bytes are not base64, so decoding them would store the wrong thing |
+| `http://` / `https://` URL | `https://example.com/cat.png` | Left on the request undescribed and unsaved — the pre-hook never fetches remote content, to avoid network I/O and SSRF exposure in a system hook that runs on every request |
+| `s3://` reference | `s3://bucket/key.png` | Left on the request undescribed and unsaved, same as other remote references |
+
+A `data:` URI with no payload after the comma (`data:image/png;base64,`) carries no bytes and is dropped, the same as an empty `image_data`/`file_data`. Scheme and `data:` header matching is case-insensitive.
+
+Attachments that are left on the request list are **not** removed by `MultimodalPreHook` — they reach the agent/adapter as-is so it can resolve them itself (for example, `framework/openai/openai.py` already accepts all five forms natively).
+
+:::caution Thread mode does not classify source forms yet
+This classification only runs on the **thread-off** path. When [Conversation Thread Support](/docs/advanced/threads) is enabled, `ConversationThreadManager` saves `image_data`/`file_data` to storage **before** `MultimodalPreHook` runs, always treating the string as raw bytes with an `image/jpeg`/`application/octet-stream` fallback. With threads enabled, only bare base64 and base64 `data:` URIs are handled correctly today; URL and non-base64 `data:` forms are a tracked follow-up.
+:::
+
 ## Enabling Multimodal Support
 
 ### Environment Variables
@@ -51,6 +71,37 @@ multimodal:
   description_max_length: 200         # Max chars for auto-generated descriptions
   storage_type: in_memory             # Default - no session bloat
 ```
+
+## Attachment Source Forms
+
+`AgentRequestImage.image_data` and `AgentRequestFile.file_data` accept several source forms, and what
+`MultimodalPreHook` does with each differs. Only inline bytes can be described by a vision model or
+stored — a URL is a reference to something the hook never reads.
+
+| Source form | Example | Described | Stored | Reaches the agent |
+|---|---|---|---|---|
+| Bare base64 | `iVBORw0KGgo...` | ✅ | ✅ | As a description, plus an `attachment_id` |
+| `data:` URI, base64 | `data:image/png;base64,iVBOR...` | ✅ | ✅ | As above. The URI's own media type wins over `mime_type` |
+| `data:` URI, no base64 marker | `data:text/plain,hello` | ❌ | ❌ | Passed through untouched |
+| `http://` / `https://` URL | `https://cdn.example.com/a.png` | ❌ | ❌ | Passed through untouched |
+| `s3://` URL | `s3://bucket/key.pdf` | ❌ | ❌ | Passed through untouched |
+
+"Passed through untouched" is the important row. The hook neither describes nor stores these, and — as
+of the source-form work — it no longer *strips* them either: the request travels on to the framework
+adapter with the URL intact, so an adapter that can fetch a URL itself (as several can) gets the chance
+to. Previously they were consumed and dropped, so the agent saw nothing at all.
+
+A `data:` URI with an empty payload (`data:image/png;base64,`) is dropped rather than forwarded, since
+there are no bytes to describe and nothing for an adapter to fetch. Scheme and media-type matching is
+case-insensitive.
+
+:::warning With Conversation Thread Support enabled, only bare base64 is safe
+The table above describes the **thread-off** path. When threads are enabled,
+`ConversationThreadManager.store_attachments` stores `image_data` / `file_data` verbatim before the
+hook runs and does no source-form classification — so a `data:` URI or a URL is persisted corrupted,
+and the description the agent later sees is of those corrupted bytes. Bare base64 is unaffected. This
+is a known limitation: send bare base64 when threads are on.
+:::
 
 ## Attachment Storage
 

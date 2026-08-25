@@ -537,7 +537,7 @@ module.pre_hook(agent, [RAGPreHook()])
 module.post_hook(agent, [DisclaimerPostHook()])
 ```
 
-**Streaming token hook (optional):** override `on_stream_chunk` on a `PostHook` to inspect or modify each token delta while `execution.mode: stream` is active (e.g. redact sensitive text before it reaches the client). Return `None` to drop a token entirely. Only called when streaming; regular `on_run()` still handles the non-streaming path.
+**Streaming text hook (optional):** override `on_stream_chunk` on a `PostHook` to inspect or modify each piece of streamed text while `execution.mode: stream` is active (e.g. redact sensitive text before it reaches the client). It sees the text-carrying events only — the assistant's `TextDelta` and the model's `ReasoningDelta` — not tool calls or message boundaries. Return `None` to drop the whole chunk, its event included; a returned string is written back into the event, so `delta` and `event` cannot disagree. Only called when streaming; regular `on_run()` still handles the non-streaming path.
 
 ```python
 class RedactingPostHook(DisclaimerPostHook):
