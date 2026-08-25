@@ -186,8 +186,15 @@ class TestTriggerRecording:
     async def test_occurrence_is_recorded_and_the_request_runs(self, manager, handler):
         result, _ = await ChatService().execute(self._trigger_request())
 
-        manager.record_trigger.assert_called_once_with("t1", request_id="r1", occurred_at="2030-06-01T09:00:00Z")
+        manager.record_trigger.assert_called_once_with("t1", "u1", request_id="r1", occurred_at="2030-06-01T09:00:00Z")
         assert str(result) == "agent ran"
+
+    @pytest.mark.asyncio
+    async def test_the_acting_user_is_forwarded_so_the_manager_can_reject_a_foreign_task(self, manager, handler):
+        """The trigger metadata rides on a client-bindable request, so ownership is the manager's call."""
+        await ChatService().execute(self._trigger_request(user_id="someone-else"))
+
+        manager.record_trigger.assert_called_once_with("t1", "someone-else", request_id="r1", occurred_at="2030-06-01T09:00:00Z")
 
     def test_occurrence_is_recorded_on_the_sync_path(self, manager, handler):
         ChatService().execute_sync(self._trigger_request())

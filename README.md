@@ -124,15 +124,14 @@ Let agents run code and shell commands in an isolated, permission-bounded enviro
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/sandbox)
 
-### ⏰ Scheduling — Deferred & Recurring Chat Execution
+### ⏰ Deferred & Recurring Chats
 
-A chat request carrying a `schedule` block isn't run — it's registered as a scheduled task and
-acknowledged with HTTP 202. When it's due, the occurrence runs through the normal chat path.
+Let a chat run later, or on a schedule — the platform owns the timers, the persistence, and the management API.
 
-- **One-time or recurring** — `at` for a single future moment, `cron` for a standard 5-field recurrence.
-- **Agent-driven too** — five system tools (`create_schedule`, `list_schedules`, `get_schedule`, `update_schedule`, `delete_schedule`) let the agent itself schedule follow-up work, scoped to the acting user.
-- **Management REST API** — list, read, amend, and cancel scheduled tasks, with pluggable authorization.
-- **Pluggable backends** — `local` provider + `in_memory` store today, ships as a bare `schedule:` config block for local dev.
+- **Enable it in config** — a `schedule` block turns on deferring and the agent tools with no code change; mount `ScheduleRESTRequestHandler` when you also want the management routes.
+- **One creation path, three callers** — a `schedule` block on any chat request (acknowledged with HTTP 202), the agent's own `create_schedule` tool, or a direct `ScheduleManager` call.
+- **Pluggable timers and stores** — `local` (in-process, for development) or AWS EventBridge Scheduler for production; task records in memory, Redis, Valkey, or DynamoDB.
+- **Managed over REST** — list, read, amend, pause and cancel via `/api/v1/schedules`, scoped to the owning user by a pluggable `Authoriser`.
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/scheduling)
 
@@ -142,6 +141,7 @@ acknowledged with HTTP 202. When it's due, the occurrence runs through the norma
 |---|---|
 | **Session / Memory** | In-memory, Redis, Valkey (AWS), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
 | **Conversation Threads** | Persistent, named threads keyed by `session_id` — in-memory, Redis, Valkey, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
+| **Scheduled Tasks** | Deferred and recurring chat execution — in-memory, Redis, Valkey, DynamoDB (AWS) task stores; local in-process or AWS EventBridge Scheduler timers |
 | **Vector Knowledge** | ChromaDB |
 | **Graph Knowledge** | Neo4j |
 | **SQL Analytics** | Starburst Galaxy (Trino) |
@@ -192,7 +192,7 @@ ak skill install
 |---|---|
 | `ak-init` | Scaffold a new project — any framework, any deployment mode |
 | `ak-build` | Add tools, agents, handoffs — context-aware and framework-specific |
-| `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, sandbox, scheduling |
+| `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, sandbox, scheduled tasks |
 | `ak-add-integration` | Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail |
 | `ak-cloud-deploy` | AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run with full Terraform |
 | `ak-test` | Fuzzy, judge, and fallback test modes + a debugging playbook |

@@ -221,6 +221,26 @@ class TestArmingLifecycle:
         assert provider.get("t1") is None
         assert _fetch_triggers(transport, wait=0.6) == []
 
+    def test_repeated_amendments_do_not_grow_the_heap_without_bound(self, transport, provider):
+        """Each re-arm parks its predecessor in the heap; compaction keeps that bounded."""
+        provider.create(_task(_at_spec(30)), BODY_TEMPLATE)
+
+        for _ in range(50):
+            provider.update(_task(_at_spec(30)), BODY_TEMPLATE)
+
+        assert provider.get("t1") is not None
+        assert len(provider._heap) <= 16
+
+    def test_disarming_tasks_reclaims_their_heap_entries(self, transport, provider):
+        for index in range(20):
+            provider.create(_task(_at_spec(30), task_id=f"t{index}"), BODY_TEMPLATE)
+
+        for index in range(20):
+            provider.delete(f"t{index}")
+
+        assert provider._armed == {}
+        assert len(provider._heap) < 20
+
     def test_an_amended_occurrence_does_not_fire_at_the_old_time(self, transport, provider):
         task = _task(_at_spec(0.3))
         provider.create(task, BODY_TEMPLATE)

@@ -122,3 +122,30 @@ output "websocket_api_cloudwatch_log_group_name" {
   description = "Name of the CloudWatch log group for the WebSocket API Gateway (null when access logging is disabled)"
   value       = local.is_websocket_mode && var.enable_api_gateway_logs ? aws_cloudwatch_log_group.ws_api[0].name : null
 }
+
+# Scheduling outputs (null unless the matching flag is set)
+
+output "schedule_group_name" {
+  description = "EventBridge Scheduler schedule-group name the scheduled tasks register their schedules in"
+  value       = local.schedule_group_name
+}
+
+output "schedule_group_arn" {
+  description = "EventBridge Scheduler schedule-group ARN"
+  value       = local.schedule_group_arn
+}
+
+output "scheduler_execution_role_arn" {
+  description = "ARN of the role EventBridge Scheduler assumes to deliver scheduled triggers to the Input Queue"
+  value       = local.scheduler_execution_role_arn
+}
+
+output "schedule_table_name" {
+  description = "DynamoDB schedule store table name"
+  value       = local.dynamodb_schedule_table_name
+}
+
+output "schedule_table_arn" {
+  description = "DynamoDB schedule store table ARN"
+  value       = local.dynamodb_schedule_table_arn
+}

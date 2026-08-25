@@ -511,7 +511,15 @@ class ChatService:
             if manager is None:
                 self._log.warning(f"Trigger of scheduled task {task_id} arrived while scheduling is not configured")
                 return
-            manager.record_trigger(task_id, request_id=getattr(req, "request_id", None), occurred_at=getattr(req, "scheduled_time", None))
+            # The acting user is passed so the manager can reject a request that named someone
+            # else's task: this metadata arrives on a client-bindable chat request, not a channel
+            # only a provider can reach.
+            manager.record_trigger(
+                task_id,
+                req.user_id,
+                request_id=getattr(req, "request_id", None),
+                occurred_at=getattr(req, "scheduled_time", None),
+            )
         except Exception as e:
             self._log.error(f"Failed to record trigger of scheduled task {task_id}: {e}")
 

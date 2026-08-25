@@ -5,7 +5,7 @@ ordering guarantees (record first, register second, roll back on failure) are ob
 """
 
 import json
-from typing import ClassVar, Optional
+from typing import Optional
 
 import pytest
 
@@ -19,6 +19,7 @@ from agentkernel.schedule.errors import ScheduleError
 from agentkernel.schedule.manager import ScheduleManager
 from agentkernel.schedule.model import TOKEN_OCCURRENCE_TIME, TOKEN_REQUEST_ID, ScheduleStatus
 from agentkernel.schedule.provider.base import ScheduleProvider
+from agentkernel.schedule.provider.eventbridge import EventBridgeScheduleProvider
 from agentkernel.schedule.provider.local import LocalScheduleProvider
 from agentkernel.schedule.store.in_memory import InMemoryScheduleStore
 
@@ -55,10 +56,12 @@ class FakeScheduleProvider(ScheduleProvider):
             raise ScheduleError(f"provider {operation} rejected")
 
 
-class SqsOnlyScheduleProvider(FakeScheduleProvider):
-    """A provider that can only deliver to SQS, like the EventBridge one."""
+def _sqs_only_provider() -> EventBridgeScheduleProvider:
+    """The shipped SQS-only provider, so the compatibility checks pin the real class attribute.
 
-    supported_transports: ClassVar[Optional[frozenset[str]]] = frozenset({"sqs"})
+    Its client is created on first use, so constructing one never reaches AWS.
+    """
+    return EventBridgeScheduleProvider(group_name="ak-schedules", role_arn="arn:aws:iam::1:role/r", queue_arn="arn:aws:sqs:us-east-1:1:q.fifo")
 
 
 class DummyRunner(Runner):
@@ -168,13 +171,23 @@ class TestSingletonAndConfiguration:
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
 
         with pytest.raises(AKConfigError, match="delivers to \\['sqs'\\] transports, but the configured queue transport is 'in_memory'"):
-            ScheduleManager(provider=SqsOnlyScheduleProvider(), store=store)
+            ScheduleManager(provider=_sqs_only_provider(), store=store)
+
+    def test_incompatible_pairing_without_a_schedule_block_still_reports_a_config_error(self, store, monkeypatch):
+        """A manager built with its own backends gets the same diagnosis, named by the provider class."""
+        AKConfig._reset()
+        base = AKConfig.get()
+        monkeypatch.setattr(AKConfig, "get", classmethod(lambda cls: base.model_copy(update={"schedule": None})))
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+
+        with pytest.raises(AKConfigError, match="schedule provider 'EventBridgeScheduleProvider' delivers to \\['sqs'\\] transports"):
+            ScheduleManager(provider=_sqs_only_provider(), store=store)
 
     def test_compatible_provider_and_transport_are_accepted(self, store, monkeypatch):
-        _configure_schedule(monkeypatch, provider={"type": "eventbridge"})
+        _configure_schedule(monkeypatch, provider={"type": "eventbridge"}, store={"type": "dynamodb"})
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
 
-        assert ScheduleManager(provider=SqsOnlyScheduleProvider(), store=store) is not None
+        assert ScheduleManager(provider=_sqs_only_provider(), store=store) is not None
 
     def test_local_provider_is_accepted_on_the_single_process_pairing(self, store, monkeypatch):
         _configure_schedule(monkeypatch, provider={"type": "local"}, store={"type": "in_memory"})
@@ -200,10 +213,18 @@ class TestSingletonAndConfiguration:
 
     def test_the_single_process_constraint_applies_only_to_the_local_provider(self, store, monkeypatch):
         """A provider that owns its timers elsewhere is unaffected by this check."""
+        _configure_schedule(monkeypatch, provider={"type": "eventbridge"}, store={"type": "dynamodb"})
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+
+        assert ScheduleManager(provider=_sqs_only_provider(), store=store) is not None
+
+    def test_in_memory_store_and_broker_transport_fail_fast(self, store, monkeypatch):
+        """A durable provider fires from whichever process created a task; in-memory records do not travel."""
         _configure_schedule(monkeypatch, provider={"type": "eventbridge"}, store={"type": "in_memory"})
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
 
-        assert ScheduleManager(provider=SqsOnlyScheduleProvider(), store=store) is not None
+        with pytest.raises(AKConfigError, match="store 'in_memory' is single-process only.*transport is 'sqs'"):
+            ScheduleManager(provider=_sqs_only_provider(), store=store)
 
 
 class TestCreation:
@@ -464,6 +485,16 @@ class TestCancellation:
         with pytest.raises(KeyError, match="not found"):
             manager.cancel("missing")
 
+    def test_provider_failure_restores_the_active_record(self, store):
+        """A cancellation the provider rejected must not leave a record claiming it succeeded."""
+        manager = ScheduleManager(provider=FakeScheduleProvider(fail_on="delete"), store=store)
+        task = _create(manager)
+
+        with pytest.raises(ScheduleError, match="provider delete rejected"):
+            manager.cancel(task.task_id)
+
+        assert store.get(task.task_id).status is ScheduleStatus.ACTIVE
+
     def test_cancelling_twice_is_rejected(self, manager):
         task = _create(manager)
         manager.cancel(task.task_id)
@@ -476,7 +507,7 @@ class TestTriggerRecording:
     def test_recording_advances_the_occurrence_fields(self, manager, store):
         task = _create(manager)
 
-        manager.record_trigger(task.task_id, request_id="r1", occurred_at="2030-06-01T09:00:00Z")
+        manager.record_trigger(task.task_id, "u1", request_id="r1", occurred_at="2030-06-01T09:00:00Z")
 
         recorded = store.get(task.task_id)
         assert recorded.trigger_count == 1
@@ -487,23 +518,41 @@ class TestTriggerRecording:
     def test_recording_stamps_the_current_time_when_the_provider_reports_none(self, manager, store):
         task = _create(manager)
 
-        manager.record_trigger(task.task_id)
+        manager.record_trigger(task.task_id, "u1")
 
         assert store.get(task.task_id).last_triggered_at is not None
 
     def test_recording_completes_a_one_time_task(self, manager, store):
         task = _create(manager, spec=ScheduleSpec(at=FUTURE_AT))
 
-        manager.record_trigger(task.task_id, request_id="r1")
+        manager.record_trigger(task.task_id, "u1", request_id="r1")
 
         assert store.get(task.task_id).status is ScheduleStatus.COMPLETED
 
+    def test_recording_against_a_task_another_user_owns_is_ignored(self, manager, store):
+        """A forged trigger must not complete someone else's one-time task out from under them."""
+        task = _create(manager, user_id="u1", spec=ScheduleSpec(at=FUTURE_AT))
+
+        manager.record_trigger(task.task_id, "u2", request_id="r1")
+
+        recorded = store.get(task.task_id)
+        assert recorded.trigger_count == 0
+        assert recorded.status is ScheduleStatus.ACTIVE
+
+    def test_recording_without_an_identity_is_ignored(self, manager, store):
+        """An absent user_id is a mismatch, not an unauthenticated caller to wave through."""
+        task = _create(manager, user_id="u1")
+
+        manager.record_trigger(task.task_id, None, request_id="r1")
+
+        assert store.get(task.task_id).trigger_count == 0
+
     def test_recording_an_unknown_task_is_ignored(self, manager):
-        manager.record_trigger("missing", request_id="r1")
+        manager.record_trigger("missing", "u1", request_id="r1")
 
     def test_recording_never_raises_into_the_run(self, provider, store, monkeypatch):
         manager = ScheduleManager(provider=provider, store=store)
         task = _create(manager)
         monkeypatch.setattr(store, "record_trigger", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("store down")))
 
-        manager.record_trigger(task.task_id, request_id="r1")
+        manager.record_trigger(task.task_id, "u1", request_id="r1")

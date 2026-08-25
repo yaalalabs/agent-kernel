@@ -197,30 +197,55 @@ class TestEnvelope:
 
 
 class TestTransportFactory:
-    class _FakeCfgNoTypeNoUrl:
+    class _FakeCfgInMemory:
         class execution:
             class queues:
+                type = "in_memory"
+
                 class input:
                     url = None
 
-    class _FakeCfgNoTypeWithUrl:
+    class _FakeCfgInMemoryWithUrl:
+        """A declared in_memory transport whose queue coordinates are still injected."""
+
         class execution:
             class queues:
+                type = "in_memory"
+
                 class input:
                     url = "https://sqs.test/input"
 
-    def test_resolve_type_defaults_to_in_memory(self, monkeypatch):
-        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._FakeCfgNoTypeNoUrl))
+    class _FakeCfgSqsWithoutUrl:
+        """The agent-runner Lambda's shape: sqs declared, input URL never injected into it."""
+
+        class execution:
+            class queues:
+                type = "sqs"
+
+                class input:
+                    url = None
+
+    class _FakeCfgNoQueuesBlock:
+        class execution:
+            queues = None
+
+    def test_resolve_type_follows_the_declared_type(self, monkeypatch):
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._FakeCfgSqsWithoutUrl))
+        assert QueueTransportFactory.resolve_type() == "sqs"
+
+    def test_resolve_type_ignores_the_queue_urls(self, monkeypatch):
+        """Queue coordinates are injected per component, so they must not decide the transport."""
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._FakeCfgInMemoryWithUrl))
         assert QueueTransportFactory.resolve_type() == "in_memory"
 
-    def test_resolve_type_url_implies_sqs(self, monkeypatch):
-        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._FakeCfgNoTypeWithUrl))
-        assert QueueTransportFactory.resolve_type() == "sqs"
+    def test_resolve_type_defaults_to_in_memory_without_a_queues_block(self, monkeypatch):
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._FakeCfgNoQueuesBlock))
+        assert QueueTransportFactory.resolve_type() == "in_memory"
 
     def test_default_type_creates_in_memory_transport(self, monkeypatch):
         from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 
-        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._FakeCfgNoTypeNoUrl))
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._FakeCfgInMemory))
         assert isinstance(QueueTransportFactory.create(), InMemoryTransport)
 
     def test_builtin_without_an_implementation_raises(self, monkeypatch):

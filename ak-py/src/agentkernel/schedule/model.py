@@ -72,6 +72,27 @@ class ScheduledTask(BaseModel):
     trigger_count: int = 0
     last_request_id: Optional[str] = None
 
+    def apply_trigger(self, request_id: Optional[str], occurred_at: str, completed: bool) -> "ScheduledTask":
+        """Advance the occurrence bookkeeping after one of this task's triggers fired.
+
+        What an occurrence records, and when it closes the task, is the same on every backend —
+        a store's remaining job is only to load the record and write it back — so the rule lives
+        here rather than once per store. A cancellation outranks a completion: a task cancelled
+        between the fire and the record must not come back as completed.
+
+        :param request_id: Request id of the run the occurrence produced, when known.
+        :param occurred_at: ISO-8601 UTC timestamp of the occurrence.
+        :param completed: Whether this was the task's final occurrence.
+        :return: This task, advanced in place, so a store can write it back in one expression.
+        """
+        self.last_triggered_at = occurred_at
+        self.last_request_id = request_id
+        self.trigger_count += 1
+        self.updated_at = utc_now_iso()
+        if completed and self.status is not ScheduleStatus.CANCELLED:
+            self.status = ScheduleStatus.COMPLETED
+        return self
+
 
 class ScheduledTaskPage(BaseModel):
     """A page of scheduled tasks and the cursor for the next one (None on the last page)."""

@@ -494,6 +494,8 @@ module "serverless_api_auth" {
 | `create_valkey_cluster` | Create a Valkey (ElastiCache) cluster for Agent session memory | `bool` | `false` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
 | `create_dynamodb_thread_table` | Create a DynamoDB table for conversation thread storage and inject its generated name as `AK_THREAD__DYNAMODB__TABLE_NAME` into both Lambdas. Thread support is enabled by the application declaring `thread.type: dynamodb` in `config.yaml` — setting this flag alone leaves threads on the in-memory backend. Note that enabling threads makes `user_id` required on every chat request. | `bool` | `false` | no |
+| `enable_scheduling` | Create the EventBridge Scheduler schedule group and the execution role Scheduler assumes to deliver triggers to the Input Queue, grant both Lambda roles `scheduler:*Schedule` + `iam:PassRole` on them, and inject `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME` / `__ROLE_ARN` / `__QUEUE_ARN`. **Requires `queue_mode = true`**, and flips the Input Queue to content-based deduplication (Scheduler cannot set a `MessageDeduplicationId`). The capability is enabled by the application declaring `schedule.provider.type: eventbridge` in `config.yaml` — setting this flag alone leaves scheduling on the in-process `local` provider. | `bool` | `false` | no |
+| `create_dynamodb_schedule_table` | Create a DynamoDB table for scheduled-task storage (partition `task_id`, no sort key, no GSI, TTL on `expiry_time`) and inject its generated name as `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` into both Lambdas. Requires the application to declare `schedule.store.type: dynamodb` in `config.yaml`. | `bool` | `false` | no |
 | `create_redis_response_store` | Create or reuse Redis for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
 | `create_valkey_response_store` | Create or reuse Valkey for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
 | `create_dynamodb_response_store` | Create a DynamoDB table for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
@@ -698,6 +700,11 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 | `agent_runner_lambda_function_arn` | ARN of the agent runner Lambda function (returns null when `queue_mode = false`) |
 | `agent_runner_lambda_function_name` | Name of the agent runner Lambda function (returns null when `queue_mode = false`) |
 | `agent_runner_lambda_function_invoke_arn` | Invoke ARN of the agent runner Lambda function (returns null when `queue_mode = false`) |
+| `schedule_group_name` | EventBridge Scheduler schedule-group name (null unless `enable_scheduling`) |
+| `schedule_group_arn` | EventBridge Scheduler schedule-group ARN (null unless `enable_scheduling`) |
+| `scheduler_execution_role_arn` | ARN of the role Scheduler assumes to deliver triggers to the Input Queue (null unless `enable_scheduling`) |
+| `schedule_table_name` | DynamoDB schedule store table name (null unless `create_dynamodb_schedule_table`) |
+| `schedule_table_arn` | DynamoDB schedule store table ARN (null unless `create_dynamodb_schedule_table`) |
 | `agent_runner_lambda_role_arn` | ARN of the agent runner Lambda execution role (returns null when `queue_mode = false`) |
 | `agent_runner_lambda_role_name` | Name of the agent runner Lambda execution role (returns null when `queue_mode = false`) |
 | `input_queue_arn` | ARN of the input SQS queue (returns null when `queue_mode = false`) |

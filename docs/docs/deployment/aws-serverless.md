@@ -1208,6 +1208,49 @@ module "serverless_agents" {
 - `output_queue_visibility_timeout` must be ≥ `response_handler.timeout`
 - At most one of `create_redis_response_store`, `create_valkey_response_store`, and `create_dynamodb_response_store` may be `true`
 
+### Scheduling (EventBridge Scheduler)
+
+Deferred and recurring chats run on AWS EventBridge Scheduler, which delivers each occurrence as a
+trigger message to the Input Queue. **Scheduling requires `queue_mode = true`** — there is no
+non-queue path for it.
+
+| Variable | Description | Type | Default |
+|---|---|---|---|
+| `enable_scheduling` | Create the EventBridge Scheduler schedule group and the execution role Scheduler assumes to deliver triggers to the Input Queue, grant both Lambda roles `scheduler:*Schedule` + `iam:PassRole`, and inject `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME` / `__ROLE_ARN` / `__QUEUE_ARN`. Requires `queue_mode = true`. | `bool` | `false` |
+| `create_dynamodb_schedule_table` | Create the DynamoDB schedule store table (partition `task_id`, no sort key, no GSI, TTL on `expiry_time`) and inject its generated name as `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` into both Lambdas | `bool` | `false` |
+
+```hcl
+queue_mode                     = true
+enable_scheduling              = true
+create_dynamodb_schedule_table = true
+```
+
+**Terraform is only half of it.** The module injects the group, role, queue and table coordinates but
+never `schedule.provider.type` or `schedule.store.type`. The application's `config.yaml` must declare
+the backends:
+
+```yaml
+schedule:
+  provider:
+    type: eventbridge
+  store:
+    type: dynamodb
+```
+
+Setting the flags without that block leaves scheduling on the in-process `local` provider and
+`in_memory` store — which does not survive between Lambda invocations — and the provisioned group and
+table sit unused with no error.
+
+`enable_scheduling` also flips the **Input Queue** to `content_based_deduplication = true`. EventBridge
+Scheduler cannot set a `MessageDeduplicationId`, so without it two occurrences carrying an otherwise
+identical trigger body would collapse into one inside the 5-minute dedup window. Application senders
+are unaffected — they always send an explicit `MessageDeduplicationId`, which takes precedence.
+
+Relevant outputs: `schedule_group_name`, `schedule_group_arn`, `scheduler_execution_role_arn`,
+`schedule_table_name`, `schedule_table_arn` (each `null` unless the matching flag is set).
+
+For the application side see the [Scheduling guide](../advanced/scheduling.md).
+
 ## Cost Optimization
 
 ### Lambda Configuration
@@ -1445,5 +1488,6 @@ CloudWatch metrics automatically available:
 | [websocket-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai) | `async` | Yes | Full-response WebSocket delivery |
 | [streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) | `stream` | Yes | Event streaming over WebSocket with `ServerlessStreamAgentRunner` |
 | [openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai) | `rest_sync` | No | Simple single-Lambda REST deployment |
+| [schedule-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai) | `rest_sync` | Yes | Deferred and recurring chats on EventBridge Scheduler with a DynamoDB schedule store |
 
 See [examples/aws-serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless) for all available examples.

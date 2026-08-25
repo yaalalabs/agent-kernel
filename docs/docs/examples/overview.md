@@ -24,6 +24,7 @@ Examples demonstrating Agent Kernel's API capabilities and integrations:
 - **`whatsapp/`** - WhatsApp integration example
 - **`instagram/`** - Instagram integration example
 - **`telegram/`** - Telegram integration example
+- **`schedule-openai/`** - Deferred and recurring chats: a chat request carrying a `schedule` block is registered instead of run (HTTP 202), with the in-process `local` provider, an `in_memory` task store, the `/api/v1/schedules` management routes, and an agent that can schedule work itself
 
 ### 📁 CLI Examples (`/examples/cli`)
 
@@ -80,6 +81,7 @@ AWS ECS/Fargate deployment examples:
 - **`openai-websocket-scalable/`** - OpenAI agents on AWS ECS over a WebSocket API in queue mode: the REST/IO service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner service processes them from SQS
 - **`openai-stream/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue), STREAM execution mode: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
 - **`openai-stream-queue-mode/`** - OpenAI agents on AWS ECS over a WebSocket API in queue-based STREAM execution mode: the Agent Runner streams token-by-token chunks onto the Output Queue so it can scale independently of ingress
+- **`openai-schedule/`** - Deferred and recurring chats on AWS ECS: EventBridge Scheduler owns the timers and delivers each occurrence into the Input Queue, with a DynamoDB schedule store and the `/api/v1/schedules` management routes on the REST service
 
 ### 📁 AWS Serverless Examples (`/examples/aws-serverless`)
 
@@ -91,6 +93,7 @@ AWS Lambda serverless deployment examples:
 - **`openai/`** - OpenAI agents running on AWS Lambda
 - **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
 - **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: stream`)
+- **`schedule-openai/`** - Deferred and recurring chats on AWS Lambda: EventBridge Scheduler delivers each occurrence into the Input Queue for the agent-runner Lambda, backed by a DynamoDB schedule store
 
 ### 📁 Azure Containerized Examples (`/examples/azure-containerized`)
 

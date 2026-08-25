@@ -52,6 +52,9 @@ weekly:
     - type: aws-containerized
       path: examples/aws-containerized/openai-dynamodb-scalable
       deploy_dir: deploy
+    - type: aws-containerized
+      path: examples/aws-containerized/openai-schedule
+      deploy_dir: deploy
 
     # AWS Serverless
     - type: aws-serverless
@@ -68,6 +71,9 @@ weekly:
       deploy_dir: deploy
     - type: aws-serverless
       path: examples/aws-serverless/openai-auth
+      deploy_dir: deploy
+    - type: aws-serverless
+      path: examples/aws-serverless/schedule-openai
       deploy_dir: deploy
 
     # Memory options

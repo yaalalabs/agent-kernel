@@ -4,7 +4,7 @@ import logging
 from typing import ClassVar, List, Optional, Tuple
 
 from ...core.util.pagination import DEFAULT_PAGE_SIZE, paginate
-from ..model import ScheduledTask, ScheduleStatus, utc_now_iso
+from ..model import ScheduledTask
 from .base import ScheduleStore
 
 
@@ -45,12 +45,8 @@ class InMemoryScheduleStore(ScheduleStore):
         if task is None:
             self._log.warning(f"Ignoring trigger record for unknown scheduled task {task_id}")
             return
-        task.last_triggered_at = occurred_at
-        task.last_request_id = request_id
-        task.trigger_count += 1
-        task.updated_at = utc_now_iso()
-        if completed and task.status is not ScheduleStatus.CANCELLED:
-            task.status = ScheduleStatus.COMPLETED
+        # The stored record is advanced directly: it is the persisted state, not a copy of it.
+        task.apply_trigger(request_id, occurred_at, completed)
 
     def clear(self) -> None:
         self._log.debug("Clearing all stored scheduled tasks")

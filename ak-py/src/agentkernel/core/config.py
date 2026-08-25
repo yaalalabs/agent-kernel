@@ -312,8 +312,7 @@ class _ThreadStoreConfig(BaseModel):
     cosmosdb: Optional[_ThreadCosmosDBConfig] = None
 
 
-# Declared ahead of the provider that reads it: the eventbridge provider is not among the built-in
-# short names yet, so this block is inert until it ships.
+# Connection details only, and Terraform-provisioned: the eventbridge provider requires all three.
 class _ScheduleEventBridgeConfig(BaseModel):
     group_name: Optional[str] = Field(default=None, description="EventBridge Scheduler schedule-group name the schedules are created in")
     role_arn: Optional[str] = Field(
@@ -325,13 +324,11 @@ class _ScheduleEventBridgeConfig(BaseModel):
 class _ScheduleProviderConfig(BaseModel):
     type: str = Field(
         default="local",
-        description="Schedule provider: a built-in short name (local) or a dotted path to a ScheduleProvider subclass",
+        description="Schedule provider: a built-in short name (local, eventbridge) or a dotted path to a ScheduleProvider subclass",
     )
     eventbridge: Optional[_ScheduleEventBridgeConfig] = None
 
 
-# The redis, valkey and dynamodb store blocks are likewise declared ahead of their backends: only
-# in_memory is a built-in short name today, so these three are inert until those stores ship.
 class _ScheduleStoreRedisConfig(_RedisConfig):
     # Unlike threads, schedules carry no default expiry: a task that silently disappeared
     # would stop firing with no audit trail.
@@ -355,7 +352,7 @@ class _ScheduleStoreDynamoDBConfig(_DynamoDBConfig):
 class _ScheduleStoreConfig(BaseModel):
     type: str = Field(
         default="in_memory",
-        description="Scheduled task store backend: a built-in short name (in_memory) or a dotted path to a ScheduleStore subclass",
+        description="Scheduled task store backend: a built-in short name (in_memory, redis, valkey, dynamodb) or a dotted path to a ScheduleStore subclass",
     )
     redis: Optional[_ScheduleStoreRedisConfig] = None
     valkey: Optional[_ScheduleStoreValkeyConfig] = None
@@ -538,12 +535,13 @@ class _NatsQueueConfig(BaseModel):
 
 
 class _QueuesConfig(BaseModel):
-    type: Optional[str] = Field(
-        default=None,
+    type: str = Field(
         description=(
             "Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport "
-            "subclass. When unset, a configured input.url implies sqs (pre-#495 compatibility); "
-            "otherwise in_memory."
+            "subclass. Mandatory whenever this block is declared: the transport decides the "
+            "deployment topology, so it is declared by the application rather than inferred from "
+            "whichever queue coordinates a deployment happens to inject. Omitting the whole block "
+            "leaves the single-process 'in_memory' transport."
         ),
     )
     input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input queue configuration for queue execution mode")
@@ -581,7 +579,13 @@ class _ExecutionConfig(BaseModel):
         default=None,
         description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, stream for token streaming (WebSocket serverless or containerized direct streaming)",
     )
-    queues: Optional[_QueuesConfig] = Field(default_factory=_QueuesConfig, description="Queue URLs for async execution mode")
+    # The default carries the transport type explicitly: `type` is mandatory inside a declared
+    # queues block, and a config that declares no block at all still runs single-process on the
+    # in-process pipeline, whose topology needs no queue coordinates.
+    queues: Optional[_QueuesConfig] = Field(
+        default_factory=lambda: _QueuesConfig(type="in_memory"),
+        description="Queue transport and queue settings for queue-based execution",
+    )
     response_store: Optional[_ResponseStoreConfig] = Field(
         default=None,
         description="Response storage configuration for async execution mode",

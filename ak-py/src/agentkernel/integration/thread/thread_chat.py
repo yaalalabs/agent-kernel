@@ -19,7 +19,7 @@ from ...auth.authoriser import Authoriser
 from ...core import Config
 from ...core.chat_service import RequestBuilder, ResponseBuilder
 from ...core.model import BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
-from ...core.runtime import Runtime
+from ...core.service import AgentService
 from .manager import ConversationThreadManager
 from .recorder import ThreadRecorder
 
@@ -200,12 +200,12 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
     def _check_agent_available(name: Optional[str]) -> None:
         """Agent-availability precheck before any thread write, keeping a missing agent
         from leaving a phantom thread with an unanswered user message. The rule itself is
-        shared with the other commit-before-running surfaces (Runtime.ensure_agent_available).
+        shared with the other commit-before-running surfaces (AgentService.ensure_agent_available).
 
         :param name: The requested agent name, or None for the default agent
         :raises ValueError: If no matching agent is available
         """
-        Runtime.ensure_agent_available(name)
+        AgentService.ensure_agent_available(name)
 
 
 class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):

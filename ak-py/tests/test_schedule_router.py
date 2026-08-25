@@ -197,6 +197,24 @@ class TestAmendment:
 
         assert _client().put(f"{SCHEDULES_PATH}/{task.task_id}", json=_amendment(**overrides)).status_code == 400
 
+    def test_a_prompt_only_body_cannot_keep_the_stored_rule(self, scheduling):
+        """PUT has no partial form: ScheduleAmendment defaults timezone/session_mode and the route
+        passes model_dump(), so a body carrying only a prompt reaches the manager with at and cron
+        both None and fails the spec's one-of rule. The untouched-rule branch of _apply_amendment is
+        a manager-level affordance, not this route's contract — docs/docs/advanced/scheduling.md
+        says so, and this pins it."""
+        task = _create(scheduling)
+
+        response = _client().put(f"{SCHEDULES_PATH}/{task.task_id}", json={"prompt": "send the daily report"})
+
+        assert response.status_code == 400
+        assert scheduling.get_task(task.task_id).spec.cron == "0 9 * * 1"  # unchanged
+
+        # The same change through the manager keeps the rule and applies the prompt.
+        amended = scheduling.update(task.task_id, {"prompt": "send the daily report"}, user_id="u1")
+        assert amended.spec.cron == "0 9 * * 1"
+        assert amended.prompt == "send the daily report"
+
     def test_amendment_rejected_by_the_body_model_is_422(self, scheduling):
         # prompt is required on the amendment body: FastAPI rejects the payload before the manager.
         task = _create(scheduling)

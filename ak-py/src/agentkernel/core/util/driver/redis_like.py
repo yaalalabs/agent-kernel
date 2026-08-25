@@ -296,6 +296,17 @@ class _RedisLikeDriver(BaseDriver):
         self._log.debug(f"SADD {key}")
         self.client.sadd(key, member)
 
+    def srem(self, key: str, member: Any) -> None:
+        """
+        Removes a member from the set stored at the given key. Removing an absent
+        member is not an error.
+
+        :param key: The set key.
+        :param member: The member to remove.
+        """
+        self._log.debug(f"SREM {key}")
+        self.client.srem(key, member)
+
     def smembers(self, key: str) -> set[str]:
         """
         Returns all members of the set stored at the given key, decoded to strings.

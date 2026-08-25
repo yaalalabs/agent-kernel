@@ -46,7 +46,8 @@ class AgentService:
         self._agent = None
         self._session = None
 
-    def ensure_agent_available(self, name: str | None) -> None:
+    @staticmethod
+    def ensure_agent_available(name: str | None) -> None:
         """
         Checks that a request naming ``name`` could be served, without selecting anything.
 
@@ -56,10 +57,15 @@ class AgentService:
         first, so a request that could never be answered fails while the caller is still
         listening instead of at run time.
 
+        Static because it only interrogates the agent registry: it holds no agent and no session,
+        so the callers that are not mid-conversation (the thread and schedule surfaces) reach it as
+        ``AgentService.ensure_agent_available(...)`` rather than building a throwaway instance. It
+        is kept here, next to select(), because it is select()'s rule.
+
         :param name: Name of the requested agent, or None for the default agent.
         :raises ValueError: If no matching agent is available.
         """
-        agents = self._runtime.agents()
+        agents = Runtime.current().agents()
         if (name and name not in agents) or (not name and not agents):
             raise ValueError("No agent available")
 

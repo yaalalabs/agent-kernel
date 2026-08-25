@@ -9,12 +9,12 @@ import logging
 from abc import ABC, abstractmethod
 from typing import ClassVar, Optional
 
-from ...core.config import AKConfig
-from ...core.util.factory import AKConfigError, resolve_dotted
+from ...core.config import AKConfig, _ScheduleProviderConfig
+from ...core.util.factory import AKConfigError, require_extra, resolve_dotted
 from ..model import ScheduledTask
 
 # Providers shipped with the capability; anything else is treated as a dotted path (BYO).
-_BUILTIN_SCHEDULE_PROVIDERS = ["local"]
+_BUILTIN_SCHEDULE_PROVIDERS = ["local", "eventbridge"]
 
 
 class ScheduleProvider(ABC):
@@ -30,6 +30,22 @@ class ScheduleProvider(ABC):
     # fails fast at construction when the configured transport is not in the set, so an
     # undeliverable pairing surfaces at startup instead of at the first occurrence.
     supported_transports: ClassVar[Optional[frozenset[str]]] = None
+
+    @classmethod
+    def from_config(cls, provider_config: _ScheduleProviderConfig) -> "ScheduleProvider":
+        """Build the provider from the ``schedule.provider`` block.
+
+        The single construction seam the factory uses for every provider. A provider that needs
+        settings or a collaborator resolves them here, once, which is what keeps ``create``,
+        ``update``, ``delete`` and ``get`` free of configuration reads. The default needs neither
+        and ignores the block, so a bring-your-own provider is constructed by it unchanged.
+
+        :param provider_config: The ``schedule.provider`` block, including every provider's own
+                                settings sub-block.
+        :return: The configured provider.
+        :raises AKConfigError: If the provider's own settings are missing or incomplete.
+        """
+        return cls()
 
     @abstractmethod
     def create(self, task: ScheduledTask, body_template: str) -> str:
@@ -91,15 +107,16 @@ class ScheduleProviderFactory:
 
     @staticmethod
     def create() -> ScheduleProvider:
-        """Create the configured provider, resolving its dependencies from config once.
+        """Create the configured provider, delegating to its ``from_config`` seam.
 
-        ``type`` is a built-in short name or a dotted path to a user-supplied
+        ``type`` is a built-in short name (local, eventbridge) or a dotted path to a user-supplied
         ``ScheduleProvider`` subclass (bring-your-own). An unknown, non-dotted value raises
         ``AKConfigError``.
 
         :return: The configured provider.
         :raises ValueError: If the scheduling capability is not configured.
-        :raises AKConfigError: If the configured type is neither a built-in nor a resolvable dotted path.
+        :raises AKConfigError: If the configured type is neither a built-in nor a resolvable dotted
+                               path, or if a built-in's own configuration is incomplete.
         """
         schedule_config = AKConfig.get().schedule
         if schedule_config is None:
@@ -107,16 +124,19 @@ class ScheduleProviderFactory:
 
         provider_type = schedule_config.provider.type
         ScheduleProviderFactory._log.info(f"Building '{provider_type}' schedule provider")
-        if provider_type.lower() == "local":
-            from ...pipeline.transport.base import QueueTransportFactory
+        key = provider_type.lower()
+        if key == "local":
             from .local import LocalScheduleProvider
 
-            # The transport is resolved here, not inside the provider: a provider must not read
-            # AKConfig in its methods.
-            return LocalScheduleProvider(transport=QueueTransportFactory.create())
+            return LocalScheduleProvider.from_config(schedule_config.provider)
+        if key == "eventbridge":
+            with require_extra("aws", "schedule.provider.type: eventbridge"):
+                from .eventbridge import EventBridgeScheduleProvider
+
+            return EventBridgeScheduleProvider.from_config(schedule_config.provider)
         if "." not in provider_type:
             raise AKConfigError(
                 f"unknown schedule provider type '{provider_type}'; expected one of {_BUILTIN_SCHEDULE_PROVIDERS} "
                 "or a dotted path to a ScheduleProvider subclass"
             )
-        return resolve_dotted(provider_type, base=ScheduleProvider)()
+        return resolve_dotted(provider_type, base=ScheduleProvider).from_config(schedule_config.provider)

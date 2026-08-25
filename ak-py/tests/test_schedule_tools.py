@@ -202,6 +202,80 @@ class TestRegistration:
         assert [tool.description for tool in tools[1:]] == ["", "", "", ""]
 
 
+class TestCronFlavor:
+    """The cron flavor a caller must write is the configured provider's, so both agent-facing
+    surfaces — the prompt guidance and the tools' own schemas — have to state that provider's."""
+
+    @staticmethod
+    def _configure(monkeypatch, provider_type: str) -> None:
+        """Configure scheduling on the named provider."""
+        _install_schedule_cfg(monkeypatch, _ScheduleConfig.model_validate({"provider": {"type": provider_type}}))
+
+    def test_the_local_provider_describes_the_unix_numbering(self, monkeypatch):
+        self._configure(monkeypatch, "local")
+
+        guidance = get_schedule_tools()[0].description
+
+        assert "0-6 with 0 = Sunday" in guidance
+        assert "0-6 with 0 = Sunday" in create_schedule.__doc__
+        assert "0-6 with 0 = Sunday" in update_schedule.__doc__
+
+    def test_the_eventbridge_provider_describes_the_aws_numbering(self, monkeypatch):
+        self._configure(monkeypatch, "eventbridge")
+
+        guidance = get_schedule_tools()[0].description
+
+        assert "1-7 with 1 = Sunday" in guidance
+        assert "1-7 with 1 = Sunday" in create_schedule.__doc__
+        assert "1-7 with 1 = Sunday" in update_schedule.__doc__
+        # The day-field restriction is part of writing an expression AWS will accept.
+        assert "never both" in create_schedule.__doc__
+
+    def test_the_provider_name_is_matched_case_insensitively(self, monkeypatch):
+        self._configure(monkeypatch, "EventBridge")
+
+        assert "1-7 with 1 = Sunday" in get_schedule_tools()[0].description
+
+    def test_a_bring_your_own_provider_keeps_the_standard_description(self, monkeypatch):
+        self._configure(monkeypatch, "tests.test_schedule_tools.RecordingScheduleProvider")
+
+        assert "0-6 with 0 = Sunday" in get_schedule_tools()[0].description
+
+    def test_the_description_is_re_rendered_when_the_provider_changes(self, monkeypatch):
+        """The templates are rendered from a pristine copy, so a later flavor still lands: a render
+        that consumed its own placeholder would pin whichever provider was configured first."""
+        self._configure(monkeypatch, "eventbridge")
+        get_schedule_tools()
+
+        self._configure(monkeypatch, "local")
+        guidance = get_schedule_tools()[0].description
+
+        assert "0-6 with 0 = Sunday" in guidance
+        assert "0-6 with 0 = Sunday" in create_schedule.__doc__
+        assert "1-7" not in create_schedule.__doc__
+
+    def test_no_placeholder_survives_into_either_surface(self, monkeypatch):
+        self._configure(monkeypatch, "local")
+
+        assert "{cron}" not in get_schedule_tools()[0].description
+        assert "{cron}" not in create_schedule.__doc__
+        assert "{cron}" not in update_schedule.__doc__
+
+    def test_the_tool_functions_keep_their_identity_across_builds(self, monkeypatch):
+        """Both attachment paths deduplicate by function identity, so rendering must rewrite the
+        existing functions rather than hand out fresh ones."""
+        self._configure(monkeypatch, "local")
+
+        assert [tool.func for tool in get_schedule_tools()] == [tool.func for tool in get_schedule_tools()]
+
+    def test_an_unconfigured_capability_keeps_the_standard_description(self, monkeypatch):
+        """Rendering must not depend on the capability being usable: registering the tools happens
+        during agent construction, long before anything is scheduled."""
+        _install_schedule_cfg(monkeypatch, None)
+
+        assert "0-6 with 0 = Sunday" in get_schedule_tools()[0].description
+
+
 class TestDisabledCapability:
     @pytest.mark.asyncio
     async def test_every_tool_short_circuits(self, disabled, acting_session):

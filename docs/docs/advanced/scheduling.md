@@ -1,138 +1,221 @@
 ---
-sidebar_position: 7
+sidebar_position: 4
 ---
 
-# Scheduling
+# Scheduled Tasks
 
-Agent Kernel supports **deferred and recurring chat execution**: a chat request that carries a
-`schedule` block is not run immediately — it is registered as a scheduled task and acknowledged
-with HTTP 202. When an occurrence is due, the configured provider delivers the stored prompt back
-into the input queue as a plain chat request, and the normal execution path runs it.
+Agent Kernel can **defer and repeat chat execution**: a chat request that carries a `schedule` block is
+not run — it is registered as a scheduled task and acknowledged with **HTTP 202**. When an occurrence is
+due, the configured provider delivers the stored prompt into the input queue as a plain chat request, and
+the normal execution path runs it.
 
 ## Overview
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant CS as ChatService core
-    participant SM as ScheduleManager
-    participant Provider as ScheduleProvider
-    participant Agent
-
-    Client->>CS: POST /api/v1/chat (prompt, session_id, user_id, schedule)
-    CS->>SM: create(spec)
-    SM->>Provider: register occurrence
-    CS-->>Client: 202 {status: SCHEDULED, scheduled_task_id}
-    Provider->>CS: occurrence due -> plain chat request (input queue)
-    CS->>Agent: run
-    Agent-->>CS: reply
-    CS->>SM: record trigger (trigger_count, last_triggered_at)
-```
+| Concern | What it means |
+| --- | --- |
+| **Enablement** | The presence of a `schedule` block in `config.yaml` enables deferring and the agent tools — no code change. The management routes are a separate opt-in: the app mounts `ScheduleRESTRequestHandler`. |
+| **Creation** | Three paths, one implementation: the `schedule` block on a chat request, the `create_schedule` agent tool, or a direct `ScheduleManager` call. There is deliberately **no** `POST /api/v1/schedules`. |
+| **Provider** | Owns the timers and fires each occurrence — `local` (in-process thread) or `eventbridge` (AWS EventBridge Scheduler). |
+| **Store** | Persists the task records — `in_memory`, `redis`, `valkey`, or `dynamodb`. |
+| **Management** | `GET` / `PUT` / `DELETE /api/v1/schedules` for listing, amending, pausing and cancelling. |
+| **Ownership** | Every task belongs to a `user_id`; reads and changes are checked against it. |
 
 ### Key Design Decisions
 
-- **A `schedule` block in `config.yaml` is what enables the capability.** Its presence is the
-  enabled-check (the same pattern conversation threads use) — no block, no interception, no tools.
-- **Two backends, chosen independently**: a **provider** that owns the timers and delivers
-  occurrences, and a **store** that persists the task records. Today only `local` (an in-process
-  scheduler thread) and `in_memory` are built in; `eventbridge`, `redis`, `valkey`, and `dynamodb`
-  are planned.
-- **The `local` provider and `in_memory` store are single-process only.** `ScheduleManager` fails
-  fast at startup if either is combined with a broker transport (`sqs`/`kafka`/`nats`) or a shared
-  store — on a broker transport, the management routes (`IOHandler` process) would amend timers a
-  different process (the agent runner) actually owns.
-- **Creation has exactly three paths**, all sharing the same validation: the chat API's `schedule`
-  block, the agent's own `create_schedule` tool, and any bring-your-own caller of
-  `ScheduleManager.create`. There is deliberately **no POST** on the management REST API.
-- **`PUT` is full-replacement**, not a merge: an amendment naming any of `at`/`cron`/`timezone`/
-  `session_mode` rebuilds the whole occurrence rule from what it carries (omitted fields fall back
-  to their defaults, never to the stored values). An amendment naming none of them leaves the rule
-  untouched, which is how a prompt-only or pause/resume amendment works.
-- **Optional, pluggable authorization**: you supply an `Authoriser` that validates a ****** against
-  *your* authentication provider; without one, the management routes are open.
+- **A schedule block means "not now".** The check runs at the top of all four `ChatService` entry points,
+  before validation and agent selection, so every chat surface behaves identically. The caller gets an
+  acknowledgement carrying the task id, not an agent reply.
+- **`user_id` is required.** It is the owner the task is stored under and the identity later reads and
+  changes are checked against. A creation without one is a 400.
+- **The occurrence is a plain chat request.** The fired trigger carries no `schedule` key — otherwise
+  firing a schedule would register another one.
+- **Deferred requests create no thread.** `AgentThreadRequestHandler` checks for the `schedule` block
+  before recording, so a deferral neither creates a thread nor records messages. The occurrences that
+  later fire do.
+- **The provider and store are validated as a pair at startup**, not at first use — see
+  [Topology Constraints](#topology-constraints).
+
+:::caution Scheduling needs the queue pipeline
+Occurrences are delivered *into the input queue*, so scheduling requires the queue-mode execution
+pipeline. On a laptop the `in_memory` transport satisfies this inside one process; on AWS it means
+`queue_mode = true`.
+:::
 
 ## Enabling Scheduling
 
-Add a `schedule` block to `config.yaml` — a bare block is enough for local development:
+Add a `schedule` block to `config.yaml`. A bare block works — its defaults (`local` provider,
+`in_memory` store) are what local development needs:
 
 ```yaml
 schedule:
   provider:
-    type: local           # local (the only built-in today), or a dotted path to a ScheduleProvider
+    type: local           # local | eventbridge, or a dotted path to a ScheduleProvider
   store:
-    type: in_memory        # in_memory (the only built-in today), or a dotted path to a ScheduleStore
-  agents: [planner]        # optional: agents the schedule tools attach to (omitted = all agents)
+    type: in_memory       # in_memory | redis | valkey | dynamodb, or a dotted path to a ScheduleStore
+  # agents: [planner]     # agents the schedule tools attach to; omitted = all agents
+
+execution:
+  mode: rest_sync
+  queues:
+    type: in_memory
 ```
 
-This alone deferring chats via the chat API's `schedule` block and gives every scoped agent the
-five scheduling tools. To also expose the management REST API, mount
-`ScheduleRESTRequestHandler` alongside your app's other handlers:
+That block alone is enough to defer chat requests and to give every agent the schedule tools. The
+management routes are mounted by the app, the way the Slack and thread handlers are — mounting them is
+also what resolves the provider/store pairing, so an unusable combination fails the app build rather
+than the first request:
 
 ```python
 from agentkernel.pipeline import IOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
 
-IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
+if __name__ == "__main__":
+    # config.yaml selects the in_memory transport, so this boots the whole single-process pipeline;
+    # the passed handlers are mounted alongside the pipeline's own chat route.
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
 ```
 
-or, with the full REST API:
+An app that mounts nothing still defers and still gets the agent tools — it just serves no
+`/api/v1/schedules` routes.
 
-```python
-from agentkernel.api import RESTAPI
-from agentkernel.schedule import ScheduleRESTRequestHandler
-
-RESTAPI.run(handlers=[ScheduleRESTRequestHandler()])
-```
-
-## Deferring a Chat Request
-
-Send a `schedule` block on a normal chat request instead of running it immediately. Exactly one of
-`at` or `cron` is required:
+Cron parsing needs the `cron` extra:
 
 ```bash
-# One-time — `at` is a local wall-clock timestamp read in `timezone`, and must be in the future
+pip install "agentkernel[cron]"
+```
+
+## Chat Request Fields
+
+The `schedule` block on any JSON chat request (`POST /api/v1/chat`):
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `at` | string | — | ISO-8601 **local wall-clock** timestamp for a one-time run. No UTC offset; must be in the future. |
+| `cron` | string | — | Standard **5-field** cron expression for a recurring run. |
+| `timezone` | string | `UTC` | IANA timezone the expression is evaluated in. |
+| `session_mode` | `reuse` \| `new` | `reuse` | Continue the originating session, or give each occurrence a fresh one. |
+
+Exactly one of `at` / `cron` must be given.
+
+:::note Multipart requests cannot carry a schedule
+The three multipart chat routes take no `schedule` form field. Schedule a chat over the JSON route.
+:::
+
+### Deferring a one-time chat
+
+```bash
 curl -i -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Send me the daily summary", "session_id": "ses-1", "user_id": "alice",
        "schedule": {"at": "2030-01-31T09:00:00", "timezone": "Asia/Colombo"}}'
+```
 
-# Recurring — `cron` is a standard 5-field expression
-curl -i -X POST http://localhost:8000/api/v1/chat \
+The acknowledgement comes back as **202**, not 200 — the request was accepted, not executed:
+
+```http
+HTTP/1.1 202 Accepted
+content-type: application/json
+
+{"result":"{\"status\": \"SCHEDULED\", \"scheduled_task_id\": \"74ca19a5-...\", \"session_id\": \"ses-1\"}","session_id":"ses-1"}
+```
+
+The 202 surfaces on every REST surface: direct mode, through the pipeline waiter/poller, and on both
+AWS deployments — ECS and Lambda — where the queue runners forward it as a `status_code` attribute.
+Streaming surfaces yield the
+acknowledgement as a single terminal chunk — deliberately not an error chunk, since deferring was the
+requested outcome.
+
+### Deferring a recurring chat
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Send the weekly report", "session_id": "ses-2", "user_id": "alice",
        "schedule": {"cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"}}'
 ```
 
-The acknowledgement comes back as **202**, not 200 — the request was accepted, not executed:
+An unusable schedule is rejected at creation rather than at fire time:
 
-```json
-{"result":"{\"status\": \"SCHEDULED\", \"scheduled_task_id\": \"74ca19a5-e610-4e39-8264-541ec6ab5352\", \"session_id\": \"ses-1\"}","session_id":"ses-1"}
+```http
+HTTP/1.1 400 Bad Request
+
+{"detail":{"error":"schedule 'at' must be in the future: '2020-01-01T09:00:00' has already passed in UTC","session_id":"ses-1"}}
 ```
 
-| Field | Required | Description |
-|---|---|---|
-| `at` | one of `at`/`cron` | ISO-8601 local timestamp, must be in the future |
-| `cron` | one of `at`/`cron` | Standard 5-field cron expression |
-| `timezone` | no (default UTC) | IANA timezone `at`/`cron` are interpreted in |
-| `session_mode` | no (default `reuse`) | `reuse` continues the originating `session_id` on every occurrence; `new` runs each occurrence in its own fresh session |
+## Managing Schedules
 
-An unusable schedule is rejected at creation rather than at fire time (a past `at`, an
-unparseable `cron`, or an unregistered named agent all return 400).
+```bash
+# List a user's schedules, most recently updated first (cursor-paginated)
+curl "http://localhost:8000/api/v1/schedules?user_id=alice&limit=20"
 
-## Agent-Facing Tools
+# Read one
+curl http://localhost:8000/api/v1/schedules/{task_id}
+```
 
-When a `schedule` block is present, `SystemToolFactory` attaches five tools to every scoped agent
-(`schedule.agents`, or all agents if omitted) — the agent's own instructions need not mention
-scheduling, the guidance is injected into its system prompt automatically:
+A task record reads back as:
 
-- `create_schedule` — register a new scheduled task
-- `list_schedules` — list the acting user's scheduled tasks
-- `get_schedule` — read one scheduled task
-- `update_schedule` — full-replacement amendment (matches the `PUT` route)
-- `delete_schedule` — cancel a scheduled task
+```json
+{
+  "task_id": "ae9a043b-27f7-480f-8655-5903fbfd200a",
+  "user_id": "alice",
+  "prompt": "Send the weekly report",
+  "agent": null,
+  "session_id": "ses-2",
+  "spec": {"at": null, "cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"},
+  "status": "active",
+  "provider_ref": "ae9a043b-27f7-480f-8655-5903fbfd200a",
+  "created_at": "2026-08-18T07:04:04.177184+00:00",
+  "updated_at": "2026-08-18T07:04:04.178100+00:00",
+  "last_triggered_at": null,
+  "trigger_count": 0,
+  "last_request_id": null
+}
+```
 
-Every tool acts as the **acting user** — an agent can never reach another user's schedules, and a
-run with no user identity gets an error result rather than an anonymous create:
+`status` is one of `active`, `paused`, `completed` (a fired one-time task) or `cancelled`.
+`trigger_count`, `last_triggered_at` and `last_request_id` track occurrences — `last_request_id`
+correlates a task with the run it produced.
+
+### Amending
+
+`PUT` replaces the **full amendable state** rather than merging, so send every value including the ones
+that are not changing. An omitted occurrence field clears it. `status` covers only the paused/active
+switch — a paused schedule keeps its record but stops firing:
+
+```bash
+curl -X PUT http://localhost:8000/api/v1/schedules/{task_id} \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Send the weekly report", "cron": "0 8 * * 1", "timezone": "Asia/Colombo",
+       "session_mode": "new", "status": "paused"}'
+```
+
+There is no partial amendment over this route: `ScheduleAmendment` defaults `timezone` and
+`session_mode`, so a body always carries occurrence fields, and one naming neither `at` nor `cron`
+fails the one-of rule with a **400**. A prompt-only or pause-only change therefore still has to
+resend the occurrence rule — read the task first with `GET` if you do not already hold it. The
+`update_schedule` agent tool has the same contract.
+
+:::note Partial amendments are a `ScheduleManager` affordance, not a route one
+`ScheduleManager.update(task_id, {"prompt": ...})` — an amendment dict naming none of
+`at`/`cron`/`timezone`/`session_mode` — does leave the occurrence rule untouched. That path is open
+to code holding the manager directly, not to `PUT`, whose body is a full representation by design.
+:::
+
+### Cancelling
+
+```bash
+curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
+```
+
+The record survives as the audit trail, so the response is the task with `"status": "cancelled"`.
+
+## Agent Tools
+
+When the block is present, Agent Kernel injects five system tools and their guidance into the agent's
+system prompt, so an agent can defer work when a user asks it to — agent authors never describe these
+tools themselves:
+
+`create_schedule` · `list_schedules` · `get_schedule` · `update_schedule` · `delete_schedule`
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/chat \
@@ -141,79 +224,198 @@ curl -X POST http://localhost:8000/api/v1/chat \
        "session_id": "ses-3", "user_id": "alice"}'
 ```
 
-## Managing Schedules
+Every tool acts as the **acting user** — the `user_id` of the run that invoked it — so an agent can
+never reach another user's schedules. A run with no user identity gets an error result rather than an
+anonymous create. Scope the tools to specific agents with `schedule.agents`:
 
-With `ScheduleRESTRequestHandler` mounted:
-
-```bash
-# List a user's schedules (most recently updated first, cursor-paginated)
-curl "http://localhost:8000/api/v1/schedules?user_id=alice"
-
-# Read one schedule
-curl http://localhost:8000/api/v1/schedules/{task_id}
-
-# Amend a schedule — PUT replaces the full amendable state, so send every value
-curl -X PUT http://localhost:8000/api/v1/schedules/{task_id} \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Send the weekly report", "cron": "0 8 * * 1", "timezone": "Asia/Colombo",
-       "session_mode": "new", "status": "paused"}'
-
-# Cancel a schedule — the record survives as the audit trail
-curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
+```yaml
+schedule:
+  agents: [planner]   # omitted = all agents
 ```
-
-`trigger_count`, `last_triggered_at`, and `last_request_id` on the returned task track its
-occurrences, so a fired one-time task reads back as `"status": "completed"` with
-`"trigger_count": 1`.
 
 ## Authorization
 
-Scheduling routes are **open** until you supply an `Authoriser`:
+The management routes are **open** until an `Authoriser` is configured. Supply a subclass that validates
+the Bearer token against your authentication provider and resolves the caller's `user_id`, then pass it to
+the handler you mount:
 
 ```python
-from typing import Optional
-from agentkernel.api import RESTAPI
 from agentkernel.auth import Authoriser
+from agentkernel.pipeline import IOHandler
 from agentkernel.schedule import ScheduleRESTRequestHandler
 
 
 class MyAuthoriser(Authoriser):
-    def authorise(self, token: str) -> Optional[str]:
-        return my_auth_provider.resolve(token)
+    def authorise(self, token: str) -> str | None:
+        return resolve_user_from(token)  # None rejects the token
 
 
-RESTAPI.run(handlers=[ScheduleRESTRequestHandler(authoriser=MyAuthoriser())])
+if __name__ == "__main__":
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=MyAuthoriser())])
 ```
 
-With an `Authoriser` configured, listings are forced to the resolved user and the single-task
-routes enforce ownership (403 on another user's schedule). Without one, the routes are open.
+With an `Authoriser` configured, listings are forced to the resolved user and reading or changing another
+user's schedule is rejected with 403. If you already have an `AuthValidator`, wrap it rather than writing
+a second implementation:
+
+```python
+from agentkernel.auth import AuthValidatorAuthoriser
+
+IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=AuthValidatorAuthoriser(MyValidator()))])
+```
 
 :::caution Open until configured
-Without an `Authoriser`, any caller can list, read, amend, or cancel any schedule. Deploy behind
-network-level access controls until one is configured.
+Without an `Authoriser`, any caller can list and change any user's schedules by passing `user_id`. Expose
+these routes publicly only behind one.
 :::
 
-## Backends
+## Providers
+
+| Provider | Durability | Transport | Use for |
+| --- | --- | --- | --- |
+| `local` | Armed occurrences are lost on restart | `in_memory` only | Local development, single-process demos |
+| `eventbridge` | AWS owns the timers; any process with the same config can amend or cancel | `sqs` only | Production on AWS |
+
+The `local` provider runs one daemon thread per process over a heap of armed occurrences. The
+`eventbridge` provider registers one EventBridge Scheduler schedule per task named `ak-<task_id>`,
+translating `at` to an `at(...)` expression and 5-field cron to the 6-field AWS flavour. A fired one-time
+schedule is retired by AWS (`ActionAfterCompletion: DELETE`); the store record remains the audit trail.
 
 ```yaml
 schedule:
   provider:
-    type: local             # only built-in provider today; eventbridge is planned
+    type: eventbridge
   store:
-    type: in_memory          # only built-in store today; redis, valkey, dynamodb are planned
-  agents: [planner]          # optional: omitted = all agents
+    type: dynamodb
+
+execution:
+  queues:
+    type: sqs             # what tells every component it is on SQS; the URLs are injected per component
 ```
 
-Store backends default to `ttl: 0` (unlike threads: a schedule must not silently expire) and the
-Redis/Valkey key prefix is `ak:schedule:`. Any short name other than `local`/`in_memory` raises
-`AKConfigError` today, since the alternative backends' config blocks are declared but inert.
-
-:::note Env-var enablement
-The same failure mode threads have applies here: any `AK_SCHEDULE__*` environment variable
-materializes the `schedule` block and enables the capability with its default (`local`/
-`in_memory`) backends.
+:::note AWS cron accepts only one day field
+EventBridge rejects a schedule constraining both day-of-month and day-of-week. A 5-field cron that
+constrains both is refused at creation with a 400.
 :::
+
+## Storage Backends
+
+```yaml
+# Redis
+schedule:
+  store:
+    type: redis
+    redis:
+      url: redis://localhost:6379
+      prefix: "ak:schedule:"
+      ttl: 0                     # 0 disables expiry (the default)
+
+# Valkey (Redis-protocol compatible; requires the `valkey` extra)
+schedule:
+  store:
+    type: valkey
+    valkey:
+      url: valkey://localhost:6379
+
+# DynamoDB — table needs partition key `task_id` (S), no sort key
+schedule:
+  store:
+    type: dynamodb
+    dynamodb:
+      table_name: ak-agent-schedules
+```
+
+:::note TTL defaults to 0, unlike threads
+A task that silently expired would stop firing with no audit trail, so schedule records never expire
+unless you set a TTL explicitly.
+:::
+
+## Topology Constraints
+
+`ScheduleManager` validates the pairing at startup and fails the boot rather than the first request:
+
+| Combination | Rejected because |
+| --- | --- |
+| `local` provider + a broker transport (`sqs`/`kafka`/`nats`) | The heap of armed occurrences is reachable only from its own process, so the management routes would amend timers a different process owns — a cancellation would report success while the timer kept firing. |
+| `local` provider + a shared store | Same split: the records and the timers must live together. |
+| `in_memory` store + a broker transport | The records themselves would be split across the runner and IO-handler processes. |
+| `eventbridge` provider + a non-`sqs` transport | Delivery is baked into the schedule registration as an SQS target. |
+| `eventbridge` provider with `group_name`, `role_arn` or `queue_arn` missing | Nothing to register schedules against. |
+
+## Deploying Scheduling
+
+Deploying scheduling takes **two** steps, the same split as session and thread storage — your
+application declares *which* backends, Terraform provisions them and supplies *where* they live:
+
+1. Declare the backends in `config.yaml`: `schedule: {provider: {type: eventbridge}, store: {type: dynamodb}}`.
+2. Set the matching Terraform flags, which provision the backends and inject their coordinates:
+
+| Cloud | Flag | Provisions | Injects |
+|---|---|---|---|
+| AWS serverless + containerized | `enable_scheduling` | An EventBridge Scheduler schedule group, the execution role Scheduler assumes to deliver triggers to the input queue, and `scheduler:*Schedule` + `iam:PassRole` on both roles | `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME`, `__ROLE_ARN`, `__QUEUE_ARN` |
+| AWS serverless + containerized | `create_dynamodb_schedule_table` | A DynamoDB table (partition `task_id`, no sort key, no GSI, TTL on `expiry_time`) | `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` |
+
+```hcl
+queue_mode                     = true
+enable_scheduling              = true
+create_dynamodb_schedule_table = true
+```
+
+You do not need to set the group, role or table names yourself — Terraform generates them and passes
+them in.
+
+:::warning Setting the flags without declaring the backends runs scheduling locally
+`AKConfig.schedule` is absent until something populates it, and any `AK_SCHEDULE__*` variable is enough
+to populate it — but `provider.type` and `store.type` then fall back to their `local` / `in_memory`
+defaults. So the Terraform flags *without* a `schedule:` block in `config.yaml` give you an in-process
+scheduler whose timers die with the container, while the provisioned group and table sit unused, with no
+error. Declare both types and this cannot happen.
+
+The reverse mistake is safe: declaring the types *without* setting the flags fails loudly at startup —
+`AKConfigError` on the missing `group_name` / `role_arn` / `queue_arn` — because no coordinates were
+injected.
+:::
+
+:::note `enable_scheduling` flips the input queue to content-based deduplication
+EventBridge Scheduler cannot set a `MessageDeduplicationId`, so without content-based dedup two
+occurrences carrying an otherwise identical body would collapse into one inside the 5-minute window.
+This is an in-place update on an existing queue and does not affect application senders, which always
+send an explicit `MessageDeduplicationId` — that takes precedence. The output queue is untouched.
+:::
+
+## Trigger Contract
+
+Each occurrence arrives on the input queue as a plain chat request. The manager freezes one body per
+task at create/amend time and the provider substitutes the occurrence placeholders when it fires:
+
+```json
+{"prompt": "...", "agent": null, "user_id": "alice",
+ "session_id": "ses-2",
+ "scheduled_task_id": "<task_id>",
+ "request_id": "<per-occurrence id>",
+ "scheduled_time": "<occurrence time>"}
+```
+
+- With `session_mode: new`, `session_id` becomes `ak-sched-<task_id>-<occurrence_time>`.
+- **No `schedule` key** — the occurrence runs, it does not register another schedule.
+- **Metadata travels in the body, not in message attributes.** EventBridge Scheduler cannot set SQS
+  message attributes, and the local provider deliberately matches that, so both exercise the runners'
+  body-fallback path for `request_id` and `user_id`.
+- `schedule`, `scheduled_task_id` and `scheduled_time` never reach the agent as unknown context.
 
 ## Examples
 
-- [`examples/api/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/schedule-openai): one-time and recurring chat deferral, the management REST API, and agent-driven scheduling
+- [`examples/api/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/api/schedule-openai) —
+  a runnable REST API with the `local` provider and `in_memory` store, showing deferral, the management
+  routes, and an agent that schedules work itself.
+- [`examples/aws-containerized/openai-schedule`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/aws-containerized/openai-schedule) —
+  the same capability on AWS ECS with the `eventbridge` provider and a DynamoDB store: a REST-service
+  task serving the management routes, an agent-runner task consuming the Input Queue, and Terraform
+  provisioning the schedule group, execution role and schedule table.
+- [`examples/aws-serverless/schedule-openai`](https://github.com/yaalalabs/agent-kernel/tree/main/examples/aws-serverless/schedule-openai) —
+  the AWS Lambda equivalent: request-handler, agent-runner and response-handler Lambdas with the
+  `eventbridge` provider and a DynamoDB store.
+
+See the [AWS containerized](../deployment/aws-containerized.md#scheduling-eventbridge-scheduler) and
+[AWS serverless](../deployment/aws-serverless.md#scheduling-eventbridge-scheduler) deployment guides for
+the `enable_scheduling` / `create_dynamodb_schedule_table` Terraform variables.

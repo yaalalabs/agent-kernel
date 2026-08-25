@@ -15,6 +15,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from ..core.base import Session
+from ..core.config import AKConfig
 from ..core.model import ScheduleSpec, SystemTool
 from ..core.runtime import ACTING_USER_CACHE_KEY
 from .manager import ScheduleManager
@@ -26,60 +27,123 @@ _DISABLED = json.dumps({"error": "scheduling capability is disabled"})
 
 _NO_IDENTITY = json.dumps({"error": "scheduling requires a user identity: include user_id on the chat request"})
 
+# Placeholder the cron flavor's description is substituted into, in both the tool docstrings and
+# the prompt guidance. Substituted textually rather than with str.format because those templates
+# carry literal braces of their own (the JSON shapes in every Returns section).
+_CRON_TOKEN = "{cron}"
 
-def _acting_user() -> Optional[str]:
-    """The user the current run acts for, published in the session's volatile cache by ``Runtime``.
+# The provider whose backend reads AWS's own cron flavor instead of the Unix one. EventBridge
+# Scheduler interprets the expression itself, so what a caller must write changes with it.
+_EVENTBRIDGE_PROVIDER = "eventbridge"
 
-    :return: The acting user id, or None when the run carries no user identity.
+# What a caller has to know to write a cron expression the configured backend will honor. One
+# sentence per flavor, worded to read the same in a tool's parameter schema and in the prompt.
+_CRON_STANDARD_DOC = "A standard 5-field cron expression, whose day-of-week field runs 0-6 with 0 = Sunday (so '0 9 * * 1' is every Monday at 09:00)."
+
+_CRON_EVENTBRIDGE_DOC = (
+    "An AWS EventBridge Scheduler 5-field cron expression, whose day-of-week field runs 1-7 with 1 = Sunday "
+    "(so '0 9 * * 2' is every Monday at 09:00). Constrain either the day-of-month or the day-of-week field, never both."
+)
+
+
+class ScheduleToolUtil:
+    """Shared helpers behind the schedule tools: run identity, the agent-facing JSON, cron-flavor docs.
+
+    Static because none of it owns state: the identity reads come from the ambient ``Session``, the
+    projections are pure, and ``describe_cron_flavor`` writes to the module's tool functions.
     """
-    session = Session.current()
-    if session is None:
-        return None
-    return session.get_volatile_cache().get(ACTING_USER_CACHE_KEY)
 
+    @staticmethod
+    def cron_description() -> str:
+        """Describe the cron expression the configured provider will actually honor.
 
-def _current_session_id() -> Optional[str]:
-    """The session a task created in this run belongs to.
+        Anchored on the ``eventbridge`` short name, the way the manager's topology guards anchor on
+        ``local``: it is the one built-in whose backend owns the interpretation. Everything else —
+        the local provider, and a bring-your-own provider that has its own agent instructions — is
+        described in the standard flavor.
 
-    It is the session each occurrence runs in under ``session_mode`` reuse, and the base the
-    per-occurrence session ids are derived from under ``session_mode`` new.
+        :return: The sentence substituted into every cron placeholder.
+        """
+        schedule_config = AKConfig.get().schedule
+        if schedule_config is not None and schedule_config.provider.type.lower() == _EVENTBRIDGE_PROVIDER:
+            return _CRON_EVENTBRIDGE_DOC
+        return _CRON_STANDARD_DOC
 
-    :return: The current session id, or None outside a run.
-    """
-    session = Session.current()
-    return session.id if session is not None else None
+    @staticmethod
+    def acting_user() -> Optional[str]:
+        """The user the current run acts for, published in the session's volatile cache by ``Runtime``.
 
+        :return: The acting user id, or None when the run carries no user identity.
+        """
+        session = Session.current()
+        if session is None:
+            return None
+        return session.get_volatile_cache().get(ACTING_USER_CACHE_KEY)
 
-def _error_json(error: Exception) -> str:
-    """Serialize a failure into the tool ``{"error": ...}`` JSON contract.
+    @staticmethod
+    def current_session_id() -> Optional[str]:
+        """The session a task created in this run belongs to.
 
-    :param error: The failure to report.
-    :return: The error JSON.
-    """
-    return json.dumps({"error": str(error)})
+        It is the session each occurrence runs in under ``session_mode`` reuse, and the base the
+        per-occurrence session ids are derived from under ``session_mode`` new.
 
+        :return: The current session id, or None outside a run.
+        """
+        session = Session.current()
+        return session.id if session is not None else None
 
-def _task_json(task: ScheduledTask) -> Dict[str, Any]:
-    """Agent-facing view of a task: the fields an agent can act on or report to the user.
+    @staticmethod
+    def error_json(error: Exception) -> str:
+        """Serialize a failure into the tool ``{"error": ...}`` JSON contract.
 
-    Flattened out of the stored record (whose provider reference and owner are machinery the agent
-    has no use for) so a schedule reads back the same way it was asked for.
+        :param error: The failure to report.
+        :return: The error JSON.
+        """
+        return json.dumps({"error": str(error)})
 
-    :param task: The stored task.
-    :return: The agent-facing projection.
-    """
-    return {
-        "task_id": task.task_id,
-        "prompt": task.prompt,
-        "agent": task.agent,
-        "status": task.status.value,
-        "at": task.spec.at,
-        "cron": task.spec.cron,
-        "timezone": task.spec.timezone,
-        "session_mode": task.spec.session_mode,
-        "trigger_count": task.trigger_count,
-        "last_triggered_at": task.last_triggered_at,
-    }
+    @staticmethod
+    def task_json(task: ScheduledTask) -> Dict[str, Any]:
+        """Agent-facing view of a task: the fields an agent can act on or report to the user.
+
+        Flattened out of the stored record (whose provider reference and owner are machinery the
+        agent has no use for) so a schedule reads back the same way it was asked for.
+
+        :param task: The stored task.
+        :return: The agent-facing projection.
+        """
+        return {
+            "task_id": task.task_id,
+            "prompt": task.prompt,
+            "agent": task.agent,
+            "status": task.status.value,
+            "at": task.spec.at,
+            "cron": task.spec.cron,
+            "timezone": task.spec.timezone,
+            "session_mode": task.spec.session_mode,
+            "trigger_count": task.trigger_count,
+            "last_triggered_at": task.last_triggered_at,
+        }
+
+    @staticmethod
+    def describe_cron_flavor(cron_doc: str) -> None:
+        """Point the two timing tools' LLM-facing schemas at the configured provider's cron flavor.
+
+        Only ``SystemTool.func`` reaches a framework — the adapters read its ``__doc__`` when they
+        wrap it (``framework/langgraph/langgraph.py``, and the SDK-native decorators elsewhere) —
+        so a flavor-aware tool schema means a rendered docstring. The module-level functions are
+        rewritten in place rather than replaced by fresh per-call closures because both attachment
+        paths (``Agent._attach_system_tools`` and the adapters' own wrapping) deduplicate tools by
+        function identity, which new objects would defeat. Rewriting them is safe process-wide
+        state: the configured provider is one per process, so no two agents in one process can need
+        different flavors.
+
+        Reads the tools and their pristine templates out of the module at call time, so it sits here
+        with its sibling helpers even though both are defined further down the file.
+
+        :param cron_doc: The flavor's description, substituted into every cron placeholder.
+        """
+        create_schedule.__doc__ = _CREATE_SCHEDULE_DOC.replace(_CRON_TOKEN, cron_doc)
+        update_schedule.__doc__ = _UPDATE_SCHEDULE_DOC.replace(_CRON_TOKEN, cron_doc)
 
 
 async def create_schedule(
@@ -96,8 +160,7 @@ async def create_schedule(
     Args:
         prompt: The instruction to run at the scheduled time. It runs with no further input, so
             make it self-contained.
-        cron: Standard 5-field cron expression for a recurring schedule (e.g. "0 9 * * 1" for
-            every Monday at 09:00). Give either cron or at, never both.
+        cron: {cron} Give either cron or at, never both.
         at: Local wall-clock ISO-8601 timestamp for a one-time schedule (e.g.
             "2030-01-31T09:00:00"), without a UTC offset and in the future.
         timezone: IANA timezone the expression is evaluated in (e.g. "Asia/Colombo").
@@ -112,16 +175,16 @@ async def create_schedule(
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = _acting_user()
+    user_id = ScheduleToolUtil.acting_user()
     if user_id is None:
         return _NO_IDENTITY
     try:
         spec = ScheduleSpec(at=at, cron=cron, timezone=timezone, session_mode=session_mode)
-        task = manager.create(user_id=user_id, prompt=prompt, spec=spec, agent=agent, session_id=_current_session_id())
-        return json.dumps(_task_json(task))
+        task = manager.create(user_id=user_id, prompt=prompt, spec=spec, agent=agent, session_id=ScheduleToolUtil.current_session_id())
+        return json.dumps(ScheduleToolUtil.task_json(task))
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("create_schedule failed: %s", exc)
-        return _error_json(exc)
+        return ScheduleToolUtil.error_json(exc)
 
 
 async def list_schedules() -> str:
@@ -135,15 +198,15 @@ async def list_schedules() -> str:
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = _acting_user()
+    user_id = ScheduleToolUtil.acting_user()
     if user_id is None:
         return _NO_IDENTITY
     try:
         page = manager.list_tasks(user_id=user_id)
-        return json.dumps({"schedules": [_task_json(task) for task in page.tasks]})
+        return json.dumps({"schedules": [ScheduleToolUtil.task_json(task) for task in page.tasks]})
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("list_schedules failed: %s", exc)
-        return _error_json(exc)
+        return ScheduleToolUtil.error_json(exc)
 
 
 async def get_schedule(task_id: str) -> str:
@@ -161,17 +224,17 @@ async def get_schedule(task_id: str) -> str:
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = _acting_user()
+    user_id = ScheduleToolUtil.acting_user()
     if user_id is None:
         return _NO_IDENTITY
     try:
         task = manager.get_task(task_id, user_id=user_id)
         if task is None:
             return json.dumps({"error": f"scheduled task {task_id} not found"})
-        return json.dumps(_task_json(task))
+        return json.dumps(ScheduleToolUtil.task_json(task))
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("get_schedule failed: %s", exc)
-        return _error_json(exc)
+        return ScheduleToolUtil.error_json(exc)
 
 
 async def update_schedule(
@@ -192,7 +255,7 @@ async def update_schedule(
     Args:
         task_id: Identifier of the schedule to change.
         prompt: The instruction each occurrence runs.
-        cron: Standard 5-field cron expression for a recurring schedule. Give either cron or at.
+        cron: {cron} Give either cron or at.
         at: Local wall-clock ISO-8601 timestamp for a one-time schedule, in the future.
         timezone: IANA timezone the expression is evaluated in.
         session_mode: "reuse" to run each occurrence in this conversation, "new" for a fresh
@@ -206,15 +269,15 @@ async def update_schedule(
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = _acting_user()
+    user_id = ScheduleToolUtil.acting_user()
     if user_id is None:
         return _NO_IDENTITY
     try:
         amendment = {"prompt": prompt, "cron": cron, "at": at, "timezone": timezone, "session_mode": session_mode, "status": status}
-        return json.dumps(_task_json(manager.update(task_id, amendment, user_id=user_id)))
+        return json.dumps(ScheduleToolUtil.task_json(manager.update(task_id, amendment, user_id=user_id)))
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("update_schedule failed: %s", exc)
-        return _error_json(exc)
+        return ScheduleToolUtil.error_json(exc)
 
 
 async def delete_schedule(task_id: str) -> str:
@@ -231,17 +294,23 @@ async def delete_schedule(task_id: str) -> str:
     manager = ScheduleManager.get()
     if manager is None:
         return _DISABLED
-    user_id = _acting_user()
+    user_id = ScheduleToolUtil.acting_user()
     if user_id is None:
         return _NO_IDENTITY
     try:
-        return json.dumps(_task_json(manager.cancel(task_id, user_id=user_id)))
+        return json.dumps(ScheduleToolUtil.task_json(manager.cancel(task_id, user_id=user_id)))
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("delete_schedule failed: %s", exc)
-        return _error_json(exc)
+        return ScheduleToolUtil.error_json(exc)
 
 
-_GUIDANCE = (
+# The docstrings of the two timing tools, captured before anything renders them. Every render
+# starts from these pristine templates rather than from an already-rendered __doc__, whose
+# placeholder is gone — otherwise the first flavor to be described would be the only one.
+_CREATE_SCHEDULE_DOC = create_schedule.__doc__ or ""
+_UPDATE_SCHEDULE_DOC = update_schedule.__doc__ or ""
+
+_GUIDANCE_TEMPLATE = (
     "[Scheduling]\n"
     "You can defer work: when the user asks for something to happen later or on a repeating "
     "rhythm, register it as a schedule instead of answering as if you had already done it. Each "
@@ -255,10 +324,12 @@ _GUIDANCE = (
     "- update_schedule(task_id, prompt, cron, at, timezone, session_mode, status): replace a "
     "schedule's full state (including status 'paused' to suspend it, 'active' to resume).\n"
     "- delete_schedule(task_id): cancel a schedule permanently.\n"
-    "Timing: give exactly one of cron (standard 5-field expression, e.g. '0 9 * * 1' for Mondays "
-    "at 09:00) or at (local wall-clock ISO-8601 timestamp in the future, e.g. "
-    "'2030-01-31T09:00:00', with no UTC offset). Both are evaluated in timezone, an IANA name — "
-    "ask the user for theirs rather than assuming UTC when the request implies a local time.\n"
+    "Timing: give exactly one of cron or at.\n"
+    "- cron: {cron}\n"
+    "- at: a local wall-clock ISO-8601 timestamp in the future, e.g. '2030-01-31T09:00:00', with "
+    "no UTC offset.\n"
+    "Both are evaluated in timezone, an IANA name — ask the user for theirs rather than assuming "
+    "UTC when the request implies a local time.\n"
     "session_mode 'reuse' (the default) runs each occurrence in this conversation, so the "
     "occurrence sees its history; 'new' runs each occurrence in a fresh session.\n"
     "update_schedule replaces every field rather than merging, so read the schedule first and "
@@ -268,6 +339,13 @@ _GUIDANCE = (
     'If a tool result contains an "error" field the operation FAILED: report the error to the '
     "user; never describe a schedule as created, changed or cancelled when it was not."
 )
+
+
+# Rendered once at import, in the standard flavor, so nothing reading a docstring before the tools
+# are built — help(), a doc generator, an app attaching one of these functions itself — ever sees
+# the raw placeholder. Reads no config: the configured provider's flavor is only known once
+# get_schedule_tools() runs, which re-renders both from the pristine templates.
+ScheduleToolUtil.describe_cron_flavor(_CRON_STANDARD_DOC)
 
 
 def get_schedule_tools() -> list[SystemTool]:
@@ -280,10 +358,16 @@ def get_schedule_tools() -> list[SystemTool]:
     remaining tools carry empty descriptions; their LLM-facing schemas come from the function
     docstrings when the tools are bound.
 
+    Both surfaces are rendered here rather than fixed at import, because what a caller must write
+    for ``cron`` depends on the configured provider: the timers' owner is what interprets the
+    expression, and the local and EventBridge backends do not read it the same way.
+
     :return: The schedule system tools.
     """
+    cron_doc = ScheduleToolUtil.cron_description()
+    ScheduleToolUtil.describe_cron_flavor(cron_doc)
     return [
-        SystemTool(name="create_schedule", description=_GUIDANCE, func=create_schedule),
+        SystemTool(name="create_schedule", description=_GUIDANCE_TEMPLATE.replace(_CRON_TOKEN, cron_doc), func=create_schedule),
         SystemTool(name="list_schedules", description="", func=list_schedules),
         SystemTool(name="get_schedule", description="", func=get_schedule),
         SystemTool(name="update_schedule", description="", func=update_schedule),
