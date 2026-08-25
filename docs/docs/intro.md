@@ -8,7 +8,7 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
-⏰ **Scheduling** - Defer chat execution to a later moment or a recurring cadence (`at`/`cron`), with a management REST API and agent-facing scheduling tools. [Learn more →](/docs/advanced/scheduling)
+⏰ **Scheduling** - Defer chat execution to a later moment or a recurring cadence (`at`/`cron`), with a management REST API and agent-facing scheduling tools. [Learn more →](./advanced/scheduling.md)
 
 📦 **Sandbox** - Let agents execute code and shell commands in an isolated, permission-bounded environment, with pluggable providers, workload profiles, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 
