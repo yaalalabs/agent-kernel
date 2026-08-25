@@ -83,7 +83,7 @@ Agent Kernel provides pre-built execution capabilities:
 - **WebSocket Delivery (AWS)**: real-time push of full responses (`async` mode) or per-event chunks (`stream` mode)
 - **MCP Server** for Model Context Protocol tool publishing
 - **A2A Server** for Agent-to-Agent communication
-- **AG-UI Surface** for driving an agent from your own frontend, streaming the answer, reasoning, and tool calls as typed events alongside a shared state object
+- **AG-UI Server** for streaming any agent (text, tool calls, reasoning, shared state) to an AG-UI-compliant frontend
 
 ### Multi-Cloud Architecture
 
@@ -214,7 +214,7 @@ config:
 flowchart LR
     A["Agent Logic"] --> B["Deployment Mode"]
     B -- Local --> C["CLI Testing"]
-    B -- API --> D["REST API Server"] & G["MCP Server"] & H["A2A Server"]
+    B -- API --> D["REST API Server"] & G["MCP Server"] & H["A2A Server"] & U["AG-UI Server"]
     B -- AWS Cloud --> E["AWS Lambda"] & F["AWS ECS/Fargate"]
     B -- Azure Cloud --> K["Azure Functions"] & L["Azure Container Apps"]
     B -- GCP Cloud --> Q["Cloud Run (serverless)"] & R["Cloud Run (always-on)"]
