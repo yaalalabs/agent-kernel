@@ -62,9 +62,7 @@ Wraps a framework-specific agent. Key properties:
 Encapsulates framework-specific execution logic:
 
 - **`run(agent, session, requests) -> AgentReply`**: Async method that executes the agent with the given requests within a session context
-- **`stream(agent, session, requests) -> AsyncGenerator[StreamEvent, None]`**: Abstract async generator that yields typed **stream events** (`core/event.py`), not strings, for streaming execution (`execution.mode: stream`) and for the AG-UI surface. The twelve members are message boundaries (`MessageStart`/`TextDelta`/`MessageEnd`), reasoning (`ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`), tool calls (`ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`) and steps (`StepStart`/`StepEnd`). Frameworks whose adapters do not implement streaming yet (CrewAI, smolagents) implement it by raising `NotImplementedError` — both SDKs stream natively, so the gap is the unwired adapter
-- **`supports_streaming -> bool`**: Whether this runner streams. A runner whose adapter leaves `stream()` raising declares `False`, so a caller can reject the request instead of provoking the raise. Defaults to `True`
-- **Adapter state is a local, never an attribute.** One `Runner` instance is shared across every agent and every concurrent session, so anything an adapter remembers mid-stream (a derived message id, a "already opened" flag) must live inside the `stream()` call. On `self` it would leak between sessions
+- **`stream(agent, session, requests) -> AsyncGenerator[StreamEvent | str, None]`**: Abstract async generator that yields typed `StreamEvent`s (`core/event.py`: `MessageStart`/`TextDelta`/`MessageEnd`, `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult`, `StepStart`/`StepEnd`, `ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`; a `Field(discriminator="type")` union) for streaming execution (`execution.mode: stream`). The `| str` is TRANSITIONAL (PR 1 -> PR 6 of the AG-UI streaming migration, `docs/specs/523-ag-ui-support/`): adapters not yet migrated to the event model still yield raw token strings, which `Runtime.stream()` normalises into a synthesised `MessageStart`/`TextDelta`/`MessageEnd` sequence. `supports_streaming` (a `Runner` property, default `True`) lets a caller check before invoking `stream()` instead of provoking the raise; frameworks without native token streaming (CrewAI, smolagents) override it to `False` and implement `stream()` by raising `NotImplementedError`
 - Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`, `PydanticAIRunner`)
 - Runners handle: creating `ToolContext`, converting request models to framework-native formats, invoking the framework's execution API, converting responses back to `AgentReply`
 - **Per-run framework context**: the base `Runner` provides `_load_framework_context(session)` (returns a **deep copy** of the reserved `framework_context` key, or `None` when absent) and `_store_framework_context(session, incoming, produced)` (shallow-merges `produced` over `incoming`: framework-touched top-level keys win, untouched caller keys preserved: with a fail-fast picklability check). Each adapter's `run`/`stream` calls load before the native call, injects `incoming` via its native mechanism, and calls store **only after a successful native call** (inside the `try`, before the `except`; after the `async for` loop for streams, never in `finally`) so a crash/disconnect leaves the stored context intact. Both helpers go through the `Session` accessors, so the raw key name stays inside `Session`. Round-trip fidelity is per-framework (OpenAI and Pydantic AI full: injected as `context=` / `deps=`, mutated in place by tools; ADK all-but-internal-and-scope-prefixed keys, accumulate-only; smolagents pre-seeded keys only, and the context is also appended to the task prompt; LangGraph declared channels only; CrewAI unsupported: warns once per runner and skips). When an adapter seeds caller keys into a native state dict, write AK-internal keys **last** so a caller key cannot displace them (`ak_tool_context` in ADK, `messages` in LangGraph)
@@ -96,9 +94,10 @@ Global orchestrator and agent registry:
   7. Clears volatile cache in `finally` block
 - **`stream(agent, session, requests, acting_user_id=None) -> AsyncGenerator[StreamChunk, None]`**: Streaming counterpart of `run()`, sharing the same pre-hook pipeline via `_prepare_requests()`:
   1. Runs pre-hooks; if halted, yields a `StreamChunk(error=..., done=True)` and returns
-  2. Iterates `agent.runner.stream(agent, session, requests)`. Only `TextDelta` and `ReasoningDelta` carry text, so only those two reach `PostHook.on_stream_chunk()`; a hook returning `None` drops the whole chunk, event included, and a hook that *edits* the text has its edit **written back into the event** so `delta` and `event` can never disagree
-  3. Yields one `StreamChunk` per event, carrying `event` always and `delta` **only for `TextDelta`** — reasoning is deliberately kept out of `delta`, which is what plain-text clients concatenate as the answer and what `ThreadRecorder` persists. Non-text events therefore arrive with `delta=None`. Then a final `StreamChunk(done=True, session_id=...)`
-  4. Stores session and clears volatile cache in `finally`, same as `run()`
+  2. Iterates `agent.runner.stream(agent, session, requests)`; a legacy `str` (TRANSITIONAL) is wrapped into a synthesised `TextDelta` before anything else runs, and its first occurrence allocates a `uuid4().hex` `message_id` shared by a synthesised `MessageStart`/`MessageEnd` pair bracketing the run
+  3. Only `TextDelta`/`ReasoningDelta` content passes through `PostHook.on_stream_chunk()` (a hook can drop the whole chunk, event included, by returning `None`; a hook's edit is written back into the event via `model_copy` so `delta` and `event` never disagree)
+  4. Yields a `StreamChunk(delta=..., event=...)` per event — `delta` is populated only for `TextDelta` (every other event type carries `event` alone) — then a final `StreamChunk(done=True)`
+  5. Stores session and clears volatile cache in `finally`, same as `run()`
 - **System hooks**: Automatically includes `InputGuardrailFactory` as system pre-hook, `OutputGuardrailFactory` as system post-hook
 - **Context manager**: `with Runtime(sessions):` sets an isolated runtime as current
 
@@ -212,7 +211,7 @@ Pydantic-based configuration:
   - `AgentReplyText`, 
   - `AgentReplyImage`
   - `AgentReplyAny`: `content: dict`: returned when the agent is configured for structured output (OpenAI `output_type`, LangGraph `response_format`, ADK `output_schema`, CrewAI module-level `output_pydantic`/`output_json`, Smolagents dict/Pydantic `final_answer`, Pydantic AI `output_type`); `str(reply)` returns the JSON-serialized content. Non-streaming only.
-  - `StreamChunk`: `delta: str | None`, `event: StreamEvent | None`, `done: bool`, `error: str | None`, `session_id: str | None`: one frame of a streamed response, yielded per stream event by `Runtime.stream()` / `AgentService.stream_multi()`. `delta` carries assistant prose only and is what plain-text consumers concatenate; `event` carries the full typed event, for consumers that render reasoning, tool calls and message boundaries. `Runtime.stream` is the only place that populates both, so a `StreamChunk(delta=...)` built directly still serialises as it always did
+  - `StreamChunk`: `delta: str | None`, `event: StreamEvent | None`, `done: bool`, `error: str | None`, `session_id: str | None`: yielded by `Runtime.stream()` / `AgentService.stream_multi()`; `event` is the full typed event the runner emitted, `delta` is populated only when `event` is a `TextDelta` (plain-text consumers concatenate `delta`, enriched consumers read `event`)
 - Type aliases: `AgentRequest = Union[...]`, `AgentReply = Union[...]`
 
 ## Tools (`ak-py/src/agentkernel/core/tool.py`)
@@ -225,8 +224,7 @@ Pydantic-based configuration:
 
 - **`PreHook`**: `on_run(session, agent, requests) -> list[AgentRequest] | AgentReply`: return modified requests to continue, or an `AgentReply` to halt execution
 - **`PostHook`**: `on_run(session, requests, agent, agent_reply) -> AgentReply`: return modified or unmodified reply
-- **`PostHook.on_stream_chunk(session, requests, agent, delta) -> str | None`**: Optional override called for each piece of streamed **text** before it reaches the client — `TextDelta` and `ReasoningDelta` content, nothing else. Default implementation passes it through unchanged; return `None` to drop the chunk entirely, event included. A returned string is written back into the event, so a redaction hook cannot be bypassed by reading `event` instead of `delta`
-- **Limit worth knowing: no hook can see tool-call payloads.** `ToolCallArgs` and `ToolCallResult` carry no text through `on_stream_chunk`, and `PostHook.on_run` does not run on a streamed path at all — so on a streamed run `on_stream_chunk` is the entire output-side defence and tool-call arguments and results reach the client uninspected
+- **`PostHook.on_stream_chunk(session, requests, agent, delta) -> str | None`**: Optional override called for each streaming `TextDelta`/`ReasoningDelta` content string before it reaches the client (other event types skip the hook chain entirely). Default implementation passes the text through unchanged; return `None` to drop the whole chunk, event included
 - Use cases: RAG injection, input/output guardrails, logging, disclaimers, prompt modification, multimodal preprocessing, streaming token filtering/redaction
 
 ## Multimodal (`ak-py/src/agentkernel/core/multimodal/`)
@@ -824,11 +822,12 @@ User Input
         → Runtime.stream(agent, session, requests)
             → async with session:                    # acquire lock, set context
             → PreHooks (agent hooks, then system)    # halt → yield StreamChunk(error, done=True)
-            → agent.runner.stream(agent, session, requests)  # async generator of typed StreamEvents
-                → text events only: PostHook.on_stream_chunk() # drop, or edit and write back
-                → yield StreamChunk(event=..., delta=... )    # delta only for TextDelta
+            → agent.runner.stream(agent, session, requests)  # async generator of StreamEvents (or legacy str, TRANSITIONAL)
+                → legacy str normalised into TextDelta, bracketed by a synthesised MessageStart/MessageEnd
+                → for each TextDelta/ReasoningDelta: PostHook.on_stream_chunk() # can drop the chunk or edit the text
+                → yield StreamChunk(delta=..., event=...)  # delta set only for TextDelta
             → session_store.store(session)           # persist state
-            → yield StreamChunk(done=True, session_id=...)
+            → yield StreamChunk(done=True)
             → clear volatile cache                   # cleanup
     → REST: SSE (`text/event-stream`) when execution.mode=stream
     → AWS Lambda serverless: each StreamChunk sent as a separate SQS/WebSocket `STREAM_CHUNK` message

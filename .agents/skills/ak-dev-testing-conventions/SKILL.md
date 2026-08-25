@@ -37,6 +37,8 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 |-----------|-------|
 | `test_base.py` | Session, Agent, Runner abstractions |
 | `test_runtime.py` | Runtime registration, execution, hooks |
+| `test_stream_events.py` | `core/event.py`'s `StreamEvent` discriminated union: every member round-trips through JSON (`type` discriminator), rejects an unknown `type`, and stays JSON/pickle-safe (no framework-native fields) |
+| `test_runtime_stream_events.py` | `Runtime.stream()`'s streaming contract (spec `docs/specs/523-ag-ui-support/`): legacy `str` yields normalised into a `MessageStart`/`TextDelta`/`MessageEnd` sequence, `PostHook.on_stream_chunk()` only sees `TextDelta`/`ReasoningDelta` content and a hook's edit is written back into the event, a hook returning `None` drops the whole chunk, `delta` is populated only for `TextDelta`, and the final chunk is a bare `StreamChunk(done=True)` |
 | `test_module.py` | Module load/unload, wrapping |
 | `test_session.py` | Session state, caches, context vars |
 | `test_session_cache.py` | LRU SessionCache |
@@ -127,7 +129,9 @@ class DummyRunner(Runner):
 
     async def stream(self, agent, session, requests):
         # Runner.stream() is abstract — implement even in test doubles.
-        # Raise NotImplementedError() (with a trailing `yield`) if the test doesn't exercise streaming.
+        # Raise NotImplementedError() (with a trailing `yield`) if the test doesn't exercise streaming,
+        # or yield StreamEvent instances (or, TRANSITIONALLY, bare token strings — Runtime.stream()
+        # normalises them) to test Runtime.stream() / AgentService.stream_multi().
         raise NotImplementedError()
         yield
 

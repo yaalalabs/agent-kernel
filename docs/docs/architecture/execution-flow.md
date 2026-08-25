@@ -176,15 +176,14 @@ sequenceDiagram
     User->>API: POST /api/v1/chat (same payload)
     API->>RT: stream(agent, session, requests)
     RT->>RT: pre-hook pipeline (same as run)
-    Run-->>RT: MessageStart(message_id)
-    RT-->>API: StreamChunk(event=message_start)
-    API-->>User: data: {"event": {"type": "message_start", ...}, "done": false, "session_id": "..."}
-    loop each text event
-        Run-->>RT: TextDelta(message_id, content)
-        RT->>Post: on_stream_chunk(text)
-        Post-->>RT: text (or None to drop the chunk)
-        RT-->>API: StreamChunk(delta=..., event=text_delta)
-        API-->>User: data: {"delta": "...", "event": {"type": "text_delta", ...}, "done": false, "session_id": "..."}
+    loop each event
+        Run-->>RT: StreamEvent (or legacy str, normalised)
+        opt event is TextDelta/ReasoningDelta
+            RT->>Post: on_stream_chunk(content)
+            Post-->>RT: content (or None to drop the whole chunk)
+        end
+        RT-->>API: StreamChunk(delta=..., event=...)
+        API-->>User: data: {"delta": "...", "event": {...}, "done": false, "session_id": "..."}
     end
     Run-->>RT: MessageEnd(message_id)
     RT-->>API: StreamChunk(event=message_end)
@@ -201,7 +200,8 @@ absent key). The terminal `{"done": true}` frame carries neither. A client that 
 must therefore test for the key rather than assume every non-terminal frame has one.
 
 - If a pre-hook halts (e.g., an input guardrail trips), the stream yields a single `StreamChunk` with `error` set and `done: true`.
-- **Framework support**: OpenAI Agents SDK, LangGraph, Google ADK and Pydantic AI stream natively. CrewAI and Smolagents raise `NotImplementedError` and declare `supports_streaming = False`, so a streaming surface rejects the request rather than provoking the raise.
+- `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) carries `event` alone, with no `delta` key in the wire frame.
+- **Framework support**: OpenAI Agents SDK, LangGraph, and Google ADK stream natively. CrewAI and Smolagents declare `supports_streaming = False` and raise `NotImplementedError` in stream mode.
 - On AWS serverless and AWS ECS containerized, the same `StreamChunk`s are delivered as WebSocket `STREAM_CHUNK` messages instead of SSE; see below.
 
 ## The Queue Pipeline Abstraction

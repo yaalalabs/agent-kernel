@@ -122,7 +122,7 @@ class <Name>Runner(Runner):
 
 ### 3b. Implement `stream()` for Token Streaming
 
-`Runner` declares `stream()` as `@abstractmethod`, so every framework adapter **must** implement it — even if the framework doesn't support token streaming.
+`Runner` declares `stream()` as `@abstractmethod`, so every framework adapter **must** implement it — even if the framework doesn't support token streaming. Its signature is `AsyncGenerator[StreamEvent | str, None]` (`core/event.py`): the `| str` is TRANSITIONAL (PR 1 -> PR 6 of the AG-UI streaming migration tracked in `docs/specs/523-ag-ui-support/`) — adapters not yet migrated to the typed event model still yield raw token strings, and `Runtime.stream()` normalises them into a synthesised `MessageStart`/`TextDelta`/`MessageEnd` sequence. Follow whichever shape the framework adapters you're modelling this on currently use (check `git grep "async def stream" ak-py/src/agentkernel/framework` for the current state — most adapters still yield `str` at time of writing).
 
 **If the framework's SDK exposes a token-delta stream** (e.g. an async event stream with text-delta events), implement it directly:
 
@@ -147,33 +147,16 @@ async def stream(self, agent, session: Session, requests: list[AgentRequest]) ->
         tool_context.reset()
 ```
 
-**`stream()` yields typed events, not strings.** The union is in `core/event.py`: message boundaries
-(`MessageStart` / `TextDelta` / `MessageEnd`), reasoning (`ReasoningStart` / `ReasoningDelta` /
-`ReasoningEnd`), tool calls (`ToolCallStart` / `ToolCallArgs` / `ToolCallEnd` / `ToolCallResult`) and
-steps (`StepStart` / `StepEnd`). Yielding a bare `str` is rejected by `StreamChunk.event` with a
-`ValidationError`, so an unmigrated adapter fails loudly rather than degrading.
-
-Three rules the existing adapters all follow, each of which was a bug in an early draft:
-
-- **Read correlation ids off the framework's own events; never generate one you could have read.** A
-  generated id cannot correlate a tool result to the call that produced it. Generate only where the
-  framework supplies nothing — and then keep the mapping in a local.
-- **Anything remembered mid-stream is a local inside `stream()`, never an attribute.** One `Runner`
-  instance serves every agent and every concurrent session, so state on `self` would let one
-  session's boundaries close another's, or two sessions share a message id and have a client splice
-  their text together.
-- **Never open a message you might not fill.** If the framework's start signal fires for turns that
-  produce no prose (a tool-call-only turn), defer `MessageStart` until text actually arrives and emit
-  `MessageEnd` only for a message that opened — otherwise every such turn renders as an empty
-  assistant bubble.
-
-**If you are not implementing streaming yet** — including when the underlying SDK *does* stream
-(CrewAI and smolagents today: their AK adapters still stub this out) — or the framework truly has
-no streaming API, implement `stream()` as a generator that always raises, so it satisfies the
-abstract method contract but fails fast with a clear message that names the *adapter* gap, not a
-false claim that the framework cannot stream:
+**If the framework has no native token streaming** (e.g. CrewAI, smolagents), override `supports_streaming` to `False` and implement `stream()` as a generator that always raises, so a caller can check the property before invoking `stream()` instead of provoking the raise, while `stream()` itself still satisfies the abstract method contract and fails fast with a clear message:
 
 ```python
+@property
+def supports_streaming(self) -> bool:
+    """
+    :return: False — this adapter does not implement streaming, so stream() always raises.
+    """
+    return False
+
 async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
     """
     <Name> streaming is not implemented in this adapter yet.
@@ -190,11 +173,7 @@ def supports_streaming(self) -> bool:
     return False
 ```
 
-Declaring `supports_streaming = False` is what keeps the raise off the happy path: surfaces that
-require streaming (AG-UI, `execution.mode: stream`) check it and reject the request with a clear
-message instead of opening a stream that dies on its first event.
-
-`Runtime.stream()` wraps each yielded event in a `StreamChunk`, passes the **text-carrying** ones (`TextDelta`, `ReasoningDelta`) through `PostHook.on_stream_chunk()` and writes any edit back into the event, then forwards the chunk to the caller (REST SSE endpoint, AG-UI surface, or the queue/WebSocket pipeline). `delta` is populated only for `TextDelta`, so reasoning never reaches a plain-text client as the answer. No other core changes are needed to support a new framework's streaming — implement `Runner.stream()` and declare `supports_streaming`.
+`Runtime.stream()` wraps each event (or normalises each legacy token) into a `StreamChunk`, runs `TextDelta`/`ReasoningDelta` content through `PostHook.on_stream_chunk()`, and forwards it to the caller (REST SSE endpoint or AWS Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new framework's streaming — just implement `Runner.stream()` (and, once your adapter emits typed events natively, drop the `supports_streaming` override if you had one).
 
 ### 3c. Wire up the per-run framework context
 
