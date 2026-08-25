@@ -3,8 +3,9 @@ name: ak-add-capabilities
 description: >
   Add capabilities to an existing Agent Kernel project. This skill guides you through
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
-  A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support, and the
-  sandbox capability (isolated code execution). Session
+  A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support, the
+  sandbox capability (isolated code execution), and scheduling (deferred/recurring chat execution
+  with a management REST API and agent-facing scheduling tools). Session
   persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, Valkey, DynamoDB (AWS), Firestore (GCP),
   and Cosmos DB (Azure) backends. Generates configuration and code changes needed.
@@ -42,6 +43,7 @@ Which capability would you like to add?
 9. **Conversation Threads** — Persistent, named conversation history keyed by `session_id`
 10. **Sandbox** — Isolated code/command execution with pluggable providers, workload profiles, policy, and per-user identity
 11. **AG-UI Server** — Stream any agent to an AG-UI-compliant frontend (text, tool calls, reasoning, shared state)
+12. **Scheduling** — Deferred and recurring chat execution (`at`/`cron`), a schedule management REST API, and five agent-facing scheduling tools
 
 ### Step 3: Generate Changes
 
@@ -1007,6 +1009,87 @@ For per-user identity (running sandboxed code under the invoking user's identity
 `principal_resolver` to a dotted path and a profile's `identity.mode: user`; see the
 [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox) and the
 `examples/sandbox/identity` example.
+
+---
+
+#### Scheduling
+
+**What it does:** Lets a chat request defer to a later moment (`at`) or a recurring cadence
+(`cron`) instead of running immediately — it is registered as a scheduled task and acknowledged
+with HTTP 202, then delivered back as a plain chat request when it fires. The same capability is
+available to the agent itself: five system tools (`create_schedule`, `list_schedules`,
+`get_schedule`, `update_schedule`, `delete_schedule`) and their usage guidance are injected
+automatically into every scoped agent's system prompt.
+
+**Ask:** Should the scheduling tools attach to all agents or only some (the `agents` list)? Do you
+also want the management REST API (list/read/amend/cancel) mounted, and if so, should it be
+protected with an `Authoriser`?
+
+**1. Install the `cron` extra if any schedule will use `cron` (not needed for `at`-only schedules):**
+
+```bash
+pip install "agentkernel[cron]"
+```
+
+**2. Add a `schedule` block to `config.yaml`.** Its presence is the enablement signal — a bare
+block works for local development:
+
+```yaml
+schedule:
+  provider:
+    type: local            # local (the only built-in today), or a dotted path to a ScheduleProvider
+  store:
+    type: in_memory         # in_memory (the only built-in today), or a dotted path to a ScheduleStore
+  agents: [planner]         # optional: agents the schedule tools attach to; omit = all agents
+```
+
+**3. To expose the management REST API**, mount `ScheduleRESTRequestHandler` alongside the app's
+other handlers — there is no config key that mounts routes:
+
+```python
+from agentkernel.pipeline import IOHandler
+from agentkernel.schedule import ScheduleRESTRequestHandler
+
+IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
+```
+
+or, on the full REST API surface:
+
+```python
+from agentkernel.api import RESTAPI
+from agentkernel.schedule import ScheduleRESTRequestHandler
+
+RESTAPI.run(handlers=[ScheduleRESTRequestHandler()])
+```
+
+**4. No agent code changes needed** — the scheduling tools and prompt guidance attach
+automatically to every scoped agent.
+
+**Defer a chat request** (`at` is a local wall-clock timestamp, must be in the future; `cron` is a
+standard 5-field expression):
+
+```bash
+curl -i -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1", "user_id": "alice",
+       "schedule": {"at": "2030-01-31T09:00:00", "timezone": "Asia/Colombo"}}'
+```
+
+:::caution
+`local` + `in_memory` are single-process only: `ScheduleManager` fails fast at startup if either is
+combined with a broker transport (`sqs`/`kafka`/`nats`) or a shared store, since the management
+routes would then run in a process different from the one that owns the scheduler timers.
+:::
+
+For authorization on the management routes, supply a pluggable `Authoriser`, exactly like the
+thread and AG-UI handlers:
+
+```python
+RESTAPI.run(handlers=[ScheduleRESTRequestHandler(authoriser=MyAuthoriser())])
+```
+
+See the [Scheduling guide](https://kernel.yaala.ai/docs/advanced/scheduling) and the
+`examples/api/schedule-openai` example.
 
 ---
 

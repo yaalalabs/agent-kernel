@@ -12,6 +12,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity
+- **Scheduling**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider/store backends (`local`/`in_memory` built in)
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
@@ -54,6 +55,12 @@ pip install "agentkernel[sandbox-docker]"   # docker provider
 pip install "agentkernel[e2b]"              # e2b cloud provider
 pip install "agentkernel[daytona]"          # daytona cloud provider
 pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
+```
+
+For cron-expression schedules (`schedule.cron`; `at`-only schedules work without it):
+
+```bash
+pip install "agentkernel[cron]"
 ```
 
 **Requirements:**
@@ -1280,6 +1287,54 @@ Key fields:
 See the [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox) for the full
 reference and the `examples/sandbox` and `examples/sandbox/identity` examples.
 
+#### Scheduling Configuration
+
+Enable deferred and recurring chat execution. The presence of the `schedule` block is the
+enablement signal — a chat request carrying a `schedule` block (`at` or `cron`) is registered as
+a scheduled task and acknowledged with HTTP 202 instead of being run immediately, and every scoped
+agent automatically gains five scheduling tools (`create_schedule`, `list_schedules`,
+`get_schedule`, `update_schedule`, `delete_schedule`).
+
+A bare block works for local development:
+
+```yaml
+schedule:
+  provider:
+    type: local            # local (the only built-in today), or a dotted path to a ScheduleProvider
+  store:
+    type: in_memory         # in_memory (the only built-in today), or a dotted path to a ScheduleStore
+  agents: [planner]         # optional: agents the schedule tools attach to; omit = all agents
+```
+
+To also expose the management REST API (`GET /api/v1/schedules`, `GET`/`PUT`/`DELETE
+/api/v1/schedules/{task_id}`), mount `ScheduleRESTRequestHandler` alongside your app's other
+handlers:
+
+```python
+from agentkernel.pipeline import IOHandler
+from agentkernel.schedule import ScheduleRESTRequestHandler
+
+IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
+```
+
+Key fields:
+
+- **`provider.type`** — `local` (an in-process scheduler thread; the only built-in today), or a
+  dotted path to a `ScheduleProvider` subclass. `eventbridge` is planned.
+- **`store.type`** — `in_memory` (the only built-in today), or a dotted path to a `ScheduleStore`
+  subclass. `redis`, `valkey`, and `dynamodb` are planned.
+- **`agents`** — agent names the schedule tools and system-prompt guidance attach to; omit for all
+  agents.
+
+`local` + `in_memory` are single-process only: `ScheduleManager` fails fast at startup if either
+is combined with a broker transport (`sqs`/`kafka`/`nats`) or a shared store, since the management
+routes would then run in a different process from the scheduler thread that actually owns the
+timers. Install the `cron` extra (`pip install "agentkernel[cron]"`) for `schedule.cron`
+expressions; `at`-only schedules work without it.
+
+See the [Scheduling guide](https://kernel.yaala.ai/docs/advanced/scheduling) for the full
+reference and the `examples/api/schedule-openai` example.
+
 #### Messaging Platform Integrations
 
 Configure integrations with messaging platforms.
@@ -1474,6 +1529,12 @@ thread: # optional; configures Conversation Thread Support (enabled by mounting 
     url: redis://localhost:6379
     ttl: 2592000
     prefix: "ak:thread:"
+schedule: # optional; presence enables deferred/recurring chat execution + the schedule agent tools
+  provider:
+    type: local
+  store:
+    type: in_memory
+  agents: [planner] # omit for all agents
 execution:
   mode: rest_sync
   queues:

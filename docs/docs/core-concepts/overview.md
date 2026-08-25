@@ -183,6 +183,7 @@ Around these abstractions, the kernel provides:
 - **ChatService**: the chat request layer on top of AgentService. Its execution core (`execute`/`execute_stream`) validates, builds or accepts prebuilt request lists, and returns typed replies; it is what messaging integrations, the thread handler, and the AG-UI handler call. Its presentation wrappers (`process_*`) add the HTTP shapes (JSON, SSE, `HTTPException`) used by the REST API and deployment handlers.
 - **Execution modes**: the same application supports direct execution, SSE streaming (`execution.mode: stream`), and on AWS, queue-backed (`rest_sync`/`rest_async`) and WebSocket (`async`/`stream`) modes. [Execution flow →](../architecture/execution-flow)
 - **Conversation threads**: optional persistent, named conversation history with REST read APIs. [Threads →](../advanced/threads)
+- **Scheduling**: optional deferred/recurring chat execution (`at`/`cron`) intercepted at the top of ChatService's execution core, with a management REST API and agent-facing scheduling tools. [Scheduling →](../advanced/scheduling)
 - **Multimodal attachments**: image/file preprocessing via a system pre-hook with pluggable attachment stores. [Multimodal →](../advanced/multimodal)
 
 ## How They Work Together

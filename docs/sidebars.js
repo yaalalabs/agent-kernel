@@ -141,6 +141,7 @@ const sidebars = {
         'advanced/multimodal',
         'advanced/threads',
         'advanced/sandbox',
+        'advanced/scheduling',
         'advanced/knowledge-bases',
         'advanced/queue-mode-guide',
         {

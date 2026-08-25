@@ -124,6 +124,18 @@ Let agents run code and shell commands in an isolated, permission-bounded enviro
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/sandbox)
 
+### ⏰ Scheduling — Deferred & Recurring Chat Execution
+
+A chat request carrying a `schedule` block isn't run — it's registered as a scheduled task and
+acknowledged with HTTP 202. When it's due, the occurrence runs through the normal chat path.
+
+- **One-time or recurring** — `at` for a single future moment, `cron` for a standard 5-field recurrence.
+- **Agent-driven too** — five system tools (`create_schedule`, `list_schedules`, `get_schedule`, `update_schedule`, `delete_schedule`) let the agent itself schedule follow-up work, scoped to the acting user.
+- **Management REST API** — list, read, amend, and cancel scheduled tasks, with pluggable authorization.
+- **Pluggable backends** — `local` provider + `in_memory` store today, ships as a bare `schedule:` config block for local dev.
+
+[Learn more →](https://kernel.yaala.ai/docs/advanced/scheduling)
+
 ### 🧠 Memory, Sessions & Knowledge Bases
 
 | Layer | Backends |
@@ -180,7 +192,7 @@ ak skill install
 |---|---|
 | `ak-init` | Scaffold a new project — any framework, any deployment mode |
 | `ak-build` | Add tools, agents, handoffs — context-aware and framework-specific |
-| `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, AG-UI, hooks, multimodal, conversation threads |
+| `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, sandbox, scheduling |
 | `ak-add-integration` | Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail |
 | `ak-cloud-deploy` | AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run with full Terraform |
 | `ak-test` | Fuzzy, judge, and fallback test modes + a debugging playbook |
