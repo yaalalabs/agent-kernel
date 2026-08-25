@@ -192,7 +192,7 @@ ak skill install
 |---|---|
 | `ak-init` | Scaffold a new project — any framework, any deployment mode |
 | `ak-build` | Add tools, agents, handoffs — context-aware and framework-specific |
-| `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, scheduled tasks |
+| `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, sandbox, scheduled tasks |
 | `ak-add-integration` | Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail |
 | `ak-cloud-deploy` | AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run with full Terraform |
 | `ak-test` | Fuzzy, judge, and fallback test modes + a debugging playbook |

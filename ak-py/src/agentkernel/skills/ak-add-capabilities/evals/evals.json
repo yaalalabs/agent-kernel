@@ -362,44 +362,6 @@
       ]
     },
     {
-      "id": "cap-schedule-local",
-      "name": "Add scheduled tasks with the local provider",
-      "input": "Add scheduled tasks to my project so a chat request can be deferred or run on a cron schedule",
-      "expected_outputs": [
-        "schedule:",
-        "provider:",
-        "type: local",
-        "store:",
-        "type: in_memory",
-        "queues:",
-        "type: in_memory",
-        "agentkernel[",
-        "cron",
-        "ScheduleRESTRequestHandler"
-      ],
-      "must_not_contain": [
-        "type: eventbridge"
-      ]
-    },
-    {
-      "id": "cap-schedule-eventbridge",
-      "name": "Add scheduled tasks with the EventBridge provider",
-      "input": "Add scheduled tasks to my AWS project using EventBridge Scheduler and DynamoDB",
-      "expected_outputs": [
-        "schedule:",
-        "provider:",
-        "type: eventbridge",
-        "store:",
-        "type: dynamodb",
-        "agentkernel[",
-        "aws",
-        "cron"
-      ],
-      "must_not_contain": [
-        "type: local"
-      ]
-    },
-    {
       "id": "cap-sandbox-local",
       "name": "Add local_subprocess sandbox",
       "input": "Add a sandbox to my project so the agent can run Python code locally",
@@ -423,6 +385,58 @@
         "type: docker",
         "agentkernel[sandbox-docker]",
         "image:"
+      ]
+    },
+    {
+      "id": "cap-schedule-basic",
+      "name": "Add scheduling capability",
+      "input": "Add scheduling support so my agent can defer chats and schedule follow-up work",
+      "expected_outputs": [
+        "schedule:",
+        "provider:",
+        "type: local",
+        "store:",
+        "type: in_memory",
+        "create_schedule"
+      ]
+    },
+    {
+      "id": "cap-schedule-management-api",
+      "name": "Enable schedule management REST API",
+      "input": "Add the scheduling management REST API to my project so I can list, amend, and cancel scheduled tasks",
+      "expected_outputs": [
+        "ScheduleRESTRequestHandler",
+        "schedule:",
+        "IOHandler",
+        "handlers="
+      ]
+    },
+    {
+      "id": "cap-schedule-cron",
+      "name": "Add a recurring schedule with cron",
+      "input": "I want the agent to be able to schedule recurring reminders with a cron expression",
+      "expected_outputs": [
+        "schedule:",
+        "cron",
+        "agentkernel[cron]"
+      ]
+    },
+    {
+      "id": "cap-schedule-eventbridge",
+      "name": "Add scheduled tasks with the EventBridge provider",
+      "input": "Add scheduled tasks to my AWS project using EventBridge Scheduler and DynamoDB",
+      "expected_outputs": [
+        "schedule:",
+        "provider:",
+        "type: eventbridge",
+        "store:",
+        "type: dynamodb",
+        "agentkernel[",
+        "aws",
+        "cron"
+      ],
+      "must_not_contain": [
+        "type: local"
       ]
     }
   ]
