@@ -40,8 +40,12 @@ crewai = [
     "openinference-instrumentation-litellm>=0.1.28",
 ]
 langgraph = [
-    "langgraph~=1.0.5",
-    "langchain~=1.2.3",
+    "langgraph~=1.2.10",
+    # langgraph-prebuilt is otherwise capped only by langgraph-checkpoint, so it can resolve ahead of
+    # langgraph itself; >=1.1.0 is the first release that matches langgraph 1.2's langgraph.runtime.
+    "langgraph-prebuilt~=1.1.0",
+    "langchain~=1.3.10",
+    "langchain_community==0.4.1",
     "litellm~=1.89.2"
 ]
 smolagents = [

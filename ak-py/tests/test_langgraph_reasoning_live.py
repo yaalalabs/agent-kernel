@@ -17,9 +17,9 @@ Two things this file has to get right, both of which cost an earlier attempt its
   *summary*; a reasoning-capable model asked for no summary streams none, so the whole chain looks
   broken when nothing is actually wrong with it. Setting `reasoning` also routes `ChatOpenAI` onto the
   Responses API, which is where summaries come from.
-- **A bare `StateGraph`, not `create_react_agent`.** `langgraph.prebuilt` imports `ExecutionInfo` from
-  `langgraph.runtime`, which the pinned `langgraph` does not export, so importing it fails outright.
-  A react loop would add nothing here: this test wants one model call that thinks and then answers.
+- **Bare `StateGraph`, not `create_react_agent`.** The test needs only one model call, so a ReAct loop adds nothing.
+  Using a bare graph also avoids unnecessary `langgraph.prebuilt` version coupling. The original workaround is no longer
+  required since #586 lifted the `langgraph` pin.
 
 `langchain_openai` is guarded with `importorskip` because ak-py does not depend on it — it arrives only
 through `ragas`, the test-judge extra. pytest imports every test module at collection, so an unguarded
@@ -74,7 +74,8 @@ class TestLangGraphReasoningLive:
         agent = SimpleNamespace(_system_prompt="", agent=_graph(model))
 
         runner = LangGraphRunner()
-        events = [event async for event in runner.stream(agent, Session("live-reasoning"), [AgentRequestText(prompt=PROMPT)])]
+        events = [event async for event in
+                  runner.stream(agent, Session("live-reasoning"), [AgentRequestText(prompt=PROMPT)])]
         kinds = [event.type for event in events]
 
         assert isinstance(events[0], ReasoningStart), kinds
