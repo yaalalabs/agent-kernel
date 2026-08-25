@@ -74,8 +74,7 @@ class TestLangGraphReasoningLive:
         agent = SimpleNamespace(_system_prompt="", agent=_graph(model))
 
         runner = LangGraphRunner()
-        events = [event async for event in
-                  runner.stream(agent, Session("live-reasoning"), [AgentRequestText(prompt=PROMPT)])]
+        events = [event async for event in runner.stream(agent, Session("live-reasoning"), [AgentRequestText(prompt=PROMPT)])]
         kinds = [event.type for event in events]
 
         assert isinstance(events[0], ReasoningStart), kinds
