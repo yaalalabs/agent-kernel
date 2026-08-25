@@ -44,8 +44,8 @@ class AGUIRunInput:
         if user_message is None:
             raise HTTPException(status_code=400, detail="RunAgentInput.messages carries no user message; there is no turn to run")
 
-        _reject_empty_content(user_message)
-        _reject_unknown_content_types(user_message)
+        AGUIRunInput._reject_empty_content(user_message)
+        AGUIRunInput._reject_unknown_content_types(user_message)
 
         filtered = {**body, "messages": [user_message]}
         for wire_name, python_name, default in _OPTIONAL_ON_THE_WIRE:
@@ -86,76 +86,78 @@ class AGUIRunInput:
 
         requests: list[AgentRequest] = []
         for index, part in enumerate(content):
-            requests.append(_to_request(part, index))
+            requests.append(AGUIRunInput._to_request(part, index))
         return requests
 
+    @staticmethod
+    def _reject_empty_content(user_message: dict) -> None:
+        """Raise 400 if the user message has no content."""
+        content = user_message.get("content")
+        if (isinstance(content, str) and not content.strip()) or (isinstance(content, list) and not content):
+            raise HTTPException(status_code=400, detail="The user message carries no content; there is no turn to run")
 
-def _reject_empty_content(user_message: dict) -> None:
-    """Raise 400 if the user message has no content."""
-    content = user_message.get("content")
-    if (isinstance(content, str) and not content.strip()) or (isinstance(content, list) and not content):
-        raise HTTPException(status_code=400, detail="The user message carries no content; there is no turn to run")
+    @staticmethod
+    def _reject_unknown_content_types(user_message: dict) -> None:
+        """Raise 400 for content or source types the SDK does not know."""
+        content = user_message.get("content")
+        if not isinstance(content, list):
+            return
 
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            part_type = part.get("type")
+            if part_type not in _KNOWN_CONTENT_TYPES:
+                raise HTTPException(status_code=400, detail=f"Unsupported content type '{part_type}' in the user message")
+            source = part.get("source")
+            if isinstance(source, dict) and source.get("type") not in _KNOWN_SOURCE_TYPES:
+                raise HTTPException(status_code=400, detail=f"Unsupported content source type '{source.get('type')}' in the user message")
 
-def _reject_unknown_content_types(user_message: dict) -> None:
-    """Raise 400 for content or source types the SDK does not know."""
-    content = user_message.get("content")
-    if not isinstance(content, list):
-        return
+    @staticmethod
+    def _to_request(part: "InputContent", index: int) -> AgentRequest:
+        """Convert one InputContent part into an AK request."""
+        from ag_ui.core import AudioInputContent, BinaryInputContent, ImageInputContent, TextInputContent, VideoInputContent
 
-    for part in content:
-        if not isinstance(part, dict):
-            continue
-        part_type = part.get("type")
-        if part_type not in _KNOWN_CONTENT_TYPES:
-            raise HTTPException(status_code=400, detail=f"Unsupported content type '{part_type}' in the user message")
-        source = part.get("source")
-        if isinstance(source, dict) and source.get("type") not in _KNOWN_SOURCE_TYPES:
-            raise HTTPException(status_code=400, detail=f"Unsupported content source type '{source.get('type')}' in the user message")
+        if isinstance(part, TextInputContent):
+            return AgentRequestText(prompt=part.text)
 
-
-def _to_request(part: "InputContent", index: int) -> AgentRequest:
-    """Convert one InputContent part into an AK request."""
-    from ag_ui.core import AudioInputContent, BinaryInputContent, ImageInputContent, TextInputContent, VideoInputContent
-
-    if isinstance(part, TextInputContent):
-        return AgentRequestText(prompt=part.text)
-
-    if isinstance(part, (AudioInputContent, VideoInputContent)):
-        raise HTTPException(
-            status_code=400,
-            detail=f"AG-UI {part.type} content is not supported: Agent Kernel has no {part.type} request type, "
-            f"and mapping it onto the generic file type produces misleading model output",
-        )
-
-    if isinstance(part, BinaryInputContent):
-        value = part.data or part.url
-        if value is None:
+        if isinstance(part, (AudioInputContent, VideoInputContent)):
             raise HTTPException(
                 status_code=400,
-                detail="AG-UI binary content carrying only an 'id' is not supported: the id references a store Agent Kernel cannot read. Send 'data' or 'url' instead",
+                detail=f"AG-UI {part.type} content is not supported: Agent Kernel has no {part.type} request type, "
+                f"and mapping it onto the generic file type produces misleading model output",
             )
-        return _attachment_request(value, part.mime_type, part.filename or _generated_name(index, part.mime_type, value))
 
-    source = part.source
-    name = _generated_name(index, source.mime_type, source.value)
-    if isinstance(part, ImageInputContent):
-        return AgentRequestImage(image_data=source.value, name=name, mime_type=source.mime_type)
-    return AgentRequestFile(file_data=source.value, name=name, mime_type=source.mime_type)
+        if isinstance(part, BinaryInputContent):
+            value = part.data or part.url
+            if value is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="AG-UI binary content carrying only an 'id' is not supported: the id references a store Agent Kernel cannot read. Send 'data' or 'url' instead",
+                )
+            return AGUIRunInput._attachment_request(
+                value, part.mime_type, part.filename or AGUIRunInput._generated_name(index, part.mime_type, value)
+            )
 
+        source = part.source
+        name = AGUIRunInput._generated_name(index, source.mime_type, source.value)
+        if isinstance(part, ImageInputContent):
+            return AgentRequestImage(image_data=source.value, name=name, mime_type=source.mime_type)
+        return AgentRequestFile(file_data=source.value, name=name, mime_type=source.mime_type)
 
-def _attachment_request(value: str, mime_type: Optional[str], name: str) -> AgentRequest:
-    """Route a binary part to an image or file request by mime type."""
-    if mime_type and mime_type.lower().startswith("image/"):
-        return AgentRequestImage(image_data=value, name=name, mime_type=mime_type)
-    return AgentRequestFile(file_data=value, name=name, mime_type=mime_type)
+    @staticmethod
+    def _attachment_request(value: str, mime_type: Optional[str], name: str) -> AgentRequest:
+        """Route a binary part to an image or file request by mime type."""
+        if mime_type and mime_type.lower().startswith("image/"):
+            return AgentRequestImage(image_data=value, name=name, mime_type=mime_type)
+        return AgentRequestFile(file_data=value, name=name, mime_type=mime_type)
 
-
-def _generated_name(index: int, mime_type: Optional[str], value: str) -> str:
-    """Invent a filename when AG-UI did not send one."""
-    if "://" in value:
-        candidate = unquote(urlparse(value).path.rsplit("/", 1)[-1]).strip()
-        if candidate:
-            return candidate
-    extension = mimetypes.guess_extension(mime_type) if mime_type else None
-    return f"agui-attachment-{index + 1}{extension or ''}"
+    @staticmethod
+    def _generated_name(index: int, mime_type: Optional[str], value: str) -> str:
+        """Invent a filename when AG-UI did not send one."""
+        if "://" in value:
+            candidate = unquote(urlparse(value).path.rsplit("/", 1)[-1]).strip()
+            if candidate:
+                return candidate
+        extension = mimetypes.guess_extension(mime_type) if mime_type else None
+        return f"agui-attachment-{index + 1}{extension or ''}"
