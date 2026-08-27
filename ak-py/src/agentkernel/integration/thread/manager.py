@@ -13,6 +13,7 @@ from typing import List, Optional
 
 from ...core.config import AKConfig
 from ...core.model import AgentRequest, AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage
+from ...core.multimodal.source import AttachmentSource
 from ...core.util.pagination import clamp_limit, decode_cursor, encode_cursor
 from .model import MessagePage, Thread, ThreadAttachment, ThreadMessage, ThreadPage
 from .naming import ThreadNamingStrategy
@@ -143,19 +144,29 @@ class ConversationThreadManager:
 
     def store_attachments(self, session_id: str, requests: List[AgentRequest]) -> tuple[List[AgentRequest], List[ThreadAttachment]]:
         """
-        Save the bytes of each image/file request into the existing multimodal
-        AttachmentStore and return (1) a rebuilt request list in which every stored
-        image/file request is replaced, in place, by an AgentRequestAttachmentRef
-        carrying its assigned id (all other requests kept in order), and (2) the
-        ThreadAttachment references for the saved attachments.
+        Save each image/file request into the existing multimodal AttachmentStore
+        and return (1) a rebuilt request list in which every base64 image/file
+        request is replaced, in place, by an AgentRequestAttachmentRef carrying its
+        assigned id (all other requests kept in order), and (2) one ThreadAttachment
+        per attachment the turn carried.
 
-        Passing the id in-band on the rebuilt request list is how MultimodalPreHook
-        later learns which attachment to reference — no raw bytes travel past
-        storage. Requires multimodal.enabled: requests carrying attachments while
-        multimodal is disabled are rejected (thread mode is text-only without it),
-        and text-only requests pass through unchanged. No description is
-        generated here (that stays in MultimodalPreHook). Thread attachments are
-        exempt from the store's max_attachments eviction.
+        Every attachment gets a store record and therefore an attachment_id, but
+        AttachmentSource decides what that record holds and whether the request is
+        replaced:
+
+        - **Base64 data** is saved as bytes and the request becomes a ref. Passing
+          the id in-band is how MultimodalPreHook later learns which attachment to
+          reference — no raw bytes travel past storage.
+        - **A remote reference** is saved as a url, and the request travels on
+          untouched. It must not become a ref: MultimodalPreHook strips every ref
+          before the agent runs, so a remote attachment turned into one would reach
+          the agent as nothing at all. The adapter is what resolves it.
+
+        Requires multimodal.enabled: requests carrying attachments while multimodal
+        is disabled are rejected (thread mode is text-only without it), and
+        text-only requests pass through unchanged. No description is generated here
+        (that stays in MultimodalPreHook). Thread attachments are exempt from the
+        store's max_attachments eviction.
 
         :param session_id: Session identifier used for attachment isolation.
         :param requests: The incoming agent requests to scan for attachments.
@@ -185,23 +196,25 @@ class ConversationThreadManager:
         rebuilt: List[AgentRequest] = []
         references: List[ThreadAttachment] = []
         for req in requests:
-            if isinstance(req, AgentRequestImage) and req.image_data:
-                data, att_type, name, mime_type = req.image_data, "image", req.name, req.mime_type or "image/jpeg"
-            elif isinstance(req, AgentRequestFile) and req.file_data:
-                data, att_type, name, mime_type = req.file_data, "file", req.name, req.mime_type or "application/octet-stream"
-            else:
+            extracted = AttachmentSource.extract(req)
+            if extracted is None:
                 rebuilt.append(req)
                 continue
+            is_remote = not extracted.is_base64
             attachment_id = manager.save_attachment(
-                data=data,
-                attachment_type=att_type,
-                name=name,
-                mime_type=mime_type,
+                data="" if is_remote else extracted.data,
+                attachment_type=extracted.att_type,
+                name=extracted.name,
+                mime_type=extracted.mime_type,
                 max_attachments=sys.maxsize,  # thread attachments are exempt from eviction
+                url=extracted.data if is_remote else None,
             )
-            references.append(ThreadAttachment(attachment_id=attachment_id, name=name, mime_type=mime_type))
-            rebuilt.append(AgentRequestAttachmentRef(attachment_id=attachment_id))
-            self._log.debug(f"Stored thread attachment {attachment_id} ({name}) for session {session_id}")
+            references.append(ThreadAttachment(attachment_id=attachment_id, name=extracted.name, mime_type=extracted.mime_type))
+            if is_remote:
+                rebuilt.append(req)
+            else:
+                rebuilt.append(AgentRequestAttachmentRef(attachment_id=attachment_id))
+            self._log.debug(f"Stored thread attachment {attachment_id} ({extracted.name}) for session {session_id}")
         return rebuilt, references
 
     def get_thread(self, session_id: str, user_id: Optional[str] = None) -> Optional[Thread]:
