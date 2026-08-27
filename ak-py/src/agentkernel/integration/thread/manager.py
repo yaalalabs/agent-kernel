@@ -144,34 +144,27 @@ class ConversationThreadManager:
 
     def store_attachments(self, session_id: str, requests: List[AgentRequest]) -> tuple[List[AgentRequest], List[ThreadAttachment]]:
         """
-        Save each image/file request into the existing multimodal AttachmentStore
-        and return (1) a rebuilt request list in which every base64 image/file
-        request is replaced, in place, by an AgentRequestAttachmentRef carrying its
-        assigned id (all other requests kept in order), and (2) one ThreadAttachment
-        per attachment the turn carried.
+        Save each image/file request into the multimodal AttachmentStore and return the
+        rebuilt request list plus one ThreadAttachment per attachment the turn carried.
 
-        Every attachment gets a store record and therefore an attachment_id, but
-        AttachmentSource decides what that record holds and whether the request is
-        replaced:
+        Every attachment gets a store record and an attachment_id; AttachmentSource decides
+        what that record holds and whether the request survives:
 
-        - **Base64 data** is saved as bytes and the request becomes a ref. Passing
-          the id in-band is how MultimodalPreHook later learns which attachment to
-          reference — no raw bytes travel past storage.
-        - **A remote reference** is saved as a url, and the request travels on
-          untouched. It must not become a ref: MultimodalPreHook strips every ref
-          before the agent runs, so a remote attachment turned into one would reach
-          the agent as nothing at all. The adapter is what resolves it.
+        - **Base64 data** is saved as bytes and the request is replaced, in place, by an
+          AgentRequestAttachmentRef. Passing the id in-band is how MultimodalPreHook later
+          finds the attachment, and no raw bytes travel past storage.
+        - **A remote reference** is saved as a url and the request travels on untouched. It
+          must not become a ref: MultimodalPreHook strips every ref before the agent runs,
+          so a remote attachment turned into one would reach the agent as nothing at all.
+          The adapter resolves it instead.
 
-        Requires multimodal.enabled: requests carrying attachments while multimodal
-        is disabled are rejected (thread mode is text-only without it), and
-        text-only requests pass through unchanged. No description is generated here
-        (that stays in MultimodalPreHook). Thread attachments are exempt from the
-        store's max_attachments eviction.
+        Descriptions are not generated here; that stays in MultimodalPreHook.
 
         :param session_id: Session identifier used for attachment isolation.
         :param requests: The incoming agent requests to scan for attachments.
         :return: A tuple of (rebuilt requests, ThreadAttachment references).
-        :raises ValueError: If the requests carry attachments while multimodal is disabled.
+        :raises ValueError: If the requests carry attachments while multimodal is disabled, or
+                            multimodal.storage_type is session_cache (thread mode needs a shared store).
         """
         if not AKConfig.get().multimodal.enabled:
             if any(
