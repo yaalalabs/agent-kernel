@@ -193,17 +193,17 @@ class ConversationThreadManager:
             if extracted is None:
                 rebuilt.append(req)
                 continue
-            is_remote = not extracted.is_base64
+            is_reference = not extracted.is_base64
             attachment_id = manager.save_attachment(
-                data="" if is_remote else extracted.data,
+                data="" if is_reference else extracted.data,
                 attachment_type=extracted.att_type,
                 name=extracted.name,
                 mime_type=extracted.mime_type,
                 max_attachments=sys.maxsize,  # thread attachments are exempt from eviction
-                url=extracted.data if is_remote else None,
+                url=extracted.data if is_reference else None,
             )
             references.append(ThreadAttachment(attachment_id=attachment_id, name=extracted.name, mime_type=extracted.mime_type))
-            if is_remote:
+            if is_reference:
                 rebuilt.append(req)
             else:
                 rebuilt.append(AgentRequestAttachmentRef(attachment_id=attachment_id))

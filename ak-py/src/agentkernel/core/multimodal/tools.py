@@ -1,6 +1,13 @@
 """
 Multimodal tools for LLM to access images/files.
 
+A stored attachment carries either bytes or an address, never both: `AttachmentData.data` holds
+base64 for one saved inline, and `AttachmentData.url` holds a remote reference recorded without its
+bytes — a URL, or a `data:` URI that is not base64 — which the thread path saves so a thread's
+message history has one record per attachment either way. `analyze_attachments` therefore checks
+`url` before reaching for `data`: wrapping an empty `data` as a base64 payload would hand the model a
+malformed `data:` URI — a field labelled base64 holding something that is not, which is the failure
+the source-form split exists to prevent.
 """
 
 import logging
@@ -44,6 +51,13 @@ def analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
         content = [{"type": "text", "text": prompt}]
 
         for att in attachments:
+            if att.url:
+                if att.mime_type.startswith("image/"):
+                    content.append({"type": "image_url", "image_url": {"url": att.url}})
+                else:
+                    content.append({"type": "text", "text": f"\n[Attachment: {att.name} ({att.mime_type}) at {att.url}]\n"})
+                continue
+
             if att.mime_type.startswith("image/"):
                 content.append({"type": "image_url", "image_url": {"url": f"data:{att.mime_type};base64,{att.data}"}})
             elif att.mime_type.startswith("application/pdf"):

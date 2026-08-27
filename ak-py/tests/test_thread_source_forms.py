@@ -1,5 +1,5 @@
 """
-Attachment source forms through ConversationThreadManager.store_attachments (issue #669).
+Attachment source forms through ConversationThreadManager.store_attachments.
 
 The direct path already classifies an attachment's source form before deciding what to do with it
 (see test_multimodal_source_forms.py). The thread path did not: it stored whatever the data field

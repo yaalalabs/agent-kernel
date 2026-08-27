@@ -49,6 +49,7 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_shared_drivers.py` | Shared DB drivers (`core/util/driver/`): retry scope, ping/reconnect, command surface, DynamoDB item-dict semantics |
 | `test_multimodal_redis_store.py` | RedisAttachmentStore index TTL refresh, JSON round trip, pruning (mocked driver) |
 | `test_multimodal_source_forms.py` | `MultimodalPreHook` attachment source-form classification (spec #523 §8): bare base64 and base64 `data:` URIs are described/stored/stripped; `http(s)://`/`s3://` and non-base64 `data:` URIs are retained undescribed; empty `data:` payloads are dropped |
+| `test_thread_source_forms.py` | The same source forms through `ConversationThreadManager.store_attachments` (issue #669): base64 stored as bytes and replaced by an `AgentRequestAttachmentRef`; a remote reference recorded by `url` with empty `data` and its request passed through unreplaced; mixed/multiple attachments keeping order; plus an end-to-end guard that a URL image survives `MultimodalPreHook` to the agent |
 | `test_config.py` | AKConfig loading, env vars |
 | `test_test_config.py` | AKTestConfig (Test framework config) loading, defaults |
 | `test_tool.py` | ToolContext, cache |

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -644,3 +645,75 @@ class TestOpenAIRunnerStructuredOutput:
 
             assert isinstance(reply, AgentReplyAny)
             assert reply.content == {"name": "Launch", "date": "2026-07-08"}
+
+
+class TestOpenAIRunnerSessionMemory:
+    """
+    Which turns are recorded in the SDK's conversation session.
+
+    A turn used to run with `session=None` whenever it carried real attachment content, so an image
+    sent by URL was neither remembered nor recorded — the next turn could not refer back to it. The
+    session now travels with every turn, whatever its input shape.
+    """
+
+    @staticmethod
+    def _captured_session(requests):
+        """Run the agent against a stubbed SDK and return the session it was handed."""
+        captured = {}
+
+        async def fake_run(agent, input_data, session=None, context=None):
+            captured["session"] = session
+            result = MagicMock()
+            result.final_output = "done"
+            return result
+
+        runner = OpenAIRunner()
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = fake_run
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+            asyncio.run(runner.run(mock_agent, Session("s"), requests))
+        return captured["session"]
+
+    @staticmethod
+    def _captured_stream_session(requests):
+        """Same, for the streaming call site — it passes the session separately from run()."""
+        captured = {}
+
+        def fake_run_streamed(agent, input_data, session=None, context=None):
+            captured["session"] = session
+            result = MagicMock()
+
+            async def events():
+                yield MagicMock(type="raw_response_event", data=MagicMock())
+
+            result.stream_events = events
+            return result
+
+        async def drain():
+            runner = OpenAIRunner()
+            async for _ in runner.stream(mock_agent, Session("s"), requests):
+                pass
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = fake_run_streamed
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+            asyncio.run(drain())
+        return captured["session"]
+
+    def test_text_only_turn_is_remembered(self):
+        assert self._captured_session([AgentRequestText(prompt="hi")]) is not None
+
+    def test_attachment_turn_is_remembered(self):
+        # The regression: this list makes `_get_run_input` return the message list rather than a
+        # bare prompt, which is the shape that used to be sent with session=None.
+        requests = [
+            AgentRequestText(prompt="what is this?"),
+            AgentRequestImage(image_data="https://example.com/cat.png", name="cat.png", mime_type="image/png"),
+        ]
+        assert self._captured_session(requests) is not None
+
+    def test_streaming_remembers_the_turn(self):
+        requests = [AgentRequestImage(image_data="https://example.com/cat.png", name="cat.png", mime_type="image/png")]
+        assert self._captured_stream_session(requests) is not None

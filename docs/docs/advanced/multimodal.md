@@ -50,9 +50,7 @@ A `data:` URI with no payload after the comma (`data:image/png;base64,`) carries
 
 Attachments that are left on the request list are **not** removed by `MultimodalPreHook` — they reach the agent/adapter as-is so it can resolve them itself (for example, `framework/openai/openai.py` already accepts all five forms natively).
 
-:::caution Thread mode does not classify source forms yet
-This classification only runs on the **thread-off** path. When [Conversation Thread Support](/docs/advanced/threads) is enabled, `ConversationThreadManager` saves `image_data`/`file_data` to storage **before** `MultimodalPreHook` runs, always treating the string as raw bytes with an `image/jpeg`/`application/octet-stream` fallback. With threads enabled, only bare base64 and base64 `data:` URIs are handled correctly today; URL and non-base64 `data:` forms are a tracked follow-up.
-:::
+With [Conversation Thread Support](/docs/advanced/threads) enabled, `ConversationThreadManager.store_attachments` classifies through the same `AttachmentSource`, so every form above behaves identically. It adds one thing: each attachment gets a store record and an `attachment_id` so the thread's history is uniform. Base64 is saved as bytes; a remote reference is saved as a `url` with no bytes, and its request still travels on for the adapter to resolve.
 
 ## Enabling Multimodal Support
 
@@ -95,13 +93,11 @@ A `data:` URI with an empty payload (`data:image/png;base64,`) is dropped rather
 there are no bytes to describe and nothing for an adapter to fetch. Scheme and media-type matching is
 case-insensitive.
 
-:::warning With Conversation Thread Support enabled, only bare base64 is safe
-The table above describes the **thread-off** path. When threads are enabled,
-`ConversationThreadManager.store_attachments` stores `image_data` / `file_data` verbatim before the
-hook runs and does no source-form classification — so a `data:` URI or a URL is persisted corrupted,
-and the description the agent later sees is of those corrupted bytes. Bare base64 is unaffected. This
-is a known limitation: send bare base64 when threads are on.
-:::
+The **Described** and **Reaches the agent** columns hold with Conversation Thread Support enabled
+too — `ConversationThreadManager.store_attachments` calls the same classifier. **Stored** is where
+thread mode differs: every attachment gets a store record and an `attachment_id`, so a thread's
+message history is uniform. Base64 is stored as bytes; a remote reference is stored as a `url` with
+no bytes, and the request still passes through untouched for the adapter to resolve.
 
 ## Attachment Storage
 
