@@ -1,0 +1,29 @@
+[project]
+name = "mathru-phm-companion"
+version = "0.1.0"
+description = "Agent Kernel WhatsApp companion for expectant mothers and Public Health Midwives"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[api,cli,openai,whatsapp]>=0.8.1",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.8.1",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "pytest>=8.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

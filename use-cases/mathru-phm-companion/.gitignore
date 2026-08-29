@@ -1,0 +1,26 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+dist_*/
+*.zip
+*.pyc
+requirements*.txt
+
+# Tool-owned SQLite storage for mother records (see SPEC.md, phase 2)
+*.db
+*.sqlite
+*.sqlite3
+
+# Local secrets
+.env
+
+# Installed coding-agent skills and rules
+.agents/skills/
+.cursor/
+.claude/commands/
+.windsurf/rules/
+.codex/skills/
+.aider/skills/
