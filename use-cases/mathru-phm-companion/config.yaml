@@ -1,0 +1,23 @@
+# Agent Kernel local development configuration for the Mathru PHM companion.
+# Secrets are read from environment variables only, never from this file:
+#   AK_WHATSAPP__VERIFY_TOKEN, AK_WHATSAPP__ACCESS_TOKEN,
+#   AK_WHATSAPP__APP_SECRET, AK_WHATSAPP__PHONE_NUMBER_ID, OPENAI_API_KEY
+whatsapp:
+  agent: "mathru_triage"
+  agent_acknowledgement: "Got your message. One moment..."
+  api_version: "v24.0"
+
+# The WhatsApp integration uses the sender's phone number as the session id, which gives
+# per-mother conversation continuity without a parallel session mechanism. Mother records
+# are persisted separately by tool-owned sqlite3 storage in tool.py (see SPEC.md phase 2);
+# sqlite is not an Agent Kernel session backend, so sessions stay in_memory.
+session:
+  type: in_memory
+  cache:
+    size: 256
+
+logging:
+  ak:
+    level: INFO
+  system:
+    level: INFO
