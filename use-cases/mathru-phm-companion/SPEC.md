@@ -61,10 +61,10 @@ Implement in `tool.py` as plain functions bound with `OpenAIToolBuilder.bind`.
   creates or updates the mother's record. Either `edd_iso` or `child_dob_iso` is
   required, not both.
 - `get_mother_profile(phone)` — returns the stored record or a not-registered marker.
-- `compute_antenatal_schedule(edd_iso)` — returns the antenatal visit calendar derived
-  from the EDD as pure date arithmetic. No model involvement.
-- `compute_immunization_schedule(child_dob_iso)` — returns the childhood immunisation
-  calendar derived from the date of birth as pure date arithmetic.
+- `compute_antenatal_schedule()` — returns the antenatal visit calendar derived from the
+  registered mother's stored EDD as pure date arithmetic. Takes no parameters; the EDD is
+  read from storage, never supplied by the model.
+- `compute_immunization_schedule()` — same, from the stored child date of birth.
 - `next_appointment(phone)` — returns the single next due item and its date.
 - `screen_danger_signs(symptom_text)` — matches the reported symptoms against the
   danger-sign reference table and returns matched signs, a severity of `red`, `amber`,
