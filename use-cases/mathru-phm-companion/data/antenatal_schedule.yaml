@@ -1,0 +1,31 @@
+# Antenatal visit schedule.
+#
+# TODO: POPULATE FROM MINISTRY OF HEALTH PUBLICATIONS.
+# Every value below is a structural placeholder. None of it is clinical guidance and none
+# of it may be shown to a mother as a real appointment date. This table requires clinician
+# review before any real-world use.
+#
+# While `status` is `placeholder`, the tools relay that marker and schedule_agent must
+# decline to read out dates rather than presenting fabricated ones.
+#
+# Visits are keyed by gestational week. A visit date is derived as pure arithmetic:
+#   visit_date = edd - (term_gestational_weeks - gestational_week) * 7 days
+
+status: placeholder
+
+# TODO: confirm the term reference used by the MoH antenatal calendar.
+term_gestational_weeks: 40
+
+visits:
+  # TODO: replace the entries below with the real MoH antenatal visit schedule.
+  - id: placeholder_anc_1
+    gestational_week: 12 # TODO: placeholder, not clinical guidance
+    label: "PLACEHOLDER antenatal visit 1 - not clinical guidance"
+
+  - id: placeholder_anc_2
+    gestational_week: 26 # TODO: placeholder, not clinical guidance
+    label: "PLACEHOLDER antenatal visit 2 - not clinical guidance"
+
+  - id: placeholder_anc_3
+    gestational_week: 36 # TODO: placeholder, not clinical guidance
+    label: "PLACEHOLDER antenatal visit 3 - not clinical guidance"

@@ -1,0 +1,28 @@
+# Childhood immunisation schedule.
+#
+# TODO: POPULATE FROM MINISTRY OF HEALTH / EPI PUBLICATIONS.
+# Every value below is a structural placeholder. None of it is clinical guidance and none
+# of it may be shown to a mother as a real immunisation date. This table requires clinician
+# review before any real-world use.
+#
+# While `status` is `placeholder`, the tools relay that marker and schedule_agent must
+# decline to read out dates rather than presenting fabricated ones.
+#
+# Visits are keyed by the child's age in weeks. A visit date is derived as pure arithmetic:
+#   visit_date = child_dob + age_weeks * 7 days
+
+status: placeholder
+
+visits:
+  # TODO: replace the entries below with the real EPI immunisation schedule.
+  - id: placeholder_epi_1
+    age_weeks: 0 # TODO: placeholder, not clinical guidance
+    label: "PLACEHOLDER immunisation visit 1 - not clinical guidance"
+
+  - id: placeholder_epi_2
+    age_weeks: 8 # TODO: placeholder, not clinical guidance
+    label: "PLACEHOLDER immunisation visit 2 - not clinical guidance"
+
+  - id: placeholder_epi_3
+    age_weeks: 26 # TODO: placeholder, not clinical guidance
+    label: "PLACEHOLDER immunisation visit 3 - not clinical guidance"

@@ -1969,6 +1969,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "agentkernel", extra = ["api", "openai", "whatsapp"] },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -1984,6 +1985,7 @@ dev = [
 requires-dist = [
     { name = "agentkernel", extras = ["api", "cli", "openai", "whatsapp"], specifier = ">=0.8.1" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [package.metadata.requires-dev]
