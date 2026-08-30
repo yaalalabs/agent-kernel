@@ -39,6 +39,7 @@ contact their PHM or nearest hospital directly.
 - `demo.py` is the local Agent Kernel CLI entry point, for exercising the agent without WhatsApp.
 - `tool.py` holds the Agent Kernel tools. Empty in phase 1.
 - `config.yaml` configures the WhatsApp agent binding, sessions, and logging.
+- `.env.example` is the template for the gitignored `.env` holding secrets.
 - `SPEC.md` documents the requirements this project is built from.
 
 ## Setup
@@ -50,20 +51,36 @@ chmod +x build.sh
 
 ## Configure Environment Variables
 
-All secrets come from the environment. Never commit tokens or keys.
+Secrets are managed with a `.env` file, loaded by `python-dotenv`. Copy the template and fill it
+in:
 
 ```bash
-export OPENAI_API_KEY="sk-..."
-
-export AK_WHATSAPP__VERIFY_TOKEN="your_secure_verify_token"
-export AK_WHATSAPP__ACCESS_TOKEN="your_permanent_access_token"
-export AK_WHATSAPP__PHONE_NUMBER_ID="123456789012345"
-export AK_WHATSAPP__APP_SECRET="your_app_secret"   # optional but recommended
+cp .env.example .env
 ```
+
+```ini
+OPENAI_API_KEY=sk-...
+AK_WHATSAPP__VERIFY_TOKEN=your_secure_verify_token
+AK_WHATSAPP__ACCESS_TOKEN=your_permanent_access_token
+AK_WHATSAPP__PHONE_NUMBER_ID=123456789012345
+AK_WHATSAPP__APP_SECRET=your_app_secret
+```
+
+`.env` is gitignored; `.env.example` holds placeholders only. Never commit real tokens or keys.
+Exported shell variables still work and take precedence over `.env`, which is what you want in
+CI or a container.
 
 `AK_WHATSAPP__VERIFY_TOKEN` is a random string you invent; it must match what you enter in the
 Meta developer portal. The agent name, acknowledgement message, and API version are set in
 `config.yaml`, not the environment.
+
+### Why `load_dotenv()` is called explicitly
+
+Agent Kernel's `Config` already reads `.env` natively, but only for `AK_`-prefixed keys and only
+into its own settings model, never into `os.environ`. The OpenAI Agents SDK reads
+`OPENAI_API_KEY` straight from `os.environ`, so a key kept only in `.env` would not be found.
+`server.py` and `demo.py` therefore call `load_dotenv()` before importing anything else, which
+puts every key on `os.environ` and covers both consumers uniformly.
 
 ## Run Locally Without WhatsApp
 
@@ -101,7 +118,21 @@ automatically, so no extra code is needed to activate the URL.
 
 ## Verify The Round Trip
 
-Phase 1 is complete when a live round trip works:
+The local half of the chain is verified and working. With the server running:
+
+```bash
+curl http://127.0.0.1:8000/health
+# {"status":"ok"}
+
+curl "http://127.0.0.1:8000/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=$AK_WHATSAPP__VERIFY_TOKEN&hub.challenge=1234567890"
+# 1234567890
+```
+
+The challenge echo confirms the whole configuration path: `.env` to `Config.whatsapp.verify_token`
+to the handler. A wrong verify token returns HTTP 403.
+
+Phase 1 is complete when a live round trip works, which additionally needs real WhatsApp
+credentials:
 
 1. Start the server and the tunnel, and configure the webhook.
 2. Send `Hello` from a WhatsApp number that is allowed to message your business or test number.
