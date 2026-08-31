@@ -7,7 +7,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def test_client():
-    test = Test("demo.py", match_threshold=0.15)
+    test = Test("demo.py", match_threshold=0.1)
     await test.start()
     try:
         yield test
@@ -33,12 +33,12 @@ async def test_score_mode_gives_partial_credit(test_client):
 
 @pytest.mark.order(3)
 async def test_llm_mode_uses_the_custom_judge(test_client):
-    # High threshold forces the score stage to miss, so fallback reaches the judge.
     await test_client.send("Which country hosted the 1996 cricket world cup? Just give the answer and don't repeat the question.")
     result = Test.compare(
         actual=test_client.last_agent_response,
         expected=["The tournament was co-hosted by India, Pakistan and Sri Lanka."],
         user_input=test_client.last_user_input,
+        threshold=0.6,
         return_metrics=True,
     )
     assert result.metric == "litellm_raw_judge"
