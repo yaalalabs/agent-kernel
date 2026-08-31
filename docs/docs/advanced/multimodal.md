@@ -86,8 +86,14 @@ stored — a URL is a reference to something the hook never reads.
 
 "Passed through untouched" is the important row. The hook neither describes nor stores these, and — as
 of the source-form work — it no longer *strips* them either: the request travels on to the framework
-adapter with the URL intact, so an adapter that can fetch a URL itself (as several can) gets the chance
-to. Previously they were consumed and dropped, so the agent saw nothing at all.
+adapter with the URL intact, so an adapter whose provider can fetch it gets the chance to. Previously
+they were consumed and dropped, so the agent saw nothing at all.
+
+Agent Kernel never fetches a remote attachment. The request travels on to the framework adapter, which
+hands the address to the model provider — so whether it resolves is a question for the app's configured
+model, not for Agent Kernel. If that model cannot fetch the address, the app should send the attachment
+as base64 instead — it is stored and described locally, so it does not depend on the provider fetching
+anything.
 
 A `data:` URI with an empty payload (`data:image/png;base64,`) is dropped rather than forwarded, since
 there are no bytes to describe and nothing for an adapter to fetch. Scheme and media-type matching is

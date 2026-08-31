@@ -254,7 +254,10 @@ class _MultimodalConfig(BaseModel):
     )
     analysis_model: str = Field(
         default="gpt-4o",
-        description="LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment",
+        description=(
+            "LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment; "
+            "a remote attachment is handed to it as an address, so the model must be able to fetch that address itself"
+        ),
     )
     redis: Optional[_MultimodalStorageRedisConfig] = None
     dynamodb: Optional[_MultimodalStorageDynamoDBConfig] = None
