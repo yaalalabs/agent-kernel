@@ -15,11 +15,12 @@ from agentkernel.test.config import AKTestConfig
 from .base import AKEvaluationCase, AKEvaluationError, AKEvaluationResult, AKEvaluator, AKMissingInput
 
 _DEFAULT_LLM_CRITERIA = (
-    "Determine whether the actual output correctly conveys the information in the expected output. "
-    "The expected output may be a short phrase, fact, or keyword rather than a full sentence — score "
-    "the actual output as correct if it clearly states or implies that information, even when it also "
-    "includes additional context, explanation, or detail beyond it. Do not penalize the actual output "
-    "merely for being longer or more detailed than the expected output."
+    "Given the input question, determine whether the actual output correctly conveys the information in "
+    "the expected output. The actual output may be a short phrase, fact, or keyword rather than a full "
+    "sentence — score it as correct if, read together with the input, it clearly states or implies the "
+    "information in the expected output, even when it also includes additional context, explanation, or "
+    "detail beyond it. Do not penalize the actual output merely for being shorter, longer, or more or less "
+    "detailed than the expected output, as long as the information conveyed is correct."
 )
 
 
@@ -51,7 +52,11 @@ class DeepevalAKEvaluator(AKEvaluator):
         metric = GEval(
             name="Correctness",
             criteria=case.criteria or _DEFAULT_LLM_CRITERIA,
-            evaluation_params=[SingleTurnParams.ACTUAL_OUTPUT, SingleTurnParams.EXPECTED_OUTPUT],
+            evaluation_params=[
+                SingleTurnParams.INPUT,
+                SingleTurnParams.ACTUAL_OUTPUT,
+                SingleTurnParams.EXPECTED_OUTPUT,
+            ],
             model=self._llm_model(),
             threshold=None,
         )

@@ -18,6 +18,7 @@ from agentkernel.test.core.akevaluators.deepeval import (
     _DEFAULT_LLM_CRITERIA,
     DeepevalAKEvaluator,
 )
+from deepeval.test_case import SingleTurnParams
 
 
 @pytest.fixture
@@ -132,6 +133,13 @@ def test_llm_based_evaluation_success(evaluator):
     assert fake.test_case.actual_output == "It's Paris."
     assert fake.test_case.expected_output == "Paris"
     assert fake._show_indicator is False
+    # Regression: the judge must see the question, or a terse-but-correct actual output
+    # (e.g. "Paris" for "It's Paris.") can't be checked against the expected output in context.
+    assert fake.kwargs["evaluation_params"] == [
+        SingleTurnParams.INPUT,
+        SingleTurnParams.ACTUAL_OUTPUT,
+        SingleTurnParams.EXPECTED_OUTPUT,
+    ]
 
 
 def test_llm_based_evaluation_uses_case_criteria_override(evaluator):
