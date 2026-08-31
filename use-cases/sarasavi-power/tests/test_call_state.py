@@ -59,6 +59,9 @@ class FakeLiveSession:
     async def send_client_content(self, **kwargs):
         pass
 
+    async def send_tool_response(self, **kwargs):
+        pass
+
 
 @contextlib.asynccontextmanager
 async def fake_live_connect():
@@ -99,6 +102,34 @@ def test_happy_path_signals_and_ends_at_max_duration() -> None:
     assert bridge.closed
     assert session.state is CallState.DONE
     assert finished == [session]
+
+
+def test_end_call_tool_hangs_up_before_max_duration() -> None:
+    """The agent's own end_call tool call terminates the line, not just a timeout."""
+    import voice.call_manager as call_manager_module
+
+    original_grace = call_manager_module.END_CALL_GRACE_SECONDS
+    call_manager_module.END_CALL_GRACE_SECONDS = 0.01  # keep the test fast
+    try:
+
+        class EndCallFunctionCall:
+            id = "fc-1"
+            name = "end_call"
+            args: dict = {}
+
+        class EndCallBridge(FakeBridge):
+            async def pump_gemini_to_caller(self, live, transcript, on_tool_call):
+                await on_tool_call([EndCallFunctionCall()])
+                await asyncio.Event().wait()  # the model stream itself stays open
+
+        api = FakeCallsAPI()
+        session = _session(api, EndCallBridge(), max_seconds=2.0)
+        asyncio.run(session.run())
+
+        assert api.actions == ["pre_accept", "accept", "terminate"]
+        assert session.state is CallState.DONE
+    finally:
+        call_manager_module.END_CALL_GRACE_SECONDS = original_grace
 
 
 def test_pre_accept_failure_ends_call_cleanly() -> None:

@@ -23,6 +23,10 @@ CALL_MAX_SECONDS = float(os.environ.get("SARASAVI_CALL_MAX_SECONDS", "600"))
 CONNECT_TIMEOUT_SECONDS = 15.0
 # How long to hold the caller mic closed while the greeting is generated.
 GREETING_TIMEOUT_SECONDS = 4.0
+# Gemini's goodbye audio is already queued in the playout buffer by the time the
+# end_call function call arrives (same message stream, in order), but the buffer
+# still needs real time to drain over the RTP track before it is safe to hang up.
+END_CALL_GRACE_SECONDS = float(os.environ.get("SARASAVI_END_CALL_GRACE_SECONDS", "2.5"))
 
 GREETING_TURN = (
     "[The call just connected and the caller is listening. Say your one-line "
@@ -81,6 +85,10 @@ class CallSession:
         self._max_seconds = max_seconds
         self._tasks: list[asyncio.Task] = []
         self._closed = False
+        # Set by the end_call tool: the agent judged the conversation finished
+        # and wants to hang up on its own, rather than leaving the line open
+        # until the caller hangs up or the max-duration timeout fires.
+        self._end_requested = asyncio.Event()
         # Wall-clock start and duration, for the post-call service record.
         self.started_at = datetime.datetime.now(datetime.timezone.utc)
         self.duration_seconds: float | None = None
@@ -142,10 +150,16 @@ class CallSession:
                     outbound,
                     asyncio.create_task(self._bridge.pump_caller_to_gemini(live)),
                     asyncio.create_task(self._watch_disconnect()),
+                    asyncio.create_task(self._end_requested.wait()),
                 ]
                 self._tasks = pumps
                 done, _ = await asyncio.wait(pumps, timeout=self._max_seconds, return_when=asyncio.FIRST_COMPLETED)
-                reason = "max duration reached" if not done else "media or model stream ended"
+                if not done:
+                    reason = "max duration reached"
+                elif self._end_requested.is_set():
+                    reason = "agent ended the call"
+                else:
+                    reason = "media or model stream ended"
                 # A pump that dies takes the call down; without this the cause is lost.
                 for task in done:
                     if not task.cancelled() and task.exception():
@@ -182,11 +196,21 @@ class CallSession:
             from google.genai import types
 
             responses = []
+            end_requested = False
             for fc in function_calls:
                 self.tools_used.append(fc.name)
-                result = await self._executor.call(fc.name, dict(fc.args or {}))
+                if fc.name == "end_call":
+                    # Not a household tool: it does not touch stored state, so it
+                    # never goes through VoiceToolExecutor.
+                    end_requested = True
+                    result = {"ok": True}
+                else:
+                    result = await self._executor.call(fc.name, dict(fc.args or {}))
                 responses.append(types.FunctionResponse(id=fc.id, name=fc.name, response=result))
             await live.send_tool_response(function_responses=responses)
+            if end_requested:
+                await asyncio.sleep(END_CALL_GRACE_SECONDS)
+                self._end_requested.set()
 
         return handle
 
