@@ -417,8 +417,6 @@ graph LR
 - Local state files DeepEval writes into the working directory — `.deepeval/`,
   `.deepeval_telemetry.txt` — are treated as build artefacts: added to `.gitignore`, and relocated out
   of the repository root if DeepEval offers a path override
-- Covered by a test asserting the environment variable is set before `deepeval` is imported, so a
-  future refactor that moves the import cannot silently re-enable telemetry
 
 ### `return_metrics` mode
 
@@ -488,11 +486,10 @@ graph LR
   - `asyncio.run()` raises inside a running loop, and the existing `AgentHandler._run_async_sync`
     bridge (`ak-py/src/agentkernel/core/chat_service.py:207-225`) ends in `loop.run_until_complete`,
     which also raises on an already-running loop
-- An adapter whose backend is async-only must run the coroutine on a dedicated worker thread with its
-  own event loop; a shared helper in the evaluator package provides this so each adapter does not
-  reinvent it
-  - `GEval.measure()` does not need this helper: DeepEval's default `async_mode=True` makes `measure()`
-    call `asyncio.run_until_complete(a_measure(...))` internally, but DeepEval's own
+- An adapter whose backend is async-only is responsible for hiding that behind its own synchronous
+  method body — the interface itself provides no bridge (see Non-goals)
+  - `GEval.measure()` needs no bridge: DeepEval's default `async_mode=True` makes `measure()` call
+    `asyncio.run_until_complete(a_measure(...))` internally, but DeepEval's own
     `get_or_create_event_loop()` first calls `nest_asyncio.apply()` whenever it detects an
     already-running loop — `nest_asyncio` is a hard dependency of `deepeval` itself, the same mechanism
     `ragas.evaluate()` already relies on today (`ragas/async_utils.py`) for the identical nested-loop
@@ -631,6 +628,13 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
 - Multimodal metrics and image payloads
 - Dataset-level batch evaluation (`deepeval.evaluate(test_cases, metrics)`)
 - Editing `docs/versioned_docs/` snapshots
+- A shared async-bridge helper in the evaluator package for backends that are async-only. No shipped
+  adapter needs one — DeepEval's `nest_asyncio` self-handling already covers `GEval.measure()` (see
+  "Synchronous evaluation") — so one would ship with no caller to validate its API against. An adapter
+  whose backend is genuinely async-only is responsible for hiding that itself, behind its own
+  synchronous method body; `pipeline/transport/nats.py`'s `_NatsLoop` (dedicated thread + its own event
+  loop, coroutines submitted via `asyncio.run_coroutine_threadsafe`) is a pattern to copy if one is
+  ever needed
 
 ### Verification required before implementation
 
