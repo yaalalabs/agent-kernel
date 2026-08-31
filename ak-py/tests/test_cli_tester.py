@@ -42,13 +42,15 @@ class _FakeEvaluator(AKEvaluator):
         if not case.expected:
             raise AKMissingInput("score_based_evaluation requires AKEvaluationCase.expected")
         score = 1.0 if _normalize(case.actual) == _normalize(case.expected) else 0.0
-        return AKEvaluationResult(metric="fake_score", evaluator="fake", score=score)
+        return AKEvaluationResult(metric="fake_score", evaluator="fake", score=score, passed=score >= case.threshold)
 
     def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
             raise AKMissingInput("llm_based_evaluation requires AKEvaluationCase.expected")
         score = 1.0 if _normalize(case.expected) in _normalize(case.actual) else 0.2
-        return AKEvaluationResult(metric="fake_llm", evaluator="fake", score=score, reason="fake reason")
+        return AKEvaluationResult(
+            metric="fake_llm", evaluator="fake", score=score, reason="fake reason", passed=score >= case.threshold
+        )
 
 
 class _CountingFakeEvaluator(_FakeEvaluator):
@@ -67,7 +69,7 @@ class _FailingLlmEvaluator(AKEvaluator):
     def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
             raise AKMissingInput("score_based_evaluation requires AKEvaluationCase.expected")
-        return AKEvaluationResult(metric="fake_score", evaluator="fake", score=0.0)
+        return AKEvaluationResult(metric="fake_score", evaluator="fake", score=0.0, passed=0.0 >= case.threshold)
 
     def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
         raise AKEvaluationError("judge backend unavailable (simulated)")

@@ -43,6 +43,9 @@ class Test:
         self.match_threshold = match_threshold
         self.mode = AKTestConfig.get().mode if mode is None else mode
         self._stderr_task = None
+        # Resolved eagerly so a misconfigured evaluator (unknown short name, bad dotted path,
+        # missing extra) fails fast at construction instead of on the first expect()/compare().
+        self.evaluator = self._resolve_evaluator()
 
     @classmethod
     def _update_prompt(cls, text: str):
@@ -199,7 +202,7 @@ class Test:
         decisive: AKEvaluationResult | None = None
 
         for exp in expected:
-            case = AKEvaluationCase(user_input=user_input, actual=actual, expected=exp)
+            case = AKEvaluationCase(user_input=user_input, actual=actual, expected=exp, threshold=threshold)
 
             if selected_mode == Mode.SCORE:
                 result, result_mode = evaluator.score_based_evaluation(case), Mode.SCORE
@@ -207,7 +210,7 @@ class Test:
                 result, result_mode = evaluator.llm_based_evaluation(case), Mode.LLM
             else:  # FALLBACK
                 score_result = evaluator.score_based_evaluation(case)
-                if score_result.score is not None and score_result.score >= threshold:
+                if score_result.passed:
                     result, result_mode = score_result, Mode.SCORE
                 else:
                     attempts.append(Test._stamp(score_result, Mode.SCORE, threshold, exp))
@@ -232,10 +235,11 @@ class Test:
 
     @staticmethod
     def _stamp(result: AKEvaluationResult, mode: Mode, threshold: float, expected: str) -> AKEvaluationResult:
+        """Stamps reporting metadata onto a result. result.passed is set by the evaluator itself
+        (score_based_evaluation/llm_based_evaluation) and is left untouched here."""
         result.mode = mode.value
         result.threshold = threshold
         result.expected = expected
-        result.passed = result.score is not None and result.score >= threshold
         return result
 
     @staticmethod

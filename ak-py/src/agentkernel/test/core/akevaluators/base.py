@@ -24,6 +24,7 @@ class AKEvaluationCase(BaseModel):
     user_input: str
     actual: str
     expected: str | None = None
+    threshold: float = 0.5  # the score/pass cutoff the evaluator must weigh its own passed against
     context: list[str] | None = None  # carried, unpopulated in v1 (no shipped metric reads it)
     criteria: str | None = None  # carried, unpopulated in v1 (llm mode uses AK's default rubric)
 
@@ -33,7 +34,7 @@ class AKEvaluationResult(BaseModel):
     evaluator: str
     score: float | None = None  # [0.0, 1.0]; None means "not scored", never 0.0
     threshold: float | None = None  # stamped by Test.compare; unset by evaluators
-    passed: bool | None = None  # stamped by Test.compare; unset by evaluators
+    passed: bool | None = None  # set by the evaluator itself, from score vs. AKEvaluationCase.threshold
     mode: str | None = None  # stamped by Test.compare; unset by evaluators
     expected: str | None = None  # which alternative produced this result
     reason: str | None = None
@@ -46,15 +47,20 @@ AKEvaluationResult.model_rebuild()
 
 
 class AKEvaluator(ABC):
-    """Pure scorer: computes a score, never asserts, thresholds, or decides pass/fail."""
+    """Computes a score and decides result.passed against AKEvaluationCase.threshold.
+
+    Never raises AssertionError or decides whether a failure is fatal — that's Test.compare's job,
+    based on the result.passed each method here returns.
+    """
 
     def __init__(self, config: "AKTestConfig") -> None:
         self._config = config
 
     @abstractmethod
     def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
-        """Deterministic scoring — no LLM call. Raise AKMetricNotSupported if unavailable."""
+        """Deterministic scoring — no LLM call. Must set result.passed. Raise AKMetricNotSupported
+        if unavailable."""
 
     @abstractmethod
     def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
-        """LLM-as-judge scoring. Raise AKMetricNotSupported if unavailable."""
+        """LLM-as-judge scoring. Must set result.passed. Raise AKMetricNotSupported if unavailable."""

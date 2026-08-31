@@ -45,6 +45,7 @@ class TokenOverlapEvaluator(AKEvaluator):
             metric="jaccard_token_overlap",
             evaluator=self._config.evaluator,
             score=score,
+            passed=score >= case.threshold,
         )
 
     def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
@@ -70,4 +71,5 @@ class TokenOverlapEvaluator(AKEvaluator):
             evaluator=self._config.evaluator,
             score=score,
             reason=content,
+            passed=score >= case.threshold,
         )

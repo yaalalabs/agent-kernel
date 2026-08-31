@@ -37,8 +37,13 @@ class DeepevalAKEvaluator(AKEvaluator):
     def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
             raise AKMissingInput("score_based_evaluation requires AKEvaluationCase.expected")
-        score = Scorer.quasi_exact_match_score(target=case.expected, prediction=case.actual)
-        return AKEvaluationResult(metric="quasi_exact_match", evaluator="deepeval", score=float(score))
+        score = float(Scorer.quasi_exact_match_score(target=case.expected, prediction=case.actual))
+        return AKEvaluationResult(
+            metric="quasi_exact_match",
+            evaluator="deepeval",
+            score=score,
+            passed=score >= case.threshold,
+        )
 
     def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
@@ -55,4 +60,10 @@ class DeepevalAKEvaluator(AKEvaluator):
             score = metric.measure(test_case, _show_indicator=False)
         except Exception as exc:
             raise AKEvaluationError(f"llm-based (GEval) evaluation failed: {exc}") from exc
-        return AKEvaluationResult(metric="g_eval", evaluator="deepeval", score=score, reason=metric.reason)
+        return AKEvaluationResult(
+            metric="g_eval",
+            evaluator="deepeval",
+            score=score,
+            reason=metric.reason,
+            passed=score is not None and score >= case.threshold,
+        )

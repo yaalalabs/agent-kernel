@@ -36,6 +36,7 @@ def test_score_based_evaluation_exact_match(evaluator):
     assert result.score == 1.0
     assert result.metric == "quasi_exact_match"
     assert result.evaluator == "deepeval"
+    assert result.passed is True
 
 
 def test_score_based_evaluation_mismatch(evaluator):
@@ -44,6 +45,16 @@ def test_score_based_evaluation_mismatch(evaluator):
     )
     result = evaluator.score_based_evaluation(case)
     assert result.score == 0.0
+    assert result.passed is False
+
+
+def test_score_based_evaluation_passed_uses_case_threshold(evaluator):
+    case = AKEvaluationCase(
+        user_input="capital of France?", actual="London", expected="Paris", threshold=0.0
+    )
+    result = evaluator.score_based_evaluation(case)
+    assert result.score == 0.0
+    assert result.passed is True  # 0.0 >= the case's own threshold of 0.0
 
 
 def test_score_based_evaluation_normalizes_whitespace_and_case(evaluator):
@@ -114,6 +125,7 @@ def test_llm_based_evaluation_success(evaluator):
     assert result.evaluator == "deepeval"
     assert result.score == 0.9
     assert result.reason == "matches expected answer"
+    assert result.passed is True
     (fake,) = _FakeGEval.instances
     assert fake.kwargs["criteria"] == _DEFAULT_LLM_CRITERIA
     assert fake.test_case.input == "capital of France?"
@@ -132,6 +144,14 @@ def test_llm_based_evaluation_uses_case_criteria_override(evaluator):
     evaluator.llm_based_evaluation(case)
     (fake,) = _FakeGEval.instances
     assert fake.kwargs["criteria"] == "Score 1 only if it mentions cats."
+
+
+def test_llm_based_evaluation_passed_false_below_case_threshold(evaluator):
+    _FakeGEval.measure_score = 0.4
+    case = AKEvaluationCase(user_input="q", actual="a", expected="e", threshold=0.5)
+    result = evaluator.llm_based_evaluation(case)
+    assert result.score == 0.4
+    assert result.passed is False
 
 
 def test_llm_based_evaluation_wraps_measure_exception(evaluator):
