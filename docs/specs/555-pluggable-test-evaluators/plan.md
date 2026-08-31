@@ -41,17 +41,17 @@ swap, then the full migration surface, then tests, then the docs/skills sync.
 
 ## Iteration 3: Configuration (`test/config.py`)
 
-- **Goal:** `AKTestConfig` has `evaluator`, the renamed `llm` block, the new `mode` pattern, and rejects a
-  legacy `judge` key — independently loadable and testable before `Test` changes.
+- **Goal:** `AKTestConfig` has `evaluator`, the renamed `llm` block, and the new `mode` pattern —
+  independently loadable and testable before `Test` changes.
 - **Files:** `ak-py/src/agentkernel/test/config.py`
 - **Steps:** Apply the full diff in spec.md "Configuration (`test/config.py`)": rename `_JudgeConfig` →
   `_LlmConfig`, rename the `judge` field → `llm`, add `evaluator: str = "deepeval"` (no pattern), change
-  `mode`'s pattern to `^(fallback|llm|score)$`, add the `_reject_legacy_judge_key` `model_validator`
-  importing `AKConfigError` from `agentkernel.core.util.factory`.
-- **Verify:** confirm `AKConfigError` (not a wrapped `pydantic.ValidationError`) propagates from
-  `AKTestConfig()` when a `judge:` key or `AK_TEST__JUDGE__*` env var is present (spec.md's config.py note
-  flags this as unconfirmed pydantic-version behavior — check it here, before Iteration 7's tests assert
-  on it). `AKTestConfig()` still constructs with defaults when no `test-config.yaml` exists.
+  `mode`'s pattern to `^(fallback|llm|score)$`.
+- **As shipped, reversed from this iteration's original goal**: no `_reject_legacy_judge_key`
+  `model_validator` was added — a legacy `judge:` key or `AK_TEST__JUDGE__*` env var is silently ignored
+  under `extra="ignore"`, not rejected. See spec.md "Configuration" notes and
+  `ak-py/tests/test_test_config.py::test_legacy_judge_key_in_yaml_is_silently_ignored`.
+- **Verify:** `AKTestConfig()` still constructs with defaults when no `test-config.yaml` exists.
 
 ## Iteration 4: Harness rewrite (`test/test.py`)
 

@@ -9,8 +9,9 @@ harness that `Test.compare` calls, so backend selection sits next to the policy 
 a separate factory module. Renames the comparison modes
 (`fuzzy` → `score`, `judge` → `llm`) so each mode maps one-to-one onto an `AKEvaluator` method. Adds
 `return_metrics`, a per-call argument that makes `Test.compare` / `Test.expect` return an
-`AKEvaluationResult` instead of raising `AssertionError`. The design idea: evaluators are pure scorers, and every policy decision —
-threshold, mode, alternative-expected iteration, pass/fail — stays in the harness.
+`AKEvaluationResult` instead of raising `AssertionError`. The design idea: evaluators compute a score and
+decide `passed` against the threshold carried on `AKEvaluationCase`; the harness still owns mode
+selection and alternative-expected iteration.
 
 Requirements background: [`research/evaluator-framework-survey.md`](research/evaluator-framework-survey.md).
 
@@ -92,8 +93,9 @@ graph LR
 
 ### Evaluator interface (`test/core/akevaluators/`)
 
-- `AKEvaluator` is an ABC whose implementations are **pure scorers**: they compute a score and never
-  assert, never threshold, and never decide pass/fail
+- `AKEvaluator` is an ABC whose implementations compute a score **and** decide `result.passed` by
+  comparing it against `case.threshold`; they never assert and never iterate the alternatives list —
+  that policy stays in the harness
 - Two abstract methods, matching the two non-fallback modes
   - `score_based_evaluation(case) -> AKEvaluationResult` — deterministic scoring, no LLM involved
   - `llm_based_evaluation(case) -> AKEvaluationResult` — LLM-as-judge scoring
@@ -146,6 +148,8 @@ graph LR
   - `user_input: str` — required
   - `actual: str` — required
   - `expected: str | None` — a **single** ground truth; no library accepts alternatives (survey §2)
+  - `threshold: float` — the score/pass cutoff, default `0.5`; each evaluator method compares its own
+    score against this to set `result.passed`
   - `context: list[str] | None` — retrieved/ground-truth context; **present in the model but not
     populated in v1**, since neither shipped metric consumes it
   - `criteria: str | None` — rubric for the llm metric; **present in the model but not populated in
@@ -173,7 +177,9 @@ graph LR
   - `metric: str` — the metric that produced the score
   - `evaluator: str` — the configured evaluator name
   - `score: float | None` — normalised to `[0.0, 1.0]`; `None` means "not scored", never `0.0`
-  - `threshold: float | None` / `passed: bool | None` — stamped by `Test.compare`, unset by evaluators
+  - `threshold: float | None` — stamped by `Test.compare` for reporting, mirroring `case.threshold`
+  - `passed: bool | None` — set by the evaluator itself, from its own score compared against
+    `case.threshold`; `Test._stamp` leaves it untouched
   - `mode: str | None` — the `Mode` that produced the decisive result; unset by evaluators
   - `expected: str | None` — which alternative produced the decisive score
   - `reason: str | None` — the judge's rationale where the backend supplies one
@@ -203,11 +209,15 @@ graph LR
     its only consumer; neither shipped metric uses embeddings)
 - No `score` block, no metric-selection keys, and no rubric key: one metric per mode means nothing to
   select, and the llm metric's rubric is AK-owned until a per-test source is decided
-- Legacy keys are rejected rather than ignored, so the clean break fails loudly
-  - `AKTestConfig` sets `extra="ignore"` (`config.py:40`), so a leftover `judge:` block would otherwise
-    be **silently dropped**, reverting the model/provider to defaults with no error
-  - A present `judge` key (in YAML or as `AK_TEST__JUDGE__*`) raises `AKConfigError` naming the new
-    `llm` spelling; this is a validation error, not a compatibility shim
+- **Reversed from an earlier pass of this design**: a legacy `judge` key is *not* specially rejected.
+  `AKTestConfig` sets `extra="ignore"` (`config.py:44`), so a leftover `judge:` block (YAML or
+  `AK_TEST__JUDGE__*`) is silently dropped like any other unknown key, and `llm` keeps its own default
+  rather than reading from it — no `_reject_legacy_judge_key`-style validator exists, and none is planned.
+  Tested explicitly: `ak-py/tests/test_test_config.py::test_legacy_judge_key_in_yaml_is_silently_ignored`.
+  Only the **mode name** (`fuzzy`/`judge` as a `mode:`/`AK_TEST__MODE` value) fails loudly, via the
+  `mode` field's `pattern` — that check is unchanged from the design below. **`docs/docs/core-concepts/
+  configuration.md` still documents the rejected version of this behaviour and needs correcting
+  separately** (outside this spec folder's scope)
 - Env-var spellings for new fields follow the existing convention: `AK_TEST__EVALUATOR`,
   `AK_TEST__LLM__MODEL`
 
@@ -306,12 +316,14 @@ graph LR
     both returning `AKEvaluationResult`
   - Raise `AKMetricNotSupported` from a method the backend cannot provide, rather than returning a
     `0.0` — an unsupported mode is a configuration error, not a test failure
-  - Populate `metric`, `score` (normalised to `[0.0, 1.0]`, or `None` for "not scored"), and
-    optionally `reason` / `cost` / `metadata`. Leave `passed`, `threshold`, `mode`, and `attempts`
-    unset: the harness stamps them, so an evaluator that sets them is overwritten, not obeyed
-  - Never assert, never threshold, never iterate the alternatives list, and never read
-    `AKTestConfig` independently — every policy decision stays in `Test.compare`, and the single
-    `expected` on the case is the only ground truth a method sees
+  - Populate `metric`, `score` (normalised to `[0.0, 1.0]`, or `None` for "not scored"), and `passed`
+    (the score compared against `case.threshold`); optionally `reason` / `cost` / `metadata`. Leave
+    `threshold`, `mode`, and `attempts` unset on the result: the harness stamps those, so an evaluator
+    that sets them is overwritten, not obeyed
+  - Never assert, never iterate the alternatives list, and never read `AKTestConfig` independently —
+    mode selection and alternative iteration stay in `Test.compare`; deciding `passed` from the score is
+    the one policy call delegated to the evaluator, and the single `expected` on the case is the only
+    ground truth a method sees
   - Raise `AKEvaluationError` on a backend failure (missing credentials, transport error) so the
     harness can distinguish a broken evaluator from a failing agent, which is the failure mode
     called out in Motivation
@@ -347,8 +359,17 @@ graph LR
     no longer scores `1.0` on the score path — e.g. `target="Paris"`, `prediction="...the capital of
     France is Paris..."` scores `0` — only a response whose entire normalised text equals the
     normalised expected phrase passes
-  - **Consequence for callers**: a caller needing containment for a long response now relies on
-    `llm`/`fallback`, not `score` alone
+  - **Consequence for callers, revised**: `llm`/`fallback` is not, by itself, a reliable rescue for this
+    case. A symmetric-equivalence rubric ("does `actual` convey the *same* information as `expected`?")
+    fails the identical short-expected/verbose-correct-actual case that `score` mode gives up on, because
+    a verbose `actual` says *more* than a short `expected` — reproduced in review on 4 shipped example
+    suites (`knowledgebase/openai/chromadb`, `api/multimodal/openai`, `cli/logfire`,
+    `cli/guardrail/bedrock`), all in `fallback` mode, all failing at the `llm` stage too. The default
+    rubric (`_DEFAULT_LLM_CRITERIA`, `akevaluators/deepeval.py:17-23`) was made directional to close this
+    gap — it now explicitly tells the judge not to penalize `actual` for including more detail than
+    `expected`. A caller needing containment for a long response now depends on that directional rubric
+    holding, not on the `llm`/`fallback` mode pairing alone; whether it actually rescues the four examples
+    above needs empirical reverification before this is called closed
   - It returns a binary 0/1: `threshold` is inert on the score path (any value in `(0, 1]` behaves
     identically), and in `fallback` a near-miss reaches the llm stage rather than passing locally
     (survey §9, Finding 12). That cost is proportional — only failing comparisons pay it
@@ -357,7 +378,10 @@ graph LR
   - Verified present with a stable signature across the full pinned range: `deepeval.scorer.Scorer.quasi_exact_match_score`
     exists and is exported unchanged from `4.1.4` (the minimum pin) through `4.1.8`
 - **Llm metric: `GEval`**
-  - One AK-owned rubric, judging whether the response conveys the same information as `expected`, with
+  - One AK-owned rubric (`_DEFAULT_LLM_CRITERIA`, `akevaluators/deepeval.py:17-23`), **directional, not
+    symmetric**: it asks whether `actual` correctly conveys the information in `expected`, and explicitly
+    instructs the judge not to penalize `actual` for being longer or more detailed than `expected` —
+    `expected` may be a short phrase, fact, or keyword rather than a full sentence. Uses
     `evaluation_params=[ACTUAL_OUTPUT, EXPECTED_OUTPUT]`
   - Required because DeepEval ships no semantic-similarity metric — the one gap that is DeepEval's
     alone, since RAGAS, Opik, and autoevals all ship a ground-truth comparison (survey §3 Finding 5,
@@ -453,10 +477,14 @@ graph LR
   `test.py:260`) are removed
 - `Test.match_threshold` and `Test.compare(threshold=...)` default to `0.5` instead of `50`
   (`test.py:28`, `test.py:221`)
-- Thresholding stays in the harness: DeepEval metrics are constructed with `threshold=None`, and
-  `passed` is decided by comparing the returned score against the AK threshold
-- Out-of-range values (a leftover `50`) raise `ValueError` rather than silently passing everything,
-  since any score is below 50 on the new scale
+- DeepEval metrics are constructed with `threshold=None`; `passed` is decided by each
+  `DeepevalAKEvaluator` method itself, comparing its returned score against `case.threshold`
+- **Reversed from an earlier pass of this design**: `Test.compare` does not guard `threshold` to
+  `[0.0, 1.0]`. The meaningful range depends on the configured evaluator's own scoring scale — a
+  different backend could score outside `[0.0, 1.0]` — so a universal range guard doesn't generalize
+  past the two shipped DeepEval metrics. A stale `threshold=50` call site is accepted as-is; it just
+  makes `score >= threshold` false for both shipped metrics (never passes) instead of erroring loudly.
+  Tested explicitly: `ak-py/tests/test_cli_tester.py::test_compare_threshold_outside_zero_one_is_not_rejected`
 - Every explicit `threshold=`/`match_threshold=` call site under `examples/` is updated to the new
   scale — currently 15 files, 30 call sites (`git grep -nE "(match_)?threshold *= *[0-9]" examples/`);
   `spec.md` carries the full file enumeration. Plus the docs pages listed under Migration surface
@@ -555,8 +583,9 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
   replaces the live-LLM calls currently in `ak-py/tests/test_cli_tester.py:35-81`
 - Coverage required for: each mode routing to its evaluator method, `return_metrics` true/false per
   mode, `attempts` population in `fallback`, the judge-unavailable path raising rather than
-  reporting a mismatch, and `mode: fuzzy` / `mode: judge` and a leftover `judge:` block each failing
-  with a clear error
+  reporting a mismatch, and `mode: fuzzy` / `mode: judge` failing with a clear error. **As shipped**, a
+  leftover `judge:` block does *not* fail — it is intentionally, silently ignored (see "Configuration");
+  that reversal is itself covered by `test_legacy_judge_key_in_yaml_is_silently_ignored`
 - `Test._resolve_evaluator` is covered branch by branch: `deepeval` → `DeepevalAKEvaluator`; a dotted
   path to a test-local subclass → that class; an unknown short name → `AKConfigError` listing the
   built-ins; a dotted path to a non-`AKEvaluator` class → `AKConfigError`; a dotted path to a missing

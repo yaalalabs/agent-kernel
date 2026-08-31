@@ -129,6 +129,7 @@ class AKEvaluationCase(BaseModel):
     user_input: str
     actual: str
     expected: str | None = None
+    threshold: float = 0.5             # the score/pass cutoff the evaluator must weigh its own passed against
     context: list[str] | None = None   # carried, unpopulated in v1 (no shipped metric reads it)
     criteria: str | None = None        # carried, unpopulated in v1 (llm mode uses AK's default rubric)
 
@@ -138,7 +139,7 @@ class AKEvaluationResult(BaseModel):
     evaluator: str
     score: float | None = None         # [0.0, 1.0]; None means "not scored", never 0.0
     threshold: float | None = None     # stamped by Test.compare; unset by evaluators
-    passed: bool | None = None         # stamped by Test.compare; unset by evaluators
+    passed: bool | None = None         # set by the evaluator itself, from score vs. AKEvaluationCase.threshold
     mode: str | None = None            # stamped by Test.compare; unset by evaluators
     expected: str | None = None        # which alternative produced this result
     reason: str | None = None
@@ -148,18 +149,23 @@ class AKEvaluationResult(BaseModel):
 
 
 class AKEvaluator(ABC):
-    """Pure scorer: computes a score, never asserts, thresholds, or decides pass/fail."""
+    """Computes a score and decides result.passed against AKEvaluationCase.threshold.
+
+    Never raises AssertionError or decides whether a failure is fatal — that's Test.compare's job,
+    based on the result.passed each method here returns.
+    """
 
     def __init__(self, config: "AKTestConfig") -> None:
         self._config = config
 
     @abstractmethod
     def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
-        """Deterministic scoring — no LLM call. Raise AKMetricNotSupported if unavailable."""
+        """Deterministic scoring — no LLM call. Must set result.passed. Raise AKMetricNotSupported
+        if unavailable."""
 
     @abstractmethod
     def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
-        """LLM-as-judge scoring. Raise AKMetricNotSupported if unavailable."""
+        """LLM-as-judge scoring. Must set result.passed. Raise AKMetricNotSupported if unavailable."""
 ```
 
 `AKEvaluationResult.attempts` is `list["AKEvaluationResult"]` (self-referential) — needs
@@ -212,7 +218,13 @@ from agentkernel.test.config import AKTestConfig
 
 from .base import AKEvaluationCase, AKEvaluationError, AKEvaluationResult, AKEvaluator, AKMissingInput
 
-_DEFAULT_LLM_CRITERIA = "Determine whether the actual output conveys the same information as the expected output."
+_DEFAULT_LLM_CRITERIA = (
+    "Determine whether the actual output correctly conveys the information in the expected output. "
+    "The expected output may be a short phrase, fact, or keyword rather than a full sentence — score "
+    "the actual output as correct if it clearly states or implies that information, even when it also "
+    "includes additional context, explanation, or detail beyond it. Do not penalize the actual output "
+    "merely for being longer or more detailed than the expected output."
+)
 
 
 class DeepevalAKEvaluator(AKEvaluator):
@@ -229,8 +241,13 @@ class DeepevalAKEvaluator(AKEvaluator):
     def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
             raise AKMissingInput("score_based_evaluation requires AKEvaluationCase.expected")
-        score = Scorer.quasi_exact_match_score(target=case.expected, prediction=case.actual)
-        return AKEvaluationResult(metric="quasi_exact_match", evaluator="deepeval", score=float(score))
+        score = float(Scorer.quasi_exact_match_score(target=case.expected, prediction=case.actual))
+        return AKEvaluationResult(
+            metric="quasi_exact_match",
+            evaluator="deepeval",
+            score=score,
+            passed=score >= case.threshold,
+        )
 
     def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
@@ -247,7 +264,13 @@ class DeepevalAKEvaluator(AKEvaluator):
             score = metric.measure(test_case, _show_indicator=False)
         except Exception as exc:
             raise AKEvaluationError(f"llm-based (GEval) evaluation failed: {exc}") from exc
-        return AKEvaluationResult(metric="g_eval", evaluator="deepeval", score=score, reason=metric.reason)
+        return AKEvaluationResult(
+            metric="g_eval",
+            evaluator="deepeval",
+            score=score,
+            reason=metric.reason,
+            passed=score is not None and score >= case.threshold,
+        )
 ```
 
 Notes on this sketch (rules, not implementation detail to skip):
@@ -270,6 +293,16 @@ Notes on this sketch (rules, not implementation detail to skip):
 2. **The score path returns a plain `int` (0 or 1), cast to `float` for `AKEvaluationResult.score`.**
    `Scorer.quasi_exact_match_score` returns `int`; `AKEvaluationResult.score` is typed `float | None`
    (design.md), so the cast is required, not stylistic.
+2a. **Both methods set `result.passed` themselves**, comparing the score they just computed against
+   `case.threshold` (`score >= case.threshold`, or `score is not None and score >= case.threshold` on
+   the llm path since `metric.measure` can leave `score` unset on a soft failure). Neither method reads
+   `case.threshold` for any other purpose — no other AK-side thresholding happens in this file.
+2b. **`_DEFAULT_LLM_CRITERIA` is directional, not a symmetric-equivalence rubric.** It explicitly tells
+   the judge that `expected` "may be a short phrase, fact, or keyword rather than a full sentence" and to
+   score `actual` as correct "even when it also includes additional context ... beyond it," and "not [to]
+   penalize the actual output merely for being longer or more detailed." This wording exists specifically
+   to keep a verbose-but-correct `actual` from failing `llm`/`fallback` after `score` mode gave up
+   containment — see design.md's "Consequence for callers, revised."
 3. **`self._model` is per-`DeepevalAKEvaluator`-instance lazy state**, built on first `llm_based_evaluation`
    call and reused for the evaluator's lifetime (which is the cached singleton's lifetime — see
    `Test._resolve_evaluator` below). This is the "one instance owns its own backend clients" requirement
@@ -362,15 +395,19 @@ Notes:
 
 - `evaluator` has **no** `pattern` (plain `str`), unlike `mode`: the built-in set is checked in
   `Test._resolve_evaluator`, and a dotted path can't be expressed as a regex (design.md "Configuration").
-- `_reject_legacy_judge_key` raises `AKConfigError` (imported from `agentkernel.core.util.factory`), not a
-  `pydantic.ValidationError`. Pydantic v2 re-raises exception types it doesn't recognise (only `ValueError`/
-  `TypeError`/`AssertionError`/its own error types are wrapped into `ValidationError`) as-is from a
-  `model_validator`, so `AKTestConfig()` propagates `AKConfigError` directly. This must be confirmed by the
-  new test (see "Testing") rather than assumed, since a pydantic-core version bump could in principle change
-  this — if it doesn't hold, catch and re-raise explicitly inside the validator instead.
+- **Reversed from an earlier pass of this spec**: the real `ak-py/src/agentkernel/test/config.py` has no
+  `_reject_legacy_judge_key` validator, no `model_validator` import, and no `AKConfigError` import at all
+  — `judge`/`AK_TEST__JUDGE__*` is silently dropped by `extra="ignore"` and `AKTestConfig` reverts to
+  `llm`'s defaults with no error, the exact failure mode this validator existed to prevent. Tested
+  explicitly as intentional:
+  `ak-py/tests/test_test_config.py::test_legacy_judge_key_in_yaml_is_silently_ignored` ("No special-cased
+  rejection: a leftover `judge:` block is just an unknown key under `extra=\"ignore\"`"). Two things this
+  reversal leaves stale and **out of this spec folder's scope to fix here**: at least one shipped example
+  (`examples/aws-serverless/schedule-openai/test-config.yaml`) still has a top-level `judge:` block that
+  is now silently ignored rather than erroring, and `docs/docs/core-concepts/configuration.md` still
+  documents the rejected version of this behaviour as shipped.
 - Env var spellings: `AK_TEST__EVALUATOR`, `AK_TEST__LLM__MODEL`, `AK_TEST__LLM__PROVIDER`,
-  `AK_TEST__LLM__EMBEDDING_MODEL`. `AK_TEST__JUDGE__*` (any of the three) is caught by the same validator,
-  since `env_nested_delimiter="__"` materialises it as a `"judge"` key in the merged dict before validation.
+  `AK_TEST__LLM__EMBEDDING_MODEL`. `AK_TEST__JUDGE__*` is not rejected either, for the same reason.
 
 ### `Test._resolve_evaluator` (`test/test.py`)
 
@@ -453,8 +490,6 @@ class Test:
     ) -> AKEvaluationResult | None:
         if mode is not None and mode not in (Mode.SCORE, Mode.LLM, Mode.FALLBACK):
             raise ValueError(f"Invalid mode: {mode}. Must be one of: {Mode.SCORE}, {Mode.LLM}, {Mode.FALLBACK}")
-        if not 0.0 <= threshold <= 1.0:
-            raise ValueError(f"threshold must be within [0.0, 1.0]; got {threshold}")
         if not expected:
             raise ValueError("Expected strings list cannot be empty for comparison.")
 
@@ -465,7 +500,7 @@ class Test:
         decisive: AKEvaluationResult | None = None
 
         for exp in expected:
-            case = AKEvaluationCase(user_input=user_input, actual=actual, expected=exp)
+            case = AKEvaluationCase(user_input=user_input, actual=actual, expected=exp, threshold=threshold)
 
             if selected_mode == Mode.SCORE:
                 result, result_mode = evaluator.score_based_evaluation(case), Mode.SCORE
@@ -473,7 +508,7 @@ class Test:
                 result, result_mode = evaluator.llm_based_evaluation(case), Mode.LLM
             else:  # FALLBACK
                 score_result = evaluator.score_based_evaluation(case)
-                if score_result.score is not None and score_result.score >= threshold:
+                if score_result.passed:
                     result, result_mode = score_result, Mode.SCORE
                 else:
                     attempts.append(Test._stamp(score_result, Mode.SCORE, threshold, exp))
@@ -498,10 +533,11 @@ class Test:
 
     @staticmethod
     def _stamp(result: AKEvaluationResult, mode: Mode, threshold: float, expected: str) -> AKEvaluationResult:
+        """Stamps reporting metadata onto a result. result.passed is set by the evaluator itself
+        (score_based_evaluation/llm_based_evaluation) and is left untouched here."""
         result.mode = mode.value
         result.threshold = threshold
         result.expected = expected
-        result.passed = result.score is not None and result.score >= threshold
         return result
 
     @staticmethod
@@ -523,8 +559,10 @@ Rules this sketch encodes (verify each in the real implementation and its tests)
 2. **`attempts` accumulates every non-decisive result** across the whole `expected` loop, not only the
    `fallback` score-stage failures — `AKEvaluationResult.attempts` on the returned/raised result holds
    every alternative that did not become decisive, whichever mode produced it.
-3. **The threshold comparison (`score >= threshold`) is the only "passed" definition**, in one place
-   (`_stamp`), not duplicated per mode.
+3. **The threshold comparison (`score >= case.threshold`) is the only "passed" definition**, computed
+   once per evaluator method (`score_based_evaluation`/`llm_based_evaluation`), not duplicated or
+   recomputed by `_stamp` or by `compare` itself. `compare`'s fallback branch reads `score_result.passed`
+   directly rather than re-deriving it from `score_result.score`.
 4. **`AKMissingInput`** (raised by the evaluator when `case.expected` is falsy) can only occur if
    `expected` contains a falsy element (e.g. `""`) inside an otherwise valid list — `compare`'s own guard
    only rejects an empty *list*. This is intentionally not additionally guarded in `compare`: a caller
@@ -578,8 +616,14 @@ Numbered, exhaustive; each is intentional, with its justification. Non-changes f
    a verbose-but-correct response that merely *contains* the expected phrase now scores `0.0`, not just a
    response that scored just above the old fuzzy threshold on edit-distance tolerance. In practice this
    pushes more comparisons through to the `llm` stage under `fallback` than either `fuzz.ratio` or
-   `PatternMatchMetric` would have; a caller relying on `score` alone for a short expected phrase inside a
-   verbose response must switch to `llm`/`fallback`.
+   `PatternMatchMetric` would have. A caller relying on `score` alone for a short expected phrase inside a
+   verbose response must switch to `llm`/`fallback` — but switching alone is **not sufficient**: a
+   symmetric-equivalence llm rubric fails the identical case, since a verbose `actual` says more than a
+   short `expected`. This was reproduced in review on 4 shipped example suites, all in `fallback` mode,
+   all failing at the `llm` stage too (see design.md's "Consequence for callers, revised"). The default
+   `_DEFAULT_LLM_CRITERIA` was made directional specifically to address this, instructing the judge not
+   to penalize `actual` for extra length/detail — that rubric change, not the mode switch by itself, is
+   what a caller needing containment now depends on.
 2. **`llm` mode with no `expected` now raises `AKMissingInput` instead of falling back to
    `answer_relevancy` against the question.** *Why:* every in-repo caller already supplies `expected`
    (`expect()` requires a non-empty list by signature), and `GEval` has no reference-free counterpart to
@@ -589,9 +633,17 @@ Numbered, exhaustive; each is intentional, with its justification. Non-changes f
 3. **Threshold scale changes from `0–100` (with `/100` conversion into judge scoring) to `0.0–1.0`
    uniformly.** *Why:* matches what every evaluation library returns; removes an ad hoc conversion.
    *Consequence:* every explicit `threshold=`/`match_threshold=` call site must be rewritten (see
-   "Migration surface"); an un-rewritten leftover (e.g. `threshold=50`) now raises `ValueError` instead of
-   silently behaving as "score < 50 ⇒ effectively never passes" or, for a stray negative leftover,
-   "always passes" — both are explicitly rejected by the new `0.0 <= threshold <= 1.0` guard.
+   "Migration surface"); an un-rewritten leftover (e.g. `threshold=50`) is **not** rejected — `compare`
+   has no range guard on `threshold`, so a stale `50` just makes every evaluator's `score >= threshold`
+   comparison false (both shipped metrics return scores in `[0.0, 1.0]`), i.e. "always fails" rather than
+   erroring loudly. **Reversed from an earlier pass of this spec**, which called for a `0.0 <= threshold
+   <= 1.0` `ValueError` guard in `compare`: dropped before shipping because the meaningful range depends
+   on the configured evaluator's own scoring scale, so a universal guard doesn't generalize past the two
+   shipped DeepEval metrics. Tested explicitly as intentional, not an oversight:
+   `ak-py/tests/test_cli_tester.py::test_compare_threshold_outside_zero_one_is_not_rejected`.
+   Similarly, a legacy `judge:` key is **not** rejected either, contrary to the `_reject_legacy_judge_key`
+   validator sketched under "Configuration" below — see that section's notes for the tested, shipped
+   behaviour (silently ignored under `extra="ignore"`, same as any other unknown key).
 4. **`fallback`'s local stage is score mode (binary) rather than fuzzy (graded).** *Why:* inherent to
    dropping `fuzz.ratio`. *Consequence* (already flagged in design.md, restated for completeness): a
    near-miss that would have passed fuzzy locally now falls through to the llm stage every time, so
@@ -607,8 +659,8 @@ Numbered, exhaustive; each is intentional, with its justification. Non-changes f
    "Testing") rather than kept working against old text.
 6. **`return_metrics=True` never raises `AssertionError` for a failing comparison**, but every other error
    (`AKEvaluationError`, `AKMissingInput`, `AKMetricNotSupported`, `AKConfigError`, the `ValueError`s for
-   invalid mode/threshold/empty-expected-list, and `expect`'s own "no response recorded" `AssertionError`)
-   still raises unsuppressed. *Why:* `return_metrics` is a reporting mode, not an error-suppression mode.
+   invalid mode/empty-expected-list, and `expect`'s own "no response recorded" `AssertionError`) still
+   raises unsuppressed. *Why:* `return_metrics` is a reporting mode, not an error-suppression mode.
    *Consequence:* callers that adopt `return_metrics=True` must still handle the non-assertion exceptions.
 
 **Non-changes** (confirm unchanged in review): `Test.start`/`send`/`stop`/`_read_until_prompt`/
@@ -623,13 +675,13 @@ alternative passes" semantics; the shape of `Mode` as a `StrEnum` (values change
 | Unknown evaluator short name (no `.`) | `AKConfigError` | `Test._resolve_evaluator_class` | No — propagates |
 | Dotted path doesn't import / wrong attr / not an `AKEvaluator` subclass | `AKConfigError` | `resolve_dotted` | No |
 | `deepeval` extra not installed, `evaluator: deepeval` | `ImportError` (extra-naming message) | `require_extra` inside `_resolve_evaluator_class` | No |
-| Legacy `judge:` key present (YAML or env) | `AKConfigError` | `AKTestConfig._reject_legacy_judge_key` | N/A — raised before `Test` is reached |
+| Legacy `judge:` key present (YAML or env) | *(not rejected — intentionally silently dropped by `extra="ignore"`; see "Configuration" notes)* | — | — |
 | `case.expected` falsy on a shipped metric call | `AKMissingInput` | `DeepevalAKEvaluator.{score,llm}_based_evaluation` | No — propagates out of the `expected` loop |
 | Evaluator can't provide a requested mode (BYO) | `AKMetricNotSupported` | evaluator subclass | No — propagates; see design.md rationale (a structural mismatch, not a per-case failure) |
 | DeepEval judge backend failure (bad/missing API key, judge model rejects schema-constrained output, unparseable judge response) | `AKEvaluationError` | `DeepevalAKEvaluator.llm_based_evaluation` (wraps the caught exception) — `score_based_evaluation` has no failure mode to wrap; it is a pure string comparison | No — propagates |
 | Invalid `mode=` argument | `ValueError` | `Test.compare` | N/A |
-| `threshold` outside `[0.0, 1.0]` | `ValueError` | `Test.compare` | N/A |
 | Empty `expected` list | `ValueError` | `Test.compare` | N/A |
+| `threshold` outside `[0.0, 1.0]` | *(not rejected — intentionally unvalidated; see Behavioural change 3)* | — | — |
 | `expect()` called with no prior `send()` | `AssertionError` | `Test.expect` | N/A |
 | A comparison legitimately scores below threshold | `AssertionError` (or `AKEvaluationResult` under `return_metrics=True`) | `Test.compare` | This is the one caught/converted case |
 
@@ -652,8 +704,10 @@ indistinguishable from a failing agent" problem this design removes.
     evaluator method; `return_metrics` true/false under each mode; `attempts` populated correctly in
     `fallback` (score-stage failure recorded, llm result decisive); the "judge unavailable" path (fake
     evaluator raises `AKEvaluationError`) surfacing as `AKEvaluationError`, not as a content-mismatch
-    `AssertionError`; `mode="fuzzy"`/`mode="judge"` rejected as invalid; a leftover `judge:` key in
-    `test-config.yaml` raising `AKConfigError`.
+    `AssertionError`; `mode="fuzzy"`/`mode="judge"` rejected as invalid (as shipped:
+    `test_compare_legacy_mode_names_rejected`); a `threshold` outside `[0.0, 1.0]` is accepted, not
+    rejected (as shipped, reversed from an earlier pass of this spec:
+    `test_compare_threshold_outside_zero_one_is_not_rejected`).
   - Existing assertion-text matches rewritten per "Behavioural changes" point 5: `match="didn't pass the
     score threshold"`, `match="didn't pass llm evaluation"`, `match="didn't pass score matching or llm
     evaluation"`.
@@ -680,9 +734,11 @@ indistinguishable from a failing agent" problem this design removes.
     doesn't leak between tests in this file.
 - **`ak-py/tests/test_test_config.py`** — add: `evaluator` field default (`"deepeval"`) and override
   (YAML + `AK_TEST__EVALUATOR`); the renamed `llm` block (YAML + `AK_TEST__LLM__MODEL`/`PROVIDER`/
-  `EMBEDDING_MODEL`); `mode` pattern rejecting `fuzzy`/`judge` (`ValidationError`, mirroring the existing
-  `test_invalid_mode_raises`); a `judge:` key (YAML) and `AK_TEST__JUDGE__MODEL` (env) each raising
-  `AKConfigError` via `_reject_legacy_judge_key`.
+  `EMBEDDING_MODEL`); `mode` pattern rejecting `fuzzy`/`judge` (`ValidationError`, as shipped:
+  `test_legacy_mode_names_rejected`). As shipped, a legacy `judge:` key (YAML) is *not* rejected — it is
+  silently ignored under `extra="ignore"` (as shipped:
+  `test_legacy_judge_key_in_yaml_is_silently_ignored`), reversed from this spec's earlier
+  `_reject_legacy_judge_key`/`AKConfigError` plan.
 - **`ak-py/tests/test_config.py`** — no behavioural change expected (test-config independence from
   `AKConfig` is already covered by `test_independent_from_akconfig` in `test_test_config.py`); confirm no
   `test:`-block assertions in this file reference the old `judge`/`fuzzy` spelling before leaving it
