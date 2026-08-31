@@ -123,7 +123,7 @@ class EC2SSMEnvironment(AttachedEnvironment):
         while True:
             try:
                 invocation = await asyncio.to_thread(self._ssm.get_command_invocation, CommandId=command_id, InstanceId=self.id)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — boto3 may surface missing invocations as different exception types; we inspect the error code below
                 if not _is_missing_invocation(exc):
                     raise
                 await asyncio.sleep(_POLL_INTERVAL)
