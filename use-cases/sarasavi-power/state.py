@@ -125,8 +125,15 @@ def set_household(
     return save_profile(profile)
 
 
-def add_appliance(key: str, hours_per_day: float, quantity: int = 1) -> dict[str, Any]:
-    """Add or update an appliance line-item (keyed by appliance ``key``)."""
+def add_appliance(
+    key: str, hours_per_day: float, quantity: int = 1, watts: float | None = None
+) -> dict[str, Any]:
+    """Add or update an appliance line-item (keyed by appliance ``key``).
+
+    ``watts`` is optional and overrides the catalog's typical rating with a value
+    read off the household's own appliance (e.g. a nameplate photo), which is more
+    accurate than the generic default for that appliance type.
+    """
     profile = load_profile()
     _require_consent(profile)
     if not 0 <= hours_per_day <= 24:
@@ -134,6 +141,16 @@ def add_appliance(key: str, hours_per_day: float, quantity: int = 1) -> dict[str
     if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= 100:
         raise ValueError("quantity must be a whole number between 1 and 100")
     entry = {"key": key, "hours_per_day": float(hours_per_day), "quantity": quantity}
+    if watts is not None:
+        if not 1 <= watts <= 15000:
+            raise ValueError("watts must be between 1 and 15000")
+        entry["watts_override"] = float(watts)
+    else:
+        # Adjusting hours/quantity alone (watts not resupplied) should not silently
+        # discard a wattage the user already gave us off their own appliance.
+        existing = next((a for a in profile["appliances"] if a["key"] == key), None)
+        if existing and existing.get("watts_override") is not None:
+            entry["watts_override"] = existing["watts_override"]
     appliances = [a for a in profile["appliances"] if a["key"] != key]  # replace duplicates
     appliances.append(entry)
     profile["appliances"] = appliances

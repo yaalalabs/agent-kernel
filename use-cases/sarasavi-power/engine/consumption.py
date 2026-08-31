@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 _DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "appliances.json")
@@ -74,7 +74,10 @@ def appliance_kwh(appliance: Appliance, hours_per_day: float, quantity: int = 1,
 def estimate_total(usages: list[dict], catalog: Optional[dict[str, Appliance]] = None) -> dict:
     """Aggregate a household's monthly kWh from a list of appliance usages.
 
-    Each usage: {"key": str, "hours_per_day": float, "quantity": int?, "days": int?}.
+    Each usage: {"key": str, "hours_per_day": float, "quantity": int?, "days": int?,
+    "watts_override": float?}. ``watts_override`` replaces the catalog's typical
+    rating with a value read off the household's own appliance (e.g. its nameplate),
+    which is more accurate than the generic default.
     Returns total kWh plus a per-appliance breakdown sorted by impact (highest first)
     so the analysis agent can name the high-impact areas.
     """
@@ -87,6 +90,9 @@ def estimate_total(usages: list[dict], catalog: Optional[dict[str, Appliance]] =
         if key not in catalog:
             raise KeyError(f"unknown appliance {key!r}")
         appliance = catalog[key]
+        watts_override = u.get("watts_override")
+        if watts_override is not None:
+            appliance = replace(appliance, watts=float(watts_override))
         quantity = u.get("quantity", 1)
         days = u.get("days", 30)
         if isinstance(quantity, bool) or not isinstance(quantity, int):
@@ -104,6 +110,8 @@ def estimate_total(usages: list[dict], catalog: Optional[dict[str, Appliance]] =
                 "hours_per_day": hours,
                 "days": days,
                 "kwh": round(kwh, 2),
+                "watts": appliance.watts,
+                "watts_is_custom": watts_override is not None,
             }
         )
 
