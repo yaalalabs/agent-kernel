@@ -25,6 +25,7 @@ _BUILTIN_PROVIDER_NAMES = ["local_subprocess", "docker", "ec2_ssm", "e2b", "dayt
 _BUILTIN_BROKERS: dict[str, str] = {
     "embedded": "agentkernel.sandbox.broker.embedded.EmbeddedBroker",
     "thread": "agentkernel.sandbox.broker.thread.ThreadBroker",
+    "queue": "agentkernel.sandbox.broker.queue.QueueExecutionBroker",
 }
 
 
