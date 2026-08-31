@@ -2,8 +2,8 @@
 
 Implements the approved [design.md](design.md): a `queue` broker flavor whose client submits
 `ExecutionRequest`s over any #495 `QueueTransport`, a `QueueBrokerWorker` runnable that consumes
-them and drives `BrokerWorkerCore`, DB-first completions on the pipeline response-store family,
-conditional completion events to the agent input queue on an independently configured transport,
+them, drives `BrokerWorkerCore`, and returns completions over the block's output queue, where
+the worker's own output loop persists them to the pipeline response-store family,
 and the `kubernetes` sandbox provider both target deployments execute on. The one-sentence design
 idea: the transport contract's per-group FIFO (`group_id = sandbox_session_id`) carries the #494
 per-session serialization contract across a worker fleet, so the broker needs no distributed
@@ -19,7 +19,7 @@ time of writing.
 ```
 ak-py/src/agentkernel/sandbox/broker/
 ├── queue.py           # QueueExecutionBroker (agent-side client flavor)
-├── queue_worker.py    # QueueBrokerWorker (the worker process entry point) + idle sweep
+├── queue_worker.py    # QueueBrokerWorker (request + output consumer loops) + idle sweep
 └── wire.py            # binary-safe (de)serialization of the broker wire models
 
 ak-py/src/agentkernel/sandbox/providers/
@@ -64,14 +64,10 @@ Governing rules (amendments to the #494 rules, `494-sandbox-capability/spec.md:6
 
 ### Wire contract additions and binary-safe serialization
 
-Two additive fields on the broker wire models (`sandbox/broker/base.py:44-64`); both default to
-values that reproduce today's behavior, so the in-process flavors are untouched:
+One additive field on the completion wire model (`sandbox/broker/base.py:57-65`); it defaults
+to a value that reproduces today's behavior, so the in-process flavors are untouched:
 
 ```python
-class ExecutionRequest(BaseModel):
-    ...                                      # existing fields unchanged
-    emit_completion_event: bool = True       # NEW: False suppresses the completion event (destroys)
-
 class ExecutionCompletion(BaseModel):
     ...                                      # existing fields unchanged
     error_type: Optional[str] = None         # NEW: SandboxError subclass name for typed re-raise
@@ -89,8 +85,9 @@ class ExecutionCompletion(BaseModel):
   1. `SandboxFile` gains a `field_serializer` emitting base64 in JSON-serialization mode only,
      and a `field_validator` accepting a base64 string back into `bytes`. Python-mode dumps
      (nv_cache registry, in-process flavors) keep raw `bytes`, so stored data does not change shape.
-  2. `sandbox/broker/wire.py` provides `encode_request/decode_request` and
-     `encode_completion/decode_completion`: `model_dump(mode="json")`/`model_validate` plus
+  2. `sandbox/broker/wire.py` provides the stateless `BrokerWireCodec` class with
+     `encode_request/decode_request` and
+     `encode_completion/decode_completion` methods: `model_dump(mode="json")`/`model_validate` plus
      explicit base64 handling of `payload["content"]` for the `upload_file` operation (the one
      free-form binary field a JSON-mode dump cannot see). Only `queue.py` and `queue_worker.py`
      use the codec.
@@ -116,8 +113,8 @@ Registration: `_BUILTIN_BROKERS["queue"] = "agentkernel.sandbox.broker.queue.Que
 
 `submit(request, wait)` semantics, in order:
 
-1. **Effective wait.** `operation == "destroy"` → effective wait `0` and
-   `request.emit_completion_event = False`: destroys are fire-and-forget. Ordering makes this
+1. **Effective wait.** `operation == "destroy"` → effective wait `0`: destroys are
+   fire-and-forget. Ordering makes this
    safe: the destroy message shares the session's `group_id`, so per-group FIFO guarantees it is
    processed after every operation submitted before it, and `BrokerWorkerCore` destroys are
    idempotent (`worker.py:71-76`). This keeps `ExecutionManager._destroy_backend`
@@ -126,31 +123,25 @@ Registration: `_BUILTIN_BROKERS["queue"] = "agentkernel.sandbox.broker.queue.Que
    **bounded**, never indefinite (the "broker decides per flavor" latitude in
    `manager.py:88`); an unbounded await against a possibly-down remote worker would hang the
    agent turn, and the terminal-completion guarantee plus `task_status` recovery cover the tail.
-2. **Deadline stamping.** `request.wait_deadline = time.time() + effective_wait` is stamped
-   before serialization (overwriting the manager's value, which is `None` for
-   `upload`/`download`/`destroy`, `manager.py:98-107,238`). Without this the worker's event-due
-   check would treat every file operation as "caller will not wait" and emit a spurious
-   completion event per upload, each costing one wasted agent re-invocation through the
-   `SandboxPreHook` dedup path.
-3. **Fail-fast ceiling.** `config.worker_timeout_ceiling` set and `request.policy.timeout`
+2. **Fail-fast ceiling.** `config.worker_timeout_ceiling` set and `request.policy.timeout`
    exceeds it → `SandboxPolicyError` naming both values (design requirement; config field at
    `core/config.py:617-620`).
-4. **Size guard.** Serialized request larger than `config.inline_payload_max_bytes` →
+3. **Size guard.** Serialized request larger than `config.inline_payload_max_bytes` →
    `ExecutionBrokerError` naming the size, the limit, and the offending operation. This fires
    before the transport's own send failure because broker caps differ (SQS 256 KiB, Kafka/NATS
    about 1 MiB by default) and their errors are opaque.
-5. **Send.** `QueueMessage(body=encode_request(request), attributes={ATTR_REQUEST_ID:
+4. **Send.** `QueueMessage(body=BrokerWireCodec.encode_request(request), attributes={ATTR_REQUEST_ID:
    request.task_id}, group_id=request.sandbox_session.sandbox_session_id,
    dedup_id=request.task_id)` to `QueueName.INPUT` of the sandbox transport (the
    `RequestHandler._enqueue_request` shape, `pipeline/request_handler.py:60-72`).
-6. **Bounded poll.** Effective wait `0` → return a `SandboxTask(status="pending", ...)`
+5. **Bounded poll.** Effective wait `0` → return a `SandboxTask(status="pending", ...)`
    immediately (the `ThreadBroker` promotion shape, `thread.py:118-128`). Otherwise poll
    `store.get_message(task_id)` every `config.wait_poll_interval` seconds (via
    `asyncio.to_thread` + `asyncio.sleep`, never `ResponseStore.get_message_with_retry`: that
    helper reads its retry config from the global `execution.response_store` block,
    `pipeline/response_store/base.py:115-125`, which the sandbox path does not own) until the
    deadline:
-   - `status == "succeeded"` → `decode_completion(...)`, return `completion.result`.
+   - `status == "succeeded"` → `BrokerWireCodec.decode_completion(...)`, return `completion.result`.
    - `status == "timed_out"` → raise `SandboxTimeoutError(completion.error)`.
    - `status == "failed"` → re-raise the typed error: `error_type` is looked up in
      `agentkernel.sandbox.errors` (only names defined there are honored); unknown/absent names
@@ -161,9 +152,9 @@ Registration: `_BUILTIN_BROKERS["queue"] = "agentkernel.sandbox.broker.queue.Que
    The record is read without `get_and_delete`: the store is the durable source of truth and its
    TTL cleans up (design: DB-first).
 
-`result(task_id)`: `store.get_message(task_id)` → `decode_completion` or `None`. Serves
-`ExecutionManager.task_status`'s fall-through (`manager.py:109-143`), including the
-suspend/resume recovery path where the task is missing from this process's registry.
+`result(task_id)`: `store.get_message(task_id)` → `BrokerWireCodec.decode_completion` or `None`. Serves
+`ExecutionManager.task_status`'s fall-through (`manager.py:109-143`): the `check_sandbox_task`
+recovery path, including when the task is missing from this process's registry.
 
 ### The queue broker worker: `sandbox/broker/queue_worker.py`
 
@@ -178,26 +169,31 @@ class QueueBrokerWorker:
         #    other is in_memory too (the single-process test topology); a broker transport with a
         #    non-shared store raises, mirroring ResponseStoreFactory's rule
         #    (pipeline/response_store/factory.py:34-43).
-        # 2. Build: request transport + one TransportConsumer per consumer thread (factory seam),
-        #    response store (factory seam), BrokerWorkerCore(inline_payload_max_bytes=None)
-        #    (truncation happens here in the worker, not in core), optional completion-event
-        #    transport from broker.completion_queue.
+        # 2. Build: one transport over broker.queue (factory seam) serving both of the block's
+        #    queues, the response store (factory seam), and
+        #    BrokerWorkerCore(inline_payload_max_bytes=None)
+        #    (truncation happens here in the worker, not in core).
         # 3. ThreadRunner.install_shutdown_signal_handlers(log), the IOHandler discipline
         #    (pipeline/io_handler.py:116-128): SIGTERM/SIGINT set shutdown_event and exit code 0.
-        # 4. ThreadRunner.run([consumer-loop task (exit_on_shutdown=False nested loop),
-        #    sweep task (graceful=True)]), the ECSIOHandler two-peer-thread shape.
+        # 4. ThreadRunner.run([request-loop task, output-loop task (both exit_on_shutdown=False
+        #    nested loops), sweep task (graceful=True)]), the ECSIOHandler peer-thread shape.
 ```
 
-- The consumer machinery is one `ConsumerLoop` (`pipeline/consumer.py:12-123`):
-  `process=cls._process` (async: the loop drives it via `asyncio.run`, `consumer.py:138-140`),
-  `on_permanent_failure=cls._on_permanent_failure`,
-  `max_receive_count=broker.queue.input.max_receive_count`,
-  `num_consumers=broker.queue.input.no_of_consumers`, `batch_size=broker.queue.batch_size or 1`
-  (the pipeline `AgentRunner.start` resolution), `consumer_factory=lambda:
-  transport.create_consumer(QueueName.INPUT)`, `thread_name_prefix="sandbox-worker"`,
-  `logger=ak.sandbox.broker.worker`.
-- `_process(message)`, per message:
-  1. `request = decode_request(message.body)`: a decode failure raises, so the loop nacks and
+- The consumer machinery is two `ConsumerLoop`s (`pipeline/consumer.py:12-123`), the chat
+  pipeline's Agent Runner / Output Consumer split applied inside one process:
+  - **Request loop** on `QueueName.INPUT`: `process=cls._process_request` (async: the loop
+    drives it via `asyncio.run`, `consumer.py:138-140`),
+    `on_permanent_failure=cls._on_request_permanent_failure`,
+    `max_receive_count=broker.queue.input.max_receive_count`,
+    `num_consumers=broker.queue.input.no_of_consumers`, `batch_size=broker.queue.batch_size or 1`
+    (the pipeline `AgentRunner.start` resolution), `consumer_factory=lambda:
+    transport.create_consumer(QueueName.INPUT)`, `thread_name_prefix="sandbox-worker"`.
+  - **Output loop** on `QueueName.OUTPUT`: `process=cls._process_completion`,
+    `on_permanent_failure=cls._on_completion_permanent_failure`, the `output.*` knobs
+    (`max_receive_count`, `no_of_consumers`), `thread_name_prefix="sandbox-output"`.
+  - Both log to `ak.sandbox.broker.worker`.
+- `_process_request(message)`, per message:
+  1. `request = BrokerWireCodec.decode_request(message.body)`: a decode failure raises, so the loop nacks and
      the message retries into the permanent-failure path (no silent drop).
   2. `completion = await core.process(request)`, which never raises (`worker.py:99-109`); fail-closed
      principal/policy checks, attach-or-create self-heal, and per-session in-process locking are
@@ -209,82 +205,70 @@ class QueueBrokerWorker:
      redirection to keep full output". `output_files` whose total encoded size would push the
      record past the limit are dropped with the same notice mechanism. `result_ref` stays
      reserved and always `None` in v1 (design resolution 2026-08-24).
-  4. **DB-first store write:** `store.add_message({"request_id": task_id, "session_id":
-     request.ak_session_id, "status_code": <succeeded: 200, failed: 500, timed_out: 504>,
-     "body": encode_completion(completion)})`. A write failure raises → nack → redelivery.
-     Redelivery after a successful execution re-executes the operation: this is the same
-     at-least-once semantics the chat pipeline has, stated in the docs (side-effectful commands
-     are not exactly-once).
-  5. **Inventory upsert** for the sweep (below), for managed profiles only.
-  6. **Completion event** if due (next section).
-  The loop acks after `_process` returns (`consumer.py:144`).
-- `_on_permanent_failure(message)` (must catch its own exceptions, `consumer.py:48-49`):
-  best-effort `decode_request`; on success write a `failed` completion (`error="sandbox
+  4. **Send the ready-to-store record to the output queue** (shape in the next section). A send
+     failure raises → nack → redelivery re-executes the operation: the same at-least-once
+     semantics the chat pipeline has, stated in the docs (side-effectful commands are not
+     exactly-once). Once the record is queued the at-least-once window is closed: no later
+     failure re-executes the sandbox operation.
+  The loop acks after `_process_request` returns (`consumer.py:144`).
+- `_process_completion(message)`, per message (the `ECSOutputConsumer` role):
+  1. `record = json.loads(message.body)`: a decode failure raises into the same
+     nack/permanent-failure path.
+  2. **DB-first store write:** `store.add_message(record)` persists the record verbatim. A
+     write failure raises → nack → redelivery retries the persist only; the sandbox operation
+     is never re-executed from here.
+  3. **Inventory upsert** for the sweep (below), for managed profiles only, from the decoded
+     completion's `sandbox_session`.
+- `_on_request_permanent_failure(message)` (must catch its own exceptions, `consumer.py:48-49`):
+  best-effort `BrokerWireCodec.decode_request`; on success send a `failed` completion record (`error="sandbox
   execution failed after N deliveries"`, `error_type="ExecutionBrokerError"`, the request's real
-  `sandbox_session`) and emit the event if the request wanted one; on decode failure fall back
+  `sandbox_session`) to the output queue; on decode failure fall back
   to `task_id = message.attributes.get(ATTR_REQUEST_ID)` and a completion with a synthesized
   placeholder `SandboxSession(sandbox_session_id=task_id or "unknown", profile="unknown",
   provider_type="unknown", created_at=now, last_used_at=now)`; with no task id at all, log at
   ERROR and return (the transport's `dead_letter` disposition still runs, `consumer.py:130-136`).
   No task with a recoverable id ends without a terminal completion.
+- `_on_completion_permanent_failure(message)`: the last resort when a record could not be
+  persisted within `max_receive_count` deliveries (a store outage outliving the redelivery
+  budget): log at ERROR naming the `request_id` and let `dead_letter` run. The client's poll
+  has long since expired into a pending `SandboxTask`, and `check_sandbox_task` keeps reporting
+  it pending: the documented failure mode for a store that stays down.
 - Trust boundary is unchanged from #494: providers are built worker-side by
   `SandboxProviderFactory` inside `BrokerWorkerCore` (`worker.py:62`); the agent process holds
   queue credentials only.
 
-### Completion events
+### Completion delivery over the output queue
 
-Emitted by the worker to the **agent input queue** so the deployment's existing consumers
-re-invoke the session. Due when ALL hold: `request.emit_completion_event`;
-`broker.completion_queue` is configured; `request.ak_session_id` is non-empty (an operation
-submitted outside any AK session has no session to re-invoke: log at DEBUG and skip); and
-`request.wait_deadline is None or time.time() > request.wait_deadline` (the #494 rule: the
-client's poll already delivered the result otherwise).
-
-Message shape (the amended #494 contract, design resolution 2026-08-24):
+Completions travel `QueueName.OUTPUT` of the same `sandbox.broker.queue` block (design
+resolution 2026-08-31), mirroring the chat pipeline's Agent Runner → output queue → output
+consumer shape (`ECSAgentRunner` + `ECSOutputConsumer`). The message body is the ready-to-store
+record itself, so the output loop persists it verbatim:
 
 ```python
 QueueMessage(
     body=json.dumps({
-        "prompt": f"Sandbox task {task_id} completed: {status}.",   # required by BaseChatRequest
+        "request_id": task_id,
         "session_id": request.ak_session_id,
-        "agent": request.agent,
-        "request_id": task_id,                                      # body fallback for consumers
-        "sandbox_task_completion": <bounded completion dict>,
+        "status_code": <succeeded: 200, failed: 500, timed_out: 504>,
+        "body": BrokerWireCodec.encode_completion(completion),
     }),
     attributes={ATTR_REQUEST_ID: task_id},
-    group_id=request.ak_session_id,       # serialize with the session's chat turns
+    group_id=request.sandbox_session.sandbox_session_id,
     dedup_id=task_id,                     # publish-time dedup where supported
 )
 ```
 
-- **Bounded completion** (the amendment): the event carries `encode_completion` of a copy whose
-  `result.stdout`/`result.stderr` are truncated to `sandbox.tool_output_max_chars` and whose
-  `result.output_files` and `result.provider_data` are emptied. #494 said "minus inline result"
-  (`494-sandbox-capability/spec.md:443-451`), but the shipped `SandboxPreHook._summary` builds
-  its agent-facing summary from `completion.result.stdout/stderr` (`sandbox/hooks.py:107-127`);
-  stripping the result entirely would leave suspend/resume summaries without output. The bounded
-  copy keeps the shipped hook working unchanged and keeps the event small (at most
-  2 × `tool_output_max_chars` + envelope). The full result stays in the response store, reachable
-  via `check_sandbox_task`.
-- **Verified consumer path** (all three consumers accept this body unchanged):
-  - Pipeline: `AgentRunner.process` validates `BaseRunRequest` (`extra="allow"`,
-    `core/model.py:217-222`) at `pipeline/agent_runner.py:37`; `_resolve_request_metadata`
-    (`agent_runner.py:96-122`) finds `request_id` in the attributes first.
-  - ECS: `ECSAgentRunner.process_message` validates the same model
-    (`deployment/aws/containerized/akagentrunner.py:134`).
-  - Serverless: `ServerlessAgentRunner._parse_body`
-    (`deployment/aws/serverless/akagentrunner.py:141-148`).
-  - `RequestBuilder._attach_additional_context` (`core/chat_service.py:118-131`) turns the
-    `sandbox_task_completion` key into `AgentRequestAny(name="sandbox_task_completion",
-    content=<dict>)`, which `SandboxPreHook.on_run` matches (`sandbox/hooks.py:56`) and
-    `_parse_completion` model-validates from the dict (`hooks.py:94-105`). Dedup by `task_id` is
-    `ExecutionManager.ingest_completion` (`manager.py:145-161`).
-- STREAM-mode note: `StreamAgentRunner.process` requires `ATTR_USER_ID` on broker transports
-  (`agent_runner.py:156-157`). The event carries no user id (none exists worker-side), so in
-  STREAM deployments the completion event permanently fails into a stream error frame rather
-  than re-invoking the session. Documented limitation: suspend/resume events target REST-mode
-  deployments in this iteration; STREAM deployments use poll-only mode (omit
-  `completion_queue`).
+- The queue hop is what decouples execution from store availability: once the record is
+  queued, a store outage retries the persist via output-queue redelivery without re-running
+  the (side-effectful) sandbox operation. The response store remains the read side: queues are
+  never read by task id (`494-sandbox-capability/design.md:398-402` rejected
+  receive-and-filter).
+- **No agent re-invocation** (design resolution 2026-08-31): the worker never sends anything
+  to the deployment's agent input queue, and no completion event exists. When the client's
+  bounded poll expires, the turn ends with a pending `SandboxTask` and the
+  wait-then-`check_sandbox_task` tool flow is the whole recovery contract (`task_status` →
+  `result()`, above). Asynchronous resumption of a paused tool call belongs to the separate
+  human-in-the-loop feature and will be designed there.
 
 ### Idle-session sweep and the response-store scan capability
 
@@ -294,7 +278,8 @@ QueueMessage(
   `scan_records(prefix: str) -> list[Dict]` (default `NotImplementedError`). Implemented for
   `in_memory` (dict scan), `redis`/`valkey` (driver `SCAN` on `<prefix>*`), and `dynamodb`
   (`Scan` with `begins_with(request_id, prefix)`); a BYO store opts in by overriding both.
-- Worker inventory: after each successful managed-profile operation, upsert record
+- Worker inventory: the output loop, after persisting each successful managed-profile
+  completion, upserts record
   `request_id=f"session:{sandbox_session_id}"`, `body={"provider_type", "sandbox_id", "profile",
   "idle_timeout", "last_used_at"}`. Records ride the store's TTL like completions, so a dead
   worker's records still expire (#494: `max(2 × idle_timeout, response_ttl)` is approximated by
@@ -312,15 +297,11 @@ QueueMessage(
 ### Factory seams (transport and response store)
 
 - `QueueTransportFactory` (`pipeline/transport/base.py:90-201`):
-  - `resolve_type(queues_config=None)` and `create(queues_config=None, used_queues=(INPUT,
-    OUTPUT))`. `queues_config=None` reads `AKConfig.get().execution.queues` exactly as today
-    (`base.py:107,124,133,143,162`); the default path is byte-for-byte unchanged, including the
-    `input.url`-implies-sqs compatibility rule.
-  - `used_queues` relaxes only the SQS URL validation (`base.py:136-137`): a URL is required
-    only for queues in `used_queues`. Kafka/NATS constructors are unchanged (an unused
-    topic/stream name is simply never referenced). Documented consequence: NATS
-    `auto_provision: true` on a sandbox block still provisions both of the block's streams; the
-    unused output stream is idle and harmless, and production posture is declarative CRs anyway.
+  - `resolve_type(queues_config=None)` and `create(queues_config=None)`. `queues_config=None`
+    reads `AKConfig.get().execution.queues` exactly as today (`base.py:113,131`); the default
+    path is byte-for-byte unchanged, including the `input.url`-implies-sqs compatibility rule
+    and the SQS both-URLs validation (the sandbox broker uses both of its block's queues, so no
+    relaxation is needed).
   - `create_consumer(queue, queues_config=None)` threads the block through.
 - `ResponseStoreFactory.create(response_store_config=None, transport_type=None, ttl=None)`
   (`pipeline/response_store/factory.py:23-75`): `None` arguments read
@@ -475,8 +456,7 @@ class _ExecutionBrokerConfig(BaseModel):
     response_ttl: int = ...                   # unchanged (611); TTL for sandbox completion and inventory records
     sweep_interval: int = ...                 # unchanged (612)
     worker_timeout_ceiling: Optional[float] = ...   # unchanged (617-620)
-    queue: Optional[_QueuesConfig] = Field(default=None, description="Sandbox request-queue transport for the 'queue' flavor; reuses the execution.queues shape (input = the request queue; output unused)")            # NEW
-    completion_queue: Optional[_QueuesConfig] = Field(default=None, description="Transport whose input queue is the AGENT input queue, for completion events; omit for poll-only mode")                                # NEW
+    queue: Optional[_QueuesConfig] = Field(default=None, description="Sandbox broker queues for the 'queue' flavor; reuses the execution.queues shape (input carries execution requests to the worker, output carries completions back to the response store)")   # NEW
     response_store: Optional[_ResponseStoreConfig] = ...   # unchanged (621-624); required by the 'queue' flavor
     # REMOVED: request_queue_url (613), object_store_bucket (614-616)
 ```
@@ -489,8 +469,8 @@ class _ExecutionBrokerConfig(BaseModel):
 - Reusing `_QueuesConfig` (`core/config.py:475-499`) verbatim gives every transport's sub-block
   and documentation for free: `AK_SANDBOX__BROKER__QUEUE__TYPE`,
   `AK_SANDBOX__BROKER__QUEUE__NATS__URL`, `AK_SANDBOX__BROKER__QUEUE__INPUT__NO_OF_CONSUMERS`,
-  etc. Semantics notes added to the sandbox docs: `input.*` drives the worker;
-  `output.*` is unused; NATS `ack_wait` must exceed the largest profile `policy.timeout`
+  etc. Semantics notes added to the sandbox docs: `input.*` drives the request loop;
+  `output.*` drives the output loop; NATS `ack_wait` must exceed the largest profile `policy.timeout`
   (the redelivery trap the field description already warns about for agent turns).
 - `_SandboxKubernetesConfig` (`core/config.py:590-595`) grows (existing four fields unchanged):
 
@@ -543,10 +523,15 @@ sandboxWorker:
     serviceAccount:
       create: true                            # <fullname>-sandbox-pod; the app config points
       name: ""                                #   kubernetes.service_account at it
-  queue:                                      # sandbox request queue names per transport
-    nats: {stream: SANDBOX_REQUESTS, subjectPrefix: sandbox.req, partitions: 32}
-    kafka: {topic: sandbox-input}
-    sqs: {url: ""}
+  queue:                                      # sandbox queue names per transport (input + output)
+    nats:
+      inputStream: SANDBOX_REQUESTS
+      inputSubjectPrefix: sandbox.req
+      outputStream: SANDBOX_COMPLETIONS
+      outputSubjectPrefix: sandbox.done
+      partitions: 32
+    kafka: {inputTopic: sandbox-input, outputTopic: sandbox-output}
+    sqs: {inputUrl: "", outputUrl: ""}
   hardening:
     enabled: false
     podSecurityStandard: restricted           # PSA labels on the sandbox namespace
@@ -573,8 +558,9 @@ Templates, following the surveyed patterns exactly:
   .Values.sandboxWorker.enabled }}` (the `scaledobject.yaml:1` shape); triggers mirror the
   existing three branches (`scaledobject.yaml:21-42`) with the sandbox queue names: kafka
   consumer group `{{ printf "%s-input" .Values.transport.kafka.groupId }}` is replaced by the
-  sandbox group, topic `sandboxWorker.queue.kafka.topic`; nats-jetstream on
-  `sandboxWorker.queue.nats.stream`; aws-sqs-queue on `sandboxWorker.queue.sqs.url`.
+  sandbox group, topic `sandboxWorker.queue.kafka.inputTopic`; nats-jetstream on
+  `sandboxWorker.queue.nats.inputStream`; aws-sqs-queue on `sandboxWorker.queue.sqs.inputUrl`
+  (scaling keys on the input backlog; the output queue drains at store speed).
 - `sandbox-hardening.yaml`: gate `{{- if and .Values.sandboxWorker.enabled
   .Values.sandboxWorker.hardening.enabled }}`; renders PSA labels
   (`pod-security.kubernetes.io/enforce: <standard>`), as a Namespace patch when
@@ -585,12 +571,13 @@ Templates, following the surveyed patterns exactly:
 - `configmap-env.yaml` gains a `{{- if .Values.sandboxWorker.enabled }}` block emitting, with
   the existing per-transport `if eq .Values.transport.type` branching (`configmap-env.yaml`
   pattern at lines 24-43): `AK_SANDBOX__BROKER__FLAVOR: "queue"`,
-  `AK_SANDBOX__BROKER__QUEUE__TYPE: {{ .Values.transport.type }}`, the sandbox queue names
-  (`AK_SANDBOX__BROKER__QUEUE__NATS__*` / `__KAFKA__*` / `__INPUT__URL`), broker URLs reusing
-  the `agent-kernel.natsUrl`/`agent-kernel.kafkaBootstrap` helpers, completion-queue vars
-  pointing at the chat transport's input (`AK_SANDBOX__BROKER__COMPLETION_QUEUE__*` mirroring
-  the `AK_EXECUTION__QUEUES__*` values), and `AK_SANDBOX__BROKER__RESPONSE_STORE__*` from the
-  existing `responseStore` values block. Everything else about the sandbox capability (profiles,
+  `AK_SANDBOX__BROKER__QUEUE__TYPE: {{ .Values.transport.type }}`, the sandbox input and
+  output queue names
+  (`AK_SANDBOX__BROKER__QUEUE__NATS__*` / `__KAFKA__*` / `__INPUT__URL` / `__OUTPUT__URL`),
+  broker URLs reusing
+  the `agent-kernel.natsUrl`/`agent-kernel.kafkaBootstrap` helpers, and
+  `AK_SANDBOX__BROKER__RESPONSE_STORE__*` from the existing `responseStore` values block.
+  Everything else about the sandbox capability (profiles,
   policies, provider config) lives in the application image's `config.yaml`, per the chart's
   application-image contract.
 - CI: `chart-test.yaml`'s explicit-render step gains one render with
@@ -615,8 +602,8 @@ required coverage is normative.
   `docker`/`kind`/`OPENAI_API_KEY` are unavailable, the `examples/transport/kafka/app_test.py:58-64`
   pattern) covers: a read-only kubectl command returning within the bounded poll; a write
   command rejected by RBAC (Forbidden), asserted with a sentinel; and a promoted long execution
-  recovered via `check_sandbox_task`. The Lambda-mode variant (request queue Kafka, completion
-  queue SQS, DynamoDB store) is a README section, not automated. Registered in
+  recovered via `check_sandbox_task`. The Lambda-mode variant (sandbox queues on Kafka, DynamoDB
+  response store) is a README section, not automated. Registered in
   `.github/test-config.yaml` as `type: containerized` (behaviorally identical to `cli`;
   `run_single_test.py` runs `./build.sh local` + pytest either way).
 - **`examples/sandbox/broker-nats/`** (the NATS chart shape): builds on
@@ -624,9 +611,9 @@ required coverage is normative.
   (`QueueBrokerWorker.run()` behind a `main()`), `deploy/Dockerfile.sandbox-worker`, a
   `config.nats.yaml` sandbox block (kubernetes profile, hardened image reference,
   `security_context`, `service_account`), and a chart values overlay enabling `sandboxWorker`
-  and `sandboxWorker.hardening`. The README demonstrates suspend/resume end to end: submit a
-  long-running task, watch the turn end with a pending task, and see the completion event
-  re-invoke the session over NATS. Not registered in `.github/test-config.yaml` (chart-coupled
+  and `sandboxWorker.hardening`. The README demonstrates the promotion recovery end to end:
+  submit a long-running task, watch the turn end with a pending task, and fetch the finished
+  result with `check_sandbox_task` on the next turn. Not registered in `.github/test-config.yaml` (chart-coupled
   examples are gated by `chart-test.yaml`; `examples/k8s/openai-queue-mode` has the same
   status).
 
@@ -638,14 +625,14 @@ All intentional; none reachable unless `sandbox.enabled: true` except 5-8:
    by `test_sandbox_broker.py:356-361`; that test's expectation list gains `queue`).
 2. `request_queue_url` and `object_store_bucket` are removed from `_ExecutionBrokerConfig`;
    stale YAML/env values are silently ignored (pydantic `extra="ignore"`), verified by test.
-3. `ExecutionRequest` gains `emit_completion_event` (default `True`) and `ExecutionCompletion`
-   gains `error_type` (default `None`); `BrokerWorkerCore.process` stamps `error_type` on
-   failure completions. Wire-additive; in-process flavors behave identically.
+3. `ExecutionCompletion` gains `error_type` (default `None`); `BrokerWorkerCore.process`
+   stamps `error_type` on failure completions. Wire-additive; in-process flavors behave
+   identically.
 4. `SandboxFile.content` serializes as base64 in JSON mode and validates base64 strings back to
    bytes. No in-repo consumer JSON-dumps these models today (the nv_cache registry uses
    python-mode dumps), so no stored data changes shape.
-5. `QueueTransportFactory.resolve_type`/`create`/`create_consumer` gain optional
-   `queues_config`/`used_queues` parameters; omitted, resolution is byte-for-byte today's.
+5. `QueueTransportFactory.resolve_type`/`create`/`create_consumer` gain an optional
+   `queues_config` parameter; omitted, resolution is byte-for-byte today's.
 6. `ResponseStoreFactory.create` gains optional `response_store_config`/`transport_type`/`ttl`
    parameters; omitted, resolution is byte-for-byte today's.
 7. `ResponseStore` gains the optional scan capability (`supports_key_scan`, `scan_records`);
@@ -656,8 +643,7 @@ All intentional; none reachable unless `sandbox.enabled: true` except 5-8:
 9. `kubernetes` becomes a resolvable built-in provider (previously "unknown sandbox provider
    type"); `_SandboxKubernetesConfig` gains nine fields.
 10. On the `queue` flavor only: `wait=None` is bounded by `wait_timeout` (in-process flavors
-    keep indefinite waits), and `destroy` submissions are fire-and-forget with completion
-    events suppressed.
+    keep indefinite waits), and `destroy` submissions are fire-and-forget.
 11. The instance-level capability override pattern is introduced (one use:
     `network_policy: true` flips `policy_network` on the provider instance).
 12. `agentkernel.sandbox` exports `QueueBrokerWorker`.
@@ -665,8 +651,7 @@ All intentional; none reachable unless `sandbox.enabled: true` except 5-8:
 **Non-changes**: `EmbeddedBroker`/`ThreadBroker` behavior; `ExecutionManager`, `SandboxPreHook`,
 tools, principal resolution; `BrokerWorkerCore`'s fail-closed checks, self-heal, per-session
 locking, and log messages; the `execution.*` config section and every chat-pipeline component;
-the completion-event consumer path (`BaseRunRequest` parsing, `RequestBuilder` extra-field
-mapping; the event is designed to it, not the other way around); session/nv_cache data layouts;
+session/nv_cache data layouts;
 all existing public exports; all existing transports' wire formats.
 
 ## Error handling
@@ -687,13 +672,16 @@ all existing public exports; all existing transports' wire formats.
   `error` text); `timed_out` → `SandboxTimeoutError`; deadline expiry → `SandboxTask` (not an
   error); store read exceptions during polling → logged at WARNING, poll continues until
   deadline (a transiently unavailable store must not fail an execution that is still running).
-- **Worker**: request decode failure → raise → nack → bounded redelivery → permanent-failure
-  completion + `dead_letter` (no silent black hole); provider/machinery failures never escape
-  `BrokerWorkerCore.process`; store write failure → raise → nack → redelivery re-executes
-  (documented at-least-once semantics); completion-event send failure → logged at ERROR, the
-  message is still acked (the completion is durable in the store; DB-first means the event is
-  best-effort and `check_sandbox_task` is the recovery path); `_on_permanent_failure` catches
-  everything itself (the `ConsumerLoop` contract, `pipeline/consumer.py:48-49`).
+- **Worker, request loop**: request decode failure → raise → nack → bounded redelivery →
+  permanent-failure completion + `dead_letter` (no silent black hole); provider/machinery
+  failures never escape `BrokerWorkerCore.process`; output-queue send failure → raise → nack →
+  redelivery re-executes (documented at-least-once semantics; the window closes once the
+  record is queued); both permanent-failure hooks catch everything themselves (the
+  `ConsumerLoop` contract, `pipeline/consumer.py:48-49`).
+- **Worker, output loop**: record decode failure or store write failure → raise → nack →
+  redelivery retries the persist only (the sandbox operation never re-runs from here);
+  persistence still failing after `max_receive_count` deliveries → ERROR log naming the
+  `request_id` + `dead_letter`, and the task stays pending from the client's perspective.
 - **Kubernetes provider**: pod create/wait failure → `SandboxProvisionError` (pod deleted, no
   orphan); gone/terminated attach target → `SandboxGoneError`; domain entries in an enforced
   allowlist → `SandboxPolicyError` under `strict`, WARNING otherwise; exec timeout →
@@ -718,25 +706,25 @@ Asserts:
   `output_files` (non-UTF-8 bytes).
 - **Wait semantics**: `wait=0` promotes immediately; deadline expiry promotes and the late
   completion is recovered via `task_status` → `result()`; `wait=None` is bounded by
-  `wait_timeout`; `destroy` is fire-and-forget, suppresses its event, and orders after a prior
+  `wait_timeout`; `destroy` is fire-and-forget and orders after a prior
   operation in the same group (FIFO assertion).
-- **Deadline stamping**: the sent message's decoded request carries the flavor-stamped
-  `wait_deadline`, not the manager's `None`.
 - **Typed errors**: `failed` completion with `error_type: SandboxPolicyError` re-raises
   `SandboxPolicyError`; unknown `error_type` → `ExecutionBrokerError`; `timed_out` →
   `SandboxTimeoutError`.
-- **Completion events**: emitted to the completion transport's INPUT with the specified body,
-  attributes, `group_id=ak_session_id`, `dedup_id=task_id`; bounded result (truncated streams,
-  emptied `output_files`/`provider_data`); suppressed when the poll deadline had not passed,
-  when `completion_queue` is absent, when `ak_session_id` is empty, and for destroys.
-- **End-to-end suspend/resume**: worker event → `BaseRunRequest.model_validate` →
-  `RequestBuilder` → real `Runtime` with the `SandboxPreHook` ingesting and deduping (extends
-  the `test_runtime_ingests_completion_then_dedupes` precedent,
-  `test_sandbox_broker.py:307-330`).
-- **Permanent failure**: after `max_receive_count` deliveries a `failed` completion with the
-  request's real `sandbox_session` exists in the store and the message is dead-lettered; the
-  undecodable-body fallback writes the placeholder-session completion keyed by the
-  `ATTR_REQUEST_ID` attribute.
+- **Output-queue delivery**: the request loop sends the ready-to-store record to
+  `QueueName.OUTPUT` with the specified body, attributes, `group_id=sandbox_session_id`,
+  `dedup_id=task_id`; the output loop persists it verbatim (`store.get_record` sees the
+  `status_code` and the encoded completion); a store write failure nacks and the redelivered
+  output message persists on retry without the sandbox operation running again (FakeSandbox
+  call-count assertion).
+- **End-to-end promotion recovery**: a deadline expiry promotes to a pending `SandboxTask`;
+  after both worker loops run, `task_status` → `result()` (the `check_sandbox_task` path)
+  returns the terminal completion from the store.
+- **Permanent failure**: after `max_receive_count` request deliveries a `failed` completion
+  with the request's real `sandbox_session` reaches the store via the output queue and the
+  request message is dead-lettered; the undecodable-body fallback writes the
+  placeholder-session completion keyed by the `ATTR_REQUEST_ID` attribute; an output record
+  that cannot be persisted within its own `max_receive_count` logs the ERROR and dead-letters.
 - **Truncation**: oversized stdout is cut with the notice; oversized request rejected at submit.
 - **Sweep**: with a scan-capable fake store, an idle inventory record triggers
   `provider.destroy` and record deletion; attached profiles untouched; scan-less store logs the
@@ -773,7 +761,8 @@ Run: `cd ak-py && uv run pytest` (per-file:
 ## Documentation
 
 - `docs/docs/advanced/sandbox.md`: the `queue` flavor section (topology diagrams for both
-  shapes, poll-only vs event mode, at-least-once semantics, sizing `ack_wait`/visibility against
+  shapes, the wait-then-`check_sandbox_task` recovery contract, at-least-once semantics,
+  sizing `ack_wait`/visibility against
   `policy.timeout`), the kubernetes provider row (isolation tier `container`, extra
   `kubernetes`), and the RBAC-not-string-parsing security guidance.
 - `docs/docs/advanced/queue-mode-guide.md`: a cross-reference note that the sandbox broker rides

@@ -29,6 +29,14 @@ class InMemoryResponseStore(ResponseStore):
     def supports_chunk_streaming(self) -> bool:
         return True
 
+    def supports_key_scan(self) -> bool:
+        return True
+
+    def scan_records(self, prefix: str) -> list[Dict]:
+        """Return copies of every record whose request_id starts with ``prefix``."""
+        with self._lock:
+            return [dict(record) for request_id, record in self._records.items() if request_id.startswith(prefix)]
+
     def add_message(self, message: Dict) -> None:
         self._log.debug("Adding in-memory response message for request_id=%s", message.get("request_id"))
         with self._lock:

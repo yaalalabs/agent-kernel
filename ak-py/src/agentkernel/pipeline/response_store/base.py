@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Iterator, Optional
+from typing import Dict, Iterator, List, Optional
 
 from ...core.config import AKConfig
 
@@ -72,6 +72,22 @@ class ResponseStore(ABC):
     def close_stream(self, request_id: str) -> None:
         """Release a request's chunk state, unblocking any pending reader. Chunk-streaming stores only."""
         raise NotImplementedError(f"{type(self).__name__} does not support chunk streaming")
+
+    # -- optional key-scan capability (the sandbox broker's idle-sweep inventory, #503) ------
+
+    def supports_key_scan(self) -> bool:
+        """Whether this store can enumerate stored records by request-id prefix.
+
+        The pipeline checks this capability instead of concrete store types (the
+        chunk-streaming precedent above); a bring-your-own store opts in by implementing
+        ``scan_records`` and returning True here. The sandbox broker worker disables its
+        idle-session sweep, with a warning, on a store without it.
+        """
+        return False
+
+    def scan_records(self, prefix: str) -> List[Dict]:
+        """Return every stored record whose request_id starts with ``prefix``. Scan-capable stores only."""
+        raise NotImplementedError(f"{type(self).__name__} does not support key scans")
 
     def get_message_with_retry(self, request_id: str, get_and_delete: bool = False, async_mode: bool = False):
         """

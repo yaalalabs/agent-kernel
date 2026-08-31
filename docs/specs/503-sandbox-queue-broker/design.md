@@ -34,12 +34,13 @@ deployments execute sandbox workloads as pods.
   - So `group_id = sandbox_session_id` upholds the per-session contract across a whole worker
     fleet with no distributed locks.
   - At-least-once delivery is already tolerated end-to-end: `QueueMessage.dedup_id`
-    (`pipeline/envelope.py:31-32`) gives publish-time dedup where supported, and `SandboxPreHook`
-    dedups completions by `task_id` (`sandbox/hooks.py:26,48-73`).
+    (`pipeline/envelope.py:31-32`) gives publish-time dedup where supported, and completion
+    records are keyed by `task_id`, so a redelivered completion overwrites idempotently.
 - Long-running executions exceed agent-runtime ceilings: the original driver for this issue is a
-  Claude code-execution task of roughly 18 minutes against the 15-minute Lambda limit. The
-  broker's suspend/resume contract (submit, end the turn, completion event re-invokes the
-  session; `design.md:208-217`) is the fix, and it needs a real queue flavor to exist.
+  Claude code-execution task of roughly 18 minutes against the 15-minute Lambda limit. The fix
+  is promotion: the tool's bounded wait expires, the turn ends with a task handle, the worker
+  finishes on its own clock, and a later turn recovers the result via `check_sandbox_task`
+  (agent re-invocation on completion is deferred; see Non-goals).
 - Two concrete deployments are waiting on this feature:
   - **Kafka shape**: Agent Kernel in Lambda mode, sandbox requests on an existing Kafka cluster,
     a broker worker pod inside EKS spinning up sandbox pods that run read-only kubectl commands
@@ -95,12 +96,20 @@ deployments execute sandbox workloads as pods.
   - Publicly exported (entry points are public, matching `ECSAgentRunner`); the #494 export rule
     that concrete brokers stay internal (`494-sandbox-capability/spec.md:93`) is amended for the
     worker only, not for the client flavor.
-- Per message: deserialize the `ExecutionRequest`, run `BrokerWorkerCore.process()` (terminal
-  guarantee, never raises: `sandbox/broker/worker.py:99-109`), write the completion to the
-  response store (DB-first), emit the completion event when due, then ack.
-- Permanent-failure hook (retries exhausted before `process()` could produce a completion):
-  write a `failed` completion for the `task_id`, then dead-letter; no task ends without a
-  terminal completion (`494-sandbox-capability/design.md:203-207`).
+- The worker hosts two consumer loops as peer threads (the `ECSAgentRunner` +
+  `ECSOutputConsumer` split, collapsed into one process):
+  - **Request loop** (input queue): deserialize the `ExecutionRequest`, run
+    `BrokerWorkerCore.process()` (terminal guarantee, never raises:
+    `sandbox/broker/worker.py:99-109`), send the completion to the block's **output queue**,
+    then ack the request. Execution and persistence are decoupled: once the completion is on
+    the output queue, a response-store outage can no longer cause a re-execution.
+  - **Output loop** (output queue): persist each completion as a response-store record keyed by
+    `task_id`, upsert the session-inventory record, then ack.
+- Permanent-failure hooks: request-side (retries exhausted before `process()` could produce a
+  completion) sends a `failed` completion to the output queue, then dead-letters; no task ends
+  without a terminal completion (`494-sandbox-capability/design.md:203-207`). Output-side (the
+  store persistently unreachable) logs at ERROR and dead-letters; the completion survives in
+  the DLQ for operator recovery.
 - Trust boundary: providers are constructed worker-side only; backend credentials (kubeconfig,
   ServiceAccount, SaaS keys) never exist in the agent process; principal and policy are enforced
   fail-closed in the worker against declared capabilities (`sandbox/broker/worker.py:113-159`),
@@ -113,26 +122,20 @@ deployments execute sandbox workloads as pods.
 
 ### Completion delivery
 
-- DB-first: every completion is written to the sandbox response store before any event, keyed by
-  `task_id`, with TTL `sandbox.broker.response_ttl` (`core/config.py:611`). The store is the
-  source of truth; events are transient (per the #494 completion contract).
-- Completion event: emitted to the **agent input queue** so the deployment's existing consumers
-  re-invoke the session; body is the #494 `BaseRunRequest`-shaped JSON carrying
-  `sandbox_task_completion` (`494-sandbox-capability/spec.md:443-451`), which `SandboxPreHook`
-  already ingests and dedups (`sandbox/hooks.py:26,48-73`). `group_id = ak_session_id`,
+- Completions travel the sandbox block's **output queue** (design review 2026-08-31): the
+  request loop produces them, the output loop persists them, mirroring the chat pipeline's
+  Agent Runner / Output Consumer split. `group_id = sandbox_session_id`,
   `dedup_id = task_id`.
-  - The exact wire shape is finalized at spec stage: it must ride the existing extra-field
-    channel (extra request-body fields become `AgentRequestAny`) and satisfy the
-    `SandboxPreHook` contract on every consumer (pipeline `AgentRunner`, ECS, serverless). The
-    #494 shape is the starting point and is amended where a cleaner form serves all three.
-- The event emitter's transport is configured **independently** of the request-queue transport.
-  This is the one deliberate departure from the #494 spec, forced by the Kafka shape: requests
-  arrive on Kafka, but the Lambda deployment's agent input queue is SQS. In the NATS shape both
-  blocks point at the same NATS cluster.
-- Event emission is conditional: emitted only when a completion-queue block is configured AND
-  the request's `wait_deadline` is absent or already passed (the #494 rule). With no
-  completion-queue block the flavor is poll-only: synchronous waits poll the store, and promoted
-  tasks are recovered via the `check_sandbox_task` tool on a later turn.
+- The response store remains the read side: records keyed by `task_id` with TTL
+  `sandbox.broker.response_ttl` (`core/config.py:611`) serve the client's bounded wait and
+  `check_sandbox_task` recovery ("the user can come back and check", the #494 rule). Queues are
+  never read by task id (`494-sandbox-capability/design.md:398-402` rejected receive-and-filter).
+- There is **no completion event and no agent re-invocation** in this story: the tool waits;
+  on expiry the agent holds a task handle and recovers it with the existing
+  `check_sandbox_task` tool on a later turn. Asynchronous resumption (pausing tool execution
+  and resuming on completion) is being built as its own human-in-the-loop capability and the
+  sandbox broker will adopt it there (see Non-goals). The shipped `SandboxPreHook` ingestion
+  path (`sandbox/hooks.py:26,48-73`) stays in place, unfed by this feature, ready for that one.
 
 ### Factory seams
 
@@ -155,9 +158,8 @@ deployments execute sandbox workloads as pods.
   - New `queue: Optional[_QueuesConfig]`: the sandbox request-queue transport, reusing the
     existing `_QueuesConfig` shape (`core/config.py:475-499`) so every transport's sub-block
     (`kafka`, `nats`, `in_memory`, SQS URLs) and its documentation carry over verbatim. The
-    sandbox request queue is the block's INPUT queue; OUTPUT is unused by this feature.
-  - New `completion_queue: Optional[_QueuesConfig]`: where completion events are sent (the agent
-    input queue of the deployment). Absent = poll-only mode.
+    block's INPUT queue carries execution requests to the worker; its OUTPUT queue carries
+    completions back to the output loop for response-store persistence.
   - Existing knobs reused as-is: `wait_timeout` (607), `inline_payload_max_bytes` (608-610),
     `response_ttl` (611), `sweep_interval` (612), `worker_timeout_ceiling` (617-620),
     `response_store` (621-624).
@@ -253,12 +255,14 @@ deployments execute sandbox workloads as pods.
   - **Kafka shape** (`examples/sandbox/broker-kafka/`): agent process + `QueueBrokerWorker` as
     separate processes over a Kafka broker; kubernetes provider running kubectl read-only
     commands in a kind cluster under a view-bound ServiceAccount; demonstrates the bounded-poll
-    wait and the RBAC rejection of a write command. The Lambda-mode variant (request queue
-    Kafka, completion queue SQS) is documented in the example README rather than automated.
+    wait and the RBAC rejection of a write command. The Lambda-mode variant (the agent side
+    submitting from Lambda, everything else identical) is documented in the example README
+    rather than automated.
   - **NATS shape** (`examples/sandbox/broker-nats/`): the chart-deployed topology
     (`examples/k8s/openai-queue-mode` is the base) plus the sandbox worker Deployment, NATS
-    request and completion queues, hardened image, securityContext, and the namespace-hardening
-    manifests; demonstrates suspend/resume via the completion event.
+    sandbox request/output queues, hardened image, securityContext, and the namespace-hardening
+    manifests; demonstrates a long execution promoting to a task handle and a later turn
+    recovering it via `check_sandbox_task`.
 - Sentinel-based deterministic assertions, per the `examples/sandbox/docker` reference.
 
 ### Testing
@@ -268,9 +272,12 @@ deployments execute sandbox workloads as pods.
     miss (promotion), `result()` recovery, `failed`/`timed_out` surfacing as typed errors.
   - Ordering: two sessions interleaved, per-session FIFO preserved; same session never
     concurrent across two worker threads.
-  - Suspend/resume round trip including duplicate completion-event dedup (`SandboxPreHook`) and
-    DB-first recovery of a missed event.
-  - Permanent-failure path writes the `failed` completion before dead-lettering.
+  - Promotion round trip: bounded wait expires, the completion lands via the output loop, and
+    a later `check_sandbox_task` recovers it (registry-miss path included).
+  - Output-loop decoupling: a response-store write failure retries via output-queue redelivery
+    without re-executing the sandbox operation.
+  - Permanent-failure paths: request-side sends the `failed` completion to the output queue
+    before dead-lettering; output-side dead-letters without losing the request loop.
   - Fail-fasts: missing/`in_memory` response store, missing queue block, timeout over
     `worker_timeout_ceiling`, oversized request payload.
 - `tests/test_sandbox_providers.py`: `SandboxProviderContract` subclass for the kubernetes
@@ -287,8 +294,8 @@ deployments execute sandbox workloads as pods.
 ### Documentation
 
 - `docs/docs/advanced/sandbox.md`: broker-flavor section for `queue` (config, topologies for
-  both shapes, poll-only vs event mode), kubernetes provider row with honest tiers, and the
-  RBAC-not-string-filtering security guidance.
+  both shapes, the wait-then-check recovery contract), kubernetes provider row with honest
+  tiers, and the RBAC-not-string-filtering security guidance.
 - `ak-py/README.md`: `kubernetes` extra; `ak-deployment/ak-k8s/README.md`: sandbox worker
   values.
 - Dev skills sync (`ak-dev-architecture`, `ak-dev-new-sandbox-provider`,
@@ -302,11 +309,10 @@ graph LR
     M --> C[QueueExecutionBroker<br/>client flavor]
     C -->|"ExecutionRequest<br/>group_id = sandbox_session_id"| RQ[(Request queue<br/>sqs / kafka / nats)]
     C -->|bounded poll| DB[(Sandbox response store<br/>redis / valkey / dynamodb)]
-    RQ --> W[QueueBrokerWorker<br/>ConsumerLoop x N]
+    RQ --> W[QueueBrokerWorker<br/>request loop x N]
     W --> BW[BrokerWorkerCore<br/>fail-closed checks] --> P[SandboxProvider<br/>kubernetes: pod per sandbox]
-    W -->|DB-first completion| DB
-    W -->|"completion event<br/>(independent transport)"| AQ[(Agent input queue)]
-    AQ --> H[SandboxPreHook<br/>dedup by task_id]
+    W -->|"ExecutionCompletion<br/>dedup_id = task_id"| OQ[(Output queue)]
+    OQ --> OC[QueueBrokerWorker<br/>output loop] -->|record by task_id| DB
 ```
 
 ## Non-goals
@@ -342,3 +348,15 @@ graph LR
     are removed; namespace hardening ships as values-gated chart templates covered by the
     chart's kind CI; the completion-event body starts from the #494 shape and is amended at
     spec stage where a cleaner form serves all consumers.
+  - Resolved 2026-08-25 (iteration-1 review): the separate `completion_queue` block is dropped;
+    completion events ride the deployment's existing `execution.queues` (which is the agent
+    input queue by definition, restoring the #494 contract), with a `completion_events` boolean
+    (default true) as the poll-only switch and a startup warning on the broker-request-queue +
+    in_memory-execution-queues mismatch.
+  - Resolved 2026-08-31 (iteration-1 review): superseding the 2026-08-25 entry, completion
+    events and agent re-invocation are removed from this story altogether; asynchronous
+    resumption will arrive with the separate human-in-the-loop capability. Completions now
+    travel the sandbox block's own OUTPUT queue and are persisted to the response store by an
+    output loop inside the worker (full `_QueuesConfig` symmetry with the chat pipeline); the
+    tool contract is bounded wait plus `check_sandbox_task`. The `completion_events` flag and
+    the `used_queues` factory seam are dropped as no longer needed.

@@ -14,15 +14,15 @@ impersonation iteration are deliberately last (design resolutions 2026-08-24).
   `pipeline/response_store/factory.py`, `pipeline/response_store/{base,in_memory,redis,valkey,dynamodb}.py`,
   `core/config.py`, tests.
 - **Steps:**
-  1. Add `ExecutionRequest.emit_completion_event` and `ExecutionCompletion.error_type`; stamp
+  1. Add `ExecutionCompletion.error_type`; stamp
      `error_type` in `BrokerWorkerCore.process` (spec §Wire contract).
   2. `SandboxFile` JSON-mode base64 (de)serializers; `sandbox/broker/wire.py` codec.
-  3. `QueueTransportFactory` `queues_config`/`used_queues` seams;
+  3. `QueueTransportFactory` `queues_config` seam;
      `ResponseStoreFactory.create` `response_store_config`/`transport_type`/`ttl` seam
      (spec §Factory seams).
   4. `ResponseStore` scan capability + the four built-in implementations (spec §Idle-session
      sweep).
-  5. `_ExecutionBrokerConfig`: add `queue`, `completion_queue`, `wait_poll_interval`; update the
+  5. `_ExecutionBrokerConfig`: add `queue`, `wait_poll_interval`; update the
      `flavor` description; remove `request_queue_url`/`object_store_bucket` (spec §Config).
 - **Verify:** `cd ak-py && uv run pytest` fully green (no existing patch targets move); new
   tests: codec round trip with non-UTF-8 bytes, seam default-path parity, scan capability,
@@ -36,8 +36,8 @@ impersonation iteration are deliberately last (design resolutions 2026-08-24).
   `tests/test_sandbox_queue_broker.py` (new), `tests/test_sandbox_broker.py`.
 - **Steps:**
   1. `QueueExecutionBroker` per spec §The `queue` broker flavor: fail-fast constructor,
-     effective-wait rules (destroy fire-and-forget + event suppression, bounded `wait=None`),
-     deadline stamping, ceiling and size guards, send shape, bounded poll with typed re-raise,
+     effective-wait rules (destroy fire-and-forget, bounded `wait=None`),
+     ceiling and size guards, send shape, bounded poll with typed re-raise,
      `result()`.
   2. `_BUILTIN_BROKERS["queue"]`; extend the built-in list assertion at
      `test_sandbox_broker.py:356-361`.
@@ -46,20 +46,22 @@ impersonation iteration are deliberately last (design resolutions 2026-08-24).
 
 ## Iteration 3: The queue broker worker
 
-- **Goal:** A runnable worker consumes requests end to end: DB-first completions, events,
-  truncation, permanent failure, sweep.
+- **Goal:** A runnable worker consumes requests end to end: the request loop executes and
+  queues the record, the output loop persists it, plus truncation, permanent failure, sweep.
 - **Files:** `sandbox/broker/queue_worker.py` (new), `sandbox/__init__.py`,
   `tests/test_sandbox_queue_broker.py`.
 - **Steps:**
   1. `QueueBrokerWorker.run()` per spec §The queue broker worker: fail-fasts, signal
-     discipline, `ConsumerLoop` + sweep task under `ThreadRunner`.
-  2. `_process` (decode, `core.process`, truncate, store write, inventory upsert, event when
-     due) and `_on_permanent_failure` (real/placeholder-session completions).
-  3. Completion events per spec §Completion events (bounded result, due conditions).
-  4. Export `QueueBrokerWorker` from `agentkernel.sandbox`.
-- **Verify:** end-to-end tests over `in_memory`: round trip, ordering, suspend/resume through a
-  real `Runtime` + `SandboxPreHook` (extends `test_sandbox_broker.py:307-330`), event gating
-  matrix, permanent failure, truncation, sweep, fail-fasts.
+     discipline, the two `ConsumerLoop`s + sweep task under `ThreadRunner`.
+  2. `_process_request` (decode, `core.process`, truncate, output-queue send) with
+     `_on_request_permanent_failure` (real/placeholder-session completions to the output
+     queue), and `_process_completion` (store write, inventory upsert) with
+     `_on_completion_permanent_failure` (ERROR + dead-letter), per spec §Completion delivery
+     over the output queue.
+  3. Export `QueueBrokerWorker` from `agentkernel.sandbox`.
+- **Verify:** end-to-end tests over `in_memory`: round trip, ordering, output-queue delivery
+  with store-failure retry that never re-executes, promotion recovery via `task_status` →
+  `result()`, permanent failure, truncation, sweep, fail-fasts.
 
 ## Iteration 4: The `kubernetes` sandbox provider
 
@@ -96,21 +98,21 @@ impersonation iteration are deliberately last (design resolutions 2026-08-24).
 - **Steps:** transport-example layout with the `ENTRYPOINTS` dispatch; `k8s/rbac.yaml` binding
   the sandbox-pod SA to `view`; sentinel tests (read-only success within the bounded poll,
   RBAC-rejected write, promoted task recovered via `check_sandbox_task`); README including the
-  Lambda-mode (Kafka request + SQS completion + DynamoDB store) variant section; register as
+  Lambda-mode (sandbox queues on Kafka, DynamoDB response store) variant section; register as
   `type: containerized`.
 - **Verify:** `./build.sh local && uv run pytest -s` with docker + kind + `OPENAI_API_KEY`
   (self-skips otherwise).
 
 ## Iteration 7: Example: `examples/sandbox/broker-nats` (NATS chart shape)
 
-- **Goal:** The chart-deployed topology demonstrates suspend/resume over NATS with the hardened
-  image, securityContext, and namespace hardening.
+- **Goal:** The chart-deployed topology demonstrates the promotion recovery over NATS with the
+  hardened image, securityContext, and namespace hardening.
 - **Files:** `examples/sandbox/broker-nats/*` (spec §Examples: `app_sandbox_worker.py`,
   `deploy/Dockerfile.sandbox-worker`, sandbox-profile `config.nats.yaml`, chart values overlay,
   README walkthrough).
 - **Steps:** build on `examples/k8s/openai-queue-mode`; overlay enables `sandboxWorker` and
-  `sandboxWorker.hardening`; README walks submit → turn ends pending → completion event
-  re-invokes the session.
+  `sandboxWorker.hardening`; README walks submit → turn ends pending → `check_sandbox_task`
+  fetches the finished result on the next turn.
 - **Verify:** the README walkthrough end to end on a local cluster (k3d/kind); `helm template`
   with the overlay renders clean. Not registered in `.github/test-config.yaml` (chart-coupled,
   the `openai-queue-mode` precedent).
@@ -141,8 +143,8 @@ impersonation iteration are deliberately last (design resolutions 2026-08-24).
 - **Goal:** Every guidance surface matches the shipped behavior; run the
   `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` flows before merge.
 - **Docs:** `docs/docs/advanced/sandbox.md` (queue flavor, kubernetes provider row,
-  RBAC-not-string-parsing guidance, at-least-once and sizing notes, STREAM poll-only
-  limitation); `docs/docs/advanced/queue-mode-guide.md` (cross-reference);
+  RBAC-not-string-parsing guidance, at-least-once and sizing notes, the
+  wait-then-`check_sandbox_task` recovery contract); `docs/docs/advanced/queue-mode-guide.md` (cross-reference);
   `ak-py/README.md` (`kubernetes` extra); `ak-deployment/ak-k8s/README.md` (done in
   iteration 5, re-verified here); `examples/sandbox/README.md` index (+2 rows).
 - **Skills:** `.agents/skills/ak-dev-architecture/SKILL.md` (sandbox section: `queue` flavor,

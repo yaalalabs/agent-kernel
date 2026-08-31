@@ -9,10 +9,11 @@ is returned as a :class:`SandboxResult` with ``exit_code != 0`` and diagnostics 
 :mod:`agentkernel.sandbox.errors`).
 """
 
+import base64
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
 class IsolationTier(str, Enum):
@@ -54,6 +55,20 @@ class SandboxFile(BaseModel):
     path: str
     content: bytes
     mime_type: str = "application/octet-stream"
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _content_from_wire(cls, value: Any) -> Any:
+        """Accept the wire form: a base64 string decodes back to bytes; bytes pass through."""
+        if isinstance(value, str):
+            return base64.b64decode(value, validate=True)
+        return value
+
+    @field_serializer("content", when_used="json")
+    def _content_to_wire(self, value: bytes) -> str:
+        """Emit base64 in JSON-serialization mode so arbitrary binary survives the wire;
+        python-mode dumps (in-process flavors, the nv_cache registry) keep raw bytes."""
+        return base64.b64encode(value).decode("ascii")
 
 
 class SandboxResult(BaseModel):

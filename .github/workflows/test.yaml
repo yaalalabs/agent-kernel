@@ -13,6 +13,12 @@ on:
         type: boolean
         default: false
 
+# Cancel superseded runs: a new push to the same PR or branch cancels the
+# in-flight run instead of queueing behind it
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   update-lock-files:
     if: ${{ github.event.inputs.update_example_locks == 'true' }}
