@@ -65,6 +65,7 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_langgraph_reasoning_live.py` | LangGraph reasoning against a REAL reasoning model, env-gated (`AK_TEST_REASONING_MODEL`; skipped in normal runs). Guards the premise the chunk-feeding unit tests cannot: that the model streams a summary at all (it must be asked — `reasoning={"summary": "auto"}`) and that LangChain surfaces it under `content_blocks`. Builds a bare `StateGraph`, because `langgraph.prebuilt` is unimportable against the pinned `langgraph` |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
+| `test_api_mcp.py` | `MCP.get_http_app()`: `mcp.stateless_http` is passed to `http_app()` (fastmcp 3 removed the `FastMCP(stateless_http=...)` constructor kwarg, so the constructor must stay name-only), and a second call reuses the built server while still applying the configured mode |
 | `test_chat_service_core.py` | ChatService execution core (`execute`/`execute_stream`): typed replies, prebuilt request lists, validation, error propagation, wrapper wire shapes |
 | `test_chat_service_streaming.py` | ChatService SSE/stream chunk formatting |
 | `test_slack_integration.py` | Slack handler on the ChatService core: request/identity mapping, attachment-only, error paths, chunking (pattern for integration handler tests) |
