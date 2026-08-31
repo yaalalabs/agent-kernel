@@ -12,10 +12,12 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity
+- **Scheduled Tasks**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider (`local`, `eventbridge`) and store (`in_memory`, `redis`, `valkey`, `dynamodb`) backends
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
 - **A2A Server**: Built-in Agent-to-Agent communication server for exposing agents with a simple configuration change
+- **AG-UI Server**: Built-in [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui) handler for driving any streaming-capable agent from an AG-UI frontend, with opt-in shared state and client-context tools
 - **REST API**: Built-in REST API server for agent interaction
 - **Test Automation**: Built-in test suite for testing agents
 
@@ -39,6 +41,12 @@ For LLM-based thread naming with Conversation Thread Support:
 pip install "agentkernel[thread]"
 ```
 
+For the AG-UI server (`AGUIRequestHandler`):
+
+```bash
+pip install "agentkernel[agui]"
+```
+
 For the sandbox providers (the `local_subprocess` provider needs no extra; `ec2_ssm` rides
 the `aws` extra):
 
@@ -47,6 +55,12 @@ pip install "agentkernel[sandbox-docker]"   # docker provider
 pip install "agentkernel[e2b]"              # e2b cloud provider
 pip install "agentkernel[daytona]"          # daytona cloud provider
 pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
+```
+
+For cron parsing with the Scheduling capability (the `eventbridge` provider rides the `aws` extra):
+
+```bash
+pip install "agentkernel[cron]"
 ```
 
 **Requirements:**
@@ -300,6 +314,33 @@ if __name__ == "__main__":
 
 For full Terraform deployment configuration, see [`ak-deployment/ak-gcp/`](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp) or the [GCP deployment docs](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/gcp-serverless.md).
 
+### On-Prem / Kubernetes Deployment
+
+Deploy the queue pipeline to any Kubernetes cluster with the official Helm chart: an
+io-handler Deployment (REST API + Response Handler), an agent-runner Deployment, and an
+optional WebSocket gateway, over Kafka or NATS JetStream (or SQS on EKS). Your image supplies
+one entry file per component:
+
+```python
+# app_io_handler.py
+from agentkernel.pipeline import IOHandler
+
+IOHandler.run()
+
+# app_agent_runner.py
+from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import AgentRunner
+
+OpenAIModule([...])
+AgentRunner.run()
+```
+
+The chart injects broker and store connections as `AK_*` environment variables. See
+[`ak-deployment/ak-k8s/`](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s),
+the [On-Prem / Kubernetes docs](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/onprem-kubernetes.md),
+and the end-to-end example at
+[`examples/k8s/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode).
+
 ## Configuration
 
 Agent Kernel can be configured via environment variables, `.env` files, or YAML/JSON configuration files.
@@ -534,6 +575,104 @@ Required when `thread.type=cosmosdb`:
   - **Description**: Cosmos DB table name for thread storage
   - **Environment Variable**: `AK_THREAD__COSMOSDB__TABLE_NAME`
 
+#### Scheduling
+
+The presence of a `schedule` block enables deferred and recurring chat execution: a chat request carrying a
+`schedule` block (`at` for one-time, `cron` for recurring, plus `timezone` and `session_mode`) is not run —
+it is registered as a scheduled task and acknowledged with HTTP 202. When an occurrence is due, the provider
+delivers the stored prompt into the input queue as a plain chat request, so scheduling requires the queue
+execution pipeline. The block also injects five agent tools (`create_schedule`, `list_schedules`,
+`get_schedule`, `update_schedule`, `delete_schedule`). The management routes
+(`GET`/`PUT`/`DELETE /api/v1/schedules`) are not mounted from config: the application mounts
+`ScheduleRESTRequestHandler` itself — `IOHandler.run(handlers=[ScheduleRESTRequestHandler()])` —
+passing an optional pluggable `Authoriser` to the handler to protect them. Every scheduling request
+needs a `user_id`: it is the owner the task is stored under and the identity later reads and changes
+are checked against. A bare `schedule:` block works for local development — its defaults are the
+`local` provider and the `in_memory` store. See `examples/api/schedule-openai`.
+
+- **Provider Type**
+  - **Field**: `schedule.provider.type`
+  - **Type**: string
+  - **Default**: `local`
+  - **Options**: `local` (in-process scheduler thread; requires the `in_memory` transport and store),
+    `eventbridge` (AWS EventBridge Scheduler; requires the `sqs` transport and the `aws` extra), or a dotted
+    path to a `ScheduleProvider` subclass
+  - **Environment Variable**: `AK_SCHEDULE__PROVIDER__TYPE`
+
+- **Store Type**
+  - **Field**: `schedule.store.type`
+  - **Type**: string
+  - **Default**: `in_memory`
+  - **Options**: `in_memory`, `redis`, `valkey`, `dynamodb`, or a dotted path to a `ScheduleStore` subclass
+  - **Environment Variable**: `AK_SCHEDULE__STORE__TYPE`
+
+- **Tool Scoping**
+  - **Field**: `schedule.agents`
+  - **Type**: list of strings
+  - **Default**: `null` (all agents)
+  - **Description**: Agent names the schedule tools and system-prompt guidance attach to
+  - **Environment Variable**: `AK_SCHEDULE__AGENTS`
+
+##### EventBridge Scheduler Provider
+
+Required when `schedule.provider.type=eventbridge`. All three are supplied by the AWS Terraform modules
+when `enable_scheduling = true`; a missing one fails at startup with an `AKConfigError`.
+
+- **Group Name**
+  - **Field**: `schedule.provider.eventbridge.group_name`
+  - **Description**: EventBridge Scheduler schedule-group name the schedules are created in
+  - **Environment Variable**: `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME`
+
+- **Role ARN**
+  - **Field**: `schedule.provider.eventbridge.role_arn`
+  - **Description**: Execution role ARN Scheduler assumes to deliver triggers to the input queue
+  - **Environment Variable**: `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__ROLE_ARN`
+
+- **Queue ARN**
+  - **Field**: `schedule.provider.eventbridge.queue_arn`
+  - **Description**: Input queue ARN used as the schedule target
+  - **Environment Variable**: `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__QUEUE_ARN`
+
+##### Redis / Valkey Schedule Store
+
+Required when `schedule.store.type=redis` (or `valkey`, with `schedule.store.valkey.*` / `AK_SCHEDULE__STORE__VALKEY__*`).
+
+- **URL**
+  - **Field**: `schedule.store.redis.url`
+  - **Default**: `redis://localhost:6379`
+  - **Description**: Redis connection URL. Use `rediss://` for SSL
+  - **Environment Variable**: `AK_SCHEDULE__STORE__REDIS__URL`
+
+- **Key Prefix**
+  - **Field**: `schedule.store.redis.prefix`
+  - **Default**: `ak:schedule:`
+  - **Description**: Key prefix for scheduled-task storage
+  - **Environment Variable**: `AK_SCHEDULE__STORE__REDIS__PREFIX`
+
+- **TTL (Time to Live)**
+  - **Field**: `schedule.store.redis.ttl`
+  - **Default**: `0` (disabled)
+  - **Description**: Scheduled task TTL in seconds. Unlike threads this defaults to 0 — a task that
+    silently expired would stop firing with no audit trail
+  - **Environment Variable**: `AK_SCHEDULE__STORE__REDIS__TTL`
+
+##### DynamoDB Schedule Store
+
+Required when `schedule.store.type=dynamodb`. The table needs a partition key named `task_id` (S) and no
+sort key; the AWS Terraform modules create it when `create_dynamodb_schedule_table = true`.
+
+- **Table Name**
+  - **Field**: `schedule.store.dynamodb.table_name`
+  - **Default**: `ak-agent-schedules`
+  - **Description**: DynamoDB table name for scheduled-task storage
+  - **Environment Variable**: `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME`
+
+- **TTL (Time to Live)**
+  - **Field**: `schedule.store.dynamodb.ttl`
+  - **Default**: `0` (disabled)
+  - **Description**: DynamoDB item TTL in seconds
+  - **Environment Variable**: `AK_SCHEDULE__STORE__DYNAMODB__TTL`
+
 #### Execution Configuration
 
 Configure queue-backed and serverless execution behavior.
@@ -552,8 +691,8 @@ Configure queue-backed and serverless execution behavior.
   - **Transport Type**
     - **Field**: `execution.queues.type`
     - **Options**: `in_memory`, `sqs`, `kafka`, `nats`, or a dotted path to a `QueueTransport` subclass
-    - **Default**: `None`
-    - **Description**: Queue transport used by the pipeline. When unset, a configured `execution.queues.input.url` implies `sqs` (pre-#495 compatibility); otherwise defaults to `in_memory` — a zero-dependency, in-process transport for local development and single-process deployments.
+    - **Default**: none — **mandatory whenever an `execution.queues` block is declared**
+    - **Description**: Queue transport used by the pipeline, and the only thing that selects it: queue coordinates are injected per component by a deployment, so they are never used to infer the transport. Declaring the block without a `type` is a configuration error. Omitting the block entirely leaves `in_memory` — a zero-dependency, in-process transport for local development and single-process deployments.
     - **Environment Variable**: `AK_EXECUTION__QUEUES__TYPE`
 
   - **Input Queue URL**
@@ -845,6 +984,52 @@ Configure the REST API server (if using the API module).
 - **Endpoint** (not configurable)
   - The MCP server is always mounted at `/mcp` on the main API server.
   - Full URL: `http://{api.host}:{api.port}/mcp` — use `api.port` / `AK_API__PORT` to change the port.
+
+#### AG-UI Configuration
+
+Mounting `AGUIRequestHandler` (from `agentkernel.agui`, requires the `agentkernel[agui]` extra — `pip
+install "agentkernel[agui]"`) is what enables the [AG-UI protocol](https://github.com/ag-ui-protocol/ag-ui)
+surface; the `agui` block only parameterizes it, and it never switches the surface on by itself.
+`AGUIRequestHandler` refuses to construct without an `Authoriser` or `AuthValidator` — AG-UI runs
+agents on a caller's behalf and has no anonymous mode. Only agents whose runner declares
+`supports_streaming = True` are reachable (currently OpenAI Agents SDK, LangGraph, Google ADK, and
+Pydantic AI — not CrewAI or Smolagents). See `examples/api/agui`.
+
+- **Agents**
+  - **Field**: `agui.agents`
+  - **Default**: unset (every streaming-capable agent is reachable)
+  - **Description**: Agent names reachable over AG-UI
+  - **Environment Variable**: `AK_AGUI__AGENTS` (comma-separated)
+
+- **Prefix**
+  - **Field**: `agui.prefix`
+  - **Default**: `/agui`
+  - **Description**: Route prefix for the AG-UI surface
+  - **Environment Variable**: `AK_AGUI__PREFIX`
+
+- **Default Agent**
+  - **Field**: `agui.default_agent`
+  - **Default**: unset
+  - **Description**: Agent served on the bare prefix route (`POST {prefix}`, in addition to `POST {prefix}/{agent_name}`); must be one of `agui.agents` when that list is set
+  - **Environment Variable**: `AK_AGUI__DEFAULT_AGENT`
+
+- **State Tools**
+  - **Field**: `agui.state.enabled`
+  - **Default**: `false`
+  - **Description**: Attach `get_agui_state` / `update_agui_state`, giving agents read/write access to AG-UI's shared JSON state (a `StateSnapshot` is streamed back only when the state actually changed)
+  - **Environment Variable**: `AK_AGUI__STATE__ENABLED`
+  - **Field**: `agui.state.agents`
+  - **Default**: unset (every agent gets the tools)
+  - **Environment Variable**: `AK_AGUI__STATE__AGENTS` (comma-separated)
+
+- **Client Context Tools**
+  - **Field**: `agui.client_context.enabled`
+  - **Default**: `false`
+  - **Description**: Attach the read-only `get_forwarded_props` / `get_agui_context` tools over a run's `forwardedProps` and `context` fields; never injected into the prompt automatically
+  - **Environment Variable**: `AK_AGUI__CLIENT_CONTEXT__ENABLED`
+  - **Field**: `agui.client_context.agents`
+  - **Default**: unset (every agent gets the tools)
+  - **Environment Variable**: `AK_AGUI__CLIENT_CONTEXT__AGENTS` (comma-separated)
 
 #### Trace (Observability) Configuration
 
@@ -1262,6 +1447,30 @@ Configure integrations with messaging platforms.
 - **Bot Token**, **Webhook Secret**, **API Version**
   - **Environment Variables**: `AK_TELEGRAM__BOT_TOKEN`, `AK_TELEGRAM__WEBHOOK_SECRET`, `AK_TELEGRAM__API_VERSION`
 
+##### Microsoft Teams
+
+- **Agent**
+  - **Field**: `teams.agent`
+  - **Default**: `""`
+  - **Description**: Default agent for Microsoft Teams interactions
+  - **Environment Variable**: `AK_TEAMS__AGENT`
+
+- **Agent Acknowledgement**
+  - **Field**: `teams.agent_acknowledgement`
+  - **Default**: `""`
+  - **Description**: Message sent as an acknowledgement when a Teams message is received
+  - **Environment Variable**: `AK_TEAMS__AGENT_ACKNOWLEDGEMENT`
+
+- **App ID**, **App Password**
+  - **Description**: Azure Bot / Entra ID application (client) ID and client secret. Both are required
+  - **Environment Variables**: `AK_TEAMS__APP_ID`, `AK_TEAMS__APP_PASSWORD`
+
+- **Tenant ID**
+  - **Field**: `teams.tenant_id`
+  - **Default**: `""`
+  - **Description**: Entra ID tenant that owns the bot's app registration. Required only for a single-tenant registration, whose channel tokens must be issued by its own tenant; leave empty for a multi-tenant bot. Also the fallback tenant for the app-only token used to download attachments whose URL is not pre-authenticated, when the incoming activity carries none
+  - **Environment Variable**: `AK_TEAMS__TENANT_ID`
+
 ##### Gmail
 
 - **Agent**
@@ -1373,7 +1582,7 @@ thread: # optional; configures Conversation Thread Support (enabled by mounting 
 execution:
   mode: rest_sync
   queues:
-    # type: in_memory | sqs | kafka | nats — omit to auto-detect (sqs if input.url is set, else in_memory)
+    type: sqs # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass — mandatory whenever this block is declared
     input:
       url: https://queue.example.com/<accountno>/<queuename> # sqs transport only
       max_receive_count: 3
@@ -1469,6 +1678,10 @@ instagram:
   agent: my-agent
 telegram:
   agent: my-agent
+teams:
+  agent: my-agent
+  app_id: "<azure-app-client-id>"
+  app_password: "<azure-app-client-secret>"
 gmail:
   agent: my-agent
   poll_interval: 30
@@ -1540,6 +1753,11 @@ gmail:
   },
   "telegram": {
     "agent": "my-agent"
+  },
+  "teams": {
+    "agent": "my-agent",
+    "app_id": "<azure-app-client-id>",
+    "app_password": "<azure-app-client-secret>"
   },
   "gmail": {
     "agent": "my-agent",

@@ -260,18 +260,34 @@ class RequestHandler(RestHandler):
         if not body.prompt:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
 
-        if self._effective_mode() == ExecutionMode.STREAM:
+        mode = self._effective_mode()
+        if mode == ExecutionMode.ASYNC:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "ASYNC mode delivers responses over the WebSocket route: connect to /ws instead", "session_id": body.session_id},
+            )
+        if mode == ExecutionMode.STREAM:
             return await self._run_chat_stream(body)
         return await self.enqueue_and_wait(body)
 
     async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
+        if not self.get_response_store().supports_chunk_streaming():
+            # Broker topologies pair STREAM with a shared store that cannot stream chunks;
+            # there the chunks are pushed over WebSocket and this route has nothing to serve.
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "STREAM responses on this topology are delivered over the WebSocket route: connect to /ws instead",
+                    "session_id": body.session_id,
+                },
+            )
         request_id = str(uuid.uuid4())
         self._log.info(f"[STREAM REQUEST] session_id={body.session_id}, request_id={request_id}")
         await asyncio.to_thread(self._enqueue_request, body, request_id)
         return StreamingResponse(self._sse_stream(request_id, body.session_id), media_type="text/event-stream")
 
     async def _sse_stream(self, request_id: str, session_id: Optional[str]) -> AsyncGenerator[str, None]:
-        store = self.get_response_store()  # chunk-streaming capable: validated at IOHandler startup
+        store = self.get_response_store()  # chunk-streaming capable: checked in _run_chat_stream before enqueue
         chunk_iterator = store.stream(request_id)
         try:
             while True:

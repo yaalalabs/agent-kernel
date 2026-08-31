@@ -5,6 +5,7 @@ import pytest
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.chat_service import ChatService
 from agentkernel.core.config import AKConfig
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import (
     AgentReplyText,
     AgentRequestAny,
@@ -255,8 +256,13 @@ class _ActingUserRunner(Runner):
         return AgentReplyText(response="ok")
 
     async def stream(self, agent, session, requests):
+        # A runner owns its own boundaries. Worth knowing why the tests below also assert on errors:
+        # ChatService.execute_stream converts a mid-stream raise into an error chunk, so asserting
+        # `seen` alone could not tell a working stream from a broken one.
         self.seen.append(session.get_volatile_cache().get(ACTING_USER_CACHE_KEY))
-        yield "ok"
+        yield MessageStart(message_id="acting-1")
+        yield TextDelta(message_id="acting-1", content="ok")
+        yield MessageEnd(message_id="acting-1")
 
 
 class _ActingUserAgent(Agent):
@@ -306,8 +312,11 @@ class TestActingUserPropagation:
     @pytest.mark.asyncio
     async def test_execute_stream_exposes_the_acting_user(self, runner):
         chunks = await ChatService().execute_stream(self._request("s-acting-3", user_id="u-3"))
-        [chunk async for chunk in chunks]
+        collected = [chunk async for chunk in chunks]
         assert runner.seen == ["u-3"]
+        # execute_stream turns a mid-stream raise into an error chunk, so asserting `seen` alone
+        # cannot tell a working stream from a broken one.
+        assert [chunk.error for chunk in collected if chunk.error] == []
 
     def test_execute_stream_sync_exposes_the_acting_user(self, runner):
         list(ChatService().execute_stream_sync(self._request("s-acting-4", user_id="u-4")))
@@ -326,3 +335,65 @@ class TestActingUserPropagation:
         await service.execute(self._request("s-acting-6", user_id="u-6"))
         await service.execute(self._request("s-acting-6"))
         assert runner.seen == ["u-6", None]
+
+
+class TestPrepareAgentHandler:
+    def test_returns_the_initialized_handler(self):
+        handler = _mock_handler()
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            prepared = ChatService().prepare_agent_handler("s1", "a1")
+        assert prepared is handler
+        handler.initialize.assert_called_once_with("s1", "a1")
+
+    def test_unknown_agent_raises(self):
+        handler = _mock_handler()
+        handler.initialize.side_effect = ValueError("No agent available")
+        with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+            with pytest.raises(ValueError, match="No agent available"):
+                ChatService().prepare_agent_handler("s1", "missing")
+
+
+class TestEnsureAgentAvailable:
+    def test_named_miss_raises(self):
+        from agentkernel.core.service import AgentService
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        runtime = Runtime(InMemorySessionStore())
+        with runtime:
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService().ensure_agent_available("missing")
+
+    def test_unnamed_with_empty_registry_raises(self):
+        from agentkernel.core.service import AgentService
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        runtime = Runtime(InMemorySessionStore())
+        with runtime:
+            with pytest.raises(ValueError, match="No agent available"):
+                AgentService().ensure_agent_available(None)
+
+    def test_named_hit_does_not_select_or_load(self):
+        from agentkernel.core.service import AgentService
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        capturing_runner = _ActingUserRunner()
+        agent = _ActingUserAgent(capturing_runner)
+        runtime = Runtime(InMemorySessionStore())
+        runtime.register(agent)
+        with runtime:
+            service = AgentService()
+            service.ensure_agent_available(ACTING_USER_AGENT)
+            assert service.agent is None
+            assert service.session is None
+
+    def test_initialize_does_not_load_a_session_for_an_unknown_agent(self):
+        from agentkernel.core.chat_service import AgentHandler
+        from agentkernel.core.session.in_memory import InMemorySessionStore
+
+        store = InMemorySessionStore()
+        runtime = Runtime(store)
+        with runtime:
+            with patch.object(store, "load", wraps=store.load) as load:
+                with pytest.raises(ValueError, match="No agent available"):
+                    AgentHandler().initialize("s1", "missing")
+                load.assert_not_called()

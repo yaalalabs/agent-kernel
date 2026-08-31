@@ -148,11 +148,13 @@ class TestStreamAgentRunner:
         assert second.dedup_id == "d1-1-1"
         assert "status_code" not in first.attributes
 
-    def test_endpoint_url_required_on_broker_transport(self, monkeypatch):
+    def test_user_id_required_on_broker_transport(self, monkeypatch):
+        """Broker STREAM chunks are WebSocket-delivered, so the WS-entered marker (the
+        authenticated USER_ID attribute) must be present."""
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
         runner = StreamAgentRunner(transport=InMemoryTransport(), chat_service=MagicMock())
-        with pytest.raises(ValueError, match="endpoint_url"):
-            runner.process(_input_msg())
+        with pytest.raises(ValueError, match="user_id"):
+            runner.process(_input_msg(attributes={"request_id": "r1"}))
 
     def test_permanent_failure_sends_error_chunk(self, monkeypatch):
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _FakeCfg))

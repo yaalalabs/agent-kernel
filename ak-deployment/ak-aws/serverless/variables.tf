@@ -182,6 +182,18 @@ variable "create_dynamodb_thread_table" {
   default     = false
 }
 
+variable "create_dynamodb_schedule_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the scheduled tasks"
+  default     = false
+}
+
+variable "enable_scheduling" {
+  type        = bool
+  description = "Provision EventBridge Scheduler resources (schedule group + execution role) and inject their coordinates, so the application's `schedule.provider.type: eventbridge` has a group to register schedules in. Requires queue_mode: the schedules deliver their triggers to the Input Queue"
+  default     = false
+}
+
 variable "private_subnet_cidrs" {
   type        = list(string)
   description = "CIDR blocks for the private subnets"

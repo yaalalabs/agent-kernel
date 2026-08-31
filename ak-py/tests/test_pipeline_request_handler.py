@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
@@ -31,8 +32,12 @@ class DummyRunner(Runner):
         return AgentReplyText(response=f"ok:{prompt}")
 
     async def stream(self, agent, session, requests):
+        # A runner owns its own boundaries. The frame assertions below are unchanged: the boundaries
+        # are emitted here rather than synthesised downstream, which does not alter the wire.
+        yield MessageStart(message_id="m-1")
         for token in ["he", "llo"]:
-            yield token
+            yield TextDelta(message_id="m-1", content=token)
+        yield MessageEnd(message_id="m-1")
 
 
 class DummyAgent(Agent):
@@ -200,9 +205,30 @@ class TestStreamSSE:
             frames = [json.loads(line[len("data: ") :]) for line in response.iter_lines() if line.startswith("data: ")]
 
         # Exact direct-mode wire shape (ResponseBuilder.stream_chunk with exclude_none):
-        # delta frames carry done=False, the terminal frame done=True.
-        assert frames[0] == {"delta": "he", "done": False, "session_id": "s1"}
-        assert frames[1] == {"delta": "llo", "done": False, "session_id": "s1"}
+        # delta frames carry done=False, the terminal frame done=True. Each also carries the event
+        # it was projected from, and the assistant message is bracketed by boundary frames that
+        # carry no delta at all. Here Runtime.stream synthesises the boundaries because DummyRunner
+        # still yields str; once adapters emit events they supply their own, so the frame count is
+        # the same either way.
+        message_id = frames[0]["event"]["message_id"]
+        assert frames[0] == {
+            "event": {"type": "message_start", "message_id": message_id, "role": "assistant"},
+            "done": False,
+            "session_id": "s1",
+        }
+        assert frames[1] == {
+            "delta": "he",
+            "event": {"type": "text_delta", "message_id": message_id, "content": "he"},
+            "done": False,
+            "session_id": "s1",
+        }
+        assert frames[2] == {
+            "delta": "llo",
+            "event": {"type": "text_delta", "message_id": message_id, "content": "llo"},
+            "done": False,
+            "session_id": "s1",
+        }
+        assert frames[3] == {"event": {"type": "message_end", "message_id": message_id}, "done": False, "session_id": "s1"}
         assert frames[-1]["done"] is True
         assert frames[-1]["session_id"] == "s1"
 
@@ -304,3 +330,33 @@ class TestMultipart:
         monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
         response = _client().post(RequestHandler.CHAT_MULTIPART_PATH, data={"prompt": "x", "session_id": "s1"})
         assert response.status_code == 404
+
+
+class TestWebSocketModeGuards:
+    """REST chat routes reject the modes whose delivery is the WebSocket route (#495 §9)."""
+
+    def test_async_mode_rejects_rest_chat(self, monkeypatch):
+        _configure(monkeypatch, mode="async")
+        response = _client().post(CHAT, json={"prompt": "hi", "session_id": "s1"})
+        assert response.status_code == 400
+        assert "/ws" in response.json()["detail"]["error"]
+
+    def test_stream_without_a_chunk_streaming_store_rejects_rest_chat(self, monkeypatch):
+        """Broker STREAM topologies pair a shared store with WS delivery: the SSE route has
+        nothing to drain, so the request must be refused before it is enqueued."""
+        _configure(monkeypatch, mode="stream")
+
+        class _NoChunkStore:
+            def supports_chunk_streaming(self):
+                return False
+
+        handler = RequestHandler()
+        handler._response_store = _NoChunkStore()
+        app = FastAPI()
+        app.include_router(handler.get_router())
+        response = TestClient(app).post(CHAT, json={"prompt": "hi", "session_id": "s1"})
+        assert response.status_code == 400
+        assert "/ws" in response.json()["detail"]["error"]
+
+        # Nothing was enqueued: the input queue stays empty.
+        assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []

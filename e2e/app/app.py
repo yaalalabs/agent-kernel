@@ -92,9 +92,15 @@ def _handlers():
 
         return AgentInstagramRequestHandler()
 
+    def _teams():
+        from agentkernel.teams import AgentTeamsRequestHandler
+
+        return AgentTeamsRequestHandler()
+
     _append_optional(handlers, "WhatsApp", "AK_WHATSAPP__ACCESS_TOKEN", _whatsapp)
     _append_optional(handlers, "Messenger", "AK_MESSENGER__ACCESS_TOKEN", _messenger)
     _append_optional(handlers, "Instagram", "AK_INSTAGRAM__ACCESS_TOKEN", _instagram)
+    _append_optional(handlers, "Teams", "AK_TEAMS__APP_ID", _teams)
     return handlers
 
 

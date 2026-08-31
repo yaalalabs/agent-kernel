@@ -37,6 +37,8 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 |-----------|-------|
 | `test_base.py` | Session, Agent, Runner abstractions |
 | `test_runtime.py` | Runtime registration, execution, hooks |
+| `test_stream_events.py` | `core/event.py`'s `StreamEvent` discriminated union: every member round-trips through JSON (`type` discriminator), rejects an unknown `type`, and stays JSON/pickle-safe (no framework-native fields) |
+| `test_runtime_stream_events.py` | `Runtime.stream()`'s streaming contract (spec `docs/specs/523-ag-ui-support/`): legacy `str` yields normalised into a `MessageStart`/`TextDelta`/`MessageEnd` sequence, `PostHook.on_stream_chunk()` only sees `TextDelta`/`ReasoningDelta` content and a hook's edit is written back into the event, a hook returning `None` drops the whole chunk, `delta` is populated only for `TextDelta`, and the final chunk is a bare `StreamChunk(done=True)` |
 | `test_module.py` | Module load/unload, wrapping |
 | `test_session.py` | Session state, caches, context vars |
 | `test_session_cache.py` | LRU SessionCache |
@@ -46,6 +48,7 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_sessions_dynamodb.py` | DynamoDBSessionStore Binary wrap/unwrap, missing-item skip (mocked driver) |
 | `test_shared_drivers.py` | Shared DB drivers (`core/util/driver/`): retry scope, ping/reconnect, command surface, DynamoDB item-dict semantics |
 | `test_multimodal_redis_store.py` | RedisAttachmentStore index TTL refresh, JSON round trip, pruning (mocked driver) |
+| `test_multimodal_source_forms.py` | `MultimodalPreHook` attachment source-form classification (spec #523 §8): bare base64 and base64 `data:` URIs are described/stored/stripped; `http(s)://`/`s3://` and non-base64 `data:` URIs are retained undescribed; empty `data:` payloads are dropped |
 | `test_config.py` | AKConfig loading, env vars |
 | `test_test_config.py` | AKTestConfig (Test framework config) loading, defaults |
 | `test_tool.py` | ToolContext, cache |
@@ -59,6 +62,7 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_crewai_runner.py` | CrewAIRunner execution (mocked Crew kickoff) |
 | `test_smolagents_runner.py` | SmolagentsRunner execution, multimodal requests, error handling |
 | `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring |
+| `test_langgraph_reasoning_live.py` | LangGraph reasoning against a REAL reasoning model, env-gated (`AK_TEST_REASONING_MODEL`; skipped in normal runs). Guards the premise the chunk-feeding unit tests cannot: that the model streams a summary at all (it must be asked — `reasoning={"summary": "auto"}`) and that LangChain surfaces it under `content_blocks`. Builds a bare `StateGraph`, because `langgraph.prebuilt` is unimportable against the pinned `langgraph` |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
 | `test_chat_service_core.py` | ChatService execution core (`execute`/`execute_stream`): typed replies, prebuilt request lists, validation, error propagation, wrapper wire shapes |
@@ -94,9 +98,30 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_pipeline_kafka_transport.py` | `KafkaTransport` against a fake in-memory Kafka cluster: send/fetch/ack/nack, dead-letter routing scoped by topic, delivery errors, consumer capacity check |
 | `test_pipeline_nats_transport.py` | `NatsTransport` against a fake JetStream behind a real `_NatsLoop` bridge: subject/header construction, stable client-side (`crc32`) partition hashing, `num_delivered` mapping, nak redelivery, `term()` on permanent failure, one-in-flight-per-partition, stream-scoped dedup, `auto_provision` create-vs-verify, consumer capacity warning, and the full `QueueTransportContract` with no skips |
 | `test_response_store_in_memory.py` | `InMemoryResponseStore`: `get_record` (`status_code` exposed), `add_chunk`/`stream` chunk-streaming for local SSE |
+| `test_transport_contract.py` | The reusable `QueueTransportContract` (`pipeline/testing.py`) run against the `in_memory` transport |
+| `test_transport_contract_live.py` | The same contract against REAL brokers, env-gated (`AK_TEST_NATS_URL` / `AK_TEST_KAFKA_BOOTSTRAP`; skipped in normal runs) with per-test unique streams/topics; run in CI by `test-reusable.yaml`'s `transport-integration-tests` job over the transport examples' compose stacks. Documents two live-only timing traps: the per-partition pull window must stay below `ack_wait`, and partition counts are chosen from the real partitioner mappings (crc32 / murmur2) |
+| `test_pipeline_request_handler.py` | Pipeline `RequestHandler` over FastAPI `TestClient`: `rest_sync` parity (stored `status_code` honored), `rest_async` accept/poll, SSE streaming end-to-end, multipart-on-`in_memory` only |
+| `test_pipeline_response_handler.py` | Pipeline `ResponseHandler` delivery paths: REST records, the `USER_ID`-presence WS routing marker, `STREAM_CHUNK`/`CHAT_RESPONSE` pushes, missing-attribute retries, permanent-failure frames/records |
+| `test_pipeline_io_handler.py` | `IOHandler.run()` topology validation and fail-fasts (ASYNC-on-`in_memory` without a validator, broker WS modes without a push token, broker + non-shared response store), signal handlers, graceful-drain exit code |
+| `test_pipeline_ws.py` | The gateway tier: `LocalConnectionRegistry`, `PodPushWebSocketHandler` store-lookup delivery + stale-connection cleanup, `/internal/push` auth, the native `/ws` route (1008 closes, chat enqueue attributes, custom routes), `WebSocketGateway` fail-fasts, single-process ASYNC/STREAM end-to-end over `in_memory`, and cross-"pod" delivery between two gateway apps sharing one connection store |
+| `test_session_connection_store.py` | The `WSConnectionStore` contract over the in-memory/redis-like/DynamoDB implementations, plus `SessionStore.get_connection_store()` per backend (store-less backends raise actionably) |
 | `test_sandbox.py` | Sandbox core: model/capabilities, error hierarchy, config, provider contract, manager + factory + embedded broker, agent surface (system tools + task-completion pre-hook), `agents` scoping |
 | `test_sandbox_broker.py` | Broker flavors (embedded/thread) end-to-end, thread loop-identity contract, wait-policy promotion + late-completion recovery, suspend/resume completion ingestion |
 | `test_sandbox_providers.py` | `local_subprocess` (real subprocess) + `docker` (mocked SDK) providers, run against the reusable `SandboxProviderContract` |
+| `test_authoriser_shared.py` | Shared `Authoriser` in `agentkernel.auth`: `AuthValidatorAuthoriser` adaptation, export identity, and the guard that the thread package no longer re-exports it |
+| `test_schedule_model.py` | `ScheduleSpec` one-of/timezone/session_mode validation, chat-envelope parsing, `ScheduledTask` JSON round trip (JSON primitives only) |
+| `test_schedule_manager.py` | `ScheduleManager`: `get()` gating + singleton, provider/transport fail-fast, semantic validation matrix (including the named-agent precheck and the unnamed-agent exemption), create ordering + rollback, trigger-body freezing, ownership, amendment rules (occurrence rule replaced as a unit, untouched when the amendment names none of it), cancellation, occurrence recording (never raises) |
+| `test_schedule_store.py` | Every `ScheduleStore` backend against the one contract the in_memory class pins — in_memory, redis/valkey through a fake redis-like client injected as `store._driver._client`, dynamodb through a fake driver whose `table.scan` replays `LastEvaluatedKey` pages — plus index cleanup on delete, TTL behaviour (none by default), and `ScheduleStoreBuilder` built-in/BYO/unknown-type/missing-extra resolution |
+| `test_schedule_provider_local.py` | `LocalScheduleProvider`: next-fire computation, one-time vs re-armed occurrences, token substitution, body-only delivery into `InMemoryTransport`, pause/delete disarm, `ScheduleProviderFactory` resolution |
+| `test_schedule_provider_eventbridge.py` | `EventBridgeScheduleProvider` against a mocked `boto3.client`: cron/at expression translation, exact registration/amendment/removal kwargs sent to the Scheduler API, error mapping to `ScheduleError`, `ScheduleProviderFactory` wiring |
+| `test_schedule_router.py` | `ScheduleRESTRequestHandler`: 404 when unconfigured, the three 401 variants from the shared `AuthorisedRESTRequestHandler`, listings forced to the authorised user, 403-before-404 ordering, PUT amendment happy path + validation 400s, DELETE returning the cancelled task, mount-time validation of the configured backends (`get_router()` building the manager, an unusable provider failing the mount, mounting while unconfigured still allowed), and the guard that importing the package does not pull in FastAPI |
+| `test_schedule_tools.py` | Schedule system tools: `SystemToolFactory` registration + `schedule.agents` scoping, prompt-suffix content, disabled short-circuit, acting-user read from the session volatile cache, and each tool's JSON contract including the no-identity and unknown-agent errors |
+| `test_chat_service_schedule.py` | ChatService interception on all four entry points: 202 wire shapes, streaming terminal chunk, unconfigured 400, occurrence recording, no scheduling field leaking as `AgentRequestAny` |
+| `test_serverless_status_propagation.py` | The status a chat run produced (e.g. 202 deferred-to-schedule, 4xx rejected) survives the serverless queue round trip: `ServerlessAgentRunner` forwards it as the `ATTR_STATUS_CODE` output-message attribute, `ResponseHandler` stores it on the response record, and the REST surface (`DefaultEndpointsHandler`, response-store polling) replays it to the caller |
+| `test_pipeline_agent_runner_schedule.py` | Pipeline runners' trigger contract: `request_id`/`user_id` body fallback, attribute precedence, attribute injection for output forwarding |
+| `test_ecs_agent_runner_schedule.py` | ECS runners' body fallback (`_get_record_attributes` with/without a parsed body) and `status_code` custom attribute |
+| `test_ecs_output_consumer_status.py` | `ECSOutputConsumer` stores `status_code` (present / absent → 200 / permanent failure → 500) |
+| `test_serverless_agent_runner_schedule.py` | Serverless runners' body fallback in both `_get_record_attributes` implementations |
 | `test_factory.py` | Shared pluggable-backend helpers (`resolve_dotted`, `require_extra`, `AKConfigError`) in `core/util/factory.py` |
 | `test_store_builders.py` | Session/thread/multimodal store builders: fail-loud on unknown type, BYO dotted-path subclass resolution |
 | `test_trace.py` | Trace factory built-in resolution, BYO dotted path, unknown-type error |
@@ -118,9 +143,11 @@ class DummyRunner(Runner):
         return AgentReplyText(response=f"ok:{prompt}")
 
     async def stream(self, agent, session, requests):
-        # Runner.stream() is abstract — implement even in test doubles.
+        # Runner.stream() is abstract — implement even in test doubles, and yield `StreamEvent`
+        # members (never a bare `str` — `StreamChunk.event` rejects it with a `ValidationError`).
         # Raise NotImplementedError() (with a trailing `yield`) if the test doesn't exercise streaming,
-        # or yield token strings to test Runtime.stream() / AgentService.stream_multi().
+        # or yield MessageStart/TextDelta/MessageEnd (own the message's boundaries yourself) to test
+        # Runtime.stream() / AgentService.stream_multi().
         raise NotImplementedError()
         yield
 
@@ -136,6 +163,32 @@ class DummyAgent(Agent):
     def get_a2a_card(self):
         return None
 ```
+
+**A double that *does* exercise streaming yields events, not strings.** `Runner.stream()` is typed
+`AsyncGenerator[StreamEvent, None]`, and `StreamChunk.event` is a discriminated union — so a bare
+`str` raises a `ValidationError` the moment `Runtime.stream()` wraps it. A double owns its own
+boundaries:
+
+```python
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
+
+
+class StreamingDummyRunner(Runner):
+    async def run(self, agent, session, requests):
+        return AgentReplyText(response="ok")
+
+    async def stream(self, agent, session, requests):
+        yield MessageStart(message_id="m-1")
+        for token in ("Hel", "lo"):
+            yield TextDelta(message_id="m-1", content=token)
+        yield MessageEnd(message_id="m-1")
+```
+
+Only `TextDelta` and `ReasoningDelta` reach `PostHook.on_stream_chunk()`, and only `TextDelta` is
+projected into `StreamChunk.delta` — so a test that accumulates the reply must filter on
+`chunk.delta is not None` rather than slice by position. (`delta` is a model field, so the attribute
+always exists; it is `None` on every non-text frame. Key *presence* is the wire-format rule, which
+applies to the serialised SSE frames, not to the objects a test sees.)
 
 ### Async Test Patterns
 
@@ -314,7 +367,8 @@ async def http_client():
 ## CI/CD Workflows
 
 - **`test.yaml`**: Triggers on pull requests, pushes to `develop`, and manual dispatch; has an `update-lock-files` job (dispatch-only) and a `run-tests` job that delegates to `test-reusable.yaml`
-- **`test-reusable.yaml`**: Reusable workflow (`workflow_call`) containing the actual test jobs, including the `uv run pytest` invocation
+- **`test-reusable.yaml`**: Reusable workflow (`workflow_call`) containing the actual test jobs, including the `uv run pytest` invocation and the `transport-integration-tests` job, which starts real NATS and Kafka containers from the transport examples' compose files (broker services only, `up -d --wait nats|kafka`) and runs `tests/test_transport_contract_live.py` against them on every PR
+- **`chart-test.yaml`**: The #495 Helm chart gates, path-filtered on the chart, the k8s example, and `agentkernel/pipeline/`: a lint job (`ct lint` via `ak-deployment/ak-k8s/ci/ct.yaml`, plus explicit `helm template` renders of every flavor values file and optional tier) and a kind-smoke matrix over the dev/baremetal/eks flavors, each installing the chart with the example images and driving one real chat request through NATS (baremetal/eks install the Gateway API CRDs and a live NACK controller so `autoProvision: false` verifies operator-reconciled objects; the CI overlays in `ak-deployment/ak-k8s/ci/` swap only storage class and sizing). Skipped for fork PRs (needs `OPENAI_API_KEY`)
 - **`test-trusted-pr.yaml`**: Runs `test-reusable.yaml` with secrets for fork PRs that have been reviewed and labeled `safe-to-test` (`pull_request_target`)
 - **`test-github-app.yaml`**: Manual dispatch only; verifies the GitHub App secrets (`APP_ID`/`APP_PRIVATE_KEY`) are configured correctly
 - **`integration-test.yaml`**: "Nightly" (tier `nightly`) integration tests against deployed environments; scheduled weekly on Sundays at 5:30 PM UTC (`cron: '30 17 * * 0'`), plus manual dispatch

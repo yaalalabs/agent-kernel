@@ -1,0 +1,78 @@
+{{- if .Values.kafka.enabled }}
+{{/*
+In-cluster Kafka as Strimzi CRs (KRaft, node pools). Prerequisite: the Strimzi operator
+watching this namespace; this chart does not install it. Topics are provisioned here because
+Agent Kernel deliberately never creates them: the input/output topics plus their dead-letter
+counterparts, with the partition count as the up-front capacity parameter (adding partitions
+later briefly breaks in-flight session ordering).
+*/}}
+{{- $clusterName := include "agent-kernel.kafkaClusterName" . }}
+{{- $topicReplicas := min .Values.kafka.topicReplicas .Values.kafka.replicas }}
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaNodePool
+metadata:
+  name: {{ $clusterName }}-dual-role
+  labels:
+    strimzi.io/cluster: {{ $clusterName }}
+    {{- include "agent-kernel.labels" (dict "root" . "component" "kafka") | nindent 4 }}
+spec:
+  replicas: {{ .Values.kafka.replicas }}
+  roles:
+    - controller
+    - broker
+  storage:
+    type: jbod
+    volumes:
+      - id: 0
+        type: persistent-claim
+        size: {{ .Values.kafka.storage.size }}
+        {{- with .Values.kafka.storage.class }}
+        class: {{ . }}
+        {{- end }}
+        deleteClaim: false
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: Kafka
+metadata:
+  name: {{ $clusterName }}
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "kafka") | nindent 4 }}
+spec:
+  kafka:
+    {{- with .Values.kafka.version }}
+    version: {{ . | quote }}
+    {{- end }}
+    listeners:
+      - name: plain
+        port: 9092
+        type: internal
+        tls: false
+    config:
+      offsets.topic.replication.factor: {{ $topicReplicas }}
+      transaction.state.log.replication.factor: {{ $topicReplicas }}
+      transaction.state.log.min.isr: {{ max 1 (sub $topicReplicas 1) }}
+      default.replication.factor: {{ $topicReplicas }}
+      min.insync.replicas: {{ max 1 (sub $topicReplicas 1) }}
+  entityOperator:
+    topicOperator: {}
+{{- $root := . }}
+{{- range $topic := list .Values.transport.kafka.inputTopic .Values.transport.kafka.outputTopic }}
+{{- range $suffix := list "" $root.Values.transport.kafka.dlqSuffix }}
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: {{ printf "%s%s" $topic $suffix | lower | replace "." "-" }}
+  labels:
+    strimzi.io/cluster: {{ $clusterName }}
+    {{- include "agent-kernel.labels" (dict "root" $root "component" "kafka") | nindent 4 }}
+spec:
+  topicName: {{ printf "%s%s" $topic $suffix }}
+  partitions: {{ $root.Values.kafka.partitions }}
+  replicas: {{ $topicReplicas }}
+{{- end }}
+{{- end }}
+{{- end }}

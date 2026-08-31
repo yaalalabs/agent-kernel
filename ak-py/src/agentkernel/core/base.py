@@ -9,6 +9,7 @@ from collections.abc import AsyncGenerator, Iterator, Mapping
 from enum import Enum
 from typing import Any, ClassVar, Self, cast
 
+from .event import StreamEvent
 from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
@@ -372,16 +373,30 @@ class Runner(ABC):
         """
         raise NotImplementedError()
 
-    @abstractmethod
-    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+    @property
+    def supports_streaming(self) -> bool:
         """
-        Streams the agent response token by token.
+        Whether this runner streams. Runners whose adapter does not implement streaming declare False
+        and leave stream() raising, so a caller can reject the request instead of provoking the raise.
+        :return: True unless the subclass overrides it.
+        """
+        return True
+
+    @abstractmethod
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Streams the agent response as a sequence of stream events.
+
+        Every adapter emits events; a runner that yields a bare `str` is rejected by
+        `StreamChunk.event` with a `ValidationError` rather than being normalised (§4 rule 6).
+
         :param agent: The agent to run.
         :param session: The session to use for the agent.
         :param requests: The list of requests to provide to the agent.
-        :return: An async generator yielding string token deltas.
+        :return: An async generator yielding StreamEvent objects.
         """
         raise NotImplementedError()
+        yield  # makes this an async generator, so overrides match the shape rather than a coroutine
 
 
 class Agent(ABC):

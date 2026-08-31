@@ -1,6 +1,6 @@
 {
   "skill": "ak-cloud-deploy",
-  "description": "Evaluations for the ak-cloud-deploy (AWS/Azure deployment) skill with sync/async and scalable modes",
+  "description": "Evaluations for the ak-cloud-deploy (AWS/Azure/GCP/Kubernetes deployment) skill with sync/async and scalable modes",
   "version": "0.8.1",
   "evals": [
     {
@@ -129,6 +129,23 @@
       ]
     },
     {
+      "id": "deploy-aws-scheduling-eventbridge",
+      "name": "Deploy scheduled tasks on AWS ECS with EventBridge Scheduler",
+      "input": "Deploy my agent to AWS ECS Fargate in queue mode with scheduled tasks backed by EventBridge Scheduler and DynamoDB",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/aws",
+        "queue_mode                     = true",
+        "enable_scheduling              = true",
+        "create_dynamodb_schedule_table = true",
+        "schedule:",
+        "type: eventbridge",
+        "type: dynamodb"
+      ],
+      "must_not_contain": [
+        "azurerm"
+      ]
+    },
+    {
       "id": "deploy-aws-containerized-websocket",
       "name": "Deploy to AWS ECS Fargate over WebSocket",
       "input": "Deploy my agent to AWS ECS Fargate with a WebSocket API for real-time chat",
@@ -187,7 +204,8 @@
         "session:",
         "type: dynamodb",
         "table_name:",
-        "agentkernel[", "aws"
+        "agentkernel[",
+        "aws"
       ]
     },
     {
@@ -210,7 +228,8 @@
         "type: valkey",
         "create_valkey_cluster",
         "true",
-        "agentkernel[", "valkey"
+        "agentkernel[",
+        "valkey"
       ]
     },
     {
@@ -295,7 +314,28 @@
         "session:",
         "type: firestore",
         "create_firestore_db",
-        "agentkernel[", "gcp"
+        "agentkernel[",
+        "gcp"
+      ]
+    },
+    {
+      "id": "deploy-kubernetes-helm",
+      "name": "Deploy to Kubernetes with the Helm chart",
+      "input": "Deploy my agent to our on-prem Kubernetes cluster",
+      "expected_outputs": [
+        "from agentkernel.pipeline import IOHandler",
+        "IOHandler.run()",
+        "from agentkernel.pipeline import AgentRunner",
+        "AgentRunner.run()",
+        "app_io_handler.py",
+        "app_agent_runner.py",
+        "helm install",
+        "ak-deployment/ak-k8s",
+        "values-dev.yaml"
+      ],
+      "must_not_contain": [
+        "terraform apply",
+        "yaalalabs/ak-serverless/aws"
       ]
     }
   ]

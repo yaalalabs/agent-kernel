@@ -13,6 +13,10 @@ from typing import Optional
 # Cap applied to every requested page size.
 MAX_PAGE_SIZE = 200
 
+# Page size used when a listing requests none. Shared by the service layer (via clamp_limit) and
+# the store signatures beneath it, so a listing's default lives in one place.
+DEFAULT_PAGE_SIZE = 50
+
 
 def encode_cursor(offset: Optional[int]) -> Optional[str]:
     """Encode a numeric page offset into an opaque cursor token, or None."""
@@ -42,3 +46,21 @@ def clamp_limit(limit: Optional[int], default: int) -> int:
     if not limit or limit < 1:
         return default
     return min(limit, MAX_PAGE_SIZE)
+
+
+def paginate(items: list, limit: int, offset: int) -> tuple[list, Optional[int]]:
+    """Slice an in-order list into an offset/limit page.
+
+    For backends that hold or fetch the whole ordered collection (in-memory maps, scans,
+    document reads) and page it in the store layer.
+
+    :param items: The full, ordered list of items.
+    :param limit: Maximum number of items in the page.
+    :param offset: Zero-based index of the first item.
+    :return: A tuple of (page, next_offset); next_offset is None on the last page.
+    """
+    if offset < 0:
+        offset = 0
+    page = items[offset : offset + limit]
+    next_offset = offset + limit if offset + limit < len(items) else None
+    return page, next_offset

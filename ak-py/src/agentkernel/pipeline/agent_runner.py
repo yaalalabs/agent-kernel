@@ -11,7 +11,9 @@ from .envelope import ATTR_ENDPOINT_URL, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransport, QueueTransportFactory
 
-# Attributes forwarded from an input message to its output message(s).
+# Attributes forwarded from an input message to its output message(s). ENDPOINT_URL is part of
+# the SQS/ECS wire format only (the pipeline neither stamps nor reads it, spec #495 §2): it is
+# forwarded so ECS-entered messages keep their return address through a pipeline runner.
 _FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL)
 
 
@@ -141,9 +143,9 @@ class AgentRunner:
 class StreamAgentRunner(AgentRunner):
     """STREAM-mode sibling: fans out each streamed chunk as its own output message (spec #495 §8).
 
-    ENDPOINT_URL is required on broker transports (the reply is pushed over a WebSocket); the
-    in_memory transport delivers chunks to the local response store instead, so no endpoint is
-    needed (relaxation of the ECS requirement).
+    On broker transports the chunks are pushed over WebSocket, so the USER_ID attribute (the
+    WS-entered marker, spec #495 §2) is required; the in_memory transport also serves
+    REST-entered chunks from the local response store over SSE, where no user is needed.
     """
 
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
@@ -151,8 +153,8 @@ class StreamAgentRunner(AgentRunner):
     def process(self, message: QueueMessage) -> None:
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
-        if not message.attributes.get(ATTR_ENDPOINT_URL) and QueueTransportFactory.resolve_type() != "in_memory":
-            raise ValueError("endpoint_url is required in queue message attributes for STREAM mode")
+        if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
+            raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
 
         self._log.info(f"[STREAM AGENT START] request_id={request_id} (receive_count={message.receive_count})")
 

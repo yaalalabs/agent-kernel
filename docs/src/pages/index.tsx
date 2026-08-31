@@ -983,9 +983,9 @@ function Deployment() {
           </div>
           <h2 className={styles.deployTitle}>Deploy Anywhere</h2>
           <p className={styles.deploySubtitle}>
-            Run the same agent code on AWS, Azure, GCP, or your own on-prem Docker. Zero rewrites.
+            Run the same agent code on AWS, Azure, GCP, or your own Kubernetes cluster. Zero rewrites.
             <br />
-            Includes production-ready Terraform modules with best practices baked in.
+            Includes production-ready Terraform modules and a Helm chart with best practices baked in.
           </p>
         </div>
 

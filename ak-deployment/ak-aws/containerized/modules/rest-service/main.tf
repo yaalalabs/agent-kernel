@@ -13,6 +13,17 @@ locals {
     var.dynamodb_thread_table_arn != null ? {
       AK_THREAD__DYNAMODB__TABLE_NAME = var.dynamodb_thread_table_name
     } : {},
+    # Scheduling: the group/role/queue coordinates only. `schedule.provider.type` and
+    # `schedule.store.type` are deliberately never injected — the application declares them in its
+    # committed config.yaml, exactly like `thread.type`.
+    var.enable_scheduling ? {
+      AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME = var.schedule_group_name
+      AK_SCHEDULE__PROVIDER__EVENTBRIDGE__ROLE_ARN   = var.scheduler_execution_role_arn
+      AK_SCHEDULE__PROVIDER__EVENTBRIDGE__QUEUE_ARN  = var.input_queue_arn
+    } : {},
+    var.create_dynamodb_schedule_table ? {
+      AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME = var.dynamodb_schedule_table_name
+    } : {},
     # Queue mode — inject queue URLs and batch size
     var.queue_mode ? {
       AK_EXECUTION__QUEUES__INPUT__URL  = var.input_queue_url
@@ -93,6 +104,34 @@ resource "aws_iam_policy" "dynamodb_thread_policy" {
         ]
         # No /index/* unlike the session policy: list_threads Scans, this table has no GSI.
         Resource = var.dynamodb_thread_table_arn
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_policy" "dynamodb_schedule_policy" {
+  count       = var.create_dynamodb_schedule_table ? 1 : 0
+  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-dynamodb-schedule-policy"
+  description = "Policy for DynamoDB scheduled-task store access"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        # No /index/* : listings Scan, this table has no GSI.
+        Resource = var.dynamodb_schedule_table_arn
       }
     ]
   })
@@ -287,6 +326,9 @@ module "ecs_service" {
     } : {},
     var.create_dynamodb_thread_table ? {
       DynamoDBThread = aws_iam_policy.dynamodb_thread_policy[0].arn
+    } : {},
+    var.create_dynamodb_schedule_table ? {
+      DynamoDBSchedule = aws_iam_policy.dynamodb_schedule_policy[0].arn
     } : {}
   )
 

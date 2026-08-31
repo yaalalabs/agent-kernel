@@ -9,6 +9,10 @@ session:
 execution:
   mode: rest_sync
   queues:
+    # The transport every component of this deployment runs on. Mandatory: the queue URLs
+    # below are injected per component, so only this declaration tells each process which
+    # transport it is on.
+    type: sqs
     input:
       # url: "https://sqs.<region>.amazonaws.com/<account-id>/<input-queue-name>"
       max_receive_count: 3

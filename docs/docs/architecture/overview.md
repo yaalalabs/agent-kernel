@@ -168,8 +168,8 @@ All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAM
 
 Built-in support for:
 - Multi-cloud session persistence (AWS, Azure, GCP)
-- Token-level streaming (SSE over REST, WebSocket on AWS serverless)
-- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Kafka and NATS JetStream for on-prem / Kubernetes (Kubernetes deployment chart upcoming)
+- Event streaming (SSE over REST, WebSocket on AWS serverless)
+- Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Kafka and NATS JetStream for on-prem / Kubernetes (deployed by the [Helm chart](../deployment/onprem-kubernetes))
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
 - Observability and tracing (Langfuse, OpenLLMetry, Logfire)
@@ -229,7 +229,7 @@ Key properties:
 
 ## The Streaming Pipeline
 
-`Runtime.stream()` is the streaming counterpart, sharing the same pre-hook pipeline but yielding `StreamChunk` objects as tokens arrive:
+`Runtime.stream()` is the streaming counterpart, sharing the same pre-hook pipeline but yielding `StreamChunk` objects carrying typed `StreamEvent`s as they arrive:
 
 ```mermaid
 sequenceDiagram
@@ -244,24 +244,28 @@ sequenceDiagram
     alt halted by pre-hook
         R-->>U: StreamChunk(error=..., done=true)
     else streaming
-        loop each token delta
-            Run-->>R: delta (str)
-            R->>PoH: on_stream_chunk(delta)
-            alt hook returns None
-                Note over R: token dropped
+        loop each event
+            Run-->>R: StreamEvent (or legacy str, normalised)
+            alt event is TextDelta/ReasoningDelta
+                R->>PoH: on_stream_chunk(content)
+                alt hook returns None
+                    Note over R: chunk dropped, event included
+                else
+                    R-->>U: StreamChunk(delta=..., event=...)
+                end
             else
-                R-->>U: StreamChunk(delta=...)
+                R-->>U: StreamChunk(event=...)
             end
         end
         R->>R: store session, clear volatile cache
-        R-->>U: StreamChunk(done=true, session_id=...)
+        R-->>U: StreamChunk(done=true)
     end
 ```
 
-- Each `StreamChunk` carries `delta`, `done`, `error`, and `session_id` fields.
-- Post-hooks can filter or redact individual tokens via `on_stream_chunk()`; returning `None` drops the token.
+- Each `StreamChunk` carries `delta`, `event`, `done`, `error`, and `session_id` fields. `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) is carried in `event` alone.
+- Post-hooks can filter or redact `TextDelta`/`ReasoningDelta` content via `on_stream_chunk()`; returning `None` drops the whole chunk.
 - Delivery depends on the surface: the REST API serves chunks as **Server-Sent Events** (`text/event-stream`); AWS serverless and AWS ECS containerized WebSocket modes push each chunk as a separate `STREAM_CHUNK` WebSocket message (optionally through SQS queues).
-- OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents do not support token streaming (their runners raise `NotImplementedError` in stream mode).
+- OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents declare `supports_streaming = False` and do not support token streaming (their runners raise `NotImplementedError` in stream mode).
 
 See [Execution Flow](./execution-flow) for the full request lifecycle including the queue-based and WebSocket paths.
 

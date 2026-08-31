@@ -31,6 +31,7 @@ variable "queue_config" {
     input_queue_max_receive_count             = optional(number, 5)
     input_queue_create_dlq                    = optional(bool, false)
     input_queue_dlq_message_retention_seconds = optional(number, 1800)
+    input_queue_content_based_deduplication = optional(bool, false)
 
     # Output queue settings
     output_queue_visibility_timeout            = optional(number, 60)

@@ -1,0 +1,28 @@
+Agent Kernel {{ .Chart.AppVersion }} deployed as release {{ .Release.Name }}.
+
+Topology:
+  io-handler    {{ .Values.ioHandler.replicaCount }} replica(s), REST on port {{ .Values.ioHandler.port }}
+{{- if .Values.agentRunner.enabled }}
+  agent-runner  {{ .Values.agentRunner.replicaCount }} replica(s), transport: {{ .Values.transport.type }}
+{{- else }}
+  agent-runner  disabled (single-process profile: the io-handler runs the whole pipeline)
+{{- end }}
+{{- if .Values.wsGateway.enabled }}
+  ws-gateway    {{ .Values.wsGateway.replicaCount }} replica(s), WebSocket path {{ .Values.gateway.websocket.path }}
+{{- end }}
+
+Reach the API:
+{{- if .Values.gateway.enabled }}
+  kubectl get gateway {{ include "agent-kernel.fullname" . }} -n {{ .Release.Namespace }}
+{{- else if .Values.serviceLB.enabled }}
+  kubectl get service {{ include "agent-kernel.fullname" . }}-io-lb -n {{ .Release.Namespace }}
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} service/{{ include "agent-kernel.fullname" . }}-io 8000:80
+{{- end }}
+
+Send a chat request:
+  curl -s -X POST http://localhost:8000/api/v1/chat \
+    -H 'Content-Type: application/json' \
+    -d '{"prompt": "Hello", "session_id": "s1", "agent": "<agent>"}'
+
+Chart guide: ak-deployment/ak-k8s/README.md
