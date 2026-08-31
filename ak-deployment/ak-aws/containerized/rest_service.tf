@@ -19,14 +19,20 @@ module "rest_service" {
   service_name   = local.service_name
   container_name = local.container_name
 
-  redis_url                    = local.redis_url
-  valkey_url                   = local.valkey_url
-  create_dynamodb_memory_table = var.create_dynamodb_memory_table
-  dynamodb_memory_table_arn    = local.dynamodb_memory_table_arn
-  dynamodb_memory_table_name   = local.dynamodb_memory_table_name
-  create_dynamodb_thread_table = var.create_dynamodb_thread_table
-  dynamodb_thread_table_arn    = local.dynamodb_thread_table_arn
-  dynamodb_thread_table_name   = local.dynamodb_thread_table_name
+  redis_url                      = local.redis_url
+  valkey_url                     = local.valkey_url
+  create_dynamodb_memory_table   = var.create_dynamodb_memory_table
+  dynamodb_memory_table_arn      = local.dynamodb_memory_table_arn
+  dynamodb_memory_table_name     = local.dynamodb_memory_table_name
+  create_dynamodb_thread_table   = var.create_dynamodb_thread_table
+  dynamodb_thread_table_arn      = local.dynamodb_thread_table_arn
+  dynamodb_thread_table_name     = local.dynamodb_thread_table_name
+  enable_scheduling              = var.enable_scheduling
+  schedule_group_name            = local.schedule_group_name
+  scheduler_execution_role_arn   = local.scheduler_execution_role_arn
+  create_dynamodb_schedule_table = var.create_dynamodb_schedule_table
+  dynamodb_schedule_table_arn    = local.dynamodb_schedule_table_arn
+  dynamodb_schedule_table_name   = local.dynamodb_schedule_table_name
 
   rest_service = {
     cpu                               = var.rest_service.cpu
@@ -41,6 +47,7 @@ module "rest_service" {
   }
 
   queue_mode                = var.queue_mode
+  input_queue_arn           = var.queue_mode ? module.queues[0].input_queue_arn : null
   input_queue_url           = var.queue_mode ? module.queues[0].input_queue_url : null
   output_queue_url          = var.queue_mode ? module.queues[0].output_queue_url : null
   response_store_table_name = (var.queue_mode && !local.is_websocket_mode) ? aws_dynamodb_table.response_store[0].name : null

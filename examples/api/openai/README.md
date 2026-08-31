@@ -89,8 +89,10 @@ AK_EXECUTION__MODE=stream uv run app.py
 curl -s -N -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt": "Count from 1 to 5.", "agent": "general", "session_id": "s3"}'
-# data: {"delta": "1", "done": false, "session_id": "s3"}
+# data: {"event": {"type": "message_start", "message_id": "m1", "role": "assistant"}, "done": false, "session_id": "s3"}
+# data: {"delta": "1", "event": {"type": "text_delta", "message_id": "m1", "content": "1"}, "done": false, "session_id": "s3"}
 # ...
+# data: {"event": {"type": "message_end", "message_id": "m1"}, "done": false, "session_id": "s3"}
 # data: {"done": true, "session_id": "s3"}
 ```
 

@@ -8,24 +8,13 @@ from typing import List, Optional, Tuple
 
 from ....core.config import AKConfig
 from ....core.util.factory import AKConfigError, require_extra, resolve_dotted
+
+# Re-exported so the thread store backends keep importing their page slicer from this module;
+# the helper itself is shared with the other paginated resources in core.util.pagination.
+from ....core.util.pagination import paginate  # noqa: F401
 from ..model import Thread, ThreadMessage
 
 _BUILTIN_THREAD_STORES = ["in_memory", "redis", "valkey", "dynamodb", "cosmosdb", "firestore"]
-
-
-def paginate(items: list, limit: int, offset: int) -> tuple[list, Optional[int]]:
-    """
-    Slice an in-order list into an offset/limit page.
-    :param items: The full, ordered list of items.
-    :param limit: Maximum number of items in the page.
-    :param offset: Zero-based index of the first item.
-    :return: A tuple of (page, next_offset); next_offset is None on the last page.
-    """
-    if offset < 0:
-        offset = 0
-    page = items[offset : offset + limit]
-    next_offset = offset + limit if offset + limit < len(items) else None
-    return page, next_offset
 
 
 class ThreadStore(ABC):

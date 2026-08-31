@@ -117,7 +117,7 @@ class NatsTransportConsumer(TransportConsumer):
         if not self._partitions:
             return []
 
-        per_partition_wait = max(wait_seconds / len(self._partitions), MIN_PARTITION_FETCH_SECONDS)
+        idle_wait = max(wait_seconds / len(self._partitions), MIN_PARTITION_FETCH_SECONDS)
         deadline = time.monotonic() + wait_seconds
         messages: List[QueueMessage] = []
 
@@ -126,7 +126,14 @@ class NatsTransportConsumer(TransportConsumer):
                 break
             partition = self._partitions[self._cursor % len(self._partitions)]
             self._cursor += 1
-            messages.extend(self._fetch_partition(partition, batch_size - len(messages), per_partition_wait))
+            # Once the batch holds something, the remaining partitions are only a top-up and get
+            # the floor wait rather than their full slice. A pull always burns its whole timeout,
+            # so waiting them out would hold the messages already in hand for the rest of the
+            # fetch window: that is added latency on every message, and their server-side ack_wait
+            # is already ticking, so a short ack_wait can make a message redeliverable before the
+            # caller ever sees it and break the one-in-flight guarantee.
+            partition_wait = MIN_PARTITION_FETCH_SECONDS if messages else idle_wait
+            messages.extend(self._fetch_partition(partition, batch_size - len(messages), partition_wait))
         return messages
 
     def ack(self, message: QueueMessage) -> None:

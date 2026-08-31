@@ -60,6 +60,11 @@ module "e2e_agents" {
       path           = "instagram/webhook",
       method         = "POST",
       overwrite_path = "/instagram/webhook"
+    },
+    {
+      path           = "teams/messages",
+      method         = "POST",
+      overwrite_path = "/teams/messages"
     }
   ]
 
@@ -67,26 +72,29 @@ module "e2e_agents" {
     package_path   = "../dist"
     container_port = 8000
     environment_variables = {
-      OPENAI_API_KEY              = var.openai_api_key
-      SLACK_BOT_TOKEN             = var.slack_bot_token
-      SLACK_SIGNING_SECRET        = var.slack_signing_secret
-      AK_TELEGRAM__BOT_TOKEN      = var.telegram_bot_token
-      AK_TELEGRAM__WEBHOOK_SECRET = var.telegram_webhook_secret
-      AK_GMAIL__CLIENT_ID         = var.gmail_client_id
-      AK_GMAIL__CLIENT_SECRET     = var.gmail_client_secret
-      AK_GMAIL__TOKEN_B64         = var.gmail_token_b64
-      AK_GMAIL__SENDER_FILTER     = var.gmail_sender_filter
-      AK_WHATSAPP__ACCESS_TOKEN   = var.whatsapp_access_token
-      AK_WHATSAPP__PHONE_NUMBER_ID = var.whatsapp_phone_number_id
-      AK_WHATSAPP__VERIFY_TOKEN   = var.whatsapp_verify_token
-      AK_WHATSAPP__APP_SECRET     = var.whatsapp_app_secret
-      AK_MESSENGER__ACCESS_TOKEN  = var.messenger_access_token
-      AK_MESSENGER__VERIFY_TOKEN  = var.messenger_verify_token
-      AK_MESSENGER__APP_SECRET    = var.messenger_app_secret
-      AK_INSTAGRAM__ACCESS_TOKEN  = var.instagram_access_token
-      AK_INSTAGRAM__VERIFY_TOKEN  = var.instagram_verify_token
-      AK_INSTAGRAM__APP_SECRET    = var.instagram_app_secret
+      OPENAI_API_KEY                     = var.openai_api_key
+      SLACK_BOT_TOKEN                    = var.slack_bot_token
+      SLACK_SIGNING_SECRET               = var.slack_signing_secret
+      AK_TELEGRAM__BOT_TOKEN             = var.telegram_bot_token
+      AK_TELEGRAM__WEBHOOK_SECRET        = var.telegram_webhook_secret
+      AK_GMAIL__CLIENT_ID                = var.gmail_client_id
+      AK_GMAIL__CLIENT_SECRET            = var.gmail_client_secret
+      AK_GMAIL__TOKEN_B64                = var.gmail_token_b64
+      AK_GMAIL__SENDER_FILTER            = var.gmail_sender_filter
+      AK_WHATSAPP__ACCESS_TOKEN          = var.whatsapp_access_token
+      AK_WHATSAPP__PHONE_NUMBER_ID       = var.whatsapp_phone_number_id
+      AK_WHATSAPP__VERIFY_TOKEN          = var.whatsapp_verify_token
+      AK_WHATSAPP__APP_SECRET            = var.whatsapp_app_secret
+      AK_MESSENGER__ACCESS_TOKEN         = var.messenger_access_token
+      AK_MESSENGER__VERIFY_TOKEN         = var.messenger_verify_token
+      AK_MESSENGER__APP_SECRET           = var.messenger_app_secret
+      AK_INSTAGRAM__ACCESS_TOKEN         = var.instagram_access_token
+      AK_INSTAGRAM__VERIFY_TOKEN         = var.instagram_verify_token
+      AK_INSTAGRAM__APP_SECRET           = var.instagram_app_secret
       AK_INSTAGRAM__INSTAGRAM_ACCOUNT_ID = var.instagram_account_id
+      AK_TEAMS__APP_ID                   = var.teams_app_id
+      AK_TEAMS__APP_PASSWORD             = var.teams_app_password
+      AK_TEAMS__TENANT_ID                = var.teams_tenant_id
     }
   }
 }

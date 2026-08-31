@@ -97,7 +97,7 @@ Deploy your agent to AWS, Azure, GCP, or any Kubernetes cluster. Generates compl
 
 ### ak-add-capabilities
 
-Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, custom hooks, multimodal support, and conversation thread support (in-memory, Redis, Valkey, DynamoDB, Firestore, Cosmos DB).
+Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, AG-UI server, custom hooks, multimodal support, conversation thread support (in-memory, Redis, Valkey, DynamoDB, Firestore, Cosmos DB), sandbox code execution, and scheduling (deferred/recurring chat execution, agent-facing scheduling tools).
 
 **Example prompts:**
 - *"Add OpenAI guardrails to my agent"*

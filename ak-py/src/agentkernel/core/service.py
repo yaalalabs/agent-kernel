@@ -46,6 +46,29 @@ class AgentService:
         self._agent = None
         self._session = None
 
+    @staticmethod
+    def ensure_agent_available(name: str | None) -> None:
+        """
+        Checks that a request naming ``name`` could be served, without selecting anything.
+
+        Applies the same rule select() applies when it selects: a named agent must be
+        registered, and an unnamed one needs at least one agent to default to. Surfaces that
+        commit state before the agent ever runs — a thread write, a scheduled task — call this
+        first, so a request that could never be answered fails while the caller is still
+        listening instead of at run time.
+
+        Static because it only interrogates the agent registry: it holds no agent and no session,
+        so the callers that are not mid-conversation (the thread and schedule surfaces) reach it as
+        ``AgentService.ensure_agent_available(...)`` rather than building a throwaway instance. It
+        is kept here, next to select(), because it is select()'s rule.
+
+        :param name: Name of the requested agent, or None for the default agent.
+        :raises ValueError: If no matching agent is available.
+        """
+        agents = Runtime.current().agents()
+        if (name and name not in agents) or (not name and not agents):
+            raise ValueError("No agent available")
+
     def select(self, session_id: str | None = None, name: str | None = None):
         """
         Selects an agent by name, or the first available agent if no name is provided.

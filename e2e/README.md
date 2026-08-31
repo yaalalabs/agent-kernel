@@ -7,14 +7,16 @@ reply is read back from the platform. This covers the full transport layer (API 
 webhook routing, Slack signature verification, Telegram secret token) that in-process
 tests cannot.
 
-Current coverage: **Slack**, **Telegram**, **Gmail**, **WhatsApp**, **Messenger**, and
-**Instagram** — every messaging platform Agent Kernel can construct today. (Teams is
-excluded: `core/config.py` has no `_TeamsConfig`/`teams:` field, so its handler can't be
-constructed.)
+Current coverage: **Slack**, **Telegram**, **Gmail**, **WhatsApp**, **Messenger**,
+**Instagram**, and **Microsoft Teams** — every messaging platform Agent Kernel can
+construct today.
 
 Verification depth differs by platform:
 - **Slack / Telegram / Gmail** — read the agent's reply back from the platform (full
   round-trip proof), fully automated in CI.
+- **Teams** — driven through the bot's **Direct Line** channel rather than the Teams
+  client (there is no API to post into Teams as a user). Same Azure Bot, same deployed
+  webhook, so it proves the Bot Framework transport and the handler end to end.
 - **WhatsApp** — no read-back API; verified via CloudWatch logs. Automated test is opt-in
   (`E2E_WHATSAPP_AUTOMATED=1`) and needs a production sender number; otherwise manual.
 - **Messenger / Instagram** — cannot be automated at all (no API to message a Page/account
@@ -202,6 +204,44 @@ CI: add secrets `E2E_INSTAGRAM_ACCESS_TOKEN`, `E2E_INSTAGRAM_VERIFY_TOKEN`,
 unless `E2E_INSTAGRAM_AUTOMATED=1` (and even then only confirms a *recent human-triggered*
 round trip via logs).
 
+### 2f. Microsoft Teams (optional)
+
+Needs an **Azure Bot** resource backed by an Entra ID app registration. There is no API
+to post into a Teams channel *as a user*, so the automated test talks to the same bot
+over its **Direct Line** channel — the activity takes the identical path (Bot Framework
+auth → the deployed `/teams/messages` endpoint → the handler → `continue_conversation`
+reply), so a Direct Line round trip proves the integration. The **Teams** channel is
+added alongside it for manual verification from the real client.
+
+1. Create the app registration and the bot (Azure portal → **Azure Bot**, or `az`):
+   - The live e2e bot (`ak-e2e-teams-bot`) is app type **Single Tenant**, so
+     `TEAMS_TENANT_ID` must be its own tenant; a multi-tenant registration works too, and
+     then the value stays empty. Note the **App ID (client ID)**, generate a **client
+     secret**, and note the **tenant ID**.
+   - If you create the registration with `az ad app create` or the Graph API rather than
+     the portal, **create its service principal too** (`az ad sp create --id <app-id>`).
+     Without it the webhook still answers 200 and every reply dies with `AADSTS7000229`.
+2. Set the bot's **messaging endpoint** to the `teams_messages_url` terraform output
+   (`.../teams/messages`).
+3. Add channels: **Direct Line** (copy one of its **secret keys** → the test's
+   `E2E_TEAMS_DIRECTLINE_SECRET`) and **Microsoft Teams**.
+4. Fill `app/.env` (`TEAMS_APP_ID`, `TEAMS_APP_PASSWORD`, optionally `TEAMS_TENANT_ID`)
+   and redeploy. The handler is only mounted when `AK_TEAMS__APP_ID` is set.
+5. Verify manually in Teams: from the bot's Azure Bot blade use **Open in Teams**, or
+   sideload a manifest whose `botId` is the app ID, then message the bot.
+   ```bash
+   aws logs tail /aws/ecs/ak-e2e-dev-messaging-service/ak-e2e-dev-messaging-app \
+     --region us-east-2 --since 5m | grep -i teams
+   ```
+
+CI: add secrets `E2E_TEAMS_APP_ID`, `E2E_TEAMS_APP_PASSWORD`,
+`E2E_TEAMS_DIRECTLINE_SECRET`; variable `E2E_TEAMS_TENANT_ID` — set, since the bot is
+single-tenant. `test_teams.py` skips when the Direct Line secret is absent.
+
+Attachments are **not** covered by the automated test: Direct Line serves uploads from
+different hosts than Teams' `smba.trafficmanager.net` / SharePoint, so attachment
+download is exercised by the unit tests and by manual Teams verification instead.
+
 ### 3. Deploy to AWS ECS
 
 The primary deploy path is the `e2e-messaging-deploy` job in the **Weekly Integration
@@ -210,6 +250,12 @@ manually with the `provision_e2e_messaging` input enabled. It must run on a Linu
 runner: the
 container image vendors Python dependencies at build time, and building from a Mac ships
 macOS native extensions that crash the linux/amd64 container.
+
+The job builds `ak-py` from the checked-out revision and installs that wheel over the
+released `agentkernel` the lock file resolves, so the deployment always exercises the
+branch's code — an integration added on a branch is not on PyPI yet. Locally, `app/build.sh
+local` does the same thing. Re-provision whenever the integration code changes; a run
+without `provision_e2e_messaging` tests whatever is already deployed.
 
 One-time: add these secrets to the repo's `ci-tests` environment (Settings → Environments
 → ci-tests): `E2E_SLACK_BOT_TOKEN`, `E2E_SLACK_SIGNING_SECRET`, `E2E_TELEGRAM_BOT_TOKEN`,
@@ -315,6 +361,8 @@ environment variables.
 | `E2E_MESSENGER_AUTOMATED` | tests | Set to `1` to run the Messenger log-based check (default: skip) |
 | `INSTAGRAM_ACCESS_TOKEN` / `INSTAGRAM_VERIFY_TOKEN` / `INSTAGRAM_APP_SECRET` / `INSTAGRAM_ACCOUNT_ID` | deploy (`app/.env`) | IG business token + verify token + app secret + account ID (CI: `E2E_INSTAGRAM_*` secrets/variable) |
 | `E2E_INSTAGRAM_AUTOMATED` | tests | Set to `1` to run the Instagram log-based check (default: skip) |
+| `TEAMS_APP_ID` / `TEAMS_APP_PASSWORD` / `TEAMS_TENANT_ID` | deploy (`app/.env`) | Azure Bot app registration credentials (CI: `E2E_TEAMS_APP_ID`, `E2E_TEAMS_APP_PASSWORD` secrets; `E2E_TEAMS_TENANT_ID` variable) |
+| `E2E_TEAMS_DIRECTLINE_SECRET` | tests | Direct Line channel secret used to drive the bot (CI: secret) |
 
 ## Troubleshooting
 

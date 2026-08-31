@@ -120,44 +120,84 @@ class <Name>Runner(Runner):
 - Handle all `AgentRequest` subtypes (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`)
 - Return an `AgentReply` (`AgentReplyText` or `AgentReplyImage`)
 
-### 3b. Implement `stream()` for Token Streaming
+### 3b. Implement `stream()` with AK Stream Events
 
-`Runner` declares `stream()` as `@abstractmethod`, so every framework adapter **must** implement it — even if the framework doesn't support token streaming.
+`Runner` declares `stream()` as `@abstractmethod`, returning `AsyncGenerator[StreamEvent, None]` —
+**every** adapter must implement it, even if the framework doesn't support token streaming, and it
+must yield `StreamEvent` members (`core/event.py`: `MessageStart`/`TextDelta`/`MessageEnd`,
+`ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`, `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/
+`ToolCallResult`, `StepStart`/`StepEnd`) — never a bare `str`. A runner that yields a bare `str` is
+rejected by `StreamChunk.event` with a `pydantic.ValidationError`; there is no string-normalisation
+fallback in `Runtime.stream()`.
 
-**If the framework's SDK exposes a token-delta stream** (e.g. an async event stream with text-delta events), implement it directly:
+**If the framework's SDK exposes a token-delta stream**, map its native events onto AK events —
+bracket assistant text with `MessageStart`/`MessageEnd` (deferred until text actually arrives, so a
+tool-only turn doesn't emit an empty message), and map tool-call/tool-result events onto
+`ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult` correlated by the framework's own call
+id where one exists (never generate an id when the framework supplies one — a generated id cannot
+correlate a result to the call that produced it):
 
 ```python
 from collections.abc import AsyncGenerator
 
-async def stream(self, agent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+from ...core.event import MessageEnd, MessageStart, StreamEvent, TextDelta
+
+async def stream(self, agent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
     tool_context = ToolContext(Runtime.current(), agent, session, requests)
     try:
         tool_context.set()
         fw_session = self._session(session)
         prompt = "".join(req.prompt for req in requests if isinstance(req, AgentRequestText))
 
+        # Anything remembered mid-stream is a local — see the rule below.
+        message_id: str | None = None
+
         result = await self._execute_streamed(agent, fw_session, prompt)  # framework-specific
+        message_id: str | None = None  # local — the runner is shared across sessions
         async for event in result:
             delta = self._extract_text_delta(event)  # framework-specific
             if delta:
-                yield delta
+                if message_id is None:
+                    message_id = uuid4().hex
+                    yield MessageStart(message_id=message_id)
+                yield TextDelta(message_id=message_id, content=delta)
+        if message_id is not None:
+            yield MessageEnd(message_id=message_id)
     finally:
         tool_context.reset()
 ```
 
-**If the framework has no native token streaming** (e.g. CrewAI, smolagents), implement `stream()` as a generator that always raises, so it satisfies the abstract method contract but fails fast with a clear message:
+**If the framework has no native token streaming** (e.g. CrewAI, smolagents), override `supports_streaming` to `False` and implement `stream()` as a generator that always raises, so a caller can check the property before invoking `stream()` instead of provoking the raise, while `stream()` itself still satisfies the abstract method contract and fails fast with a clear message:
 
 ```python
-async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
     """
-    <Name> does not support SSE streaming.
+    :return: False — this adapter does not implement streaming, so stream() always raises.
+    """
+    return False
+
+async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+    """
+    <Name> streaming is not implemented in this adapter yet.
     :raises NotImplementedError: Always raised — use rest_sync mode instead.
     """
-    raise NotImplementedError("<Name> does not support SSE streaming. Use rest_sync mode.")
+    raise NotImplementedError(
+        "<Name> streaming is not implemented in the Agent Kernel adapter yet. Use rest_sync mode."
+    )
     yield  # make this an async generator to satisfy the type contract
+
+@property
+def supports_streaming(self) -> bool:
+    """Declared False so a caller can reject a streamed request instead of provoking the raise."""
+    return False
 ```
 
-`Runtime.stream()` wraps each yielded token in a `StreamChunk`, runs it through `PostHook.on_stream_chunk()`, and forwards it to the caller (REST SSE endpoint or AWS Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new framework's streaming — just implement `Runner.stream()`.
+`Runtime.stream()` wraps each yielded event in a `StreamChunk` (`delta` is populated only for
+`TextDelta`, so a plain-text consumer that only reads `StreamChunk.delta` keeps working unchanged),
+runs it through `PostHook.on_stream_chunk()`, and forwards it to the caller (REST SSE endpoint or AWS
+Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new framework's
+streaming — just implement `Runner.stream()`. See `docs/specs/523-ag-ui-support/spec.md` for the full
+event-mapping rules and per-adapter correlation-id/boundary-derivation decisions.
 
 ### 3c. Wire up the per-run framework context
 
@@ -375,7 +415,8 @@ Create at minimum:
 
 - [ ] `ak-py/src/agentkernel/framework/<name>/` directory with `__init__.py` and `<name>.py`
 - [ ] `<Name>Session` (if needed), `<Name>Runner`, `<Name>Agent`, `<Name>Module`, `<Name>ToolBuilder`
-- [ ] `<Name>Runner.stream()` implemented — either real token streaming or a `NotImplementedError` stub
+- [ ] `<Name>Runner.stream()` implemented — either real event streaming or a `NotImplementedError` stub
+- [ ] `<Name>Runner.supports_streaming` declared — `False` when `stream()` only raises, so callers reject instead of provoking it
 - [ ] `<Name>Runner`'s `name` (passed to `super().__init__()`) matches the session key used in `session.get/set(...)` — required for `Session.get_framework_session()` to resolve it
 - [ ] Public alias at `ak-py/src/agentkernel/<name>.py`
 - [ ] Optional dependency group in `ak-py/pyproject.toml`

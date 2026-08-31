@@ -43,7 +43,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 | 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
 | 🔍 **Production Observability** | LangFuse, OpenLLMetry, and Pydantic Logfire tracing wired in. Every agent, tool, and LLM call — visible. |
-| 🤝 **Open Standards** | Native **MCP** (Model Context Protocol) and **A2A** (Agent-to-Agent) support. |
+| 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), and **AG-UI** (streamed event protocol for agent-facing frontends) support. |
 | 🆓 **Apache 2.0** | No licensing fees. No vendor lock-in. Production-ready open source. |
 
 > ⭐ **If Agent Kernel is solving real problems for you, please star the repo — it's the single best way to help us grow.**
@@ -124,12 +124,24 @@ Let agents run code and shell commands in an isolated, permission-bounded enviro
 
 [Learn more →](https://kernel.yaala.ai/docs/advanced/sandbox)
 
+### ⏰ Deferred & Recurring Chats
+
+Let a chat run later, or on a schedule — the platform owns the timers, the persistence, and the management API.
+
+- **Enable it in config** — a `schedule` block turns on deferring and the agent tools with no code change; mount `ScheduleRESTRequestHandler` when you also want the management routes.
+- **One creation path, three callers** — a `schedule` block on any chat request (acknowledged with HTTP 202), the agent's own `create_schedule` tool, or a direct `ScheduleManager` call.
+- **Pluggable timers and stores** — `local` (in-process, for development) or AWS EventBridge Scheduler for production; task records in memory, Redis, Valkey, or DynamoDB.
+- **Managed over REST** — list, read, amend, pause and cancel via `/api/v1/schedules`, scoped to the owning user by a pluggable `Authoriser`.
+
+[Learn more →](https://kernel.yaala.ai/docs/advanced/scheduling)
+
 ### 🧠 Memory, Sessions & Knowledge Bases
 
 | Layer | Backends |
 |---|---|
 | **Session / Memory** | In-memory, Redis, Valkey (AWS), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
 | **Conversation Threads** | Persistent, named threads keyed by `session_id` — in-memory, Redis, Valkey, DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP) |
+| **Scheduled Tasks** | Deferred and recurring chat execution — in-memory, Redis, Valkey, DynamoDB (AWS) task stores; local in-process or AWS EventBridge Scheduler timers |
 | **Vector Knowledge** | ChromaDB |
 | **Graph Knowledge** | Neo4j |
 | **SQL Analytics** | Starburst Galaxy (Trino) |
@@ -145,6 +157,7 @@ Build once. Ship to every channel your users live on. No bespoke bot code.
 
 - **MCP (Model Context Protocol)** — Connect agents to external tools, data sources, and services. Optionally expose your agents *as* MCP tools.
 - **A2A (Agent-to-Agent)** — Native message passing, handoffs, and coordination between agents in a shared ecosystem.
+- **AG-UI** — Stream any agent's run (text, tool calls, reasoning, shared state) to a compliant AG-UI frontend, e.g. [CopilotKit](https://docs.copilotkit.ai).
 
 ### ⚡ Built-In Execution Modes
 
@@ -179,7 +192,7 @@ ak skill install
 |---|---|
 | `ak-init` | Scaffold a new project — any framework, any deployment mode |
 | `ak-build` | Add tools, agents, handoffs — context-aware and framework-specific |
-| `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, hooks, multimodal, conversation threads |
+| `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, sandbox, scheduled tasks |
 | `ak-add-integration` | Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail |
 | `ak-cloud-deploy` | AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run with full Terraform |
 | `ak-test` | Score, llm, and fallback test modes (pluggable evaluators) + a debugging playbook |

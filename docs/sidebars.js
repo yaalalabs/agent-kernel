@@ -110,6 +110,7 @@ const sidebars = {
         'integrations/gmail',
         'integrations/teams',
         'integrations/hooks',
+        'integrations/agui',
       ],
     },
     {
@@ -119,6 +120,7 @@ const sidebars = {
         'api/rest-api',
         'api/mcp-server',
         'api/a2a-server',
+        'api/agui-server',
       ],
     },
     {
@@ -138,6 +140,7 @@ const sidebars = {
         'advanced/multi-agent',
         'advanced/multimodal',
         'advanced/threads',
+        'advanced/scheduling',
         'advanced/sandbox',
         'advanced/knowledge-bases',
         'advanced/queue-mode-guide',

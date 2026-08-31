@@ -192,10 +192,11 @@ class ScheduleManager:
     def record_trigger(self, task_id, request_id=None, occurred_at=None) -> None
 ```
 
-- **Transport compatibility (fail-fast)**: at construction, when `provider.supported_transports is not None` and `QueueTransportFactory.resolve_type()` (`pipeline/transport/base.py:72-87`) is not in the set, raise `AKConfigError("schedule provider 'eventbridge' delivers to 'sqs' transports, but the configured queue transport is 'in_memory'")`. `resolve_type()` is used (not `create()`) because it returns the declared or URL-implied type even where the pipeline transport class has not shipped (ECS today).
+- **Transport compatibility (fail-fast)**: at construction, when `provider.supported_transports is not None` and `QueueTransportFactory.resolve_type()` (`pipeline/transport/base.py:99-114`) is not in the set, raise `AKConfigError("schedule provider 'eventbridge' delivers to 'sqs' transports, but the configured queue transport is 'in_memory'")`. `resolve_type()` is used (not `create()`) because it resolves the type without constructing a transport, so the check works even where the pipeline transport class has not shipped (ECS today). **Amended after review (2026-08-21):** it returns `execution.queues.type` or the no-block default, not "the declared or URL-implied type" — URL inference was removed in this feature line (see Behavioural changes 12), because coordinates are injected per component and made sibling processes resolve different transports.
+- **Local-provider single-process constraint (fail-fast)**: at construction, when `AKConfig.get().schedule.provider.type.lower() == "local"` and either `QueueTransportFactory.resolve_type()` or `schedule.store.type.lower()` is not `in_memory`, raise `AKConfigError("schedule provider 'local' is single-process only: it requires the 'in_memory' queue transport and the 'in_memory' store, but the configured transport is 'sqs' and the store is 'in_memory'")`. A separate method (`_validate_local_provider_topology`) from the transport check above, because the two fail for different reasons: `local` + `sqs` *delivers* correctly and is only unmanageable — the armed heap lives in the agent-runner process while the management routes are served by IOHandler. Returns early when `AKConfig.get().schedule` is `None`, the only path being a caller that injected its own backends (`get()` never does). Keyed on the `local` short name rather than a capability declared on the ABCs: `local` is the sole built-in provider, so no reachable configuration escapes it, and no ABC change is needed.
 - **Creation** (`create_from_request` validates `req.user_id` and delegates): validate spec semantically (croniter parse of `cron`; `zoneinfo.ZoneInfo(timezone)`; `at` parses via `datetime.fromisoformat`, rejects an explicit UTC offset, and must be in the future in its timezone; `user_id` required) → mint `task_id` → build the `ScheduledTask` and trigger-body template → `store.create(task)` → `provider.create(task, body_template)` → `store.update(task with provider_ref)`. On provider failure: `store.delete(task_id)` (hard delete, rollback only) and re-raise. Design order preserved: record first, provider second, no active record without a provider registration surviving an error.
 - **Amendment** (`update`): load + ownership check → reject when `status` in (`completed`, `cancelled`) with `ValueError` → apply the amendable fields (semantic re-validation) → `store.update` → `provider.update` (which re-freezes the trigger body; pause/resume maps to provider state). On provider failure the store change is rolled back to the previous record and the error re-raised.
-- **Cancel**: ownership check → `provider.delete(provider_ref)` (tolerates already-gone) → `store.update(status=CANCELLED)`. Soft transition: the record is the audit trail.
+- **Cancel**: ownership check → `store.update(status=CANCELLED)` → `provider.delete(provider_ref)` (tolerates already-gone), restoring the previous record if the provider rejects. Soft transition: the record is the audit trail. **Amended after review (2026-08-21):** ordered store-first like `create` and `update` (`schedule/manager.py:254-265`) rather than provider-first, so a caller that sees an error never has to wonder which of the two took effect. The window this leaves — record cancelled while the registration can still fire once — is the harmless direction: `apply_trigger` refuses to complete a cancelled task, so a trigger landing in it records its occurrence and nothing more.
 - **Ownership**: `get_task`/`update`/`cancel` raise `PermissionError` when `user_id is not None and task.user_id != user_id` (the thread convention, `integration/thread/manager.py:251-252`); `list_tasks` filters by owner.
 - **record_trigger**: `store.record_trigger(task_id, request_id, occurred_at or now)` updating `last_triggered_at`, `trigger_count += 1`, `last_request_id`; a one-time task (spec has `at`) also moves to `COMPLETED`. Wrapped in `try/except Exception: log`: recording never fails a run.
 - **Pagination**: cursor/limit helpers move to a new shared `core/util/pagination.py` (`encode_cursor`, `decode_cursor`, `clamp_limit`) extracted verbatim from `integration/thread/manager.py:27-54`; the thread manager is refactored to call them (behavior identical: base64 offset cursor, `ValueError("Invalid pagination cursor")`, default 50 / max 200). `ScheduleManager` uses the same helpers.
@@ -330,7 +331,33 @@ schedule: Optional[_ScheduleConfig] = Field(default=None, description="Schedulin
 ```
 
 - Block presence is the enablement signal (the thread pattern); defaults (`local` + `in_memory`) make a bare `schedule:` block work for local dev. Env vars: `AK_SCHEDULE__PROVIDER__TYPE`, `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME` / `__ROLE_ARN` / `__QUEUE_ARN`, `AK_SCHEDULE__STORE__TYPE`, `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME`, etc. Note the same failure mode threads have: any `AK_SCHEDULE__*` env var materializes the block and enables the capability.
-- Existing YAML/env configs are unaffected (`schedule` was never a valid key; unknown keys in `config.yaml` were already rejected/ignored per `YamlBaseSettingsModified` behavior, unchanged).
+- Existing YAML/env configs are unaffected **by the `schedule` block itself** (`schedule` was never a valid key; unknown keys in `config.yaml` were already rejected/ignored per `YamlBaseSettingsModified` behavior, unchanged).
+- `execution.queues.type` is mandatory inside a declared block (Behavioural changes 12). This is the one breaking config change in the feature line:
+
+  Before:
+
+  ```yaml
+  execution:
+    mode: rest_sync
+    queues:
+      input:
+        url: https://sqs.us-east-1.amazonaws.com/123456789012/ak-input.fifo
+  ```
+
+  After:
+
+  ```yaml
+  execution:
+    mode: rest_sync
+    queues:
+      type: sqs          # now required inside a declared block
+      input:
+        url: https://sqs.us-east-1.amazonaws.com/123456789012/ak-input.fifo
+  ```
+
+  An app with **no** `queues` block that receives `AK_EXECUTION__QUEUES__*` env vars must add the
+  block with `type` too — the env source materializes a partial `queues` dict, so the field's
+  `default_factory` never runs.
 
 ### Management REST handler (`schedule/handler.py`)
 
@@ -346,7 +373,10 @@ schedule: Optional[_ScheduleConfig] = Field(default=None, description="Schedulin
 Mounting:
 
 - Explicitly, on any surface: `RESTAPI.run(handlers=[AgentRESTRequestHandler(), ScheduleRESTRequestHandler(authoriser=...)])`, or on ECS `AWSRestAPI.run(handlers=[ECSQueueRequestHandler(), ScheduleRESTRequestHandler(authoriser=...)])`.
-- Pipeline single-process topology: `IOHandler.run` gains `schedule_authoriser: Optional[Authoriser] = None` and builds `handlers=[RequestHandler()]` plus (lazy import) `ScheduleRESTRequestHandler(authoriser=schedule_authoriser)` when `AKConfig.get().schedule is not None` (`pipeline/io_handler.py:52`). `IOHandler.run` also calls `ScheduleManager.get()` eagerly at startup so provider/transport incompatibility and missing provider config fail the boot, not the first request. `RESTAPI.run()`'s delegation rule is untouched (`api/http.py`, no-explicit-handlers rule); an app needing an `Authoriser` in this topology calls `IOHandler.run(schedule_authoriser=...)` directly.
+- ECS queue mode: `ECSIOHandler.run` gains the same `handlers` parameter as the pipeline `IOHandler` and forwards it additively — `[*AWSRestAPI.get_default_handlers(), *handlers]` in the REST branch, appended to the two built-ins in the WebSocket branch — so an app mounts the routes with `ECSIOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=...)])` instead of reassembling the handler's two-thread body (`ThreadRunner` is internal-only) in user code. **Added after review (2026-08-21)**, closing the asymmetry left when only the pipeline `IOHandler` gained `handlers`.
+- Pipeline single-process topology: `IOHandler.run` gains `handlers: Optional[list[RESTRequestHandler]] = None` and serves `[RequestHandler(), *handlers]` — the pipeline's own chat route always, plus whatever the app mounts, so an app exposing the management routes passes `ScheduleRESTRequestHandler(authoriser=...)` there. Nothing is mounted from config. `RESTAPI.run()`'s delegation rule is untouched (`api/http.py`, no-explicit-handlers rule); an app wanting the routes in this topology calls `IOHandler.run(handlers=[...])` directly.
+- Startup fail-fast, independent of mounting: `IOHandler._validate_topology` calls `ScheduleManager.get()` whenever `config.schedule is not None`, so provider/transport incompatibility and missing provider config fail the boot rather than the first request — including for an app that only uses the agent tools.
+- **Amended after review (2026-08-21):** `IOHandler.run` originally took `authoriser` and appended `ScheduleRESTRequestHandler` itself whenever the `schedule` block was present. Replaced with app-level mounting for consistency with every other optional REST surface (Slack, threads; #612 removed the equivalent auto-mount from `RESTAPI.run`), and the eager `ScheduleManager.get()` moved out of the mounting path into topology validation.
 
 ### Shared authorization refactor (`auth/`)
 
@@ -425,7 +455,7 @@ def get_schedule_tools() -> list[SystemTool]:
 
 ### Example
 
-New `examples/api/schedule-openai/` (the `examples/api/thread-openai` layout): `app.py` running `RESTAPI.run()` with a `schedule:` block (local provider, in_memory store: the IOHandler auto-mounts the management routes), `config.yaml`, `README.md` showing a deferred chat request (`schedule.at` / `schedule.cron`), the 202 acknowledgement, the management routes, and an agent prompt that exercises `create_schedule`.
+New `examples/api/schedule-openai/` (the `examples/api/thread-openai` layout): `app.py` running `IOHandler.run(handlers=[ScheduleRESTRequestHandler()])` with a `schedule:` block (local provider, in_memory store), `config.yaml`, `README.md` showing a deferred chat request (`schedule.at` / `schedule.cron`), the 202 acknowledgement, the management routes, and an agent prompt that exercises `create_schedule`.
 
 ### Terraform changes (`ak-deployment/ak-aws/`)
 
@@ -454,11 +484,13 @@ All intentional; each traced to a design requirement:
 4. `ECSAgentRunner` stops discarding `ChatService`'s status code (:110) and forwards it; `ECSOutputConsumer` stores it. Stored ECS records gain a `status_code` key (readers unaffected: records are TTL-bound and read via `_build_sync_response`).
 5. ECS REST_SYNC/REST_ASYNC replies whose stored status is >= 400 now surface as HTTP 4xx/5xx (`HTTPException`) instead of HTTP 200 with an error body: parity with direct mode and the pipeline (`RequestHandler._build_sync_response` :269-277 becomes the shared base behavior).
 6. A missing `request_id` message attribute no longer permanently fails a queue message whose **body** carries `request_id` (the trigger contract); messages missing both keep today's error path (`pipeline/agent_runner.py:89-94`, `akagentrunner.py:62-64`, serverless :47-54/:191-196).
-7. `IOHandler` mounts the schedule management routes automatically when the `schedule` block is present, and fails startup on provider/transport incompatibility (new `AKConfigError`, joining the existing fail-fasts `pipeline/io_handler.py:107-119`).
+7. `IOHandler.run` takes `handlers` (mounted alongside its own `RequestHandler`): the schedule management routes are the application's to mount, like a Slack handler. It performs no scheduling validation of its own: mounting `ScheduleRESTRequestHandler` calls `ScheduleManager.validate_configuration()`, so an unusable provider/store/transport pairing fails the app build there (new `AKConfigError`), while an app reaching the capability only through the agent tools builds its backends on first use.
 8. The thread handler does not create a thread or record messages for a request carrying `schedule` (checked before `ThreadRecorder.pre_run`, `thread_chat.py:120,146`).
 9. Runs whose request carries `user_id` now expose it in the session volatile cache under `ak.acting_user_id` for the duration of the run (visible to hooks/tools; set and cleared by `Runtime` inside the per-session lock). `AgentHandler.run_*`, `AgentService.run_multi`/`stream_multi`, and `Runtime.run`/`stream` each gain a backward-compatible optional `acting_user_id` parameter.
 10. The Terraform input queue flips to `content_based_deduplication = true` when `enable_scheduling` (containerized `modules/queues/main.tf:17`, serverless equivalent). App senders are unaffected: an explicit `MessageDeduplicationId` (always sent today, `pipeline/request_handler.py:86`, `sqs_handler.py:343-350`) takes precedence over content-based dedup.
 11. `ThreadRESTRequestHandler` inherits `_resolve_user` from the new `AuthorisedRESTRequestHandler` and `Authoriser` moves to `auth/`: runtime behavior and error strings identical, but **the import path changes** — `Authoriser` is now only importable from `agentkernel.auth`, no longer from `agentkernel.thread` or `agentkernel.integration.thread`. Apps that subclass it must update one import line.
+
+12. **`execution.queues.type` becomes mandatory inside a declared `queues` block** and URL-based transport inference is removed (`pipeline/transport/base.py:99-114`). Coordinates are injected per component by a deployment — a Lambda consuming its input queue through an event source mapping is never given the input URL — so inference made one process resolve `sqs` while its sibling resolved `in_memory`. This is a **breaking config change**: it breaks both a declared block without `type` *and* a config with no block at all running where `AK_EXECUTION__QUEUES__*` is injected (the field's `default_factory` never runs once the env source supplies a partial dict), which is every pre-#646 queue-mode AWS deployment. The tests that pinned the inference are rewritten (`test_pipeline_sqs_transport.py`, `test_pipeline_consumer_loop.py`). Migration and blast radius: `release-notes.md:89-150`.
 
 **Non-changes**: the three multipart route signatures (`api/handler.py:76-105`, `pipeline/request_handler.py:343-380`, `integration/thread/thread_chat.py:79-108`) gain no `schedule` form field, so multipart requests cannot carry a schedule block (design non-goal; the inherited model field simply stays `None` there); chat wire shapes for non-scheduled requests (200 bodies byte-identical); `ResponseBuilder.build_response` for status 200 and all error paths; messaging integrations, CLI, A2A, MCP; thread store layouts and thread routes; `RESTAPI.run()` delegation rule (`cls is RESTAPI`, no explicit handlers, `in_memory`); `QueueMessage` envelope shape; session store layouts; serverless WebSocket paths; `SQSHandler` send-side signatures; existing ECS record keys (`session_id`, `request_id`, `body`) all remain, `status_code` is additive.
 
@@ -470,9 +502,11 @@ All intentional; each traced to a design requirement:
 | Invalid spec: both/neither `at`/`cron` (pydantic), bad cron, unknown timezone, `at` not ISO / has UTC offset / in the past, cron with both day fields (EventBridge) | `ValueError` → 400 (chat + PUT), error JSON (tools) |
 | Creation without `user_id` | `ValueError` → 400 (chat); error JSON (tools, from the acting-user check) |
 | Provider create/update failure (`botocore ClientError`, local send failure at registration) | `ScheduleError` → 500 via the wrappers; create rolls the store record back (hard delete), update restores the previous record |
-| Provider/transport mismatch (`eventbridge` + non-`sqs` transport) | `AKConfigError` at `ScheduleManager` construction: IOHandler startup failure when the block is present; otherwise first scheduling use → 500 |
+| Provider/transport mismatch (`eventbridge` + non-`sqs` transport) | `AKConfigError` at `ScheduleManager` construction: app-build failure when the management routes are mounted (`ScheduleManager.validate_configuration`); otherwise first scheduling use → 500 |
+| Local provider outside a single process (`local` + broker transport, or `local` + non-`in_memory` store) | `AKConfigError` at `ScheduleManager` construction, surfaced the same way: the armed heap and the management routes would sit in different processes |
+| Store/transport mismatch (`in_memory` store + broker transport) | `AKConfigError` at `ScheduleManager` construction, surfaced the same way: the records would be split across the runner and the route-serving processes |
 | Missing `schedule.provider.eventbridge.{group_name,role_arn,queue_arn}` | `AKConfigError` at factory time (same surfacing as above) |
-| `croniter` not installed | `ImportError` with the extra hint via `require_extra("schedule", ...)` at manager build (`core/util/factory.py:50-64`) |
+| `croniter` not installed | `ImportError` with the extra hint via `require_extra("cron", ...)`, raised on demand when a cron expression is first interpreted (`schedule/timing.py:90`), not at manager build |
 | Store create/update/list failure | Propagates → 500 / error JSON |
 | `record_trigger` store failure | Logged, never fails the run (`ChatService._record_trigger` and the manager both guard) |
 | Ownership violation | `PermissionError` → 403 (routes), error JSON (tools) |
