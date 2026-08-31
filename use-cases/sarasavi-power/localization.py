@@ -474,6 +474,39 @@ SAVING_TIPS: dict[str, dict[str, list[str]]] = {
     },
 }
 
+# A savings answer is easy to read and forget; closing it with a short, numbered
+# plan gives the household something to actually go DO. Fully pre-formatted here
+# (like every other money/kWh figure in this app) so build_savings_plan() below
+# just fills in numbers the engine already computed -- the model relays it
+# verbatim rather than composing its own, which is where a plan would drift.
+PLAN_TEXT: dict[str, dict[str, str]] = {
+    "en": {
+        "heading": "Your action plan:",
+        "boundary_step": "Cut {cut:.2f} kWh to reach {target:.0f} kWh this cycle: staying under that tariff "
+        "block alone saves {currency} {saving:,.2f}.",
+        "appliance_step": "Cut back on {name} ({share:.0f}% of your usage): {tip}",
+        "general_step": "{tip}",
+        "recheck_step": "Send your next meter reading before this cycle ends so we can confirm you hit the target.",
+    },
+    "si": {
+        "heading": "ඔබේ ක්‍රියාකාරී සැලැස්ම:",
+        "boundary_step": "{target:.0f} kWh දක්වා යාමට {cut:.2f} kWh අඩු කරන්න: එම ගාස්තු කාණ්ඩයට පහළින් සිටීම "
+        "නිසාම {currency} {saving:,.2f} ඉතිරි වේ.",
+        "appliance_step": "{name} භාවිතය අඩු කරන්න (ඔබේ පරිභෝජනයෙන් {share:.0f}%ක්): {tip}",
+        "general_step": "{tip}",
+        "recheck_step": "ඉලක්කයට ළඟා වුනාද බැලීමට, මෙම බිල් කාලය අවසන් වීමට පෙර මීළඟ මීටර් කියවීම එවන්න.",
+    },
+    "ta": {
+        "heading": "உங்கள் செயல் திட்டம்:",
+        "boundary_step": "{target:.0f} kWh-ஐ அடைய {cut:.2f} kWh குறைக்கவும்: அந்தக் கட்டணப் படிக்குக் கீழே "
+        "திரும்புவதால் மட்டும் {currency} {saving:,.2f} சேமிக்கலாம்.",
+        "appliance_step": "{name} பயன்பாட்டைக் குறைக்கவும் (உங்கள் பயன்பாட்டில் {share:.0f}%): {tip}",
+        "general_step": "{tip}",
+        "recheck_step": "இலக்கை அடைந்தீர்களா எனப் பார்க்க, இந்தக் காலம் முடிவதற்குள் உங்கள் அடுத்த மீட்டர் "
+        "அளவீட்டை அனுப்பவும்.",
+    },
+}
+
 UI_TEXT: dict[str, dict[str, str]] = {
     "en": {
         "banner": "Sarasavi Power - keyless product demo",
@@ -504,7 +537,7 @@ UI_TEXT: dict[str, dict[str, str]] = {
         "bill": "ඇස්තමේන්තුගත බිල",
         "loads": "වැඩිම ඇස්තමේන්තුගත පරිභෝජන:",
         "opportunity": "හොඳම ගාස්තු සීමා ඉතිරි කිරීම:",
-        "cut": "{target:.0f} kWh දක්වා යාමට {cut:.2f} kWh අඩු කරන්න; ඇස්තමේන්තුගත බිල LKR {bill:,.2f} වන අතර LKR {saving:,.2f} ඉතිරි වේ.",
+        "cut": "{target:.0f} kWh දක්වා යාමට {cut:.2f} kWh අඩු කරන්න; ඇස්තමේන්තුගත බිල රුපියල් {bill:,.2f} වන අතර රුපියල් {saving:,.2f} ඉතිරි වේ.",
         "no_opportunity": "මෙම පරිභෝජන මට්ටමේදී අඩු ගාස්තු සීමාවක් නොමැත.",
         "disclaimer": "මෙය ඇස්තමේන්තුවක් පමණි - නිල CEB/LECO බිලක් නොවේ.",
         "next": "Agent Kernel සංවාදය සඳහා demo.py භාවිතා කරන්න; Meta තොරතුරු එක් කළ පසු app.py භාවිතා කරන්න.",
@@ -521,12 +554,22 @@ UI_TEXT: dict[str, dict[str, str]] = {
         "bill": "மதிப்பிடப்பட்ட கட்டணம்",
         "loads": "அதிக மதிப்பிடப்பட்ட பயன்பாடுகள்:",
         "opportunity": "சிறந்த கட்டண எல்லைச் சேமிப்பு:",
-        "cut": "{target:.0f} kWh-ஐ அடைய {cut:.2f} kWh குறைக்கவும்; மதிப்பிடப்பட்ட கட்டணம் LKR {bill:,.2f}, சேமிப்பு LKR {saving:,.2f}.",
+        "cut": "{target:.0f} kWh-ஐ அடைய {cut:.2f} kWh குறைக்கவும்; மதிப்பிடப்பட்ட கட்டணம் ரூபாய் {bill:,.2f}, சேமிப்பு ரூபாய் {saving:,.2f}.",
         "no_opportunity": "இந்தப் பயன்பாட்டு நிலையில் குறைந்த கட்டண எல்லை இல்லை.",
         "disclaimer": "இது ஒரு மதிப்பீடு மட்டுமே - அதிகாரப்பூர்வ CEB/LECO கட்டணம் அல்ல.",
         "next": "Agent Kernel உரையாடலுக்கு demo.py-ஐ பயன்படுத்தவும்; Meta விவரங்களைச் சேர்த்த பிறகு app.py-ஐ பயன்படுத்தவும்.",
     },
 }
+
+
+# The currency word written in each language's own script. English keeps the ISO
+# code; a Sinhala or Tamil sentence never carries "LKR", because readers say it
+# as the English letters (and so does every TTS voice: එල් කේ ආර්).
+CURRENCY_WORDS = {"en": "LKR", "si": "රුපියල්", "ta": "ரூபாய்"}
+
+
+def currency_word(language: str | None) -> str:
+    return CURRENCY_WORDS[normalize_language(language)]
 
 
 def normalize_language(language: str | None) -> str:
@@ -588,6 +631,52 @@ def matching_tips(query: str, language: str) -> list[str]:
         if key in query_folded or localized in query_folded or any(word in query_folded for word in key.split("_")):
             matched.extend(tips_for(key, language))
     return matched or tips_for("general", language)
+
+
+def build_savings_plan(language: str, top_boundary: dict | None, top_appliances: list[dict]) -> str:
+    """A short, numbered, ready-to-send action plan closing out a savings answer.
+
+    Every number here already came from the engine (top_boundary/top_appliances
+    are find_savings()'s own output), so this only assembles and translates --
+    the model appends the result verbatim instead of composing a plan itself,
+    the same determinism guarantee every other figure in this app gets.
+    Degrades gracefully: no boundary win, or no appliance breakdown (a metered-only
+    household), still yields a sensible plan.
+    """
+    language = normalize_language(language)
+    t = PLAN_TEXT[language]
+    steps: list[str] = []
+
+    if top_boundary:
+        steps.append(
+            t["boundary_step"].format(
+                cut=top_boundary["units_to_cut"],
+                target=top_boundary["target_units"],
+                currency=currency_word(language),
+                saving=top_boundary["savings"],
+            )
+        )
+
+    for item in top_appliances[:2]:
+        tip_list = tips_for(item["key"], language) or tips_for("general", language)
+        if not tip_list:
+            continue
+        steps.append(
+            t["appliance_step"].format(
+                name=appliance_name(item["key"], language, item.get("name")),
+                share=item.get("share_pct", 0),
+                tip=tip_list[0],
+            )
+        )
+
+    if not steps:  # neither a boundary win nor a known appliance to single out
+        general = tips_for("general", language)
+        if general:
+            steps.append(t["general_step"].format(tip=general[0]))
+
+    steps.append(t["recheck_step"])
+    numbered = [f"{i}. {step}" for i, step in enumerate(steps, start=1)]
+    return t["heading"] + "\n" + "\n".join(numbered)
 
 
 def ui_text(language: str, key: str) -> str:

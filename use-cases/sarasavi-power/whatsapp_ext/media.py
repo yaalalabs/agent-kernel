@@ -11,8 +11,11 @@ from __future__ import annotations
 import io
 import logging
 import os
+import re
 
 import httpx
+
+import speech
 
 logger = logging.getLogger("sarasavi.whatsapp.media")
 
@@ -25,6 +28,89 @@ TTS_VOICE = os.environ.get("SARASAVI_TTS_VOICE", "Leda")
 
 # Keep spoken replies short: synthesize at most this many characters.
 _MAX_TTS_CHARS = 900
+
+# The reply text is written to be read (LKR 345.00, 61 kWh); localization.py's
+# format strings emit these tokens the same way in every language. Read aloud
+# verbatim, a TTS engine spells "LKR" letter by letter (එල් කේ ආර්) and reads
+# the decimal point as "point"/"දශම" -- both sound broken, and "345.58" as
+# "three forty five point five eight" hides that .58 means cents. Detect the
+# reply's script and rewrite every amount as words (speech.py owns the
+# wording): රුපියල්/ரூபாய்/rupees first, cents become සත and are dropped when
+# zero, and in a Sinhala reply the remaining digits themselves become Sinhala
+# words so the TTS voice cannot wander into an English reading of "2,500".
+_SINHALA_SCRIPT = re.compile(r"[඀-෿]")
+_TAMIL_SCRIPT = re.compile(r"[஀-௿]")
+# Currency on either side of the number, in any written form the text agents
+# use: "LKR 345.58", "1,260.00 LKR", "රුපියල් 1,260.00", "රු. 630", "ரூபாய் 80".
+_AMOUNT = r"\d+(?:,\d{3})*(?:\.\d{1,2})?"
+_CURRENCY_TOKEN = r"(?:LKR|Rs\.?|රුපියල්|රු\.?|ரூபாய்|ரூ\.?)"
+_CURRENCY_AMOUNT = re.compile(
+    _CURRENCY_TOKEN + r"\s*(?P<after>" + _AMOUNT + r")"
+    r"|(?P<before>" + _AMOUNT + r")\s*" + _CURRENCY_TOKEN
+)
+_ZERO_DECIMAL = re.compile(r"(\d)\.00\b")  # leftover non-currency "61.00 kWh" -> "61 kWh"
+# "<n> kWh" -> the unit word leads for Sinhala/Tamil, the way a quantity is
+# actually said there (කිලෝ වොට් 520, like රුපියල් leads a rupee amount), not
+# the English number-then-unit order the text reply writes literally. English
+# keeps its own natural order ("520 units").
+_UNIT_AMOUNT = re.compile(r"(?:(?P<num>[\d,]+(?:\.\d+)?)\s*)?\bkWh\b")
+# Digits still left in a Sinhala reply after the passes above (unit counts,
+# day counts, plain "2500" the model wrote without a currency token).
+_BARE_NUMBER = re.compile(r"\d+(?:,\d{3})*(?:\.\d+)?")
+
+_UNIT_WORD = {"si": "කිලෝ වොට්", "ta": "கிலோவாட்", "en": "units"}
+
+
+def _script(text: str) -> str:
+    if _SINHALA_SCRIPT.search(text):
+        return "si"
+    if _TAMIL_SCRIPT.search(text):
+        return "ta"
+    return "en"
+
+
+def _speak_bare_sinhala(match: re.Match) -> str:
+    """Word one leftover digit run: "2500" -> "දෙදහස් පන්සීය", "61.5" -> "හැට එක දශම පහ".
+
+    A non-zero decimal tail is read digit by digit after දශම, the normal Sinhala
+    reading for a measurement; a zero tail is not said at all. Runs too long to
+    word (reference numbers) are left as digits.
+    """
+    token = match.group(0)
+    whole_text, _, frac = token.partition(".")
+    try:
+        words = speech.number_to_sinhala_words(int(whole_text.replace(",", "")))
+    except ValueError:
+        return token
+    frac = frac.rstrip("0")
+    if frac:
+        words += " දශම " + speech.sinhala_digits(frac)
+    return words
+
+
+def _normalize_for_speech(text: str) -> str:
+    """Rewrite written currency/unit shorthand into what TTS should say aloud."""
+    lang = _script(text)
+
+    def _speak_amount(match: re.Match) -> str:
+        token = match.group("after") or match.group("before")
+        whole_text, _, cents_text = token.partition(".")
+        whole = int(whole_text.replace(",", "") or 0)
+        cents = int(cents_text.ljust(2, "0")) if cents_text else 0
+        return speech.spoken_rupees(whole + cents / 100, lang)
+
+    def _speak_unit(match: re.Match) -> str:
+        num, unit_word = match.group("num"), _UNIT_WORD[lang]
+        if not num:
+            return unit_word
+        return f"{num} {unit_word}" if lang == "en" else f"{unit_word} {num}"
+
+    text = _CURRENCY_AMOUNT.sub(_speak_amount, text)  # "LKR 345.58" -> "රුපියල් ... සත ..."
+    text = _ZERO_DECIMAL.sub(r"\1", text)  # any other "N.00" left (e.g. kWh figures)
+    text = _UNIT_AMOUNT.sub(_speak_unit, text)  # "520 kWh" -> "කිලෝ වොට් 520" (si/ta), "520 units" (en)
+    if lang == "si":
+        text = _BARE_NUMBER.sub(_speak_bare_sinhala, text)  # "ඒකක 61" -> "ඒකක හැට එක"
+    return text
 
 
 async def upload_media(
@@ -72,8 +158,9 @@ async def send_audio(base_url: str, phone_number_id: str, access_token: str, to_
 
 
 def _strip_for_speech(text: str) -> str:
-    """Drop markdown decorations that read badly aloud and cap the length."""
+    """Drop markdown decorations, normalize currency/units, and cap the length."""
     cleaned = text.replace("**", "").replace("*", "").replace("_", "").replace("#", "")
+    cleaned = _normalize_for_speech(cleaned)
     return cleaned[:_MAX_TTS_CHARS]
 
 

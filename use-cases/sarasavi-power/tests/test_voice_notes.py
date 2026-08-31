@@ -12,7 +12,7 @@ import pytest
 from agentkernel.core.model import AgentRequestFile, AgentRequestText
 
 from whatsapp_ext import media as media_ext
-from whatsapp_ext.handler import _VOICE_NOTE_INSTRUCTION, SarasaviWhatsAppHandler
+from whatsapp_ext.handler import _VOICE_NOTE_INSTRUCTION, SarasaviWhatsAppHandler, _clear_oversized_adk_session
 
 
 def _handler() -> SarasaviWhatsAppHandler:
@@ -105,6 +105,104 @@ def test_pcm_to_ogg_opus_produces_ogg_container() -> None:
 
     assert ogg is not None
     assert ogg[:4] == b"OggS"
+
+
+_SIZE_ERROR = "An error occurred (ValidationException) ... Item size has exceeded the maximum allowed size"
+
+
+def test_clear_oversized_session_is_noop_outside_dynamodb() -> None:
+    """Local dev's config.yaml uses session.type: in_memory, where this size cap
+    does not exist; the helper must not touch DynamoDB/boto3 in that case."""
+    import logging
+
+    assert _clear_oversized_adk_session("94770000001", logging.getLogger("test")) is False
+
+
+def test_oversized_session_error_is_retried_once_after_clearing() -> None:
+    handler = _handler()
+    handler._get_media_info = AsyncMock(return_value=(2048, "audio/ogg"))
+    handler._download_media = AsyncMock(return_value="ZmFrZS1vZ2c=")
+    handler._send_message = AsyncMock()
+    handler._send_voice_reply = AsyncMock()
+    attempts = {"n": 0}
+
+    class FlakyService:
+        agent = object()
+
+        def select(self, session_id, name):
+            pass
+
+        async def run_multi(self, requests):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise RuntimeError(_SIZE_ERROR)
+            return "Your estimated bill is LKR 630."
+
+    with (
+        patch("whatsapp_ext.handler.AgentService", FlakyService),
+        patch("whatsapp_ext.handler._clear_oversized_adk_session", return_value=True) as clear_mock,
+    ):
+        asyncio.run(handler._handle_audio_message(_AUDIO_MESSAGE, {}))
+
+    assert attempts["n"] == 2  # first call failed, retry succeeded
+    clear_mock.assert_called_once()
+    sent = [call.args[1] for call in handler._send_message.await_args_list]
+    assert any("Your estimated bill is LKR 630." in text for text in sent)
+    assert not any("error processing" in text for text in sent)
+
+
+def test_oversized_session_error_falls_back_when_clearing_fails() -> None:
+    handler = _handler()
+    handler._get_media_info = AsyncMock(return_value=(2048, "audio/ogg"))
+    handler._download_media = AsyncMock(return_value="ZmFrZS1vZ2c=")
+    handler._send_message = AsyncMock()
+
+    class AlwaysFailsService:
+        agent = object()
+
+        def select(self, session_id, name):
+            pass
+
+        async def run_multi(self, requests):
+            raise RuntimeError(_SIZE_ERROR)
+
+    with (
+        patch("whatsapp_ext.handler.AgentService", AlwaysFailsService),
+        patch("whatsapp_ext.handler._clear_oversized_adk_session", return_value=False),
+    ):
+        asyncio.run(handler._handle_audio_message(_AUDIO_MESSAGE, {}))
+
+    text = handler._send_message.await_args.args[1]
+    assert "error processing your voice note" in text
+
+
+def test_unrelated_errors_are_not_retried() -> None:
+    """Only the specific DynamoDB size failure gets a retry; anything else is a
+    real failure and should surface as one, not double the LLM cost guessing."""
+    handler = _handler()
+    handler._get_media_info = AsyncMock(return_value=(2048, "audio/ogg"))
+    handler._download_media = AsyncMock(return_value="ZmFrZS1vZ2c=")
+    handler._send_message = AsyncMock()
+    attempts = {"n": 0}
+
+    class BrokenService:
+        agent = object()
+
+        def select(self, session_id, name):
+            pass
+
+        async def run_multi(self, requests):
+            attempts["n"] += 1
+            raise RuntimeError("boom")
+
+    with (
+        patch("whatsapp_ext.handler.AgentService", BrokenService),
+        patch("whatsapp_ext.handler._clear_oversized_adk_session") as clear_mock,
+    ):
+        asyncio.run(handler._handle_audio_message(_AUDIO_MESSAGE, {}))
+
+    assert attempts["n"] == 1
+    clear_mock.assert_not_called()
 
 
 def test_strip_for_speech_removes_markdown_and_caps_length() -> None:

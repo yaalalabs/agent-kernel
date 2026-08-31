@@ -48,3 +48,13 @@ def test_keyless_demo_renders_all_supported_languages(language: str, expected: s
     report = build_report(DemoInput([parse_appliance("refrigerator:24")], 30, None))
 
     assert expected in render_report(report, language)
+
+
+@pytest.mark.parametrize(("language", "word"), [("si", "රුපියල්"), ("ta", "ரூபாய்")])
+def test_sinhala_and_tamil_renders_never_write_lkr(language: str, word: str) -> None:
+    report = build_report(DemoInput([parse_appliance("refrigerator:24")], 30, 61))
+
+    rendered = render_report(report, language)
+
+    assert word in rendered
+    assert "LKR" not in rendered

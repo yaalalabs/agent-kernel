@@ -109,6 +109,23 @@ def test_savings_exposes_current_bill_at_top_level(memory_cache) -> None:
     assert savings["current_bill"]["slab"] == "C"
 
 
+def test_savings_closes_with_a_followable_action_plan(memory_cache) -> None:
+    """The recommendation agent is told to append this verbatim; it must exist
+    and actually reflect this household's own boundary win, not a generic line."""
+    decode(tool.set_storage_consent(True))
+    decode(tool.add_appliance("refrigerator", 24))
+    decode(tool.add_appliance("ceiling_fan", 8, quantity=2))
+    decode(tool.add_appliance("led_bulb", 5, quantity=6))
+
+    savings = decode(tool.find_savings())
+    plan = savings["plan"]
+    boundary = savings["top_boundary_opportunity"]
+
+    assert plan.startswith("Your action plan:")
+    assert f"{boundary['savings']:,.2f}" in plan
+    assert "Refrigerator" in plan  # the household's own top appliance, not a placeholder
+
+
 def test_appliance_can_be_removed_and_meter_reading_cleared(memory_cache) -> None:
     decode(tool.set_storage_consent(True))
     decode(tool.add_appliance("fridge", 24))

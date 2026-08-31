@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Sequence
 
 from engine import boundary_opportunities, compute_bill, estimate_total, load_appliances
-from localization import appliance_name, configure_utf8_console, normalize_language, ui_text
+from localization import appliance_name, configure_utf8_console, currency_word, normalize_language, ui_text
 
 SAMPLE_APPLIANCES = (
     "refrigerator:24",
@@ -99,7 +99,7 @@ def render_report(report: dict, language: str = "en") -> str:
         f"{ui_text(language, 'usage')} : {report['units']:.2f} kWh ({source_label})",
         f"{ui_text(language, 'tariff_slab')} : {bill['slab']} "
         f"({ui_text(language, 'effective')} {bill['effective_date']})",
-        f"{ui_text(language, 'bill')} : LKR {bill['total']:,.2f}",
+        f"{ui_text(language, 'bill')} : {currency_word(language)} {bill['total']:,.2f}",
     ]
 
     breakdown = report["estimate"]["breakdown"]

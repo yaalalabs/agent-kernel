@@ -101,7 +101,7 @@ _UNSAFE_TERMS = (
     "மீட்டரை திற",
 )
 
-_MONEY_MARKERS = ("lkr", "rs.", "rs ", "rupee", "රු.", "ரூ")
+_MONEY_MARKERS = ("lkr", "rs.", "rs ", "rupee", "රුපියල්", "රු.", "ரூ")
 
 # Match only a claim about the current/estimated bill. Savings amounts are left
 # untouched because they represent a different engine result.
@@ -111,8 +111,8 @@ _BILL_PHRASE = (
 )
 _CURRENT_BILL_PATTERN = re.compile(
     rf"(?P<prefix>{_BILL_PHRASE}[^.\d]{{0,80}}?(?:(?:is|:|වන්නේ|ஆகும்)\s*)?(?:\*\*)?\s*)"
-    r"(?:(?P<currency_before>LKR|Rs\.?|රු\.?|ரூ\.?)\s*(?P<amount_after>[\d,]+(?:\.\d+)?)|"
-    r"(?P<amount_before>[\d,]+(?:\.\d+)?)\s*(?P<currency_after>LKR|Rs\.?|රු\.?|ரூ\.?))",
+    r"(?:(?P<currency_before>LKR|Rs\.?|රුපියල්|රු\.?|ரூபாய்|ரூ\.?)\s*(?P<amount_after>[\d,]+(?:\.\d+)?)|"
+    r"(?P<amount_before>[\d,]+(?:\.\d+)?)\s*(?P<currency_after>LKR|Rs\.?|රුපියල්|රු\.?|ரூபாய்|ரூ\.?))",
     re.IGNORECASE,
 )
 

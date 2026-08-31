@@ -126,7 +126,9 @@ def test_bill_accuracy_hook_leaves_correct_claim_unchanged() -> None:
     [
         ("Your estimated monthly electricity bill is **80 LKR**.", "**1,260.00 LKR**"),
         ("ඔබගේ ඇස්තමේන්තුගත විදුලි බිල රු. 80 වේ.", "රු. 1,260.00"),
+        ("ඔබගේ ඇස්තමේන්තුගත විදුලි බිල රුපියල් 80 වේ.", "රුපියල් 1,260.00"),
         ("மதிப்பிடப்பட்ட மின்சாரக் கட்டணம் 80 LKR ஆகும்.", "1,260.00 LKR"),
+        ("மதிப்பிடப்பட்ட மின்சாரக் கட்டணம் ரூபாய் 80 ஆகும்.", "ரூபாய் 1,260.00"),
     ],
 )
 def test_bill_accuracy_hook_corrects_all_languages_and_currency_orders(text: str, expected: str) -> None:

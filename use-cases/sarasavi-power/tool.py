@@ -29,6 +29,7 @@ from localization import (
     APPLIANCE_ALIASES,
     appliance_key_from_name,
     appliance_name,
+    build_savings_plan,
     localize_breakdown,
     matching_tips,
     normalize_language,
@@ -136,9 +137,12 @@ def _resolve_appliance_key(appliance: str, catalog: dict) -> str | None:
     return None
 
 
-def add_appliance(appliance: str, hours_per_day: float, quantity: int = 1) -> str:
+def add_appliance(appliance: str, hours_per_day: float, quantity: int = 1, watts: float = 0.0) -> str:
     """Record how much an appliance is used. 'appliance' must be a known key (call
-    list_appliances to see them); 'hours_per_day' is average daily active hours."""
+    list_appliances to see them); 'hours_per_day' is average daily active hours.
+    'watts' is optional: pass the rated power read off the household's own unit
+    (e.g. from a nameplate/spec-sticker photo) to use it instead of the catalog's
+    typical value for that appliance type; leave it 0 to keep the typical value."""
     catalog = load_appliances()
     resolved = _resolve_appliance_key(appliance, catalog)
     if resolved is None:
@@ -149,8 +153,10 @@ def add_appliance(appliance: str, hours_per_day: float, quantity: int = 1) -> st
     appliance = resolved
     if not math.isfinite(hours_per_day) or not 0 <= hours_per_day <= 24:
         return json.dumps({"ok": False, "error": "hours_per_day must be between 0 and 24"})
+    if watts and (not math.isfinite(watts) or not 1 <= watts <= 15000):
+        return json.dumps({"ok": False, "error": "watts must be between 1 and 15000"})
     try:
-        profile = state.add_appliance(appliance, hours_per_day, quantity)
+        profile = state.add_appliance(appliance, hours_per_day, quantity, watts=watts or None)
     except (PermissionError, ValueError) as exc:
         return json.dumps({"ok": False, "error": str(exc)})
     return json.dumps({"ok": True, "added": appliance, "appliances": profile["appliances"]})
@@ -243,10 +249,36 @@ def clear_bill_reading() -> str:
     return json.dumps({"ok": True, "metered_units": profile["metered_units"]})
 
 
+def _call_gist(transcript: list[str], limit: int = 160) -> str:
+    """Crude one-line gist of the caller's side of a call transcript.
+
+    get_household_profile is called before EVERY orchestrator turn (see
+    agent.py), so whatever it returns here gets baked into stored conversation
+    history again on every single message. The full multi-line streamed
+    transcript (each line one STT fragment) must never flow through this path:
+    a handful of turns is enough to compound it past DynamoDB's 400 KB item
+    limit and permanently break the session's storage. Keep just the gist.
+    """
+    prefix = "caller: "
+    chunks = [line[len(prefix) :] for line in transcript if line.startswith(prefix)]
+    text = " ".join("".join(chunks).split()).strip()
+    if not text:
+        return ""
+    return text if len(text) <= limit else text[:limit].rsplit(" ", 1)[0] + "..."
+
+
 def get_household_profile() -> str:
     """Return everything currently known about the household (basics + appliances),
-    including a summary of the most recent WhatsApp voice call if one happened."""
-    return json.dumps({"profile": state.load_profile(), "last_voice_call": state.load_last_voice_call()})
+    including a short note on the most recent WhatsApp voice call if one happened."""
+    call = state.load_last_voice_call()
+    call_note = None
+    if call:
+        call_note = {
+            "at": call.get("at"),
+            "tools_used": call.get("tools_used", []),
+            "caller_said": _call_gist(call.get("transcript", [])),
+        }
+    return json.dumps({"profile": state.load_profile(), "last_voice_call": call_note}, ensure_ascii=False)
 
 
 def export_household_data() -> str:
@@ -351,7 +383,9 @@ def estimate_units_for_bill(bill_amount: float, billing_days: int = 0) -> str:
 def find_savings() -> str:
     """Find the highest-value ways to cut the bill: retroactive slab-boundary
     opportunities (the big lever), the top energy-consuming appliances, and tips.
-    Flags lower confidence when working from an estimate rather than a meter reading."""
+    Flags lower confidence when working from an estimate rather than a meter reading.
+    Also returns 'plan': a short, numbered, already-translated action plan -- append
+    it verbatim as the closing part of the answer, never rewritten or invented."""
     profile = state.load_profile()
     units, source = _resolve_units(profile)
     if units == 0:
@@ -382,6 +416,8 @@ def find_savings() -> str:
     for o in opps:
         o["reliable"] = source == "metered"
 
+    plan = build_savings_plan(_language(profile), opps[0] if opps else None, breakdown[:2])
+
     return json.dumps(
         {
             "ok": True,
@@ -395,6 +431,7 @@ def find_savings() -> str:
             "all_boundary_opportunities": opps,
             "high_impact_appliances": breakdown[:3],
             "tips": tips,
+            "plan": plan,
         },
         ensure_ascii=False,
     )

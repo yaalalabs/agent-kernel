@@ -2,12 +2,15 @@
 
 Agent Kernel's ``AgentWhatsAppRequestHandler`` hard-rejects audio messages and
 silently drops non-``messages`` webhook fields. This subclass keeps every stock
-behavior (verification, signatures, text/image/document paths) via ``super()``
-and adds:
+behavior (verification, signatures, the text path) via ``super()`` and adds:
 
 * inbound voice notes -> the audio blob rides to Gemini as an inline part
   (the ADK runner already forwards ``AgentRequestFile`` blobs untouched);
-* the reply is sent as text (hooks apply) AND as a synthesized voice note.
+* the reply is sent as text (hooks apply) AND as a synthesized voice note;
+* inbound photos -> a bill/meter/appliance-nameplate reading instruction
+  rides alongside the image (the stock path sends a bare caption);
+* inbound documents (bill PDFs) -> the same careful-read instruction, since
+  the stock path otherwise forwards them with no reason to extract a reading.
 """
 
 from __future__ import annotations
@@ -30,8 +33,62 @@ VOICE_CALLS_ENABLED = os.environ.get("SARASAVI_VOICE_ENABLED", "true").strip().l
 # Sent before the language preference is known, so it covers all three languages.
 _MEDIA_ACK = "⏳ One moment... / මොහොතක්... / ஒரு நிமிடம்..."
 
+# DynamoDB rejects a PutItem once the serialized item passes its 400 KB hard
+# per-item cap. The "adk" item holds the whole conversation event history for a
+# session, base64 voice notes and bill photos included, so a session that has
+# traded enough media eventually can never be written to again -- every future
+# message for that phone number (text included: Runtime.run persists the full
+# in-memory Session, not just the keys the current turn touched) fails with
+# this same error. There is no SessionStore API to drop a single key, so this
+# reaches into the same DynamoDB table the framework's own driver uses and
+# removes just the oversized "adk" item; the household profile lives under a
+# separate "nv_cache" item and is never touched. A fresh, empty "adk" item is
+# then created the next time the agent runs, so this only costs the model's
+# short-term conversation memory, never the stored household data.
+_DYNAMODB_ITEM_TOO_LARGE = "Item size has exceeded the maximum allowed size"
+
+
+def _clear_oversized_adk_session(session_id: str, log) -> bool:
+    """Best-effort: delete the oversized 'adk' history item for one session.
+
+    False (no-op) outside a DynamoDB deployment (e.g. local dev's in_memory
+    store, where this size cap does not exist) or if the delete itself fails.
+    """
+    try:
+        from agentkernel.core.config import AKConfig
+
+        session_cfg = AKConfig.get().session
+        if session_cfg.type != "dynamodb" or not session_cfg.dynamodb or not session_cfg.dynamodb.table_name:
+            return False
+        import boto3
+
+        boto3.resource("dynamodb").Table(session_cfg.dynamodb.table_name).delete_item(
+            Key={"session_id": session_id, "key": "adk"}
+        )
+        # DynamoDBSessionStore layers an in-process LRU cache in front of the
+        # table (session.cache.size in config.yaml) with no public API to evict
+        # a single entry, so the row just deleted would otherwise keep coming
+        # back from this process's own memory. Clearing it is safe: nothing
+        # durable is lost, every session just re-reads from DynamoDB next time.
+        cache = getattr(Runtime.current().sessions(), "_cache", None)
+        if cache is not None:
+            cache.clear()
+        log.warning("Cleared oversized ADK session history for %s", session_id)
+        return True
+    except Exception:
+        log.exception("Could not clear oversized session history for %s", session_id)
+        return False
+
 # Set once per caller: the language chooser is a first-contact question only.
 _LANGUAGE_PROMPTED_KEY = "language_prompted"
+
+# Meta resends a webhook delivery when this endpoint doesn't ack within its retry
+# window. `_handle_webhook` only returns 200 AFTER processing every message in the
+# payload (base class), and a voice-note reply (download + Gemini + TTS render +
+# upload) routinely takes longer than that window — so without a dedup guard, a
+# slow reply goes out 2-3x per message as Meta retries the same delivery.
+_PROCESSED_MESSAGE_IDS_KEY = "processed_message_ids"
+_PROCESSED_MESSAGE_IDS_KEEP = 20
 
 # Which of the WABA's numbers this webhook arrived on. One Meta app can host
 # several numbers (e.g. a test number that may receive calls plus a real number
@@ -47,23 +104,41 @@ _VOICE_NOTE_INSTRUCTION = (
     "spoken in the audio (English, Sinhala, or Tamil)."
 )
 
-# Bill photos are the fastest accurate path to a real reading: a CEB/LECO bill
+# Bill photos/PDFs are the fastest accurate path to a real reading: a CEB/LECO bill
 # prints the units, so reading them beats asking the user to type numbers off a
-# page. Gemini reads the image directly — the model must still route the value
+# page. Gemini reads the file directly — the model must still route the value
 # through record_bill_reading so the deterministic engine owns every calculation.
+# Shared between the image and document paths (a bill can arrive as either), with
+# only the opening tag/noun differing.
+def _bill_media_instruction(tag: str, noun: str, source_word: str) -> str:
+    return (
+        f"[{tag}] The user sent {noun}. If it is a CEB or LECO "
+        "electricity bill, or a meter display, read it carefully and extract: the units "
+        "consumed in kWh, the number of billing days (or the from/to dates), and the total "
+        "amount if shown. Then call record_bill_reading with the units and billing days you "
+        f"read, and tell the user exactly which numbers you took from the {source_word} so they can "
+        "correct you. On a Sri Lankan CEB bill the consumption is usually labelled "
+        "'Units', 'kWh', or 'ඒකක'. If the bill instead shows three consumption figures marked "
+        "(O), (D) and (P), it is a Domestic Time-of-Use bill: read all three and use the "
+        "time-of-use calculation rather than the block one. If any number is blurred or unclear, say which "
+        "one and ask the user to type just that value. Never guess a number. "
+    )
+
+
 _BILL_PHOTO_INSTRUCTION = (
-    "[Photo] The user sent a photograph, attached as an image. If it is a CEB or LECO "
-    "electricity bill, or a meter display, read it carefully and extract: the units "
-    "consumed in kWh, the number of billing days (or the from/to dates), and the total "
-    "amount if shown. Then call record_bill_reading with the units and billing days you "
-    "read, and tell the user exactly which numbers you took from the photo so they can "
-    "correct you. On a Sri Lankan CEB bill the consumption is usually labelled "
-    "'Units', 'kWh', or 'ඒකක'. If the bill instead shows three consumption figures marked "
-    "(O), (D) and (P), it is a Domestic Time-of-Use bill: read all three and use the "
-    "time-of-use calculation rather than the block one. If any number is blurred or you are unsure, say which "
-    "one and ask the user to type just that value. Never guess a number. If the photo "
-    "is not a bill or meter, say briefly what you see and steer back to electricity."
+    _bill_media_instruction("Photo", "a photograph, attached as an image", "photo")
+    + "If it is instead a nameplate, spec sticker or rating label on an appliance "
+    "(often on the back or underside, e.g. a TV, fridge, AC, iron, kettle), read the rated "
+    "power off it (look for 'W', 'Watts', 'Rated Power', 'Input Power'; if a range or AC/DC pair "
+    "is shown, use the higher active-power figure) and the appliance type, then call add_appliance "
+    "with that appliance and watts so the estimate uses the household's real rating instead of the "
+    "generic default; ask for daily hours of use if you do not already have them. If the photo is "
+    "neither a bill/meter nor an appliance label, say briefly what you see and steer back to electricity."
 )
+
+_BILL_DOCUMENT_INSTRUCTION = _bill_media_instruction(
+    "Document", "a document, attached as a file (often a PDF)", "document"
+) + "If the document is not a bill or meter reading, say briefly what you see and steer back to electricity."
 
 
 def _is_bare_greeting(message: dict) -> bool:
@@ -224,6 +299,11 @@ class SarasaviWhatsAppHandler(AgentWhatsAppRequestHandler):
 
     async def _handle_message(self, message: dict, value: dict):
         message_type = message.get("type")
+        from_number = message.get("from")
+        message_id = message.get("id")
+        if from_number and message_id and await self._is_duplicate_delivery(from_number, message_id):
+            self._log.info("Ignoring duplicate WhatsApp delivery of message %s", message_id)
+            return
         if await self._maybe_prompt_language(message):
             return
         if message_type == "audio":
@@ -232,7 +312,34 @@ class SarasaviWhatsAppHandler(AgentWhatsAppRequestHandler):
         if message_type == "image":
             await self._handle_image_message(message, value)
             return
+        if message_type == "document":
+            await self._handle_document_message(message, value)
+            return
         await super()._handle_message(message, value)
+
+    async def _is_duplicate_delivery(self, from_number: str, message_id: str) -> bool:
+        """True when this WhatsApp message id has already been handled.
+
+        Marks it seen up front, before any slow work, so a retry that arrives
+        mid-processing is recognized immediately instead of triggering a second
+        full reply. Keyed on Meta's own message id, which is never reused for a
+        genuinely new message, so this cannot mistake two real messages for one.
+        """
+        try:
+            runtime = Runtime.current()
+            session = runtime.sessions().load(from_number)
+            cache = session.get_non_volatile_cache()
+            seen = list(cache.get(_PROCESSED_MESSAGE_IDS_KEY, None) or [])
+            if message_id in seen:
+                return True
+            seen.append(message_id)
+            cache.set(_PROCESSED_MESSAGE_IDS_KEY, seen[-_PROCESSED_MESSAGE_IDS_KEEP:])
+            runtime.sessions().store(session)
+            return False
+        except Exception:
+            # Dedup bookkeeping must never block a genuine reply.
+            self._log.exception("Duplicate-delivery check failed; processing message %s anyway", message_id)
+            return False
 
     async def _maybe_prompt_language(self, message: dict) -> bool:
         """On first contact, offer the language buttons instead of answering.
@@ -342,6 +449,63 @@ class SarasaviWhatsAppHandler(AgentWhatsAppRequestHandler):
         ]
         await self._run_and_reply(from_number, message_id, requests, "photo")
 
+    async def _handle_document_message(self, message: dict, value: dict):
+        """Bill PDF (or other document) -> Gemini reads it -> record_bill_reading.
+
+        The stock path forwards documents with a bare "[Document received: name]"
+        caption, which gives the model no reason to extract a reading — the exact
+        gap that made photo bills work but PDF bills fall flat. Mirrors
+        _handle_image_message so both media types get the same careful read.
+        """
+        message_id = message.get("id")
+        from_number = message.get("from")
+        if not from_number or not message_id:
+            self._log.warning("Document message missing required fields (from/id)")
+            return
+
+        document_info = message.get("document", {})
+        media_id = document_info.get("id")
+        filename = document_info.get("filename", "document")
+        if not media_id:
+            self._log.warning("Document message %s carries no media id", message_id)
+            return
+
+        media_size, media_mime_type = await self._get_media_info(media_id)
+        if media_size is None:
+            await self._send_message(
+                from_number, "Sorry, I could not retrieve that document. Please try again.", message_id
+            )
+            return
+        if media_size > self._max_file_size:
+            await self._send_message(
+                from_number,
+                "Sorry, that document is too large. Please send a smaller one, or type the units from your bill.",
+                message_id,
+            )
+            return
+
+        file_data = await self._download_media(media_id)
+        if file_data is None:
+            await self._send_message(
+                from_number, "Sorry, I could not download that document. Please try again.", message_id
+            )
+            return
+
+        # A caption is the user's own request about the document; keep it.
+        caption = (document_info.get("caption") or "").strip()
+        instruction = _BILL_DOCUMENT_INSTRUCTION
+        if caption:
+            instruction = f"{instruction}\n\nUser's caption: {caption}"
+        requests = [
+            AgentRequestText(text=instruction),
+            AgentRequestFile(
+                file_data=file_data,
+                name=filename,
+                mime_type=media_mime_type or document_info.get("mime_type") or "application/pdf",
+            ),
+        ]
+        await self._run_and_reply(from_number, message_id, requests, "document")
+
     async def _handle_audio_message(self, message: dict, value: dict):
         """Mirror the stock document path, but for voice notes, and answer in kind."""
         message_id = message.get("id")
@@ -401,7 +565,11 @@ class SarasaviWhatsAppHandler(AgentWhatsAppRequestHandler):
 
         Shared by the voice-note and photo paths so both get the same
         acknowledgement, hook pipeline and error handling. ``voice_reply`` adds a
-        spoken copy — right when the user spoke to us, noise otherwise.
+        spoken copy — right when the user spoke to us, noise otherwise. A
+        DynamoDB item-too-large failure (see ``_clear_oversized_adk_session``)
+        gets one retry after clearing the offending session: it is caused by
+        media traded earlier in THIS session, not by the current request, so
+        without the retry a perfectly fine voice note would wrongly look broken.
         """
         service = AgentService()
         try:
@@ -417,7 +585,16 @@ class SarasaviWhatsAppHandler(AgentWhatsAppRequestHandler):
                 )
                 return
 
-            result = await service.run_multi(requests=requests)
+            try:
+                result = await service.run_multi(requests=requests)
+            except Exception as e:
+                if _DYNAMODB_ITEM_TOO_LARGE not in str(e) or not _clear_oversized_adk_session(from_number, self._log):
+                    raise
+                # service._session (loaded above) is still the same oversized
+                # in-memory object; re-select to force a fresh load now that the
+                # store behind it is clean, then retry the same request once.
+                service.select(session_id=from_number, name=self._whatsapp_agent)
+                result = await service.run_multi(requests=requests)
             response_text = str(result)
             await self._send_message(from_number, response_text, message_id)
             if voice_reply:

@@ -18,6 +18,8 @@ from agentkernel.core import Runtime
 from agentkernel.core import ToolContext as AKToolContext
 from google.genai import types
 
+import speech
+import state
 import tool
 
 logger = logging.getLogger("sarasavi.voice.live")
@@ -104,13 +106,25 @@ VOICE_TOOL_DECLARATIONS: list[types.FunctionDeclaration] = [
     ),
     _decl(
         "compute_current_bill",
-        "Compute the current estimated bill in LKR from stored data. Quote the returned total exactly.",
+        "Compute the current estimated bill in LKR from stored data. Say the returned total_spoken "
+        "aloud exactly as written; the numeric total is for your reasoning only.",
         {},
         [],
     ),
     _decl(
         "find_savings",
-        "Find the best ways to cut the bill, led by tariff slab-boundary opportunities. Quote current_bill.total exactly.",
+        "Find the best ways to cut the bill, led by tariff slab-boundary opportunities. Say the "
+        "_spoken money fields (current_bill.total_spoken, savings_spoken) exactly as written. The "
+        "result also has a 'plan' field: that is written text for the WhatsApp channel, never read it "
+        "aloud or spell out its numbering; instead say the same one or two highest-value actions in "
+        "your own short spoken style.",
+        {},
+        [],
+    ),
+    _decl(
+        "end_call",
+        "Hang up the line. Call this only immediately after you have already spoken a short goodbye line "
+        "and the caller has nothing further to ask; never call it mid-question.",
         {},
         [],
     ),
@@ -131,9 +145,22 @@ _SYSTEM_PROMPT = (
     "help desk sounds. Keep every turn to one or two short sentences, then stop and let them talk; "
     "never deliver a paragraph. Ask one question at a time.\n"
     "This is speech, not text. Never say formatting characters: no asterisks, bullets, or headings. "
-    "Say numbers the way a person would: 'about one thousand two hundred and sixty rupees', not "
-    "'LKR 1,260.00'; 'sixty one units', not '61 kWh'. Round in speech, one decimal at most. Never "
-    "read a list of appliances aloud; name the top two and stop. Never spell out tool names.\n"
+    "Money arrives in tool results twice: a raw number such as 1260.00 for your reasoning, and a "
+    "ready-to-say '<name>_spoken' field right next to it (total_spoken, savings_spoken). When you "
+    "say an amount, say the _spoken string EXACTLY as written, word for word. Never read the raw "
+    "number as written, never say the letters 'LKR', and never say 'point', 'දශම' or 'බිංදුව' "
+    "inside an amount. If an amount has no _spoken field, or the caller is speaking a different "
+    "language than the _spoken text, convert the raw number yourself the same way: drop the decimal "
+    "entirely when it is .00, otherwise whole rupees then cents. In Sinhala: 345.00 becomes "
+    "'රුපියල් තුන්සිය හතලිස් පහයි' (no 'සත', no 'බින්දු'), and 350.58 becomes 'රුපියල් තුන්සිය පනහයි "
+    "සත පනස් අටයි'. In English: 'three hundred and forty five rupees', and 'three hundred and fifty "
+    "rupees and fifty eight cents'. Same rule for kWh, and the unit word leads the number in Sinhala and "
+    "Tamil exactly like the currency word does: 520 kWh becomes 'කිලෝ වොට් පන්සිය විස්ස' or 'ඒකක "
+    "පන්සිය විස්ස' in Sinhala (never 'පන්සිය විස්ස කිලෝ වොට්'), 'கிலோவாட் ஐநூற்று இருபது' in Tamil. "
+    "English keeps its own order: 'five hundred and twenty units'. Never spell out 'kWh' or read a "
+    "trailing '.00' on a unit count either. Round in speech, "
+    "one decimal at most. Never read a list of appliances aloud; name the top two and stop. Never "
+    "spell out tool names.\n"
     "Data rules: never work out units, bills, or savings yourself. Call the tools and say their "
     "numbers. Every figure is an estimate based on the published CEB and LECO domestic tariff, not "
     "an official bill; say that once, briefly, the first time you give an amount, not every time. "
@@ -146,7 +173,11 @@ _SYSTEM_PROMPT = (
     "licensed electrician, or CEB on one nine eight seven for a supply fault, then offer what you "
     "can do instead. Decline anything unrelated to household electricity in one sentence and offer "
     "two things you can help with. For exporting or deleting their data, ask them to send a "
-    "WhatsApp text message, so the request is on record."
+    "WhatsApp text message, so the request is on record.\n"
+    "Ending the call: when the caller says goodbye, thanks you and is clearly done, or has nothing "
+    "further to ask, speak one short warm closing line in the language of the call, for example "
+    "'stuti, subha dawasak', then call end_call right after. Never call end_call before speaking "
+    "that line, and never while the caller still seems to be mid question."
 )
 
 
@@ -215,6 +246,7 @@ class VoiceToolExecutor:
             ctx.set()
             try:
                 raw = func(**(args or {}))
+                language = state.get_language()
             except TypeError as exc:
                 return {"ok": False, "error": f"bad arguments: {exc}"}
             finally:
@@ -224,5 +256,11 @@ class VoiceToolExecutor:
             result = json.loads(raw)
         except (TypeError, json.JSONDecodeError):
             result = {"result": raw}
+        # Gemini Live speaks the answer directly, so there is no text stage where
+        # "LKR 1,260.00" could be rewritten. Instead every money field gains a
+        # ready-to-say ``*_spoken`` sibling in the caller's language and the
+        # system prompt tells the model to read those verbatim.
+        if isinstance(result, dict):
+            speech.annotate_spoken_amounts(result, language)
         logger.info("Voice tool %s -> ok=%s", name, result.get("ok", "n/a"))
         return result
