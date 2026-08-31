@@ -43,6 +43,18 @@ what it binds a consumer to, and which of its properties drive the decisions bel
   `get_all_kb_descriptions` does guard each backend (`knowledgebuilder.py:185-187`). Since
   `schema()` raises `ValueError` when `add_schema()` was never called (`base.py:57-58`), one
   unconfigured backend makes the agent's first tool call raise into the framework.
+- **`StarburstManager.schema` shadows the base `schema()` method**, so `get_schemas` is broken today
+  for every Starburst deployment — not only unconfigured ones.
+  - `__init__` assigns the Trino schema name to the same attribute (`self.schema = schema`,
+    `starburst.py:67`) that `KnowledgeBase` defines as a method (`base.py:50`). The instance
+    attribute wins, so `backend.schema()` at `knowledgebuilder.py:105` raises
+    `TypeError: 'str' object is not callable`.
+  - This fires even though the example does call `.add_schema(...)`
+    (`examples/cli/knowledgebase/openai/starburst/demo.py:30`) — the configured schema is stored in
+    `_dynamic_schema` and is unreachable for the life of the object.
+  - Consequence for this change: adding `"capabilities"` to `schema()` output cannot reach Starburst,
+    and the per-backend `try/except` below would *mask* the collision as an error string rather than
+    fix it. The attribute must be renamed.
 
 ### Schemas must be hand-written, but OKF bundles carry their own
 
@@ -103,7 +115,7 @@ classDiagram
         +fetch(ids)
         +browse(path, limit)
         +write(records)
-        +read(query, limit) "alias"
+        +read(query, limit) "routes to query/search"
     }
     class KnowledgeCapabilities {
         +kinds
@@ -140,9 +152,8 @@ classDiagram
 
 ### Capability declaration
 
-- Add `KnowledgeCapabilities` (pydantic `BaseModel`, `knowledgebase/model.py`), declared as a
-  `ClassVar`-style attribute on every backend, mirroring `SandboxCapabilities`
-  (`sandbox/model.py:33-48`).
+- Add `KnowledgeCapabilities` (pydantic `BaseModel`, `knowledgebase/model.py`), mirroring the shape
+  of `SandboxCapabilities` (`sandbox/model.py:33-49`).
   - `kinds: list[str]` — advisory taxonomy surfaced to the agent, an **open list** whose conventional
     values are `vector`, `structured`, `graph`, `document`; an out-of-tree backend may declare its own
     kind without a framework release, and unknown values reach the agent unchanged. A backend may
@@ -155,11 +166,24 @@ classDiagram
   - `browse: bool` — enumeration of the backend's namespace.
   - `writable: bool`.
   - `derives_schema: bool` — whether `schema()` can self-describe without `add_schema()`.
+- Declared as an **instance attribute** set in each backend's `__init__` (`self.capabilities = ...`),
+  **not** a `ClassVar` — a deliberate divergence from `Sandbox.capabilities` (`sandbox/base.py:88`),
+  where a provider's shape is fixed by its class.
+  - A KB's shape depends on what it was constructed with: `OKFManager.capabilities.writable` folds in
+    `store.writable`, which differs between a `LocalDocumentStore` and an `S3DocumentStore` over a
+    read-only prefix. A `ClassVar` cannot express that.
+  - `KnowledgeBase.__init__` takes the capabilities object and validates the invariant below; every
+    subclass calls `super().__init__(capabilities=...)`. The base declares
+    `capabilities: KnowledgeCapabilities` as a bare annotation for typing, with no class-level default.
 - Declared values must be true of the instance: a backend declaring `fetch=True` must override
   `fetch()`. Verified by the contract suite (below), not by trust.
-- **Invariant, enforced at construction**: at least one of `search`, `query`, `fetch` is `True`,
-  otherwise the backend is unreachable through `read_kb`. Violation raises `ValueError` naming the
-  backend.
+- **Invariant, enforced at construction**: at least one of `search`, `query`, `fetch`, `browse`, or
+  `writable` is `True`. Violation raises `ValueError` naming the backend.
+  - The bar is "reachable through *some* tool", not "reachable through `read_kb`" — a write-only sink
+    (an append-only audit or event log an agent records into but never reads back) is a legitimate
+    backend, and so is a browse-only catalogue.
+  - A backend with no read capability at all is still registrable; `read_kb` routed at it returns the
+    actionable capability string, exactly as any other undeclared operation does.
 - Declaring `kinds` as data — rather than as `VectorKB` / `StructuredKB` / `FileSystemKB` base
   classes — is the load-bearing choice; see [Deviations from the proposed class
   diagram](#deviations-from-the-proposed-class-diagram).
@@ -168,22 +192,33 @@ classDiagram
 
 - Retain the existing abstract members unchanged: `backend_name`, `connect()`, `get_description()`,
   and the provided `add_schema()` / `format_results()` / `close()`.
-- Four retrieval/write operations, each **optional** with a base implementation that raises
-  `KnowledgeCapabilityError(backend_name, operation)` — the `sandbox/base.py:39-69` shape:
+- Five operations — four retrieval plus `write` — each **optional**, with a base implementation that
+  raises `KnowledgeCapabilityError(backend_name, operation)` — the `sandbox/base.py:39-69` shape:
 
   | Operation | Signature | Declared by |
   |---|---|---|
-  | `search` | `(query: str, limit: int = 3) -> list[Record]` | `capabilities.search` |
-  | `query` | `(statement: str, limit: int = 3) -> list[Record]` | `capabilities.query` |
-  | `fetch` | `(ids: list[str]) -> list[Record]` | `capabilities.fetch` |
-  | `browse` | `(path: str = "", limit: int = 50) -> list[Record]` | `capabilities.browse` |
+  | `search` | `(query: str, limit: int = 3, **kwargs) -> list[Record]` | `capabilities.search` |
+  | `query` | `(statement: str, limit: int = 3, **kwargs) -> list[Record]` | `capabilities.query` |
+  | `fetch` | `(ids: list[str], **kwargs) -> list[Record]` | `capabilities.fetch` |
+  | `browse` | `(path: str = "", limit: int = 50, **kwargs) -> list[Record]` | `capabilities.browse` |
   | `write` | `(records: Iterable[Record], **kwargs) -> None` | `capabilities.writable` |
 
-- `read(query, limit)` becomes a **concrete** method on the base that delegates to `query()` when
-  `capabilities.query_language` is set, else to `search()`.
+- **Every operation keeps `**kwargs`**, matching today's `read`/`write` (`base.py:74,84`) and all three
+  backends (`chroma.py:102`, `neo4j.py:125`, `starburst.py`), which already accept and ignore it.
+  - `read()` forwards its `**kwargs` unchanged to whichever primitive it delegates to, so a caller
+    passing backend-specific options through `read()` reaches the same code it reaches today.
+  - Dropping `**kwargs` on the read path would be a signature change; the **Non-changes** assertion
+    below covers it.
+- `read(query, limit, **kwargs)` becomes a **concrete** method on the base that delegates to `query()`
+  when `capabilities.query_language` is set, else to `search()`.
   - Keeps `read_kb` and every external caller working with no signature change.
   - A subclass that still overrides `read()` — including any application's own backend — keeps
     winning, so bring-your-own backends written against today's ABC need no edit.
+  - When a backend declares **both** `search` and `query`, `read()` routes to `query()` and the
+    relevance path is reached through `search_kb` instead (see [Agent surface](#agent-surface--knowledgebuilder)).
+  - Renaming `Neo4jManager.read` to `query` moves its default from `limit=10` (`neo4j.py:125`) to the
+    base's `limit=3`. `read_kb` always passes `limit` explicitly, so only a direct
+    `neo4j.read(q)` call sees the change; it is listed as a behavioural change below.
 - Add `knowledgebase/errors.py` with `KnowledgeError` and `KnowledgeCapabilityError`, matching
   `sandbox/errors.py`. `KnowledgeCapabilityError` replaces `StarburstManager`'s ad-hoc
   `NotImplementedError` (`starburst.py:141`).
@@ -192,15 +227,29 @@ classDiagram
 
 - `Record` stays `Mapping[str, Any]` (`base.py:4`) — no runtime shape change, so no existing backend
   or user subclass is invalidated.
-- Add a `KnowledgeRecord` `TypedDict` (`total=False`) documenting the **reserved metadata keys** a
-  backend may set, so richer representations have a defined place:
-  - `id` — the backend-native identity (an OKF bundle path). Required in any record a `fetch`-capable
-    backend returns, because it is what the agent passes back to `fetch`.
-  - `source`, `title`, `kind`, `trust`, `stale`, `links`.
-  - Unknown keys are carried through untouched — asserted by the contract suite.
-- `format_results` (`base.py:94-103`) keeps its current output for records that carry only
-  `text`/`metadata.source`, and gains an `id` prefix when `metadata["id"]` is present. Backends may
-  override; `OKFManager` does.
+- Add **two** `TypedDict`s (`total=False`) so the two levels of a record are named separately — today
+  the shape `{"text": ..., "metadata": {...}}` is only a convention held in each backend's code:
+  - `KnowledgeMetadata` — the **reserved keys inside `metadata`**:
+    - `id` — the backend-native identity (an OKF bundle path). Required in the `metadata` of any
+      record a `fetch`-capable backend returns, because it is what the agent passes back to `fetch`.
+    - `source`, `title`, `kind`, `trust`, `stale`, `links`.
+  - `KnowledgeRecord` — the **whole record**: `text: str` and `metadata: KnowledgeMetadata`.
+  - Both are documentation-only: `Record` remains the runtime type on every signature, so neither is
+    validated and neither invalidates an existing backend.
+  - Unknown keys at **either** level are carried through untouched — asserted by the contract suite.
+- `format_results` (`base.py:94-103`) gains an `id` prefix, **gated on the backend declaring
+  `fetch`** — not merely on `metadata["id"]` being present:
+  - Rendered as `- [<id>] <text> (source: <source>)` when `capabilities.fetch` is `True` and
+    `metadata["id"]` is a non-empty string; the existing
+    `- <text> (source: <source>)` line (`base.py:103`) is produced in every other case, byte for byte.
+  - The gate exists because `metadata` is caller-supplied for the existing backends — a Chroma
+    deployment may already store an `id` key of its own, and an ungated prefix would silently change
+    the text those agents see. Chroma, Neo4j, and Starburst all declare `fetch=False`, so their output
+    is unchanged; it is listed as a behavioural change below regardless, because it is prompt-visible
+    for any backend that later declares `fetch`.
+  - A missing, empty, or non-string `id` on a `fetch`-capable backend degrades to the unprefixed line
+    rather than rendering `[None]`.
+  - Backends may override; `OKFManager` does.
 
 ### Schema derivation
 
@@ -214,6 +263,13 @@ classDiagram
 - `OKFManager._derived_schema()` returns the bundle's own `okf_version`, the distinct `type` values
   present, the top-level directory names, concept count, and the reserved-file inventory — read from
   the loaded bundle, never hand-transcribed.
+- **`StarburstManager`'s attribute/method collision is fixed** so that `schema()` is reachable at all:
+  the Trino schema name moves to `self.db_schema` (`starburst.py:67`, with its readers at
+  `starburst.py:111,116,204`).
+  - The constructor keyword stays `schema=`, so both existing call sites that pass it
+    (`examples/cli/knowledgebase/openai/starburst/demo.py:22`, `.../multi/demo.py:99`) are unchanged.
+  - `KnowledgeBaseContract` asserts that `schema()` is callable and returns a mapping on every
+    backend, so no future backend can reintroduce the collision with a same-named attribute.
 
 ### Storage layer — `DocumentStore`
 
@@ -276,10 +332,13 @@ classDiagram
   base class, and it exists because it carries real shared behavior for any path-addressed
   collection: holding the `DocumentStore`, normalising and validating paths, mapping
   `FileNotFoundError` to an empty result, and folding `store.writable` into its capabilities.
-- `OKFManager(store: DocumentStore, name: str = "", description: str | None = None)` composes the
-  store with the OKF parser. It declares
-  `kinds=["document"], search=True, search_mode="lexical", fetch=True, browse=True,
+- `OKFManager(store, name="", description=None, refresh_seconds=300, max_concepts=10_000)` composes
+  the store with the OKF parser, and builds its capabilities **in `__init__`** from what it was given:
+  `kinds=["document"], search=True, search_mode="lexical", query=False, fetch=True, browse=True,
   writable=store.writable, derives_schema=True`.
+  - `writable` is the reason capabilities are per instance — the same class over a read-only
+    `S3DocumentStore` prefix declares `writable=False`.
+  - `query=False` means `read()` routes to `search()`, and `search_kb` is not emitted on its account.
   - `fetch(ids)` — bundle paths in, concept records out. The natural companion to `metadata["links"]`.
   - `browse(path)` — directory listing; a bundle-root call returns `index.md`'s listing when present
     and a derived listing when it is not.
@@ -305,12 +364,28 @@ classDiagram
     deliberate trade and must be documented on the backend.
   - Bodies of large bundles are read lazily per concept; frontmatter is parsed eagerly, because
     schema derivation and search ranking both need it.
+- **Declared scale.** The manifest is held per *process*, so its cost is paid once per pod in the
+  ECS/pipeline topology and once per cold start on Lambda. The design targets a stated envelope
+  rather than leaving it open:
+  - **Design target: bundles up to 10,000 concepts**, at which the eagerly parsed frontmatter is
+    expected to stay under ~50 MB resident. Both numbers are asserted by a test over a generated
+    bundle, so a regression in per-concept overhead is caught rather than discovered in a pod.
+  - `max_concepts` **defaults to 10,000**: the walk stops at the limit, keeps the concepts it has, and
+    records a diagnostic naming the count and the limit. It is a bound on memory, not a conformance
+    rule — the bundle still loads and serves, consistent with the tolerance requirement above.
+  - Bodies are excluded from the envelope: they are read on demand and not retained between calls, so
+    total bundle *bytes* on disk or in S3 is not the limiting dimension — concept count is.
+  - A deployment needing more raises `max_concepts` explicitly and owns the memory consequence. There
+    is no automatic spill to disk, no LRU eviction, and no shared cross-pod cache; each is a
+    non-goal below.
 
 ### Agent surface — `KnowledgeBuilder`
 
 - The four existing tools keep their names and signatures: `get_schemas`, `read_kb`, `write_kb`,
   `get_all_kb_descriptions`.
-- Two new capability-gated tools:
+- Three new capability-gated tools:
+  - `search_kb(backend: str, query: str, limit: int = 3) -> str` — relevance retrieval, calling
+    `search()` directly.
   - `fetch_kb(backend: str, ids: str) -> str` — comma-separated ids.
   - `browse_kb(backend: str, path: str = "", limit: int = 50) -> str`.
   - Each is included in `build()`'s output **only when at least one registered backend declares that
@@ -318,6 +393,17 @@ classDiagram
   - Routing a call at a backend that does not declare the capability returns an actionable string
     naming the backends that do — matching `read_kb`'s existing error-to-string behavior
     (`knowledgebuilder.py:118-119,128-130`), never an exception into the framework.
+- **Why `search_kb` exists**: without it, a backend declaring both `search` and `query` has an
+  unreachable `search()`, because `read()` routes to `query()` whenever `query_language` is set.
+  - No in-tree backend is affected today — Chroma is search-only, Neo4j and Starburst are query-only,
+    OKF is search-only — but the capability model exists precisely so backends can grow, and a
+    declared-but-unreachable capability would be the same dishonesty the model is meant to remove.
+  - `search_kb`'s gate is narrower than the other two: it is emitted only when at least one backend
+    declares **both** `search` and `query`. For a search-only backend `read_kb` already reaches
+    `search()`, and emitting a second tool that does the same thing would only give the agent a
+    redundant choice.
+  - The gate is a property of the registered set, not of one backend: once emitted, `search_kb` routes
+    at any backend declaring `search`, and returns the capability string for the others.
 - `write_kb` stops emitting Neo4j's `cypher_query` / `cypher_params` keys
   (`knowledgebuilder.py:157-166`); it emits the generic `query` / `params` only.
   - `Neo4jManager.write` reads `query`/`params` first and falls back to `cypher_query`/`cypher_params`
@@ -338,12 +424,16 @@ classDiagram
 - `knowledgebase/testing.py` ships `KnowledgeBaseContract` and `DocumentStoreContract`, reusable
   suites in the `SandboxProviderContract` (`sandbox/testing.py:130`) / `QueueTransportContract` shape.
   `KnowledgeBaseContract` asserts, for any backend: declared capabilities match implemented
-  operations; undeclared operations raise `KnowledgeCapabilityError`; records carry `id` when
-  `fetch` is declared; unknown metadata keys round-trip; `read()` routes to the declared primitive.
+  operations; undeclared operations raise `KnowledgeCapabilityError`; `schema()` is callable and
+  returns a mapping (the `StarburstManager` collision above); records carry `metadata["id"]` when
+  `fetch` is declared; unknown keys round-trip at both record and metadata level; every operation
+  accepts `**kwargs`; the construction-time capability invariant is enforced; and `read()` routes to
+  the declared primitive, preferring `query()` when both it and `search()` are declared.
 - `knowledgebase/__init__.py` gains **lazy** exports via PEP 562 `__getattr__` (the
   `deployment/aws/__init__.py` pattern) for `KnowledgeBase`, `KnowledgeBuilder`,
-  `KnowledgeCapabilities`, `Record`, and the errors — fixing the import documented at
-  `docs/docs/core-concepts/overview.md:353` without making `chromadb`/`neo4j`/`trino`/`boto3` eager.
+  `KnowledgeCapabilities`, `Record`, `KnowledgeRecord`, `KnowledgeMetadata`, and the errors — fixing
+  the import documented at `docs/docs/core-concepts/overview.md:353` without making
+  `chromadb`/`neo4j`/`trino`/`boto3` eager.
 
 ### Security
 
@@ -391,16 +481,32 @@ Each is intentional; each needs a test.
    agent-issued writes are unaffected; **records already stored by Chroma carry the dead keys and are
    not migrated**.
 6. `get_schemas` degrades per backend instead of failing the call.
-7. `build()` may return six callables rather than four, when a registered backend declares `fetch`
-   or `browse`.
+7. `build()` may return up to seven callables rather than four, when registered backends declare
+   `fetch`, `browse`, or both `search` and `query`.
 8. `agentkernel.knowledgebase` exports names for the first time — additive; the documented import
    starts working.
+9. `StarburstManager`'s Trino schema name moves from `self.schema` to `self.db_schema`
+   (`starburst.py:67`). The `schema=` constructor keyword is unchanged, so no call site moves; code
+   reading `manager.schema` as a string must be updated — in-tree there is none, and the read now
+   returns the inherited `schema()` method. `get_schemas` starts returning a real schema for
+   Starburst backends instead of raising `TypeError`, which is a prompt-visible change for every
+   Starburst deployment.
+10. `format_results` prefixes `[<id>]` for backends declaring `fetch`. No existing backend declares
+    it, so in-tree output is unchanged; the rule is listed because it is prompt-visible the moment a
+    `fetch`-capable backend is registered.
+11. `Neo4jManager.query` (formerly `read`) defaults to `limit=3` instead of `limit=10`
+    (`neo4j.py:125`). `read_kb` always passes `limit`, so only direct callers see it.
+12. `KnowledgeBase.__init__` requires a `capabilities` argument. A third-party subclass calling
+    `super().__init__()` with no arguments must pass one — the only signature in this change that is
+    not backward compatible, and the reason capability declaration is not optional.
 
-**Non-changes**, to be asserted: `Record` stays `Mapping[str, Any]`; `read`/`write` signatures;
-the four existing tool names and signatures; `KnowledgeBuilder.__init__`'s `backends` +
-`semantic_map` signature; `add_schema`/`format_results`/`close`; no framework adapter changes; no
-`AKConfig` section added; every existing example (`examples/cli/knowledgebase/openai/*`) runs
-unmodified.
+**Non-changes**, to be asserted: `Record` stays `Mapping[str, Any]` and stays the type on every
+signature (`KnowledgeMetadata`/`KnowledgeRecord` are documentation-only); `read`/`write` signatures,
+including their `**kwargs`, which every new operation also carries; the four existing tool names and
+signatures; `KnowledgeBuilder.__init__`'s `backends` + `semantic_map` signature;
+`add_schema`/`format_results`/`close`; the `schema=` keyword on `StarburstManager.__init__`; no
+framework adapter changes; no `AKConfig` section added; every existing example
+(`examples/cli/knowledgebase/openai/*`) runs unmodified.
 
 ## Deviations from the proposed class diagram
 
@@ -438,6 +544,8 @@ is adopted as-is in substance. Two changes:
   pipeline is a separate change.
 - **A `knowledgebase` block in `AKConfig`.** Backends stay application-constructed, as today.
 - Bundle-level concurrency control, versioning, or locking on write.
+- A shared or cross-pod manifest cache, spill-to-disk, or LRU eviction. The manifest is per process
+  and bounded by `max_concepts`; a bundle outgrowing that envelope is a separate change.
 - Changing any framework adapter, `Runtime`, `Session`, or the system-tool factory. Knowledge-base
   tools remain application-bound through `KnowledgeBuilder.build()`.
 - Migrating metadata already written by the current `write_kb` (item 5 above).
@@ -454,10 +562,12 @@ Resolved with the maintainer on 2026-08-31. The requirements above already refle
    conventional values, not a closed enum. Extensibility wins over agent-side routability, and the
    values are advisory anyway — routing is driven by the boolean capability flags and
    `get_description()`, not by `kinds`.
-3. **Record typing — `KnowledgeRecord` as a `TypedDict`.** Reserved keys get a documented home,
-   `Record` stays `Mapping[str, Any]`, and no existing backend or user subclass is invalidated. The
-   "a `fetch`-capable backend must set `id`" rule is enforced by `KnowledgeBaseContract`, not by
-   runtime validation.
+3. **Record typing — `KnowledgeMetadata` + `KnowledgeRecord` as `TypedDict`s.** Two types, because
+   the reserved keys live inside `metadata` while the record itself is `{"text", "metadata"}`; one
+   type covering both levels would leave "a `fetch`-capable backend must set `id`" ambiguous about
+   where `id` goes. `Record` stays `Mapping[str, Any]` on every signature, so no existing backend or
+   user subclass is invalidated, and the `id` rule is enforced by `KnowledgeBaseContract` rather than
+   by runtime validation.
 4. **Manifest refresh — lazy automatic refresh, `refresh_seconds` default 300.** The manifest re-walks
    on the first access after the interval elapses; `reload()` forces one immediately;
    `refresh_seconds=None` opts out for an immutable bundle. Chosen so an S3 bundle rewritten by a
@@ -467,6 +577,13 @@ Resolved with the maintainer on 2026-08-31. The requirements above already refle
    but `timestamp` and a body `# Citations` list are carried through as unrecognised content rather
    than mapped onto `generated` / `sources`, and a declared `okf_version` other than `0.2` is recorded
    as a bundle diagnostic.
-6. **Verification gate — stands.** Every `[SPEC]`-marked claim in `research/okf-format-survey.md` must
+6. **Capabilities are per instance, not per class.** `Sandbox` fixes its shape on the class
+   (`sandbox/base.py:88`); a KB's shape depends on its constructor arguments — `writable` follows the
+   injected `DocumentStore`. Validated in `KnowledgeBase.__init__`, which is what makes the
+   at-least-one-capability invariant enforceable.
+7. **Manifest envelope — 10,000 concepts / ~50 MB, `max_concepts` truncates with a diagnostic.** A
+   declared and tested bound, rather than an open-ended in-process cache, because the manifest is
+   held per pod and per Lambda cold start. Raising it is an explicit, application-owned decision.
+8. **Verification gate — stands.** Every `[SPEC]`-marked claim in `research/okf-format-survey.md` must
    be re-checked verbatim against the OKF **v0.2** specification text before `spec.md` fixes
    conformance behavior.
