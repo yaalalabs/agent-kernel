@@ -9,7 +9,7 @@ Agents are exposed as MCP tools and can be accessed via both the **REST API** an
 
 * Containerized Agent Kernel running on AWS ECS
 * MCP server enabled and exposed via `/mcp` endpoint
-* Supports CrewAI and OpenAI Agent SDK agents
+* Supports Smolagents and OpenAI Agent SDK agents
 * Agents automatically registered as MCP tools
 * Redis-backed state (optional)
 
@@ -121,7 +121,7 @@ This endpoint supports MCP clients such as `fastmcp`.
 
 This package contains a demo of **Agent Kernel** running agents built with:
 
-* CrewAI
+* Smolagents
 * OpenAI Agent SDK
 
 Agents run in a single runtime and are exposed as **MCP tools**, allowing:
