@@ -1,0 +1,45 @@
+[project]
+name = "sarasavi-power"
+version = "0.1.0"
+description = "WhatsApp energy-optimisation assistant for Sri Lankan households, built on Agent Kernel (SDG 7)."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # One dependency: Agent Kernel with the extras this use-case uses.
+    #   cli      -> local terminal run (demo.py)
+    #   adk      -> google.adk LlmAgent + Gemini (the LLM layer)
+    #   api      -> RESTAPI server (app.py local/container run)
+    #   whatsapp -> WhatsApp Cloud API channel
+    #   aws      -> Lambda deploy (lambda.py + deploy/)
+    "agentkernel[cli,adk,api,whatsapp,aws]>=0.6.1",
+    "pyreadline3>=3.5.6 ; sys_platform == 'win32'",
+    "python-dotenv>=1.0.0",
+    # Voice: WebRTC leg of WhatsApp calls (aiortc bundles PyAV for Opus/resampling)
+    # and the Gemini Live/TTS client (transitive via google-adk, pinned because the
+    # voice bridge imports it directly).
+    "aiortc>=1.9.0",
+    "google-genai>=1.16.0",
+]
+
+[dependency-groups]
+# Dev tooling for format/lint/type only. The AK test framework (agentkernel[test])
+# is intentionally omitted: it pulls litellm, whose 1.9x native build fails on
+# Windows (needs python312.lib + a Rust/MSVC toolchain). This use-case instead uses
+# focused pytest coverage plus engine/golden_vectors.py for deterministic checks.
+dev = [
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "pytest>=8.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
