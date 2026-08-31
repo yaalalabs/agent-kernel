@@ -258,8 +258,14 @@ classDiagram
     an explicit `add_schema()` value always wins over a derived one.
   - Also add `"capabilities": capabilities.model_dump()` so the agent is told what the backend can do
     from the same call it already makes.
-- The hard failure at `base.py:57-58` is relaxed: it raises only when the schema is empty **and**
-  `capabilities.derives_schema` is `False`. A backend that self-describes needs no `add_schema()`.
+- The hard failure at `base.py:57-58` is relaxed: it raises only when **both** `_dynamic_schema` and
+  `_derived_schema()` are empty. The unconditional `{"backend": name}` and `"capabilities"` entries
+  never count as content — otherwise the guard could never fire again. A backend that self-describes
+  needs no `add_schema()`; a backend that neither derives nor was configured still fails loudly,
+  exactly as today.
+  - `capabilities.derives_schema` is a declaration, not the gate: it tells the agent that
+    `_derived_schema()` is expected to be non-empty, and `KnowledgeBaseContract` fails a backend that
+    declares it while returning `{}` rather than letting it serve a content-free schema.
 - `OKFManager._derived_schema()` returns the bundle's own `okf_version`, the distinct `type` values
   present, the top-level directory names, concept count, and the reserved-file inventory — read from
   the loaded bundle, never hand-transcribed.
@@ -281,14 +287,27 @@ classDiagram
     KB above it folds that into `capabilities.writable`.
   - Paths are POSIX-style and **bundle-relative**; the store owns the mapping to a filesystem path or
     an object key.
+  - **The store owns containment.** Every path it accepts or emits — through `read_bytes`, `exists`,
+    `write_bytes`, and every entry `list()` returns — is normalised and confined to the store's own
+    namespace; one that escapes is refused, never resolved. Containment therefore also covers paths no
+    agent supplied: the manifest walk and links read out of a concept. `LocalDocumentStore` enforces it
+    during **traversal** as well as access — `..` segments and absolute paths are rejected, and a
+    symlink resolving outside `root` is skipped by the walk and refused on read.
+  - `list()` returns paths in **lexicographic order**. Ordering is part of the contract because
+    `max_concepts` truncation keeps a prefix of the walk: an unordered store would give two pods
+    different concept sets for the same over-limit bundle.
 - `LocalDocumentStore(root: str)` — local filesystem. No extra required (stdlib only).
 - `S3DocumentStore(bucket: str, prefix: str = "", region: str | None = None, client=None)` — requires
   the existing `aws` extra (`boto3>=1.41.4`, already in `pyproject.toml`); no new extra.
-  - `list()` paginates; `read_bytes` maps `NoSuchKey` to `FileNotFoundError` so the layer above sees
-    one exception type regardless of store.
-- `DocumentStore.from_uri(uri)` resolves `file://…` / a bare path → `LocalDocumentStore`, `s3://bucket/prefix`
-  → `S3DocumentStore`, and any other value as a dotted path via `resolve_dotted`
-  (`core/util/factory.py:26`), raising `AKConfigError` otherwise.
+  - `list()` paginates and merges pages in key order (S3 already lists in UTF-8 binary order);
+    `read_bytes` maps `NoSuchKey` to `FileNotFoundError` so the layer above sees one exception type
+    regardless of store.
+- `DocumentStore.from_uri(uri)` resolves by **explicit scheme**: `file://…` or a bare path →
+  `LocalDocumentStore`; `s3://bucket/prefix` → `S3DocumentStore`; `python:pkg.module.ClassName` →
+  `resolve_dotted` (`core/util/factory.py:26`). Any other scheme raises `AKConfigError`.
+  - The `python:` prefix is required because a dotted path *is* a bare path. Without a discriminator,
+    `mypkg.stores.GitStore` would silently become a `LocalDocumentStore` rooted at a directory that
+    does not exist, and the bring-your-own-store branch would be unreachable.
   - This is what makes local-in-dev / S3-in-prod a one-environment-variable change without the KB
     tier gaining an `AKConfig` section (see [Decisions](#decisions) 1).
 - Stores take **explicit constructor parameters and never read `AKConfig`**, matching the shared-driver
@@ -330,8 +349,9 @@ classDiagram
 
 - `DocumentKnowledgeBase` (abstract, `knowledgebase/document.py`) is the **only** new intermediate
   base class, and it exists because it carries real shared behavior for any path-addressed
-  collection: holding the `DocumentStore`, normalising and validating paths, mapping
-  `FileNotFoundError` to an empty result, and folding `store.writable` into its capabilities.
+  collection: holding the `DocumentStore`, mapping a store's containment refusal to an agent-facing
+  error result and `FileNotFoundError` to an empty one, and folding `store.writable` into its
+  capabilities. Containment itself is enforced by the store, not here.
 - `OKFManager(store, name="", description=None, refresh_seconds=300, max_concepts=10_000)` composes
   the store with the OKF parser, and builds its capabilities **in `__init__`** from what it was given:
   `kinds=["document"], search=True, search_mode="lexical", query=False, fetch=True, browse=True,
@@ -340,8 +360,10 @@ classDiagram
     `S3DocumentStore` prefix declares `writable=False`.
   - `query=False` means `read()` routes to `search()`, and `search_kb` is not emitted on its account.
   - `fetch(ids)` — bundle paths in, concept records out. The natural companion to `metadata["links"]`.
-  - `browse(path)` — directory listing; a bundle-root call returns `index.md`'s listing when present
-    and a derived listing when it is not.
+  - `browse(path)` — directory listing. At **any** level, an `index.md` in the browsed directory
+    supplies the listing when present, and a derived listing is returned when it is not. `index.md` is
+    reserved at every directory level (`research/okf-format-survey.md` §2), so a curated listing for
+    `datasets/` is honoured exactly as the bundle root's is.
   - `search(query, limit)` — **lexical**, over frontmatter (`title`, `description`, `tags`, `type`)
     and body text, ranked by field-weighted term overlap. Declared as `lexical` precisely so no
     caller mistakes it for embedding search.
@@ -405,9 +427,12 @@ classDiagram
   - The gate is a property of the registered set, not of one backend: once emitted, `search_kb` routes
     at any backend declaring `search`, and returns the capability string for the others.
 - `write_kb` stops emitting Neo4j's `cypher_query` / `cypher_params` keys
-  (`knowledgebuilder.py:157-166`); it emits the generic `query` / `params` only.
-  - `Neo4jManager.write` reads `query`/`params` first and falls back to `cypher_query`/`cypher_params`
-    (`neo4j.py:120-121`), so a caller writing records by hand in the old shape still works.
+  (`knowledgebuilder.py:156-167`); it emits the generic `query` / `params` only.
+  - **`Neo4jManager.write` changes in the same commit.** It reads *only* the `cypher_*` spelling today
+    (`neo4j.py:120-121`), so dropping those keys without touching it would call `_run(None, {})` on
+    every agent-issued write. It is changed to read `query`/`params` first and fall back to
+    `cypher_query`/`cypher_params`, keeping hand-written old-shape records working, and to skip a
+    record carrying neither with a logged warning rather than handing `None` to the driver.
 - `get_schemas` gains the same per-backend `try/except` its sibling `get_all_kb_descriptions` already
   has (`knowledgebuilder.py:185-187`), reporting the failing backend inline instead of failing the
   whole call.
@@ -437,9 +462,13 @@ classDiagram
 
 ### Security
 
-- **Path containment**: every agent-supplied id or path reaching `fetch`/`browse`/`write` is
-  normalised and rejected if it escapes the bundle root — `..` segments, absolute paths, and symlinks
-  that resolve outside `LocalDocumentStore.root`. Rejection is an error result, not a traversal.
+- **Path containment is the `DocumentStore`'s obligation**, stated in the store contract above rather
+  than left to each caller — so it covers paths that reach a store from anywhere: an agent
+  (`fetch`/`browse`/`write`), a link read out of a concept, and the manifest walk, which supplies no
+  agent path at all. `..` segments, absolute paths, and symlinks resolving outside
+  `LocalDocumentStore.root` are refused on access and skipped during traversal.
+  `DocumentKnowledgeBase` turns the refusal into an error result for the agent; it never stands in as
+  the only place an escape is detected.
 - **No network fetch of OKF reference fields**: `resource`, `sources[].resource`, and `computation`
   values that are absolute URLs are returned to the agent as data and never dereferenced by the KB
   layer, matching the multimodal hook's stance on remote references
@@ -496,7 +525,11 @@ Each is intentional; each needs a test.
     `fetch`-capable backend is registered.
 11. `Neo4jManager.query` (formerly `read`) defaults to `limit=3` instead of `limit=10`
     (`neo4j.py:125`). `read_kb` always passes `limit`, so only direct callers see it.
-12. `KnowledgeBase.__init__` requires a `capabilities` argument. A third-party subclass calling
+12. `Neo4jManager.write` reads the generic `query`/`params` metadata keys, falling back to
+    `cypher_query`/`cypher_params`, and skips a record carrying neither with a logged warning instead
+    of calling the driver with `None` (`neo4j.py:118-123`). Required by item 5: `write_kb` no longer
+    emits the `cypher_*` keys, and the fallback is what keeps old-shape records working.
+13. `KnowledgeBase.__init__` requires a `capabilities` argument. A third-party subclass calling
     `super().__init__()` with no arguments must pass one — the only signature in this change that is
     not backward compatible, and the reason capability declaration is not optional.
 
