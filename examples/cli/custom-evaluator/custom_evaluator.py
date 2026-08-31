@@ -1,4 +1,5 @@
 # A bring-your-own AKEvaluator example for the CLI. This is a simple token-overlap evaluator that also demonstrates how to
+# call an LLM judge directly via litellm (see llm_based_evaluation below).
 
 import re
 

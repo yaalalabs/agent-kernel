@@ -340,37 +340,20 @@ graph LR
     case/punctuation/article normalisation (`deepeval.utils.normalize_text`) to **both** arguments
     internally — `score_based_evaluation` passes `case.expected`/`case.actual` straight through and does
     no normalisation of its own
-  - **Two prior design decisions superseded here, not implementation detail**:
-    1. The design originally specified `Scorer.quasi_contains_score`, assuming it performed substring
-       containment. Verified against the source (`scorer/scorer.py:119-124`): it is list-membership
-       *equality* — `normalize_text(prediction) in normalized_targets` — never a substring test in
-       either argument direction, the same semantics as `quasi_exact_match_score` but over several gold
-       answers (its only other in-package use is the DROP benchmark's multiple-gold-answer exact match)
-    2. `spec.md`'s first pass corrected this to `PatternMatchMetric` (regex-based containment), reasoning
-       that a verbose-but-correct `actual` should still match a short `expected` phrase. That containment
-       property was re-evaluated and deliberately given up in favour of `quasi_exact_match_score` — a
-       documented `Scorer` primitive rather than a hand-assembled regex `BaseMetric`. **Consequence,
-       verified empirically against `deepeval` 4.1.8**: a verbose correct answer no longer scores `1.0`
-       on the score path — e.g. `target="Paris"`, `prediction="...the capital of France is Paris..."`
-       scores `0` — only a response whose entire normalised text equals the normalised expected phrase
-       passes. A caller needing containment for a long response now relies on `llm`/`fallback`, not
-       `score` alone
-  - Chosen over the model-backed scorers (`faithfulness` via SummaC, `hallucination` via Vectara HHEM,
-    `answer_relevancy` via a sentence-transformers cross-encoder) and over `rouge_score`/`sentence_bleu_score`
-    (both require an additional package DeepEval does not itself depend on — `rouge-score` pulls in `nltk`,
-    `numpy`, and `absl-py`, verified via an isolated install — and both are F-measure-based, which penalises
-    length mismatch between a short `expected` and a verbose `actual` at least as severely as exact match
-    does, without the offsetting benefit of being a documented, dependency-free `Scorer` primitive) for the
-    same reason `quasi_contains` was: everything model-backed pulls PyTorch and a first-run model download
-    into every environment installing the `test` extra. `quasi_exact_match_score` needs neither, runs
-    offline, and ships in `deepeval` core with zero extra dependency (survey §9)
-  - It returns a binary 0/1, with the same two consequences `PatternMatchMetric` would have carried:
-    `threshold` is inert on the score path (any value in `(0, 1]` behaves identically), and in
-    `fallback` a near-miss reaches the llm stage rather than passing locally (survey §9, Finding 12).
-    That cost is proportional — only failing comparisons pay it
+  - Chosen over `quasi_contains_score`, `PatternMatchMetric`, `rouge_score`/`sentence_bleu_score`, and
+    DeepEval's model-backed scorers — two prior design decisions and the rejected-alternative analysis
+    are recorded in `research/score-metric-selection.md`, not repeated here
+  - **Containment given up, verified empirically against `deepeval` 4.1.8**: a verbose correct answer
+    no longer scores `1.0` on the score path — e.g. `target="Paris"`, `prediction="...the capital of
+    France is Paris..."` scores `0` — only a response whose entire normalised text equals the
+    normalised expected phrase passes
+  - **Consequence for callers**: a caller needing containment for a long response now relies on
+    `llm`/`fallback`, not `score` alone
+  - It returns a binary 0/1: `threshold` is inert on the score path (any value in `(0, 1]` behaves
+    identically), and in `fallback` a near-miss reaches the llm stage rather than passing locally
+    (survey §9, Finding 12). That cost is proportional — only failing comparisons pay it
   - No object is constructed per call — `quasi_exact_match_score` is a stateless classmethod called
-    directly with `case.expected`/`case.actual`, unlike a metric class that would need a fresh instance
-    per pattern
+    directly with `case.expected`/`case.actual`
   - Verified present with a stable signature across the full pinned range: `deepeval.scorer.Scorer.quasi_exact_match_score`
     exists and is exported unchanged from `4.1.4` (the minimum pin) through `4.1.8`
 - **Llm metric: `GEval`**
