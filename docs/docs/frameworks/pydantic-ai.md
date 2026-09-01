@@ -169,13 +169,12 @@ content, so text-based consumers (chat integrations, logging) work unchanged. Se
 [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced,
 and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
-:::info Structured output and streaming now agree
-This used to be a limitation: the older `run_stream()` treated the **first `output_type` match** as the
-final output, so combining `output_type` with streaming truncated differently from the non-streaming
-path. The adapter now drives `run_stream_events()`, which wraps Pydantic AI's own `run()` — so a
-streamed run and a synchronous one produce the same structured output. Plain-text streaming is
-unaffected; it emits `TextDelta` events as usual.
-:::
+Structured output is supported in streaming mode too: the runner uses Pydantic AI's
+`run_stream_events()`, which wraps `run()` itself, so a streamed structured-output run truncates
+the same way the non-streaming path does — no divergence to work around. The final-answer tool
+call is streamed like any other tool call (`ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/
+`ToolCallResult`), and the run's `AgentReplyAny` is still available from the non-streaming `run()`
+path described above.
 
 ## Per-run context/state
 

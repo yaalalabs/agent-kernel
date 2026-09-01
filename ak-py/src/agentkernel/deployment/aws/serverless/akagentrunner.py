@@ -5,6 +5,7 @@ from typing import Optional
 from ....core.chat_service import ChatService
 from ....core.config import AKConfig
 from ....core.model import BaseRunRequest, ExecutionMode, StreamChunk
+from ....pipeline.envelope import ATTR_STATUS_CODE
 from ..core.sqs_handler import SQSHandler
 from .core import LambdaSQSConsumer
 
@@ -16,6 +17,8 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
 
     _log = logging.getLogger("ak.aws.agentrunner")
     _chat_service = None
+    # A run that exhausted its retries never produced a status of its own.
+    _PERMANENT_FAILURE_STATUS_CODE = 500
 
     @classmethod
     def _get_max_receive_count(cls) -> int:
@@ -107,12 +110,14 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         return {"error": error_msg}
 
     @classmethod
-    def _send_to_output_queue(cls, message_body: dict, record_attributes: dict) -> None:
+    def _send_to_output_queue(cls, message_body: dict, record_attributes: dict, status_code: Optional[int] = None) -> None:
         """
         Send a prepared message to the configured response SQS queue using send_message_to_output_queue.
 
         :param message_body: Message body (``dict``) to be sent to the response queue
         :param record_attributes: Extracted attributes (``dict``) from the record
+        :param status_code: Status the chat service produced, forwarded so the REST surface can
+            answer with it instead of collapsing every queued reply to 200
         :return: None
         """
         cls._log.info("Sending message to output queue")
@@ -123,6 +128,10 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         if record_attributes.get("endpoint_url"):
             custom_attributes.append(
                 SQSHandler.CustomAttribute(name="endpoint_url", value=record_attributes["endpoint_url"], datatype=SQSHandler.AttributeDataType.STRING)
+            )
+        if status_code is not None:
+            custom_attributes.append(
+                SQSHandler.CustomAttribute(name=ATTR_STATUS_CODE, value=str(status_code), datatype=SQSHandler.AttributeDataType.STRING)
             )
 
         cls._log.debug(f"Custom attributes: {custom_attributes}")
@@ -157,10 +166,13 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
         """
         cls._log.info(f"Processing message: {record}")
         body = cls._parse_body(record)
-        _, agent_response = cls._get_chat_service().process_chat_request(req=body)
-        cls._log.info(f"Chat service response: '{agent_response}'")
+        # ChatService(rest_api_mode=False) returns (status_code, response_dict). The status travels
+        # to the output message as an attribute so the deferred-schedule 202 and the validation 4xx
+        # survive the queue round trip instead of collapsing to 200 at the REST surface.
+        status_code, agent_response = cls._get_chat_service().process_chat_request(req=body)
+        cls._log.info(f"Chat service response: '{agent_response}' with status_code: {status_code}")
         record_attributes = cls._get_record_attributes(raw_queue_message=record, body=body)
-        cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes)
+        cls._send_to_output_queue(message_body=agent_response, record_attributes=record_attributes, status_code=status_code)
         cls._log.info(f"Sent Response message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
 
     @classmethod
@@ -178,7 +190,9 @@ class ServerlessAgentRunner(LambdaSQSConsumer):
                 error_msg=f"Failed to process message. Retried {cls._get_max_receive_count()} times"
             )
             error_message_body["session_id"] = record_attributes["message_group_id"]
-            cls._send_to_output_queue(message_body=error_message_body, record_attributes=record_attributes)
+            cls._send_to_output_queue(
+                message_body=error_message_body, record_attributes=record_attributes, status_code=cls._PERMANENT_FAILURE_STATUS_CODE
+            )
             cls._log.info(f"Sent Permanent Failure message to Output Queue: '{SQSHandler.get_output_queue_url()}'")
         except Exception as e:
             # Message comes to this function only if the message has reached its maximum no of retries

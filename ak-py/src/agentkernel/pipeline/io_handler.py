@@ -3,6 +3,7 @@ from typing import Optional
 
 import uvicorn
 
+from ..api.handler import RESTRequestHandler
 from ..auth.handler import AuthValidator
 from ..core.config import AKConfig
 from ..core.model import ExecutionMode
@@ -32,14 +33,19 @@ class IOHandler:
     _log = logging.getLogger("ak.pipeline.io_handler")
 
     @classmethod
-    def run(cls, auth_validator: Optional[AuthValidator] = None) -> None:
-        """Boot the pipeline's IO process.
+    def run(cls, auth_validator: Optional[AuthValidator] = None, handlers: Optional[list[RESTRequestHandler]] = None) -> None:
+        """Boot the pipeline topology this configuration implies and serve until shutdown.
 
         :param auth_validator: Only meaningful on the ``in_memory`` transport, where it co-hosts
             the WebSocket gateway (the ``/ws`` route plus the push endpoint) in ASYNC/STREAM
             modes; mandatory there for ASYNC. Broker topologies authenticate at their standalone
             gateway instead (``WebSocketGateway.run(auth_validator=...)``). Claims must include
             a ``userId``.
+        :param handlers: Optional REST handlers mounted alongside the pipeline's own chat route,
+            which is always served (it is the queue producer, not a replaceable default).
+            Mounting an optional surface is the application's job here, as it is for the Slack
+            and thread handlers.
+        :raises AKConfigError: If the topology is unusable.
         """
         config = AKConfig.get()
         mode = config.execution.mode
@@ -64,7 +70,7 @@ class IOHandler:
 
         from ..api.http import RESTAPI  # local import: RESTAPI.run() lazily imports this module
 
-        handlers = [RequestHandler()]
+        handlers = [RequestHandler(), *(handlers or [])]
         if ws_cohosted:
             from .ws.endpoint import PushEndpointHandler
             from .ws.handler import PipelineWebSocketHandler

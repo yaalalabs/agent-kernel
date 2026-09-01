@@ -70,6 +70,7 @@ const sidebars = {
           items: [
             'deployment/aws-serverless',
             'deployment/aws-containerized',
+            'deployment/aws-queue-mode-scalability',
           ],
         },
         {
@@ -140,6 +141,7 @@ const sidebars = {
         'advanced/multi-agent',
         'advanced/multimodal',
         'advanced/threads',
+        'advanced/scheduling',
         'advanced/sandbox',
         'advanced/knowledge-bases',
         'advanced/queue-mode-guide',

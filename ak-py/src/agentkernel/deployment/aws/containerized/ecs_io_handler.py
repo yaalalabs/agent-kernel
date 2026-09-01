@@ -1,6 +1,7 @@
 import logging
 from typing import Optional
 
+from ....api.handler import RESTRequestHandler
 from ....auth.handler import AuthValidator
 from ....core.config import AKConfig, ExecutionMode
 from ...common import ThreadRunner
@@ -16,13 +17,26 @@ class ECSIOHandler:
     modes, or WebSocket (ASYNC/STREAM) frames via ECSWebSocketRequestHandler. Thread 2
     (output-queue-consumer) runs ECSOutputConsumer.run, writing to DB (REST) or pushing
     over WebSocket (ASYNC). WebSocket mode requires ``run(auth_validator=MyValidator())``.
+
+    Optional REST surfaces (the schedule and thread management routes, a Slack handler) are
+    mounted by passing them as ``handlers``, the way the pipeline's ``IOHandler`` takes them.
     """
 
     _log = logging.getLogger("ak.ecs.iohandler")
     _config = AKConfig.get()
 
     @classmethod
-    def run(cls, auth_validator: Optional[AuthValidator] = None) -> None:
+    def run(cls, auth_validator: Optional[AuthValidator] = None, handlers: Optional[list[RESTRequestHandler]] = None) -> None:
+        """Boot the REST/WebSocket API and the output-queue consumer as peer threads, and serve until shutdown.
+
+        :param auth_validator: Authenticates the ``$connect`` handshake in WebSocket (ASYNC/STREAM)
+            mode, where it is mandatory; unused in the REST queue modes.
+        :param handlers: Optional REST handlers mounted alongside the API's own defaults, which are
+            always served (the chat route is the queue producer, not a replaceable default).
+            Mounting an optional surface is the application's job here, as it is on the pipeline's
+            ``IOHandler``.
+        :raises ValueError: If WebSocket mode is configured without an ``auth_validator``.
+        """
         mode = cls._config.execution.mode
         cls._log.info(f"ECSIOHandler starting — mode={mode}")
 
@@ -37,13 +51,15 @@ class ECSIOHandler:
 
             # Register the validator on AWSWebsocketAPI so its default handler picks it up.
             def run_api() -> None:
-                AWSWebsocketAPI.set_auth_handler(auth_validator=auth_validator).run()
+                AWSWebsocketAPI.set_auth_handler(auth_validator=auth_validator).run(handlers=handlers)
 
         else:
             from .core.api.rest_api import AWSRestAPI
 
             def run_api() -> None:
-                AWSRestAPI.run()
+                # Defaults first, then the application's: RESTAPI.run() replaces the defaults with
+                # whatever it is handed, and the queue-producing chat route must survive.
+                AWSRestAPI.run(handlers=[*AWSRestAPI.get_default_handlers(), *(handlers or [])])
 
         ThreadRunner.run(
             tasks=[

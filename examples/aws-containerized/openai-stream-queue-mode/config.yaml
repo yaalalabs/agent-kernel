@@ -10,6 +10,10 @@ session:
 execution:
   mode: stream
   queues:
+    # The transport every component of this deployment runs on. Mandatory: the queue URLs
+    # below are injected per component, so only this declaration tells each process which
+    # transport it is on.
+    type: sqs
     input:
       url: "" # injected by Terraform via AK_EXECUTION__QUEUES__INPUT__URL
       max_receive_count: 4

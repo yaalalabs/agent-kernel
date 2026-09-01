@@ -8,6 +8,11 @@ on:
         required: true
         type: string
 
+# Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions). Reads cover the
+# checkout of this repo; every write goes to the target module repos through the GitHub App token.
+permissions:
+  contents: read
+
 jobs:
   sync-modules:
     runs-on: ubuntu-latest

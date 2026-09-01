@@ -192,10 +192,10 @@ class TestFactory:
         assert isinstance(transport, SQSTransport)
         assert transport._queue_urls == {QueueName.INPUT: INPUT_URL, QueueName.OUTPUT: OUTPUT_URL}
 
-    def test_input_url_alone_implies_sqs_transport(self, monkeypatch):
-        """Pre-#495 compatibility: untyped config with queue URLs resolves and builds sqs."""
-        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._cfg(transport_type=None)))
-        assert isinstance(QueueTransportFactory.create(), SQSTransport)
+    def test_queue_urls_alone_do_not_imply_sqs(self, monkeypatch):
+        """Only the declared type selects the transport, however the URLs are configured."""
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._cfg(transport_type="in_memory")))
+        assert not isinstance(QueueTransportFactory.create(), SQSTransport)
 
     def test_missing_output_url_raises(self, monkeypatch):
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: self._cfg(output_url=None)))

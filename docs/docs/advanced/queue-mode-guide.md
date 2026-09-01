@@ -23,18 +23,31 @@ where the queues are durable SQS FIFO queues.
 Queue mode decouples the HTTP request from the agent processing by placing a queue between the
 caller and the Agent Runner. This gives you:
 
+- **Independent scaling**: the request/response path and the Agent Runner pool scale separately,
+  instead of being sized as one unit for whichever workload is heavier.
 - **Backpressure control**: the queue absorbs burst traffic.
 - **Ordered processing per session**: the message group (`session_id`) keeps chat turns in order
-  while different sessions run in parallel.
-- **Automatic retries**: unacknowledged messages are redelivered, up to `max_receive_count`;
-  after that a permanent-failure error is delivered so the caller never hangs.
-- **Deduplication**: a per-request deduplication ID prevents the same message being processed twice.
+  while different sessions run fully in parallel.
+- **Crash resilience**: a message is only removed from the queue once fully processed, so a
+  worker crashing, restarting, or hanging mid-turn leaves the turn on the queue for another worker.
+- **Automatic retries**: unacknowledged messages are redelivered, up to `max_receive_count`,
+  absorbing provider rate limits and transient upstream failures without the caller having to
+  notice or retry; after that a permanent-failure error is delivered so the caller never hangs.
+- **Capped provider concurrency**: how hard the model provider gets hit is set by the number of
+  consumers draining the queue, not by request arrival rate: a spike lengthens the queue instead
+  of fanning out into simultaneous provider calls.
+- **Deduplication**: a per-request deduplication ID prevents the same request being enqueued twice
+  and the same reply being delivered twice, so caller retries are safe. (This covers duplicate
+  *enqueues*, not redelivery: a message redelivered after a processed-but-unacknowledged failure is
+  re-run by the Agent Runner, which re-appends that turn to session history.)
 
-The queue transport is pluggable via `execution.queues.type`:
+The queue transport is pluggable via `execution.queues.type`, which is mandatory once an
+`execution.queues` block is declared — the transport decides the deployment topology, so it is
+declared by the application rather than inferred from the queue URLs a deployment injects:
 
 | Transport | Status | Where the components run |
 |-----------|--------|--------------------------|
-| `in_memory` | ✅ the default | All five components as threads in one process (local, single-container) |
+| `in_memory` | ✅ the default when no `queues` block is declared | All five components as threads in one process (local, single-container) |
 | `sqs` | ✅ | Two-process topology on AWS; also the transport behind the Lambda and ECS deployment adapters below |
 | `kafka` | ✅ (`pip install agentkernel[kafka]`) | Kubernetes / on-prem two-process topology |
 | `nats` (recommended on-prem) | ✅ (`pip install agentkernel[nats]`) | Kubernetes / on-prem two-process topology |
@@ -68,7 +81,7 @@ transports remain the production choice for multi-process deployments.
 execution:
   mode: rest_sync          # rest_sync (default when unset) | rest_async | stream
   queues:
-    type: in_memory        # the default; spelled out for clarity
+    type: in_memory        # mandatory in a declared queues block
     input:
       max_receive_count: 3 # deliveries before a message is permanently failed
       no_of_consumers: 2   # agent-runner worker threads (parallel sessions)
@@ -383,6 +396,39 @@ Both queues are **FIFO** with:
 | `MessageVisibilityTimeout` | Makes undeleted messages reappear for retry |
 | `MessageRetentionPeriod` | Auto-deletes stuck messages, breaks infinite loops |
 | DLQ (optional) | Catches messages that exceed `maxReceiveCount` |
+
+:::note Scheduling flips the input queue to content-based deduplication
+With `enable_scheduling`, EventBridge Scheduler becomes a second producer on the Input Queue and cannot
+set a `MessageDeduplicationId`, so the queue enables content-based deduplication instead. Application
+senders keep sending an explicit `MessageDeduplicationId`, which takes precedence — nothing about the
+flows below changes. See the [scheduling guide](./scheduling.md).
+:::
+
+### Request Metadata: Attributes, with a Body Fallback
+
+`request_id` and `user_id` normally travel as SQS **message attributes**, and the runners read them from
+there. When the attribute is absent they fall back to the same key in the **message body**, and inject
+the resolved value back into the attributes so output-side forwarding keeps working.
+
+That fallback is what makes scheduled triggers work: EventBridge Scheduler cannot set message
+attributes, so a scheduled occurrence carries its `request_id`, `user_id`, `scheduled_task_id` and
+`scheduled_time` in the body. A message missing the key in *both* places keeps the pre-existing error
+path (retry, then permanent-failure handling).
+
+### Status Codes Travel Through the Queues
+
+Every agent runner — pipeline, ECS and the agent-runner Lambda — forwards `ChatService`'s status code
+to the Output Queue as a `status_code` custom attribute, and the output consumer (or response-handler
+Lambda) stores it on the response record. On the way back out:
+
+- `status_code >= 400` surfaces as a real 4xx/5xx instead of HTTP 200 with an error body: the REST
+  surfaces raise an `HTTPException`, the Lambda router answers with that status.
+- `200 < status_code < 400` is preserved. This is how a deferred chat's **202** reaches the client
+  through the queue path.
+- Records with no `status_code` (written before this existed) default to 200.
+
+A response that never arrived is the one case the two surfaces differ on: the REST surfaces answer
+504 (sync) / 404 (poll), the Lambda router keeps its `NOT_FOUND` error body under a 200.
 
 ### REST Sync Flow
 

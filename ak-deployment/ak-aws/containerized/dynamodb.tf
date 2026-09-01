@@ -21,6 +21,32 @@ resource "aws_dynamodb_table" "response_store" {
   tags = merge(var.tags, { Type = "ResponseStore" })
 }
 
+# DynamoDB Schedule Store
+# Persists the scheduled task records. One item per task, no sort key and no GSI: listings scan with
+# a filter expression, which is acceptable at schedule cardinalities.
+
+resource "aws_dynamodb_table" "schedule_store" {
+  count = var.create_dynamodb_schedule_table ? 1 : 0
+
+  name         = "${local.prefix}-schedule-store"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "task_id"
+
+  attribute {
+    name = "task_id"
+    type = "S"
+  }
+
+  # Enabled so a deployment that opts into `schedule.store.dynamodb.ttl` works; the application's
+  # TTL defaults to 0, in which case items carry no `expiry_time` and never expire.
+  ttl {
+    attribute_name = "expiry_time"
+    enabled        = true
+  }
+
+  tags = merge(var.tags, { Type = "ScheduleStore" })
+}
+
 # WebSocket connections table, maps user_id <-> connection_id (WebSocket modes only)
 
 module "websocket_connections" {

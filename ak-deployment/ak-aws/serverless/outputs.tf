@@ -239,3 +239,30 @@ output "ws_connection_handler_lambda_role_name" {
   description = "Name of the WebSocket connection handler Lambda execution role"
   value       = try(module.ws_connection_handler[0].ws_connection_handler_lambda_role_name, null)
 }
+
+# Scheduling outputs (null unless the matching flag is set)
+
+output "schedule_group_name" {
+  description = "EventBridge Scheduler schedule-group name the scheduled tasks register their schedules in"
+  value       = local.schedule_group_name
+}
+
+output "schedule_group_arn" {
+  description = "EventBridge Scheduler schedule-group ARN"
+  value       = local.schedule_group_arn
+}
+
+output "scheduler_execution_role_arn" {
+  description = "ARN of the role EventBridge Scheduler assumes to deliver scheduled triggers to the Input Queue"
+  value       = local.scheduler_execution_role_arn
+}
+
+output "schedule_table_name" {
+  description = "DynamoDB schedule store table name"
+  value       = local.dynamodb_schedule_table_name
+}
+
+output "schedule_table_arn" {
+  description = "DynamoDB schedule store table ARN"
+  value       = local.dynamodb_schedule_table_arn
+}

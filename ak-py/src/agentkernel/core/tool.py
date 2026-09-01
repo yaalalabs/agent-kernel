@@ -197,6 +197,14 @@ class SystemToolFactory:
 
             tools.extend(get_sandbox_tools())
 
+        # Presence of the block is the enablement signal for scheduling (there is no `enabled`
+        # flag), matching how the capability is switched on everywhere else.
+        schedule_config = getattr(AKConfig.get(), "schedule", None)
+        if schedule_config is not None and SystemToolFactory._agent_allowed(schedule_config, agent_name):
+            from ..schedule.tools import get_schedule_tools
+
+            tools.extend(get_schedule_tools())
+
         agui_config = getattr(AKConfig.get(), "agui", None)
         state_config = getattr(agui_config, "state", None)
         if state_config and state_config.enabled and SystemToolFactory._agent_allowed(state_config, agent_name):

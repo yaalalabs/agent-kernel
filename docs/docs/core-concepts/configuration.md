@@ -81,6 +81,7 @@ websocket_api:
 execution:
   mode: rest_sync  # Execution mode: rest_sync, rest_async, stream, or async (WebSocket)
   queues:
+    type: sqs  # Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass. Mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
@@ -139,6 +140,31 @@ thread:
   dynamodb:
     table_name: "ak-agent-threads"
     ttl: 0
+
+# Deferred and recurring chats (optional - feature is enabled by the presence of this block.
+# A bare `schedule:` block works as-is: local provider, in_memory store.
+# See /docs/advanced/scheduling)
+schedule:
+  provider:
+    type: local  # local | eventbridge, or a dotted path to a ScheduleProvider subclass
+    eventbridge:  # required when provider.type is eventbridge - all three are supplied by the AWS Terraform modules
+      group_name: "ak-agent-schedules"
+      role_arn: "arn:aws:iam::123456789012:role/ak-scheduler-execution"
+      queue_arn: "arn:aws:sqs:us-east-1:123456789012:agent-input"
+  store:
+    type: in_memory  # in_memory | redis | valkey | dynamodb, or a dotted path to a ScheduleStore subclass
+    redis:
+      url: "redis://localhost:6379"
+      ttl: 0  # 0 disables expiry - scheduled tasks carry no default TTL
+      prefix: "ak:schedule:"
+    valkey:
+      url: "valkey://localhost:6379"
+      ttl: 0
+      prefix: "ak:schedule:"
+    dynamodb:
+      table_name: "ak-agent-schedules"  # partition key 'task_id' (S), no sort key, TTL on 'expiry_time'
+      ttl: 0
+  agents: []  # Agents the schedule tools attach to; omit for all agents
 
 # Messaging platform integrations
 slack:
@@ -278,6 +304,7 @@ Alternatively, use `config.json`:
   "execution": {
     "mode": "rest_sync",
     "queues": {
+      "type": "sqs",
       "input": {
         "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input",
         "max_receive_count": 3,
@@ -624,6 +651,7 @@ export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
 - Queues and response_store are required for `rest_sync` and `rest_async` modes
 - For `async` (WebSocket) mode, queues are optional but response_store is not used since responses are broadcast directly through the WebSocket connection
 - When queues are not configured, the request handler processes requests directly without queuing
+- `execution.queues.type` is mandatory whenever an `execution.queues` block is declared: the transport is what decides the topology, and the queue URLs a deployment injects per component are never used to infer it
 
 ### Logging Configuration (Optional)
 
@@ -808,7 +836,8 @@ guardrail:
 # Execution configuration (for AWS serverless and containerized deployments)
 execution:
   mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'stream', or 'async'
-  queues:                       # Queue URLs for queue-based execution
+  queues:                       # Queue transport + coordinates for queue-based execution
+    type: "sqs"                 # in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport subclass - mandatory whenever this block is declared
     input:
       url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
       max_receive_count: 3      # Max receive count before message is treated as failed

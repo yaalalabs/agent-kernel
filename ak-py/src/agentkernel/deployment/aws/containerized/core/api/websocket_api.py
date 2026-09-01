@@ -512,6 +512,9 @@ class AWSWebsocketAPI(RESTAPI):
         return [cls._build_system_handler(), ECSWebSocketRequestHandler(custom_routes=cls._ws_custom_routes)]
 
     @classmethod
-    def run(cls) -> None:
-        """Start the WebSocket API server with the system handler plus the chat/custom-route application handler."""
-        super().run(handlers=cls.get_default_handlers())
+    def run(cls, handlers: Optional[list[RESTRequestHandler]] = None) -> None:
+        """Start the WebSocket API server with the system handler plus the chat/custom-route application handler.
+
+        :param handlers: Optional REST handlers mounted alongside the defaults, which are always served.
+        """
+        super().run(handlers=[*cls.get_default_handlers(), *(handlers or [])])

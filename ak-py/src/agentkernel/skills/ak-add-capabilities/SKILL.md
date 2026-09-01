@@ -3,8 +3,9 @@ name: ak-add-capabilities
 description: >
   Add capabilities to an existing Agent Kernel project. This skill guides you through
   adding guardrails, tracing/observability, session persistence, knowledge bases, MCP server,
-  A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support, and the
-  sandbox capability (isolated code execution). Session
+  A2A server, AG-UI server, pre/post hooks, multimodal support, conversation thread support,
+  scheduled tasks (deferred and recurring chat execution), and the sandbox capability
+  (isolated code execution). Session
   persistence supports Redis, DynamoDB (AWS), Cosmos DB (Azure), and Firestore (GCP).
   Conversation threads support in-memory, Redis, Valkey, DynamoDB (AWS), Firestore (GCP),
   and Cosmos DB (Azure) backends. Generates configuration and code changes needed.
@@ -42,6 +43,7 @@ Which capability would you like to add?
 9. **Conversation Threads** — Persistent, named conversation history keyed by `session_id`
 10. **Sandbox** — Isolated code/command execution with pluggable providers, workload profiles, policy, and per-user identity
 11. **AG-UI Server** — Stream any agent to an AG-UI-compliant frontend (text, tool calls, reasoning, shared state)
+12. **Scheduled Tasks** — Deferred and recurring chat execution (a `schedule` block on a chat request, management routes, agent tools)
 
 ### Step 3: Generate Changes
 
@@ -935,6 +937,178 @@ curl -X POST http://localhost:8000/api/v1/chat \
 ```
 
 See `examples/api/thread-openai` and `examples/api/multimodal/thread-openai`.
+
+---
+
+#### Scheduled Tasks
+
+**What it does:** Lets a chat request run later, once or repeatedly. A request carrying a `schedule`
+block is not executed — it is registered as a scheduled task and acknowledged with **HTTP 202**. When
+an occurrence is due, the provider delivers the stored prompt into the input queue as a plain chat
+request and the normal execution path runs it. The block also injects five agent tools
+(`create_schedule`, `list_schedules`, `get_schedule`, `update_schedule`, `delete_schedule`) so the
+agent can defer work itself. The management routes are **not** mounted from config — the application
+mounts `ScheduleRESTRequestHandler` when it wants them, exactly as it mounts the Slack and thread
+handlers.
+
+**Ask:** Which provider — `local` (in-process thread, development) or `eventbridge` (AWS EventBridge
+Scheduler, production)? And which task store — in-memory (default, dev), Redis, Valkey, or DynamoDB
+(AWS)?
+
+**Important:** occurrences are delivered *into the input queue*, so scheduling requires the queue
+execution pipeline. Locally the `in_memory` transport satisfies this inside one process; on AWS it
+means deploying in queue mode.
+
+**Basic setup (local provider, in-memory store — development):**
+
+1. Update `pyproject.toml`:
+```toml
+dependencies = [
+    "agentkernel[openai,api,cron]>=0.8.1",
+]
+```
+The `cron` extra brings `croniter`, needed for cron parsing.
+
+2. Update `config.yaml`. The presence of the `schedule` block is what enables deferring and the agent
+   tools; the management routes are mounted by the app in step 3:
+```yaml
+schedule:
+  provider:
+    type: local          # other supported providers: eventbridge
+  store:
+    type: in_memory      # other supported backends: redis | valkey | dynamodb
+  # agents: [assistant]  # restrict the schedule tools to named agents; omitted = all agents
+
+execution:
+  mode: rest_sync
+  queues:
+    type: in_memory      # required: the provider fires occurrences into the input queue
+```
+
+3. Mount the management routes in `app.py`. Nothing is mounted from config, so an app that skips this
+   step still defers requests and still gets the agent tools — it just serves no `/api/v1/schedules`
+   routes:
+```python
+from agentkernel.pipeline import IOHandler
+from agentkernel.schedule import ScheduleRESTRequestHandler
+
+if __name__ == "__main__":
+    # config.yaml selects the in_memory queue transport, so this boots the whole single-process
+    # pipeline. The passed handlers are mounted alongside the pipeline's own chat route.
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler()])
+```
+
+4. When enabled:
+   - A JSON chat request may carry a `schedule` block: exactly one of `at` (ISO-8601 local wall-clock
+     timestamp, must be in the future) or `cron` (standard 5-field expression), plus `timezone`
+     (IANA, default `UTC`) and `session_mode` (`reuse` the originating session, or `new` for a fresh
+     session per occurrence)
+   - `user_id` becomes **required** on any request that schedules: it is the owner the task is stored
+     under and the identity later reads and changes are checked against
+   - `GET /api/v1/schedules` (cursor-paginated) and `GET`/`PUT`/`DELETE /api/v1/schedules/{task_id}`
+     are mounted for listing, reading, amending and cancelling (open by default, or protected by a
+     pluggable `Authoriser`). There is deliberately no `POST` — creation is the chat block or the
+     agent tool
+   - `PUT` is full-replacement: send every value, including the ones that are not changing. `status`
+     covers the `active`/`paused` switch; a cancelled task keeps its record as the audit trail
+   - The five schedule tools and their guidance are injected into every agent's system prompt; each
+     acts as the invoking user, so an agent can never reach another user's schedules
+   - A scheduled request creates no conversation thread; the occurrences that later fire do
+   - Multipart chat routes cannot carry a `schedule` block — use the JSON route
+
+**Send a chat request with a schedule:**
+
+```bash
+# One-time
+curl -i -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Send me the daily summary", "session_id": "ses-1", "user_id": "alice",
+       "schedule": {"at": "2030-01-31T09:00:00", "timezone": "Asia/Colombo"}}'
+
+# HTTP/1.1 202 Accepted
+# {"result":"{\"status\": \"SCHEDULED\", \"scheduled_task_id\": \"74ca19a5-...\", \"session_id\": \"ses-1\"}","session_id":"ses-1"}
+
+# Recurring, each occurrence in a fresh session
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Send the weekly report", "session_id": "ses-2", "user_id": "alice",
+       "schedule": {"cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"}}'
+
+# Manage
+curl "http://localhost:8000/api/v1/schedules?user_id=alice"
+curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
+```
+
+**For production on AWS (EventBridge Scheduler + DynamoDB):**
+
+```toml
+dependencies = [
+    "agentkernel[openai,api,aws,cron]>=0.8.1",
+]
+```
+```yaml
+schedule:
+  provider:
+    type: eventbridge
+  store:
+    type: dynamodb
+    dynamodb:
+      table_name: "ak-agent-schedules"   # partition key task_id (S), no sort key
+      ttl: 0                             # 0 disables expiry (the default)
+```
+
+`group_name`, `role_arn` and `queue_arn` under `schedule.provider.eventbridge` are supplied by the
+Terraform modules as `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__*` environment variables — do not hardcode
+them. See the `ak-cloud-deploy` skill.
+
+**For Redis or Valkey task storage:**
+
+```toml
+dependencies = [
+    "agentkernel[openai,api,redis,cron]>=0.8.1",   # or valkey
+]
+```
+```yaml
+schedule:
+  store:
+    type: redis           # or valkey, with a `valkey:` block
+    redis:
+      url: "redis://localhost:6379"
+      prefix: "ak:schedule:"
+      ttl: 0              # unlike threads this defaults to 0 — an expired task would stop firing silently
+```
+
+**Topology rules (validated at startup, not at first use):**
+
+| Combination | Rejected because |
+|---|---|
+| `local` provider + a broker transport (`sqs`/`kafka`/`nats`) | The in-process timers are unreachable from the process serving the management routes — a cancellation would report success while the timer kept firing |
+| `local` provider + a shared store | Same split: the timers and the records must live together |
+| `in_memory` store + a broker transport | The records would be split across the runner and IO-handler processes |
+| `eventbridge` provider + a non-`sqs` transport | Delivery is baked into the schedule registration as an SQS target |
+
+**Protecting the management routes with an Authoriser:** the routes are mounted by the application,
+so pass the `Authoriser` to the `ScheduleRESTRequestHandler` constructor:
+
+```python
+from typing import Optional
+from agentkernel.auth import Authoriser
+from agentkernel.pipeline import IOHandler
+from agentkernel.schedule import ScheduleRESTRequestHandler
+
+class DemoAuthoriser(Authoriser):
+    def authorise(self, token: str) -> Optional[str]:
+        # Validate the ****** against your own auth provider, return the user_id or None.
+        return {"alice-token": "alice", "bob-token": "bob"}.get(token)
+
+if __name__ == "__main__":
+    IOHandler.run(handlers=[ScheduleRESTRequestHandler(authoriser=DemoAuthoriser())])
+```
+
+With an Authoriser configured, listings are scoped to the resolved `user_id` and reading or changing
+another user's schedule is rejected (403). Without one, the routes are open.
+
+See `examples/api/schedule-openai`.
 
 ---
 

@@ -3,10 +3,17 @@ name: Test Trusted Fork PR
 # This workflow runs tests with secrets for fork PRs that have been reviewed and labeled as safe
 # It runs in the context of the base repository (pull_request_target) which has access to secrets
 # ⚠️  SECURITY: Only add the 'safe-to-test' label after thoroughly reviewing the PR code!
+# The reusable workflow hands ak-py/dist between jobs as a run-scoped artifact rather than an
+# Actions cache, so fork code executed here cannot poison a cache the default branch reads.
 
 on:
   pull_request_target:
     types: [labeled]
+
+# Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions). pull_request_target
+# runs with base-repo privileges, so the default is no scopes and the test job is granted only the
+# read its checkouts need.
+permissions: {}
 
 jobs:
   check-label:
@@ -24,14 +31,14 @@ jobs:
 
   run-tests:
     needs: [check-label]
+    permissions:
+      contents: read
     uses: ./.github/workflows/test-reusable.yaml
     with:
       # Test the fork PR head SHA (this is safe because the workflow only runs after manual label approval)
       checkout_ref: ${{ github.event.pull_request.head.sha }}
       # Run all tests including e2e (this workflow has access to secrets)
       run_e2e_tests: true
-      # Disable cache writes/restores when executing untrusted fork code in pull_request_target context
-      enable_cache: false
     secrets:
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
