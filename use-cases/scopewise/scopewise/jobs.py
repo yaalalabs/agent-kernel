@@ -13,6 +13,7 @@ TRACE_FIELDS = {
     "exclusions_checked",
     "guidance_chunks",
     "discarded_references",
+    "exclusion_enforced",
     "human_review_required",
 }
 

@@ -4,7 +4,7 @@ import os
 import uuid
 from urllib.parse import urlparse
 
-from .candidates import select_candidates
+from .candidates import explicit_exclusion_matches, select_candidates
 from .matching import validate_evidence, validate_match
 from .models import Analysis, Decision, Evidence, Extraction, Match
 from .retrieval import chunk_pages, cosine, embed_texts, search_chunks
@@ -345,6 +345,16 @@ class KernelEngine:
             discarded_references = sum(key not in objective_map for key in result.objective_keys) + sum(
                 quote.source not in guidance_map for quote in result.guidance
             )
+            direct_exclusions = explicit_exclusion_matches(question.text, selection.objectives)
+            if direct_exclusions:
+                aliases = {objective.id: key for key, objective in objective_map.items()}
+                result = result.model_copy(
+                    update={
+                        "objective_keys": [aliases[objective.id] for objective in direct_exclusions],
+                        "scope_status": "beyond_scope",
+                        "reason": "The approved current scope explicitly excludes this topic and requested action.",
+                    }
+                )
             match = decision_match(result, question, objective_map, guidance_map)
             matches.append(validate_match(match, documents, objectives, [question]))
             self.run_trace.append(
@@ -356,6 +366,7 @@ class KernelEngine:
                     "exclusions_checked": len(selection.exclusion_ids),
                     "guidance_chunks": len(guidance_results["results"]),
                     "discarded_references": discarded_references,
+                    "exclusion_enforced": bool(direct_exclusions),
                     "human_review_required": True,
                 }
             )

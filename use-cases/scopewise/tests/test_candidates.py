@@ -1,4 +1,4 @@
-from scopewise.candidates import select_candidates
+from scopewise.candidates import explicit_exclusion_matches, select_candidates
 from scopewise.models import Evidence, Objective
 
 
@@ -53,3 +53,10 @@ def test_missing_semantic_scores_use_lexical_mode_without_raising():
 
     assert selection.mode == "lexical"
     assert [item.id for item in selection.objectives] == ["keys"]
+
+
+def test_explicit_exclusion_requires_the_excluded_topic_and_action():
+    exclusion = objective("bcnf", "BCNF proofs are explicitly excluded from this module.", "excluded")
+
+    assert explicit_exclusion_matches("Prove that every BCNF relation is in third normal form.", [exclusion]) == [exclusion]
+    assert explicit_exclusion_matches("Explain the definition of BCNF.", [exclusion]) == []

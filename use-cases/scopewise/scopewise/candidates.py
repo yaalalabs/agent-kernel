@@ -32,6 +32,20 @@ STOP = {
     "why",
 }
 TOKEN = re.compile(r"[a-z0-9]+")
+ACTION_ROOTS = {
+    "proof": "proof",
+    "proofs": "proof",
+    "prove": "proof",
+    "proving": "proof",
+    "calculate": "calculate",
+    "calculates": "calculate",
+    "calculation": "calculate",
+    "calculations": "calculate",
+    "derive": "derive",
+    "derivation": "derive",
+    "derivations": "derive",
+}
+EXCLUSION_NOISE = {"are", "current", "explicitly", "excluded", "from", "module", "not", "scope", "this", "topic"}
 
 
 @dataclass(frozen=True)
@@ -44,6 +58,28 @@ class CandidateSelection:
 
 def significant_terms(text: str) -> set[str]:
     return {token for token in TOKEN.findall(text.casefold()) if token not in STOP and len(token) > 1}
+
+
+def _exclusion_terms(text: str) -> set[str]:
+    return {
+        ACTION_ROOTS.get(token, token)
+        for token in TOKEN.findall(text.casefold())
+        if token not in EXCLUSION_NOISE and token not in {"a", "an", "and", "of", "the", "to"} and len(token) > 1
+    }
+
+
+def explicit_exclusion_matches(question: str, objectives: list[Objective]) -> list[Objective]:
+    question_terms = _exclusion_terms(question)
+    matches = []
+    for objective in objectives:
+        if objective.kind != "excluded":
+            continue
+        terms = _exclusion_terms(objective.text)
+        actions = terms & set(ACTION_ROOTS.values())
+        topics = terms - actions
+        if topics and topics.issubset(question_terms) and (not actions or bool(actions & question_terms)):
+            matches.append(objective)
+    return matches
 
 
 def select_candidates(question: str, objectives: list[Objective], semantic_scores=None, limit: int = 6) -> CandidateSelection:

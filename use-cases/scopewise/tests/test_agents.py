@@ -1,7 +1,7 @@
 import pytest
 
 from scopewise.agents import KernelEngine, validate_analysis, validate_extraction
-from scopewise.models import Analysis, Evidence, Extraction, Match, Objective
+from scopewise.models import Analysis, Evidence, Extraction, Match, Objective, Question
 
 
 def test_extraction_cannot_approve_itself_or_cite_another_document():
@@ -166,6 +166,58 @@ async def test_analysis_sends_only_question_candidates_to_the_alignment_agent(mo
             "exclusions_checked": 0,
             "guidance_chunks": 0,
             "discarded_references": 0,
+            "exclusion_enforced": False,
             "human_review_required": True,
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_analysis_enforces_a_direct_explicit_exclusion_when_the_model_misses_it(monkeypatch):
+    from scopewise import agents
+
+    documents = [
+        {"id": "syllabus", "role": "syllabus", "approved": True, "pages": ["BCNF proofs are explicitly excluded from this module."]},
+        {"id": "paper", "role": "paper", "approved": True, "pages": ["Prove that every BCNF relation is in third normal form."]},
+    ]
+    exclusion = Objective(
+        id="bcnf",
+        text="BCNF proofs are explicitly excluded from this module.",
+        kind="excluded",
+        approved=True,
+        evidence=Evidence(document_id="syllabus", page=1, quote="BCNF proofs are explicitly excluded from this module."),
+    )
+    question = Question(
+        id="proof",
+        text="Prove that every BCNF relation is in third normal form.",
+        approved=True,
+        evidence=Evidence(document_id="paper", page=1, quote="Prove that every BCNF relation is in third normal form."),
+    )
+    engine = KernelEngine.__new__(KernelEngine)
+    engine.store = object()
+
+    async def lexical_only(_question, _objectives):
+        return None
+
+    async def no_guidance(*_args, **_kwargs):
+        return {"mode": "lexical", "results": []}
+
+    async def missed_exclusion(*_args):
+        return {
+            "objective_keys": [],
+            "scope_status": "uncertain",
+            "reason": "No objective selected.",
+            "assessment_status": "unknown",
+            "assessment_reason": "No current guidance.",
+            "guidance": [],
+        }
+
+    engine._semantic_scores = lexical_only
+    engine._run = missed_exclusion
+    monkeypatch.setattr(agents, "search_chunks", no_guidance)
+
+    analysis = await engine.analyze("alice", {"id": "course"}, documents, [exclusion], [question])
+
+    assert analysis.matches[0].scope_status == "beyond_scope"
+    assert analysis.matches[0].objective_ids == ["bcnf"]
+    assert "explicitly excludes" in analysis.matches[0].reason
