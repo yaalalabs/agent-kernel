@@ -62,7 +62,7 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_crewai_runner.py` | CrewAIRunner execution (mocked Crew kickoff) |
 | `test_smolagents_runner.py` | SmolagentsRunner execution, multimodal requests, error handling |
 | `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring |
-| `test_langgraph_reasoning_live.py` | LangGraph reasoning against a REAL reasoning model, env-gated (`AK_TEST_REASONING_MODEL`; skipped in normal runs). Guards the premise the chunk-feeding unit tests cannot: that the model streams a summary at all (it must be asked — `reasoning={"summary": "auto"}`) and that LangChain surfaces it under `content_blocks`. Builds a bare `StateGraph`, because `langgraph.prebuilt` is unimportable against the pinned `langgraph` |
+| `test_langgraph_reasoning_live.py` | LangGraph reasoning against a REAL reasoning model, env-gated (`AK_TEST_REASONING_MODEL`; skipped in normal runs). Guards the premise the chunk-feeding unit tests cannot: that the model streams a summary at all (it must be asked — `reasoning={"summary": "auto"}`) and that LangChain surfaces it under `content_blocks`. Builds a bare `StateGraph` rather than `create_react_agent`, since the test needs only one model call and a ReAct loop would add nothing |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
 | `test_api_mcp.py` | `MCP.get_http_app()`: `mcp.stateless_http` is passed to `http_app()` (fastmcp 3 removed the `FastMCP(stateless_http=...)` constructor kwarg, so the constructor must stay name-only), and a second call reuses the built server while still applying the configured mode |
