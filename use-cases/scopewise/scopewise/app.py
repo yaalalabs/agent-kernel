@@ -227,7 +227,7 @@ def create_app(settings=None, engine_factory=KernelEngine):
 
     @app.patch("/api/courses/{course_id}")
     def edit_course(course_id: str, body: CoursePatch, identity=Depends(user)):
-        return store.update_course(identity["id"], course_id, **body.model_dump(exclude_unset=True))
+        return service.edit_course(identity["id"], course_id, **body.model_dump(exclude_unset=True))
 
     @app.delete("/api/courses/{course_id}")
     def delete_course(course_id: str, identity=Depends(user)):

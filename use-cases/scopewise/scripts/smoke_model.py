@@ -44,7 +44,13 @@ async def main():
             print("ASSISTANT:", response)
             print("VERIFIED TOOL CALLS:", engine.tool_events)
             sample = seed_sample(store, "smoke-user")
-            documents, objectives, questions = CourseService(store).materials("smoke-user", sample["id"])
+            service = CourseService(store)
+            sample = service.edit_course("smoke-user", sample["id"], lecturer="Changed synthetic lecturer")
+            change_response = await engine.chat("smoke-user", sample["id"], "What changed? Use the course change-impact tool before answering.")
+            assert "get_change_impact" in engine.tool_events, "Assistant must execute the change-impact tool"
+            print("CHANGE IMPACT:", change_response)
+            print("VERIFIED CHANGE TOOL CALLS:", engine.tool_events)
+            documents, objectives, questions = service.materials("smoke-user", sample["id"])
             comparison = await engine.analyze("smoke-user", sample, documents, objectives, questions)
             print("LIVE COMPARISON (unreviewed):", comparison.model_dump_json(indent=2))
         finally:

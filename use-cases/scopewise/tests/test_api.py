@@ -161,3 +161,25 @@ def test_bundle_keeps_earlier_analysis_without_provenance(app):
         analysis = client.get(f"/api/courses/{course['id']}").json()["analyses"][-1]
 
         assert "provenance" not in analysis
+
+
+def test_course_bundle_exposes_only_bounded_change_impact_fields(app):
+    with TestClient(app) as client:
+        account(client)
+        course = client.post("/api/sample").json()
+
+        impact = client.get(f"/api/courses/{course['id']}").json()["change_impact"]
+
+        assert set(impact) == {
+            "latest_event",
+            "scope_version",
+            "assessment_version",
+            "stale_analysis_count",
+            "stale_pack_count",
+            "retired_objective_count",
+            "has_current_guidance",
+            "next_action",
+            "statement",
+            "events",
+        }
+        assert len(impact["events"]) <= 10
