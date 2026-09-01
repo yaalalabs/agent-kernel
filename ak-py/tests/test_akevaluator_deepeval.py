@@ -8,6 +8,8 @@ that's the one path that would otherwise hit a live provider.
 from typing import ClassVar
 
 import pytest
+from deepeval.test_case import SingleTurnParams
+
 from agentkernel.test.config import AKTestConfig
 from agentkernel.test.core.akevaluators import (
     AKEvaluationCase,
@@ -18,7 +20,6 @@ from agentkernel.test.core.akevaluators.deepeval import (
     _DEFAULT_LLM_CRITERIA,
     DeepevalAKEvaluator,
 )
-from deepeval.test_case import SingleTurnParams
 
 
 @pytest.fixture
@@ -30,9 +31,7 @@ def evaluator():
 
 
 def test_score_based_evaluation_exact_match(evaluator):
-    case = AKEvaluationCase(
-        user_input="capital of France?", actual="Paris", expected="Paris"
-    )
+    case = AKEvaluationCase(user_input="capital of France?", actual="Paris", expected="Paris")
     result = evaluator.score_based_evaluation(case)
     assert result.score == 1.0
     assert result.metric == "quasi_exact_match"
@@ -41,18 +40,14 @@ def test_score_based_evaluation_exact_match(evaluator):
 
 
 def test_score_based_evaluation_mismatch(evaluator):
-    case = AKEvaluationCase(
-        user_input="capital of France?", actual="London", expected="Paris"
-    )
+    case = AKEvaluationCase(user_input="capital of France?", actual="London", expected="Paris")
     result = evaluator.score_based_evaluation(case)
     assert result.score == 0.0
     assert result.passed is False
 
 
 def test_score_based_evaluation_passed_uses_case_threshold(evaluator):
-    case = AKEvaluationCase(
-        user_input="capital of France?", actual="London", expected="Paris", threshold=0.0
-    )
+    case = AKEvaluationCase(user_input="capital of France?", actual="London", expected="Paris", threshold=0.0)
     result = evaluator.score_based_evaluation(case)
     assert result.score == 0.0
     assert result.passed is True  # 0.0 >= the case's own threshold of 0.0
@@ -116,9 +111,7 @@ def test_llm_based_evaluation_missing_expected_raises(evaluator):
 def test_llm_based_evaluation_success(evaluator):
     _FakeGEval.measure_score = 0.9
     _FakeGEval.measure_reason = "matches expected answer"
-    case = AKEvaluationCase(
-        user_input="capital of France?", actual="It's Paris.", expected="Paris"
-    )
+    case = AKEvaluationCase(user_input="capital of France?", actual="It's Paris.", expected="Paris")
 
     result = evaluator.llm_based_evaluation(case)
 

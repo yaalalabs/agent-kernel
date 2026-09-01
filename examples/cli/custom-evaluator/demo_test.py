@@ -33,7 +33,9 @@ async def test_score_mode_gives_partial_credit(test_client):
 
 @pytest.mark.order(3)
 async def test_llm_mode_uses_the_custom_judge(test_client):
-    await test_client.send("Which country hosted the 1996 cricket world cup? Just give the answer and don't repeat the question.")
+    await test_client.send(
+        "Which country hosted the 1996 cricket world cup? Just give the answer and don't repeat the question."
+    )
     result = Test.compare(
         actual=test_client.last_agent_response,
         expected=["The tournament was co-hosted by India, Pakistan and Sri Lanka."],

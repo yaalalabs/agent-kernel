@@ -3,6 +3,7 @@ import pytest
 pytest.importorskip("crewai")
 
 from crewai.tools import BaseTool
+
 from agentkernel.framework.crewai.crewai import CrewAIToolBuilder
 
 

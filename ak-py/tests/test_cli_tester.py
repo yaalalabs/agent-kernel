@@ -48,9 +48,7 @@ class _FakeEvaluator(AKEvaluator):
         if not case.expected:
             raise AKMissingInput("llm_based_evaluation requires AKEvaluationCase.expected")
         score = 1.0 if _normalize(case.expected) in _normalize(case.actual) else 0.2
-        return AKEvaluationResult(
-            metric="fake_llm", evaluator="fake", score=score, reason="fake reason", passed=score >= case.threshold
-        )
+        return AKEvaluationResult(metric="fake_llm", evaluator="fake", score=score, reason="fake reason", passed=score >= case.threshold)
 
 
 class _CountingFakeEvaluator(_FakeEvaluator):
