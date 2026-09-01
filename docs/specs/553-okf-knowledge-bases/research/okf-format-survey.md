@@ -5,8 +5,20 @@ consumer, and which of its properties drive the AK design decisions.
 
 **Verification status.** The v0.2 specification and the announcement blog were read on 2026-08-31 via
 web fetch, and the summaries below are that reading, not a verbatim transcription. Every normative
-statement marked **[SPEC]** must be re-checked against the specification text verbatim before it is
-implemented — the design's conformance requirements are only as good as this re-check.
+statement marked **[SPEC]** was **re-checked verbatim against `okf/SPEC.md` on 2026-09-01**, closing
+the verification gate the design records as decision 8. Outcome:
+
+- Verified as stated: reserved filenames (§2), `type` as the only required key (§3), the actor
+  convention and `human:` detection (§3), the trust-tier derivation (§3), the two link forms (§4), the
+  conformance definition (§5), the `okf_version` location (§6), and the two v0.1 → v0.2 breaking
+  changes (§6).
+- **One correction applied** (§5): surfacing a failing attestation is a **SHOULD**, not a MUST. The
+  earlier wording overstated it.
+- **Two clarifications applied**: reserved filenames are reserved *at any level* of the tree, and an
+  `index.md` may carry frontmatter **only** for `okf_version` at the bundle root (§2, §6); and the
+  v0.1 fallbacks are **MAY** (`timestamp`) / **SHOULD read `sources`, MAY parse legacy `# Citations`**
+  (§6), which is what makes the design's v0.2-only decision a conformant choice rather than a
+  deviation.
 
 Sources:
 - Announcement: https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing
@@ -39,7 +51,9 @@ sales/
 
 - **The file path is the concept's identity.** `/tables/orders.md` *is* the id. There is no separate
   id field, and nothing outside the path is authoritative.
-- `index.md` and `log.md` are **reserved filenames [SPEC]** — they are not concept documents.
+- `index.md` and `log.md` are **reserved filenames at any level of the tree [SPEC]** — they MUST NOT be
+  used for concept documents. An `index.md` carries no frontmatter at all, except the optional
+  `okf_version` at the bundle root (§6).
 - Distribution is by ordinary means: a git repo, a tarball, a mounted directory, an object-store
   prefix. Nothing in the format assumes a database.
 
@@ -108,7 +122,8 @@ The consumer obligations are the load-bearing part for AK, because they are all 
 - **MUST** treat a bare `verified` mapping as a one-element list.
 - **MUST NOT** reject a concept for missing optional fields or an unknown `type`.
 - **MUST NOT** reject a bundle for a missing `index.md`, a broken link, or unknown frontmatter keys.
-- **MUST** surface failed attestations rather than silently dropping them.
+- **MUST** tolerate broken links.
+- **SHOULD** surface, not silently drop, a failing attestation.
 - **SHOULD** derive trust tiers and staleness only from the specified fields.
 
 Read together: **a strict OKF reader is a non-conformant OKF reader.** Anything unrecognised is
@@ -120,9 +135,12 @@ failing a load.
 - `<major>.<minor>`; minor bumps are backward-compatible additions.
 - A bundle may declare its target version as `okf_version: "0.2"` in the **bundle-root `index.md`**
   frontmatter — the only frontmatter permitted in an index file.
-- v0.1 → v0.2 breaking changes a reader must absorb:
-  - `timestamp` was replaced by `generated: {by, at}`.
-  - A body `# Citations` list was replaced by the `sources` frontmatter family.
+- v0.1 → v0.2 breaking changes, and what a reader is *obliged* to do about them **[SPEC]**:
+  - `timestamp` is superseded by `generated.at`; a consumer **MAY** fall back to a legacy `timestamp`
+    when `generated` is absent.
+  - A body `# Citations` list is superseded by `sources`; a consumer **SHOULD** read `sources` and
+    **MAY** still parse a legacy `# Citations` body list for v0.1 documents.
+  - Both fallbacks are optional, so declining them (design decision 5, v0.2 only) is conformant.
 
 ## 7. Attested Computation
 
