@@ -18,8 +18,10 @@ load_dotenv()
 from agentkernel.core import AgentService  # noqa: E402
 from agentkernel.openai import OpenAIModule  # noqa: E402
 
+import redaction  # noqa: E402
 import store  # noqa: E402
-from agent import AGENTS  # noqa: E402
+from agent import AGENTS, mathru_triage_agent  # noqa: E402
+from hooks import BlockUnsafeLanguageHook  # noqa: E402
 
 ENTRY_AGENT = "mathru_triage"
 
@@ -30,7 +32,11 @@ SAMPLE_FIRST_NAME = "Nimali"
 SAMPLE_MOH_AREA = "Colombo"
 SAMPLE_EDD_OFFSET_DAYS = 120
 
-OpenAIModule(AGENTS)
+redaction.install()
+
+# See the note in server.py: the hook goes on the entry agent, which is the only place it
+# sees replies produced after a handoff.
+OpenAIModule(AGENTS).post_hook(mathru_triage_agent, [BlockUnsafeLanguageHook()])
 
 
 def seed(session_id: str) -> None:
@@ -51,6 +57,7 @@ def seed(session_id: str) -> None:
         f"Seeded {record['first_name']} in {record['moh_area']}, EDD {record['edd_iso']}, "
         f"assigned PHM {store.redact_phone(record['phm_phone'])}."
     )
+    print(f"To act as her PHM instead, rerun with --session-id {SAMPLE_PHM_PHONE}.")
 
 
 def parse_args() -> argparse.Namespace:

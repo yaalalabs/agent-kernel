@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "pre_flight": {
+    "version": 1,
+    "guardrails": [
+      {
+        "name": "Moderation",
+        "config": {
+          "categories": [
+            "sexual/minors",
+            "hate/threatening",
+            "harassment/threatening",
+            "illicit/violent"
+          ]
+        }
+      }
+    ]
+  },
+  "input": {
+    "version": 1,
+    "guardrails": [
+      {
+        "name": "Jailbreak",
+        "config": {
+          "confidence_threshold": 0.7,
+          "model": "gpt-4o-mini",
+          "include_reasoning": false
+        }
+      }
+    ]
+  },
+  "output": {
+    "version": 1,
+    "guardrails": []
+  }
+}

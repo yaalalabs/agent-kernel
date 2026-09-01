@@ -16,6 +16,22 @@ session:
   cache:
     size: 256
 
+# Moderation and jailbreak checks only. PII detection is deliberately OFF: a mother types
+# her PHM's phone number during registration, and the escalation path needs it to deliver.
+# Phone redaction happens in log output only, via the filter in redaction.py.
+# See guardrails/README.md for why the moderation categories are narrow.
+guardrail:
+  input:
+    enabled: true
+    type: openai
+    model: gpt-4o-mini
+    config_path: guardrails/input.json
+  output:
+    enabled: true
+    type: openai
+    model: gpt-4o-mini
+    config_path: guardrails/output.json
+
 logging:
   ak:
     level: INFO
