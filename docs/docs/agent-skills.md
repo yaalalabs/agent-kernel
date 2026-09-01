@@ -87,12 +87,13 @@ Add messaging platform integrations to an existing project. Covers Slack, WhatsA
 
 ### ak-cloud-deploy
 
-Deploy your agent to AWS, Azure, or GCP. Generates complete Terraform configurations for six deployment modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), Azure Containerized (Container Apps), GCP Serverless (Cloud Run scale-to-zero), and GCP Containerized (Cloud Run always-on). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, custom API Gateway authorizers, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images). AWS containerized supports `ecr_image_uri` for pre-built ECR images alongside local Docker builds, plus a scalable SQS queue mode (`queue_mode = true`) that splits the deployment into a REST/IO ECS service (`ECSIOHandler`) and a separate Agent Runner ECS service (`ECSAgentRunner`) with `sync`/`async` execution modes and DynamoDB-backed response storage.
+Deploy your agent to AWS, Azure, GCP, or any Kubernetes cluster. Generates complete Terraform configurations for six cloud deployment modes, plus Helm-chart deployments to on-prem/baremetal/EKS Kubernetes (the `ak-deployment/ak-k8s` chart: io-handler + agent-runner Deployments over NATS/Kafka/SQS, optional WebSocket gateway tier, KEDA queue-depth autoscaling). Terraform modes: AWS Serverless (Lambda), AWS Containerized (ECS Fargate), Azure Serverless (Functions), Azure Containerized (Container Apps), GCP Serverless (Cloud Run scale-to-zero), and GCP Containerized (Cloud Run always-on). AWS serverless templates also cover `rest_sync`, `rest_async`, `async` (WebSocket), queue/scalable mode, custom API Gateway authorizers, and external artifact sources (`lambda_package_s3` for S3 ZIP, `ecr_image_uri` for pre-built ECR images). AWS containerized supports `ecr_image_uri` for pre-built ECR images alongside local Docker builds, plus a scalable SQS queue mode (`queue_mode = true`) that splits the deployment into a REST/IO ECS service (`ECSIOHandler`) and a separate Agent Runner ECS service (`ECSAgentRunner`) with `sync`/`async` execution modes and DynamoDB-backed response storage.
 
 **Example prompts:**
 - *"Deploy my agent to AWS Lambda"*
 - *"Set up Azure Container Apps deployment"*
 - *"Deploy my agent to GCP Cloud Run"*
+- *"Deploy my agent to our on-prem Kubernetes cluster"*
 
 ### ak-add-capabilities
 
@@ -113,7 +114,7 @@ Set up testing and debug common issues. Covers test modes (fuzzy, judge, fallbac
 
 ## Developer Skills: Accelerating Contributions with AI
 
-Agent Kernel doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains fifteen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
+Agent Kernel doesn't just expose its capabilities as skills for users; it also exposes its internals as skills for contributors. The `.agents/skills/` folder at the repository root contains sixteen developer skills that teach coding assistants how to work on the Agent Kernel codebase itself.
 
 When a contributor opens the repository in a coding assistant (Copilot, Claude Code, Cursor, etc.), these skills are automatically discovered. The assistant immediately understands the architecture, adapter patterns, testing conventions, and code quality standards, eliminating the onboarding curve for new contributors.
 
@@ -127,6 +128,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry, Logfire): `BaseTrace` interface, traced runners, factory wiring |
 | `ak-dev-new-multimodal-storage` | How to add a new multimodal attachment storage backend (beyond in-memory, Redis, DynamoDB): storage interface, config wiring, tests, and docs |
 | `ak-dev-new-sandbox-provider` | How to add a new sandbox code-execution backend (beyond `local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`): implement the `Sandbox`/`SandboxProvider` ABCs, declare capabilities honestly, factory registration, config block, contract tests |
+| `ak-dev-new-queue-transport` | How to add a new queue transport to the execution pipeline (beyond `in_memory`, SQS, Kafka, NATS JetStream): the queue-semantics contract, `QueueTransport`/`TransportConsumer` implementation, factory registration, config and extras, the `QueueTransportContract` suite (fake and live-broker), the transport example, and Helm chart wiring |
 | `ak-dev-sync-skills-from-branch` | How to inspect branch commits plus uncommitted changes, then add/update/remove developer and user skills so the skill trees stay aligned with the implemented capability set |
 | `ak-dev-sync-docs-from-branch` | How to inspect branch commits plus uncommitted changes, then update root docs, package docs, website docs, deployment READMEs, and example READMEs so documentation matches the implemented behavior |
 | `ak-dev-sync-skills-and-docs-from-commit` | How to process a specific commit hash (typically merged to develop), update dev/user skills and documentation based on that commit delta, and support automation PR flows with loop prevention |
@@ -143,6 +145,7 @@ A first-time contributor doesn't need to spend hours reading source code to unde
 - *"Add a new tracing provider for Datadog"* → The assistant reads `ak-dev-new-tracing-provider` and implements the `BaseTrace` interface, creates traced runners, and wires the factory.
 - *"Add Microsoft Teams integration"* → The assistant reads `ak-dev-new-messaging-integration` and scaffolds the handler, webhook routes, config, and example.
 - *"Add a new sandbox provider for X"* → The assistant reads `ak-dev-new-sandbox-provider` and implements the `Sandbox`/`SandboxProvider` ABCs, declares capabilities honestly, and wires the factory, config, and contract tests.
+- *"Add a RabbitMQ transport for queue mode"* → The assistant reads `ak-dev-new-queue-transport` and implements the `QueueTransport`/`TransportConsumer` ABCs against the queue-semantics contract, wires the factory, config, and extras, and runs the `QueueTransportContract` suite against a fake and a live broker.
 
 The skills carry the same architectural knowledge the core team has: patterns, conventions, where things go, how components interact. Contributors ship features faster because their coding assistant already understands the codebase.
 

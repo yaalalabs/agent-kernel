@@ -1,0 +1,38 @@
+# Values for the kind install smoke (ct install and the manual gate in
+# ak-deployment/ak-k8s/README.md): the dev flavor squeezed onto a CI node. The two example
+# images must be loaded into the cluster beforehand (kind load docker-image);
+# examples/k8s/openai-queue-mode/deploy/package.sh builds them.
+
+image:
+  tag: dev
+  pullPolicy: Never
+
+ioHandler:
+  replicaCount: 1
+  port: 8000
+  image:
+    repository: ak-example-io-handler
+
+agentRunner:
+  replicaCount: 1
+  image:
+    repository: ak-example-agent-runner
+
+transport:
+  type: nats
+  input:
+    noOfConsumers: 2
+  output:
+    noOfConsumers: 1
+  nats:
+    autoProvision: true
+    partitions: 4
+
+valkey:
+  enabled: true
+
+nats:
+  enabled: true
+  config:
+    jetstream:
+      enabled: true

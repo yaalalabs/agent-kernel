@@ -1,11 +1,13 @@
 import logging
+from typing import Optional
 
 from boto3.dynamodb.types import Binary
 
 from ..base import Session
 from ..config import AKConfig
 from ..util.driver.dynamodb import DynamoDBDriver
-from .base import SessionCache, SessionStore
+from ..util.factory import AKConfigError
+from .base import SessionCache, SessionStore, WSConnectionStore
 from .serde import BinarySerde
 
 
@@ -115,3 +117,77 @@ class DynamoDBSessionStore(SessionStore):
         self._driver.clear_all()
         if self._cache:
             self._cache.clear()
+
+    def get_connection_store(self) -> WSConnectionStore:
+        """
+        The WebSocket gateway's connection store on an EXISTING DynamoDB connections table
+        (spec #495 §9): the store never creates it.
+
+        The table is named by ``session.connection_store.table_name`` and uses the same schema
+        as the AWS deployment adapters' connections table (``websocket_api.connection_table``),
+        so one table can serve both: partition key ``user_id``, sort key ``connection_id``, a
+        ``connection_id-index`` GSI on ``connection_id``, and DynamoDB TTL enabled on the
+        ``expiry_time`` attribute.
+
+        :raises AKConfigError: When ``session.connection_store.table_name`` is not configured.
+        """
+        connection_cfg = AKConfig.get().session.connection_store
+        if not connection_cfg.table_name:
+            raise AKConfigError(
+                "dynamodb sessions need session.connection_store.table_name for WebSocket modes: an existing "
+                "table with partition key 'user_id', sort key 'connection_id', a 'connection_id-index' GSI, "
+                "and TTL on 'expiry_time'"
+            )
+        return DynamoDBWSConnectionStore(
+            DynamoDBDriver(
+                table_name=connection_cfg.table_name,
+                partition_key="user_id",
+                sort_key="connection_id",
+                ttl=int(connection_cfg.ttl),
+            )
+        )
+
+
+class DynamoDBWSConnectionStore(WSConnectionStore):
+    """:class:`WSConnectionStore` over an existing DynamoDB connections table.
+
+    Item shape: ``{user_id, connection_id, endpoint, expiry_time}``; the driver stamps
+    ``expiry_time`` on every put. Reverse lookups go through the ``connection_id-index`` GSI,
+    the way the AWS deployment adapters' connection store resolves users from connections.
+    """
+
+    CONNECTION_ID_INDEX = "connection_id-index"
+
+    _log = logging.getLogger("ak.core.session.dynamodb_ws_connection_store")
+
+    def __init__(self, driver: DynamoDBDriver):
+        """:param driver: a driver on the connections table (pk ``user_id``, sk ``connection_id``)."""
+        self._driver = driver
+
+    def add_connection(self, user_id: str, connection_id: str, endpoint: str) -> None:
+        self._driver.put({"user_id": user_id, "connection_id": connection_id, "endpoint": endpoint})
+
+    def get_connections(self, user_id: str) -> list[str]:
+        return list(self.get_endpoints(user_id))
+
+    def get_endpoints(self, user_id: str) -> dict[str, str]:
+        return {item["connection_id"]: item.get("endpoint", "") for item in self._driver.query_items(user_id)}
+
+    def get_endpoint(self, connection_id: str) -> Optional[str]:
+        item = self._reverse_item(connection_id)
+        return item.get("endpoint") if item else None
+
+    def get_user_id(self, connection_id: str) -> Optional[str]:
+        item = self._reverse_item(connection_id)
+        return item.get("user_id") if item else None
+
+    def delete_connection(self, user_id: str, connection_id: str) -> None:
+        self._driver.delete(user_id, connection_id)
+
+    def _reverse_item(self, connection_id: str) -> Optional[dict]:
+        items = self._driver.query_index(self.CONNECTION_ID_INDEX, "connection_id", connection_id)
+        if not items:
+            return None
+        if len(items) > 1:
+            self._log.warning(f"Multiple users found for connection_id={connection_id}. Selecting first result.")
+        return items[0]

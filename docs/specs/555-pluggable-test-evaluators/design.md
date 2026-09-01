@@ -18,7 +18,7 @@ Requirements background: [`research/evaluator-framework-survey.md`](research/eva
 
 - The comparison logic is RAGAS-specific and cannot be swapped
   - `Test._judge_compare` imports `ragas` / `litellm` inline and builds RAGAS clients directly (`ak-py/src/agentkernel/test/test.py:152-181`)
-  - The two RAGAS metrics are selected by an `if expected:` branch inside that method (`test.py:188`, `test.py:201`)
+  - The two RAGAS metrics are selected by an `if expected:` branch inside that method (`test.py:183`, gating metric selections at `test.py:193` and `test.py:211`)
 - The harness owns the evaluation clients
   - The judge's LLM and embedding clients are parked on `Test` class attributes (`test.py:25-26`) and
     constructed **inside the comparison method itself** (`test.py:171-178`), so `Test` holds live
@@ -27,8 +27,9 @@ Requirements background: [`research/evaluator-framework-survey.md`](research/eva
     holding — only whichever objects the current comparison method happened to build
   - Swapping the evaluation backend therefore means editing the method that does the comparing, rather
     than changing a configuration value
-- The evaluator seam exists but is unspecified
-  - `AKEvaluator` (untracked, `ak-py/src/agentkernel/test/core/akevaluators/evaluator.py`) declares `score_based_evaluation` and `llm_based_evaluation` with no parameters, no return type, and no payload model; `deepeval.py` is empty
+- There is no evaluator interface today
+  - All evaluation logic currently lives directly in `Test` (`ak-py/src/agentkernel/test/test.py`), so swapping evaluation backends requires changing harness code
+  - This design introduces that interface: `AKEvaluator`, under a new `test/core/akevaluators/` package
 - Mode names describe implementations, not intent
   - `Mode.FUZZY` / `Mode.JUDGE` (`test.py:16-19`) name a specific string-matching library and a specific
     RAGAS technique, so a backend that scores deterministically by another means has no accurate mode to sit under
@@ -64,6 +65,18 @@ graph LR
   - `score` → `AKEvaluator.score_based_evaluation`
   - `llm` → `AKEvaluator.llm_based_evaluation`
   - `fallback` → `score_based_evaluation`, then `llm_based_evaluation` only if the first did not pass
+    - "did not pass" means a returned `AKEvaluationResult` scoring below threshold, never an exception:
+      `AKMetricNotSupported` and `AKEvaluationError` raised by the score stage always propagate out of
+      `compare` and are never caught as a non-passing attempt that falls through to `llm`
+      - `AKMetricNotSupported` is a structural property of the configured evaluator, true on every
+        call rather than a per-case result; catching it would turn every comparison into a silent,
+        permanent skip of the score stage instead of surfacing the mode/evaluator mismatch once. An
+        evaluator that only implements one mode is not usable under `fallback` — it must be configured
+        under the one mode it does support
+      - Catching `AKEvaluationError` here would reproduce the Motivation bug this design removes ("a
+        broken judge is indistinguishable from a failing agent") one stage later: a broken score
+        backend is not a scored attempt, so it cannot be recorded in `attempts`, and would vanish
+        entirely if `llm` subsequently passed
 - The two names describe **how** a backend scores (deterministically, or by asking a model), never
   **what** it measures. That is what makes them backend-neutral: only four evaluation concerns exist in
   all four surveyed catalogues, so any mode vocabulary naming a measurement — `similarity`,
@@ -140,7 +153,7 @@ graph LR
     rubric until then
 - Only the fields the two shipped metrics need are populated, all of them from `Test.compare`'s
   existing arguments
-  - `quasi_contains` needs `actual` and `expected`
+  - The score metric (`PatternMatchMetric`) needs `actual` and `expected`
   - `GEval` is keyed on `actual` and `expected` only — its `evaluation_params` name `ACTUAL_OUTPUT`
     and `EXPECTED_OUTPUT`, so the rubric never reads the question
   - `user_input` is still carried and passed through, because `LLMTestCase.input` is mandatory in
@@ -317,22 +330,39 @@ graph LR
 ### `DeepEvalEvaluator`
 
 - Ships as part of the `test` extra, exactly as `ragas` did — one dependency line, no new extra
-- **Score metric: `quasi_contains`** via `deepeval.scorer.Scorer`, wrapped in a custom `BaseMetric` as
-  DeepEval documents for statistical scoring
-  - SQuAD-style normalised containment (case, punctuation, and article normalisation, then a
-    containment test), so a verbose correct answer still matches a short expected phrase
-  - Chosen because it is the only option that is simultaneously DeepEval-specific (Opik, RAGAS, and
-    autoevals all ship ROUGE/BLEU/BERTScore/exact-match; none ship normalised containment), needs no
-    extra dependency, downloads no model, and runs offline — so `agentkernel[test]` stays light and
-    score mode never touches the network (survey §9)
-  - It returns a binary 0/1, with two accepted consequences: `threshold` is inert on the score path
-    (any value in `(0, 1]` behaves identically), and in `fallback` a near-miss reaches the llm stage
-    rather than passing locally (survey §9, Finding 12). That cost is proportional — only failing comparisons pay
-    it — and close to today's behaviour, since the length-sensitive `fuzz.ratio` already falls through
-    for long responses against short expectations
-  - The model-backed scorers (`faithfulness` via SummaC, `hallucination` via Vectara HHEM,
-    `answer_relevancy` via a sentence-transformers cross-encoder) are **not** shipped: each pulls
-    PyTorch and a first-run model download into every environment installing the `test` extra
+- **Score metric: `PatternMatchMetric`** (`deepeval.metrics.PatternMatchMetric`) — a ready-made,
+  non-LLM `BaseMetric` DeepEval ships directly, so no custom `BaseMetric` wrapper is written at all
+  - Normalised containment: both `actual` and `expected` are normalised with the same helper
+    `Scorer.quasi_*` uses internally (`deepeval.utils.normalize_text` — case, punctuation, and article
+    normalisation), `expected` is then regex-escaped and wrapped `(?s:.*){expected}(?s:.*)`, and
+    `PatternMatchMetric` is constructed with that pattern and matched against the normalised `actual`
+    via its `fullmatch`-based `measure()`. A verbose correct answer therefore still matches a short
+    expected phrase — verified empirically against `deepeval` 4.1.8 (containment, case-only match,
+    non-match, and article/punctuation normalisation on both sides)
+  - **Superseded design decision, not an implementation detail**: the design originally specified
+    `deepeval.scorer.Scorer.quasi_contains_score` for this metric, on the assumption that it performed
+    substring containment. Verified against the source (`scorer/scorer.py:119-124`), it is list-membership
+    *equality* — `normalize_text(prediction) in normalized_targets`, the same semantics as
+    `quasi_exact_match_score` but for several gold answers (its only other in-package use is the DROP
+    benchmark's multiple-gold-answer exact match). It is never a substring test, in either argument
+    direction, so no remapping of AK's arguments onto it produces containment. `PatternMatchMetric`
+    replaces it as the metric that actually delivers the containment behaviour this section describes
+  - Chosen over the model-backed scorers (`faithfulness` via SummaC, `hallucination` via Vectara HHEM,
+    `answer_relevancy` via a sentence-transformers cross-encoder) for the same reason `quasi_contains`
+    was: each pulls PyTorch and a first-run model download into every environment installing the `test`
+    extra. `PatternMatchMetric` needs neither, runs offline, and is DeepEval-specific in the same sense
+    (Opik, RAGAS, and autoevals ship ROUGE/BLEU/BERTScore/exact-match; none ship a ready-made
+    containment metric) (survey §9)
+  - It returns a binary 0/1, with the same two accepted consequences the original choice carried:
+    `threshold` is inert on the score path (any value in `(0, 1]` behaves identically), and in
+    `fallback` a near-miss reaches the llm stage rather than passing locally (survey §9, Finding 12).
+    That cost is proportional — only failing comparisons pay it — and close to today's behaviour, since
+    the length-sensitive `fuzz.ratio` already falls through for long responses against short expectations
+  - Constructed fresh per call, not once at evaluator construction: the pattern is compiled from the
+    call's `expected`, so `score_based_evaluation` builds a new `PatternMatchMetric(pattern=...)` per
+    case rather than reusing one instance across calls
+  - Verified present with a stable constructor across the full pinned range: `deepeval.metrics.PatternMatchMetric`
+    exists and is exported unchanged from `4.1.4` (the minimum pin) through `4.1.8`
 - **Llm metric: `GEval`**
   - One AK-owned rubric, judging whether the response conveys the same information as `expected`, with
     `evaluation_params=[ACTUAL_OUTPUT, EXPECTED_OUTPUT]`
@@ -345,8 +375,13 @@ graph LR
     requires `expected` and raises `AKMissingInput` without it. Every in-repo caller already passes
     expectations, and `expect()` requires them by signature (`test.py:264`)
   - AK owns the default rubric; overriding it per test is deferred (see the payload section)
-  - Constructed with `threshold=None` (DeepEval's score-only mode), `include_reason=True`, and the
-    `LiteLLMModel` from "LLM model construction"
+  - Constructed with `threshold=None` (DeepEval's score-only mode — the harness owns pass/fail, per
+    "Threshold scale") and the `LiteLLMModel` from "LLM model construction". Requires `deepeval>=4.1.4`
+    (see "Dependencies") — on every earlier release, `threshold=None` crashes `measure()`/`a_measure()`
+    with a `TypeError` on every call, not just at construction
+  - No `include_reason` is passed: `GEval` does not accept that constructor argument (verified against
+    `deepeval` 2.9.3 and 4.1.8) — unlike DeepEval's RAG metrics, `GEval` always returns `(score, reason)`
+    from the single rubric-judging LLM call, so there is no reason/no-reason mode to toggle
 - Maps `AKEvaluationCase` → `LLMTestCase(input, actual_output, expected_output)`
 - Translates a soft backend failure (`metric.error`, a `None` score) into a raised `AKEvaluationError`
   rather than a low score
@@ -427,9 +462,9 @@ graph LR
   `passed` is decided by comparing the returned score against the AK threshold
 - Out-of-range values (a leftover `50`) raise `ValueError` rather than silently passing everything,
   since any score is below 50 on the new scale
-- Call sites carrying explicit thresholds are updated: `examples/transport/nats/app_test.py:111,123`
-  and `examples/transport/kafka/app_test.py` (`threshold=10`), plus the docs pages listed under
-  Migration surface
+- Every explicit `threshold=`/`match_threshold=` call site under `examples/` is updated to the new
+  scale — currently 15 files, 30 call sites (`git grep -nE "(match_)?threshold *= *[0-9]" examples/`);
+  `spec.md` carries the full file enumeration. Plus the docs pages listed under Migration surface
 
 ### Synchronous evaluation
 
@@ -442,21 +477,42 @@ graph LR
 - An adapter whose backend is async-only must run the coroutine on a dedicated worker thread with its
   own event loop; a shared helper in the evaluator package provides this so each adapter does not
   reinvent it
+  - `GEval.measure()` does not need this helper: DeepEval's default `async_mode=True` makes `measure()`
+    call `asyncio.run_until_complete(a_measure(...))` internally, but DeepEval's own
+    `get_or_create_event_loop()` first calls `nest_asyncio.apply()` whenever it detects an
+    already-running loop — `nest_asyncio` is a hard dependency of `deepeval` itself, the same mechanism
+    `ragas.evaluate()` already relies on today (`ragas/async_utils.py`) for the identical nested-loop
+    case, which is why the current judge path has never broken under `@pytest.mark.asyncio`. Verified
+    empirically against `deepeval` 2.9.3, 2.9.7, and 4.1.8: `GEval.measure()` called from inside a
+    running loop returns normally
+    - Residual risk, not addressed here: `nest_asyncio.apply()` raises on a uvloop-based loop (the same
+      incompatibility `ragas` special-cases). No shipped AK example runs evaluation under uvloop today
 
 ### Dependencies
 
-- `deepeval` replaces `ragas` in the `test` extra as a single dependency line, the same way `ragas` was
-  declared (`ak-py/pyproject.toml:153`)
+- `deepeval` replaces `ragas` in the `test` extra, pinned `>=4.1.4` rather than declared as an unpinned
+  single line the way `ragas` was (`ak-py/pyproject.toml:153`)
+  - Required, not a preference: `GEval.measure()`/`a_measure()` compute `self.success = self.score >=
+    self.threshold` with no `None` guard on every `deepeval` release checked from `2.9.3` through
+    `4.1.3` (spot-checked `2.9.3`, `2.9.5`, `2.9.7`, `3.0.0`, `3.5.0`, `3.8.0`, `4.0.0`, `4.0.9`, `4.1.0`,
+    `4.1.1`, `4.1.2`, `4.1.3`) — with `threshold=None` (see "Llm metric: GEval"), that line raises
+    `TypeError: '>=' not supported between instances of 'float' and 'NoneType'` on every real
+    evaluation, empirically reproduced against the installed `2.9.3`. `4.1.4` is the first release that
+    routes through a guarded `is_successful()` (`self.success = None if self.threshold is None else
+    ...`), verified empirically against the downloaded `4.1.4` and `4.1.8` wheels
 - Removed from the `test` extra (`pyproject.toml:152-157`): `ragas`, `datasets`, `pandas`, the
   `langchain_community==0.4.1` pin, and `rapidfuzz` (`:152`), which loses its consumer once
   `_fuzzy_compare` is deleted
-- Nothing else is added: `quasi_contains` needs no library, and `litellm` is already there
+- Nothing else is added: `PatternMatchMetric` is part of `deepeval` core (no extra library), and
+  `litellm` is already there
 - DeepEval emits anonymous usage telemetry by default and writes local state files into the working
   directory; both are suppressed — see "No outbound data"
-- Installing `deepeval` also installs four pytest plugins — `pytest-xdist`, `pytest-repeat`,
-  `pytest-rerunfailures`, `pytest-asyncio` are its runtime dependencies, and pytest auto-loads plugins
-  via entry points, so they become active in every AK test session alongside the existing `addopts`
-  (`pyproject.toml:212`). RAGAS brought none; the interaction must be verified before merge
+- Installing `deepeval` also pulls in `pytest-xdist`, `pytest-repeat`, `pytest-rerunfailures`, and
+  `pytest-asyncio` as runtime dependencies, and pytest auto-loads plugins via entry points; `pytest-asyncio`
+  is already a direct dependency of the `test` extra (`pyproject.toml:148`) and is already active today, so
+  only the other three — `pytest-xdist`, `pytest-repeat`, `pytest-rerunfailures` — become newly active in
+  every AK test session alongside the existing `addopts` (`pyproject.toml:212`). RAGAS brought none of
+  these three; the interaction must be verified before merge
 - The identical `langchain_community==0.4.1` pin in the `langgraph` extra (`pyproject.toml:45`) is a
   separate pin and is untouched. AK's CI installs every extra (`ak-py/build.sh` runs
   `uv sync --all-extras`, driven by `.github/workflows/test-reusable.yaml:152`), so that pin still
@@ -476,10 +532,26 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
   `docs/docs/testing/overview.md`, `docs/docs/core-concepts/configuration.md` — each gains the
   `evaluator` key alongside `mode`, and the testing pages gain a bring-your-own-evaluator section
   mirroring the sandbox one (`docs/docs/advanced/sandbox.md:378`)
-- Examples: 40 `examples/**/test-config.yaml` files — 34 with `mode: fallback`, 6 with `mode: fuzzy`,
-  and every one of them carrying a `judge:` block and a comment naming the old modes
-  - No `evaluator` key is added to them: the default already selects `deepeval`, and adding a key
+  - `ak-py/README.md:967` documents `` `judge`: Uses LLM-based evaluation (Ragas) `` alongside `fuzzy`
+    and `fallback`; updated to the new mode names and backend
+- Examples: 40 `examples/**/test-config.yaml` files
+  - 34 with `mode: fallback`, each also carrying a `judge:` block and the
+    `# Test comparison mode: fuzzy, judge, or fallback` comment
+  - 6 with `mode: fuzzy` (`examples/sandbox/{basic,daytona,docker,e2b,policy,profiles}/test-config.yaml`)
+    — mode line only; none of these carries a `judge:` block, and their comment explains why fuzzy was
+    chosen rather than naming the mode options
+  - No `evaluator` key is added to any of them: the default already selects `deepeval`, and adding a key
     every example would carry identically is noise. The skill templates document the key instead
+- Use-cases: `use-cases/waste-sorting-assistant/test-config.yaml:2` is `mode: fuzzy` — the only
+  in-repo surface outside `examples/` pinned to an old mode name, so it is updated alongside the
+  6 sandbox configs above
+- Skills (non-`ak-init`/`ak-test`-template): `.agents/skills/ak-dev-testing-conventions/SKILL.md:269-275`
+  documents the `fuzzy`/`judge`/`fallback` modes, the `judge:` config block, and Ragas-based
+  evaluation — updated to `score`/`llm`/`fallback`, the `llm:` block, and `AKEvaluator`/DeepEval
+  - `ak-py/src/agentkernel/skills/ak-test/evals/evals.json:33-48` asserts on `mode: fuzzy`,
+    `mode: judge`, and `judge:` in its expected outputs (`test-mode-fuzzy`, `test-mode-judge`
+    eval cases); updated to `mode: score`, `mode: llm`, and `llm:` so the ak-test skill's own evals
+    pass against the renamed modes
 - Versioned docs under `docs/versioned_docs/` are frozen published snapshots and are **not** edited
 
 ### Test suite
@@ -509,7 +581,7 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
   `evaluator` mid-suite takes effect instead of scoring through the previously cached instance
 - `ak-py/tests/test_test_config.py` gains assertions for the new fields, the renamed `llm` block, the
   rejected `mode` values, and the `AKConfigError` raised by a legacy `judge:` key
-- Score-mode tests run against the real `quasi_contains` scorer — no model download, no network — and
+- Score-mode tests run against the real `PatternMatchMetric` — no model download, no network — and
   assert the new score semantics rather than the old fuzzy ratio
 
 ## Non-goals
@@ -544,24 +616,13 @@ The rename touches these current (non-versioned, non-build) surfaces; all must b
 - Dataset-level batch evaluation (`deepeval.evaluate(test_cases, metrics)`)
 - Editing `docs/versioned_docs/` snapshots
 
-### Verification required in `spec.md`
+### Verification required before implementation
 
-- The argument direction of `quasi_contains_score(targets, prediction)`: documented as testing whether
-  the normalised prediction appears in the normalised target list, which is the reverse of what this
-  harness needs (the short expected phrase should be found inside the longer response). AK controls
-  which value goes into which argument — confirm against the source and map accordingly
-- Whether passing a `LiteLLMModel` instance to a metric is sufficient, or whether DeepEval also
-  requires the `USE_LITELLM=1` environment variable its docs mention for litellm-backed judges
-- That the configured judge model can actually return schema-constrained JSON: `GEval` parses
-  structured verdicts, so a weak or non-JSON-capable model behind `llm.model` fails at evaluation time
-  rather than at configuration time
-- That opting out of telemetry does not break evaluation in the pinned DeepEval version — the project
-  has a history of opt-out regressions (confident-ai/deepeval#1613), so the pin must be tested with
-  `DEEPEVAL_TELEMETRY_OPT_OUT=1` set
-- Whether DeepEval still creates `.deepeval/` when telemetry is opted out, and whether a path override
-  exists to move it out of the user's repository
+- Tracked pointwise in [`spec.md`](spec.md) rather than here: these are implementation-detail
+  confirmations against the DeepEval source, not design decisions, so they belong in the
+  implementation spec once it is written (see `ak-dev-write-spec`)
 
 ## Open questions
 
 - None outstanding. Items needing confirmation against the DeepEval source or a pinned version are
-  listed under "Verification required in `spec.md`" rather than left as design decisions.
+  tracked in [`spec.md`](spec.md) rather than left as design decisions.

@@ -300,6 +300,33 @@ if __name__ == "__main__":
 
 For full Terraform deployment configuration, see [`ak-deployment/ak-gcp/`](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp) or the [GCP deployment docs](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/gcp-serverless.md).
 
+### On-Prem / Kubernetes Deployment
+
+Deploy the queue pipeline to any Kubernetes cluster with the official Helm chart: an
+io-handler Deployment (REST API + Response Handler), an agent-runner Deployment, and an
+optional WebSocket gateway, over Kafka or NATS JetStream (or SQS on EKS). Your image supplies
+one entry file per component:
+
+```python
+# app_io_handler.py
+from agentkernel.pipeline import IOHandler
+
+IOHandler.run()
+
+# app_agent_runner.py
+from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import AgentRunner
+
+OpenAIModule([...])
+AgentRunner.run()
+```
+
+The chart injects broker and store connections as `AK_*` environment variables. See
+[`ak-deployment/ak-k8s/`](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s),
+the [On-Prem / Kubernetes docs](https://github.com/yaalalabs/agent-kernel/tree/develop/docs/docs/deployment/onprem-kubernetes.md),
+and the end-to-end example at
+[`examples/k8s/openai-queue-mode`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/k8s/openai-queue-mode).
+
 ## Configuration
 
 Agent Kernel can be configured via environment variables, `.env` files, or YAML/JSON configuration files.

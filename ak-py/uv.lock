@@ -59,6 +59,7 @@ adk = [
 api = [
     { name = "fastapi" },
     { name = "gunicorn" },
+    { name = "httpx" },
     { name = "uvicorn" },
 ]
 auth = [
@@ -227,6 +228,7 @@ requires-dist = [
     { name = "google-auth-oauthlib", marker = "extra == 'gmail'", specifier = ">=1.0.0" },
     { name = "google-cloud-firestore", marker = "extra == 'gcp'", specifier = ">=2.19.0" },
     { name = "gunicorn", marker = "extra == 'api'", specifier = ">=23.0.0" },
+    { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'instagram'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'messenger'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'slack'", specifier = ">=0.27.0" },

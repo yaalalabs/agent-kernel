@@ -4,7 +4,8 @@ from typing import Optional
 from ..base import Session
 from ..config import AKConfig
 from ..util.driver.firestore import FirestoreDriver
-from .base import SessionCache, SessionStore
+from ..util.factory import AKConfigError
+from .base import SessionCache, SessionStore, WSConnectionStore
 from .serde import BinarySerde
 
 
@@ -110,3 +111,19 @@ class FirestoreSessionStore(SessionStore):
         self._driver.delete_all()
         if self._cache:
             self._cache.clear()
+
+    def get_connection_store(self) -> "WSConnectionStore":
+        """
+        A WebSocket connection store is not yet provided on Firestore (spec #495 §9).
+
+        Firestore can absolutely hold one (AWS's own WebSocket mode keeps connections in
+        DynamoDB): implementing it here, over this store's driver, is how to add it. Until then,
+        configure ``session.type`` as ``redis``, ``valkey`` or ``dynamodb``, or ``in_memory`` for a
+        single-process deployment.
+
+        :raises AKConfigError: Always.
+        """
+        raise AKConfigError(
+            "session.type 'firestore' does not yet provide a WebSocket connection store: "
+            "use redis, valkey or dynamodb sessions, or in_memory for single-process deployments"
+        )

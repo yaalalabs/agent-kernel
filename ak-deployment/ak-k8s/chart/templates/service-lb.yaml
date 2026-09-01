@@ -1,0 +1,48 @@
+{{- if and .Values.serviceLB.enabled (not .Values.gateway.enabled) }}
+{{/*
+Fallback entry when no Gateway API implementation is available: plain LoadBalancer Services
+(MetalLB answers these on baremetal, an NLB on EKS). One for REST, one for WebSockets when the
+gateway tier is enabled, since the two tiers are different pods.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-io-lb
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "io-handler") | nindent 4 }}
+  {{- with .Values.serviceLB.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: {{ .Values.serviceLB.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "io-handler") | nindent 4 }}
+{{- if .Values.wsGateway.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-ws-lb
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "ws-gateway") | nindent 4 }}
+  {{- with .Values.serviceLB.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: {{ .Values.serviceLB.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "ws-gateway") | nindent 4 }}
+{{- end }}
+{{- end }}
