@@ -11,6 +11,35 @@ from .retrieval import chunk_pages, cosine, embed_texts, search_chunks
 from .service import CourseService
 
 
+def approved_course_overview(store, owner, course_id):
+    course = store.get(owner, "course", course_id)
+    documents = store.list(owner, "document", course_id)
+    approved_documents = [document for document in documents if document.get("approved")]
+    approved_document_ids = {document["id"] for document in approved_documents}
+    objectives = store.list(owner, "objective", course_id)
+    approved_objectives = [
+        objective
+        for objective in objectives
+        if objective.get("approved") and objective.get("evidence", {}).get("document_id") in approved_document_ids
+    ]
+    return {
+        "course": course,
+        "documents": [{key: document.get(key) for key in ("id", "name", "role", "lecturer", "year", "approved")} for document in approved_documents],
+        "objectives": approved_objectives,
+        "pending_review": {
+            "documents": len(documents) - len(approved_documents),
+            "objectives": len(objectives) - len(approved_objectives),
+        },
+    }
+
+
+def approved_source_page(store, owner, course_id, document_id, page):
+    document = store.get(owner, "document", document_id)
+    if document["course_id"] != course_id or not document.get("approved") or not 1 <= page <= len(document["pages"]):
+        raise ValueError("Source page is not available in approved course material.")
+    return {"document_id": document_id, "name": document["name"], "page": page, "text": document["pages"][page - 1][:10000]}
+
+
 def decision_match(decision, question, objectives, guidance):
     unknown_objectives = [key for key in decision.objective_keys if key not in objectives]
     unknown_guidance = [quote for quote in decision.guidance if quote.source not in guidance]
@@ -109,22 +138,13 @@ class KernelEngine:
             """Read current syllabus/assessment versions, reviewed learning objectives and available papers for this course."""
             owner, course = context()
             self.tool_events.append("get_course_overview")
-            return {
-                "course": store.get(owner, "course", course),
-                "documents": [
-                    {k: d.get(k) for k in ("id", "name", "role", "lecturer", "year", "approved")} for d in store.list(owner, "document", course)
-                ],
-                "objectives": store.list(owner, "objective", course),
-            }
+            return approved_course_overview(store, owner, course)
 
         def read_source_page(document_id: str, page: int) -> dict:
             """Read an exact source page to support a claim. IDs must come from get_course_overview."""
             owner, course = context()
             self.tool_events.append("read_source_page")
-            document = store.get(owner, "document", document_id)
-            if document["course_id"] != course or not 1 <= page <= len(document["pages"]):
-                raise ValueError("Source page not available in this course.")
-            return {"document_id": document_id, "name": document["name"], "page": page, "text": document["pages"][page - 1][:10000]}
+            return approved_source_page(store, owner, course, document_id, page)
 
         def get_coverage_review() -> dict:
             """Read the most recent question alignments and whether they are stale or awaiting human review."""

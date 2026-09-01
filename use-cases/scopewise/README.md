@@ -71,6 +71,21 @@ ScopeWise does not send the document to a hosted vector service. It extracts tex
 
 This is a small-course RAG design, so it does not need a separate vector database. Search retrieves a few relevant current-guidance chunks for question comparison and always preserves the original document ID, page/slide and verbatim text. Scope/objective extraction is deliberately different: it scans every chunk in bounded groups, because retrieving only the most similar passages could miss an explicit exclusion. Model references are resolved against server-supplied aliases; an unknown alias is discarded and that judgment becomes uncertain instead of aborting the whole comparison.
 
+```mermaid
+flowchart LR
+    A[PDF, slides or text] --> B[Isolated page/slide parser]
+    B --> C[Exact-text chunks + source locations]
+    C --> D[(Private SQLite)]
+    C --> E[Local Ollama embeddings]
+    E --> D
+    Q[Past-paper question] --> R[Keyword + semantic candidates]
+    D --> R
+    R --> K[Agent Kernel alignment agent]
+    K --> V[Server validates aliases and citations]
+    V --> H[Human review]
+    H --> P[Evidence-backed practice pack]
+```
+
 ## How Agent Kernel is used
 
 `scopewise/agents.py` registers three Pydantic AI agents through `PydanticAIModule`:
@@ -80,6 +95,8 @@ This is a small-course RAG design, so it does not need a separate vector databas
 - `scopewise_assistant`: calls `get_course_overview`, `read_source_page`, `get_coverage_review`, `get_change_impact`, and `prepare_practice_pack`.
 
 All model work runs through **AgentService**. Tools get owner/course identity from **ToolContext** populated by the server, never from model arguments or document instructions. Course context is isolated by account/course, cleared on revision changes, and bounded to eight conversation turns before reset. Sessions are in memory; courses, documents, jobs and judgments are in SQLite.
+
+The assistant overview and page-reader tools expose only human-approved sources and objectives backed by approved sources. They may report how many drafts await review, but draft text never enters assistant context.
 
 The Telegram adapter subclasses Agent Kernel's **AgentTelegramRequestHandler**, uses its command/message dispatch and message delivery, and routes authenticated messages into the same assistant. It adds private-chat linking, a required secret, rate limits and duplicate-update protection. It does not mount the framework's unauthenticated generic agent routes.
 
@@ -114,7 +131,7 @@ uv run python -m scripts.evaluate_model
 uv run python -m scripts.judge_check --full
 ```
 
-The smoke script verifies structured extraction, an **actual Agent Kernel tool call**, and structured comparison. The evaluation script compares five development examples with hand-authored expected judgments and writes `output/local-evaluation.json`. These examples were used while tuning the prompt: they are **not an independent accuracy benchmark**. A quote validator checks evidence provenance, not whether a semantic judgment is correct.
+The smoke script verifies structured extraction, **actual Agent Kernel tool calls**, and structured comparison. The evaluation script compares eight development examples with hand-authored expected judgments and writes `output/local-evaluation.json`. These examples were used while tuning the prompt: they are **not an independent accuracy benchmark**. A quote validator checks evidence provenance, not whether a semantic judgment is correct.
 
 See [EVALUATION.md](EVALUATION.md) for measured limitations and remaining release gates. Model suggestions may miss exclusions or over-link related concepts. Human review is mandatory; validate with your real course materials before relying on the output.
 

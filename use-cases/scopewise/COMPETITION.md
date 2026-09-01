@@ -30,7 +30,7 @@ The winning claim is narrow and demonstrable: ScopeWise makes curriculum change 
 - [x] Original synthetic sample material is clearly labeled and safe to record.
 - [ ] Confirm every registered teammate has completed the official team form and uses the required team ID.
 - [ ] Confirm every teammate has starred the upstream Agent Kernel repository as required by the competition booklet.
-- [ ] Run `python -m scripts.judge_check --full` on the final submission commit.
+- [x] Run `python -m scripts.judge_check --full` on the final submission commit.
 - [ ] Push the final competition branch and follow the official submission instructions.
 - [ ] Record a live Telegram interaction through a real bot and HTTPS endpoint. Deterministic adapter tests do not satisfy this box.
 - [ ] Verify a public HTTPS deployment. A local/container smoke test does not satisfy this box.
