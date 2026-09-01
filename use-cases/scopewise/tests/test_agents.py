@@ -1,6 +1,6 @@
 import pytest
 
-from scopewise.agents import validate_analysis, validate_extraction
+from scopewise.agents import KernelEngine, validate_analysis, validate_extraction
 from scopewise.models import Analysis, Evidence, Extraction, Match, Objective
 
 
@@ -83,3 +83,77 @@ def test_unknown_guidance_reference_is_discarded_without_losing_the_question():
     assert match.assessment_status == "unknown"
     assert match.assessment_evidence == []
     assert "discarded" in match.assessment_reason.lower()
+
+
+@pytest.mark.asyncio
+async def test_semantic_objective_scores_use_local_embeddings(monkeypatch):
+    from scopewise import agents
+
+    engine = KernelEngine.__new__(KernelEngine)
+    objectives = [
+        Objective(id="trees", text="Balance search structures", evidence=Evidence(document_id="s", page=1, quote="Balance search structures")),
+        Objective(id="sort", text="Compare sorting methods", evidence=Evidence(document_id="s", page=1, quote="Compare sorting methods")),
+    ]
+
+    async def fake_embed(texts):
+        assert texts == ["AVL rotations", "Balance search structures", "Compare sorting methods"]
+        return "local-test", [[1.0, 0.0], [0.8, 0.2], [0.0, 1.0]]
+
+    monkeypatch.setattr(agents, "embed_texts", fake_embed)
+
+    assert await engine._semantic_scores("AVL rotations", objectives) == {"trees": 0.8, "sort": 0.0}
+
+
+@pytest.mark.asyncio
+async def test_semantic_objective_scoring_falls_back_when_embeddings_fail(monkeypatch):
+    from scopewise import agents
+
+    engine = KernelEngine.__new__(KernelEngine)
+    objective = Objective(id="trees", text="Balance search structures", evidence=Evidence(document_id="s", page=1, quote="Balance search structures"))
+
+    async def unavailable(_texts):
+        raise OSError("local embeddings unavailable")
+
+    monkeypatch.setattr(agents, "embed_texts", unavailable)
+
+    assert await engine._semantic_scores("AVL rotations", [objective]) is None
+
+
+@pytest.mark.asyncio
+async def test_analysis_sends_only_question_candidates_to_the_alignment_agent(monkeypatch):
+    import json
+
+    from test_core import fixtures
+
+    from scopewise import agents
+
+    documents, objectives, questions = fixtures()
+    engine = KernelEngine.__new__(KernelEngine)
+    engine.store = object()
+    supplied_payloads = []
+
+    async def lexical_only(_question, _objectives):
+        return None
+
+    async def no_guidance(*_args, **_kwargs):
+        return {"mode": "lexical", "results": []}
+
+    async def fake_run(_name, prompt, _owner, _course_id):
+        supplied_payloads.append(json.loads(prompt.split("Source data:\n", 1)[1]))
+        return {
+            "objective_keys": ["O1"],
+            "scope_status": "aligned",
+            "reason": "The question directly assesses primary keys.",
+            "assessment_status": "unknown",
+            "assessment_reason": "No current guidance confirms the format.",
+            "guidance": [],
+        }
+
+    engine._semantic_scores = lexical_only
+    engine._run = fake_run
+    monkeypatch.setattr(agents, "search_chunks", no_guidance)
+
+    analysis = await engine.analyze("alice", {"id": "course"}, documents, objectives, [questions[0]])
+
+    assert [item["text"] for item in supplied_payloads[0]["objectives"]] == ["Explain primary keys"]
+    assert analysis.matches[0].objective_ids == ["o1"]

@@ -6,6 +6,12 @@ from urllib.parse import urlparse
 TOKEN = re.compile(r"[a-z0-9]{2,}")
 
 
+def cosine(left, right):
+    if not left or len(left) != len(right):
+        return 0.0
+    return sum(a * b for a, b in zip(left, right))
+
+
 def chunk_pages(pages, target=1200, overlap=180):
     """Split each page independently so every returned excerpt remains an exact citation."""
     chunks = []

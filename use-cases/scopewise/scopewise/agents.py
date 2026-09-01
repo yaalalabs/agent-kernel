@@ -4,9 +4,10 @@ import os
 import uuid
 from urllib.parse import urlparse
 
+from .candidates import select_candidates
 from .matching import validate_evidence, validate_match
 from .models import Analysis, Decision, Evidence, Extraction, Match
-from .retrieval import chunk_pages, search_chunks
+from .retrieval import chunk_pages, cosine, embed_texts, search_chunks
 
 
 def decision_match(decision, question, objectives, guidance):
@@ -241,6 +242,17 @@ class KernelEngine:
             if not conversation:
                 service.clear()
 
+    async def _semantic_scores(self, question, objectives):
+        if not objectives:
+            return {}
+        try:
+            _, vectors = await embed_texts([question, *(objective.text for objective in objectives)])
+            if len(vectors) != len(objectives) + 1:
+                raise ValueError("Ollama returned an incomplete objective embedding set.")
+            return {objective.id: cosine(vectors[0], vector) for objective, vector in zip(objectives, vectors[1:])}
+        except Exception:
+            return None
+
     async def extract(self, owner, course_id, document):
         chunks = self.store.list_chunks(owner, course_id, document_ids={document["id"]}) or [
             {**chunk, "document_id": document["id"]} for chunk in chunk_pages(document["pages"])
@@ -282,10 +294,12 @@ class KernelEngine:
 
     async def analyze(self, owner, course, documents, objectives, questions):
         matches = []
-        objective_map = {f"O{i}": o for i, o in enumerate(objectives, 1)}
         guidance_map = {f"G{i}": d for i, d in enumerate((d for d in documents if d["role"] == "guidance" and d.get("approved")), 1)}
         guidance_keys = {document["id"]: key for key, document in guidance_map.items()}
         for question in questions:
+            semantic_scores = await self._semantic_scores(question.text, objectives)
+            selection = select_candidates(question.text, objectives, semantic_scores)
+            objective_map = {f"O{i}": objective for i, objective in enumerate(selection.objectives, 1)}
             guidance_results = await search_chunks(
                 self.store,
                 owner,
