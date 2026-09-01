@@ -217,10 +217,10 @@ name — it is `normalize_text(prediction) in normalized_targets`, i.e. list-mem
 (the same semantics as `quasi_exact_match_score`, extended to several gold answers). Its only other
 in-package caller is the DROP benchmark's multiple-gold-answer exact match. This survey's Finding 10/11
 characterisation of it as a normalised matcher is accurate; the containment framing carried into
-`design.md`'s original metric choice was not, and `design.md` was corrected to use
-`Scorer.quasi_exact_match_score` (normalised whole-string equality) as the default score metric.
-`deepeval.metrics.PatternMatchMetric` is a ready-made containment metric, but was intentionally rejected as the default.
-This class was not enumerated
+`design.md`'s original metric choice was not, and `design.md` has been corrected to use
+`deepeval.metrics.PatternMatchMetric` (a ready-made, non-LLM `BaseMetric`, present with a stable
+constructor from `4.1.4` through `4.1.8`) instead — a full-string regex match against a
+normalised-and-wildcard-wrapped pattern, which does deliver containment. This class was not enumerated
 in the §9 inventory above because that inventory scoped itself to `deepeval.scorer.Scorer` methods and
 missed the two ready-made non-LLM metric classes DeepEval also ships directly:
 `PatternMatchMetric` and `ExactMatchMetric` (`deepeval/metrics/pattern_match/`,
