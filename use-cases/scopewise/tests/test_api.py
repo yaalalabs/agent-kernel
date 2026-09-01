@@ -133,3 +133,31 @@ def test_manual_review_is_explicitly_labeled_and_works_without_model(app):
         assert response.status_code == 200
         assert response.json()["origin"] == "manual evidence review; no model output"
         assert all(not m["reviewed"] and m["scope_status"] == "uncertain" for m in response.json()["matches"])
+
+
+def test_client_cannot_mutate_server_authored_analysis_provenance(app):
+    with TestClient(app) as client:
+        account(client)
+        owner = client.get("/api/me").json()["id"]
+        course = client.post("/api/sample").json()
+        analysis = client.get(f"/api/courses/{course['id']}").json()["analyses"][-1]
+        question_id = analysis["matches"][0]["question_id"]
+        analysis["provenance"] = {question_id: {"agent": "scopewise_align"}}
+        app.state.store.put(owner, "analysis", course["id"], analysis, analysis["id"])
+        attempted_match = {**analysis["matches"][0], "provenance": {"agent": "client-forged"}}
+
+        response = client.patch(f"/api/analyses/{analysis['id']}/matches", json=attempted_match)
+
+        assert response.status_code == 422
+        stored = app.state.store.get(owner, "analysis", analysis["id"])
+        assert stored["provenance"][question_id]["agent"] == "scopewise_align"
+
+
+def test_bundle_keeps_earlier_analysis_without_provenance(app):
+    with TestClient(app) as client:
+        account(client)
+        course = client.post("/api/sample").json()
+
+        analysis = client.get(f"/api/courses/{course['id']}").json()["analyses"][-1]
+
+        assert "provenance" not in analysis

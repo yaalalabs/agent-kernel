@@ -157,3 +157,15 @@ async def test_analysis_sends_only_question_candidates_to_the_alignment_agent(mo
 
     assert [item["text"] for item in supplied_payloads[0]["objectives"]] == ["Explain primary keys"]
     assert analysis.matches[0].objective_ids == ["o1"]
+    assert engine.run_trace == [
+        {
+            "question_id": "q1",
+            "agent": "scopewise_align",
+            "retrieval_mode": "lexical",
+            "candidate_objective_count": 1,
+            "exclusions_checked": 0,
+            "guidance_chunks": 0,
+            "discarded_references": 0,
+            "human_review_required": True,
+        }
+    ]

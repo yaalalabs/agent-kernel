@@ -87,6 +87,7 @@ class KernelEngine:
             raise ValueError("Cloud models are disabled. Configure a downloaded local model.")
         self.client = httpx.AsyncClient(timeout=120, trust_env=False)
         self.tool_events = []
+        self.run_trace = []
         model = OpenAIChatModel(
             self.model_name,
             provider=OpenAIProvider(base_url=base, api_key="ollama", http_client=self.client),
@@ -254,6 +255,7 @@ class KernelEngine:
             return None
 
     async def extract(self, owner, course_id, document):
+        self.run_trace = []
         chunks = self.store.list_chunks(owner, course_id, document_ids={document["id"]}) or [
             {**chunk, "document_id": document["id"]} for chunk in chunk_pages(document["pages"])
         ]
@@ -293,6 +295,7 @@ class KernelEngine:
         return validate_extraction(Extraction(objectives=objectives, questions=questions), document)
 
     async def analyze(self, owner, course, documents, objectives, questions):
+        self.run_trace = []
         matches = []
         guidance_map = {f"G{i}": d for i, d in enumerate((d for d in documents if d["role"] == "guidance" and d.get("approved")), 1)}
         guidance_keys = {document["id"]: key for key, document in guidance_map.items()}
@@ -331,11 +334,27 @@ class KernelEngine:
             )
             raw = await self._run("scopewise_align", prompt, owner, course["id"])
             result = Decision.model_validate_json(raw) if isinstance(raw, str) else Decision.model_validate(raw)
+            discarded_references = sum(key not in objective_map for key in result.objective_keys) + sum(
+                quote.source not in guidance_map for quote in result.guidance
+            )
             match = decision_match(result, question, objective_map, guidance_map)
             matches.append(validate_match(match, documents, objectives, [question]))
+            self.run_trace.append(
+                {
+                    "question_id": question.id,
+                    "agent": "scopewise_align",
+                    "retrieval_mode": selection.mode,
+                    "candidate_objective_count": len(selection.objectives),
+                    "exclusions_checked": len(selection.exclusion_ids),
+                    "guidance_chunks": len(guidance_results["results"]),
+                    "discarded_references": discarded_references,
+                    "human_review_required": True,
+                }
+            )
         return Analysis(matches=matches)
 
     async def chat(self, owner, course_id, message):
+        self.run_trace = []
         return str(await self._run("scopewise_assistant", message, owner, course_id, conversation=True))
 
     async def close(self):

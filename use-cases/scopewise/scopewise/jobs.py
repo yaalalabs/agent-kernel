@@ -5,6 +5,28 @@ from .service import CourseService
 
 logger = logging.getLogger(__name__)
 
+TRACE_FIELDS = {
+    "question_id",
+    "agent",
+    "retrieval_mode",
+    "candidate_objective_count",
+    "exclusions_checked",
+    "guidance_chunks",
+    "discarded_references",
+    "human_review_required",
+}
+
+
+def safe_trace(engine):
+    events = []
+    for raw in list(getattr(engine, "run_trace", []))[:50]:
+        if not isinstance(raw, dict):
+            continue
+        event = {key: value for key, value in raw.items() if key in TRACE_FIELDS and isinstance(value, (str, int, bool))}
+        if event:
+            events.append(event)
+    return events
+
 
 class Jobs:
     def __init__(self, store, engine_factory):
@@ -63,15 +85,18 @@ class Jobs:
                 if course["revision"] != job["revision"]:
                     raise ValueError("Course changed while queued. Please retry against the new version.")
                 engine = self.model()
-                async with asyncio.timeout(900):
-                    if job["action"] == "extract":
-                        document = self.store.get(owner, "document", document_id)
-                        result = await engine.extract(owner, course_id, document)
-                    else:
-                        documents, objectives, questions = self.service.materials(owner, course_id)
-                        if not objectives or not questions:
-                            raise ValueError("Approve at least one objective and one question before comparing.")
-                        result = await engine.analyze(owner, course, documents, objectives, questions)
+                try:
+                    async with asyncio.timeout(900):
+                        if job["action"] == "extract":
+                            document = self.store.get(owner, "document", document_id)
+                            result = await engine.extract(owner, course_id, document)
+                        else:
+                            documents, objectives, questions = self.service.materials(owner, course_id)
+                            if not objectives or not questions:
+                                raise ValueError("Approve at least one objective and one question before comparing.")
+                            result = await engine.analyze(owner, course, documents, objectives, questions)
+                finally:
+                    job["trace"] = safe_trace(engine)
                 current = self.store.get(owner, "course", course_id)
                 if current["revision"] != job["revision"]:
                     raise ValueError("Course changed during analysis. Results were discarded; retry the current version.")
@@ -96,6 +121,7 @@ class Jobs:
                             "scope_version": course["scope_version"],
                             "assessment_version": course["assessment_version"],
                             "origin": "local model; human review required",
+                            "provenance": {event["question_id"]: event for event in job["trace"] if event.get("question_id")},
                         },
                     )
                     job["result_id"] = record["id"]
