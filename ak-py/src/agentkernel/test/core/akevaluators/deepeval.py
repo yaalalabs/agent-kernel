@@ -20,7 +20,10 @@ _DEFAULT_LLM_CRITERIA = (
     "sentence — score it as correct if, read together with the input, it clearly states or implies the "
     "information in the expected output, even when it also includes additional context, explanation, or "
     "detail beyond it. Do not penalize the actual output merely for being shorter, longer, or more or less "
-    "detailed than the expected output, as long as the information conveyed is correct."
+    "detailed than the expected output, as long as the information conveyed is correct. When the expected "
+    "output is a list or combination of facts (e.g. multiple names, items, or entities), the actual output "
+    "is correct as long as it conveys the same set of facts — the order in which they are listed, the "
+    "wording used to introduce them, and the grammatical structure of the sentence do not matter."
 )
 
 
