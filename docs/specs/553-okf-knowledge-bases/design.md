@@ -607,7 +607,7 @@ Each is intentional; each needs a test.
     third-party subclass calling `super().__init__()` with no arguments must pass one — the only
     signature in this change that is not backward compatible, and the reason capability declaration is
     not optional. Every functioning bring-your-own backend calls `super().__init__()` today, since
-    that is what initializes `_dynamic_schema` (`base.py:28`), so this item reaches all of them; the
+    that is what initializes `_dynamic_schema` (`base.py:29`), so this item reaches all of them; the
     "no edit needed" claim under [Operation set](#operation-set-on-knowledgebase) is about the `read()`
     path only.
 
