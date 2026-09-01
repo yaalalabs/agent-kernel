@@ -47,7 +47,7 @@ sales/
 
 YAML frontmatter + markdown body.
 
-```yaml
+```markdown
 ---
 type: BigQuery Table                       # the ONLY required field [SPEC]
 title: Orders
