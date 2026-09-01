@@ -256,7 +256,8 @@ class _MultimodalConfig(BaseModel):
         default="gpt-4o",
         description=(
             "LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment; "
-            "a remote attachment is handed to it as an address, so the model must be able to fetch that address itself"
+            "a remote image is handed to it as a fetchable image URL, so the model must be able to fetch that address, "
+            "while other remote attachment types are only named by their address"
         ),
     )
     redis: Optional[_MultimodalStorageRedisConfig] = None

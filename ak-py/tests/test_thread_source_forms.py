@@ -40,6 +40,7 @@ def thread_and_multimodal():
     """Thread support and in-memory multimodal storage, both enabled for one test."""
     original_enabled = AKConfig.get().multimodal.enabled
     original_storage = AKConfig.get().multimodal.storage_type
+    original_thread = AKConfig.get().thread
     AKConfig.get().multimodal.enabled = True
     AKConfig.get().multimodal.storage_type = "in_memory"
     AKConfig.get().thread = _ThreadStoreConfig(type="in_memory")
@@ -52,7 +53,7 @@ def thread_and_multimodal():
     yield ConversationThreadManager.get()
     AKConfig.get().multimodal.enabled = original_enabled
     AKConfig.get().multimodal.storage_type = original_storage
-    AKConfig.get().thread = None
+    AKConfig.get().thread = original_thread
     ConversationThreadManager.reset()
     InMemoryAttachmentStore._attachments.clear()
     InMemoryAttachmentStore._index.clear()

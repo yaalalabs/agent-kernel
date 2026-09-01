@@ -4,8 +4,7 @@ import type { Attachment } from "./types.ts";
  * Turning a picked `File` into what AG-UI's `data` source wants: bare base64, no `data:` prefix.
  *
  * `FileReader` hands back a data URI, so the prefix is stripped rather than kept. Both forms reach the
- * agent — Agent Kernel classifies either — but bare base64 is the form that works on every path,
- * including with Conversation Thread Support enabled, so it is the one worth sending.
+ * agent — Agent Kernel classifies either — but AG-UI's `data` source is specified as bare base64.
  *
  * Reading is capped: a picked file becomes base64 inside the JSON request body, which grows it by a
  * third, and a browser will happily hand over a 50MB video. The cap fails loudly instead of hanging.
