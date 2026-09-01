@@ -11,6 +11,7 @@ from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
+from ...core.event import StreamEvent
 from ...core.model import (
     AgentReply,
     AgentReplyAny,
@@ -183,7 +184,14 @@ class SmolagentsRunner(Runner):
             if context is not None:
                 context.reset()
 
-    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[str, None]:
+    @property
+    def supports_streaming(self) -> bool:
+        """
+        :return: False — this adapter does not implement streaming, so stream() always raises.
+        """
+        return False
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
         """
         smolagents does not support SSE streaming.
         :raises NotImplementedError: Always raised — use rest_sync mode instead.

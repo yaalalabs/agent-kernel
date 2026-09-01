@@ -204,7 +204,7 @@ const config = {
           'Framework-neutral runtime: OpenAI Agents, LangGraph, CrewAI, Google ADK, Smolagents, LiveKit',
           'Run multiple frameworks simultaneously in a single runtime',
           'Multi-cloud deployment to AWS, Azure, and GCP with full Terraform modules',
-          'Built-in Slack, WhatsApp, Messenger, Instagram, Telegram, and Gmail integrations',
+          'Built-in Slack, WhatsApp, Messenger, Instagram, Telegram, Microsoft Teams, and Gmail integrations',
           'Session and memory management with Redis, DynamoDB, Cosmos DB, and in-memory backends',
           'Knowledge bases with Neo4j, Starburst Galaxy, ChromaDB, and custom SQL sources',
           'Execution hooks for guardrails, RAG, analytics, and moderation',

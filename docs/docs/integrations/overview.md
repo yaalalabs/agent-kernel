@@ -26,6 +26,7 @@ The following built-in integrations are available.
 - **[Telegram](./telegram)** - Deploy agents as Telegram bots
 - **[Gmail](./gmail)** - Deploy agents as Gmail bots that automatically read and reply to emails
 - **[Microsoft Teams](./teams)** - Deploy agents as Microsoft Teams bots via Azure Bot Framework, supporting 1:1 chats, group chats, and channels
+- **[AG-UI](./agui)** - Serve agents over the AG-UI protocol to a custom frontend: streamed events for the answer, reasoning and tool calls, plus a shared state object the UI and the agent both read and write. Unlike the entries above this is not a hosted chat platform — it is a protocol your own UI speaks
 
 ```mermaid
 ---
@@ -57,7 +58,7 @@ config:
 ---
 flowchart LR
     
-    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & O["AgentTelegramRequestHandler"] & P["AgentGmailHandler"] & T["AgentTeamsHandler"] & N["CustomHandler"]
+    D["RESTRequestHandler"] --> I["AgentSlackRequestHandler"] & J["AgentWhatsAppRequestHandler"] & K["AgentMessengerRequestHandler"] & M["AgentInstagramRequestHandler"] & O["AgentTelegramRequestHandler"] & P["AgentGmailRequestHandler"] & T["AgentTeamsRequestHandler"] & N["CustomHandler"]
 
     style I fill:#005073,stroke:#fff,stroke-width:2px,color:#fff
     style J fill:#1ebbd7,stroke:#fff,stroke-width:2px,color:#fff

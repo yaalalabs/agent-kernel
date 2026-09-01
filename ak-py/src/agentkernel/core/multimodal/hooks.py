@@ -9,7 +9,8 @@ This module provides a PreHook that:
 """
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from dataclasses import dataclass
+from typing import Optional
 
 import litellm
 
@@ -25,8 +26,32 @@ from ..model import (
 )
 from .storage import AttachmentStorageManager
 
-if TYPE_CHECKING:
-    pass
+# (attachment_id, description) as injected into the request text.
+_AttachmentDescription = tuple[str, str]
+
+
+@dataclass(frozen=True)
+class _ExtractedAttachment:
+    """
+    One attachment's data pulled off a request, with its source form resolved.
+
+    `is_base64` is what decides whether this hook handles the attachment or hands it on, and it is
+    False for two different sources:
+
+    * **A remote reference** (`http://`, `https://`, `s3://`) — not fetched, because that would put
+      network I/O and SSRF exposure inside a system pre-hook running on every request.
+    * **A `data:` URI without the base64 marker** (`data:text/plain,hello%20world`) — its bytes are
+      percent-encoded text, so storing them as base64 would store the wrong thing.
+
+    Either way the request must survive into the returned list, so the adapter receives the
+    attachment and resolves it itself.
+    """
+
+    data: str
+    att_type: str
+    name: str
+    mime_type: str
+    is_base64: bool
 
 
 class MultimodalPreHook(PreHook):
@@ -127,6 +152,20 @@ class MultimodalPreHook(PreHook):
         """
         Process current attachments and inject descriptions into requests.
 
+        One pass decides, for each request, both what to describe and whether the request itself
+        travels on to the agent — so every branch below ends in an explicit `continue` or an append.
+
+        Three attachment shapes reach here:
+          - `AgentRequestAttachmentRef` (thread mode): the bytes were saved by `ChatService` before
+            the run and only the id travels in-band, so it is described from storage and never saved
+            again. The ref is always stripped — a dangling one must not reach the agent.
+          - `AgentRequestImage` / `AgentRequestFile` carrying base64 (thread-off): described, saved,
+            and stripped, because the bytes now live in storage.
+          - The same two carrying something that is *not* base64 — a URL, or a `data:` URI without
+            the marker: **kept**, because this hook cannot use those bytes and the adapter can.
+            Declining to describe one *and* stripping it would be worse than the corruption this all
+            replaced — the model would never see the attachment at all.
+
         :param session: The current session.
         :param agent: The agent instance.
         :param requests: List of current agent requests.
@@ -140,18 +179,29 @@ class MultimodalPreHook(PreHook):
         if not any(isinstance(req, (AgentRequestImage, AgentRequestFile, AgentRequestAttachmentRef)) for req in requests):
             return requests
 
-        # Describe all current attachments (saving raw ones; resolving refs by id).
-        descriptions = await self._process_attachments(session, requests, config)
-
-        # Build filtered request list, always stripping attachment requests:
-        #  - Raw image/file: their data is saved to storage
-        #  - AgentRequestAttachmentRef: the id is resolved and injected (or dropped if unresolved)
-        # so a dangling reference is never passed to the agent.
-        filtered_requests = []
+        manager = AttachmentStorageManager(session_id=session.id)
+        filtered_requests: list[AgentRequest] = []
+        descriptions: list[_AttachmentDescription] = []
         last_text_idx = -1
+
         for req in requests:
-            if isinstance(req, (AgentRequestImage, AgentRequestFile, AgentRequestAttachmentRef)):
-                continue
+            if isinstance(req, AgentRequestAttachmentRef):
+                described = await self._describe_stored(req, manager, config)
+                if described is not None:
+                    descriptions.append(described)
+                continue  # a ref never travels on: resolved, its id is injected; unresolved, it is dangling
+
+            if isinstance(req, (AgentRequestImage, AgentRequestFile)):
+                extracted = self._extract_attachment(req)
+                if extracted is None:
+                    continue  # no bytes at all, so there is nothing to forward either
+                if not extracted.is_base64:
+                    self._log.debug(f"Attachment '{extracted.name}' carries no base64 bytes; passing it to the agent undescribed")
+                    filtered_requests.append(req)  # the same object, not a copy — the adapter resolves it
+                    continue
+                descriptions.append(await self._store(extracted, manager, config))
+                continue  # the bytes are in storage now, so the raw request must not travel on
+
             if isinstance(req, AgentRequestText):
                 last_text_idx = len(filtered_requests)
             filtered_requests.append(req)
@@ -160,9 +210,7 @@ class MultimodalPreHook(PreHook):
             return filtered_requests
 
         # Build description text for attachment metadata and inject it.
-        desc_text = "\n\n[Attached Images/Files:]\n"
-        for att_id, desc in descriptions:
-            desc_text += f"- {att_id}: {desc}\n"
+        desc_text = "\n\n[Attached Images/Files:]\n" + "".join(f"- {att_id}: {desc}\n" for att_id, desc in descriptions)
 
         if last_text_idx >= 0:
             last_text_req = filtered_requests[last_text_idx]
@@ -173,92 +221,139 @@ class MultimodalPreHook(PreHook):
 
         return filtered_requests
 
-    async def _process_attachments(
+    async def _describe_stored(
         self,
-        session: "Session",
-        requests: list[AgentRequest],
+        req: AgentRequestAttachmentRef,
+        manager: AttachmentStorageManager,
         config: _MultimodalConfig,
-    ) -> list[tuple[str, str]]:
+    ) -> Optional[_AttachmentDescription]:
         """
-        Describe each attachment in the current request.
+        Describe an attachment that is already in storage, referenced only by its id.
 
-        Two request shapes are handled:
-          - AgentRequestAttachmentRef (thread mode): the bytes were already saved
-            by ChatService and only the id travels in-band. Load the bytes from the
-            AttachmentStore by id, describe them, and reference the same id — no save.
-          - AgentRequestImage / AgentRequestFile (thread-off): raw bytes travel on
-            the request; describe and save them here exactly as before.
+        This is the thread-mode path: `ChatService` saved the bytes before the run and only the id
+        travels in-band, so the bytes are loaded and described but never saved again.
 
-        :param session: The current session.
-        :param requests: List of current agent requests.
+        :param req: The reference request.
+        :param manager: The storage manager for this session.
         :param config: Multimodal configuration.
-        :return: List of (attachment_id, description) tuples.
+        :return: (attachment_id, description), or None when the id is not in storage.
         """
-        descriptions: list[tuple[str, str]] = []
-        manager = AttachmentStorageManager(session_id=session.id)
+        stored = manager.get_attachment_data([req.attachment_id])
+        if not stored:
+            self._log.warning(f"Attachment {req.attachment_id} not found in storage; skipping")
+            return None
+        attachment = stored[0]
+        return req.attachment_id, await self._described(attachment.data, attachment.mime_type, config)
 
-        for req in requests:
-            if isinstance(req, AgentRequestAttachmentRef):
-                # Thread mode: resolve the already-stored attachment by id.
-                stored = manager.get_attachment_data([req.attachment_id])
-                if not stored:
-                    self._log.warning(f"Attachment {req.attachment_id} not found in storage; skipping")
-                    continue
-                attachment = stored[0]
-                description = await self._describe_attachment_briefly(data=attachment.data, mime_type=attachment.mime_type)
-                if len(description) > config.description_max_length:
-                    description = description[: config.description_max_length]
-                descriptions.append((req.attachment_id, description))
-                continue
+    async def _store(
+        self,
+        extracted: _ExtractedAttachment,
+        manager: AttachmentStorageManager,
+        config: _MultimodalConfig,
+    ) -> _AttachmentDescription:
+        """
+        Describe an attachment's raw bytes and save them, returning the id storage assigned.
 
-            data, att_type, name, mime_type = self._extract_attachment(req)
-            if data is None:
-                continue
+        This is the thread-off path, where the bytes travel on the request itself.
 
-            # Generate brief description via LLM
-            description = await self._describe_attachment_briefly(data=data, mime_type=mime_type)
+        :param extracted: The attachment pulled off the request, already source-resolved.
+        :param manager: The storage manager for this session.
+        :param config: Multimodal configuration.
+        :return: (attachment_id, description).
+        """
+        description = await self._described(extracted.data, extracted.mime_type, config)
+        attachment_id = manager.save_attachment(
+            data=extracted.data,
+            attachment_type=extracted.att_type,
+            name=extracted.name,
+            mime_type=extracted.mime_type,
+            description=description,
+            max_attachments=config.max_attachments,
+        )
+        self._log.info(f"Saved {extracted.att_type} {attachment_id}: {extracted.name}")
+        return attachment_id, description
 
-            # Truncate to configured max length
-            if len(description) > config.description_max_length:
-                description = description[: config.description_max_length]
+    async def _described(self, data: str, mime_type: str, config: _MultimodalConfig) -> str:
+        """
+        Describe one attachment and clamp the result to the configured length.
 
-            # Thread-off: save the raw bytes here.
-            attachment_id = manager.save_attachment(
-                data=data,
-                attachment_type=att_type,
-                name=name,
-                mime_type=mime_type,
-                description=description,
-                max_attachments=config.max_attachments,
-            )
-            self._log.info(f"Saved {att_type} {attachment_id}: {name}")
-            descriptions.append((attachment_id, description))
+        Truncation lives here rather than in `_describe_attachment_briefly` because both storage paths
+        need it and that method is what tests replace — folding it in would change what a mock stands
+        in for.
 
-        return descriptions
+        :param data: Base64 encoded attachment data.
+        :param mime_type: MIME type of the attachment.
+        :param config: Multimodal configuration.
+        :return: The description, no longer than `description_max_length`.
+        """
+        description = await self._describe_attachment_briefly(data=data, mime_type=mime_type)
+        return description[: config.description_max_length]
 
     @staticmethod
-    def _extract_attachment(req: AgentRequest) -> tuple[Optional[str], str, str, str]:
+    def _extract_attachment(req: AgentRequest) -> Optional[_ExtractedAttachment]:
         """
-        Extract attachment data from a request if it is an image or file.
+        Extract attachment data from a request if it is an image or file, and classify its source.
 
         :param req: An agent request.
-        :return: (data, type, name, mime_type) or (None, ...) if not an attachment.
+        :return: The extracted attachment, or None if the request carries no attachment data.
         """
         if isinstance(req, AgentRequestImage) and req.image_data:
-            return (
-                req.image_data,
-                "image",
-                getattr(req, "name", "image"),
-                req.mime_type or "image/jpeg",
-            )
+            resolved = MultimodalPreHook._resolve_source(req.image_data, req.mime_type, "image/jpeg")
+            if resolved is None:
+                return None
+            data, mime_type, is_base64 = resolved
+            return _ExtractedAttachment(data, "image", req.name, mime_type, is_base64)
         if isinstance(req, AgentRequestFile) and req.file_data:
-            return (
-                req.file_data,
-                "file",
-                getattr(req, "name", "file"),
-                req.mime_type or "application/octet-stream",
-            )
-        return None, "", "", ""
+            resolved = MultimodalPreHook._resolve_source(req.file_data, req.mime_type, "application/octet-stream")
+            if resolved is None:
+                return None
+            data, mime_type, is_base64 = resolved
+            return _ExtractedAttachment(data, "file", req.name, mime_type, is_base64)
+        return None
+
+    @staticmethod
+    def _resolve_source(source: str, declared_mime: Optional[str], default_mime: str) -> Optional[tuple[str, str, bool]]:
+        """
+        Resolve one attachment source string into its bytes, its mime type, and whether those bytes are base64.
+
+        - `http://`, `https://`, `s3://`: a remote reference, returned unchanged and not base64.
+        - `data:<mime>;base64,<payload>`: split into the payload plus the mime type the URI itself
+          declares. The URI wins over `declared_mime` and over `default_mime`, neither of which is
+          consulted unless the URI omits its own — this is what stops a PNG being stored as JPEG.
+        - Anything else is treated as bare base64, keeping `declared_mime` or `default_mime`.
+
+        A `data:` URI with nothing after the comma resolves to `None`: it carries no bytes, so it is
+        the same case as an empty `image_data`, and the caller drops it rather than handing an adapter
+        a payloadless URI.
+
+        A `data:` URI that is not base64-encoded is passed through rather than decoded, since its
+        bytes are not what this hook would store. Per RFC 2397 the marker is the final parameter of
+        the header, so a header that merely contains the text `;base64` does not qualify.
+
+        Scheme and header matching is case-insensitive, since URI schemes (RFC 3986 §3.1), media
+        types and parameter names all are. Only the leading bytes and the short header are folded —
+        an attachment payload can be megabytes of base64, and lowercasing it would copy the lot.
+
+        :param source: The raw source string from the request.
+        :param declared_mime: The request's own mime_type, if it set one.
+        :param default_mime: Fallback when neither the source nor the request declares one.
+        :return: (data, mime_type, is_base64), or None when the source carries no bytes at all.
+        """
+        scheme = source[:8].lower()  # 8 == len("https://"), the longest prefix matched below
+
+        if scheme.startswith(("http://", "https://", "s3://")):
+            return source, declared_mime or default_mime, False
+
+        if scheme.startswith("data:"):
+            header, _, payload = source.partition(",")
+            if not payload:
+                return None
+            if not header.lower().endswith(";base64"):
+                return source, declared_mime or default_mime, False
+            uri_mime = header[len("data:") :].split(";", 1)[0].lower()
+            return payload, uri_mime or declared_mime or default_mime, True
+
+        return source, declared_mime or default_mime, True
 
     def name(self) -> str:
         return "MultimodalPreHook"

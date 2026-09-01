@@ -19,7 +19,7 @@ from ...auth.authoriser import Authoriser
 from ...core import Config
 from ...core.chat_service import RequestBuilder, ResponseBuilder
 from ...core.model import BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
-from ...core.runtime import Runtime
+from ...core.service import AgentService
 from .manager import ConversationThreadManager
 from .recorder import ThreadRecorder
 
@@ -116,6 +116,11 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         try:
             self._validate_chat_request(req)
             self._check_agent_available(req.agent)
+            if req.schedule is not None:
+                # A deferred request produces no conversation: the thread and its messages are
+                # recorded when an occurrence actually runs, not when the schedule is created.
+                result, session_id = await self.chat_service.execute(req)
+                return ResponseBuilder.build_response(202, session_id, True, result=result)
             requests = await RequestBuilder.from_base_request_async(req)
             requests, _ = self._recorder.pre_run(req, requests)
             result, session_id = await self.chat_service.execute(req, requests=requests)
@@ -142,6 +147,8 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         """
         self._validate_chat_request(req)
         self._check_agent_available(req.agent)
+        if req.schedule is not None:
+            return self._acknowledgement_frames(await self.chat_service.execute_stream(req), req.session_id)
         requests = await RequestBuilder.from_base_request_async(req)
         requests, _ = self._recorder.pre_run(req, requests)
         chunks = await self.chat_service.execute_stream(req, requests=requests)
@@ -167,6 +174,17 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         return _stream()
 
     @staticmethod
+    async def _acknowledgement_frames(chunks, session_id: Optional[str]):
+        """Frame a deferred request's acknowledgement chunk as SSE, without any recording.
+
+        :param chunks: The single-chunk stream returned by the ChatService for a deferred request
+        :param session_id: Session identifier echoed on the frame
+        :return: Async generator yielding the acknowledgement as one SSE frame
+        """
+        async for chunk in chunks:
+            yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=True)
+
+    @staticmethod
     def _validate_chat_request(req: BaseChatRequest) -> None:
         """Validate the request envelope before any thread write.
 
@@ -180,17 +198,14 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
 
     @staticmethod
     def _check_agent_available(name: Optional[str]) -> None:
-        """Agent-availability precheck before any thread write, applying the same rule
-        as AgentHandler.initialize: a named agent must be registered, otherwise at
-        least one agent must exist. Keeps a missing agent from leaving a phantom
-        thread with an unanswered user message.
+        """Agent-availability precheck before any thread write, keeping a missing agent
+        from leaving a phantom thread with an unanswered user message. The rule itself is
+        shared with the other commit-before-running surfaces (AgentService.ensure_agent_available).
 
         :param name: The requested agent name, or None for the default agent
         :raises ValueError: If no matching agent is available
         """
-        agents = Runtime.current().agents()
-        if (name and name not in agents) or (not name and not agents):
-            raise ValueError("No agent available")
+        AgentService.ensure_agent_available(name)
 
 
 class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):

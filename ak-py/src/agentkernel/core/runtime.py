@@ -13,6 +13,7 @@ from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
 from ..sandbox.hooks import SandboxPreHookFactory
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
+from .event import ReasoningDelta, TextDelta
 from .model import (
     AgentReply,
     AgentReplyAny,
@@ -233,11 +234,15 @@ class Runtime:
         self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: Optional[str] = None
     ) -> AsyncGenerator[StreamChunk, None]:
         """
-        Streams the specified agent response token by token.
+        Streams the specified agent response as StreamChunks carrying typed stream events.
 
         Pre-hooks run first; if halted, yields a StreamChunk with error and done=True.
-        Each token delta from the runner is passed through the post-hook chain via
-        on_stream_chunk() before being yielded. The volatile cache is cleared on exit.
+        The runner's events pass through the post-hook chain via on_stream_chunk(), which sees
+        text only: TextDelta and ReasoningDelta content reaches the hooks, and a hook's edit is
+        written back into the event so `delta` and `event` never disagree. Returning None drops
+        the chunk entirely, event included. Only TextDelta content is projected into `delta`,
+        keeping reasoning out of consumers that concatenate it as the answer; every event still
+        reaches `event`. The volatile cache is cleared on exit.
 
         :param agent: The agent to run.
         :param session: The session to use for the agent.
@@ -261,16 +266,24 @@ class Runtime:
                     self._log.debug(f"Streaming agent '{agent.name}' with requests: {requests}")
 
                     post_hooks = self._get_system_post_hooks() + agent.post_hooks
-                    async for delta in agent.runner.stream(agent, session, requests):
-                        for hook in post_hooks:
-                            delta = await hook.on_stream_chunk(session, requests, agent, delta)
-                            if delta is None:
-                                break
-                        if delta is not None:
-                            yield StreamChunk(delta=delta)
+
+                    async for ev in agent.runner.stream(agent, session, requests):
+                        text = ev.content if isinstance(ev, (TextDelta, ReasoningDelta)) else None
+
+                        if text is not None:
+                            for hook in post_hooks:
+                                text = await hook.on_stream_chunk(session, requests, agent, text)
+                                if text is None:
+                                    break
+                            if text is None:
+                                continue  # hook dropped the whole chunk, event included
+                            if text != ev.content:
+                                ev = ev.model_copy(update={"content": text})
+
+                        yield StreamChunk(delta=text if isinstance(ev, TextDelta) else None, event=ev)
 
                     self.sessions().store(session)
-                    yield StreamChunk(done=True, session_id=session.id)
+                    yield StreamChunk(done=True)
             finally:
                 session.get_volatile_cache().clear()
 

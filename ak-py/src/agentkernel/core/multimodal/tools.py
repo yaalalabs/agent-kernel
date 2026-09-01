@@ -14,7 +14,7 @@ from .storage import AttachmentStorageManager
 _log = logging.getLogger("ak.multimodal.tools")
 
 
-def _analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
+def analyze_attachments(attachment_ids: list[str], prompt: str) -> str:
     """
     Analyze attachments (images/files) using LLM and return ONLY the analysis response.
 
@@ -84,4 +84,4 @@ class AnalyzeAttachmentsTool(SystemTool):
         "(numbers, quotes, tables) found in the files, you MUST use the `analyze_attachments` tool to "
         "inspect the file content again. Do not guess based on the summary."
     )
-    func: Callable = _analyze_attachments
+    func: Callable = analyze_attachments

@@ -168,7 +168,7 @@ All runtime behavior is governed by `AKConfig` (Pydantic-based), loaded from YAM
 
 Built-in support for:
 - Multi-cloud session persistence (AWS, Azure, GCP)
-- Token-level streaming (SSE over REST, WebSocket on AWS serverless)
+- Event streaming (SSE over REST, WebSocket on AWS serverless)
 - Queue-pipeline execution everywhere: in-process by default, SQS-backed on Lambda and ECS, Kafka and NATS JetStream for on-prem / Kubernetes (deployed by the [Helm chart](../deployment/onprem-kubernetes))
 - Input/output guardrails and PII redaction
 - Multi-agent coordination and multimodal attachments
@@ -229,7 +229,7 @@ Key properties:
 
 ## The Streaming Pipeline
 
-`Runtime.stream()` is the streaming counterpart, sharing the same pre-hook pipeline but yielding `StreamChunk` objects as tokens arrive:
+`Runtime.stream()` is the streaming counterpart, sharing the same pre-hook pipeline but yielding `StreamChunk` objects carrying typed `StreamEvent`s as they arrive:
 
 ```mermaid
 sequenceDiagram
@@ -244,28 +244,71 @@ sequenceDiagram
     alt halted by pre-hook
         R-->>U: StreamChunk(error=..., done=true)
     else streaming
-        loop each token delta
-            Run-->>R: delta (str)
-            R->>PoH: on_stream_chunk(delta)
-            alt hook returns None
-                Note over R: token dropped
+        loop each event
+            Run-->>R: StreamEvent (or legacy str, normalised)
+            alt event is TextDelta/ReasoningDelta
+                R->>PoH: on_stream_chunk(content)
+                alt hook returns None
+                    Note over R: chunk dropped, event included
+                else
+                    R-->>U: StreamChunk(delta=..., event=...)
+                end
             else
-                R-->>U: StreamChunk(delta=...)
+                R-->>U: StreamChunk(event=...)
             end
         end
         R->>R: store session, clear volatile cache
-        R-->>U: StreamChunk(done=true, session_id=...)
+        R-->>U: StreamChunk(done=true)
     end
 ```
 
-- Each `StreamChunk` carries `delta`, `done`, `error`, and `session_id` fields.
-- Post-hooks can filter or redact individual tokens via `on_stream_chunk()`; returning `None` drops the token.
+- Each `StreamChunk` carries `delta`, `event`, `done`, `error`, and `session_id` fields. `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) is carried in `event` alone.
+- Post-hooks can filter or redact `TextDelta`/`ReasoningDelta` content via `on_stream_chunk()`; returning `None` drops the whole chunk.
 - Delivery depends on the surface: the REST API serves chunks as **Server-Sent Events** (`text/event-stream`); AWS serverless and AWS ECS containerized WebSocket modes push each chunk as a separate `STREAM_CHUNK` WebSocket message (optionally through SQS queues).
-- OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents do not support token streaming (their runners raise `NotImplementedError` in stream mode).
+- OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents declare `supports_streaming = False` and do not support token streaming (their runners raise `NotImplementedError` in stream mode).
 
 See [Execution Flow](./execution-flow) for the full request lifecycle including the queue-based and WebSocket paths.
 
-## The Queue Execution Pipeline
+## Scalability: The Queue Execution Pipeline {#the-queue-execution-pipeline}
+
+Two facts shape how Agent Kernel is built to grow with demand:
+
+1. **Accepting a request and carrying it out are not the same kind of work.** Receiving a message
+   from a user is nearly instant. Actually producing a response can involve several rounds of
+   reasoning, tool use, or lookups in outside systems, and can take anywhere from under a second to
+   several minutes depending on what's asked. Treating these two things as one inseparable unit means
+   one is always sized for the other's load: either paying for idle capacity, or getting stuck behind
+   the workload that takes longer.
+2. **Real demand doesn't arrive at a steady pace.** Usage comes in bursts, quiet periods, and peaks
+   around business hours, campaigns, or events. A system built only for the average load either falls
+   over during a peak or stays over-provisioned the rest of the time.
+
+Agent Kernel's answer is to keep "receiving a request" and "producing the response" as two separate
+jobs, with a safe holding area in between. Incoming work lands in that holding area first and is
+then picked up and completed as capacity allows, rather than being handled the instant it arrives.
+This one design choice provides several guarantees at once:
+
+- **The two jobs scale independently.** The part that talks to users and the part that does the
+  underlying thinking can each be given more or less capacity on their own, based on what's actually
+  under pressure, instead of scaling both together.
+- **Traffic spikes are absorbed, not dropped.** A sudden surge in requests lengthens the queue of
+  pending work rather than overwhelming the system or the outside services it depends on (such as
+  the AI models themselves).
+- **Conversations stay in the right order.** Messages belonging to the same conversation are always
+  completed in the order they were sent, while unrelated conversations are free to proceed fully in
+  parallel.
+- **Nothing is lost, and nothing is done twice.** If a piece of work is interrupted partway through
+  (for example, by a temporary outage), it is safely retried until it succeeds, up to a sensible
+  limit, and it is never accidentally completed more than once.
+- **Capacity can shrink as well as grow.** When demand drops, processing capacity can scale back down
+  — in some deployments all the way to zero — so cost tracks actual usage rather than peak
+  provisioning.
+- **This behavior is consistent everywhere Agent Kernel runs.** The same guarantees apply whether
+  Agent Kernel is deployed as a single small service, across a large-scale cloud environment, or on
+  an organization's own private infrastructure. Moving between these is a deployment and
+  configuration decision — it never requires changing how an agent is built or behaves.
+
+### How it works under the hood
 
 Chat execution is built on one logical pipeline
 ([#495](https://github.com/yaalalabs/agent-kernel/issues/495)): every chat request travels five
@@ -329,6 +372,9 @@ and the `AgentService` clients (CLI, A2A, MCP) keep their direct execution paths
 receives the reply either by **polling** the response store (`rest_sync` waits server-side,
 `rest_async` polls with a `request_id`), by **SSE** (`stream` on the REST surface), or by
 **WebSocket push** (`async`/`stream` on AWS today).
+
+This decouples request ingestion from agent execution so each scales, fails, and recovers on its
+own terms.
 
 ## Next Steps
 

@@ -18,3 +18,5 @@ messenger:
   agent: "general"
 instagram:
   agent: "general"
+teams:
+  agent: "general"
