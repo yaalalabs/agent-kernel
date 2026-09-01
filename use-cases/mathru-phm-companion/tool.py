@@ -16,6 +16,8 @@ from typing import Any
 
 from agentkernel.core import ToolContext
 
+import danger_signs
+import escalation
 import schedules
 import store
 
@@ -214,3 +216,133 @@ def next_appointment() -> str:
         payload["data_status"] = "placeholder"
         payload["data_warning"] = PLACEHOLDER_WARNING
     return _json(payload)
+
+
+# Every reply arising from a symptom report carries this, per SPEC.md.
+STANDING_NOTE = "I am not a clinician."
+
+NOT_A_PHM = {
+    "ok": False,
+    "error": "This sender is not a registered PHM, so PHM capabilities are not available.",
+}
+
+
+async def screen_danger_signs(symptom_text: str) -> str:
+    """Screen a mother's reported symptoms against the danger-sign reference table.
+
+    Pass the mother's own description of her symptoms through unchanged, in her own words.
+    You do not decide how urgent it is: the severity and the action string come back from
+    this tool and must be relayed as written. When the severity is red this tool has already
+    escalated to her PHM before returning.
+    """
+    session_id = _session_id()
+    if session_id is None:
+        return _error("I could not identify this conversation.")
+
+    decision = danger_signs.screen(symptom_text)
+    payload: dict[str, Any] = {
+        "ok": True,
+        "severity": decision["severity"],
+        "matched_signs": decision["matched_signs"],
+        "action": decision["action"],
+        "reason": decision["reason"],
+        "standing_note": STANDING_NOTE,
+        "relay_action_verbatim": True,
+    }
+    if decision["table_status"] == "placeholder":
+        payload["data_status"] = "placeholder"
+
+    if not decision["escalate"]:
+        return _json(payload)
+
+    record = store.get_mother(session_id)
+    if record is None:
+        # Nobody to escalate to, so she must be told to seek care herself. Never imply that
+        # anything was sent on her behalf.
+        payload["escalated"] = False
+        payload["escalation_blocked_reason"] = "sender is not registered, so no PHM is assigned"
+        payload["message_for_mother"] = escalation.ESCALATION_FAILED_MESSAGE
+        return _json(payload)
+
+    payload.update(await escalation.escalate(record, decision["severity"], decision["matched_signs"], symptom_text))
+    return _json(payload)
+
+
+def resolve_role() -> str:
+    """Return whether this sender is a registered PHM, a registered mother, or neither.
+
+    Call this first to decide where to route. A sender can be both: PHM capabilities follow
+    the PHM role, but a sender who has a mother record can always report symptoms.
+    """
+    session_id = _session_id()
+    if session_id is None:
+        return _error("I could not identify this conversation.")
+
+    is_phm = store.is_registered_phm(session_id)
+    is_mother = store.get_mother(session_id) is not None
+
+    if is_phm:
+        role = "phm"
+    elif is_mother:
+        role = "mother"
+    else:
+        role = "unknown"
+
+    return _json(
+        {
+            "ok": True,
+            "role": role,
+            "is_phm": is_phm,
+            "is_registered_mother": is_mother,
+            "may_report_symptoms": is_mother,
+        }
+    )
+
+
+def phm_caseload() -> str:
+    """Return the calling PHM's registered mothers and her open escalations."""
+    session_id = _session_id()
+    if session_id is None:
+        return _error("I could not identify this conversation.")
+    if not store.is_registered_phm(session_id):
+        return _json(NOT_A_PHM)
+
+    mothers = [
+        {
+            "first_name": mother["first_name"],
+            "moh_area": mother["moh_area"],
+            "edd_iso": mother["edd_iso"],
+            "child_dob_iso": mother["child_dob_iso"],
+        }
+        for mother in store.mothers_for_phm(session_id)
+    ]
+    escalations = store.open_escalations_for_phm(session_id)
+
+    return _json(
+        {
+            "ok": True,
+            "mothers": mothers,
+            "mother_count": len(mothers),
+            "open_escalations": escalations,
+            "open_escalation_count": len(escalations),
+            "undelivered_count": sum(1 for item in escalations if item["delivery"] == store.UNDELIVERED),
+        }
+    )
+
+
+def acknowledge_escalation(escalation_id: int) -> str:
+    """Mark one of the calling PHM's open escalations as acknowledged.
+
+    This closes the escalation on the PHM's caseload. It sends nothing to the mother.
+    """
+    session_id = _session_id()
+    if session_id is None:
+        return _error("I could not identify this conversation.")
+    if not store.is_registered_phm(session_id):
+        return _json(NOT_A_PHM)
+
+    record = store.acknowledge_escalation(escalation_id, session_id)
+    if record is None:
+        return _error(f"No escalation with id {escalation_id} belongs to this PHM.")
+
+    return _json({"ok": True, "acknowledged": True, "escalation": record})
