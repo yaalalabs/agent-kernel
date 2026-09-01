@@ -77,6 +77,13 @@ class ExecutionCompletion(BaseModel):
   `error_type=type(exc).__name__` on its `failed`/`timed_out` completions. In-process flavors
   ignore it (they re-raise the live exception); the queue client uses it to reconstruct the typed
   error across the wire (see the client below).
+- **Recovery outcome (2026-09-01).** `SandboxTask` (`sandbox/model.py`) gains
+  `result_summary: Optional[dict]`: the bounded terminal outcome (stdout/stderr tails at
+  `tool_output_max_chars`, `exit_code`, `error`, `notice`) that `ExecutionManager.task_status`
+  captures when it consumes a terminal completion, before `broker.discard` can drop it
+  (in-process flavors retain completions only until consumption). `check_sandbox_task`
+  surfaces it under `"result"`; this is what makes the wait-then-check recovery contract
+  deliver results, not just statuses, on every flavor.
 - **Binary safety.** Pydantic v2 JSON-serializes `bytes` as UTF-8 strings, which corrupts or
   rejects arbitrary binary, and two wire spots carry binary: the `upload_file` payload
   (`payload["content"]`, set in `ExecutionManager.upload`, `sandbox/manager.py:98-100`) and
@@ -429,7 +436,12 @@ Staged after the two examples (plan.md orders it); specified here so the design 
   `"kubernetes"`; one new provider `if/elif` branch. Nothing else changes.
 - `sandbox/broker/worker.py`: `process()` stamps `error_type` (one line per except arm). `run()`
   unchanged.
-- `sandbox/model.py`: `SandboxFile` (de)serializers only. All other models unchanged.
+- `sandbox/model.py`: `SandboxFile` (de)serializers and the additive
+  `SandboxTask.result_summary`. All other models unchanged.
+- `sandbox/manager.py`: `task_status` stamps `result_summary` at the terminal transition (a
+  new `_summarize_completion` helper); `sandbox/tools.py`: `check_sandbox_task` returns it
+  under `"result"` and the system-prompt guidance says so. Nothing else in either file
+  changes.
 - `sandbox/__init__.py`: `+ QueueBrokerWorker` in imports and `__all__`.
 - `pipeline/transport/base.py` and `pipeline/response_store/factory.py`: the optional-parameter
   seams; every existing caller passes nothing and resolves identically (verified call sites:
@@ -438,8 +450,9 @@ Staged after the two examples (plan.md orders it); specified here so the design 
 - `pipeline/response_store/{base,in_memory,redis,valkey,dynamodb}.py`: the optional scan
   capability; `redis.py`/`valkey.py`/`dynamodb.py` also accept the constructor `ttl` they
   already take (no signature change, the factory just passes the sandbox value).
-- **Verified unchanged**: `ExecutionManager` (`manager.py`; the flavor absorbs all queue
-  semantics), `SandboxPreHook`/`tools.py`, `EmbeddedBroker`/`ThreadBroker`, `BrokerWorkerCore`
+- **Verified unchanged**: `ExecutionManager` beyond the `result_summary` capture (the flavor
+  absorbs all queue semantics), `SandboxPreHook`, the tools other than `check_sandbox_task`,
+  `EmbeddedBroker`/`ThreadBroker`, `BrokerWorkerCore`
   logic other than `error_type`, `ConsumerLoop`, `ThreadRunner`, all chat-pipeline components,
   all deployment adapters, `core/model.py`, `core/chat_service.py`.
 
@@ -658,6 +671,10 @@ All intentional; none reachable unless `sandbox.enabled: true` except 5-8:
 11. The instance-level capability override pattern is introduced (one use:
     `network_policy: true` flips `policy_network` on the provider instance).
 12. `agentkernel.sandbox` exports `QueueBrokerWorker`.
+13. `check_sandbox_task` on finished tasks includes the bounded outcome under `"result"`, and
+    `task_status` persists it into the session registry (`SandboxTask.result_summary`,
+    additive: registry entries written before this change read back with it unset). Applies
+    to every flavor, not just `queue`.
 
 **Non-changes**: `EmbeddedBroker`/`ThreadBroker` behavior; `ExecutionManager`, `SandboxPreHook`,
 tools, principal resolution; `BrokerWorkerCore`'s fail-closed checks, self-heal, per-session
@@ -730,7 +747,9 @@ Asserts:
   call-count assertion).
 - **End-to-end promotion recovery**: a deadline expiry promotes to a pending `SandboxTask`;
   after both worker loops run, `task_status` → `result()` (the `check_sandbox_task` path)
-  returns the terminal completion from the store.
+  returns the terminal completion from the store, and the manager-level test asserts the
+  bounded outcome reaches `check_sandbox_task`'s `"result"` (with the thread flavor's
+  late-completion test asserting the same on an in-process flavor).
 - **Permanent failure**: after `max_receive_count` request deliveries a `failed` completion
   with the request's real `sandbox_session` reaches the store via the output queue and the
   request message is dead-lettered; the undecodable-body fallback writes the

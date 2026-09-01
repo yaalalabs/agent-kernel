@@ -364,3 +364,10 @@ graph LR
     output loop inside the worker (full `_QueuesConfig` symmetry with the chat pipeline); the
     tool contract is bounded wait plus `check_sandbox_task`. The `completion_events` flag and
     the `used_queues` factory seam are dropped as no longer needed.
+  - Resolved 2026-09-01 (iteration-5/6 review): two completions of earlier resolutions. The
+    ak-k8s chart supports a standalone sandbox-worker install (see Deployment wiring). And
+    the wait-then-check recovery contract delivers results, not just statuses: `SandboxTask`
+    gains a bounded `result_summary` that `ExecutionManager.task_status` captures at the
+    terminal transition (before the broker's completion copy is discarded), and
+    `check_sandbox_task` returns it under `result`; without this, removing completion events
+    would have left a promoted task's output unreachable to the agent.

@@ -23,6 +23,7 @@ from agentkernel.core.config import (
     _SandboxProfileConfig,
 )
 from agentkernel.core.runtime import Runtime
+from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.pipeline.envelope import ATTR_REQUEST_ID, QueueMessage, QueueName
 from agentkernel.pipeline.response_store.in_memory import InMemoryResponseStore
 from agentkernel.pipeline.thread_runner import ThreadRunner
@@ -37,6 +38,7 @@ from agentkernel.sandbox.factory import ExecutionBrokerFactory, SandboxProviderF
 from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import SandboxFile, SandboxPolicy, SandboxPrincipal, SandboxResult, SandboxSession, SandboxTask
 from agentkernel.sandbox.testing import FakeSandbox, FakeSandboxProvider
+from agentkernel.sandbox.tools import check_sandbox_task
 
 FAKE_DOTTED = "agentkernel.sandbox.testing.FakeSandboxProvider"
 
@@ -611,6 +613,27 @@ class TestQueueBrokerWorker:
         worker._process_completion(_fetch_one(QueueName.OUTPUT))
         completion = await client.result("t-1")  # the check_sandbox_task path
         assert completion is not None and completion.status == "succeeded"
+
+    @pytest.mark.asyncio
+    async def test_manager_recovery_surfaces_the_result_summary(self, monkeypatch):
+        # The whole wait-then-check contract through the manager: promote, run both worker
+        # loops, and check_sandbox_task returns the bounded outcome, not just the status.
+        cfg = _worker_cfg(wait_timeout=0.05, wait_poll_interval=0.01)
+        _install_cfg(monkeypatch, cfg)
+        worker = QueueBrokerWorker(cfg)
+        manager = ExecutionManager.get()
+        session = InMemorySessionStore().new("ak-1")
+        async with session:
+            outcome = await manager.execute(code="print('hi')", wait=0.05)
+            assert isinstance(outcome, SandboxTask) and outcome.status == "pending"
+            await worker._process_request(_fetch_one(QueueName.INPUT))
+            worker._process_completion(_fetch_one(QueueName.OUTPUT))
+            task = await manager.task_status(outcome.task_id)
+            assert task.status == "succeeded"
+            assert task.result_summary["stdout"] == "print('hi')"  # FakeSandbox echoes the code
+            payload = json.loads(await check_sandbox_task(outcome.task_id))
+            assert payload["status"] == "succeeded"
+            assert payload["result"]["stdout"] == "print('hi')" and payload["result"]["exit_code"] == 0
 
     @pytest.mark.asyncio
     async def test_end_to_end_over_real_consumer_threads(self, monkeypatch):

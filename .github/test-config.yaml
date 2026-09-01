@@ -59,6 +59,9 @@ e2e:
     #   path: examples/sandbox/e2b
     - type: api
       path: examples/sandbox/identity
+    # Self-skips unless docker, kind, kubectl, and OPENAI_API_KEY are all available.
+    - type: containerized
+      path: examples/sandbox/broker-kafka
 
     # API examples
     - type: api

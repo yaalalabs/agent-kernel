@@ -1,0 +1,54 @@
+# Sandbox queue broker over Kafka (#503, the Kafka shape: an agent side that could just as
+# well run in Lambda or ECS, and a sandbox worker next to the cluster; here both halves run
+# locally against this one file).
+#
+# Start Kafka + Valkey with `docker compose up -d --wait` and provision the four sandbox
+# topics (see the README; Agent Kernel never creates topics). The worker drives sandbox pods
+# in a kind cluster: k8s/rbac.yaml binds the pod ServiceAccount to the `view` ClusterRole,
+# and that RBAC is the read-only boundary; command strings are never parsed for safety.
+
+sandbox:
+  enabled: true
+  profiles:
+    default:
+      type: kubernetes
+      idle_timeout: 900 # pods carry activeDeadlineSeconds = 2 x this as the orphan ceiling
+      kubernetes:
+        namespace: default
+        image: bitnami/kubectl:1.33 # kubectl + shell; talks to the API with its pod SA token
+        service_account: ak-sandbox-pod # bound to `view` by k8s/rbac.yaml (the security boundary)
+        kubeconfig: kind-kubeconfig # written by `kind export kubeconfig` (see the README)
+  broker:
+    flavor: queue
+    wait_timeout: 8 # bounded synchronous wait; longer executions promote to a task
+    wait_poll_interval: 0.5
+    queue:
+      type: kafka
+      kafka:
+        bootstrap_servers: "localhost:9092"
+        input_topic: sandbox-input # execution requests to the worker
+        output_topic: sandbox-output # ready-to-store completion records back
+        group_id: ak-sandbox-demo # the worker's consumers append "-input" / "-output"
+        dlq_suffix: ".dlq"
+        retry_backoff: 1.0
+      input:
+        max_receive_count: 2
+        no_of_consumers: 2
+      output:
+        no_of_consumers: 1
+    response_store:
+      type: valkey
+      valkey:
+        url: "valkey://localhost:6379"
+        prefix: "ak:sandbox:"
+
+# Valkey sessions also give Kafka's delivery bookkeeping (receive counts, dedup) a durable home.
+session:
+  type: valkey
+  valkey:
+    url: "valkey://localhost:6379"
+    prefix: "ak:sessions:"
+
+logging:
+  ak:
+    level: INFO

@@ -106,6 +106,9 @@ class SandboxTask(BaseModel):
     submitted_at: float
     consumed: bool = False  # completion delivered to the agent (dedup flag)
     notice: str | None = None  # machinery advisory surfaced to the agent (e.g. sandbox recreated on idle)
+    # Bounded terminal outcome (stdout/stderr tails, exit_code, error) captured when the
+    # completion is consumed, so check_sandbox_task returns results, not just statuses.
+    result_summary: dict[str, Any] | None = None
 
 
 class SandboxPrincipal(BaseModel):

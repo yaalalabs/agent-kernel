@@ -182,10 +182,13 @@ async def test_promotion_and_late_completion_recovery(monkeypatch):
         registry = session.get_non_volatile_cache().get("sandbox")
         assert registry["tasks"][outcome.task_id]["status"] == "succeeded"
 
-        # The agent-facing check path resolves it too.
+        # The agent-facing check path resolves it too, including the bounded outcome that
+        # task_status captured before the broker's copy was discarded (the wait-then-check
+        # recovery contract delivers results, not just statuses).
         payload = json.loads(await check_sandbox_task(outcome.task_id))
         assert payload["status"] == "succeeded"
         assert payload["sandbox_session_id"] == outcome.sandbox_session_id
+        assert payload["result"]["stdout"] == "late result" and payload["result"]["exit_code"] == 0
 
 
 @pytest.mark.asyncio
