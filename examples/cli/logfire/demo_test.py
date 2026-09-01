@@ -23,5 +23,7 @@ async def test_first_question(test_client):
 
 @pytest.mark.order(2)
 async def test_follow_up_question(test_client):
-    await test_client.send("Which country hosted the tournament? Make sure to mention all the countries that hosted it.")
+    await test_client.send(
+        "Which country hosted the tournament? Make sure to mention all the countries that hosted it."
+    )
     await test_client.expect(["Co-hosted by India, Pakistan and Sri Lanka."])

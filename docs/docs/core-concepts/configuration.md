@@ -724,7 +724,7 @@ export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (
 :::warning Migration note
 Earlier versions read test configuration from a `test:` section in the application's `config.yaml`. That section is now ignored; move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`.
 
-A later release renamed the comparison modes (`fuzzy`→`score`, `judge`→`llm`) and the `judge:`/`AK_TEST__JUDGE__*` block to `llm:`/`AK_TEST__LLM__*`; a leftover `judge:` key or `AK_TEST__JUDGE__*` variable now raises a configuration error naming the new spelling instead of being silently dropped. It also added the `evaluator` key (default `deepeval`) and moved thresholds from a 0-100 scale to `[0.0, 1.0]`.
+A later release renamed the comparison modes (`fuzzy`→`score`, `judge`→`llm`) and the `judge:`/`AK_TEST__JUDGE__*` block to `llm:`/`AK_TEST__LLM__*`. Setting `mode: fuzzy` or `mode: judge` (or `AK_TEST__MODE=fuzzy`/`judge`) now raises a configuration error naming the new spelling. A leftover `judge:` key in `test-config.yaml` or `AK_TEST__JUDGE__*` environment variable, however, is silently ignored rather than raising — it is treated as an unknown field, and `llm` keeps its own default instead of reading from it, so rename it to `llm:`/`AK_TEST__LLM__*` to have it take effect. It also added the `evaluator` key (default `deepeval`) and moved thresholds from a 0-100 scale to `[0.0, 1.0]`.
 :::
 
 For how the test harness uses these settings, see [Testing](../testing/overview.md).
