@@ -1,0 +1,46 @@
+# Chart overlay for this example: layered on top of values-dev.yaml, it wires the three
+# example images and enables the sandbox worker tier with namespace hardening. Install:
+#
+#   helm install ak ../../../ak-deployment/ak-k8s/chart \
+#     -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f sandbox-values.yaml
+
+image:
+  tag: dev
+  pullPolicy: Never # the images are imported into the cluster, never pulled
+
+ioHandler:
+  image:
+    repository: ak-sbx-io-handler
+
+agentRunner:
+  image:
+    repository: ak-sbx-agent-runner
+
+extraEnv:
+  - name: OPENAI_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: openai
+        key: api-key
+
+sandboxWorker:
+  enabled: true
+  image:
+    repository: ak-sbx-sandbox-worker
+  sandboxPods:
+    # A dedicated namespace, so the hardening block below renders it with the PSA
+    # `restricted` label; the app config's kubernetes.namespace points at the same name.
+    namespace: ak-sandboxes
+    serviceAccount:
+      # Pinned so the app config's kubernetes.service_account is release-name independent.
+      # The chart deliberately binds it to nothing; this example's sandboxes need no
+      # cluster API access at all, so it stays unbound.
+      name: ak-sandbox-pod
+  queue:
+    nats:
+      partitions: 4 # micro-cluster parity; the config's auto_provision creates the streams
+  hardening:
+    enabled: true
+    podSecurityStandard: restricted
+    defaultDenyEgress: true
+    egressAllow: [] # pure-compute sandboxes: nothing re-opened, not even DNS
