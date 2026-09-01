@@ -6,11 +6,11 @@ ScopeWise helps a student decide which past-paper questions are useful for the m
 
 This is an **invite-only pilot**, built with Agent Kernel for the IDEALIZE mini competition. It supports **SDG 4: Quality Education**. It is not an exam predictor, an answer generator, or a claim that a student is exam-ready.
 
-## The problem
+## Problem statement
 
 A search result or an old paper does not know the boundaries of your module. Some questions are too advanced, others miss required skills. A change of lecturer adds another uncertainty: a question can remain relevant to the syllabus while asking for an answer format that no longer matches current guidance.
 
-## The solution
+## Solution overview
 
 1. Upload a current syllabus, current notes/slides, past papers and current assessment guidance.
 2. Inspect the extracted source pages and approve the documents.
@@ -18,6 +18,10 @@ A search result or an old paper does not know the boundaries of your module. Som
 4. Compare approved questions against the approved objectives. Every suggestion remains unreviewed.
 5. Review **syllabus fit** and **current assessment fit** independently.
 6. Build a pack of reviewed suitable questions, omit exact repeats and see uncovered objectives.
+
+ScopeWise also keeps a server-authored **Change impact** history. When the lecturer, approved syllabus, current guidance, objective scope, or a human judgment changes, the Home screen explains what became stale and gives one safe next step. Lecturer identity is never treated as proof of assessment style.
+
+New model comparisons include collapsed, evidence-safe provenance: the registered local agent, retrieval mode, candidate and exclusion counts, guidance excerpts, discarded aliases, and the human-review requirement. Prompts, vectors, session IDs, and account identifiers are never displayed.
 
 Use **Start manual review** to work through the same evidence controls without model suggestions. Its origin is explicitly labeled; it is never presented as AI output.
 
@@ -32,7 +36,7 @@ Changing the lecturer invalidates old analyses and packs and withdraws approval 
 
 Assessment fit is separately **matches guidance**, **different format**, or **not established**. Historical papers alone cannot certify current assessment style.
 
-## Setup and run locally
+## Setup instructions
 
 Requirements: Python **3.12 or 3.13**, [uv](https://docs.astral.sh/uv/getting-started/installation/), [Ollama](https://ollama.com/download), and sufficient memory for a downloaded model. A 16 GB Apple Silicon machine was used during development; this is not a concurrency capacity guarantee.
 
@@ -46,6 +50,8 @@ ollama pull nomic-embed-text:latest
 # If Ollama is not already running, start it in another terminal:
 ollama serve
 ```
+
+## How to run
 
 Start the app in a separate terminal, from the same directory:
 
@@ -61,17 +67,17 @@ The local review, editing, sample and pack workflows do not require a running mo
 
 ## What happens to an uploaded file
 
-ScopeWise does not send the document to a hosted vector service. It extracts text per PDF page or PowerPoint slide, splits each page into overlapping exact-text chunks, and stores those chunks in the same private SQLite database as the course. When local Ollama embeddings are available, normalized vectors are stored as compact binary values beside the chunks and ranked with cosine similarity plus keyword overlap. If embedding fails, upload still succeeds and search uses keyword overlap.
+ScopeWise does not send the document to a hosted vector service. It extracts text per PDF page or PowerPoint slide, splits each page into overlapping exact-text chunks, and stores those chunks in the same private SQLite database as the course. When local Ollama embeddings are available, vectors are stored as compact binary values beside the chunks and ranked with vector similarity plus keyword overlap. If embedding fails, upload still succeeds and search uses keyword overlap.
 
 This is a small-course RAG design, so it does not need a separate vector database. Search retrieves a few relevant current-guidance chunks for question comparison and always preserves the original document ID, page/slide and verbatim text. Scope/objective extraction is deliberately different: it scans every chunk in bounded groups, because retrieving only the most similar passages could miss an explicit exclusion. Model references are resolved against server-supplied aliases; an unknown alias is discarded and that judgment becomes uncertain instead of aborting the whole comparison.
 
-## Agent Kernel is on the execution path
+## How Agent Kernel is used
 
 `scopewise/agents.py` registers three Pydantic AI agents through `PydanticAIModule`:
 
 - `scopewise_extract`: proposes source-grounded draft objectives or questions.
 - `scopewise_align`: compares one question at a time using a small structured decision. The application resolves its short references to the approved objective citations, verifies guidance quotes and keeps the result unreviewed.
-- `scopewise_assistant`: calls `get_course_overview`, `read_source_page`, `get_coverage_review`, and `prepare_practice_pack`.
+- `scopewise_assistant`: calls `get_course_overview`, `read_source_page`, `get_coverage_review`, `get_change_impact`, and `prepare_practice_pack`.
 
 All model work runs through **AgentService**. Tools get owner/course identity from **ToolContext** populated by the server, never from model arguments or document instructions. Course context is isolated by account/course, cleared on revision changes, and bounded to eight conversation turns before reset. Sessions are in memory; courses, documents, jobs and judgments are in SQLite.
 
@@ -94,7 +100,7 @@ Codes are single-use and stored hashed. Group messages, edits and media are not 
 
 Webhook registration changes your bot configuration; it is never performed automatically. A live bot and HTTPS deployment are still required to demonstrate the competition's messaging requirement. See [Telegram's webhook documentation](https://core.telegram.org/bots/api#setwebhook).
 
-## Verify
+## Verification
 
 ```bash
 uv run pytest -q
@@ -104,6 +110,8 @@ node --check static/app.js
 # Requires the local model; uses only original synthetic material:
 uv run python -m scripts.smoke_model
 uv run python -m scripts.evaluate_model
+# One-command rubric/readiness check:
+uv run python -m scripts.judge_check --full
 ```
 
 The smoke script verifies structured extraction, an **actual Agent Kernel tool call**, and structured comparison. The evaluation script compares five development examples with hand-authored expected judgments and writes `output/local-evaluation.json`. These examples were used while tuning the prompt: they are **not an independent accuracy benchmark**. A quote validator checks evidence provenance, not whether a semantic judgment is correct.

@@ -1,41 +1,79 @@
-# ScopeWise competition demo (under five minutes)
+# ScopeWise competition demo — 4:50 target
 
-Use a focused module and an invited account. Hide credentials, invitation codes, linking codes and personal documents in the recording. If using the built-in sample, say clearly that its sources and reviewed judgments are synthetic. Do not stage a sample load as a live agent result.
+Use an invited test account and hide credentials, invitation codes, Telegram linking codes, and personal material. The built-in database sample is original synthetic material with human-authored judgments; say that on camera. A prepared live-model result must be labeled as prepared and must come from an actual run.
 
-## 0:00–0:35 — the problem
+## 0:00–0:35 — establish the problem
 
-“I have a current module outline and papers from a previous lecturer. Searching by topic does not tell me which questions fit my module or today's expected answer format.”
+**Click:** Home → **Explore sample module**.
 
-Show the database module overview. Introduce the two independent judgments: syllabus fit and current assessment fit.
+**Show:** the database module, the coverage summary, and the two labels on a reviewed question.
 
-## 0:35–1:25 — inspectable evidence
+**Say:** “Searching for a topic gives me videos and papers at every depth. ScopeWise asks a narrower question: which old questions fit the exact module I study now, and which still match today's expected answer format? Those are separate judgments.”
 
-Open a question and its source quote. Show that a definition question can still be in scope while differing from current guidance asking for worked examples. Open the guidance page. Show the explicitly excluded proof and the uncertain indexing question. Explain that absence from notes is not proof of exclusion.
+Expected evidence: the page says “Not exam readiness,” the sample is labeled synthetic, and syllabus fit is visually separate from assessment fit.
 
-## 1:25–2:10 — the lecturer changes
+## 0:35–1:15 — prove the evidence boundary
 
-Change the current lecturer label. Show stale analyses and pack, withdrawn guidance approval and the message that assessment fit is not established. Explain: “We do not predict the new lecturer's paper. We ask for current evidence.”
+**Click:** Review questions → open Q1 **Review both decisions** → open its source citation. Then open Q4 and Q5.
 
-For a smooth recorded demo, use a separate prepared module for the next steps; label it transparently. Do not hide model latency or pass edited footage off as uninterrupted inference.
+**Show:** Q1 is syllabus-relevant but asks for a different format; Q4 cites an explicit BCNF-proof exclusion; Q5 indexing remains uncertain.
 
-## 2:10–3:15 — a real agent run
+**Say:** “A missing topic is not automatically excluded. Beyond-scope needs explicit current evidence. Every positive link keeps the exact document, page, and quote.”
 
-Use the files in `sample_data/` or permission-cleared real materials. Show a source upload, its approval and a live extraction/comparison. Model output appears as drafts and requires review. Correct a wrong or incomplete judgment if one occurs; this is a safety feature, not something to conceal. Show a real course-tool call in the assistant.
+Expected evidence: both judgment columns, exact citations, no generated answer, and the human confirmation control.
 
-If inference is slow, begin the job earlier and narrate the elapsed time honestly. The five synthetic development questions do not establish real-course accuracy.
+## 1:15–1:55 — make curriculum change visible
 
-## 3:15–4:05 — useful practice
+**Click:** Home → Module settings → change the lecturer → **Update module**.
 
-From current reviewed judgments, build a pack. Show the original source references, the omitted exact duplicate, and the missing SQL-join objective. Download the HTML pack; open it in a browser to print or save as PDF. Explain that coverage describes the supplied objectives, not the student's readiness.
+**Show:** the Change impact card, stale comparison/pack counts, “Review current sources,” and the event history. Go to Add sources and show that current assessment guidance needs reconfirmation.
 
-## 4:05–4:45 — supported messaging
+**Say:** “A lecturer change does not prove the paper changed. ScopeWise records what became stale, withdraws the old guidance approval, and asks for current evidence.”
 
-With a real bot connected beforehand, open its private Telegram chat. Use `/courses`, `/use 1`, and ask “Which objectives still need practice?” or “Build a pack from my reviewed questions.” Show the response from the same Agent Kernel tools. Do not show the linking code or bot token.
+Expected evidence: the card uses that caveat exactly and never predicts a question, probability, or lecturer style.
 
-A simulated webhook test is not a live Telegram demonstration. This step requires bot credentials and an HTTPS host before submission.
+## 1:55–3:00 — show real Agent Kernel execution
 
-## 4:45–5:00 — why this matters
+Use a prepared module made from the original files in `sample_data/`, or permission-cleared material. If the run is prepared, say how long it took and do not imply it happened during the previous minute.
 
-“ScopeWise makes old material usable in a changing module. It gives students evidence, keeps uncertainty visible, and helps them avoid spending their limited study time on the wrong questions.”
+**Click:** Review questions → open a result → **Review both decisions** → inspect **How this comparison was made** → expand **Technical details for judges**.
 
-Mention SDG 4 and local inference without mandatory paid APIs. State remaining pilot limitations honestly. Confirm the registered team and repository submission requirements in the supplied booklet before submitting.
+**Show:** “Compared by the local ScopeWise agent,” Meaning search or Keyword fallback, candidate/exclusion counts, guidance excerpts, the final-decision reminder, `AgentService`, and `scopewise_align`.
+
+**Say:** “Agent Kernel is on the execution path. AgentService runs the registered alignment agent. Local retrieval narrows candidate objectives, explicit exclusions are checked first, and the server validates every returned alias and citation.”
+
+Then click **Ask about this module** and ask: **“What changed, and what should I review next?”** Show the grounded answer from `get_change_impact`.
+
+Fallback: if Ollama is unavailable, show the saved run details and run `python -m scripts.judge_check --full` in a terminal. State that the live model gate is unavailable; use **Start without AI** rather than staging model output.
+
+## 3:00–3:45 — demonstrate human correction
+
+**Click:** Review questions → open one judgment → **Correct evidence or decision**. Change or confirm the evidence and tick the human-review checkbox → **Save judgment**.
+
+**Show:** model output began unreviewed; only the user's reviewed judgment can enter a pack; changing it invalidates packs built from the earlier review.
+
+**Say:** “The agent proposes. The student or lecturer decides. The correction becomes a tracked course change rather than silently rewriting history.”
+
+## 3:45–4:20 — produce useful practice
+
+**Click:** Make a pack → **Build practice pack** → **Download / print**.
+
+**Show:** source references, the omitted exact duplicate, independent fit labels, and the uncovered SQL-join objective.
+
+**Say:** “The pack optimizes reviewed objective coverage, removes exact repeats, and keeps the gaps visible. Coverage describes these supplied objectives, not the student's mastery.”
+
+## 4:20–4:40 — supported user interface
+
+With a real bot and HTTPS webhook configured beforehand, open a private Telegram chat.
+
+**Send:** `/courses`, `/use 1`, then **“Which objectives still need practice?”**
+
+**Show:** a response from the same Agent Kernel assistant and tools.
+
+Fallback: if live Telegram is not verified, show the web assistant and the deterministic Telegram test result. Say clearly that this is not a live messaging demonstration and leave its submission checkbox unchecked.
+
+## 4:40–4:50 — close on value and evidence
+
+**Say:** “ScopeWise makes old learning material usable in a changing module. It reduces wasted study time, keeps uncertainty visible, and supports SDG 4 without a mandatory paid model API.”
+
+End on `COMPETITION.md` and `EVALUATION.md`. State the tested model and deployment status exactly as recorded; do not claim production capacity, public HTTPS, live Telegram, or general accuracy without the corresponding evidence.
