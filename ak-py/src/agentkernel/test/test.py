@@ -43,8 +43,6 @@ class Test:
         self.match_threshold = match_threshold
         self.mode = AKTestConfig.get().mode if mode is None else mode
         self._stderr_task = None
-        # Resolved eagerly so a misconfigured evaluator (unknown short name, bad dotted path,
-        # missing extra) fails fast at construction instead of on the first expect()/compare().
         self.evaluator = self._resolve_evaluator()
 
     @classmethod
