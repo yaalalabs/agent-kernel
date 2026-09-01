@@ -17,7 +17,7 @@ from .errors import SandboxConfigError
 
 # Landed built-in provider short names (each an if/elif real-import branch in _build).
 # A new built-in adds its branch and its name here; anything else must be a dotted path.
-_BUILTIN_PROVIDER_NAMES = ["local_subprocess", "docker", "ec2_ssm", "e2b", "daytona"]
+_BUILTIN_PROVIDER_NAMES = ["local_subprocess", "docker", "ec2_ssm", "e2b", "daytona", "kubernetes"]
 
 # short name -> dotted path of the built-in broker flavor. Brokers stay on the
 # resolve_dotted-over-map form (not if/elif real imports) because flavors living outside
@@ -142,6 +142,14 @@ class SandboxProviderFactory:
 
             # Native auto-stop: idle_timeout maps onto Daytona's auto_stop_interval.
             return DaytonaSandboxProvider(config_block, idle_timeout=profile.idle_timeout)
+
+        if type_name == "kubernetes":
+            config_block = cls._require_block(profile_name, profile, type_name)
+            with require_extra("kubernetes", "sandbox provider 'kubernetes'"):
+                from .providers.kubernetes import KubernetesSandboxProvider
+
+            # The profile's idle_timeout sizes the pod's activeDeadlineSeconds orphan ceiling.
+            return KubernetesSandboxProvider(config_block, idle_timeout=profile.idle_timeout)
 
         if "." not in type_name:
             raise SandboxConfigError(

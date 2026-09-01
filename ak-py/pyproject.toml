@@ -180,6 +180,9 @@ daytona = [
     # with crewai's pydantic<2.13 pin; 0.198 accepts pydantic>=2.11 and has the same SDK surface.
     "daytona>=0.198.0,<0.199",
 ]
+kubernetes = [
+    "kubernetes>=29.0.0",
+]
 
 [project.scripts]
 ak = "agentkernel.cli.ak:main"

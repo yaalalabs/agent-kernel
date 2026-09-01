@@ -592,6 +592,24 @@ class _SandboxKubernetesConfig(BaseModel):
     image: str = Field(default="python:3.12-slim", description="Container image used for launched sandbox pods")
     attach_to: Optional[str] = Field(default=None, description="Existing '<namespace>/<pod>' to exec into instead of launching a pod (mode 3)")
     kubeconfig: Optional[str] = Field(default=None, description="Path to a kubeconfig file; None uses in-cluster or default configuration")
+    service_account: Optional[str] = Field(
+        default=None,
+        description="ServiceAccount assigned to sandbox pods; bind it to the (read-only) RBAC role that is the execution's security boundary",
+    )
+    image_pull_secrets: List[str] = Field(default_factory=list, description="imagePullSecrets names for the sandbox pod")
+    labels: Dict[str, str] = Field(default_factory=dict, description="Extra labels merged onto sandbox pods")
+    node_selector: Dict[str, str] = Field(default_factory=dict, description="nodeSelector for sandbox pods")
+    env: Dict[str, str] = Field(default_factory=dict, description="Environment variables set in the sandbox container")
+    security_context: Dict[str, Any] = Field(default_factory=dict, description="Pod-level securityContext overlay")
+    container_security_context: Dict[str, Any] = Field(
+        default_factory=dict, description="Container-level securityContext overlay (over the hardened defaults)"
+    )
+    network_policy: bool = Field(
+        default=False,
+        description="Create per-pod NetworkPolicies for deny/allowlist egress and declare policy_network; "
+        "set only when the cluster CNI enforces NetworkPolicy",
+    )
+    create_timeout: float = Field(default=120.0, description="Seconds to wait for a sandbox pod to reach Running before failing provisioning")
 
 
 class _SandboxEC2SSMConfig(BaseModel):

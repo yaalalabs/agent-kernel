@@ -7,8 +7,10 @@ against a mocked Docker SDK (no daemon): call shapes, policy mapping arguments, 
 """
 
 import asyncio
+import base64
 import importlib
 import io
+import shlex
 import sys
 import tarfile
 import threading
@@ -23,16 +25,17 @@ from agentkernel.core.config import (
     _ExecutionBrokerConfig,
     _SandboxConfig,
     _SandboxDockerConfig,
+    _SandboxKubernetesConfig,
     _SandboxLocalSubprocessConfig,
     _SandboxProfileConfig,
 )
 from agentkernel.core.session.in_memory import InMemorySessionStore
-from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxGoneError, SandboxPolicyError, SandboxTimeoutError
+from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxGoneError, SandboxPolicyError, SandboxProvisionError, SandboxTimeoutError
 from agentkernel.sandbox.factory import SandboxProviderFactory
 from agentkernel.sandbox.manager import ExecutionManager
 from agentkernel.sandbox.model import SandboxPolicy, SandboxPrincipal
 from agentkernel.sandbox.providers.local_subprocess import LocalSubprocessSandboxProvider
-from agentkernel.sandbox.testing import SandboxProviderContract
+from agentkernel.sandbox.testing import FAIL_MARKER, SandboxProviderContract
 
 
 @pytest.fixture(autouse=True)
@@ -1305,3 +1308,383 @@ def test_factory_passes_profile_idle_timeout_to_daytona(daytona_env):
     profile = _SandboxProfileConfig(type="daytona", daytona=_SandboxDaytonaConfig(), idle_timeout=90)
     provider = SandboxProviderFactory._build("p", profile)
     assert provider._idle_timeout == 90
+
+
+# --------------------------------------------------------------------------- #
+# kubernetes — mocked Kubernetes client (no cluster)
+# --------------------------------------------------------------------------- #
+
+
+class FakeApiException(Exception):
+    def __init__(self, status):
+        super().__init__(f"api error {status}")
+        self.status = status
+
+
+class _FakeK8sPod:
+    def __init__(self, name, namespace, body, phase="Running"):
+        self.name, self.namespace, self.body = name, namespace, body
+        self.phase = phase
+        self.deletion_timestamp = None
+        self.conditions = []
+        self.files: dict[str, bytes] = {}
+
+
+class FakeK8sCluster:
+    """In-memory pod/NetworkPolicy state plus a functional exec handler implementing the
+    provider's base64-framed tar protocol, so the contract's files round trip is real."""
+
+    def __init__(self):
+        self.pods: dict[tuple[str, str], _FakeK8sPod] = {}
+        self.netpols: dict[tuple[str, str], dict] = {}
+        self.pod_creates: list[dict] = []
+        self.pod_deletes: list[tuple[str, str]] = []
+        self.netpol_deletes: list[tuple[str, str]] = []
+        self.exec_calls: list[tuple[str, list, int]] = []  # (pod, command, thread ident)
+        self.default_phase = "Running"
+        self.kubeconfig_loads: list = []
+        self.incluster_loads: list = []
+        self.exec_handler = self._default_exec
+
+    def open_exec(self, name, namespace, kwargs):
+        pod = self.pods.get((namespace, name))
+        if pod is None:
+            raise FakeApiException(404)
+        self.exec_calls.append((name, kwargs["command"], threading.get_ident()))
+        return _FakeExecClient(pod, kwargs["command"], kwargs.get("stdin", False), self)
+
+    @staticmethod
+    def _default_exec(pod, command, stdin_data):
+        if command[0] == "python" and command[1] == "-c":
+            code = command[2]
+            return ("", "simulated failure", 1) if FAIL_MARKER in code else (code, "", 0)
+        if command[0] == "pip":
+            return "installed", "", 0
+        if command[0] in ("sh", "/bin/sh") and command[1] == "-c":
+            shell_cmd = command[2]
+            if "base64 -d | tar" in shell_cmd:  # the upload pipeline
+                with tarfile.open(fileobj=io.BytesIO(base64.b64decode(stdin_data))) as tar:
+                    for member in tar.getmembers():
+                        if member.isfile():
+                            pod.files[member.name] = tar.extractfile(member).read()
+                return "", "", 0
+            if shell_cmd.startswith("tar -cf"):  # the download pipeline
+                rel = shlex.split(shell_cmd.split("|")[0])[-1]
+                if rel not in pod.files:
+                    return "", f"tar: {rel}: not found", 2
+                buf = io.BytesIO()
+                with tarfile.open(fileobj=buf, mode="w") as tar:
+                    info = tarfile.TarInfo(name=rel)
+                    info.size = len(pod.files[rel])
+                    tar.addfile(info, io.BytesIO(pod.files[rel]))
+                return base64.b64encode(buf.getvalue()).decode(), "", 0
+            if shell_cmd.startswith("pkill"):
+                return "", "", 0
+            return ("", "simulated failure", 1) if FAIL_MARKER in shell_cmd else (shell_cmd, "", 0)
+        return "", f"unknown command {command}", 127
+
+
+class _FakeExecClient:
+    """The WSClient surface the provider's exec loop drives."""
+
+    def __init__(self, pod, command, needs_stdin, cluster):
+        self._pod, self._command, self._cluster = pod, command, cluster
+        self._needs_stdin = needs_stdin
+        self._stdin: list[str] = []
+        self._stdout = ""
+        self._stderr = ""
+        self.returncode = None
+        self._open = True
+        self._ran = False
+
+    def write_stdin(self, data):
+        self._stdin.append(data)
+
+    def is_open(self):
+        return self._open
+
+    def update(self, timeout=None):
+        if not self._ran and (not self._needs_stdin or self._stdin):
+            stdin_data = "".join(self._stdin) if self._needs_stdin else None
+            self._stdout, self._stderr, self.returncode = self._cluster.exec_handler(self._pod, self._command, stdin_data)
+            self._ran = True
+            self._open = False
+
+    def peek_stdout(self):
+        return bool(self._stdout)
+
+    def read_stdout(self):
+        out, self._stdout = self._stdout, ""
+        return out
+
+    def peek_stderr(self):
+        return bool(self._stderr)
+
+    def read_stderr(self):
+        err, self._stderr = self._stderr, ""
+        return err
+
+    def close(self):
+        self._open = False
+
+
+class FakeCoreV1:
+    def __init__(self, cluster):
+        self._cluster = cluster
+        self.connect_get_namespaced_pod_exec = object()  # handed to stream(); the fake keys off the pod name
+
+    def create_namespaced_pod(self, namespace, body):
+        name = body["metadata"]["name"]
+        self._cluster.pods[(namespace, name)] = _FakeK8sPod(name, namespace, body, phase=self._cluster.default_phase)
+        self._cluster.pod_creates.append(body)
+
+    def read_namespaced_pod(self, name, namespace):
+        pod = self._cluster.pods.get((namespace, name))
+        if pod is None:
+            raise FakeApiException(404)
+        return types.SimpleNamespace(
+            metadata=types.SimpleNamespace(name=name, deletion_timestamp=pod.deletion_timestamp),
+            status=types.SimpleNamespace(phase=pod.phase, conditions=pod.conditions),
+        )
+
+    def delete_namespaced_pod(self, name, namespace, **kwargs):
+        if (namespace, name) not in self._cluster.pods:
+            raise FakeApiException(404)
+        del self._cluster.pods[(namespace, name)]
+        self._cluster.pod_deletes.append((namespace, name))
+
+
+class FakeNetworkingV1:
+    def __init__(self, cluster):
+        self._cluster = cluster
+
+    def create_namespaced_network_policy(self, namespace, body):
+        self._cluster.netpols[(namespace, body["metadata"]["name"])] = body
+
+    def delete_namespaced_network_policy(self, name, namespace, **kwargs):
+        if (namespace, name) not in self._cluster.netpols:
+            raise FakeApiException(404)
+        del self._cluster.netpols[(namespace, name)]
+        self._cluster.netpol_deletes.append((namespace, name))
+
+
+@pytest.fixture
+def k8s_env(monkeypatch):
+    """Import the provider module against a fake kubernetes SDK and return (module, cluster)."""
+    cluster = FakeK8sCluster()
+    core, networking = FakeCoreV1(cluster), FakeNetworkingV1(cluster)
+    client_ns = types.SimpleNamespace(
+        CoreV1Api=lambda: core, NetworkingV1Api=lambda: networking, rest=types.SimpleNamespace(ApiException=FakeApiException)
+    )
+    config_ns = types.SimpleNamespace(
+        load_kube_config=lambda config_file=None: cluster.kubeconfig_loads.append(config_file),
+        load_incluster_config=lambda: cluster.incluster_loads.append(True),
+    )
+    stream_ns = types.SimpleNamespace(stream=lambda api_method, name, namespace, **kwargs: cluster.open_exec(name, namespace, kwargs))
+    fake_sdk = types.SimpleNamespace(client=client_ns, config=config_ns, stream=stream_ns)
+    for module_name, module in [
+        ("kubernetes", fake_sdk),
+        ("kubernetes.client", client_ns),
+        ("kubernetes.client.rest", client_ns.rest),
+        ("kubernetes.config", config_ns),
+        ("kubernetes.stream", stream_ns),
+    ]:
+        monkeypatch.setitem(sys.modules, module_name, module)
+    module = importlib.import_module("agentkernel.sandbox.providers.kubernetes")
+    monkeypatch.setattr(module, "kubernetes", fake_sdk)  # rebind in case it was imported earlier
+    return module, cluster
+
+
+def _k8s_provider(module, config=None, idle_timeout=1800):
+    return module.KubernetesSandboxProvider(config or _SandboxKubernetesConfig(), idle_timeout=idle_timeout)
+
+
+class TestKubernetesContract(SandboxProviderContract):
+    """The public provider contract, run against the fake SDK (real tar/base64 file path)."""
+
+    @pytest.fixture
+    def provider(self, k8s_env):
+        module, _cluster = k8s_env
+        return _k8s_provider(module)
+
+
+@pytest.mark.asyncio
+async def test_k8s_pod_manifest_shape(k8s_env):
+    module, cluster = k8s_env
+    config = _SandboxKubernetesConfig(
+        namespace="sb",
+        image="hardened:1",
+        service_account="sandbox-pod",
+        image_pull_secrets=["regcred"],
+        labels={"team": "ai"},
+        node_selector={"pool": "sandbox"},
+        env={"PYTHONUNBUFFERED": "1"},
+        security_context={"fsGroup": 2000},
+        container_security_context={"runAsNonRoot": True, "capabilities": {"drop": ["NET_RAW"]}},
+    )
+    provider = _k8s_provider(module, config, idle_timeout=900)
+    principal, _ = _principal_policy()
+    policy = SandboxPolicy(cpu=1.5, memory_mb=512, fs_allow_write=["/workspace"])
+    sandbox = await provider.create(principal=principal, policy=policy)
+    body = cluster.pod_creates[0]
+    name = body["metadata"]["name"]
+    assert name.startswith("ak-sandbox-") and sandbox.id == f"sb/{name}"
+    labels = body["metadata"]["labels"]
+    assert labels["app.kubernetes.io/managed-by"] == "agent-kernel" and labels["agentkernel.io/sandbox"] == "true"
+    assert labels["team"] == "ai" and labels["agentkernel.io/sandbox-name"] == name
+    spec = body["spec"]
+    assert spec["restartPolicy"] == "Never" and spec["activeDeadlineSeconds"] == 1800  # 2 x idle_timeout
+    assert spec["terminationGracePeriodSeconds"] == 5
+    assert spec["serviceAccountName"] == "sandbox-pod"
+    assert spec["imagePullSecrets"] == [{"name": "regcred"}] and spec["nodeSelector"] == {"pool": "sandbox"}
+    assert spec["securityContext"] == {"fsGroup": 2000}
+    assert spec["volumes"] == [{"name": "workspace", "emptyDir": {}}]
+    container = spec["containers"][0]
+    assert container["image"] == "hardened:1" and container["command"] == ["sh", "-c", "sleep infinity"]
+    assert container["workingDir"] == "/workspace"
+    assert container["env"] == [{"name": "PYTHONUNBUFFERED", "value": "1"}]
+    assert container["resources"] == {"requests": {"cpu": "1.5", "memory": "512Mi"}, "limits": {"cpu": "1.5", "memory": "512Mi"}}
+    assert container["volumeMounts"] == [{"name": "workspace", "mountPath": "/workspace"}]
+    sc = container["securityContext"]
+    assert sc["allowPrivilegeEscalation"] is False and sc["seccompProfile"] == {"type": "RuntimeDefault"}
+    assert sc["capabilities"] == {"drop": ["NET_RAW"]}  # the config overlay wins per key
+    assert sc["runAsNonRoot"] is True
+    assert sc["readOnlyRootFilesystem"] is True  # policy enforcement wins over the overlay
+
+
+@pytest.mark.asyncio
+async def test_k8s_exec_argv_shapes_and_to_thread(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_code("print(1)")
+    await sandbox.execute_command("echo hi")
+    await sandbox.install_packages(["requests"])
+    commands = [call[1] for call in cluster.exec_calls]
+    assert commands[0] == ["python", "-c", "print(1)"]
+    assert commands[1] == ["/bin/sh", "-c", "echo hi"]
+    assert commands[2] == ["pip", "install", "requests"]
+    assert all(ident != threading.get_ident() for _, _, ident in cluster.exec_calls)  # every SDK call off the event loop
+
+
+@pytest.mark.asyncio
+async def test_k8s_upload_download_binary_round_trip(k8s_env):
+    module, _cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    payload = bytes([0, 255, 128, 10, 13, 200])
+    await sandbox.upload_file("data/blob.bin", payload)
+    assert await sandbox.download_file("data/blob.bin") == payload
+    with pytest.raises(SandboxPolicyError):
+        await sandbox.upload_file("../escape.txt", b"x")
+
+
+@pytest.mark.asyncio
+async def test_k8s_exec_timeout_kills_and_raises(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    default_handler = cluster.exec_handler
+
+    def slow_handler(pod, command, stdin_data):
+        if command[0] == "python":
+            time.sleep(5)
+        return default_handler(pod, command, stdin_data)
+
+    cluster.exec_handler = slow_handler
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_code("while True: pass", timeout=0.05)
+    assert cluster.exec_calls[-1][1] == ["sh", "-c", "pkill -9 python"]  # the best-effort kill
+
+
+@pytest.mark.asyncio
+async def test_k8s_attach_parsing_and_gone_signals(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    cluster.pods[("other", "pod-x")] = _FakeK8sPod("pod-x", "other", {})
+    cluster.pods[("default", "bare-pod")] = _FakeK8sPod("bare-pod", "default", {})
+    assert (await provider.attach("other/pod-x", principal=principal, policy=policy)).id == "other/pod-x"
+    assert (await provider.attach("bare-pod", principal=principal, policy=policy)).id == "default/bare-pod"  # bare name -> config namespace
+    with pytest.raises(SandboxGoneError):
+        await provider.attach("default/never-existed", principal=principal, policy=policy)
+    cluster.pods[("default", "done-pod")] = _FakeK8sPod("done-pod", "default", {}, phase="Succeeded")
+    with pytest.raises(SandboxGoneError):
+        await provider.attach("done-pod", principal=principal, policy=policy)
+    terminating = _FakeK8sPod("dying-pod", "default", {})
+    terminating.deletion_timestamp = "2026-09-01T00:00:00Z"
+    cluster.pods[("default", "dying-pod")] = terminating
+    with pytest.raises(SandboxGoneError):
+        await provider.attach("dying-pod", principal=principal, policy=policy)
+
+
+@pytest.mark.asyncio
+async def test_k8s_create_failure_leaves_no_orphan(k8s_env):
+    module, cluster = k8s_env
+    principal, policy = _principal_policy()
+    cluster.default_phase = "Pending"
+    provider = _k8s_provider(module, _SandboxKubernetesConfig(create_timeout=0.05))
+    with pytest.raises(SandboxProvisionError, match="did not reach Running"):
+        await provider.create(principal=principal, policy=policy)
+    assert cluster.pods == {} and cluster.pod_deletes  # the failed create cleaned up after itself
+    cluster.default_phase = "Failed"
+    provider = _k8s_provider(module, _SandboxKubernetesConfig(create_timeout=5))
+    with pytest.raises(SandboxProvisionError, match="terminated during provisioning"):
+        await provider.create(principal=principal, policy=policy)
+    assert cluster.pods == {}
+
+
+@pytest.mark.asyncio
+async def test_k8s_network_policy_gating(k8s_env):
+    module, cluster = k8s_env
+    principal, _ = _principal_policy()
+    # Default posture: the provider maps nothing and the class capability stays honest.
+    plain = _k8s_provider(module)
+    assert plain.capabilities.policy_network is False
+    await plain.create(principal=principal, policy=SandboxPolicy(network_egress="deny", strict=False))
+    assert cluster.netpols == {}
+    # network_policy: true flips the INSTANCE capability only, and maps deny/allowlist.
+    asserted = _k8s_provider(module, _SandboxKubernetesConfig(network_policy=True))
+    assert asserted.capabilities.policy_network is True
+    assert module.KubernetesSandboxProvider.capabilities.policy_network is False  # class default untouched
+    sandbox = await asserted.create(principal=principal, policy=SandboxPolicy(network_egress="deny"))
+    pod_name = sandbox.id.split("/", 1)[1]
+    netpol = cluster.netpols[("default", pod_name)]
+    assert netpol["spec"]["podSelector"] == {"matchLabels": {"agentkernel.io/sandbox-name": pod_name}}
+    assert netpol["spec"]["policyTypes"] == ["Egress"] and netpol["spec"]["egress"] == []
+    await asserted.destroy(sandbox.id)
+    assert ("default", pod_name) not in cluster.netpols and ("default", pod_name) not in cluster.pods
+    # Allowlist: CIDRs become ipBlock rules; domains are unenforceable.
+    listed = await asserted.create(principal=principal, policy=SandboxPolicy(network_egress="allowlist", network_allow=["10.0.0.0/8"]))
+    listed_name = listed.id.split("/", 1)[1]
+    assert cluster.netpols[("default", listed_name)]["spec"]["egress"] == [{"to": [{"ipBlock": {"cidr": "10.0.0.0/8"}}]}]
+    before = len(cluster.pod_creates)
+    with pytest.raises(SandboxPolicyError, match="example.com"):
+        await asserted.create(principal=principal, policy=SandboxPolicy(network_egress="allowlist", network_allow=["example.com"]))
+    assert len(cluster.pod_creates) == before  # rejected before any pod was created
+    relaxed = await asserted.create(
+        principal=principal, policy=SandboxPolicy(network_egress="allowlist", network_allow=["example.com", "10.1.0.0/16"], strict=False)
+    )
+    relaxed_name = relaxed.id.split("/", 1)[1]
+    assert cluster.netpols[("default", relaxed_name)]["spec"]["egress"] == [{"to": [{"ipBlock": {"cidr": "10.1.0.0/16"}}]}]
+
+
+@pytest.mark.asyncio
+async def test_k8s_client_config_selection(k8s_env):
+    module, cluster = k8s_env
+    principal, policy = _principal_policy()
+    explicit = _k8s_provider(module, _SandboxKubernetesConfig(kubeconfig="/tmp/kc"))
+    await explicit.create(principal=principal, policy=policy)
+    assert cluster.kubeconfig_loads == ["/tmp/kc"] and cluster.incluster_loads == []
+    fallback = _k8s_provider(module)
+    await fallback.create(principal=principal, policy=policy)
+    assert cluster.incluster_loads == [True]  # in-cluster first when no kubeconfig is set
+
+
+def test_factory_passes_profile_idle_timeout_to_kubernetes(k8s_env):
+    profile = _SandboxProfileConfig(type="kubernetes", kubernetes=_SandboxKubernetesConfig(), idle_timeout=450)
+    provider = SandboxProviderFactory._build("p", profile)
+    assert provider._idle_timeout == 450
