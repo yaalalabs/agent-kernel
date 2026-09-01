@@ -11,6 +11,12 @@ from .retrieval import chunk_pages, cosine, embed_texts, search_chunks
 from .service import CourseService
 
 
+def register_missing_agents(module_type, registry, agents):
+    missing = [agent for agent in agents if agent.name not in registry]
+    if missing:
+        module_type(missing)
+
+
 def approved_course_overview(store, owner, course_id):
     course = store.get(owner, "course", course_id)
     documents = store.list(owner, "document", course_id)
@@ -237,8 +243,7 @@ class KernelEngine:
             retries=1,
         )
         registry = Runtime.current().agents()
-        if not any(a.name in registry for a in (extraction, alignment, assistant)):
-            PydanticAIModule([extraction, alignment, assistant])
+        register_missing_agents(PydanticAIModule, registry, (extraction, alignment, assistant))
 
     async def _run(self, name, prompt, owner, course_id, *, conversation=False):
         from agentkernel.core import AgentService

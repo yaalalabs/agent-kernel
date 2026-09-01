@@ -2,9 +2,46 @@ import asyncio
 import json
 
 from scopewise.jobs import Jobs
-from scopewise.models import Analysis, Match
+from scopewise.models import Analysis, Evidence, Extraction, Match, Objective
 from scopewise.sample import seed_sample
 from scopewise.store import Store
+
+
+async def test_duplicate_only_extraction_does_not_stale_the_course(tmp_path):
+    store = Store(tmp_path / "jobs.db")
+    course = store.create_course("alice", "Databases")
+    document = store.put(
+        "alice",
+        "document",
+        course["id"],
+        {"name": "scope.txt", "role": "syllabus", "approved": True, "pages": ["Explain primary keys."]},
+    )
+    evidence = Evidence(document_id=document["id"], page=1, quote="Explain primary keys.")
+    store.put(
+        "alice",
+        "objective",
+        course["id"],
+        Objective(text="Explain primary keys", evidence=evidence, approved=False).model_dump(),
+    )
+
+    class DuplicateEngine:
+        def __init__(self, *args):
+            self.run_trace = []
+
+        async def extract(self, *args):
+            return Extraction(objectives=[Objective(text="Explain primary keys", evidence=evidence)])
+
+        async def close(self):
+            pass
+
+    jobs = Jobs(store, DuplicateEngine)
+    job = jobs.submit("alice", course["id"], "extract", document["id"])
+    await asyncio.gather(*list(jobs.tasks))
+
+    assert store.get("alice", "job", job["id"])["status"] == "completed"
+    assert store.get("alice", "course", course["id"])["revision"] == course["revision"]
+    assert len(store.list("alice", "objective", course["id"])) == 1
+    await jobs.close()
 
 
 async def test_provider_failure_is_a_failed_job_not_a_fake_analysis(tmp_path):

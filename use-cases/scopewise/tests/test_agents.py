@@ -1,7 +1,28 @@
 import pytest
 
-from scopewise.agents import KernelEngine, approved_course_overview, approved_source_page, validate_analysis, validate_extraction
+from scopewise.agents import (
+    KernelEngine,
+    approved_course_overview,
+    approved_source_page,
+    register_missing_agents,
+    validate_analysis,
+    validate_extraction,
+)
 from scopewise.models import Analysis, Evidence, Extraction, Match, Objective, Question
+
+
+def test_partial_runtime_registration_adds_only_missing_agents():
+    registered = []
+
+    class Module:
+        def __init__(self, agents):
+            registered.extend(agent.name for agent in agents)
+
+    agents = [type("Agent", (), {"name": name})() for name in ("scopewise_extract", "scopewise_align", "scopewise_assistant")]
+
+    register_missing_agents(Module, {"scopewise_assistant": object()}, agents)
+
+    assert registered == ["scopewise_extract", "scopewise_align"]
 
 
 def test_assistant_evidence_tools_hide_unapproved_material(tmp_path):

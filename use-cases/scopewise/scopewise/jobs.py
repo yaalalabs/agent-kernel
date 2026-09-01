@@ -102,15 +102,18 @@ class Jobs:
                 if current["revision"] != job["revision"]:
                     raise ValueError("Course changed during analysis. Results were discarded; retry the current version.")
                 if job["action"] == "extract":
+                    pending = []
                     for kind, items in (("objective", result.objectives), ("question", result.questions)):
                         existing = self.store.list(owner, kind, course_id)
                         limit = 30 if kind == "objective" else 50
                         new = [i for i in items if not any(r["evidence"] == i.evidence.model_dump() for r in existing)]
                         if len(existing) + len(new) > limit:
                             raise ValueError("Course item limit reached. Use a smaller topic.")
-                        for item in new:
-                            self.store.put(owner, kind, course_id, {**item.model_dump(), "approved": False})
-                    self.store.update_course(owner, course_id)
+                        pending.extend((kind, item) for item in new)
+                    for kind, item in pending:
+                        self.store.put(owner, kind, course_id, {**item.model_dump(), "approved": False})
+                    if pending:
+                        self.store.update_course(owner, course_id)
                 else:
                     record = self.store.put(
                         owner,
