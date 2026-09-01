@@ -39,7 +39,7 @@ These are hard requirements. Any implementation that violates them is incorrect.
 
 ### Agents
 
-Build five Agent Kernel agents using the OpenAI module, with `mathru_triage` as the
+Build six Agent Kernel agents using the OpenAI module, with `mathru_triage` as the
 entry point and the rest reachable by handoff.
 
 - `mathru_triage` — entry agent. Detects intent and hands off. Handles greetings and
@@ -49,40 +49,53 @@ entry point and the rest reachable by handoff.
   the user before saving.
 - `schedule_agent` — answers questions about upcoming antenatal visits and childhood
   immunisations for the registered mother.
-- `danger_sign_agent` — conducts structured symptom screening and triggers escalation.
+- `danger_sign_agent` — conducts structured symptom screening. Escalation is triggered
+  inside `screen_danger_signs`, not by this agent.
+- `phm_agent` — serves a sender whose number matches a registered `phm_phone`: caseload
+  queries and escalation acknowledgement.
 - `guidance_agent` — answers general maternal and newborn care questions from the
-  knowledge base. Phase 2; see Build Order.
+  knowledge base. Phase 4; see Build Order.
 
 ### Tools
 
 Implement in `tool.py` as plain functions bound with `OpenAIToolBuilder.bind`.
 
-- `register_mother(phone, first_name, moh_area, edd_iso, child_dob_iso, phm_phone)` —
-  creates or updates the mother's record. Either `edd_iso` or `child_dob_iso` is
-  required, not both.
-- `get_mother_profile(phone)` — returns the stored record or a not-registered marker.
+No tool accepts the sender's phone number as a parameter. Every tool resolves the sender
+from `ToolContext.get().session.id`, so the model cannot assert who is speaking. The one
+phone number that is a parameter is `phm_phone`, a data field the mother supplies.
+
+- `register_mother(first_name, moh_area, phm_phone, edd_iso, child_dob_iso)` — creates or
+  updates the mother's record. Either `edd_iso` or `child_dob_iso` is required, not both.
+- `get_mother_profile()` — returns the stored record or a not-registered marker.
 - `compute_antenatal_schedule()` — returns the antenatal visit calendar derived from the
   registered mother's stored EDD as pure date arithmetic. Takes no parameters; the EDD is
   read from storage, never supplied by the model.
 - `compute_immunization_schedule()` — same, from the stored child date of birth.
-- `next_appointment(phone)` — returns the single next due item and its date.
+- `next_appointment()` — returns the single next due item and its date.
 - `screen_danger_signs(symptom_text)` — matches the reported symptoms against the
   danger-sign reference table and returns matched signs, a severity of `red`, `amber`,
   or `green`, and the prescribed action string. Returns `amber` when nothing matches but
-  a symptom was clearly reported.
-- `escalate_to_phm(phone, severity, matched_signs, summary)` — sends a WhatsApp message
-  to the assigned PHM containing the mother's first name, MOH division, gestational week
-  or child age, matched signs, and severity. Records the escalation on the mother's
-  record.
-- `phm_caseload(phm_phone)` — returns the PHM's registered mothers and any open
+  a symptom was clearly reported. On `red` it escalates to the assigned PHM inside the
+  same call; escalation is never a separate model decision.
+- `resolve_role()` — returns whether the sender is a registered mother, a registered
+  PHM, or neither, by comparing the session id against stored `phm_phone` values. The
+  model never decides who is a PHM.
+- `phm_caseload()` — returns the calling PHM's registered mothers and any open
   escalations, so a PHM can query her own caseload over WhatsApp.
-- `search_guidance(query)` — retrieves passages from the knowledge base. Phase 2.
+- `acknowledge_escalation(escalation_id)` — marks an open escalation acknowledged.
+  PHM-side only. It sends no notification to the mother.
+- `search_guidance(query)` — retrieves passages from the knowledge base. Phase 4.
+
+Escalation delivery itself is an internal function in `escalation.py`, called by
+`screen_danger_signs`. It is never model-callable and is not bound as a tool.
 
 ### Danger-sign reference table
 
 - Store as a version-controlled data file, not in code and not in a prompt.
 - Each entry has: sign identifier, matching keywords and common Sinhala and Tamil
   transliterations, severity, and action string.
+- Table severities are restricted to `red` and `amber`. `green` is a system-level state
+  meaning no symptom was reported at all, and is never a value in the table.
 - Populate from published Ministry of Health and WHO maternal and newborn danger-sign
   patient education material. Cite the sources in `README.md`.
 - Matching is keyword and synonym based, evaluated in Python. The model passes through
@@ -102,16 +115,23 @@ Implement in `tool.py` as plain functions bound with `OpenAIToolBuilder.bind`.
 
 - The same WhatsApp deployment serves PHMs. A sender whose number matches a registered
   `phm_phone` is routed to PHM capabilities: caseload queries and escalation
-  acknowledgement.
+  acknowledgement. Role governs access to PHM capabilities only. A PHM who is herself a
+  registered mother keeps the danger-sign path open.
 - Escalation messages to PHMs must be sent to a number that has an open messaging window
   or an approved template. Document this constraint in `README.md`.
 
 ### Guardrails
 
-- Enable Agent Kernel guardrails on the input and output paths.
-- Enable PII detection and redaction for logging.
+- Enable Agent Kernel guardrails on the input and output paths, for moderation and
+  jailbreak checks. Do not enable guardrail PII detection: a mother legitimately types her
+  PHM's phone number during registration, and blocking it would break intake.
+- Redact phone numbers from log output only. Redaction must never apply to the escalation
+  path, which needs the PHM's real number to deliver.
 - Add a post-execution hook that blocks outbound messages containing diagnosis-like or
-  medication-like language and replaces them with the standard escalation response.
+  medication-like language. Diagnosis-like language is replaced with the standard
+  escalation response; medication-like language is replaced with a response declining to
+  advise on medication. The hook must not block escalation messages or danger-sign action
+  strings, and every block is logged with the original reply, redacted.
 
 ## Local Development
 
@@ -137,8 +157,8 @@ Implement in this order. Each phase must run end to end before the next begins.
 
 1. WhatsApp channel with a single passthrough agent, verified by a live round trip.
 2. `intake_agent`, `schedule_agent`, the two schedule tools, and SQLite persistence.
-3. `danger_sign_agent`, the reference table, `escalate_to_phm`, guardrails, and the
-   post-execution hook.
+3. `danger_sign_agent`, the reference table, internal escalation, PHM role routing,
+   guardrails, and the post-execution hook.
 4. `guidance_agent` and the knowledge base. The system
    must remain complete and coherent without it.
 
