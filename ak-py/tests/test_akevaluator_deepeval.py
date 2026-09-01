@@ -17,7 +17,7 @@ from agentkernel.test.core.akevaluators import (
     AKMissingInput,
 )
 from agentkernel.test.core.akevaluators.deepeval import (
-    _DEFAULT_LLM_CRITERIA,
+    _DEFAULT_LLM_EVALUATION_STEPS,
     DeepevalAKEvaluator,
 )
 
@@ -121,7 +121,8 @@ def test_llm_based_evaluation_success(evaluator):
     assert result.reason == "matches expected answer"
     assert result.passed is True
     (fake,) = _FakeGEval.instances
-    assert fake.kwargs["criteria"] == _DEFAULT_LLM_CRITERIA
+    assert fake.kwargs["criteria"] is None
+    assert fake.kwargs["evaluation_steps"] == _DEFAULT_LLM_EVALUATION_STEPS
     assert fake.test_case.input == "capital of France?"
     assert fake.test_case.actual_output == "It's Paris."
     assert fake.test_case.expected_output == "Paris"
@@ -145,6 +146,7 @@ def test_llm_based_evaluation_uses_case_criteria_override(evaluator):
     evaluator.llm_based_evaluation(case)
     (fake,) = _FakeGEval.instances
     assert fake.kwargs["criteria"] == "Score 1 only if it mentions cats."
+    assert fake.kwargs["evaluation_steps"] is None
 
 
 def test_llm_based_evaluation_passed_false_below_case_threshold(evaluator):

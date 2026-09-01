@@ -14,17 +14,18 @@ from agentkernel.test.config import AKTestConfig
 
 from .base import AKEvaluationCase, AKEvaluationError, AKEvaluationResult, AKEvaluator, AKMissingInput
 
-_DEFAULT_LLM_CRITERIA = (
-    "Given the input question, determine whether the actual output correctly conveys the information in "
-    "the expected output. The actual output may be a short phrase, fact, or keyword rather than a full "
-    "sentence — score it as correct if, read together with the input, it clearly states or implies the "
-    "information in the expected output, even when it also includes additional context, explanation, or "
-    "detail beyond it. Do not penalize the actual output merely for being shorter, longer, or more or less "
-    "detailed than the expected output, as long as the information conveyed is correct. When the expected "
-    "output is a list or combination of facts (e.g. multiple names, items, or entities), the actual output "
-    "is correct as long as it conveys the same set of facts — the order in which they are listed, the "
-    "wording used to introduce them, and the grammatical structure of the sentence do not matter."
-)
+_DEFAULT_LLM_EVALUATION_STEPS = [
+    "Identify the concrete facts the expected output asserts (entities, names, numbers, or other "
+    "specific claims), read together with the input question.",
+    "For each of those facts, check whether the actual output states or clearly implies it — matching "
+    "in substance regardless of exact wording, phrasing, synonyms, order, or sentence structure, and "
+    "regardless of whether the actual output is a full sentence or a short phrase/keyword.",
+    "Extra correct, non-contradictory detail or specificity in the actual output beyond what the "
+    "expected output states (e.g. naming a more specific type or subcategory of the same thing) must "
+    "NOT be penalized — this is not a wording-similarity or length comparison.",
+    "Score low only if the actual output omits one or more of the required facts, contradicts the "
+    "expected output, or asserts something that conflicts with it.",
+]
 
 
 class DeepevalAKEvaluator(AKEvaluator):
@@ -54,7 +55,8 @@ class DeepevalAKEvaluator(AKEvaluator):
             raise AKMissingInput("llm_based_evaluation requires AKEvaluationCase.expected")
         metric = GEval(
             name="Correctness",
-            criteria=case.criteria or _DEFAULT_LLM_CRITERIA,
+            criteria=case.criteria if case.criteria else None,
+            evaluation_steps=None if case.criteria else _DEFAULT_LLM_EVALUATION_STEPS,
             evaluation_params=[
                 SingleTurnParams.INPUT,
                 SingleTurnParams.ACTUAL_OUTPUT,
