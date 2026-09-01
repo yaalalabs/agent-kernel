@@ -1,0 +1,43 @@
+{{- if and .Values.sandboxWorker.enabled .Values.sandboxWorker.rbac.create }}
+{{/*
+What the broker worker may do in the sandbox-pods namespace, and nothing else: pod lifecycle
+and exec, plus per-pod NetworkPolicies only when the app config's kubernetes.network_policy
+posture needs them. The security boundary for what runs INSIDE sandbox pods is the sandbox-pod
+SA's own (application-bound) RBAC, never command-string parsing.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-sandbox-worker
+  namespace: {{ include "agent-kernel.sandboxPodsNamespace" . }}
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "sandbox-worker") | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+  {{- if .Values.sandboxWorker.rbac.networkPolicies }}
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "delete"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-sandbox-worker
+  namespace: {{ include "agent-kernel.sandboxPodsNamespace" . }}
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "sandbox-worker") | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "agent-kernel.sandboxWorkerServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "agent-kernel.fullname" . }}-sandbox-worker
+{{- end }}

@@ -106,6 +106,31 @@ Name of the Secret holding the WebSocket push token.
 {{- end }}
 
 {{/*
+The namespace sandbox pods run in (sandboxWorker.sandboxPods.namespace or the release namespace).
+*/}}
+{{- define "agent-kernel.sandboxPodsNamespace" -}}
+{{- default .Release.Namespace .Values.sandboxWorker.sandboxPods.namespace }}
+{{- end }}
+
+{{/*
+Name of the sandbox worker's ServiceAccount ("default" when neither created nor named).
+*/}}
+{{- define "agent-kernel.sandboxWorkerServiceAccountName" -}}
+{{- if .Values.sandboxWorker.serviceAccount.create }}
+{{- default (printf "%s-sandbox-worker" (include "agent-kernel.fullname" .)) .Values.sandboxWorker.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.sandboxWorker.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Name of the ServiceAccount assigned to sandbox pods (the app config's kubernetes.service_account).
+*/}}
+{{- define "agent-kernel.sandboxPodServiceAccountName" -}}
+{{- default (printf "%s-sandbox-pod" (include "agent-kernel.fullname" .)) .Values.sandboxWorker.sandboxPods.serviceAccount.name }}
+{{- end }}
+
+{{/*
 KEDA maxReplicaCount: explicit value, or partitions / input.noOfConsumers for the partitioned
 transports (past that ceiling an extra replica finds no free partition), or 10 for sqs.
 */}}

@@ -13,6 +13,12 @@ metadata:
 data:
   AK_EXECUTION__MODE: {{ .Values.execution.mode | quote }}
   AK_LOGGING__AK__LEVEL: {{ .Values.logging.level | quote }}
+  {{- /*
+  The chat pipeline's queues and response store are emitted only when some pipeline tier runs
+  in this release; a standalone sandbox-worker install (io/runner/gateway all disabled) must
+  not be forced to configure chat queues it never touches.
+  */}}
+  {{- if or .Values.ioHandler.enabled .Values.agentRunner.enabled .Values.wsGateway.enabled }}
   AK_EXECUTION__QUEUES__TYPE: {{ .Values.transport.type | quote }}
   {{- with .Values.transport.batchSize }}
   AK_EXECUTION__QUEUES__BATCH_SIZE: {{ . | quote }}
@@ -52,6 +58,7 @@ data:
   AK_EXECUTION__RESPONSE_STORE__REDIS__URL: {{ required "responseStore.url is required when responseStore.type is redis" .Values.responseStore.url | quote }}
   AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX: {{ .Values.responseStore.prefix | quote }}
   {{- end }}
+  {{- end }}
   AK_SESSION__TYPE: {{ .Values.session.type | quote }}
   {{- if eq .Values.session.type "valkey" }}
   AK_SESSION__VALKEY__URL: {{ default (include "agent-kernel.valkeyUrl" .) .Values.session.url | quote }}
@@ -59,4 +66,37 @@ data:
   {{- else if eq .Values.session.type "redis" }}
   AK_SESSION__REDIS__URL: {{ required "session.url is required when session.type is redis" .Values.session.url | quote }}
   AK_SESSION__REDIS__PREFIX: {{ .Values.session.prefix | quote }}
+  {{- end }}
+  {{- if .Values.sandboxWorker.enabled }}
+  {{- /*
+  The sandbox broker wiring (#503): the queue flavor over the deployment's transport, with the
+  sandbox block's own input/output queues and the shared response-store backend under a
+  sandbox-specific prefix. Profiles, policies, and provider config stay in the app's config.yaml.
+  */}}
+  AK_SANDBOX__BROKER__FLAVOR: "queue"
+  AK_SANDBOX__BROKER__QUEUE__TYPE: {{ .Values.transport.type | quote }}
+  {{- if eq .Values.transport.type "nats" }}
+  AK_SANDBOX__BROKER__QUEUE__NATS__URL: {{ default (include "agent-kernel.natsUrl" .) .Values.transport.nats.url | quote }}
+  AK_SANDBOX__BROKER__QUEUE__NATS__INPUT_STREAM: {{ .Values.sandboxWorker.queue.nats.inputStream | quote }}
+  AK_SANDBOX__BROKER__QUEUE__NATS__INPUT_SUBJECT_PREFIX: {{ .Values.sandboxWorker.queue.nats.inputSubjectPrefix | quote }}
+  AK_SANDBOX__BROKER__QUEUE__NATS__OUTPUT_STREAM: {{ .Values.sandboxWorker.queue.nats.outputStream | quote }}
+  AK_SANDBOX__BROKER__QUEUE__NATS__OUTPUT_SUBJECT_PREFIX: {{ .Values.sandboxWorker.queue.nats.outputSubjectPrefix | quote }}
+  AK_SANDBOX__BROKER__QUEUE__NATS__PARTITIONS: {{ .Values.sandboxWorker.queue.nats.partitions | quote }}
+  {{- else if eq .Values.transport.type "kafka" }}
+  AK_SANDBOX__BROKER__QUEUE__KAFKA__BOOTSTRAP_SERVERS: {{ include "agent-kernel.kafkaBootstrap" . | quote }}
+  AK_SANDBOX__BROKER__QUEUE__KAFKA__INPUT_TOPIC: {{ .Values.sandboxWorker.queue.kafka.inputTopic | quote }}
+  AK_SANDBOX__BROKER__QUEUE__KAFKA__OUTPUT_TOPIC: {{ .Values.sandboxWorker.queue.kafka.outputTopic | quote }}
+  AK_SANDBOX__BROKER__QUEUE__KAFKA__GROUP_ID: {{ .Values.sandboxWorker.queue.kafka.groupId | quote }}
+  {{- else if eq .Values.transport.type "sqs" }}
+  AK_SANDBOX__BROKER__QUEUE__INPUT__URL: {{ required "sandboxWorker.queue.sqs.inputUrl is required when transport.type is sqs" .Values.sandboxWorker.queue.sqs.inputUrl | quote }}
+  AK_SANDBOX__BROKER__QUEUE__OUTPUT__URL: {{ required "sandboxWorker.queue.sqs.outputUrl is required when transport.type is sqs" .Values.sandboxWorker.queue.sqs.outputUrl | quote }}
+  {{- end }}
+  AK_SANDBOX__BROKER__RESPONSE_STORE__TYPE: {{ .Values.responseStore.type | quote }}
+  {{- if eq .Values.responseStore.type "valkey" }}
+  AK_SANDBOX__BROKER__RESPONSE_STORE__VALKEY__URL: {{ default (include "agent-kernel.valkeyUrl" .) .Values.responseStore.url | quote }}
+  AK_SANDBOX__BROKER__RESPONSE_STORE__VALKEY__PREFIX: "ak:sandbox:"
+  {{- else if eq .Values.responseStore.type "redis" }}
+  AK_SANDBOX__BROKER__RESPONSE_STORE__REDIS__URL: {{ required "responseStore.url is required when responseStore.type is redis" .Values.responseStore.url | quote }}
+  AK_SANDBOX__BROKER__RESPONSE_STORE__REDIS__PREFIX: "ak:sandbox:"
+  {{- end }}
   {{- end }}

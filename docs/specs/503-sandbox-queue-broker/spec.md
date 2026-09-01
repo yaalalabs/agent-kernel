@@ -580,9 +580,20 @@ Templates, following the surveyed patterns exactly:
   Everything else about the sandbox capability (profiles,
   policies, provider config) lives in the application image's `config.yaml`, per the chart's
   application-image contract.
-- CI: `chart-test.yaml`'s explicit-render step gains one render with
+- **Standalone install** (the Kafka/Lambda shape's cluster half, resolution 2026-09-01): the
+  sandbox worker must deploy without the rest of the pipeline, so `ioHandler` gains an
+  `enabled` flag (default `true`; `deployment-io.yaml`, `service.yaml`'s io Service, the io
+  HPA, and the NOTES API section gate on it), and `configmap-env.yaml` emits the chat
+  pipeline's `AK_EXECUTION__QUEUES__*` / `AK_EXECUTION__RESPONSE_STORE__*` values only when
+  some pipeline tier (`ioHandler`/`agentRunner`/`wsGateway`) is enabled, so an SQS
+  worker-only install never has to invent chat queue URLs. With all pipeline tiers disabled,
+  the release carries only the sandbox worker plus the shared sandbox queues and response
+  store the out-of-cluster agent side (Lambda, ECS) also points at; the README documents the
+  values and the agent-side mirror configuration.
+- CI: `chart-test.yaml`'s explicit-render step gains two renders:
   `--set sandboxWorker.enabled=true --set sandboxWorker.hardening.enabled=true` (the lint-only
-  gate for optional tiers, `chart-test.yaml:65-80`); the kind smoke matrix is unchanged (the
+  gate for optional tiers, `chart-test.yaml:65-80`) and a standalone worker-only render
+  (io/runner disabled, external Kafka + Redis); the kind smoke matrix is unchanged (the
   broker-nats example is the e2e vehicle).
 
 ### Examples (final iterations)

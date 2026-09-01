@@ -116,6 +116,10 @@ session:
   prefix: "ak:sessions:"
 
 ioHandler:
+  # Disable (together with agentRunner.enabled) for a standalone sandbox-worker install: the
+  # rest of Agent Kernel runs elsewhere (Lambda, ECS) and this chart deploys only the
+  # sandboxWorker tier into the cluster. See the README's sandbox worker section.
+  enabled: true
   replicaCount: 2
   # Optional per-component image; repository/tag fall back to the top-level image block.
   image: {}
@@ -179,6 +183,84 @@ wsGateway:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+# The sandbox broker worker tier (#503): consumes sandbox execution requests from the sandbox
+# queues, drives sandbox providers (kubernetes pods), and returns completions over the sandbox
+# output queue into the shared response store. The first tier with its own ServiceAccount and
+# RBAC: the worker needs pod-lifecycle verbs in the sandbox-pods namespace. Everything about
+# the sandbox capability itself (profiles, policies, provider config) lives in the application
+# image's config.yaml; this chart injects only the broker wiring, per the image contract.
+sandboxWorker:
+  enabled: false
+  replicaCount: 1
+  # Optional per-component image; repository/tag fall back to the top-level image block.
+  image: {}
+  # The entry file in your image that calls QueueBrokerWorker.run().
+  command: ["python", "app_sandbox_worker.py"]
+  resources: {}
+  extraEnv: []
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  # Consumers observe SIGTERM and finish in-flight executions; the drain must outlive the
+  # longest sandbox policy.timeout.
+  terminationGracePeriodSeconds: 600
+  preStopSleepSeconds: 5
+  serviceAccount:
+    # The chart's first ServiceAccount objects.
+    create: true
+    # Empty derives <fullname>-sandbox-worker.
+    name: ""
+  rbac:
+    # Role + RoleBinding for the worker SA, in the sandbox-pods namespace.
+    create: true
+    # Add networkpolicies create/delete to the Role. Needed only when the app config sets
+    # kubernetes.network_policy: true (per-pod egress policies).
+    networkPolicies: false
+  sandboxPods:
+    # Namespace sandbox pods run in; empty uses the release namespace.
+    namespace: ""
+    serviceAccount:
+      # <fullname>-sandbox-pod; point the app config's kubernetes.service_account at it.
+      # Deliberately bound to nothing by this chart: what sandbox pods may do is application
+      # policy (bind it to `view` or a custom role in your app manifests), never chart policy.
+      create: true
+      name: ""
+  # Sandbox queue names per transport (input carries execution requests to the worker, output
+  # carries completions back to the response store). The transport type and broker connection
+  # follow the top-level transport block.
+  queue:
+    nats:
+      inputStream: SANDBOX_REQUESTS
+      inputSubjectPrefix: sandbox.req
+      outputStream: SANDBOX_COMPLETIONS
+      outputSubjectPrefix: sandbox.done
+      partitions: 32
+    kafka:
+      inputTopic: sandbox-input
+      outputTopic: sandbox-output
+      # Distinct from transport.kafka.groupId: sharing one Kafka consumer group across the
+      # chat and sandbox pipelines would mix subscriptions in one group and churn rebalances.
+      groupId: agent-kernel-sandbox
+    sqs:
+      inputUrl: ""
+      outputUrl: ""
+  # Values-gated hardening of the sandbox-pods namespace.
+  hardening:
+    enabled: false
+    # Pod Security Admission enforce level. Rendered as labels on a chart-created dedicated
+    # namespace (sandboxPods.namespace set to a namespace this release does not live in);
+    # labeling a pre-existing release namespace is an operator step, see the README.
+    podSecurityStandard: restricted
+    # Default-deny egress NetworkPolicy selecting sandbox pods (agentkernel.io/sandbox=true).
+    defaultDenyEgress: true
+    # NetworkPolicyEgressRule entries appended verbatim (e.g. the API server CIDR + port).
+    egressAllow: []
+    # ResourceQuota spec rendered verbatim when set.
+    resourceQuota: {}
+    # LimitRange spec rendered verbatim when set.
+    limitRange: {}
 
 # Gateway API entry (Standard channel). Prerequisites: the Gateway API CRDs and an
 # implementation (Envoy Gateway on baremetal, AWS Load Balancer Controller on EKS); this chart

@@ -239,6 +239,10 @@ deployments execute sandbox workloads as pods.
   - Values-gated ServiceAccount + Role/RoleBinding for the worker (create/get/delete pods and
     pods/exec in the sandbox namespace only), and the sandbox pod ServiceAccount it assigns.
   - KEDA `ScaledObject` on request-queue depth, mirroring the existing `scaledobject.yaml`.
+  - The tier also installs **standalone** (resolution 2026-09-01): with `ioHandler.enabled`
+    and `agentRunner.enabled` false the chart deploys only the sandbox worker, for the Kafka
+    shape where the agent side runs outside the cluster (Lambda, ECS) and shares only the
+    sandbox queues and the response store with the worker.
 - Namespace-hardening guardrails for sandbox pods ship as values-gated chart templates
   (default off), covered by the chart's kind CI:
   - Pod Security Admission `restricted` label on the sandbox namespace, so a privileged pod
