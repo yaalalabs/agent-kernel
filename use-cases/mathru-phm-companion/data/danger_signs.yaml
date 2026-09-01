@@ -1,0 +1,47 @@
+# Maternal and newborn danger-sign reference table.
+#
+# TODO: POPULATE FROM MINISTRY OF HEALTH AND WHO DANGER-SIGN PATIENT EDUCATION MATERIAL.
+# THIS TABLE REQUIRES CLINICIAN REVIEW BEFORE ANY REAL-WORLD USE.
+#
+# Every entry below is a structural placeholder. None of it is clinical guidance, none of
+# the keywords are real danger signs, and none of the action strings may be shown to a
+# mother as advice.
+#
+# While `status` is `placeholder`, screen_danger_signs treats EVERY reported symptom as
+# `red` and escalates. That is deliberate: an unpopulated table must fail toward
+# escalation, never toward reassurance.
+#
+# Severity is decided in Python by keyword matching. The model passes the mother's raw
+# text through and receives a severity it cannot override.
+#
+# Severity values are restricted to `red` and `amber`.
+#   red   -> escalate to the assigned PHM in the same turn
+#   amber -> advise, do not escalate
+# `green` is a system-level state meaning no symptom was reported at all. It is never a
+# value in this table, so do not add it here.
+#
+# Keywords must include common Sinhala and Tamil transliterations alongside English.
+# Matching is case-insensitive and word-boundary based.
+
+status: placeholder
+
+signs:
+  # TODO: replace every entry below with real Ministry of Health / WHO danger signs.
+  - id: placeholder_sign_red_1
+    severity: red # TODO: placeholder, not clinical guidance
+    keywords: # TODO: real keywords plus Sinhala and Tamil transliterations
+      - "PLACEHOLDER_RED_KEYWORD_ONE"
+      - "PLACEHOLDER_RED_KEYWORD_TWO"
+    action: "PLACEHOLDER action string, not clinical guidance. Contact your PHM or your nearest hospital now."
+
+  - id: placeholder_sign_red_2
+    severity: red # TODO: placeholder, not clinical guidance
+    keywords: # TODO
+      - "PLACEHOLDER_RED_KEYWORD_THREE"
+    action: "PLACEHOLDER action string, not clinical guidance. Contact your PHM or your nearest hospital now."
+
+  - id: placeholder_sign_amber_1
+    severity: amber # TODO: placeholder, not clinical guidance
+    keywords: # TODO
+      - "PLACEHOLDER_AMBER_KEYWORD_ONE"
+    action: "PLACEHOLDER action string, not clinical guidance. Tell your PHM about this at your next visit."
