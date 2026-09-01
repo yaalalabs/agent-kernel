@@ -1,0 +1,2 @@
+SYNTHETIC DEMONSTRATION MATERIAL
+Current assessment guidance: keys are assessed through worked schema examples, rather than standalone definitions. Normalisation questions require an explanation of the dependencies and the resulting third-normal-form tables. This is practice guidance, not a prediction of future questions.
