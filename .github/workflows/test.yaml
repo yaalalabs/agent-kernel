@@ -13,6 +13,12 @@ on:
         type: boolean
         default: false
 
+# Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions). Only reads are
+# needed here: update-lock-files pushes with the GitHub App token persisted by actions/checkout,
+# and run-tests only needs the reusable workflow's own `contents: read` for its checkouts.
+permissions:
+  contents: read
+
 jobs:
   update-lock-files:
     if: ${{ github.event.inputs.update_example_locks == 'true' }}

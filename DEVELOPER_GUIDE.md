@@ -26,7 +26,7 @@ Before you begin development, ensure you have the following installed:
 
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/yaalalabs/agent-kernel.git
+   git clone https://github.com/<your-username>/agent-kernel.git
    cd agent-kernel
    ```
 
