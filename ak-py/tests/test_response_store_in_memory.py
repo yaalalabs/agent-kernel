@@ -56,7 +56,7 @@ class TestRecords:
         store.delete_message("r1")
         assert store.get_message("r1") is None
 
-    def test_get_message_with_retry_polls_until_available(self, monkeypatch):
+    def test_get_record_with_retry_polls_until_available(self, monkeypatch):
         class _Cfg:
             class execution:
                 class response_store:
@@ -66,7 +66,7 @@ class TestRecords:
         monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
         store = InMemoryResponseStore()
         threading.Timer(0.1, lambda: store.add_message(_record())).start()
-        assert store.get_message_with_retry("r1") == {"result": "ok"}
+        assert store.get_record_with_retry("r1")["body"] == {"result": "ok"}
 
 
 class TestChunkStream:

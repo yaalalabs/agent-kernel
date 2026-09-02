@@ -30,22 +30,22 @@
       ]
     },
     {
-      "id": "test-mode-fuzzy",
-      "name": "Configure fuzzy test mode",
-      "input": "Set up fuzzy matching for my agent tests",
+      "id": "test-mode-score",
+      "name": "Configure score test mode",
+      "input": "Set up deterministic string-match mode for my agent tests",
       "expected_outputs": [
-        "test:",
-        "mode: fuzzy"
+        "test-config.yaml",
+        "mode: score"
       ]
     },
     {
-      "id": "test-mode-judge",
-      "name": "Configure judge test mode",
-      "input": "Set up LLM judge for my agent tests",
+      "id": "test-mode-llm",
+      "name": "Configure llm test mode",
+      "input": "Set up LLM-based evaluation for my agent tests",
       "expected_outputs": [
-        "test:",
-        "mode: judge",
-        "judge:",
+        "test-config.yaml",
+        "mode: llm",
+        "llm:",
         "model:"
       ]
     },
@@ -54,8 +54,28 @@
       "name": "Configure fallback test mode",
       "input": "Set up fallback test mode",
       "expected_outputs": [
-        "test:",
+        "test-config.yaml",
         "mode: fallback"
+      ]
+    },
+    {
+      "id": "test-custom-evaluator",
+      "name": "Configure a bring-your-own evaluator",
+      "input": "I want to use my own scoring logic instead of the built-in DeepEval evaluator",
+      "expected_outputs": [
+        "evaluator:",
+        "AKEvaluator",
+        "score_based_evaluation",
+        "llm_based_evaluation"
+      ]
+    },
+    {
+      "id": "test-return-metrics",
+      "name": "Get evaluation metrics instead of an assertion",
+      "input": "I want expect() to return the score instead of raising an error on failure",
+      "expected_outputs": [
+        "return_metrics=True",
+        "AKEvaluationResult"
       ]
     },
     {

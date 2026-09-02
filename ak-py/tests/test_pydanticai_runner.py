@@ -7,8 +7,24 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from pydantic import BaseModel
 from pydantic_ai import Agent, FunctionToolset, RunContext
-from pydantic_ai.messages import ModelMessagesTypeAdapter
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    ModelMessagesTypeAdapter,
+    OutputToolResultEvent,
+    PartDeltaEvent,
+    PartEndEvent,
+    PartStartEvent,
+    TextPart,
+    TextPartDelta,
+    ThinkingPart,
+    ThinkingPartDelta,
+    ToolCallPart,
+    ToolCallPartDelta,
+    ToolReturnPart,
+)
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.run import AgentRunResultEvent
 from pydantic_core import to_jsonable_python
 
 from agentkernel.core import Session
@@ -39,33 +55,90 @@ def _mock_agent(output, messages=None):
     return mock_agent
 
 
-def _mock_stream_agent(deltas, on_stream=None):
+def _mock_stream_events_agent(events, on_stream=None, messages=None):
     """
-    Build a mock agent whose ``run_stream`` is an async context manager yielding the given deltas, so
-    ``stream()`` can be driven (and closed mid-stream) without Pydantic AI's real anyio scopes. The deps
-    the runner injected are recorded on ``captured_deps``; ``on_stream`` mutates them like a native tool.
+    Build a mock agent whose ``run_stream_events`` is an async context manager yielding ``events`` and
+    then the terminal ``AgentRunResultEvent``, so ``stream()`` can be driven (and closed mid-stream)
+    without Pydantic AI's real anyio scopes. The deps the runner injected are recorded on
+    ``captured_deps``; ``on_stream`` mutates them like a native tool would.
+
+    The events themselves are real SDK objects (see the ``_text_*`` helpers), so these tests pin the
+    wire shape rather than a mock's.
     """
     mock_agent = MagicMock()
     mock_agent.captured_deps = None
 
     @asynccontextmanager
-    async def run_stream(content, message_history=None, deps=None):
+    async def run_stream_events(content, message_history=None, deps=None, **kwargs):
         mock_agent.captured_deps = deps
-        result = MagicMock()
 
-        async def stream_text(delta=True):
+        async def stream():
             if on_stream is not None and deps is not None:
                 on_stream(deps)
-            for d in deltas:
-                yield d
+            for event in events:
+                yield event
+            result = MagicMock()
+            result.all_messages = MagicMock(return_value=messages or [])
+            yield AgentRunResultEvent(result=result)
 
-        result.stream_text = stream_text
-        result.all_messages = MagicMock(return_value=[])
-        yield result
+        yield stream()
 
     mock_agent.agent = MagicMock()
-    mock_agent.agent.run_stream = run_stream
+    mock_agent.agent.run_stream_events = run_stream_events
     return mock_agent
+
+
+def _text_start(index=0, content="", part_id=None, previous_part_kind=None):
+    return PartStartEvent(index=index, part=TextPart(content=content, id=part_id), previous_part_kind=previous_part_kind)
+
+
+def _text_delta(index=0, content="x"):
+    return PartDeltaEvent(index=index, delta=TextPartDelta(content_delta=content))
+
+
+def _text_end(index=0, next_part_kind=None):
+    return PartEndEvent(index=index, part=TextPart(content=""), next_part_kind=next_part_kind)
+
+
+def _thinking_start(index=0, content="", previous_part_kind=None):
+    return PartStartEvent(index=index, part=ThinkingPart(content=content), previous_part_kind=previous_part_kind)
+
+
+def _thinking_delta(index=0, content="reasoning"):
+    return PartDeltaEvent(index=index, delta=ThinkingPartDelta(content_delta=content))
+
+
+def _thinking_end(index=0, next_part_kind=None):
+    return PartEndEvent(index=index, part=ThinkingPart(content=""), next_part_kind=next_part_kind)
+
+
+def _tool_start(index=0, name="lookup", args=None, tool_call_id="t1"):
+    return PartStartEvent(index=index, part=ToolCallPart(tool_name=name, args=args, tool_call_id=tool_call_id))
+
+
+def _tool_args_delta(index=0, args_delta='{"q": "x"}', tool_call_id="t1"):
+    return PartDeltaEvent(index=index, delta=ToolCallPartDelta(args_delta=args_delta, tool_call_id=tool_call_id))
+
+
+def _tool_end(index=0, name="lookup", tool_call_id="t1"):
+    return PartEndEvent(index=index, part=ToolCallPart(tool_name=name, args=None, tool_call_id=tool_call_id))
+
+
+def _tool_result(name="lookup", content="42", tool_call_id="t1"):
+    return FunctionToolResultEvent(part=ToolReturnPart(tool_name=name, content=content, tool_call_id=tool_call_id))
+
+
+async def _collect(runner, events, session=None, on_stream=None, messages=None):
+    """Drive PydanticAIRunner.stream over a scripted SDK event list and return the AK events."""
+    session = session if session is not None else Session("stream-session")
+    agent = _mock_stream_events_agent(events, on_stream=on_stream, messages=messages)
+    collected = [event async for event in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+    return collected, agent
+
+
+def _shape(events):
+    """The event sequence by discriminator. Derived ids are uuid4, so they cannot be asserted."""
+    return [event.type for event in events]
 
 
 class TestPydanticAIRunnerFrameworkContext:
@@ -141,7 +214,7 @@ class TestPydanticAIRunnerFrameworkContext:
 
     @pytest.mark.asyncio
     async def test_stream_normal_drain_writes_back(self):
-        """Uses the real run_stream path: a native tool mutates ctx.deps, write-back stores it."""
+        """Uses the real run_stream_events path: a native tool mutates ctx.deps, write-back stores it."""
         runner = PydanticAIRunner()
         session = Session("stream-session")
         session.set_framework_context({"cart": []})
@@ -165,17 +238,21 @@ class TestPydanticAIRunnerFrameworkContext:
     async def test_stream_disconnect_leaves_context_intact(self):
         """
         A client disconnect (GeneratorExit at a yield) skips the write-back after the delta loop.
-        Mocks run_stream because closing the generator from the test task cannot unwind Pydantic AI's
-        real anyio cancel scope.
+        Mocks run_stream_events because closing the generator from the test task cannot unwind
+        Pydantic AI's real anyio cancel scope.
         """
         runner = PydanticAIRunner()
         session = Session("stream-session")
         session.set_framework_context({"cart": []})
 
-        mock_agent = _mock_stream_agent(["hello", " world"], on_stream=lambda deps: deps["cart"].append("apple"))
+        mock_agent = _mock_stream_events_agent(
+            [_text_start(content="hello"), _text_delta(content=" world"), _text_end()],
+            on_stream=lambda deps: deps["cart"].append("apple"),
+        )
 
         agen = runner.stream(mock_agent, session, [AgentRequestText(prompt="hi")])
-        assert await agen.__anext__() == "hello"
+        first = await agen.__anext__()
+        assert first.type == "message_start"
         await agen.aclose()  # simulate client disconnect at the yield
 
         assert session.get_framework_context() == {"cart": []}
@@ -185,14 +262,12 @@ class TestPydanticAIRunnerFrameworkContext:
         runner = PydanticAIRunner()
         session = Session("stream-session")
 
-        mock_agent = _mock_stream_agent(["hi"])
-        _ = [delta async for delta in runner.stream(mock_agent, session, [AgentRequestText(prompt="hi")])]
+        _, mock_agent = await _collect(runner, [_text_start(content="hi"), _text_end()], session=session)
         assert mock_agent.captured_deps is None
         assert session.get_framework_context() is None
 
         session.set_framework_context({"user_id": "42"})
-        mock_agent = _mock_stream_agent(["hi"])
-        _ = [delta async for delta in runner.stream(mock_agent, session, [AgentRequestText(prompt="hi")])]
+        _, mock_agent = await _collect(runner, [_text_start(content="hi"), _text_end()], session=session)
         assert mock_agent.captured_deps == {"user_id": "42"}
 
     @pytest.mark.asyncio
@@ -363,23 +438,27 @@ class TestPydanticAIRunnerStructuredOutput:
 
 class TestPydanticAIRunnerStreaming:
     """
-    PydanticAIRunner.stream() yields deltas and persists session history from the streamed result,
-    mirroring the run() tests. Uses the real TestModel streaming path rather than mocks.
+    PydanticAIRunner.stream() yields AK events and persists session history from the streamed result,
+    mirroring the run() tests. Uses the real TestModel streaming path rather than mocks, so this is
+    what proves `run_stream_events` is driven correctly against the real SDK.
     """
 
     @pytest.mark.asyncio
-    async def test_stream_yields_deltas_and_persists_history(self):
+    async def test_stream_yields_bracketed_events_and_persists_history(self):
         runner = PydanticAIRunner()
         session = Session("stream-session")
         native = Agent(model=TestModel(custom_output_text="hello world from stream"), name="s")
         agent = PydanticAIAgent("s", runner, native)
 
-        deltas = [delta async for delta in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+        events = [event async for event in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
 
-        # Real token deltas were produced and reassemble into the model output.
-        assert deltas
-        assert all(isinstance(d, str) and d for d in deltas)
-        assert "".join(deltas) == "hello world from stream"
+        # Real events from the real SDK: the message is bracketed and its deltas reassemble into it.
+        assert events
+        assert events[0].type == "message_start"
+        assert events[-1].type == "message_end"
+        assert "".join(e.content for e in events if e.type == "text_delta") == "hello world from stream"
+        # One message, so every boundary and delta carries the same id.
+        assert len({e.message_id for e in events}) == 1
 
         # The streamed run persisted its message history into the framework session (jsonable form),
         # so a follow-up turn resumes the conversation just like the run() path.
@@ -400,6 +479,257 @@ class TestPydanticAIRunnerStreaming:
 
         assert deltas == []
         assert session.get(FRAMEWORK) is None
+
+
+class TestPydanticAIRunnerStreamEvents:
+    """The event mapping added in PR 6. Every stream is driven by the part events; the ids come from
+    the framework where it supplies one and are derived where it does not."""
+
+    @pytest.mark.asyncio
+    async def test_a_message_is_bracketed_around_its_deltas(self):
+        events, _ = await _collect(PydanticAIRunner(), [_text_start(content="he"), _text_delta(content="llo"), _text_end()])
+        assert _shape(events) == ["message_start", "text_delta", "text_delta", "message_end"]
+        assert "".join(e.content for e in events if e.type == "text_delta") == "hello"
+        assert len({e.message_id for e in events}) == 1
+
+    @pytest.mark.asyncio
+    async def test_the_providers_part_id_is_used_when_it_supplies_one(self):
+        events, _ = await _collect(PydanticAIRunner(), [_text_start(content="hi", part_id="prov-1"), _text_end()])
+        assert {e.message_id for e in events} == {"prov-1"}
+
+    @pytest.mark.asyncio
+    async def test_an_empty_start_emits_no_delta(self):
+        events, _ = await _collect(PydanticAIRunner(), [_text_start(content=""), _text_end()])
+        assert _shape(events) == ["message_start", "message_end"]
+
+    @pytest.mark.asyncio
+    async def test_reasoning_maps_to_its_own_stream_and_never_to_the_answer(self):
+        """§4 rule 5: reasoning must not reach `StreamChunk.delta`, so it can never be a TextDelta."""
+        events, _ = await _collect(PydanticAIRunner(), [_thinking_start(content="th"), _thinking_delta(content="inking"), _thinking_end()])
+        assert _shape(events) == ["reasoning_start", "reasoning_delta", "reasoning_delta", "reasoning_end"]
+        assert "".join(e.content for e in events if e.type == "reasoning_delta") == "thinking"
+
+    @pytest.mark.asyncio
+    async def test_reasoning_and_the_answer_do_not_share_an_id(self):
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [_thinking_start(index=0, content="t"), _thinking_end(index=0), _text_start(index=1, content="a"), _text_end(index=1)],
+        )
+        reasoning = {e.message_id for e in events if e.type.startswith("reasoning")}
+        answer = {e.message_id for e in events if e.type in ("message_start", "text_delta", "message_end")}
+        assert reasoning and answer and not (reasoning & answer)
+
+    @pytest.mark.asyncio
+    async def test_a_tool_call_opens_fills_and_closes_on_its_own_id(self):
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [_tool_start(args=None), _tool_args_delta(args_delta='{"q": "x"}'), _tool_end()],
+        )
+        assert _shape(events) == ["tool_call_start", "tool_call_args", "tool_call_end"]
+        assert {e.tool_call_id for e in events} == {"t1"}
+        assert [e.delta for e in events if e.type == "tool_call_args"] == ['{"q": "x"}']
+
+    @pytest.mark.asyncio
+    async def test_dict_arguments_are_serialised(self):
+        """Providers differ: some stream JSON text, others hand over a parsed dict."""
+        events, _ = await _collect(PydanticAIRunner(), [_tool_start(args={"q": "x"}), _tool_end()])
+        assert [e.delta for e in events if e.type == "tool_call_args"] == ['{"q": "x"}']
+
+    @pytest.mark.asyncio
+    async def test_a_tool_result_correlates_to_the_call(self):
+        events, _ = await _collect(PydanticAIRunner(), [_tool_start(), _tool_end(), _tool_result(content="42")])
+        assert _shape(events) == ["tool_call_start", "tool_call_end", "tool_call_result"]
+        assert {e.tool_call_id for e in events} == {"t1"}
+        assert [e.content for e in events if e.type == "tool_call_result"] == ["42"]
+
+    @pytest.mark.asyncio
+    async def test_an_output_tool_result_closes_its_call_too(self):
+        """A structured-output run's final-answer call must resolve, not hang.
+
+        With `output_type` set, the model's answer arrives as an ordinary tool-call part — so the
+        part events bracket it — but its result comes back as `OutputToolResultEvent` rather than
+        `FunctionToolResultEvent`. Dropping it leaves a tool card an AG-UI client can never close.
+        Pydantic AI's own AG-UI adapter emits the result for output tools through the same path it
+        uses for function tools.
+        """
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _tool_start(name="final_result", tool_call_id="o1"),
+                _tool_end(name="final_result", tool_call_id="o1"),
+                OutputToolResultEvent(part=ToolReturnPart(tool_name="final_result", content={"city": "x"}, tool_call_id="o1")),
+            ],
+        )
+        assert _shape(events) == ["tool_call_start", "tool_call_end", "tool_call_result"]
+        assert {e.tool_call_id for e in events} == {"o1"}
+        assert [e.content for e in events if e.type == "tool_call_result"] == ['{"city": "x"}']
+
+    @pytest.mark.asyncio
+    async def test_the_tool_call_event_is_ignored_so_calls_are_not_doubled(self):
+        """The part events already opened, filled and closed the call — the same reason OpenAI ignores
+        `message_output_created`."""
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _tool_start(args={"q": "x"}),
+                _tool_end(),
+                FunctionToolCallEvent(part=ToolCallPart(tool_name="lookup", args={"q": "x"}, tool_call_id="t1")),
+            ],
+        )
+        assert _shape(events).count("tool_call_start") == 1
+
+    @pytest.mark.asyncio
+    async def test_a_repeated_index_gets_a_new_id_rather_than_colliding(self):
+        """The deviation from §10's sketch. `index` is scoped to one response and the SDK states a
+        repeat *replaces* the part, so using it as the id would splice two unrelated messages into one
+        bubble in any AG-UI client. The old stream is closed before the new one opens."""
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [_text_start(index=0, content="first"), _text_start(index=0, content="second"), _text_end(index=0)],
+        )
+        assert _shape(events) == ["message_start", "text_delta", "message_end", "message_start", "text_delta", "message_end"]
+        ids = [e.message_id for e in events if e.type == "message_start"]
+        assert len(set(ids)) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_delta_for_a_part_that_never_opened_is_dropped(self):
+        """There is no id to correlate it to, and inventing one strands the fragment in a message no
+        boundary describes."""
+        events, _ = await _collect(PydanticAIRunner(), [_text_delta(index=7, content="orphan")])
+        assert events == []
+
+    @pytest.mark.asyncio
+    async def test_an_unclosed_part_is_closed_when_the_stream_drains(self):
+        events, _ = await _collect(PydanticAIRunner(), [_text_start(content="hi")])
+        assert _shape(events) == ["message_start", "text_delta", "message_end"]
+
+    @pytest.mark.asyncio
+    async def test_a_missing_terminal_event_is_logged_rather_than_losing_history_silently(self, caplog):
+        """The write-back is the only thing carrying the conversation into the next turn. Without the
+        terminal event there is nothing to read `all_messages()` off, and the next request would start
+        with no history — so the absence has to be audible."""
+        session = Session("stream-session")
+        agent = _mock_stream_events_agent([_text_start(content="hi"), _text_end()])
+
+        # Drop the terminal AgentRunResultEvent the double normally appends.
+        original = agent.agent.run_stream_events
+
+        @asynccontextmanager
+        async def without_result(*args, **kwargs):
+            async with original(*args, **kwargs) as events:
+
+                async def filtered():
+                    async for event in events:
+                        if getattr(event, "event_kind", None) != "agent_run_result":
+                            yield event
+
+                yield filtered()
+
+        agent.agent.run_stream_events = without_result
+
+        with caplog.at_level(logging.WARNING, logger="ak.pydanticai.runner"):
+            collected = [event async for event in PydanticAIRunner().stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        assert collected  # the response still streamed
+        assert session.get(FRAMEWORK).messages == []
+        assert any("conversation history was not persisted" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_the_history_write_back_reads_the_terminal_result_event(self):
+        """`all_messages()` now comes off the `agent_run_result` event captured as it passed, not off
+        the context manager's value."""
+        session = Session("stream-session")
+        events, _ = await _collect(PydanticAIRunner(), [_text_start(content="hi"), _text_end()], session=session, messages=[{"kind": "request"}])
+        assert events
+        assert session.get(FRAMEWORK).messages == [{"kind": "request"}]
+
+
+class TestPydanticAIRunnerAdjacentParts:
+    """A model can split one response across several parts of the same kind, and each must not become
+    its own assistant bubble. The SDK marks the seam with `previous_part_kind` / `next_part_kind`
+    precisely so a UI can group them, and Pydantic AI's own AG-UI adapter uses exactly those fields
+    (`pydantic_ai/ui/ag_ui/_event_stream.py`, `follows_text`). Matching it is what makes a split
+    response look the same through AK as through the first-party path."""
+
+    @pytest.mark.asyncio
+    async def test_adjacent_text_parts_are_one_message(self):
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _text_start(index=0, content="one "),
+                _text_end(index=0, next_part_kind="text"),
+                _text_start(index=1, content="two", previous_part_kind="text"),
+                _text_end(index=1),
+            ],
+        )
+        assert _shape(events) == ["message_start", "text_delta", "text_delta", "message_end"]
+        assert len({event.message_id for event in events}) == 1
+        assert "".join(e.content for e in events if e.type == "text_delta") == "one two"
+
+    @pytest.mark.asyncio
+    async def test_adjacent_thinking_parts_are_one_trace(self):
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _thinking_start(index=0, content="rea"),
+                _thinking_end(index=0, next_part_kind="thinking"),
+                _thinking_start(index=1, content="soning", previous_part_kind="thinking"),
+                _thinking_end(index=1),
+            ],
+        )
+        assert _shape(events) == ["reasoning_start", "reasoning_delta", "reasoning_delta", "reasoning_end"]
+        assert len({event.message_id for event in events}) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_thinking_part_between_two_text_parts_breaks_the_merge(self):
+        """Only *adjacent same-kind* parts group. Reasoning in between means the answer resumes as a
+        new message, which is what actually happened."""
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _text_start(index=0, content="a"),
+                _text_end(index=0, next_part_kind="thinking"),
+                _thinking_start(index=1, content="t", previous_part_kind="text"),
+                _thinking_end(index=1, next_part_kind="text"),
+                _text_start(index=2, content="b", previous_part_kind="thinking"),
+                _text_end(index=2),
+            ],
+        )
+        assert _shape(events) == [
+            "message_start",
+            "text_delta",
+            "message_end",
+            "reasoning_start",
+            "reasoning_delta",
+            "reasoning_end",
+            "message_start",
+            "text_delta",
+            "message_end",
+        ]
+        assert len({event.message_id for event in events}) == 3
+
+    @pytest.mark.asyncio
+    async def test_a_promised_continuation_that_never_arrives_is_closed_on_drain(self):
+        """`next_part_kind` is a promise about the next part, not a guarantee the run makes it there.
+        Held-open streams are drained too, or a client waits forever for a message that never closes."""
+        events, _ = await _collect(PydanticAIRunner(), [_text_start(index=0, content="hi"), _text_end(index=0, next_part_kind="text")])
+        assert _shape(events) == ["message_start", "text_delta", "message_end"]
+
+    @pytest.mark.asyncio
+    async def test_tool_call_parts_are_not_grouped(self):
+        """Each call carries its own tool_call_id, so there is nothing to group — and grouping them
+        would merge two distinct calls into one."""
+        events, _ = await _collect(
+            PydanticAIRunner(),
+            [
+                _tool_start(index=0, tool_call_id="t1"),
+                PartEndEvent(index=0, part=ToolCallPart(tool_name="lookup", args=None, tool_call_id="t1"), next_part_kind="tool-call"),
+                _tool_start(index=1, tool_call_id="t2"),
+                _tool_end(index=1, tool_call_id="t2"),
+            ],
+        )
+        assert _shape(events) == ["tool_call_start", "tool_call_end", "tool_call_start", "tool_call_end"]
+        assert [e.tool_call_id for e in events] == ["t1", "t1", "t2", "t2"]
 
 
 class TestPydanticAISessionSerialization:

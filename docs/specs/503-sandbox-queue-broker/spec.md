@@ -144,9 +144,9 @@ Registration: `_BUILTIN_BROKERS["queue"] = "agentkernel.sandbox.broker.queue.Que
 5. **Bounded poll.** Effective wait `0` → return a `SandboxTask(status="pending", ...)`
    immediately (the `ThreadBroker` promotion shape, `thread.py:118-128`). Otherwise poll
    `store.get_message(task_id)` every `config.wait_poll_interval` seconds (via
-   `asyncio.to_thread` + `asyncio.sleep`, never `ResponseStore.get_message_with_retry`: that
+   `asyncio.to_thread` + `asyncio.sleep`, never `ResponseStore.get_record_with_retry`: that
    helper reads its retry config from the global `execution.response_store` block,
-   `pipeline/response_store/base.py:115-125`, which the sandbox path does not own) until the
+   which the sandbox path does not own) until the
    deadline:
    - `status == "succeeded"` → `BrokerWireCodec.decode_completion(...)`, return `completion.result`.
    - `status == "timed_out"` → raise `SandboxTimeoutError(completion.error)`.
@@ -306,10 +306,10 @@ QueueMessage(
 
 - `QueueTransportFactory` (`pipeline/transport/base.py:90-201`):
   - `resolve_type(queues_config=None)` and `create(queues_config=None)`. `queues_config=None`
-    reads `AKConfig.get().execution.queues` exactly as today (`base.py:113,131`); the default
-    path is byte-for-byte unchanged, including the `input.url`-implies-sqs compatibility rule
-    and the SQS both-URLs validation (the sandbox broker uses both of its block's queues, so no
-    relaxation is needed).
+    reads `AKConfig.get().execution.queues` exactly as today; the default path is byte-for-byte
+    unchanged, including the declared-`type`-only resolution (a queues block's `type` is
+    mandatory, per the develop-side rule merged 2026-09-02) and the SQS both-URLs validation
+    (the sandbox broker uses both of its block's queues, so no relaxation is needed).
   - `create_consumer(queue, queues_config=None)` threads the block through.
 - `ResponseStoreFactory.create(response_store_config=None, transport_type=None, ttl=None)`
   (`pipeline/response_store/factory.py:23-75`): `None` arguments read
@@ -319,8 +319,8 @@ QueueMessage(
   `broker.response_ttl`** (`core/config.py:611`), overriding the backend block's own `ttl`
   field, so one knob governs sandbox completion retention (design: "existing knobs reused
   as-is"). The default path ignores the new `ttl` parameter.
-- The sandbox client never uses `get_message_with_retry` (its retry config is global,
-  `base.py:115-125`); the `retry_count`/`delay` fields of the sandbox `response_store` block are
+- The sandbox client never uses `get_record_with_retry` (its retry config is global); the
+  `retry_count`/`delay` fields of the sandbox `response_store` block are
   therefore inert on this path and the config descriptions say so.
 
 ### The `kubernetes` sandbox provider: `sandbox/providers/kubernetes.py`

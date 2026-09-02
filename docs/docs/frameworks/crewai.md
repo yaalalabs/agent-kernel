@@ -114,7 +114,8 @@ To change the schema after the module is loaded, set it on the wrapped agent ins
 With `output_pydantic`, the `CrewOutput.pydantic` result is converted via `model_dump()`; with `output_json`, `CrewOutput.json_dict` is used directly. Plain-text crews continue to return `AgentReplyText` from `CrewOutput.raw`. `str(reply)` on an `AgentReplyAny` returns the JSON-serialized content, so text-based consumers work unchanged. See [Reply Types](../core-concepts/runner#structured-replies) for how structured replies are surfaced, and [Execution Hooks](../integrations/hooks#structured-replies-in-hooks) for how hooks receive them.
 
 :::info Streaming limitation
-Structured output applies to non-streaming execution only. (CrewAI does not support streaming in Agent Kernel.)
+Structured output applies to non-streaming execution only. Agent Kernel's CrewAI adapter does not
+implement `Runner.stream()` yet (CrewAI itself supports streaming).
 :::
 
 ## Per-run context/state

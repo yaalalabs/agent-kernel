@@ -1,8 +1,8 @@
 ## AWS Serverless WebSocket Streaming + OpenAI Example
 
-This example deploys **Agent Kernel** on AWS using the `yaalalabs/ak-serverless/aws` Terraform module with **token-level streaming over WebSocket**.
+This example deploys **Agent Kernel** on AWS using the `yaalalabs/ak-serverless/aws` Terraform module with **event streaming over WebSocket**.
 
-Instead of buffering the full agent response and sending it once (async mode), stream mode forwards each generated token as a separate `STREAM_CHUNK` message through the WebSocket connection as soon as it is produced.
+Instead of buffering the full agent response and sending it once (async mode), stream mode forwards each stream event as a separate `STREAM_CHUNK` message through the WebSocket connection as soon as it is produced.
 
 The deployment exposes:
 
@@ -121,12 +121,14 @@ Any JWT-formatted token with a matching allowlisted combination will pass valida
 After connecting and sending a chat message, you will receive a sequence of WebSocket messages:
 
 ```json
-{"type": "STREAM_CHUNK", "delta": "Hello", "done": false, "session_id": "user-1"}
-{"type": "STREAM_CHUNK", "delta": " world", "done": false, "session_id": "user-1"}
-{"type": "STREAM_CHUNK", "delta": "!", "done": true, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "event": {"type": "message_start", "message_id": "m1", "role": "assistant"}, "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "delta": "Hello", "event": {"type": "text_delta", "message_id": "m1", "content": "Hello"}, "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "delta": " world", "event": {"type": "text_delta", "message_id": "m1", "content": " world"}, "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "event": {"type": "message_end", "message_id": "m1"}, "done": false, "session_id": "user-1"}
+{"type": "STREAM_CHUNK", "done": true, "session_id": "user-1"}
 ```
 
-Reassemble the `delta` fields in order to build the full response. The chunk with `"done": true` signals the end of the stream, and `session_id` identifies the conversation the stream belongs to.
+Reassemble the `delta` fields in order to build the full response, testing for the key rather than assuming it: every chunk carries `event`, but `delta` appears only on a `text_delta`, so the `message_start` / `message_end` frames above carry no `delta` at all. The chunk with `"done": true` signals the end of the stream, and `session_id` identifies the conversation the stream belongs to.
 
 ## Custom WebSocket routes
 

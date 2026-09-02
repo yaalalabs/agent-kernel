@@ -40,6 +40,8 @@ e2e:
       path: examples/cli/pydanticai/
     - type: cli
       path: examples/cli/pydanticai_context
+    - type: cli
+      path: examples/cli/custom-evaluator
     # - type: cli
     #   path: examples/cli/guardrail/walledai
 
@@ -110,6 +112,10 @@ e2e:
       path: examples/api/pydanticai
     - type: api
       path: examples/api/pydanticai-streaming
+    - type: api
+      path: examples/api/agui
+    - type: api
+      path: examples/api/schedule-openai
     
     # Memory examples
     - type: memory

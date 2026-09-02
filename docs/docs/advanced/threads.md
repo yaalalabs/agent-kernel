@@ -276,6 +276,12 @@ Attachment support is still decided by `multimodal.enabled`; the `thread` block 
   each thread message keeps only an `attachment_id` reference. Use a shared attachment store (`in_memory`,
   `redis`, or `dynamodb`); `storage_type: session_cache` is rejected in thread mode.
 
+Every attachment gets an `attachment_id`, but what the store holds depends on how it arrived. Base64
+data — bare, or a `data:` URI carrying the base64 marker — is saved as bytes. An attachment sent as a
+URL (`http://`, `https://`, `s3://`), or as a `data:` URI without that marker, is recorded by address
+instead: the store keeps the URL and no bytes, and the request itself is left for the agent framework's
+adapter to resolve, exactly as it is when threads are off.
+
 ```yaml
 multimodal:
   enabled: true

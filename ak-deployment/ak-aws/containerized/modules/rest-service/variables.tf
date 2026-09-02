@@ -107,6 +107,42 @@ variable "dynamodb_thread_table_name" {
   default     = null
 }
 
+variable "enable_scheduling" {
+  type        = bool
+  description = "Whether the EventBridge Scheduler resources are provisioned"
+  default     = false
+}
+
+variable "schedule_group_name" {
+  type        = string
+  description = "EventBridge Scheduler schedule-group name the scheduled tasks register their schedules in"
+  default     = null
+}
+
+variable "scheduler_execution_role_arn" {
+  type        = string
+  description = "ARN of the role EventBridge Scheduler assumes to deliver scheduled triggers to the Input Queue"
+  default     = null
+}
+
+variable "create_dynamodb_schedule_table" {
+  type        = bool
+  description = "Whether the DynamoDB schedule store table is created"
+  default     = false
+}
+
+variable "dynamodb_schedule_table_arn" {
+  type        = string
+  description = "DynamoDB schedule store table ARN"
+  default     = null
+}
+
+variable "dynamodb_schedule_table_name" {
+  type        = string
+  description = "DynamoDB schedule store table name"
+  default     = null
+}
+
 variable "rest_service" {
   description = "REST service configuration object"
   type = object({
@@ -126,6 +162,12 @@ variable "queue_mode" {
   type        = bool
   description = "Whether queue mode is enabled"
   default     = false
+}
+
+variable "input_queue_arn" {
+  type        = string
+  description = "SQS Input Queue ARN (queue mode only) — the target EventBridge Scheduler delivers scheduled triggers to"
+  default     = null
 }
 
 variable "input_queue_url" {

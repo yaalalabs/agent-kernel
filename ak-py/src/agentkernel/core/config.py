@@ -254,7 +254,11 @@ class _MultimodalConfig(BaseModel):
     )
     analysis_model: str = Field(
         default="gpt-4o",
-        description="LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment",
+        description=(
+            "LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment; "
+            "a remote image is handed to it as a fetchable image URL, so the model must be able to fetch that address, "
+            "while other remote attachment types are only named by their address"
+        ),
     )
     redis: Optional[_MultimodalStorageRedisConfig] = None
     dynamodb: Optional[_MultimodalStorageDynamoDBConfig] = None
@@ -310,6 +314,68 @@ class _ThreadStoreConfig(BaseModel):
     dynamodb: Optional[_ThreadDynamoDBConfig] = None
     firestore: Optional[_ThreadFirestoreConfig] = None
     cosmosdb: Optional[_ThreadCosmosDBConfig] = None
+
+
+# Connection details only, and Terraform-provisioned: the eventbridge provider requires all three.
+class _ScheduleEventBridgeConfig(BaseModel):
+    group_name: Optional[str] = Field(default=None, description="EventBridge Scheduler schedule-group name the schedules are created in")
+    role_arn: Optional[str] = Field(
+        default=None, description="Execution role ARN EventBridge Scheduler assumes to deliver triggers to the input queue"
+    )
+    queue_arn: Optional[str] = Field(default=None, description="Input queue ARN used as the schedule target")
+
+
+class _ScheduleProviderConfig(BaseModel):
+    type: str = Field(
+        default="local",
+        description="Schedule provider: a built-in short name (local, eventbridge) or a dotted path to a ScheduleProvider subclass",
+    )
+    eventbridge: Optional[_ScheduleEventBridgeConfig] = None
+
+
+class _ScheduleStoreRedisConfig(_RedisConfig):
+    # Unlike threads, schedules carry no default expiry: a task that silently disappeared
+    # would stop firing with no audit trail.
+    ttl: int = Field(default=0, description="Scheduled task TTL in seconds (0 disables)")
+    prefix: str = Field(default="ak:schedule:", description="Key prefix for Redis scheduled-task storage")
+
+
+class _ScheduleStoreValkeyConfig(_ValkeyConfig):
+    ttl: int = Field(default=0, description="Scheduled task TTL in seconds (0 disables)")
+    prefix: str = Field(default="ak:schedule:", description="Key prefix for Valkey scheduled-task storage")
+
+
+class _ScheduleStoreDynamoDBConfig(_DynamoDBConfig):
+    table_name: str = Field(
+        default="ak-agent-schedules",
+        description="DynamoDB table name for scheduled-task storage. Table should have a partition key named 'task_id' (S) and no sort key",
+    )
+    ttl: int = Field(default=0, description="DynamoDB item TTL in seconds (0 disables)")
+
+
+class _ScheduleStoreConfig(BaseModel):
+    type: str = Field(
+        default="in_memory",
+        description="Scheduled task store backend: a built-in short name (in_memory, redis, valkey, dynamodb) or a dotted path to a ScheduleStore subclass",
+    )
+    redis: Optional[_ScheduleStoreRedisConfig] = None
+    valkey: Optional[_ScheduleStoreValkeyConfig] = None
+    dynamodb: Optional[_ScheduleStoreDynamoDBConfig] = None
+
+
+class _ScheduleConfig(BaseModel):
+    """Configuration for the scheduling capability (trigger provider, task store, tool scoping).
+    The presence of the block is the enablement signal; its defaults (local provider,
+    in_memory store) make a bare 'schedule:' block work for local development."""
+
+    provider: _ScheduleProviderConfig = Field(
+        default_factory=_ScheduleProviderConfig, description="Backend that fires the triggers at their scheduled times"
+    )
+    store: _ScheduleStoreConfig = Field(default_factory=_ScheduleStoreConfig, description="Backend that persists the scheduled task records")
+    agents: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names the schedule tools and system-prompt guidance attach to; omitted = all agents",
+    )
 
 
 class _TraceConfig(BaseModel):
@@ -473,12 +539,13 @@ class _NatsQueueConfig(BaseModel):
 
 
 class _QueuesConfig(BaseModel):
-    type: Optional[str] = Field(
-        default=None,
+    type: str = Field(
         description=(
             "Queue transport: in_memory | sqs | kafka | nats, or a dotted path to a QueueTransport "
-            "subclass. When unset, a configured input.url implies sqs (pre-#495 compatibility); "
-            "otherwise in_memory."
+            "subclass. Mandatory whenever this block is declared: the transport decides the "
+            "deployment topology, so it is declared by the application rather than inferred from "
+            "whichever queue coordinates a deployment happens to inject. Omitting the whole block "
+            "leaves the single-process 'in_memory' transport."
         ),
     )
     input: _InputQueueConfig = Field(default_factory=_InputQueueConfig, description="Input queue configuration for queue execution mode")
@@ -516,7 +583,13 @@ class _ExecutionConfig(BaseModel):
         default=None,
         description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, stream for token streaming (WebSocket serverless or containerized direct streaming)",
     )
-    queues: Optional[_QueuesConfig] = Field(default_factory=_QueuesConfig, description="Queue URLs for async execution mode")
+    # The default carries the transport type explicitly: `type` is mandatory inside a declared
+    # queues block, and a config that declares no block at all still runs single-process on the
+    # in-process pipeline, whose topology needs no queue coordinates.
+    queues: Optional[_QueuesConfig] = Field(
+        default_factory=lambda: _QueuesConfig(type="in_memory"),
+        description="Queue transport and queue settings for queue-based execution",
+    )
     response_store: Optional[_ResponseStoreConfig] = Field(
         default=None,
         description="Response storage configuration for async execution mode",
@@ -752,7 +825,37 @@ class _SandboxConfig(BaseModel):
         return self
 
 
+class _AGUIStateConfig(BaseModel):
+    """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
+
+    enabled: bool = Field(default=False, description="Expose the AG-UI state tools to agents")
+    agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
+
+
+class _AGUIClientContextConfig(BaseModel):
+    """Opt-in for the read-only AG-UI client-context tools (forwarded props and context)."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Expose the read-only AG-UI client-context tools (forwarded props and context) to agents",
+    )
+    agents: Optional[list[str]] = Field(default=None, description="Agent names the tools attach to; omitted = all agents")
+
+
+class _AGUIConfig(BaseModel):
+    """Parameterizes a mounted AGUIRequestHandler. Mounting the handler is what enables AG-UI;
+    this block never switches the surface on. The two nested blocks do switch on agent-facing tools."""
+
+    agents: Optional[list[str]] = Field(default=None, description="Agent names reachable over AG-UI; omitted = all streaming-capable agents")
+    prefix: str = Field(default="/agui", description="Route prefix for the AG-UI surface")
+    default_agent: Optional[str] = Field(default=None, description="Agent served on the bare prefix route")
+    state: _AGUIStateConfig = Field(default_factory=_AGUIStateConfig)
+    client_context: _AGUIClientContextConfig = Field(default_factory=_AGUIClientContextConfig)
+
+
 class AKConfig(YamlBaseSettingsModified):
+    """Root configuration, loaded from config.yaml and `AK_`-prefixed environment variables."""
+
     session: _SessionStoreConfig = Field(
         description="Agent session / memory related configurations",
         default_factory=_SessionStoreConfig,
@@ -775,6 +878,12 @@ class AKConfig(YamlBaseSettingsModified):
     thread: Optional[_ThreadStoreConfig] = Field(
         default=None,
         description="Conversation Thread Support configurations (store backend, naming). The feature is served by mounting AgentThreadRequestHandler; this block only parameterizes it.",
+    )
+
+    agui: _AGUIConfig = Field(description="AG-UI integration configurations", default_factory=_AGUIConfig)
+    schedule: Optional[_ScheduleConfig] = Field(
+        default=None,
+        description="Scheduling capability configurations (trigger provider, task store, tool scoping). Absent = the capability is disabled.",
     )
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)

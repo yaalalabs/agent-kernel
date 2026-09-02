@@ -5,6 +5,7 @@ import pytest
 
 from agentkernel import Agent, Runner, Session
 from agentkernel.core.builder import SessionStoreBuilder
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.hooks import PostHook, PreHook
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
@@ -754,9 +755,13 @@ class CurrentAgentSpyRunner(Runner):
         return AgentReplyText(response="ok")
 
     async def stream(self, agent, session, requests):
+        # A runner owns its own boundaries, so this double emits the message it means. What the test
+        # asserts is unchanged: a delta still reaches the consumer.
+        yield MessageStart(message_id="spy-1")
         for token in ("a", "b", "c"):
             self.seen_during_run = Agent.current()
-            yield token
+            yield TextDelta(message_id="spy-1", content=token)
+        yield MessageEnd(message_id="spy-1")
 
 
 class FailingRunner(Runner):

@@ -3,6 +3,7 @@ explicit config block (the sandbox broker's own queue/store blocks) while their 
 paths keep reading ``execution.*`` exactly as before."""
 
 import pytest
+from pydantic import ValidationError
 
 from agentkernel.core.config import (
     _InMemoryQueueConfig,
@@ -46,11 +47,11 @@ class TestTransportFactorySeam:
     def test_resolve_type_from_explicit_block(self):
         assert QueueTransportFactory.resolve_type(_QueuesConfig(type="kafka")) == "kafka"
 
-    def test_resolve_type_url_implies_sqs_on_explicit_block(self):
-        assert QueueTransportFactory.resolve_type(_sqs_block(input_url="https://sqs.example/in").model_copy(update={"type": None})) == "sqs"
-
-    def test_resolve_type_defaults_to_in_memory_on_explicit_block(self):
-        assert QueueTransportFactory.resolve_type(_QueuesConfig()) == "in_memory"
+    def test_queues_block_requires_a_declared_type(self):
+        # The transport is declared, never inferred from queue coordinates: a queues block
+        # without `type` is invalid (the same rule the execution.queues block enforces).
+        with pytest.raises(ValidationError):
+            _QueuesConfig()
 
     def test_create_in_memory_from_explicit_block(self):
         block = _QueuesConfig(type="in_memory", in_memory=_InMemoryQueueConfig(ack_wait=7.0, dedup_window=9.0))

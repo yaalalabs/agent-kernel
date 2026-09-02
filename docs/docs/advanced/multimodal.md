@@ -34,6 +34,24 @@ sequenceDiagram
 - **Automatic description**: A vision-capable LLM generates brief descriptions of each attachment.
 - **System tool for recall**: The agent can call `analyze_attachments` to retrieve previously stored images/files.
 
+## Supported Attachment Source Forms
+
+`AgentRequestImage.image_data` and `AgentRequestFile.file_data` accept a source string in any of these forms:
+
+| Source form | Example | Handling |
+|---|---|---|
+| Bare base64 | `iVBORw0KGgo...` | Described by the vision LLM and saved to storage |
+| `data:<mime>;base64,<payload>` | `data:image/png;base64,iVBORw0KGgo...` | Described and saved to storage; the mime type comes from the URI itself, not the request's `mime_type` |
+| `data:<mime>,<payload>` (no `;base64` marker) | `data:text/plain,hello%20world` | Left on the request undescribed and unsaved — its bytes are not base64, so decoding them would store the wrong thing |
+| `http://` / `https://` URL | `https://example.com/cat.png` | Left on the request undescribed and unsaved — the pre-hook never fetches remote content, to avoid network I/O and SSRF exposure in a system hook that runs on every request |
+| `s3://` reference | `s3://bucket/key.png` | Left on the request undescribed and unsaved, same as other remote references |
+
+A `data:` URI with no payload after the comma (`data:image/png;base64,`) carries no bytes and is dropped, the same as an empty `image_data`/`file_data`. Scheme and `data:` header matching is case-insensitive.
+
+Attachments that are left on the request list are **not** removed by `MultimodalPreHook` — they reach the agent/adapter as-is so it can resolve them itself (for example, `framework/openai/openai.py` already accepts all five forms natively).
+
+With [Conversation Thread Support](/docs/advanced/threads) enabled, `ConversationThreadManager.store_attachments` classifies through the same `AttachmentSource`, so every form above behaves identically. It adds one thing: each attachment gets a store record and an `attachment_id` so the thread's history is uniform. Base64 is saved as bytes; a remote reference is saved as a `url` with no bytes, and its request still travels on for the adapter to resolve.
+
 ## Enabling Multimodal Support
 
 ### Environment Variables
@@ -51,6 +69,41 @@ multimodal:
   description_max_length: 200         # Max chars for auto-generated descriptions
   storage_type: in_memory             # Default - no session bloat
 ```
+
+## Attachment Source Forms
+
+`AgentRequestImage.image_data` and `AgentRequestFile.file_data` accept several source forms, and what
+`MultimodalPreHook` does with each differs. Only inline bytes can be described by a vision model or
+stored — a URL is a reference to something the hook never reads.
+
+| Source form | Example | Described | Stored | Reaches the agent |
+|---|---|---|---|---|
+| Bare base64 | `iVBORw0KGgo...` | ✅ | ✅ | As a description, plus an `attachment_id` |
+| `data:` URI, base64 | `data:image/png;base64,iVBOR...` | ✅ | ✅ | As above. The URI's own media type wins over `mime_type` |
+| `data:` URI, no base64 marker | `data:text/plain,hello` | ❌ | ❌ | Passed through untouched |
+| `http://` / `https://` URL | `https://cdn.example.com/a.png` | ❌ | ❌ | Passed through untouched |
+| `s3://` URL | `s3://bucket/key.pdf` | ❌ | ❌ | Passed through untouched |
+
+"Passed through untouched" is the important row. The hook neither describes nor stores these, and — as
+of the source-form work — it no longer *strips* them either: the request travels on to the framework
+adapter with the URL intact, so an adapter whose provider can fetch it gets the chance to. Previously
+they were consumed and dropped, so the agent saw nothing at all.
+
+Agent Kernel never fetches a remote attachment. The request travels on to the framework adapter, which
+hands the address to the model provider — so whether it resolves is a question for the app's configured
+model, not for Agent Kernel. If that model cannot fetch the address, the app should send the attachment
+as base64 instead — it is stored and described locally, so it does not depend on the provider fetching
+anything.
+
+A `data:` URI with an empty payload (`data:image/png;base64,`) is dropped rather than forwarded, since
+there are no bytes to describe and nothing for an adapter to fetch. Scheme and media-type matching is
+case-insensitive.
+
+The **Described** and **Reaches the agent** columns hold with Conversation Thread Support enabled
+too — `ConversationThreadManager.store_attachments` calls the same classifier. **Stored** is where
+thread mode differs: every attachment gets a store record and an `attachment_id`, so a thread's
+message history is uniform. Base64 is stored as bytes; a remote reference is stored as a `url` with
+no bytes, and the request still passes through untouched for the adapter to resolve.
 
 ## Attachment Storage
 

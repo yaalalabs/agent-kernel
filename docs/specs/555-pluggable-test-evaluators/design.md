@@ -1,0 +1,660 @@
+# #555: Replace RAGAS with a pluggable `AKEvaluator` (DeepEval), rename test modes, add `return_metrics`
+
+Removes the RAGAS-specific comparison logic from `Test` — code as well as dependency — and moves all
+scoring behind a pluggable `AKEvaluator` interface selected by a new `evaluator` field in
+`test-config.yaml`, which takes either a built-in short name (`deepeval`, the only one) or a dotted
+path to a user's own `AKEvaluator` subclass — the same bring-your-own spelling every other pluggable
+backend in the repo uses. That value is resolved by `Test._resolve_evaluator`, a private helper on the
+harness that `Test.compare` calls, so backend selection sits next to the policy it serves rather than in
+a separate factory module. Renames the comparison modes
+(`fuzzy` → `score`, `judge` → `llm`) so each mode maps one-to-one onto an `AKEvaluator` method. Adds
+`return_metrics`, a per-call argument that makes `Test.compare` / `Test.expect` return an
+`AKEvaluationResult` instead of raising `AssertionError`. The design idea: evaluators compute a score and
+decide `passed` against the threshold carried on `AKEvaluationCase`; the harness still owns mode
+selection and alternative-expected iteration.
+
+Requirements background: [`research/evaluator-framework-survey.md`](research/evaluator-framework-survey.md).
+
+## Motivation
+
+- The comparison logic is RAGAS-specific and cannot be swapped
+  - `Test._judge_compare` imports `ragas` / `litellm` inline and builds RAGAS clients directly (`ak-py/src/agentkernel/test/test.py:152-181`)
+  - The two RAGAS metrics are selected by an `if expected:` branch inside that method (`test.py:183`, gating metric selections at `test.py:193` and `test.py:211`)
+- The harness owns the evaluation clients
+  - The judge's LLM and embedding clients are parked on `Test` class attributes (`test.py:25-26`) and
+    constructed **inside the comparison method itself** (`test.py:171-178`), so `Test` holds live
+    evaluation machinery instead of something behind an interface
+  - Both are typed `Optional[Any]` (`test.py:25-26`), so the class declares no contract for what it is
+    holding — only whichever objects the current comparison method happened to build
+  - Swapping the evaluation backend therefore means editing the method that does the comparing, rather
+    than changing a configuration value
+- There is no evaluator interface today
+  - All evaluation logic currently lives directly in `Test` (`ak-py/src/agentkernel/test/test.py`), so swapping evaluation backends requires changing harness code
+  - This design introduces that interface: `AKEvaluator`, under a new `test/core/akevaluators/` package
+- Mode names describe implementations, not intent
+  - `Mode.FUZZY` / `Mode.JUDGE` (`test.py:16-19`) name a specific string-matching library and a specific
+    RAGAS technique, so a backend that scores deterministically by another means has no accurate mode to sit under
+- Scoring and asserting are fused, so scores are unobservable
+  - `_fuzzy_compare` and `_judge_compare` return `None` and communicate only by raising `AssertionError` (`test.py:149`, `test.py:197-199`, `test.py:214-217`)
+  - Numeric scores are computed and discarded (`test.py:194`, `test.py:212`); no caller can report or threshold them
+- A broken judge is indistinguishable from a failing agent
+  - `FALLBACK` catches `AssertionError` from the judge and re-raises a message naming only expected/received (`test.py:254-262`), so a missing API key surfaces as a content mismatch
+- The RAGAS dependency forces a transitive pin
+  - The `test` extra carries `ragas`, `datasets`, `pandas`, and `langchain_community==0.4.1` pinned solely to work around a RAGAS import (`ak-py/pyproject.toml:153-157`, comment at `:154`)
+- Judge unit tests hit a live LLM
+  - `test_compare_judge_mode` and `test_compare_fallback_mode` make real RAGAS calls with no skip guard or fake (`ak-py/tests/test_cli_tester.py:35-81`)
+
+## Design
+
+```mermaid
+graph LR
+    E["Test.expect()"] --> C["Test.compare()<br/>mode, threshold,<br/>expected-list loop,<br/>pass/fail or result"]
+    C -->|"mode: score"| S["evaluator.score_based_evaluation()"]
+    C -->|"mode: llm"| L["evaluator.llm_based_evaluation()"]
+    C -->|"mode: fallback"| S -.->|"on fail"| L
+    C -.->|"resolve"| F["Test._resolve_evaluator()<br/>(test-config: evaluator)"]
+    F --> DE["DeepevalAKEvaluator"]
+    F --> BYO["dotted-path<br/>user subclass"]
+```
+
+## Requirements
+
+### Mode rename
+
+- `Mode` becomes `SCORE = "score"`, `LLM = "llm"`, `FALLBACK = "fallback"`; `FUZZY` and `JUDGE` are gone
+- Each mode maps to exactly one evaluator entry point
+  - `score` → `AKEvaluator.score_based_evaluation`
+  - `llm` → `AKEvaluator.llm_based_evaluation`
+  - `fallback` → `score_based_evaluation`, then `llm_based_evaluation` only if the first did not pass
+    - "did not pass" means a returned `AKEvaluationResult` scoring below threshold, never an exception:
+      `AKMetricNotSupported` and `AKEvaluationError` raised by the score stage always propagate out of
+      `compare` and are never caught as a non-passing attempt that falls through to `llm`
+      - `AKMetricNotSupported` is a structural property of the configured evaluator, true on every
+        call rather than a per-case result; catching it would turn every comparison into a silent,
+        permanent skip of the score stage instead of surfacing the mode/evaluator mismatch once. An
+        evaluator that only implements one mode is not usable under `fallback` — it must be configured
+        under the one mode it does support
+      - Catching `AKEvaluationError` here would reproduce the Motivation bug this design removes ("a
+        broken judge is indistinguishable from a failing agent") one stage later: a broken score
+        backend is not a scored attempt, so it cannot be recorded in `attempts`, and would vanish
+        entirely if `llm` subsequently passed
+- The two names describe **how** a backend scores (deterministically, or by asking a model), never
+  **what** it measures. That is what makes them backend-neutral: only four evaluation concerns exist in
+  all four surveyed catalogues, so any mode vocabulary naming a measurement — `similarity`,
+  `faithfulness` — would be unimplementable by at least one plausible backend (survey §10, Finding 14).
+  Every catalogue, by contrast, has deterministic scorers and LLM judges
+- `AKTestConfig.mode` validation pattern becomes `^(fallback|llm|score)$` (`ak-py/src/agentkernel/test/config.py:32`)
+- Clean break: `fuzzy` and `judge` are not accepted as aliases, and no changelog note is produced
+  (the repo has no `CHANGELOG` file)
+  - `mode: fuzzy` / `mode: judge` fail loudly against the pattern, which is the intended upgrade signal
+  - The 6 in-repo example configs pinned to `mode: fuzzy` are updated in the same change
+    (enumerated under "Migration surface")
+- `Mode` stays exported from `agentkernel.test` (`ak-py/src/agentkernel/test/__init__.py:9`)
+
+### Evaluator interface (`test/core/akevaluators/`)
+
+- `AKEvaluator` is an ABC whose implementations compute a score **and** decide `result.passed` by
+  comparing it against `case.threshold`; they never assert and never iterate the alternatives list —
+  that policy stays in the harness
+- Two abstract methods, matching the two non-fallback modes
+  - `score_based_evaluation(case) -> AKEvaluationResult` — deterministic scoring, no LLM involved
+  - `llm_based_evaluation(case) -> AKEvaluationResult` — LLM-as-judge scoring
+- Both methods are **synchronous** (see "Synchronous evaluation") and take one argument: the
+  `AKEvaluationCase` payload. Everything a backend needs arrives in that model, so adding an input
+  later changes the model, never the method signatures or the harness's call sites
+- Constructed with the resolved test configuration; an evaluator instance owns its own backend
+  clients, so the only evaluator state `Test` holds is the resolved instance itself — never a
+  backend client, a model object, or a metric
+  - The constructor is **part of the interface**, because `Test._resolve_evaluator` calls it
+    identically for a built-in and for a user subclass: `__init__(self, config: AKTestConfig)`
+  - `AKEvaluator` supplies a concrete `__init__` storing `self._config`, so a subclass that needs
+    nothing more inherits it and implements only the two scoring methods
+  - The whole config is passed, not just the `llm` block: a backend may read `mode` or a field
+    added later, and widening the argument afterwards would break every user subclass
+- **One metric per mode in v1.** The interface allows a backend to offer more, but AK ships exactly one
+  score metric and one llm metric, so no metric-selection vocabulary or config key exists yet
+  - Deferring the vocabulary is not just scope control: a shared metric vocabulary would have to be
+    drawn from the four concerns common to every surveyed catalogue — custom rubric, answer relevancy,
+    context precision, context recall (survey §10, Finding 14) — and AK needs none of those four for
+    the ground-truth comparison `expect()` actually performs. A vocabulary defined now would name
+    metrics AK does not use and exclude the one it does
+  - A backend that cannot provide one of the two raises `AKMetricNotSupported`
+- The package (`agentkernel.test.core.akevaluators`) exports the interface, the two payload models, and
+  the three evaluator errors — `AKEvaluationError`, `AKMissingInput`, `AKMetricNotSupported` — so a
+  bring-your-own subclass imports everything it needs from one place. It exports **no selector**:
+  resolution lives on `Test`. `AKConfigError` stays the shared one from `core/util/factory.py`
+
+### LLM model construction
+
+- **The configuration is the common surface, not the model object.** `llm.model` and `llm.provider`
+  (`config.py:11-12`) stay AK's single source of truth for every evaluator; each backend adapts them
+  into whatever model class its own library expects
+  - This is the repo's adapter convention — wrap the native object, do not abstract over it — and it
+    preserves the provider support the RAGAS path had, which passed `provider=` into
+    `LiteLLMStructuredLLM` (`test.py:177`)
+- For DeepEval that adapter is its built-in `LiteLLMModel`, constructed as
+  `LiteLLMModel(f"{llm.provider}/{llm.model}")`
+  - AK writes **no** `DeepEvalBaseLLM` subclass and no structured-output handling: every DeepEval LLM
+    metric requires schema-constrained JSON from the judge, and `LiteLLMModel` already provides it.
+    Hand-rolling a shim would mean owning that schema plumbing for no gain, since `LiteLLMModel` is
+    litellm underneath either way
+  - `api_key` / `base_url` are left to litellm's own environment resolution
+- **Only `llm` mode needs a model.** `score_based_evaluation` performs no LLM call, so score mode runs
+  without a model, an API key, or a network connection
+
+### Evaluation payload (`AKEvaluationCase`)
+
+- Pydantic model, the single argument to both evaluator methods
+  - `user_input: str` — required
+  - `actual: str` — required
+  - `expected: str | None` — a **single** ground truth; no library accepts alternatives (survey §2)
+  - `threshold: float` — the score/pass cutoff, default `0.5`; each evaluator method compares its own
+    score against this to set `result.passed`
+  - `context: list[str] | None` — retrieved/ground-truth context; **present in the model but not
+    populated in v1**, since neither shipped metric consumes it
+  - `criteria: str | None` — rubric for the llm metric; **present in the model but not populated in
+    v1** — where a per-test rubric comes from is deferred, and the llm metric uses AK's own default
+    rubric until then
+- Only the fields the two shipped metrics need are populated, all of them from `Test.compare`'s
+  existing arguments
+  - The score metric (`Scorer.quasi_exact_match_score`) needs only `actual` and `expected` — it is a
+    plain classmethod over two strings, not a `BaseMetric`, so it never sees `user_input` at all
+  - `GEval` is keyed on `actual` and `expected` only — its `evaluation_params` name `ACTUAL_OUTPUT`
+    and `EXPECTED_OUTPUT`, so the rubric never reads the question
+  - `user_input` is still carried and passed through for the llm path, because `LLMTestCase.input` is
+    mandatory in DeepEval even when no metric reads it; an empty string is acceptable there. The score
+    path never constructs an `LLMTestCase`, so `user_input` reaches only `GEval`
+  - So `Test.compare` fills `actual` and `expected`, passes `user_input` through, and leaves
+    `context` / `criteria` unset
+- **No new `compare` / `expect` parameters** other than `return_metrics`: nothing about metric or
+  payload configuration is passed per call
+- `expected` is required by both shipped metrics; a call that reaches either without one raises
+  `AKMissingInput` naming the metric and the field
+
+### Evaluation result (`AKEvaluationResult`)
+
+- Pydantic model returned by both evaluator methods and by `compare`/`expect` under `return_metrics`
+  - `metric: str` — the metric that produced the score
+  - `evaluator: str` — the configured evaluator name
+  - `score: float | None` — normalised to `[0.0, 1.0]`; `None` means "not scored", never `0.0`
+  - `threshold: float | None` — stamped by `Test.compare` for reporting, mirroring `case.threshold`
+  - `passed: bool | None` — set by the evaluator itself, from its own score compared against
+    `case.threshold`; `Test._stamp` leaves it untouched
+  - `mode: str | None` — the `Mode` that produced the decisive result; unset by evaluators
+  - `expected: str | None` — which alternative produced the decisive score
+  - `reason: str | None` — the judge's rationale where the backend supplies one
+  - `cost: float | None` — evaluation cost where the backend reports it; expected to be `None` in
+    practice, since DeepEval documents `evaluation_cost` as tracked when integrated with Confident AI
+  - `attempts: list[AKEvaluationResult]` — non-decisive attempts (the failed score-mode result in
+    `fallback`, and per-alternative scores); empty by default
+  - `metadata: dict[str, Any]` — backend-specific extras (verbose logs, raw metric name); empty by default
+
+### Configuration (`AKTestConfig`)
+
+- One new field
+  - `evaluator: str = "deepeval"` — a built-in short name (`deepeval` is the only one) **or** a
+    dotted path to an `AKEvaluator` subclass, the same spelling `sandbox.profiles.*.type` uses for
+    a bring-your-own backend (`examples/sandbox/identity/config.yaml:18`)
+  - Plain `str` with **no** `pattern`, unlike `mode`: the built-in set is checked in
+    `Test._resolve_evaluator` and a dotted path is validated by importing it, so no regex can express
+    the valid set. An unresolvable value raises `AKConfigError` at first use — it is never silently
+    defaulted
+  - Selecting an evaluator selects **both** metrics; there is no per-mode evaluator key, since a
+    mixed pair would make `fallback` compare scores from two unrelated backends
+- `return_metrics` is **not** a config field: it is decided per call, so a suite can assert on most
+  comparisons and collect the result for specific ones
+- The `judge` block is renamed to `llm`, matching the mode name, and keeps its three existing fields
+  unchanged (`model`, `provider`, `embedding_model` — `config.py:11-13`)
+  - `embedding_model` is retained though nothing consumes it any more (RAGAS `answer_similarity` was
+    its only consumer; neither shipped metric uses embeddings)
+- No `score` block, no metric-selection keys, and no rubric key: one metric per mode means nothing to
+  select, and the llm metric's rubric is AK-owned until a per-test source is decided
+- **Reversed from an earlier pass of this design**: a legacy `judge` key is *not* specially rejected.
+  `AKTestConfig` sets `extra="ignore"` (`config.py:44`), so a leftover `judge:` block (YAML or
+  `AK_TEST__JUDGE__*`) is silently dropped like any other unknown key, and `llm` keeps its own default
+  rather than reading from it — no `_reject_legacy_judge_key`-style validator exists, and none is planned.
+  Tested explicitly: `ak-py/tests/test_test_config.py::test_legacy_judge_key_in_yaml_is_silently_ignored`.
+  Only the **mode name** (`fuzzy`/`judge` as a `mode:`/`AK_TEST__MODE` value) fails loudly, via the
+  `mode` field's `pattern` — that check is unchanged from the design below. **`docs/docs/core-concepts/
+  configuration.md` still documents the rejected version of this behaviour and needs correcting
+  separately** (outside this spec folder's scope)
+- Env-var spellings for new fields follow the existing convention: `AK_TEST__EVALUATOR`,
+  `AK_TEST__LLM__MODEL`
+
+### Evaluator selection (`Test._resolve_evaluator`)
+
+- Resolution lives on the harness, not in a separate factory module: `Test._resolve_evaluator()` is a
+  private `@classmethod` that turns `AKTestConfig.get().evaluator` into an `AKEvaluator` instance, and
+  `Test.compare` calls it once, before dispatching to a mode
+  - Keeping it on `Test` puts every policy decision — mode, threshold, alternatives, and which backend
+    scores them — inside the one class that owns the comparison, so `compare` reads top to bottom
+    without a hop into another module
+  - Private and argument-free: `evaluator` is config-only (see Non-goals), so there is nothing per call
+    to pass and nothing outside `Test` to select
+- The three resolution branches are the #541 house pattern
+  (`ak-py/src/agentkernel/core/util/factory.py`), the same shape as `InputGuardrailFactory`
+  (`guardrail/guardrail.py:33-55`) and `SandboxProviderFactory` (`sandbox/factory.py:146-159`) — only
+  the location differs, so the two shared helpers are reused verbatim
+  1. **Built-in short name** — `if evaluator == "deepeval":` with the real import inside
+     `require_extra("test", "evaluator: deepeval")` (`factory.py:50`), so a missing dependency names
+     the extra to install instead of surfacing a bare `ModuleNotFoundError`
+  2. **Unknown short name** — a value containing no `.` that matches no built-in raises
+     `AKConfigError` (`factory.py:18`) naming the value and listing the built-ins. It is **not**
+     retried as a dotted path, so a typo (`deepval`) fails as a typo rather than as an import error
+  3. **Dotted path** — any value containing a `.` goes to `resolve_dotted(evaluator,
+     base=AKEvaluator)`, which raises `AKConfigError` when the module will not import, the attribute
+     is missing, or the object is not an `AKEvaluator` subclass
+- Every branch ends the same way — `cls(AKTestConfig.get())` — which is why the constructor is part of
+  the interface: the built-in gets no construction path a user subclass does not get
+- Evaluator instance lifetime — **the resolved evaluator is cached on `Test`**
+  - **Two** private class attributes, and no others: `_evaluator: tuple[str, AKEvaluator] | None` —
+    the config string and the instance it produced, held as **one** slot — and
+    `_evaluator_lock: RLock`. `compare` is a `@staticmethod`, so there is no instance to hang them off
+  - `_resolve_evaluator` is the house double-checked lookup, the same shape as `AKConfig.get()`
+    (`core/config.py:719-741`) and `AKTestConfig.get()` (`config.py:44-50`): return the cached
+    instance when its key equals the configured value, otherwise take the lock, re-check, resolve,
+    and store
+  - `RLock` rather than `Lock` for reentrancy, the reason `AKConfig` already gives at
+    `core/config.py:716-717`: the dotted-path branch runs `importlib.import_module` while the lock is
+    held, so a user module that reaches evaluation during its own import re-enters the method instead
+    of deadlocking
+  - Key and instance share one slot so that a single store publishes both. This is **not** fixing a
+    reachable race: `evaluator` does not change during a run — one process resolves one evaluator, and
+    nothing but `_reset_evaluator()` in a test produces a second store, at which point the stale key
+    is `None` and matches no config value. One slot is simply the cheaper shape, with one store to
+    make, one read to do, and one thing to clear
+  - Holding the lock across construction is deliberate: it serialises a slow bring-your-own constructor
+    (loading a model, opening a client) against other threads' first comparison, which is the right
+    trade against constructing that same expensive object several times over
+  - **Single-slot, not a dict.** At most one evaluator is ever live, so a swapped-away backend's
+    clients are dropped rather than retained under a stale key. Re-swapping rebuilds, which costs a
+    constructor — the case a suite alternating evaluators mid-run would hit, and one no in-repo suite
+    does
+  - The cache is required, not an optimisation: a bring-your-own evaluator may do real work in its
+    constructor (load a model, open a client), and the interface promises one instance is reused for
+    the session, so rebuilding per comparison would break that promise
+  - This is **not** the state the Motivation removes. What goes away is a pair of untyped evaluation
+    clients built inline by the comparison method (`test.py:25-26`, `test.py:171-178`). What replaces
+    it is one slot holding an `AKEvaluator` behind its interface, filled by a method that does nothing
+    but resolve — swapping the backend is a config value, not an edit to `compare`
+  - The key is still compared against the live config on every call, so the suite under "Test suite"
+    that swaps `evaluator` between tests rebuilds on the next `compare` without an explicit reset.
+    Application runs never take this path — they resolve once and hit the cache thereafter
+  - `Test._reset_evaluator()` pairs with `AKTestConfig._reset()` (`config.py:53`) for the tests that
+    want the rebuild to be explicit
+  - Instances must be safe to share across threads, since one instance is reused across tests. The
+    lock guards construction only — it is not held across `score_based_evaluation` /
+    `llm_based_evaluation`, which would serialise every comparison in the suite
+  - Concurrency exposure is small by construction: `compare` is synchronous and pytest runs one thread
+    per worker, and `pytest-xdist` (newly active via `deepeval`, see Dependencies) parallelises by
+    **process**, so each worker gets its own class object and its own slot — at the cost of one
+    evaluator construction per worker
+- The evaluator is resolved for every mode, including `score`, because score mode runs the evaluator's
+  own `score_based_evaluation`
+  - `DeepevalAKEvaluator` therefore needs the `deepeval` package in every mode; the import happens inside
+    `require_extra` (`factory.py:50`), the repo-wide pattern for turning `ModuleNotFoundError` into an
+    actionable message
+  - `test.py` imports only `AKEvaluator` and the two payload models at module level, all pure Python,
+    so module-level imports in `agentkernel.test` stay free of `deepeval` and importing the harness
+    does not require it
+- No `AKEvaluatorFactory` class is added anywhere; the evaluator package has no selector to import
+
+### Bring-your-own evaluator
+
+- **The dotted path is the extension point, and it is the only one**: there is no registry, no entry
+  point, and no privileged built-in path. `DeepevalAKEvaluator` satisfies the same contract a user
+  subclass does, so anything the built-in can do a user class can do
+- Resolution is ordinary `importlib`, so any module on `sys.path` works — including one sitting
+  beside the test file, which is the form the sandbox example uses
+  (`type: sandbox_provider.DemoIdentitySandboxProvider`, `examples/sandbox/identity/config.yaml:18`)
+  - `evaluator: my_evaluator.MyEvaluator` in an app's `test-config.yaml` therefore resolves against
+    `my_evaluator.py` next to `app_test.py`, because pytest's default import mode puts the test
+    file's own directory on `sys.path`
+  - An installed package (`mypkg.evaluators.MyEvaluator`) works by the same mechanism
+- The subclass contract, which `_resolve_evaluator` does not enforce beyond the `issubclass` check
+  - Implement `score_based_evaluation(case)` and `llm_based_evaluation(case)`; both synchronous,
+    both returning `AKEvaluationResult`
+  - Raise `AKMetricNotSupported` from a method the backend cannot provide, rather than returning a
+    `0.0` — an unsupported mode is a configuration error, not a test failure
+  - Populate `metric`, `score` (normalised to `[0.0, 1.0]`, or `None` for "not scored"), and `passed`
+    (the score compared against `case.threshold`); optionally `reason` / `cost` / `metadata`. Leave
+    `threshold`, `mode`, and `attempts` unset on the result: the harness stamps those, so an evaluator
+    that sets them is overwritten, not obeyed
+  - Never assert, never iterate the alternatives list, and never read `AKTestConfig` independently —
+    mode selection and alternative iteration stay in `Test.compare`; deciding `passed` from the score is
+    the one policy call delegated to the evaluator, and the single `expected` on the case is the only
+    ground truth a method sees
+  - Raise `AKEvaluationError` on a backend failure (missing credentials, transport error) so the
+    harness can distinguish a broken evaluator from a failing agent, which is the failure mode
+    called out in Motivation
+  - Be safe to share across threads, since one instance is reused for the whole session
+  - Do no evaluation work at **module import time**. The dotted-path import runs while `Test` holds
+    `_evaluator_lock`, so a module that reaches `Test.compare` (or `_resolve_evaluator`) as an import
+    side effect inverts the lock order against CPython's per-module import lock. Construction work
+    belongs in `__init__`, which runs after the import completes
+- A user subclass needs **no** AK extra and no `deepeval` install: the `deepeval` import lives
+  inside the built-in's `require_extra` branch, so the dotted-path branch never reaches it.
+  `pip install agentkernel[test]` still pulls `deepeval` in, since it is one dependency line on the
+  extra, but nothing in the resolution path requires it
+- `AKEvaluationResult.evaluator` carries the configured string verbatim — `"deepeval"` or the
+  dotted path — rather than the class name, so a report names what the config selected
+- The offline test suite rides on this branch: the fake evaluator under "Test suite" is registered
+  by dotted path, so every llm-mode test exercises BYO resolution as a side effect
+
+### `DeepevalAKEvaluator`
+
+- Ships as part of the `test` extra, exactly as `ragas` did — one dependency line, no new extra
+- **Score metric: `Scorer.quasi_exact_match_score`** (`deepeval.scorer.Scorer.quasi_exact_match_score`) —
+  a ready-made classmethod DeepEval ships directly (`scorer/scorer.py:114-117`); no `BaseMetric` object,
+  no regex, and no `LLMTestCase` are constructed for the score path at all
+  - Normalised whole-string equality: `quasi_exact_match_score(target, prediction)` returns
+    `1 if normalize_text(target) == normalize_text(prediction) else 0`, applying DeepEval's own
+    case/punctuation/article normalisation (`deepeval.utils.normalize_text`) to **both** arguments
+    internally — `score_based_evaluation` passes `case.expected`/`case.actual` straight through and does
+    no normalisation of its own
+  - Chosen over `quasi_contains_score`, `PatternMatchMetric`, `rouge_score`/`sentence_bleu_score`, and
+    DeepEval's model-backed scorers — two prior design decisions and the rejected-alternative analysis
+    are recorded in `research/score-metric-selection.md`, not repeated here
+  - **Containment given up, verified empirically against `deepeval` 4.1.8**: a verbose correct answer
+    no longer scores `1.0` on the score path — e.g. `target="Paris"`, `prediction="...the capital of
+    France is Paris..."` scores `0` — only a response whose entire normalised text equals the
+    normalised expected phrase passes
+  - **Consequence for callers, revised**: `llm`/`fallback` is not, by itself, a reliable rescue for this
+    case. A symmetric-equivalence rubric ("does `actual` convey the *same* information as `expected`?")
+    fails the identical short-expected/verbose-correct-actual case that `score` mode gives up on, because
+    a verbose `actual` says *more* than a short `expected` — reproduced in review on 4 shipped example
+    suites (`knowledgebase/openai/chromadb`, `api/multimodal/openai`, `cli/logfire`,
+    `cli/guardrail/bedrock`), all in `fallback` mode, all failing at the `llm` stage too. The default
+    rubric (`_DEFAULT_LLM_CRITERIA`, `akevaluators/deepeval.py:17-23`) was made directional to close this
+    gap — it now explicitly tells the judge not to penalize `actual` for including more detail than
+    `expected`. A caller needing containment for a long response now depends on that directional rubric
+    holding, not on the `llm`/`fallback` mode pairing alone; whether it actually rescues the four examples
+    above needs empirical reverification before this is called closed
+  - It returns a binary 0/1: `threshold` is inert on the score path (any value in `(0, 1]` behaves
+    identically), and in `fallback` a near-miss reaches the llm stage rather than passing locally
+    (survey §9, Finding 12). That cost is proportional — only failing comparisons pay it
+  - No object is constructed per call — `quasi_exact_match_score` is a stateless classmethod called
+    directly with `case.expected`/`case.actual`
+  - Verified present with a stable signature across the full pinned range: `deepeval.scorer.Scorer.quasi_exact_match_score`
+    exists and is exported unchanged from `4.1.4` (the minimum pin) through `4.1.8`
+- **Llm metric: `GEval`**
+  - One AK-owned rubric (`_DEFAULT_LLM_CRITERIA`, `akevaluators/deepeval.py:17-23`), **directional, not
+    symmetric**: it asks whether `actual` correctly conveys the information in `expected`, and explicitly
+    instructs the judge not to penalize `actual` for being longer or more detailed than `expected` —
+    `expected` may be a short phrase, fact, or keyword rather than a full sentence. Uses
+    `evaluation_params=[ACTUAL_OUTPUT, EXPECTED_OUTPUT]`
+  - Required because DeepEval ships no semantic-similarity metric — the one gap that is DeepEval's
+    alone, since RAGAS, Opik, and autoevals all ship a ground-truth comparison (survey §3 Finding 5,
+    §10 Finding 13) — so the RAGAS
+    `answer_similarity` path has no drop-in replacement other than a rubric-based judge
+  - **Behavioural change**: today, `judge` mode with no expected answers falls back to RAGAS
+    `answer_relevancy` against the question (`test.py:201-217`). That path is dropped — `llm` mode now
+    requires `expected` and raises `AKMissingInput` without it. Every in-repo caller already passes
+    expectations, and `expect()` requires them by signature (`test.py:264`)
+  - AK owns the default rubric; overriding it per test is deferred (see the payload section)
+  - Constructed with `threshold=None` (DeepEval's score-only mode — the harness owns pass/fail, per
+    "Threshold scale") and the `LiteLLMModel` from "LLM model construction". Requires `deepeval>=4.1.4`
+    (see "Dependencies") — on every earlier release, `threshold=None` crashes `measure()`/`a_measure()`
+    with a `TypeError` on every call, not just at construction
+  - No `include_reason` is passed: `GEval` does not accept that constructor argument (verified against
+    `deepeval` 2.9.3 and 4.1.8) — unlike DeepEval's RAG metrics, `GEval` always returns `(score, reason)`
+    from the single rubric-judging LLM call, so there is no reason/no-reason mode to toggle
+- Only the llm path maps `AKEvaluationCase` → `LLMTestCase(input, actual_output, expected_output)`; the
+  score path calls `Scorer.quasi_exact_match_score(target, prediction)` directly on plain strings, with
+  no `LLMTestCase` or `BaseMetric` object involved
+- Translates a soft backend failure (`metric.error`, a `None` score) from `GEval.measure()` into a raised
+  `AKEvaluationError` rather than a low score. `quasi_exact_match_score` has no such failure mode — it is
+  a pure string comparison over two `str` values that cannot raise, so `score_based_evaluation` has no
+  try/except to translate
+- **Behavioural change**: score mode no longer computes a rapidfuzz ratio, so a response that scored
+  just above the old threshold may now score differently on a different scale
+
+### No outbound data
+
+- **Nothing about a user's tests may reach DeepEval or Confident AI.** Evaluation is local except for
+  the judge call that the user's own `llm.model` / `llm.provider` configuration makes
+- Telemetry is disabled by the harness, not left to the user
+  - `DEEPEVAL_TELEMETRY_OPT_OUT` is set via `os.environ.setdefault(..., "1")` **before the first
+    `deepeval` import**, since DeepEval initialises telemetry at import time — setting it afterwards is
+    too late
+  - `setdefault` rather than an unconditional write, so a user who deliberately opts in by exporting
+    the variable themselves is respected
+- The Confident AI cloud path is never engaged: AK does not call `deepeval.login`, does not set
+  `CONFIDENT_API_KEY`, and does not use the hosted dataset/report features. Results stay in-process
+- Local state files DeepEval writes into the working directory — `.deepeval/`,
+  `.deepeval_telemetry.txt` — are treated as build artefacts: added to `.gitignore`, and relocated out
+  of the repository root if DeepEval offers a path override
+
+### `return_metrics` mode
+
+- A keyword argument on `Test.compare` and `Test.expect`, `return_metrics: bool = False`
+  - Per-assertion, so one suite can assert on most comparisons and collect the `AKEvaluationResult`
+    for the ones it wants to inspect or report
+  - Defaulted, and keyword-only in practice since it is appended after the existing parameters, so
+    every current call site keeps working unchanged
+- When `False` (default), `compare` and `expect` behave as today: return `None` on success, raise
+  `AssertionError` on failure
+- When `True`
+  - `compare` and `expect` return the decisive `AKEvaluationResult` with `passed`, `threshold`, and
+    `mode` stamped, and non-decisive attempts in `attempts`
+  - No `AssertionError` is raised for a failing comparison
+  - Every other error still raises, unsuppressed: `AKEvaluationError` (judge unavailable),
+    `AKMissingInput`, `AKMetricNotSupported`, `AKConfigError`, the `ValueError` for an invalid mode
+    (`test.py:239-240`), the `ValueError` for an empty expected list (`test.py:143-144`), and the
+    `AssertionError` from `expect` when no response has been recorded (`test.py:271`)
+- In `fallback`, the decisive result is the llm result whenever score mode did not pass; the score-mode
+  result is recorded in `attempts`
+
+### Harness changes (`Test`)
+
+- **All RAGAS code leaves `test.py`, not just the dependency**: `_fuzzy_compare` and `_judge_compare`
+  are deleted, along with the `_ragas_llm` / `_ragas_embeddings` class attributes (`test.py:25-26`) and
+  the module-level imports `from datasets import Dataset`, `from ragas import evaluate`,
+  `from ragas.metrics import answer_relevancy, answer_similarity`, and `from rapidfuzz import fuzz`
+  (`test.py:8-11`). After the change no RAGAS, `datasets`, or `rapidfuzz` symbol appears anywhere in
+  `agentkernel.test`; all scoring goes through `AKEvaluator`
+- The private surface `Test` gains in their place is exactly four members: `_resolve_evaluator()`,
+  `_reset_evaluator()`, and the two cache attributes `_evaluator` (one `(key, instance)` tuple) and
+  `_evaluator_lock`. `_evaluator` holds an `AKEvaluator` behind its interface — no comparison logic,
+  no backend client, and no metric object returns to the class
+- `Test.compare` keeps its existing parameters and stays a synchronous `@staticmethod`; the only
+  addition is `return_metrics: bool = False`, appended last, so every current call site is unaffected
+  (`examples/transport/nats/app_test.py:105`, `ak-py/src/agentkernel/skills/ak-test/SKILL.md:159`)
+- `Test.expect` gains the same argument and forwards it to `compare`
+- `compare` retains ownership of: mode validation and selection, resolving the evaluator through
+  `Test._resolve_evaluator()`, iteration over the `expected` list with "pass if ANY alternative
+  passes", the fallback chain, and building the `AKEvaluationCase`
+  - The evaluator is resolved once per `compare` call, before the expected-list loop, so every
+    alternative and both stages of `fallback` score through the same instance
+- Assertion messages remain recognisable to existing tests that match on them
+  (`ak-py/tests/test_cli_tester.py:31`, `:48`, `:73`), with the mode names updated
+- `Test.expect` stays `async` and returns whatever `compare` returns
+
+### Threshold scale
+
+- Thresholds become plain floats in `[0.0, 1.0]` on every path, matching what every evaluation library
+  returns; the 0–100 scale and the `threshold / 100` conversion into judge scoring (`test.py:251`,
+  `test.py:260`) are removed
+- `Test.match_threshold` and `Test.compare(threshold=...)` default to `0.5` instead of `50`
+  (`test.py:28`, `test.py:221`)
+- DeepEval metrics are constructed with `threshold=None`; `passed` is decided by each
+  `DeepevalAKEvaluator` method itself, comparing its returned score against `case.threshold`
+- **Reversed from an earlier pass of this design**: `Test.compare` does not guard `threshold` to
+  `[0.0, 1.0]`. The meaningful range depends on the configured evaluator's own scoring scale — a
+  different backend could score outside `[0.0, 1.0]` — so a universal range guard doesn't generalize
+  past the two shipped DeepEval metrics. A stale `threshold=50` call site is accepted as-is; it just
+  makes `score >= threshold` false for both shipped metrics (never passes) instead of erroring loudly.
+  Tested explicitly: `ak-py/tests/test_cli_tester.py::test_compare_threshold_outside_zero_one_is_not_rejected`
+- Every explicit `threshold=`/`match_threshold=` call site under `examples/` is updated to the new
+  scale — currently 15 files, 30 call sites (`git grep -nE "(match_)?threshold *= *[0-9]" examples/`);
+  `spec.md` carries the full file enumeration. Plus the docs pages listed under Migration surface
+
+### Synchronous evaluation
+
+- Evaluator methods and `Test.compare` are synchronous, because `compare` is called from inside
+  running event loops in shipped code — `examples/transport/nats/app_test.py:100-112` and
+  `examples/aws-serverless/openai/lambda_test.py:52-56` call it inside `@pytest.mark.asyncio` bodies
+  - `asyncio.run()` raises inside a running loop, and the existing `AgentHandler._run_async_sync`
+    bridge (`ak-py/src/agentkernel/core/chat_service.py:207-225`) ends in `loop.run_until_complete`,
+    which also raises on an already-running loop
+- An adapter whose backend is async-only is responsible for hiding that behind its own synchronous
+  method body — the interface itself provides no bridge (see Non-goals)
+  - `GEval.measure()` needs no bridge: DeepEval's default `async_mode=True` makes `measure()` call
+    `asyncio.run_until_complete(a_measure(...))` internally, but DeepEval's own
+    `get_or_create_event_loop()` first calls `nest_asyncio.apply()` whenever it detects an
+    already-running loop — `nest_asyncio` is a hard dependency of `deepeval` itself, the same mechanism
+    `ragas.evaluate()` already relies on today (`ragas/async_utils.py`) for the identical nested-loop
+    case, which is why the current judge path has never broken under `@pytest.mark.asyncio`. Verified
+    empirically against `deepeval` 2.9.3, 2.9.7, and 4.1.8: `GEval.measure()` called from inside a
+    running loop returns normally
+    - Residual risk, not addressed here: `nest_asyncio.apply()` raises on a uvloop-based loop (the same
+      incompatibility `ragas` special-cases). No shipped AK example runs evaluation under uvloop today
+
+### Dependencies
+
+- `deepeval` replaces `ragas` in the `test` extra, pinned `>=4.1.4` rather than declared as an unpinned
+  single line the way `ragas` was (`ak-py/pyproject.toml:153`)
+  - Required, not a preference: `GEval.measure()`/`a_measure()` compute `self.success = self.score >=
+    self.threshold` with no `None` guard on every `deepeval` release checked from `2.9.3` through
+    `4.1.3` (spot-checked `2.9.3`, `2.9.5`, `2.9.7`, `3.0.0`, `3.5.0`, `3.8.0`, `4.0.0`, `4.0.9`, `4.1.0`,
+    `4.1.1`, `4.1.2`, `4.1.3`) — with `threshold=None` (see "Llm metric: GEval"), that line raises
+    `TypeError: '>=' not supported between instances of 'float' and 'NoneType'` on every real
+    evaluation, empirically reproduced against the installed `2.9.3`. `4.1.4` is the first release that
+    routes through a guarded `is_successful()` (`self.success = None if self.threshold is None else
+    ...`), verified empirically against the downloaded `4.1.4` and `4.1.8` wheels
+- Removed from the `test` extra (`pyproject.toml:152-157`): `ragas`, `datasets`, `pandas`, the
+  `langchain_community==0.4.1` pin, and `rapidfuzz` (`:152`), which loses its consumer once
+  `_fuzzy_compare` is deleted
+- Nothing else is added: `Scorer.quasi_exact_match_score` is part of `deepeval` core (no extra library —
+  unlike `rouge_score`/`sentence_bleu_score`, ruled out above for pulling in `nltk`/`numpy`/`absl-py`),
+  and `litellm` is already there
+- DeepEval emits anonymous usage telemetry by default and writes local state files into the working
+  directory; both are suppressed — see "No outbound data"
+- Installing `deepeval` also pulls in `pytest-xdist`, `pytest-repeat`, `pytest-rerunfailures`, and
+  `pytest-asyncio` as runtime dependencies, and pytest auto-loads plugins via entry points; `pytest-asyncio`
+  is already a direct dependency of the `test` extra (`pyproject.toml:148`) and is already active today, so
+  only the other three — `pytest-xdist`, `pytest-repeat`, `pytest-rerunfailures` — become newly active in
+  every AK test session alongside the existing `addopts` (`pyproject.toml:212`). RAGAS brought none of
+  these three; the interaction must be verified before merge
+- The identical `langchain_community==0.4.1` pin in the `langgraph` extra (`pyproject.toml:45`) is a
+  separate pin and is untouched. AK's CI installs every extra (`ak-py/build.sh` runs
+  `uv sync --all-extras`, driven by `.github/workflows/test-reusable.yaml:152`), so that pin still
+  constrains CI resolution after the `test` one is dropped
+- Resolution of `test` + `langgraph` together must be verified after the removal
+
+### Migration surface
+
+The rename touches these current (non-versioned, non-build) surfaces; all must be updated in the same change:
+
+- Code: `ak-py/src/agentkernel/test/test.py`, `ak-py/src/agentkernel/test/config.py:32`
+- Tests: `ak-py/tests/test_test_config.py`, `ak-py/tests/test_cli_tester.py`, `ak-py/tests/test_config.py`
+- Skills: `ak-py/src/agentkernel/skills/ak-test/SKILL.md:6,42,47-56`, and the `test-config.yaml`
+  template embedded in `ak-py/src/agentkernel/skills/ak-init/SKILL.md:338` (there is no separate
+  template file)
+- Docs: `docs/docs/testing/cli-testing.md`, `docs/docs/testing/automated-testing.md`,
+  `docs/docs/testing/overview.md`, `docs/docs/core-concepts/configuration.md` — each gains the
+  `evaluator` key alongside `mode`, and the testing pages gain a bring-your-own-evaluator section
+  mirroring the sandbox one (`docs/docs/advanced/sandbox.md:378`)
+  - `ak-py/README.md:967` documents `` `judge`: Uses LLM-based evaluation (Ragas) `` alongside `fuzzy`
+    and `fallback`; updated to the new mode names and backend
+- Examples: 40 `examples/**/test-config.yaml` files
+  - 34 with `mode: fallback`, each also carrying a `judge:` block and the
+    `# Test comparison mode: fuzzy, judge, or fallback` comment
+  - 6 with `mode: fuzzy` (`examples/sandbox/{basic,daytona,docker,e2b,policy,profiles}/test-config.yaml`)
+    — mode line only; none of these carries a `judge:` block, and their comment explains why fuzzy was
+    chosen rather than naming the mode options
+  - No `evaluator` key is added to any of them: the default already selects `deepeval`, and adding a key
+    every example would carry identically is noise. The skill templates document the key instead
+- Use-cases: `use-cases/waste-sorting-assistant/test-config.yaml:2` is `mode: fuzzy` — the only
+  in-repo surface outside `examples/` pinned to an old mode name, so it is updated alongside the
+  6 sandbox configs above
+- Skills (non-`ak-init`/`ak-test`-template): `.agents/skills/ak-dev-testing-conventions/SKILL.md:269-275`
+  documents the `fuzzy`/`judge`/`fallback` modes, the `judge:` config block, and Ragas-based
+  evaluation — updated to `score`/`llm`/`fallback`, the `llm:` block, and `AKEvaluator`/DeepEval
+  - `ak-py/src/agentkernel/skills/ak-test/evals/evals.json:33-48` asserts on `mode: fuzzy`,
+    `mode: judge`, and `judge:` in its expected outputs (`test-mode-fuzzy`, `test-mode-judge`
+    eval cases); updated to `mode: score`, `mode: llm`, and `llm:` so the ak-test skill's own evals
+    pass against the renamed modes
+- Versioned docs under `docs/versioned_docs/` are frozen published snapshots and are **not** edited
+
+### Test suite
+
+- Llm-mode unit tests must run offline: a fake `AKEvaluator` subclass registered by dotted path
+  replaces the live-LLM calls currently in `ak-py/tests/test_cli_tester.py:35-81`
+- Coverage required for: each mode routing to its evaluator method, `return_metrics` true/false per
+  mode, `attempts` population in `fallback`, the judge-unavailable path raising rather than
+  reporting a mismatch, and `mode: fuzzy` / `mode: judge` failing with a clear error. **As shipped**, a
+  leftover `judge:` block does *not* fail — it is intentionally, silently ignored (see "Configuration");
+  that reversal is itself covered by `test_legacy_judge_key_in_yaml_is_silently_ignored`
+- `Test._resolve_evaluator` is covered branch by branch: `deepeval` → `DeepevalAKEvaluator`; a dotted
+  path to a test-local subclass → that class; an unknown short name → `AKConfigError` listing the
+  built-ins; a dotted path to a non-`AKEvaluator` class → `AKConfigError`; a dotted path to a missing
+  module → `AKConfigError`; the built-in with the extra absent → `ImportError` naming
+  `agentkernel[test]`
+- Caching is covered directly: two `compare` calls under one config resolve to the same instance
+  (identity assertion) with the constructor running once, and a `compare` reached through the harness
+  scores through the evaluator the config names
+- The key check is covered without an explicit reset: changing `evaluator` between two `compare` calls
+  (via `AKTestConfig._reset()` alone) yields a different instance, proving the slot's key is compared
+  against the live config rather than only on first use
+- No concurrency test is written: one evaluator is resolved per run, `compare` is synchronous, and a
+  test that sleeps to widen a lock window asserts on timing rather than on behaviour
+- A BYO evaluator scores end-to-end with `deepeval` never imported (asserted against `sys.modules`),
+  proving the dotted-path branch carries no dependency on the built-in
+- The cached instance rebuilds after `AKTestConfig._reset()` + `Test._reset_evaluator()`, so swapping
+  `evaluator` mid-suite takes effect instead of scoring through the previously cached instance
+- `ak-py/tests/test_test_config.py` gains assertions for the new fields, the renamed `llm` block, the
+  rejected `mode` values, and the `AKConfigError` raised by a legacy `judge:` key
+- Score-mode tests run against the real `Scorer.quasi_exact_match_score` — no model download, no
+  network — and assert the new normalised-exact-match semantics (including that a verbose correct
+  answer no longer scores `1.0`) rather than the old fuzzy ratio
+
+## Non-goals
+
+- Any evaluator backend other than DeepEval. Opik, Braintrust, and RAGAS are not implemented here;
+  `_resolve_evaluator`'s dotted-path branch is the extension point until a second built-in is added
+  - Worth recording for whoever revisits this: the catalogues differ in **coverage**, not just in
+    preference (survey §10, Finding 15). DeepEval is deepest on agentic and safety metrics and alone
+    in shipping non-LLM local-model scorers; RAGAS is deepest on reference comparison and retrieval;
+    Opik on deterministic text statistics and conversation-level judging. A user whose need is
+    reference comparison has a real reason to reach for the dotted path, and that is the case the
+    bring-your-own branch is expected to serve first
+- More than one metric per mode, and any config surface for selecting metrics
+- A per-call or per-`Test` evaluator override. `evaluator` is config-only in v1 — unlike `mode`,
+  which `Test.__init__` and `compare` both accept — because `AK_TEST__EVALUATOR` already covers
+  per-environment selection and a suite mixing evaluators across assertions has no demonstrated use
+- A registry or entry-point mechanism for third-party evaluators: the dotted path covers it, matching
+  every other pluggable backend in the repo
+- A public `AKEvaluatorFactory`, or any way to obtain an evaluator instance outside `Test`. Resolution
+  is a private detail of the harness; if a second consumer ever needs one, `_resolve_evaluator` is
+  what gets promoted out
+- Per-call metric or payload configuration: the only argument added to `compare` / `expect` is
+  `return_metrics`, and the payload's optional fields stay unpopulated in v1
+- `DAGMetric`: it needs a caller-supplied graph object, which no config key can express and no call
+  argument may carry under the rule above
+- Trace- or trajectory-derived metrics (`TaskCompletion`, `StepEfficiency`, `PlanAdherence`): they read
+  instrumentation, not arguments, and need the CLI under test to emit spans (survey §2, Finding 4)
+- Tool-call metrics (`ToolCorrectness`, `ArgumentCorrectness`): they need typed `ToolCall` payloads the
+  harness cannot currently capture from a CLI subprocess
+- Conversational/multi-turn metrics and the turn history they need
+- Multimodal metrics and image payloads
+- Dataset-level batch evaluation (`deepeval.evaluate(test_cases, metrics)`)
+- Editing `docs/versioned_docs/` snapshots
+- A shared async-bridge helper in the evaluator package for backends that are async-only. No shipped
+  adapter needs one — DeepEval's `nest_asyncio` self-handling already covers `GEval.measure()` (see
+  "Synchronous evaluation") — so one would ship with no caller to validate its API against. An adapter
+  whose backend is genuinely async-only is responsible for hiding that itself, behind its own
+  synchronous method body; `pipeline/transport/nats.py`'s `_NatsLoop` (dedicated thread + its own event
+  loop, coroutines submitted via `asyncio.run_coroutine_threadsafe`) is a pattern to copy if one is
+  ever needed
+
+### Verification required before implementation
+
+- Tracked pointwise in [`spec.md`](spec.md) rather than here: these are implementation-detail
+  confirmations against the DeepEval source, not design decisions, so they belong in the
+  implementation spec once it is written (see `ak-dev-write-spec`)
+
+## Open questions
+
+- None outstanding. Items needing confirmation against the DeepEval source or a pinned version are
+  tracked in [`spec.md`](spec.md) rather than left as design decisions.

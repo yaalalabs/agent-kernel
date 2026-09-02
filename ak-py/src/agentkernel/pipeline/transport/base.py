@@ -104,21 +104,20 @@ class QueueTransportFactory:
 
     @staticmethod
     def resolve_type(queues_config: Optional[Any] = None) -> str:
-        """Resolve the effective transport type for a queues block.
+        """Resolve the transport type the application declared.
 
-        Explicit ``type`` wins; otherwise a configured input queue URL implies ``sqs``
-        (compatibility with pre-#495 configs), else ``in_memory``. ``queues_config=None``
-        reads ``execution.queues``.
+        Only the block's ``type`` decides, which is why the field is mandatory inside a
+        declared queues block: queue coordinates are injected per component by a deployment (a
+        Lambda that consumes its input queue through an event source mapping is never given the
+        input URL, for instance), so inferring the transport from them made one process resolve
+        ``sqs`` while its sibling resolved ``in_memory``. A config with no queues block at all
+        runs the single-process default. ``queues_config=None`` reads ``execution.queues``
+        (#503 seam: the sandbox queue broker passes its own ``sandbox.broker.queue`` block).
         """
         queues = queues_config if queues_config is not None else AKConfig.get().execution.queues
-        # The `type` field lands with the in_memory transport iteration; getattr keeps this
-        # resolution correct before and after that config change.
-        configured = getattr(queues, "type", None) if queues is not None else None
-        if configured:
-            return configured
-        if queues is not None and queues.input is not None and queues.input.url:
-            return "sqs"
-        return "in_memory"
+        if queues is None:
+            return "in_memory"
+        return queues.type
 
     @classmethod
     def create(cls, queues_config: Optional[Any] = None) -> QueueTransport:

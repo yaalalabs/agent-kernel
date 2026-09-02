@@ -439,6 +439,7 @@ class FakeSSMClient:
         self.cancel_calls = []
         self.describe_calls = []
         self.pending_polls = 0  # invocations report InProgress this many times before terminal
+        self.missing_polls = 0  # invocations raise InvocationDoesNotExist this many times first
         self.invocation = {
             "Status": "Success",
             "StandardOutputContent": "ssm stdout",
@@ -461,6 +462,9 @@ class FakeSSMClient:
 
     def get_command_invocation(self, CommandId, InstanceId):
         self.invocation_calls.append((CommandId, InstanceId))
+        if self.missing_polls > 0:  # SSM has not registered the invocation yet
+            self.missing_polls -= 1
+            raise FakeClientError("InvocationDoesNotExist")
         if self.pending_polls > 0:
             self.pending_polls -= 1
             return {"Status": "InProgress"}
@@ -571,6 +575,37 @@ async def test_ssm_polls_until_terminal_status(ssm_env):
         assert len(fake.ssm.invocation_calls) == 3  # two InProgress polls + the terminal one
     finally:
         module._POLL_INTERVAL = module_interval
+
+
+@pytest.mark.asyncio
+async def test_ssm_waits_out_unregistered_invocation(ssm_env):
+    """SendCommand -> GetCommandInvocation is eventually consistent; the gap is not a failure."""
+    module, fake = ssm_env
+    module_interval = module._POLL_INTERVAL
+    try:
+        module._POLL_INTERVAL = 0.01
+        provider = _ssm_provider(module)
+        principal, policy = _principal_policy()
+        sandbox = await provider.create(principal=principal, policy=policy)
+        fake.ssm.missing_polls = 2
+        result = await sandbox.execute_command("uname -a")
+        assert result.exit_code == 0 and result.stdout == "ssm stdout"
+        assert len(fake.ssm.invocation_calls) == 3  # two missing polls + the terminal one
+        assert len(fake.ssm.send_calls) == 1  # waited rather than re-sending
+    finally:
+        module._POLL_INTERVAL = module_interval
+
+
+@pytest.mark.asyncio
+async def test_ssm_unregistered_invocation_still_times_out(ssm_env):
+    """A never-registered invocation ends as SandboxTimeoutError, not an infinite wait."""
+    module, fake = ssm_env
+    provider = _ssm_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    fake.ssm.missing_polls = 10_000
+    with pytest.raises(SandboxTimeoutError):
+        await sandbox.execute_command("uname", timeout=0.05)
 
 
 @pytest.mark.asyncio

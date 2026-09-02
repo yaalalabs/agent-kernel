@@ -49,7 +49,7 @@ def _reset_state():
     PipelineWebSocketHandler._custom_routes.clear()
 
 
-def _use_config(monkeypatch, mode=None, chat_route=None, push_auth_token=None, push_port=None, api_port=8000):
+def _use_config(monkeypatch, mode=None, chat_route=None, push_auth_token=None, push_port=None, api_port=8000, transport_type="in_memory"):
     class _WebSocketAPI:
         pass
 
@@ -65,9 +65,11 @@ def _use_config(monkeypatch, mode=None, chat_route=None, push_auth_token=None, p
         max_receive_count = 3
 
     class _Queues:
-        type = None
         input = _Input
         output = _Output
+
+    # `type` is mandatory inside a declared queues block, so the fake carries one too.
+    _Queues.type = transport_type
 
     class _Api:
         host = "127.0.0.1"

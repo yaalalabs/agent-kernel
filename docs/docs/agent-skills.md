@@ -97,7 +97,7 @@ Deploy your agent to AWS, Azure, GCP, or any Kubernetes cluster. Generates compl
 
 ### ak-add-capabilities
 
-Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, custom hooks, multimodal support, and conversation thread support (in-memory, Redis, Valkey, DynamoDB, Firestore, Cosmos DB).
+Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, AG-UI server, custom hooks, multimodal support, conversation thread support (in-memory, Redis, Valkey, DynamoDB, Firestore, Cosmos DB), sandbox code execution, and scheduling (deferred/recurring chat execution, agent-facing scheduling tools).
 
 **Example prompts:**
 - *"Add OpenAI guardrails to my agent"*
@@ -106,7 +106,7 @@ Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing 
 
 ### ak-test
 
-Set up testing and debug common issues. Covers test modes (fuzzy, judge, fallback), CLI and API test patterns, and 8 common debugging scenarios with solutions.
+Set up testing and debug common issues. Covers test modes (score, llm, fallback), pluggable `AKEvaluator` backends (built-in DeepEval, or bring-your-own), CLI and API test patterns, and 8 common debugging scenarios with solutions.
 
 **Example prompts:**
 - *"Set up automated testing for my agent"*
@@ -134,7 +134,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-sync-skills-and-docs-from-commit` | How to process a specific commit hash (typically merged to develop), update dev/user skills and documentation based on that commit delta, and support automation PR flows with loop prevention |
 | `ak-dev-write-spec` | How to spec a planned change under `docs/specs/<issue-number>-<short-title>/` in three ordered stages: a concise point-form design spec (`design.md`) reviewed first, then a detailed implementation spec (`spec.md`), then a concise iteration-by-iteration plan (`plan.md`) the PR review checks the code against — plus an optional `research/` subfolder preserving the supporting investigation the design cites |
 | `ak-dev-review-pr` | Given a PR number or URL, fetch it with the GitHub CLI, review the delta against the architecture/code-quality/testing skills, dedupe findings, and post a single batched review with inline comments |
-| `ak-dev-testing-conventions` | Pytest patterns, async testing, mocking external services, CI/CD test workflows |
+| `ak-dev-testing-conventions` | Pytest patterns, async testing, mocking external services, pluggable `AKEvaluator` test backends, CI/CD test workflows |
 | `ak-dev-code-quality` | Formatting with `black`/`isort`, commit conventions, PR checklist, review workflow |
 
 ### How Contributors Benefit
