@@ -40,6 +40,8 @@ k3d image import -c ak ak-sbx-io-handler:dev ak-sbx-agent-runner:dev ak-sbx-sand
 
 kubectl create secret generic openai --from-literal=api-key="$OPENAI_API_KEY"
 
+helm repo add valkey https://valkey-io.github.io/valkey-helm/
+helm repo add nats https://nats-io.github.io/k8s/helm/charts/
 helm dependency build ../../../ak-deployment/ak-k8s/chart
 helm install ak ../../../ak-deployment/ak-k8s/chart \
   -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f sandbox-values.yaml

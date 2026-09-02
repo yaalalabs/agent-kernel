@@ -108,6 +108,18 @@ def test_llm_based_evaluation_missing_expected_raises(evaluator):
     assert _FakeGEval.instances == []  # never got as far as constructing GEval
 
 
+def test_llm_based_evaluation_empty_actual_fails_without_judging(evaluator):
+    # GEval hard-rejects an empty actual_output; an empty reply must come back as a scored
+    # failure (so Test.compare raises its normal AssertionError), not an AKEvaluationError.
+    case = AKEvaluationCase(user_input="q", actual="", expected="Paris")
+    result = evaluator.llm_based_evaluation(case)
+    assert result.passed is False
+    assert result.score == 0.0
+    assert result.metric == "g_eval"
+    assert "empty" in result.reason
+    assert _FakeGEval.instances == []  # no judge call was attempted
+
+
 def test_llm_based_evaluation_success(evaluator):
     _FakeGEval.measure_score = 0.9
     _FakeGEval.measure_reason = "matches expected answer"

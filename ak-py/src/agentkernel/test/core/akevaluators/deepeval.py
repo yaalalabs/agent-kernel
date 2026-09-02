@@ -53,6 +53,17 @@ class DeepevalAKEvaluator(AKEvaluator):
     def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
             raise AKMissingInput("llm_based_evaluation requires AKEvaluationCase.expected")
+        if not case.actual:
+            # An empty reply can never satisfy a non-empty expected, and GEval hard-rejects an
+            # empty actual_output (MissingTestCaseParamsError): report the scored failure so
+            # Test.compare raises its normal AssertionError instead of an evaluator error.
+            return AKEvaluationResult(
+                metric="g_eval",
+                evaluator="deepeval",
+                score=0.0,
+                reason="actual output is empty; nothing to judge",
+                passed=False,
+            )
         metric = GEval(
             name="Correctness",
             criteria=case.criteria if case.criteria else None,

@@ -89,6 +89,10 @@ def deployment():
 
         _kubectl("delete", "secret", "openai", "--ignore-not-found")
         _kubectl("create", "secret", "generic", "openai", f"--from-literal=api-key={os.environ['OPENAI_API_KEY']}")
+        # A clean machine (CI) has no helm repo definitions; dependency build needs them
+        # even with Chart.lock present (the chart-test workflow does the same).
+        _run("helm", "repo", "add", "--force-update", "valkey", "https://valkey-io.github.io/valkey-helm/")
+        _run("helm", "repo", "add", "--force-update", "nats", "https://nats-io.github.io/k8s/helm/charts/")
         _run("helm", "dependency", "build", str(CHART))
         _run(
             "helm", "--kube-context", KUBE_CONTEXT, "upgrade", "--install", "ak", str(CHART),
