@@ -7,6 +7,8 @@
 ![Tests](https://img.shields.io/badge/tests-78%20passing-2f7d67)
 ![SDG 4](https://img.shields.io/badge/UN%20SDG-4%20Quality%20Education-c5192d)
 
+![ScopeWise home page showing the evidence-first study workflow](docs/assets/scopewise-home.jpg)
+
 **ScopeWise turns current course material and past papers into an evidence-backed practice plan.** It identifies which questions fit the module now, distinguishes syllabus relevance from assessment style, and builds a balanced practice pack without pretending to predict the next exam.
 
 Built as an individual [IDEALIZE 2026](COMPETITION.md) mini-competition submission by [@chirana07](https://github.com/chirana07), using Agent Kernel and local Ollama models. No mandatory paid model API or hosted vector database is required.
