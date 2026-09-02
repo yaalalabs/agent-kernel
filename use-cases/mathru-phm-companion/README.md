@@ -192,6 +192,44 @@ export MATHRU_DB_PATH="./mathru.db"     # optional
 Use a permanent System User access token. The 24-hour token from the API Setup panel will
 expire mid-session.
 
+### Model and rate limits
+
+Every agent and both guardrails run one model, pinned so the SDK does not fall back to its
+`gpt-4o` default:
+
+```bash
+export MATHRU_MODEL="gpt-5.4-mini"      # optional; this is the default
+```
+
+On a free-tier OpenAI account the model choice is really a **rate-limit** choice, and the
+binding constraint is requests per day, not tokens:
+
+| Model | TPM | RPM | RPD |
+|---|---|---|---|
+| `gpt-5.4-mini` | 100,000 | 10 | 50 |
+| `gpt-5.6-luna` | 60,000 | 10 | 50 |
+| `gpt-5.5` | 10,000 | 3 | 50 |
+
+**50 requests per day is the number that will bite.** One conversational turn is not one
+request: the entry agent calls the model, calls `resolve_role`, calls again with the result,
+hands off, and the target agent then calls again for each of its own tools. With guardrails on,
+add a moderation call and a jailbreak call per turn. A turn costs roughly 4-6 requests, so a
+full walkthrough — greeting, registration, schedule query, symptom report, PHM caseload,
+acknowledgement — will exhaust a day's quota before it finishes.
+
+To make a demo fit, turn the guardrails off for that run. No config edit needed:
+
+```bash
+AK_GUARDRAIL__INPUT__ENABLED=false AK_GUARDRAIL__OUTPUT__ENABLED=false uv run demo.py --seed
+```
+
+That removes two model round trips per turn. Turn them back on for the recording, and record
+the guardrail behaviour separately rather than in the same run as the full walkthrough.
+
+A 3 RPM model will also trip its own limit on retries alone, which surfaces as HTTP 429 — the
+same status code as an exhausted balance, with a different `code` field. `insufficient_quota`
+means billing; `rate_limit_exceeded` means slow down.
+
 `load_dotenv()` is called explicitly because Agent Kernel's own `.env` support reads only
 `AK_`-prefixed keys into its settings model, never into `os.environ` — and the OpenAI SDK
 reads `OPENAI_API_KEY` from `os.environ` directly.
@@ -280,8 +318,9 @@ leaving the escalation delivery path untouched.
   harm than a symptom report silently dropped because a moderation endpoint was rate-limited.
   Every occurrence is logged as an error.
 - **Guardrails roughly triple the API calls per turn.** Moderation and jailbreak checks are
-  each a separate round trip on top of the agent call, and each retries on failure. Budget for
-  that, or disable `guardrail.input.enabled` while iterating locally.
+  each a separate round trip on top of the agent call, and each retries on failure. On a
+  free-tier account's 50 requests per day this is the difference between completing a demo
+  walkthrough and not. See [Model and rate limits](#model-and-rate-limits).
 - **The block list is not exhaustive.** Broad terms like `mg` and `dose` will produce false
   positives, which is why every block is logged with the original reply, redacted, so the
   rate is measurable.
