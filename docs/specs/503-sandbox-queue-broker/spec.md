@@ -213,7 +213,9 @@ class QueueBrokerWorker:
      second line for the in-process flavors; the transport's one-in-flight-per-group
      guarantee remains the cross-worker line, and the worker lock only sees contention when a
      redelivery overlaps a still-running execution (`ack_wait` below the policy timeout).
-  3. **Truncation (v1, no offload):** the WHOLE encoded completion record is budgeted against
+  3. **Truncation (v1, no offload):** the WHOLE encoded output-queue record, wrapper fields
+     (`request_id`/`session_id`/`status_code`) included, exactly as `_send_completion`
+     enqueues it, is budgeted against
      `broker.inline_payload_max_bytes` (2026-09-02, PR #699 review: per-field caps let
      stdout, stderr, and files each approach the limit and the combined record blow the
      transport's message-size cap, failing the very send truncation exists to protect). When

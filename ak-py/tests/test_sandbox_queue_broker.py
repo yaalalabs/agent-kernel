@@ -495,7 +495,7 @@ class TestQueueBrokerWorker:
         assert 0 < len(completion.result.stdout) < 5000
         assert completion.result.stdout == "x" * len(completion.result.stdout)
         assert "truncated" in completion.result.notice
-        assert worker._encoded_size(completion) <= 2048
+        assert worker._encoded_size(completion, "ak-1") <= 2048
 
     @pytest.mark.asyncio
     async def test_oversized_output_files_dropped_with_notice(self, monkeypatch):
@@ -509,15 +509,15 @@ class TestQueueBrokerWorker:
         completion = BrokerWireCodec.decode_completion(json.loads(_fetch_one(QueueName.OUTPUT).body)["body"])
         assert completion.result.output_files == []
         assert "truncated" in completion.result.notice
-        assert worker._encoded_size(completion) <= 1024
+        assert worker._encoded_size(completion, "ak-1") <= 1024
 
     def test_truncation_budgets_the_whole_record_not_each_field(self, monkeypatch):
         # stdout and stderr each under the limit but over it combined: the whole encoded
         # record must fit, or the output-queue send would blow the transport's message cap.
         worker = _worker(monkeypatch, inline_payload_max_bytes=2048)
         completion = _completion(result=SandboxResult(stdout="a" * 3000, stderr="b" * 500, exit_code=0))
-        worker._truncate(completion)
-        assert worker._encoded_size(completion) <= 2048
+        worker._truncate(completion, ak_session_id="ak-1")
+        assert worker._encoded_size(completion, "ak-1") <= 2048
         assert completion.result.stderr == "b" * 500  # only the longest stream gave up bytes
         assert 0 < len(completion.result.stdout) < 3000
         assert "truncated" in completion.result.notice
@@ -525,7 +525,7 @@ class TestQueueBrokerWorker:
     def test_truncation_terminates_when_the_envelope_alone_overflows(self, monkeypatch):
         worker = _worker(monkeypatch, inline_payload_max_bytes=16)
         completion = _completion(result=SandboxResult(stdout="x" * 100, exit_code=0))
-        worker._truncate(completion)  # must terminate even though the envelope exceeds the limit
+        worker._truncate(completion, ak_session_id="ak-1")  # must terminate even though the envelope exceeds the limit
         assert completion.result.stdout == ""
 
     def test_truncation_trims_the_error_of_a_result_less_completion(self, monkeypatch):
@@ -533,15 +533,15 @@ class TestQueueBrokerWorker:
         # provider exception can embed arbitrary output. It must fit the record limit too.
         worker = _worker(monkeypatch, inline_payload_max_bytes=1024)
         completion = _completion(status="failed", error="e" * 5000, error_type="SandboxError", result=None)
-        worker._truncate(completion)
-        assert worker._encoded_size(completion) <= 1024
+        worker._truncate(completion, ak_session_id="ak-1")
+        assert worker._encoded_size(completion, "ak-1") <= 1024
         assert completion.error.startswith("e") and completion.error.endswith(" ...[truncated]")
 
     def test_truncation_drops_oversized_provider_data(self, monkeypatch):
         worker = _worker(monkeypatch, inline_payload_max_bytes=1024)
         completion = _completion(result=SandboxResult(stdout="ok", exit_code=0, provider_data={"blob": "p" * 5000}))
-        worker._truncate(completion)
-        assert worker._encoded_size(completion) <= 1024
+        worker._truncate(completion, ak_session_id="ak-1")
+        assert worker._encoded_size(completion, "ak-1") <= 1024
         assert completion.result.provider_data == {}
         assert completion.result.stdout == "ok"  # streams were already within budget; only the escape hatch went
 

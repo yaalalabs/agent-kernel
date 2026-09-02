@@ -160,7 +160,7 @@ class QueueBrokerWorker:
             completion = await self._core.process(request)  # never raises: terminal guarantee
         finally:
             lock.release()
-        self._truncate(completion)
+        self._truncate(completion, ak_session_id=request.ak_session_id)
         self._send_completion(completion, ak_session_id=request.ak_session_id)
 
     def _session_lock(self, sandbox_session_id: str) -> threading.Lock:
@@ -172,7 +172,7 @@ class QueueBrokerWorker:
                 self._session_locks[sandbox_session_id] = lock
             return lock
 
-    def _truncate(self, completion: ExecutionCompletion) -> None:
+    def _truncate(self, completion: ExecutionCompletion, *, ak_session_id: str) -> None:
         """Truncate an oversized completion in place so the whole encoded record fits within
         ``inline_payload_max_bytes`` (v1, no offload: ``result_ref`` stays None): a per-field
         cap would let the combined record blow the transport's message-size cap, failing the
@@ -182,28 +182,28 @@ class QueueBrokerWorker:
         of a failed/timed-out completion, which carries no result and can embed arbitrary
         provider output). The notice is stamped before trimming so it never re-overflows."""
         limit = self._broker.inline_payload_max_bytes
-        if self._encoded_size(completion) <= limit:
+        if self._encoded_size(completion, ak_session_id) <= limit:
             return
         result = completion.result
         if result is not None:
             note = f"output truncated to fit the {limit}-byte record limit; rerun with a file redirection to keep full output"
             result.notice = note if result.notice is None else f"{result.notice}; {note}"
-            if result.provider_data and self._encoded_size(completion) > limit:
+            if result.provider_data and self._encoded_size(completion, ak_session_id) > limit:
                 result.provider_data = {}
-            while result.output_files and self._encoded_size(completion) > limit:
+            while result.output_files and self._encoded_size(completion, ak_session_id) > limit:
                 result.output_files = result.output_files[:-1]
             # Every trimmed character frees at least one encoded byte, so cutting by the
             # overshoot converges in a few passes despite JSON-escaping inflation.
-            while (overshoot := self._encoded_size(completion) - limit) > 0:
+            while (overshoot := self._encoded_size(completion, ak_session_id) - limit) > 0:
                 stream = "stdout" if len(result.stdout) >= len(result.stderr) else "stderr"
                 text: str = getattr(result, stream)
                 if not text:
                     break
                 setattr(result, stream, text[: max(len(text) - overshoot, 0)])
-        if completion.error and (overshoot := self._encoded_size(completion) - limit) > 0:
+        if completion.error and (overshoot := self._encoded_size(completion, ak_session_id) - limit) > 0:
             marker = " ...[truncated]"
             completion.error = completion.error[: max(len(completion.error) - overshoot - len(marker), 0)] + marker
-        excess = self._encoded_size(completion) - limit
+        excess = self._encoded_size(completion, ak_session_id) - limit
         if excess > 0:
             logger.warning(
                 "Sandbox completion record for task %s is still %d bytes over inline_payload_max_bytes=%d after "
@@ -213,19 +213,24 @@ class QueueBrokerWorker:
                 limit,
             )
 
-    def _encoded_size(self, completion: ExecutionCompletion) -> int:
-        """The completion body's wire size: what ``_send_completion`` will enqueue as ``body``."""
-        return len(json.dumps(BrokerWireCodec.encode_completion(completion)).encode("utf-8"))
+    def _encoded_size(self, completion: ExecutionCompletion, ak_session_id: str) -> int:
+        """The full output-queue record's wire size: exactly what ``_send_completion`` enqueues,
+        wrapper fields included, so truncation and the send budget the same bytes."""
+        return len(json.dumps(self._record(completion, ak_session_id=ak_session_id)).encode("utf-8"))
 
-    def _send_completion(self, completion: ExecutionCompletion, *, ak_session_id: str) -> None:
-        """Send the ready-to-store record to the output queue, where the output loop
-        persists it verbatim."""
-        record = {
+    def _record(self, completion: ExecutionCompletion, *, ak_session_id: str) -> dict:
+        """The ready-to-store output-queue record; also what ``_encoded_size`` measures."""
+        return {
             "request_id": completion.task_id,
             "session_id": ak_session_id,
             "status_code": _STATUS_CODES[completion.status],
             "body": BrokerWireCodec.encode_completion(completion),
         }
+
+    def _send_completion(self, completion: ExecutionCompletion, *, ak_session_id: str) -> None:
+        """Send the ready-to-store record to the output queue, where the output loop
+        persists it verbatim."""
+        record = self._record(completion, ak_session_id=ak_session_id)
         self._transport.send(
             QueueName.OUTPUT,
             QueueMessage(

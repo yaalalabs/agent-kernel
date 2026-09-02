@@ -28,10 +28,16 @@ class APITestClient:
             else body
         )
         async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(f"{self.url}{endpoint}", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("result", "")
+            # The model occasionally ends a tool-using turn with no text, which surfaces as
+            # an empty result; retry the same prompt instead of failing the walkthrough on it.
+            result = ""
+            for _ in range(3):
+                resp = await client.post(f"{self.url}{endpoint}", json=payload)
+                resp.raise_for_status()
+                result = resp.json().get("result", "")
+                if result:
+                    break
+            return result
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
