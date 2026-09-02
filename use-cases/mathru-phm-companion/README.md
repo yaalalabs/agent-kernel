@@ -1,314 +1,307 @@
-# Mathru - Maternal Health Companion
+# Mathru — Maternal Health Companion
 
-An Agent Kernel project that supports expectant mothers and the Public Health Midwife (PHM)
-assigned to them over WhatsApp. See [SPEC.md](SPEC.md) for the full requirements.
+A WhatsApp agent built on Agent Kernel that supports expectant mothers and the Public
+Health Midwife (PHM) assigned to them. Mothers register, ask about their upcoming clinic
+visits, and report symptoms in plain language. Reports that match a danger sign are
+escalated to their assigned midwife automatically.
 
-The system is a triage-and-routing assistant, not a clinical decision system. It does not
-diagnose, does not recommend medication, and does not originate clinical thresholds.
+Addresses **UN SDG 3 — Good Health and Well-being**, targets 3.1 (maternal mortality) and
+3.2 (newborn and under-five mortality).
 
-## Build Status
+> **This is a competition prototype, not a clinical tool.** It has not been reviewed by a
+> clinician and must not be used to make care decisions. Every clinical data file currently
+> ships as `placeholder`, which means the system declines to give out dates and treats every
+> reported symptom as an escalation. See [Data provenance](#4-data-provenance) and
+> [Known limitations](#7-known-limitations).
 
-This is **phase 3** of the build order in `SPEC.md`: danger-sign screening, escalation, and the
-PHM interface.
+---
 
-| Phase | Scope | State |
-| --- | --- | --- |
-| 1 | WhatsApp channel, `mathru_triage` passthrough agent, skeleton | Done |
-| 2 | `intake_agent`, `schedule_agent`, schedule tools, SQLite persistence | Done |
-| 3 | `danger_sign_agent`, reference table, escalation, role routing, guardrails, hook | Done |
-| 4 | `guidance_agent` and the knowledge base | Not started |
+## 1. Problem statement
 
-Six agents. `mathru_triage` routes; `intake_agent` registers; `schedule_agent` answers visit
-questions; `danger_sign_agent` screens symptoms; `phm_agent` serves midwives. `guidance_agent`
-arrives in phase 4, and the system is coherent without it.
+Sri Lanka's Public Health Midwife system achieves some of the best maternal and child
+health outcomes in South Asia, and it runs almost entirely on paper. A PHM tracks her
+caseload through handwritten registers; a mother tracks her own care through the physical
+pregnancy record and Child Health Development Record she carries to clinic.
 
-### The safety architecture
+Two gaps follow from that:
 
-Severity is decided in Python, by keyword matching in `danger_signs.py`. The model passes the
-mother's words through and receives a severity it cannot override or reinterpret. Every failure
-mode leans toward escalation:
+**Mothers have no way to ask a question between visits.** A schedule sits in a booklet at
+home. A worrying symptom at 2am has no channel short of travelling to a facility, and the
+cost of that trip means real danger signs get waited out.
+
+**PHMs have no inbound signal.** A midwife learns that something is wrong at the next
+scheduled visit, or when a mother arrives at hospital. There is no low-friction path for a
+mother to raise a concern and have it reach the right person, with context, in time.
+
+Both sides already use WhatsApp daily. The channel exists; nothing runs on it.
+
+## 2. Solution overview
+
+Mathru puts a multi-agent system on WhatsApp serving both sides of that relationship.
+
+**For mothers:** register with MOH division, expected delivery date or child date of
+birth, and assigned PHM. Ask when the next clinic visit is due. Report symptoms in
+ordinary language.
+
+**For midwives:** receive escalations with the mother's context attached, query the
+current caseload, and acknowledge escalations to close them out.
+
+### Agents
+
+| Agent | Role |
+|---|---|
+| `mathru_triage` | Entry point. Routes by intent and by resolved role. Holds only `resolve_role`. |
+| `intake_agent` | Registration. Confirms fields back before saving. |
+| `schedule_agent` | Antenatal, immunisation, and child health schedule queries. |
+| `danger_sign_agent` | Structured symptom screening and escalation. |
+| `phm_agent` | Caseload queries and escalation acknowledgement. |
+
+### How it uses Agent Kernel
+
+- **WhatsApp integration** as the sole user interface, via
+  `AgentWhatsAppRequestHandler` and `RESTAPI`.
+- **Multi-agent handoffs** through the OpenAI Agents module, with `OpenAIModule`
+  registering every handoff target.
+- **Session memory** keyed on the sender's phone number. The WhatsApp handler sets
+  `Session.id` from the sender, so per-mother conversation continuity comes from the
+  framework rather than a parallel mechanism.
+- **`ToolContext`** for identity resolution inside every tool.
+- **Guardrails** for moderation and jailbreak detection, deliberately scoped (see
+  `guardrails/README.md`).
+- **Post-execution hooks** enforcing the no-diagnosis and no-medication boundary on
+  every outbound message. Registered on the entry agent, which is the only place a hook
+  sees replies produced after a handoff.
+
+## 3. Safety design
+
+The system's central design claim is that **the language model never makes a clinical
+judgement**. It handles conversation, language, and routing. Every decision that could
+affect care is made in Python against version-controlled data.
+
+**Severity is decided in code.** The model passes the mother's raw text to
+`screen_danger_signs` and receives a severity it cannot override or re-enter.
+
+**The system fails toward escalation.** Placeholder or unverified data, an unmatched
+symptom, or an exception anywhere in matching all resolve to escalation, never to "you are
+fine". `green` is only ever reached when no symptom was reported at all, and is not a value
+the danger-sign table is allowed to contain.
 
 | Condition | Severity | Escalates |
-| --- | --- | --- |
+|---|---|---|
 | exception anywhere during matching | `red` | yes |
-| table `status: placeholder` | `red` | yes |
+| data file not exactly `sourced` | `red` | yes |
 | matched a `red` entry | `red` | yes |
 | matched an `amber` entry | `amber` | no |
 | symptom reported, nothing matched | `amber` | no |
 | no symptom reported at all | `green` | no |
 
-`green` is a system-level state meaning nothing was reported. It is never a value in the table,
-so a reported symptom can never resolve to green.
+**Escalation is not a decision the model makes.** `screen_danger_signs` escalates
+internally on red, in the same call. There is no model-callable escalation tool, so the
+model cannot fail to call it.
 
-Escalation is **not a model decision**. `screen_danger_signs` calls `escalation.escalate()`
-itself when the severity is red, in the same call. Nothing in `escalation.py` is bound as a tool.
+**Delivery failure is never silent.** A PHM's WhatsApp messaging window may be closed.
+When delivery fails, the escalation is persisted as undelivered and the mother is told in
+the same turn to contact her PHM or nearest hospital directly. Nothing implies help is on
+the way when it is not.
 
-Delivery can fail: a PHM whose 24-hour WhatsApp window has closed cannot be reached. When that
-happens the escalation is still persisted, as `undelivered`, it is logged, it appears at the top
-of that PHM's caseload, and the mother is told in the same turn to contact her PHM or nearest
-hospital **herself**. No path implies help is on the way when it is not.
+**Identity comes from the channel.** No tool accepts a phone number identifying the
+sender; identity is resolved from `ToolContext.get().session.id`. Role is decided by
+lookup, not by the model. A sender cannot talk their way into another mother's records or
+into a midwife's caseload. Role governs PHM capabilities only — a midwife who is herself
+pregnant keeps her own danger-sign path open.
 
-### The clinical data is not populated yet
+**Outbound language is filtered.** A post-execution hook blocks diagnosis-like and
+medication-like language, with danger-sign action strings and escalation text explicitly
+allowlisted so the filter can never suppress a safety message. Diagnosis blocks and
+medication blocks return different responses: asking about a supplement is a benign
+question and does not deserve an alarming reply.
 
-`data/antenatal_schedule.yaml`, `data/immunization_schedule.yaml`, and `data/danger_signs.yaml`
-ship with **placeholder values only**, each marked `# TODO`. They are structurally correct but
-clinically meaningless, and all three carry `status: placeholder`.
+**PII is minimised.** First name only. No NIC, no full name, no address beyond MOH
+division. Phone numbers are redacted in logs, and only in logs — redaction never touches
+the escalation delivery path.
 
-The tools relay that marker to the agent as `data_status: placeholder`, and `schedule_agent` is
-instructed that when it sees it, it must **refuse to read out any dates** and tell the mother the
-schedule is not available yet and that her PHM can tell her when her next visit is due.
+## 4. Data provenance
 
-Each file carries a `provenance:` block, and `provenance_test.py` makes it load-bearing: a file
-cannot claim `status: sourced` until it names its document, that document's printed date, a
-`.gov.lk` or `who.int` URL, and a second cross-check. Citing a Scribd re-upload fails the suite.
-Only the exact string `sourced` is trusted, so a typo fails toward escalation rather than away
-from it.
+Clinical reference data lives in `data/`, never in code and never in a prompt. Each file
+carries a `provenance:` block, and its `status` propagates through the tools into what the
+mother is told. `provenance_test.py` makes that header load-bearing: a file cannot claim
+`sourced` until it names its document, that document's **printed** date, a `.gov.lk` or
+`who.int` URL, and a second cross-check. Citing a re-upload fails the test suite. Only the
+exact string `sourced` is trusted, so a typo fails toward escalation rather than away from it.
 
-The danger-sign table guards the same way, but in the opposite direction. A schedule it cannot
-trust, it declines to read out. A symptom it cannot screen, it escalates. **While
-`data/danger_signs.yaml` is a placeholder, every reported symptom is treated as `red` and
-escalated to the assigned PHM.** An unpopulated table cannot rule anything out, so it is never
-allowed to reassure.
+| File | Status | Notes |
+|---|---|---|
+| `data/immunization_schedule.yaml` | `placeholder` | Values captured. National Immunization Schedule poster, Epidemiology Unit, **© 2017 printed on its face**, [epid.gov.lk](https://www.epid.gov.lk/storage/post/pdfs/en_6403b42a75fa4_Doc2.pdf), retrieved 2026-09-02. Agrees line for line with the Essential Health Services Package 2019. Both predate the 2022 CHDR circular, which mandates the CHDR but does not reproduce the schedule. |
+| `data/developmental_screening.yaml` | `placeholder` | Ten screening points, 2–60 months. Relayed from a Ministry of Health performance report describing the tool, not from the schedule document itself. |
+| `data/vitamin_a.yaml` | `placeholder` | **Two sources disagree**: the national strategy says every 6 months from 6 to 60 months (10 doses); reported service data shows 6, 18 and 36 (3 doses). The file encodes the strategy reading and records the conflict. |
+| `data/mmn_supplementation.yaml` | `placeholder` | Three 60-day periods, not appointments. Term / normal-birth-weight pathway only; the system stores nothing that could identify a child it does not apply to, so the file carries a caveat that travels with the data. |
+| `data/antenatal_schedule.yaml` | `placeholder` | **Empty.** The FHB Maternal Care Package was not locatable through the resource library's unit, type, or search filters. `term_gestational_weeks` is blocked on the same document. |
+| `data/danger_signs.yaml` | `placeholder` | **Empty.** While it stays a placeholder, every reported symptom escalates as `red`. |
+| `data/blocked_language.yaml` | populated | Not clinical guidance — a list of things the system must never say. A placeholder block list would block everything or nothing, neither of which fails safe. |
 
-So the system runs end to end, but it will not produce real appointment dates or real severities
-until the Ministry of Health values are sourced and the three data files are filled in. Every
-clinical constant lives in those files, including `term_gestational_weeks`, so no clinical value
-is hardcoded anywhere in the Python.
+When a file's status is anything other than `sourced`, the agent names which parts of the
+calendar it cannot speak for rather than quietly omitting them. **No clinical value in this
+repository has been reviewed by a clinician.**
 
-## Prerequisites
+`SOURCING.md` records what was verified, the dead ends, and the traps — including that the
+Epidemiology Unit's current site serves that 2017 poster as its top result with 2023 file
+metadata that masks its age.
 
-- Python 3.12.
-- [`uv`](https://github.com/astral-sh/uv) for dependency management.
-- An OpenAI API key.
-- A Meta Business account with a WhatsApp Business app and a verified or test phone number.
-- A tunnel for local webhook delivery (ngrok or pinggy). There is no cloud deployment in this
-  version.
+## 5. Setup instructions
 
-## Project Layout
+### Prerequisites
 
-- `agent.py` defines `mathru_triage`, `intake_agent`, and `schedule_agent`, and exports `AGENTS`.
-- `server.py` is the WhatsApp entry point, using `AgentWhatsAppRequestHandler` with
-  `RESTAPI.run([handler])`.
-- `demo.py` is the local entry point, for exercising the agent graph without WhatsApp.
-- `tool.py` holds the Agent Kernel tools, bound with `OpenAIToolBuilder.bind`.
-- `store.py` is the tool-owned SQLite storage, with the schema in one place.
-- `schedules.py` is the pure date arithmetic and input validation. No model involvement.
-- `danger_signs.py` decides severity by keyword matching. No model involvement.
-- `escalation.py` delivers and persists escalations. Not model-callable.
-- `hooks.py` is the post-execution hook blocking unsafe outbound language.
-- `redaction.py` redacts phone numbers from log output only.
-- `data/*.yaml` hold the six clinical schedules, the danger-sign table, and the hook's block
-  list. The four child-health schedules (immunisation, developmental screening, vitamin A, MMN
-  supplementation) do not share their ages, so each has its own file and its own guard.
-- `provenance.py` enforces that a clinical file cannot claim `sourced` without a citation.
-- `guardrails/` holds the guardrail configs and the reasoning behind them.
-- `SOURCING.md` records verified sources, dead ends, and the stale-document traps found.
-- `*_test.py` are the unit tests.
-- `config.yaml` configures the WhatsApp agent binding, sessions, and logging.
-- `.env.example` is the template for the gitignored `.env` holding secrets.
-- `SPEC.md` documents the requirements this project is built from.
+- Python 3.12
+- [`uv`](https://docs.astral.sh/uv/)
+- An OpenAI API key
+- A Meta app with a WhatsApp Business Account and a phone number
+- A tunnel to expose the local webhook (ngrok or equivalent)
+- A second WhatsApp number to act as the PHM
 
-### Identity is never a tool parameter
-
-No tool accepts the mother's phone number. Each one resolves her from
-`ToolContext.get().session.id`, which the WhatsApp integration sets to the sender's number. This
-means the model cannot assert who is speaking, and a mother never has to restate details she has
-already given.
-
-The one phone number that *is* a parameter is `phm_phone`, since it is a data field the mother
-supplies and cannot be derived from the session.
-
-## Setup
+### Install
 
 ```bash
-chmod +x build.sh
-./build.sh
+cd use-cases/mathru-phm-companion
+./build.sh          # uv venv && uv sync --all-extras --dev
 ```
 
-## Configure Environment Variables
+### Environment
 
-Secrets are managed with a `.env` file, loaded by `python-dotenv`. Copy the template and fill it
-in:
+Secrets are loaded from a `.env` file via `python-dotenv`; `cp .env.example .env` and fill
+it in. Exported shell variables still work and take precedence.
 
 ```bash
-cp .env.example .env
+export OPENAI_API_KEY="sk-..."
+export AK_WHATSAPP__VERIFY_TOKEN="a_string_you_choose"
+export AK_WHATSAPP__ACCESS_TOKEN="meta_system_user_token"
+export AK_WHATSAPP__APP_SECRET="meta_app_secret"
+export AK_WHATSAPP__PHONE_NUMBER_ID="meta_phone_number_id"
+export MATHRU_DB_PATH="./mathru.db"     # optional
 ```
 
-```ini
-OPENAI_API_KEY=sk-...
-AK_WHATSAPP__VERIFY_TOKEN=your_secure_verify_token
-AK_WHATSAPP__ACCESS_TOKEN=your_permanent_access_token
-AK_WHATSAPP__PHONE_NUMBER_ID=123456789012345
-AK_WHATSAPP__APP_SECRET=your_app_secret
-```
+Use a permanent System User access token. The 24-hour token from the API Setup panel will
+expire mid-session.
 
-`.env` is gitignored; `.env.example` holds placeholders only. Never commit real tokens or keys.
-Exported shell variables still work and take precedence over `.env`, which is what you want in
-CI or a container.
+`load_dotenv()` is called explicitly because Agent Kernel's own `.env` support reads only
+`AK_`-prefixed keys into its settings model, never into `os.environ` — and the OpenAI SDK
+reads `OPENAI_API_KEY` from `os.environ` directly.
 
-One optional non-secret setting: `MATHRU_DB_PATH` sets where the SQLite database lives,
-defaulting to `./mathru.db`. The database is gitignored via `*.db`.
+### Webhook
 
-`AK_WHATSAPP__VERIFY_TOKEN` is a random string you invent; it must match what you enter in the
-Meta developer portal. The agent name, acknowledgement message, and API version are set in
-`config.yaml`, not the environment.
+1. Start the server and the tunnel (see below).
+2. In the Meta app dashboard, set the callback URL to
+   `https://<your-tunnel>/whatsapp/webhook`.
+3. Set the verify token to the value of `AK_WHATSAPP__VERIFY_TOKEN`.
+4. Subscribe to the `messages` field.
 
-### Why `load_dotenv()` is called explicitly
+## 6. How to run the solution
 
-Agent Kernel's `Config` already reads `.env` natively, but only for `AK_`-prefixed keys and only
-into its own settings model, never into `os.environ`. The OpenAI Agents SDK reads
-`OPENAI_API_KEY` straight from `os.environ`, so a key kept only in `.env` would not be found.
-`server.py` and `demo.py` therefore call `load_dotenv()` before importing anything else, which
-puts every key on `os.environ` and covers both consumers uniformly.
-
-## Run Locally Without WhatsApp
-
-Because every tool resolves the mother from the session id, the demo needs to impersonate a
-specific WhatsApp sender. Agent Kernel's built-in `CLI.main()` generates a fresh `uuid4` session
-id per run and takes no arguments, so `demo.py` drives `AgentService` directly instead and passes
-a session id to its public `select()` method.
+### Local CLI — no WhatsApp required
 
 ```bash
-uv run demo.py                      # sender 94771234567, unregistered -> exercises intake
-uv run demo.py --seed               # pre-registers a sample mother and PHM -> exercises schedules
-uv run demo.py --session-id 9477... # impersonate any number
+uv run demo.py                      # unregistered sender, exercises intake
+uv run demo.py --seed               # pre-registered mother and PHM
+uv run demo.py --session-id 947XXXXXXXX
 ```
 
-`--seed` derives its EDD from today, so the seeded record never goes stale. Inside the REPL,
-`!clear` resets the conversation while leaving the registration record intact, and `!quit` exits.
+`demo.py` drives `AgentService` directly rather than `CLI.main()`, because the built-in CLI
+generates a fresh uuid4 session id per run and every tool resolves identity from the session.
 
-To exercise the PHM side, seed a mother first, then run as the number that seeding assigned as
-her PHM. `resolve_role` will resolve that sender to `phm` and triage routes to `phm_agent`:
+### WhatsApp
 
 ```bash
-uv run demo.py --seed                     # registers a mother, prints her PHM's number
-uv run demo.py --session-id 94112223344   # now you are the midwife
+uv run python server.py             # terminal 1
+ngrok http 8000                     # terminal 2
 ```
 
-Escalation delivery needs real WhatsApp credentials. Without them the send fails, which exercises
-the undelivered path: the escalation is persisted, it shows up in the caseload, and the mother is
-told to seek care herself.
+Then message your business number.
 
-## Running The Tests
+### End-to-end walkthrough
+
+1. From the mother's phone, send a greeting. Complete registration, giving the second
+   number as the PHM. Confirm when asked.
+2. Ask when the next clinic visit is due.
+3. Report a symptom. The escalation is attempted immediately.
+4. From the PHM's phone, query the caseload and acknowledge the escalation.
+
+To see delivery-failure handling, run step 3 before the PHM number has ever messaged the
+business number: its 24-hour messaging window is closed, the escalation persists as
+undelivered, and the mother is told to make contact directly.
+
+At step 2, expect the agent to say it cannot give dates yet and to name which parts of the
+calendar are unavailable. That is the placeholder guard working, not a bug.
+
+### Tests
 
 ```bash
 uv run pytest
 ```
 
-Every safety rule in the architecture above has a test. The suite covers the date arithmetic and
-validation rules; the storage behaviours most likely to break; each row of the severity table
-including a forced exception and the placeholder guard; escalation on both delivery success and
-delivery failure, asserting the failure text never implies help is coming; the hook in **both**
-directions, blocking diagnosis and medication language while letting escalation messages and
-danger-sign action strings through untouched; log redaction *and* its scope, proving the
-escalation path still receives the real unredacted number; and the case of a PHM who is herself
-pregnant keeping her own danger-sign path open.
+Every safety rule in section 3 has a corresponding test, in both directions where that
+matters: the hook is tested for blocking unsafe language *and* for never suppressing a
+danger-sign action string, and log redaction is tested for masking phone numbers *and* for
+leaving the escalation delivery path untouched.
 
-Every date test injects `today`, so none of them depend on the day they are run.
+## 7. Known limitations
 
-## Run The WhatsApp Server
+- **No clinician review.** No clinical value in this repository has been reviewed by a
+  qualified clinician. All six clinical files ship as `placeholder`: immunisation,
+  developmental screening, vitamin A and supplementation have values captured but
+  unverified against a current primary source; antenatal and danger signs are empty.
+  Nothing is `sourced`, so the system currently gives out no dates and escalates every
+  reported symptom.
+- **Vitamin A has an unresolved source conflict.** Two official readings disagree on the
+  interval — 6-monthly against roughly 12-monthly. The file records both.
+- **PHM assignment is free text.** A mother types her midwife's number at registration.
+  Format and self-assignment are validated, but a wrong number sends her escalation to a
+  stranger. In production this would come from the MOH division registry.
+- **Escalations include a verbatim excerpt** of the mother's own words. A midwife needs
+  her phrasing to judge urgency, so this is deliberate, but it means her description
+  leaves the system in plain text.
+- **Moderation is deliberately narrowed.** Broad input moderation could block a symptom
+  report — "heavy bleeding" is plausibly flagged — which would bypass the entire
+  fail-toward-escalation design. Categories were restricted to those that cannot
+  plausibly fire on a symptom report. See `guardrails/README.md`.
+- **Guardrail PII detection is disabled.** It flags phone numbers, which would break
+  registration and the escalation path. PII redaction is implemented separately, for logs
+  only.
+- **The block list is not exhaustive.** Broad terms like `mg` and `dose` will produce false
+  positives, which is why every block is logged with the original reply, redacted, so the
+  rate is measurable.
+- **Outbound messaging is not framework-supported.** Agent Kernel exposes no public API
+  for sending a message to a third party outside a request turn, so escalation calls the
+  WhatsApp Cloud API directly. Raised upstream as a discussion.
+- **Sessions are in-memory.** Conversation context resets when the server restarts.
+  Mother records and escalations persist in SQLite.
+- **No knowledge base.** A retrieval layer over Ministry of Health guidance was scoped
+  and deliberately not built. Shipping an unreviewed corpus in this domain would
+  contradict the safety design above.
+- **Reminders are conversational, not scheduled.** Unprompted outbound messages require
+  an approved WhatsApp template outside the 24-hour window.
 
-```bash
-uv run server.py
+## 8. Repository structure
+
+```
+use-cases/mathru-phm-companion/
+├── agent.py              # five agents and their handoffs
+├── tool.py               # model-callable tools
+├── store.py              # SQLite persistence
+├── schedules.py          # date arithmetic and validation
+├── danger_signs.py       # table loading and severity matching
+├── escalation.py         # payload, delivery, persistence — not model-callable
+├── hooks.py              # post-execution language filter
+├── redaction.py          # log filter
+├── provenance.py         # the sourced/placeholder contract for clinical data
+├── server.py             # WhatsApp entry point
+├── demo.py               # local CLI
+├── data/                 # clinical reference data with provenance headers
+├── guardrails/           # guardrail configuration and rationale
+├── SPEC.md               # coding-agent-readable specification
+├── SOURCING.md           # verified sources, dead ends, and stale-document traps
+└── *_test.py             # tests
 ```
 
-The server listens on `http://localhost:8000`. Expose it with a tunnel:
+## 9. Acknowledgements
 
-```bash
-ngrok http 8000
-# or
-ssh -p443 -R0:localhost:8000 a.pinggy.io
-```
-
-## Configure The WhatsApp Webhook
-
-1. Go to <https://developers.facebook.com/apps> and select your app.
-2. Open **WhatsApp > Configuration** and edit the webhook.
-3. Set the callback URL to `https://<your-tunnel-host>/whatsapp/webhook`.
-4. Set the verify token to the same value as `AK_WHATSAPP__VERIFY_TOKEN`.
-5. Subscribe to the `messages` webhook field.
-
-`AgentWhatsAppRequestHandler` answers the verification challenge on `GET /whatsapp/webhook`
-automatically, so no extra code is needed to activate the URL.
-
-## Verify The Round Trip
-
-The local half of the chain is verified and working. With the server running:
-
-```bash
-curl http://127.0.0.1:8000/health
-# {"status":"ok"}
-
-curl "http://127.0.0.1:8000/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=$AK_WHATSAPP__VERIFY_TOKEN&hub.challenge=1234567890"
-# 1234567890
-```
-
-The challenge echo confirms the whole configuration path: `.env` to `Config.whatsapp.verify_token`
-to the handler. A wrong verify token returns HTTP 403.
-
-Phase 1 is complete when a live round trip works, which additionally needs real WhatsApp
-credentials:
-
-1. Start the server and the tunnel, and configure the webhook.
-2. Send `Hello` from a WhatsApp number that is allowed to message your business or test number.
-3. You receive the acknowledgement, then a greeting from the agent.
-4. Server logs show the inbound webhook and the outbound reply.
-
-During testing with a Meta test number, the sending number must be added to the app's allowed
-recipient list first.
-
-## Known Limitations
-
-- **The PHM assignment is free-text, and that is a prototype limitation.** A mother types her
-  assigned PHM's phone number during registration, and in phase 3 that number decides where her
-  symptom report is escalated. A typo would send her health information to a stranger. The tool
-  validates the format and rejects the most likely error, a mother entering her own number, but
-  neither check can confirm the number belongs to her actual PHM. In production the assignment
-  would be resolved from the MOH division registry using her MOH area, not accepted from user
-  input.
-- **The verbatim excerpt is deliberate.** The escalation sent to a PHM contains a short, unedited
-  excerpt of the mother's own words, capped at 300 characters. A midwife triaging a report needs
-  how the mother actually described it, not a model's paraphrase of it. This does mean her raw
-  phrasing leaves the system, to one specific recipient: her assigned PHM.
-- **Moderation categories are narrow on purpose.** `self-harm` and `violence/graphic` are
-  excluded from the input guardrail. A mother describing heavy bleeding or a baby that has
-  stopped moving must never be blocked before `screen_danger_signs` runs. The trade-off is a
-  smaller moderation net; see `guardrails/README.md`.
-- **The block list is not exhaustive.** `hooks.py` matches a hand-written list in
-  `data/blocked_language.yaml`. Broad terms like `mg`, `ml`, and `dose` will produce false
-  positives, which is why every block is logged with the original reply, redacted, so the rate
-  is measurable.
-- **Escalation acknowledgement is PHM-side only.** Acknowledging closes the escalation on the
-  midwife's caseload and sends nothing to the mother.
-- **The visit schedules and the danger-sign table are placeholders.** See the build status above.
-  No real appointment date and no real severity can be produced until the Ministry of Health
-  values are sourced.
-- **No clinician review.** Nothing in this repository has been reviewed by a clinician, and the
-  data files say so in their headers.
-
-## Notes Carried Forward
-
-- **PHM messaging window.** Escalation messages can only be delivered to a number with an open
-  24-hour customer service window, or through a pre-approved message template. A PHM who has not
-  messaged the business number recently **cannot be reached** with a freeform message. This is
-  not hypothetical: it is the expected failure mode in production, which is why undelivered
-  escalations are persisted, surfaced first in the caseload, and disclosed to the mother in the
-  same turn. Approved templates are the production fix and are not implemented here.
-- **Sessions.** The WhatsApp integration uses the sender's phone number as the session id, giving
-  per-mother continuity. Mother records are persisted separately by tool-owned `sqlite3` storage
-  in `tool.py` from phase 2; sqlite is not an Agent Kernel session backend, so `session.type`
-  stays `in_memory`.
-- **Clinical sources.** Each file in `data/` carries a `provenance:` block naming the document
-  its values came from. All three are still `placeholder`, so every block reads `TODO`.
-  [SOURCING.md](SOURCING.md) records what has been verified so far, including a live trap: the
-  current Epidemiology Unit site serves a **2017** immunisation schedule as its top result, with
-  2023 file metadata that masks its age. Citations belong here once values land:
-
-  | File | Source | State |
-  | --- | --- | --- |
-  | `immunization_schedule.yaml` | Epidemiology Unit | Values captured; both sources predate the 2022 CHDR circular |
-  | `developmental_screening.yaml` | Ministry of Health | Values captured; primary schedule document still needed |
-  | `vitamin_a.yaml` | Nutrition Division | Values captured; **two sources disagree on the interval** |
-  | `mmn_supplementation.yaml` | Nutrition Division | Values captured; term / normal-birth-weight pathway only |
-  | `antenatal_schedule.yaml` | Family Health Bureau | **Empty** — Maternal Care Package not located |
-  | `danger_signs.yaml` | FHB, supplemented by WHO | **Empty** |
+Built for the IDEALIZE 2026 mini-competition organised by AIESEC in University of
+Moratuwa, using [Agent Kernel](https://github.com/yaalalabs/agent-kernel) by Yaala Labs.
