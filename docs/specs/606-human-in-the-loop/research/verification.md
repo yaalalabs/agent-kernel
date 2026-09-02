@@ -161,7 +161,25 @@ dropped") turned out to be wrong. Checked against **AK's pinned `ag-ui-protocol`
 | `RunFinishedSuccessOutcome` | present |
 | `Interrupt` | fields `id`, `reason`, `message`, `tool_call_id`, `response_schema`, `expires_at`, `metadata` |
 | `RunAgentInput.resume` | present |
-| `ResumeEntry`, `ResumeStatus` | both exported from `ag_ui.core` |
+| `ResumeEntry` | fields `interrupt_id`, `payload`, `status` |
+| `ResumeStatus` | `Literal["resolved", "cancelled"]` — **closed** |
+
+Two type facts that shape the design, both read from the installed package rather than the prose:
+
+- **`Interrupt.reason` is a plain `str`, not a `Literal`.** The documented values
+  (`tool_call`, `input_required`, `confirmation`) are *core values* — routing hints — and the
+  field accepts any string. This is why AK defines its own `PausedInterruption.kind` vocabulary
+  and passes it through untranslated: matching the documented values buys nicer client-side
+  routing, not freedom from a mapper, because no mapper was ever required.
+- **`ResumeStatus` *is* closed** — `Literal["resolved", "cancelled"]`. So the outbound direction
+  is free and the **return** direction is the constrained one. `resolved` means the human
+  answered; `cancelled` means they abandoned it without answering. AK's proposed
+  a boolean `ResumeDecision.approved` could not have expressed that difference — mapping
+  `cancelled` to `approved=False` would conflate "the human said no" with "the human dismissed it
+  without deciding", which the agent should report differently. **Resolved:** `ResumeDecision`
+  carries `status: Literal["approved", "denied", "cancelled"]`, so the AG-UI value survives the
+  boundary intact. Note this is the *inbound* direction, and it is the only closed enum in the
+  AG-UI surface — the outbound `reason` is free-form, so the constraint runs one way only.
 
 Protocol shape, from the AG-UI docs: a pause is a **terminal** outcome — the run ends with
 `RunFinished` carrying `outcome.type == "interrupt"` and a non-empty `outcome.interrupts[]`. Any
