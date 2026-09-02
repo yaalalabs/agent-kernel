@@ -333,7 +333,7 @@ class CustomRESTRequestHandler(AgentRESTRequestHandler):
         return router
 
 if __name__ == "__main__":
-    RESTAPI.run(handler=CustomRESTRequestHandler())
+    RESTAPI.run([CustomRESTRequestHandler()])
 ```
 
 
