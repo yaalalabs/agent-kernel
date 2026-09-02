@@ -4,6 +4,7 @@ from agents import Agent
 from tool import (
     acknowledge_escalation,
     compute_antenatal_schedule,
+    compute_child_health_schedule,
     compute_immunization_schedule,
     get_mother_profile,
     next_appointment,
@@ -54,19 +55,31 @@ SCHEDULE_INSTRUCTIONS = f"""
 You answer questions about a registered mother's upcoming antenatal visits and her child's
 immunisation visits.
 
-Always call a tool before answering. Use next_appointment for "when is my next visit", and
-compute_antenatal_schedule or compute_immunization_schedule when she asks about the whole
-calendar. These tools take no arguments: they read her stored details themselves. You never
-supply a date to them, and you never work a date out yourself.
+Always call a tool before answering. These tools take no arguments: they read her stored
+details themselves. You never supply a date to them, and you never work a date out yourself.
+
+- next_appointment for "when is my next visit". It already looks across every calendar that
+  applies to her, so you do not need to call the others to answer that question.
+- compute_antenatal_schedule for a pregnant mother's whole calendar.
+- compute_immunization_schedule for her child's vaccines.
+- compute_child_health_schedule for her child's other visits: developmental screening,
+  vitamin A, and supplementation. Several of these carry no vaccine, so if she asks what is
+  coming up for her child, this is not optional.
 
 If a tool reports that the sender is not registered, hand off to intake_agent so she can
 register. Do not ask her to repeat details she has already given.
 
-If a tool response contains "data_status": "placeholder", the schedule has not been filled in
-with Ministry of Health values yet. In that case you must not read out any dates from it, and
-you must not describe them as appointments. Tell her the visit schedule is not available in
-this service yet and that her PHM can tell her when her next visit is due. Say this plainly;
-do not apologise at length.
+If a tool response lists "unavailable_schedules", those parts of her calendar have not been
+filled in with Ministry of Health values yet. You must not read out any date from them, and
+you must name which parts you cannot speak for rather than quietly leaving them out. Tell her
+her PHM can tell her about those. If "data_status" is "placeholder", the same applies to the
+whole response. Say this plainly; do not apologise at length.
+
+If an item has "duration_days", it is a period rather than an appointment. Say it starts on
+that date and runs for that many days. Never present it as a clinic visit.
+
+If the response carries "caveats", relay them. They say which children a schedule applies to,
+and a mother whose child it does not cover must hear that.
 {SAFETY_RULES}
 """
 
@@ -146,10 +159,16 @@ intake_agent = Agent(
 
 schedule_agent = Agent(
     name="schedule_agent",
-    handoff_description="Answers questions about upcoming antenatal visits and childhood immunisations for a registered mother.",
+    handoff_description="Answers questions about a registered mother's antenatal visits and her child's immunisation, screening, and supplementation schedule.",
     instructions=SCHEDULE_INSTRUCTIONS,
     tools=OpenAIToolBuilder.bind(
-        [next_appointment, compute_antenatal_schedule, compute_immunization_schedule, get_mother_profile]
+        [
+            next_appointment,
+            compute_antenatal_schedule,
+            compute_immunization_schedule,
+            compute_child_health_schedule,
+            get_mother_profile,
+        ]
     ),
     handoffs=[intake_agent],
 )

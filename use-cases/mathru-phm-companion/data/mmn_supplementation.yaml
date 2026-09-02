@@ -44,6 +44,12 @@ provenance:
 # ---------------------------------------------------------------------------
 status: placeholder
 
+# Surfaced with the schedule wherever it is presented. This regime is not universal, and the
+# system stores nothing that could identify a child it does not apply to.
+caveat: >-
+  This supplementation regime is for babies born at term and at a normal birth weight. Babies
+  born early or small follow a different one. Please check with your PHM before following it.
+
 visits:
   - id: mmn_06m
     age_months: 6

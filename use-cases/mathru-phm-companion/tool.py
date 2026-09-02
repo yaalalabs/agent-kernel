@@ -154,6 +154,15 @@ def get_mother_profile() -> str:
     return _json({"registered": True, "record": record})
 
 
+# The child-health schedules a registered child is subject to, beyond immunisation. They key
+# off the same date of birth but do not share their ages.
+CHILD_HEALTH_LOADERS = (
+    ("developmental_screening", schedules.developmental_screening_visits),
+    ("vitamin_a", schedules.vitamin_a_visits),
+    ("mmn_supplementation", schedules.mmn_supplementation_visits),
+)
+
+
 def _schedule_payload(calendar: dict[str, Any]) -> str:
     payload: dict[str, Any] = {"ok": True, **calendar}
     payload["next_due"] = schedules.next_due(calendar["visits"])
@@ -161,6 +170,50 @@ def _schedule_payload(calendar: dict[str, Any]) -> str:
         payload["data_status"] = provenance.PLACEHOLDER
         payload["data_warning"] = PLACEHOLDER_WARNING
     return _json(payload)
+
+
+def _merge_calendars(calendars: list[dict[str, Any]]) -> dict[str, Any]:
+    """Combine several calendars into one, drawing visits only from sourced files.
+
+    A schedule that is not sourced contributes no dates, and is named in `unavailable` so the
+    agent can say which part of the calendar it cannot speak for. Dropping it silently would
+    leave a mother believing she had been told about everything.
+    """
+    visits: list[dict[str, Any]] = []
+    available: list[str] = []
+    unavailable: list[str] = []
+    caveats: list[str] = []
+
+    for calendar in calendars:
+        kind = calendar["kind"]
+        if not provenance.is_sourced(calendar):
+            unavailable.append(kind)
+            continue
+
+        available.append(kind)
+        if calendar.get("caveat"):
+            caveats.append(calendar["caveat"])
+        for visit in calendar["visits"]:
+            visits.append({**visit, "kind": kind})
+
+    visits.sort(key=lambda visit: visit["date_iso"])
+
+    merged: dict[str, Any] = {
+        "visits": visits,
+        "next_due": schedules.next_due(visits),
+        "available_schedules": available,
+        "unavailable_schedules": unavailable,
+    }
+    if caveats:
+        merged["caveats"] = caveats
+    if unavailable:
+        merged["data_status"] = provenance.PLACEHOLDER
+        merged["data_warning"] = (
+            f"These schedules are not populated with Ministry of Health values yet: "
+            f"{', '.join(unavailable)}. Do not give any date from them. Tell her which parts of "
+            f"her calendar you cannot speak for, and that her PHM can tell her."
+        )
+    return merged
 
 
 def compute_antenatal_schedule() -> str:
@@ -193,8 +246,35 @@ def compute_immunization_schedule() -> str:
     return _schedule_payload(schedules.immunization_visits(record["child_dob_iso"]))
 
 
+def compute_child_health_schedule() -> str:
+    """Return the sender's child health calendar beyond immunisation.
+
+    Covers developmental screening, vitamin A, and micronutrient supplementation, merged into
+    one calendar. Several of these visits carry no immunisation at all, so they would be
+    missed entirely if you only asked about vaccines. Use compute_immunization_schedule for
+    those.
+    """
+    session_id = _session_id()
+    if session_id is None:
+        return _error("I could not identify this conversation.")
+
+    record = store.get_mother(session_id)
+    if record is None:
+        return _json(NOT_REGISTERED)
+    if not record["child_dob_iso"]:
+        return _error("This sender is registered with an expected delivery date, so there is no child calendar yet.")
+
+    calendars = [loader(record["child_dob_iso"]) for _, loader in CHILD_HEALTH_LOADERS]
+    return _json({"ok": True, "kind": "child_health", **_merge_calendars(calendars)})
+
+
 def next_appointment() -> str:
-    """Return the single next due visit for the sender, from whichever calendar applies."""
+    """Return the single next due item for the sender, across every calendar that applies.
+
+    For a pregnant mother that is her antenatal calendar. For a registered child it is the
+    soonest of immunisation, developmental screening, vitamin A, and supplementation, so a
+    visit that carries no vaccine is not missed.
+    """
     session_id = _session_id()
     if session_id is None:
         return _error("I could not identify this conversation.")
@@ -204,18 +284,21 @@ def next_appointment() -> str:
         return _json(NOT_REGISTERED)
 
     if record["edd_iso"]:
-        calendar = schedules.antenatal_visits(record["edd_iso"])
+        calendars = [schedules.antenatal_visits(record["edd_iso"])]
     else:
-        calendar = schedules.immunization_visits(record["child_dob_iso"])
+        dob = record["child_dob_iso"]
+        calendars = [schedules.immunization_visits(dob)] + [loader(dob) for _, loader in CHILD_HEALTH_LOADERS]
 
+    merged = _merge_calendars(calendars)
     payload: dict[str, Any] = {
         "ok": True,
-        "kind": calendar["kind"],
-        "next_due": schedules.next_due(calendar["visits"]),
+        "next_due": merged["next_due"],
+        "available_schedules": merged["available_schedules"],
+        "unavailable_schedules": merged["unavailable_schedules"],
     }
-    if not provenance.is_sourced(calendar):
-        payload["data_status"] = provenance.PLACEHOLDER
-        payload["data_warning"] = PLACEHOLDER_WARNING
+    for key in ("caveats", "data_status", "data_warning"):
+        if key in merged:
+            payload[key] = merged[key]
     return _json(payload)
 
 

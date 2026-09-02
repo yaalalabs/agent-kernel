@@ -223,13 +223,20 @@ def child_visits(filename: str, kind: str, child_dob_iso: str, today: date | Non
         visits.append(visit)
 
     visits.sort(key=lambda visit: visit["date_iso"])
-    return {
+    calendar = {
         "kind": kind,
         "status": data.get("status"),
         "source_file": f"data/{filename}",
         "child_dob_iso": dob.isoformat(),
         "visits": visits,
     }
+
+    # A caveat travels with its data rather than living in a prompt, so a schedule that only
+    # applies to some children cannot be surfaced without it.
+    caveat = data.get("caveat")
+    if caveat:
+        calendar["caveat"] = str(caveat)
+    return calendar
 
 
 def immunization_visits(child_dob_iso: str, today: date | None = None) -> dict[str, Any]:

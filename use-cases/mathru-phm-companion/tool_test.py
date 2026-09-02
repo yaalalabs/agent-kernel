@@ -1,14 +1,20 @@
 """Tests for role resolution, PHM capabilities, and the screening tool's escalation path."""
 
 import json
+from datetime import date, timedelta
 
 import pytest
 from agentkernel.core import Session, ToolContext
 
 import danger_signs
 import escalation
+import schedules
 import store
 import tool
+
+# next_due filters to dates on or after today, and the tools use the real current date, so
+# a child's date of birth here is derived from today rather than hardcoded.
+RECENT_DOB = (date.today() - timedelta(days=30)).isoformat()
 
 MOTHER = "94771234567"
 PHM = "94112223344"
@@ -221,3 +227,161 @@ def test_acknowledging_is_refused_to_a_non_phm(as_sender):
     register(MOTHER)
     as_sender(MOTHER)
     assert json.loads(tool.acknowledge_escalation(1))["ok"] is False
+
+
+# --- merged calendars: next_appointment across every applicable schedule ----------------
+
+
+def sourced_child_schedules(monkeypatch, **ages_by_file):
+    """Make named child schedule files look sourced, leaving the rest as placeholders."""
+    real = schedules.load_schedule
+
+    def fake(filename):
+        if filename in ages_by_file:
+            return {
+                "status": "sourced",
+                "visits": [
+                    {"id": f"{filename}_{age}", "age_months": age, "label": filename} for age in ages_by_file[filename]
+                ],
+            }
+        return real(filename)
+
+    monkeypatch.setattr(schedules, "load_schedule", fake)
+
+
+def test_next_appointment_reports_every_schedule_as_unavailable_while_all_are_placeholders(as_sender):
+    register(MOTHER, edd_iso=None, child_dob_iso=RECENT_DOB)
+    as_sender(MOTHER)
+
+    result = json.loads(tool.next_appointment())
+
+    assert result["next_due"] is None
+    assert result["available_schedules"] == []
+    assert set(result["unavailable_schedules"]) == {
+        "immunization",
+        "developmental_screening",
+        "vitamin_a",
+        "mmn_supplementation",
+    }
+    assert result["data_status"] == "placeholder"
+
+
+def test_next_appointment_names_the_schedules_it_cannot_speak_for(as_sender):
+    # Silently omitting them would leave a mother believing she had heard everything.
+    register(MOTHER, edd_iso=None, child_dob_iso=RECENT_DOB)
+    as_sender(MOTHER)
+    result = json.loads(tool.next_appointment())
+    assert "vitamin_a" in result["data_warning"]
+
+
+def test_next_appointment_draws_only_from_sourced_schedules(as_sender, monkeypatch):
+    sourced_child_schedules(monkeypatch, **{schedules.VITAMIN_A_FILE: [6]})
+    register(MOTHER, edd_iso=None, child_dob_iso=RECENT_DOB)
+    as_sender(MOTHER)
+
+    result = json.loads(tool.next_appointment())
+
+    assert result["available_schedules"] == ["vitamin_a"]
+    assert result["next_due"]["kind"] == "vitamin_a"
+    assert result["next_due"]["date_iso"] == schedules.add_months(date.fromisoformat(RECENT_DOB), 6).isoformat()
+    assert "immunization" in result["unavailable_schedules"]
+
+
+def test_next_appointment_picks_the_soonest_across_schedules(as_sender, monkeypatch):
+    # A screening visit that carries no vaccine must be able to win.
+    sourced_child_schedules(
+        monkeypatch,
+        **{schedules.IMMUNIZATION_FILE: [12], schedules.DEVELOPMENTAL_SCREENING_FILE: [9]},
+    )
+    register(MOTHER, edd_iso=None, child_dob_iso=RECENT_DOB)
+    as_sender(MOTHER)
+
+    result = json.loads(tool.next_appointment())
+
+    assert result["next_due"]["kind"] == "developmental_screening"
+    assert result["next_due"]["date_iso"] == schedules.add_months(date.fromisoformat(RECENT_DOB), 9).isoformat()
+
+
+def test_a_pregnant_mother_gets_only_her_antenatal_calendar(as_sender):
+    register(MOTHER, edd_iso="2026-12-01")
+    as_sender(MOTHER)
+
+    result = json.loads(tool.next_appointment())
+
+    assert result["unavailable_schedules"] == ["antenatal"]
+    assert "vitamin_a" not in result["unavailable_schedules"]
+
+
+def test_next_appointment_surfaces_a_schedule_caveat(as_sender, monkeypatch):
+    real = schedules.load_schedule
+
+    def fake(filename):
+        if filename == schedules.MMN_SUPPLEMENTATION_FILE:
+            data = dict(real(filename))
+            data["status"] = "sourced"
+            return data
+        return real(filename)
+
+    monkeypatch.setattr(schedules, "load_schedule", fake)
+    register(MOTHER, edd_iso=None, child_dob_iso=RECENT_DOB)
+    as_sender(MOTHER)
+
+    result = json.loads(tool.next_appointment())
+
+    assert any("born early or small" in caveat for caveat in result["caveats"])
+
+
+def test_next_appointment_carries_duration_for_a_period_item(as_sender, monkeypatch):
+    real = schedules.load_schedule
+
+    def fake(filename):
+        if filename == schedules.MMN_SUPPLEMENTATION_FILE:
+            data = dict(real(filename))
+            data["status"] = "sourced"
+            return data
+        return real(filename)
+
+    monkeypatch.setattr(schedules, "load_schedule", fake)
+    register(MOTHER, edd_iso=None, child_dob_iso=RECENT_DOB)
+    as_sender(MOTHER)
+
+    assert json.loads(tool.next_appointment())["next_due"]["duration_days"] == 60
+
+
+# --- compute_child_health_schedule ------------------------------------------------------
+
+
+def test_child_health_schedule_covers_the_three_non_immunisation_programmes(as_sender):
+    register(MOTHER, edd_iso=None, child_dob_iso=RECENT_DOB)
+    as_sender(MOTHER)
+
+    result = json.loads(tool.compute_child_health_schedule())
+
+    assert result["kind"] == "child_health"
+    assert set(result["unavailable_schedules"]) == {"developmental_screening", "vitamin_a", "mmn_supplementation"}
+    assert "immunization" not in result["unavailable_schedules"]
+
+
+def test_child_health_schedule_is_refused_for_a_pregnant_mother(as_sender):
+    register(MOTHER, edd_iso="2026-12-01")
+    as_sender(MOTHER)
+    assert json.loads(tool.compute_child_health_schedule())["ok"] is False
+
+
+def test_child_health_schedule_requires_registration(as_sender):
+    as_sender("94770000000")
+    assert json.loads(tool.compute_child_health_schedule())["registered"] is False
+
+
+def test_child_health_schedule_tags_each_visit_with_its_programme(as_sender, monkeypatch):
+    sourced_child_schedules(
+        monkeypatch,
+        **{schedules.DEVELOPMENTAL_SCREENING_FILE: [2, 4], schedules.VITAMIN_A_FILE: [6]},
+    )
+    register(MOTHER, edd_iso=None, child_dob_iso=RECENT_DOB)
+    as_sender(MOTHER)
+
+    result = json.loads(tool.compute_child_health_schedule())
+    kinds = [visit["kind"] for visit in result["visits"]]
+
+    assert kinds == ["developmental_screening", "developmental_screening", "vitamin_a"]
