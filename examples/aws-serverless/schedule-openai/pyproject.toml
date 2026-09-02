@@ -17,18 +17,18 @@ dependencies = []
 # extra and never parse a cron expression — except on an amendment that changes one, which is why
 # `cron` is included there too.
 request_handler = [
-    "agentkernel[aws,cron]>=0.8.1",
+    "agentkernel[aws,cron]>=0.9.0",
 ]
 response_handler = [
-    "agentkernel[aws]>=0.8.1",
+    "agentkernel[aws]>=0.9.0",
 ]
 agent_runner = [
-    "agentkernel[aws,openai,cron]>=0.8.1",
+    "agentkernel[aws,openai,cron]>=0.9.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.8.1",
+    "agentkernel[test]>=0.9.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

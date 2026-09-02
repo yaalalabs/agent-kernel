@@ -1,0 +1,43 @@
+{{- if and .Values.keda.enabled .Values.sandboxWorker.enabled }}
+{{/*
+Queue-depth autoscaling for the sandbox worker tier, mirroring the agent-runner scaler.
+Scaling keys on the sandbox INPUT backlog (pending executions); the output queue drains at
+store speed and never needs its own scaler.
+*/}}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-sandbox-worker
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "sandbox-worker") | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "agent-kernel.fullname" . }}-sandbox-worker
+  minReplicaCount: {{ .Values.keda.minReplicaCount }}
+  maxReplicaCount: {{ include "agent-kernel.sandboxKedaMaxReplicas" . }}
+  pollingInterval: {{ .Values.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
+  triggers:
+    {{- if eq .Values.transport.type "kafka" }}
+    - type: kafka
+      metadata:
+        bootstrapServers: {{ include "agent-kernel.kafkaBootstrap" . }}
+        consumerGroup: {{ printf "%s-input" .Values.sandboxWorker.queue.kafka.groupId }}
+        topic: {{ .Values.sandboxWorker.queue.kafka.inputTopic }}
+        lagThreshold: {{ .Values.keda.lagThreshold | quote }}
+    {{- else if eq .Values.transport.type "nats" }}
+    - type: nats-jetstream
+      metadata:
+        natsServerMonitoringEndpoint: {{ default (printf "%s-nats-headless:8222" .Release.Name) .Values.keda.natsMonitoringEndpoint }}
+        account: "$G"
+        stream: {{ .Values.sandboxWorker.queue.nats.inputStream }}
+        lagThreshold: {{ .Values.keda.lagThreshold | quote }}
+    {{- else if eq .Values.transport.type "sqs" }}
+    - type: aws-sqs-queue
+      metadata:
+        queueURL: {{ .Values.sandboxWorker.queue.sqs.inputUrl }}
+        queueLength: {{ .Values.keda.lagThreshold | quote }}
+        awsRegion: {{ required "keda.awsRegion is required for the sqs scaler" .Values.keda.awsRegion }}
+        identityOwner: operator
+    {{- end }}
+{{- end }}

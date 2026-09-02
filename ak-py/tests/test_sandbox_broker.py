@@ -182,10 +182,13 @@ async def test_promotion_and_late_completion_recovery(monkeypatch):
         registry = session.get_non_volatile_cache().get("sandbox")
         assert registry["tasks"][outcome.task_id]["status"] == "succeeded"
 
-        # The agent-facing check path resolves it too.
+        # The agent-facing check path resolves it too, including the bounded outcome that
+        # task_status captured before the broker's copy was discarded (the wait-then-check
+        # recovery contract delivers results, not just statuses).
         payload = json.loads(await check_sandbox_task(outcome.task_id))
         assert payload["status"] == "succeeded"
         assert payload["sandbox_session_id"] == outcome.sandbox_session_id
+        assert payload["result"]["stdout"] == "late result" and payload["result"]["exit_code"] == 0
 
 
 @pytest.mark.asyncio
@@ -355,7 +358,7 @@ async def test_run_code_tool_returns_pending_task_json(monkeypatch):
 
 def test_broker_factory_unknown_flavor_raises_listing_builtins(monkeypatch):
     """An unknown non-dotted broker flavor fails loud with the #541 error shape."""
-    _install_cfg(monkeypatch, _sandbox_cfg(flavor="sqs"))  # not landed until iteration 8
+    _install_cfg(monkeypatch, _sandbox_cfg(flavor="sqs"))  # never a flavor: sqs is a transport type under the queue flavor
     with pytest.raises(SandboxConfigError) as exc_info:
         ExecutionBrokerFactory.get()
-    assert "embedded" in str(exc_info.value) and "thread" in str(exc_info.value)
+    assert "embedded" in str(exc_info.value) and "thread" in str(exc_info.value) and "queue" in str(exc_info.value)

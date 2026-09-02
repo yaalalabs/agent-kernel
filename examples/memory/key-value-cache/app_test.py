@@ -78,7 +78,7 @@ async def test_junior_agent_on_acme(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_senior_agent_on_acme(http_client):
-    response = await http_client.send("What is AcmeXXLabs?", agent="senior_assistant")
+    response = await http_client.send("Tell me about the company AcmeXXLabs.", agent="senior_assistant")
     print(f"Senior agent response: {response}")
     assert (
         "cutting-edge green technology" in response.lower() and "san francisco" in response.lower()
@@ -100,7 +100,7 @@ async def test_junior_agent_on_softlabs(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(4)
 async def test_senior_agent_on_softlabs(http_client):
-    response = await http_client.send("What is SoftYYLabs?", agent="senior_assistant")
+    response = await http_client.send("Tell me about the company SoftYYLabs.", agent="senior_assistant")
     print(f"Senior agent response: {response}")
     assert (
         "thorium" in response.lower() and "research" in response.lower() and "shandong" in response.lower()

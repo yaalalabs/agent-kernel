@@ -5,12 +5,12 @@ description = "Demo of CrewAI based agents running in Agent Kernel on AWS ECS"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "agentkernel[crewai,api,redis,multimodal]>=0.8.1",
+    "agentkernel[crewai,api,redis,multimodal]>=0.9.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.8.1",
+    "agentkernel[test]>=0.9.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -18,6 +18,8 @@ dev = [
 
 [tool.uv]
 package = false
+# force newer posthog: crewai's chromadb needs posthog<6.0.0 but deepeval needs posthog>=7.0.0; both only use it for telemetry
+override-dependencies = ["posthog>=7.0.0,<8.0.0"]
 
 [tool.isort]
 profile = "black"

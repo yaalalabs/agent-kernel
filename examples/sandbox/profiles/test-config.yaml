@@ -2,6 +2,6 @@
 # See https://kernel.yaala.ai/docs/testing/overview for details.
 #
 # The sandbox executes real code, so every expected answer is an exact value
-# ("42", "hello sandbox", "328"). Fuzzy string matching keeps the comparison
-# deterministic and offline: no LLM judge is involved in evaluating results.
-mode: fuzzy
+# ("42", "hello sandbox", "328"). Deterministic exact-match matching keeps the comparison
+# offline: no LLM judge is involved in evaluating results.
+mode: score

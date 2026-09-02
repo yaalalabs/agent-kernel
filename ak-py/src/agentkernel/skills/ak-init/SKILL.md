@@ -90,12 +90,12 @@ description = "<description>"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[<extras>]>=0.8.1",
+    "agentkernel[<extras>]>=0.9.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.8.1",
+    "agentkernel[test]>=0.9.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -332,10 +332,15 @@ session:
 # trace:
 #   enabled: true
 #   type: langfuse     # langfuse | openllmetry | logfire
+```
 
-# Testing
-test:
-  mode: fuzzy          # fuzzy | judge | fallback
+#### test-config.yaml
+
+Test harness configuration is **not** part of `config.yaml` — it lives in its own file, loaded
+only when tests run (a `test:` section left in `config.yaml` is ignored):
+
+```yaml
+mode: score          # score | llm | fallback (default: fallback)
 ```
 
 #### build.sh

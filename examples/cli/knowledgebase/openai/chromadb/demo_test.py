@@ -17,20 +17,20 @@ async def test_client():
 
 @pytest.mark.order(2)
 async def test_fallback_when_kb_empty(test_client):
-    await test_client.send("What is the capital of France?")
+    await test_client.send("What is the capital of France?  Reply with one word.")
     response = (test_client.last_agent_response or "").lower()
     assert "paris" in response
 
 
 @pytest.mark.order(3)
 async def test_kb_descriptions_exposed(test_client):
-    await test_client.send("Which knowledge base do you use to store information?")
+    await test_client.send("Which knowledge base do you use to store information? Reply with one word.")
     await test_client.expect(["ChromaDB"])
 
 
 @pytest.mark.order(4)
 async def test_kb_schemas_available(test_client):
-    await test_client.send("Summarize the knowledge base schemas you know about.")
+    await test_client.send("Summarize the knowledge base schemas you know about. Reply with one word.")
     await test_client.expect(["ChromaDB", "semantic"])
 
 

@@ -5,6 +5,7 @@ Attachment storage manager for multimodal memory.
 import logging
 import time
 import uuid
+from typing import Optional
 
 from ...config import AKConfig
 from ...util.factory import AKConfigError, require_extra, resolve_dotted
@@ -103,16 +104,18 @@ class AttachmentStorageManager:
         mime_type: str,
         description: str = "",
         max_attachments: int = DEFAULT_MAX_ATTACHMENTS,
+        url: Optional[str] = None,
     ) -> str:
         """
         Save an attachment using the configured storage driver.
 
-        :param data: Base64 encoded attachment data.
+        :param data: Base64 encoded attachment data; empty when url is given.
         :param attachment_type: "image" or "file".
         :param name: Filename.
         :param mime_type: MIME type of the attachment.
         :param description: Optional description from LLM.
         :param max_attachments: Maximum number of attachments to keep.
+        :param url: Address of a remote attachment whose bytes are not held here.
         :return: The generated attachment ID.
         """
         attachment_id = str(uuid.uuid4())
@@ -126,6 +129,7 @@ class AttachmentStorageManager:
             "mime_type": mime_type,
             "description": description,
             "timestamp": timestamp,
+            "url": url,
         }
 
         self._driver.save(attachment, max_attachments)
@@ -158,6 +162,7 @@ class AttachmentStorageManager:
                         mime_type=attachment["mime_type"],
                         description=attachment.get("description", ""),
                         timestamp=attachment["timestamp"],
+                        url=attachment.get("url"),
                     )
                 )
                 _log.debug(f"Loaded attachment: {attachment_id}")

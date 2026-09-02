@@ -1,9 +1,11 @@
+{{- if .Values.ioHandler.enabled }}
 {{/*
 The io tier: Request Handler (REST API) + Response Handler threads, IOHandler.run(). Its API
 stays plain REST on broker transports; WebSocket traffic terminates on the ws-gateway tier.
 On the in_memory transport this single Deployment runs the whole pipeline in-process (the
 single-process profile), co-hosting the WebSocket handlers when the app passes an
-auth_validator.
+auth_validator. Disabled only for the standalone sandbox-worker install (the rest of Agent
+Kernel runs outside the cluster, e.g. Lambda or ECS).
 */}}
 apiVersion: apps/v1
 kind: Deployment
@@ -95,3 +97,4 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+{{- end }}

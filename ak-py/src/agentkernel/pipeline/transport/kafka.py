@@ -308,7 +308,11 @@ class KafkaTransport(QueueTransport):
         metadata_timeout: float = 5.0,
         client_config: Optional[Dict[str, Any]] = None,
         bookkeeping: Optional[BookkeepingStore] = None,
+        config_path: str = "execution.queues",
     ):
+        # config_path names the queues block this transport was built from (#503 seam:
+        # the sandbox broker passes sandbox.broker.queue), so errors point at the right section.
+        self._config_path = config_path
         self._bootstrap_servers = bootstrap_servers
         self._topics = {QueueName.INPUT: input_topic, QueueName.OUTPUT: output_topic}
         self._group_id = group_id
@@ -399,7 +403,7 @@ class KafkaTransport(QueueTransport):
             _log.warning(
                 f"Topic {topic} has {partitions} partition(s) but {num_consumers} consumer(s) are configured for it: "
                 f"{num_consumers - partitions} will stay idle, because Kafka assigns each partition to one group member. "
-                f"Reduce execution.queues.{queue.value}.no_of_consumers or add partitions (note that adding partitions "
+                f"Reduce {self._config_path}.{queue.value}.no_of_consumers or add partitions (note that adding partitions "
                 "re-maps session keys, briefly disturbing per-session ordering)."
             )
         else:
