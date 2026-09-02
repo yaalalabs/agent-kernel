@@ -67,7 +67,8 @@ current caseload, and acknowledge escalations to close them out.
   framework rather than a parallel mechanism.
 - **`ToolContext`** for identity resolution inside every tool.
 - **Guardrails** for moderation and jailbreak detection, deliberately scoped (see
-  `guardrails/README.md`).
+  `guardrails/README.md`). The input guardrail is a custom subclass that **fails open** when
+  the guardrail service is unreachable; see section 3.
 - **Post-execution hooks** enforcing the no-diagnosis and no-medication boundary on
   every outbound message. Registered on the entry agent, which is the only place a hook
   sees replies produced after a handoff.
@@ -115,6 +116,15 @@ medication-like language, with danger-sign action strings and escalation text ex
 allowlisted so the filter can never suppress a safety message. Diagnosis blocks and
 medication blocks return different responses: asking about a supplement is a benign
 question and does not deserve an alarming reply.
+
+**The safety layer cannot silence a symptom report.** Agent Kernel's built-in input guardrail
+fails closed: any error during validation — a rate limit, an outage, an expired key — halts the
+run and returns a generic apology, so the agent never executes. Because the guardrail sits
+upstream of every safeguard here, that would silently disable danger-sign screening and
+escalation for the duration of an unrelated outage. `resilient_guardrail.py` replaces it with
+one that still blocks on a genuine tripwire but passes the turn through when the service is
+simply unreachable, logging every occurrence. The built-in *output* guardrail already fails
+open; only the input side did not.
 
 **PII is minimised.** First name only. No NIC, no full name, no address beyond MOH
 division. Phone numbers are redacted in logs, and only in logs — redaction never touches
@@ -265,6 +275,13 @@ leaving the escalation delivery path untouched.
 - **Guardrail PII detection is disabled.** It flags phone numbers, which would break
   registration and the escalation path. PII redaction is implemented separately, for logs
   only.
+- **The input guardrail fails open.** When the guardrail service is unreachable, a message
+  reaches the agent unscreened. That is a deliberate trade: an unscreened message is a lesser
+  harm than a symptom report silently dropped because a moderation endpoint was rate-limited.
+  Every occurrence is logged as an error.
+- **Guardrails roughly triple the API calls per turn.** Moderation and jailbreak checks are
+  each a separate round trip on top of the agent call, and each retries on failure. Budget for
+  that, or disable `guardrail.input.enabled` while iterating locally.
 - **The block list is not exhaustive.** Broad terms like `mg` and `dose` will produce false
   positives, which is why every block is logged with the original reply, redacted, so the
   rate is measurable.
@@ -291,6 +308,7 @@ use-cases/mathru-phm-companion/
 ├── escalation.py         # payload, delivery, persistence — not model-callable
 ├── hooks.py              # post-execution language filter
 ├── redaction.py          # log filter
+├── resilient_guardrail.py # input guardrail that fails open on service outage
 ├── provenance.py         # the sourced/placeholder contract for clinical data
 ├── server.py             # WhatsApp entry point
 ├── demo.py               # local CLI
