@@ -61,6 +61,7 @@ class QueueBrokerWorker:
             response_store_config=self._broker.response_store,
             transport_type=transport_type,
             ttl=self._broker.response_ttl,
+            config_path="sandbox.broker.response_store",
         )
         # Truncation happens here in the worker (against inline_payload_max_bytes), never in core.
         self._core = BrokerWorkerCore(inline_payload_max_bytes=None)

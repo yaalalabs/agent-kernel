@@ -88,8 +88,16 @@ class TestResponseStoreFactorySeam:
         )
 
     def test_unconfigured_store_on_broker_transport_raises(self):
-        with pytest.raises(AKConfigError, match="required on broker transports"):
+        with pytest.raises(AKConfigError, match="execution.response_store is required on broker transports"):
             ResponseStoreFactory.create(response_store_config=_ResponseStoreConfig(), transport_type="kafka")
+
+    def test_error_messages_name_the_callers_block(self):
+        # config_path relabels the factory's errors so a sandbox.broker.response_store
+        # misconfiguration is not reported as an execution.response_store one.
+        with pytest.raises(AKConfigError, match=r"sandbox\.broker\.response_store is required"):
+            ResponseStoreFactory.create(
+                response_store_config=_ResponseStoreConfig(), transport_type="kafka", config_path="sandbox.broker.response_store"
+            )
 
     def test_explicit_in_memory_type_skips_the_transport_check(self):
         # Explicit in_memory never consults the transport (the pre-seam short-circuit).

@@ -325,6 +325,8 @@ QueueMessage(
     #699 review), threaded into the factory's error messages, the `require_extra` contexts,
     and the kafka/nats transports' own diagnostics, so a `sandbox.broker.queue`
     misconfiguration is reported against that block instead of `execution.queues`.
+    `ResponseStoreFactory.create` takes the matching `config_path="execution.response_store"`
+    for the same reason (the sandbox path passes `sandbox.broker.response_store`).
 - `ResponseStoreFactory.create(response_store_config=None, transport_type=None, ttl=None)`
   (`pipeline/response_store/factory.py:23-75`): `None` arguments read
   `execution.response_store` / `QueueTransportFactory.resolve_type()` as today. The sandbox path

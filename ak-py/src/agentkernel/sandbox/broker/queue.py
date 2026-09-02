@@ -83,6 +83,7 @@ class QueueExecutionBroker(ExecutionBroker):
                 response_store_config=self._config.response_store,
                 transport_type=QueueTransportFactory.resolve_type(self._config.queue),
                 ttl=self._config.response_ttl,
+                config_path="sandbox.broker.response_store",
             )
         return self._store
 
