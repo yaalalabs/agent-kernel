@@ -5,7 +5,7 @@ import pytest
 import danger_signs
 
 POPULATED_TABLE = {
-    "status": "reviewed",
+    "status": "sourced",
     "signs": [
         {
             "id": "red_sign",
@@ -69,8 +69,22 @@ def test_exception_during_matching_forces_red_and_escalates(monkeypatch):
 
 
 def test_screen_never_raises(monkeypatch):
-    monkeypatch.setattr(danger_signs, "load_table", lambda: {"status": "reviewed", "signs": [{"bad": object()}]})
+    monkeypatch.setattr(danger_signs, "load_table", lambda: {"status": "sourced", "signs": [{"bad": object()}]})
     assert danger_signs.screen("something")["severity"] in {danger_signs.RED, danger_signs.AMBER}
+
+
+@pytest.mark.parametrize("status", ["sourcedd", "Sourced", "reviewed", "", None, True])
+def test_only_the_exact_sourced_status_is_trusted(monkeypatch, status):
+    # A typo must fail toward escalation. Treating "anything but placeholder" as populated
+    # would let one character silently switch the table from escalating to trusting.
+    monkeypatch.setattr(
+        danger_signs,
+        "load_table",
+        lambda: {"status": status, "signs": [{"id": "amber_sign", "severity": "amber", "keywords": ["swelling"]}]},
+    )
+    decision = danger_signs.screen("I have swelling")
+    assert decision["severity"] == danger_signs.RED
+    assert decision["escalate"] is True
 
 
 # --- matching against a populated table -------------------------------------------------

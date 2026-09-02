@@ -18,6 +18,7 @@ from agentkernel.core import ToolContext
 
 import danger_signs
 import escalation
+import provenance
 import schedules
 import store
 
@@ -156,8 +157,8 @@ def get_mother_profile() -> str:
 def _schedule_payload(calendar: dict[str, Any]) -> str:
     payload: dict[str, Any] = {"ok": True, **calendar}
     payload["next_due"] = schedules.next_due(calendar["visits"])
-    if calendar.get("status") == "placeholder":
-        payload["data_status"] = "placeholder"
+    if not provenance.is_sourced(calendar):
+        payload["data_status"] = provenance.PLACEHOLDER
         payload["data_warning"] = PLACEHOLDER_WARNING
     return _json(payload)
 
@@ -212,8 +213,8 @@ def next_appointment() -> str:
         "kind": calendar["kind"],
         "next_due": schedules.next_due(calendar["visits"]),
     }
-    if calendar.get("status") == "placeholder":
-        payload["data_status"] = "placeholder"
+    if not provenance.is_sourced(calendar):
+        payload["data_status"] = provenance.PLACEHOLDER
         payload["data_warning"] = PLACEHOLDER_WARNING
     return _json(payload)
 
@@ -249,8 +250,8 @@ async def screen_danger_signs(symptom_text: str) -> str:
         "standing_note": STANDING_NOTE,
         "relay_action_verbatim": True,
     }
-    if decision["table_status"] == "placeholder":
-        payload["data_status"] = "placeholder"
+    if decision["table_status"] != provenance.SOURCED:
+        payload["data_status"] = provenance.PLACEHOLDER
 
     if not decision["escalate"]:
         return _json(payload)

@@ -11,6 +11,33 @@
 # Visits are keyed by gestational week. A visit date is derived as pure arithmetic:
 #   visit_date = edd - (term_gestational_weeks - gestational_week) * 7 days
 
+# ---------------------------------------------------------------------------
+# PROVENANCE
+#
+# Sourcing rules, enforced by provenance_test.py:
+#   - Never cite Scribd or any re-upload. Get the .gov.lk original, or do not
+#     use the value. Copies of these documents are on Scribd and are convenient;
+#     they are unverifiable re-uploads of unknown vintage.
+#   - Two sources per value. If they disagree, the newer official one wins and
+#     the discrepancy is noted here.
+#   - Check the date printed ON THE FACE of the document, not its file
+#     metadata. An old-but-official document is more dangerous than an
+#     obviously unofficial one.
+#
+# `status` must be exactly `sourced` before any value here is used. Anything
+# else, including a typo, is treated as `placeholder` and fails toward
+# escalation. Setting `sourced` requires every provenance field below to be
+# filled in; the test suite will fail otherwise.
+# ---------------------------------------------------------------------------
+provenance:
+  source: TODO # exact document title
+  publisher: TODO # Family Health Bureau, Ministry of Health, Sri Lanka
+  document_date: TODO # as printed on the document, not the file metadata
+  url: TODO # direct .gov.lk link
+  retrieved: TODO # YYYY-MM-DD
+  cross_checked_against: TODO # second source, or "CHDR, physical copy"
+  clinician_review: "NOT PERFORMED. See Known Limitations in README.md."
+
 status: placeholder
 
 # TODO: confirm the term reference used by the MoH antenatal calendar.

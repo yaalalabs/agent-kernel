@@ -9,7 +9,7 @@ Every failure mode leans toward escalation:
 Condition                    Severity    Escalates
 ===========================  ==========  =========
 exception during matching    red         yes
-table status is placeholder  red         yes
+table not `sourced`          red         yes
 matched a red entry          red         yes
 matched an amber entry       amber       no
 symptom text, no match       amber       no
@@ -29,6 +29,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+import provenance
 
 log = logging.getLogger("mathru.danger_signs")
 
@@ -120,8 +122,9 @@ def _screen(symptom_text: str) -> dict[str, Any]:
     status = table.get("status")
 
     # An unpopulated table cannot rule anything out, so it must not be allowed to reassure.
-    if status == "placeholder":
-        return _failsafe("danger-sign table is not populated yet", status)
+    # Only an exact `sourced` counts: a typo must fail toward escalation, not away from it.
+    if not provenance.is_sourced(table):
+        return _failsafe(f"danger-sign table is not sourced (status: {status!r})", status)
 
     matched_signs = [sign for sign in table.get("signs") or [] if _matches(text, sign)]
     if not matched_signs:
