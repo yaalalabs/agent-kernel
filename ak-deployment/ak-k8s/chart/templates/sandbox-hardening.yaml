@@ -1,0 +1,69 @@
+{{- if and .Values.sandboxWorker.enabled .Values.sandboxWorker.hardening.enabled }}
+{{/*
+Values-gated hardening of the sandbox-pods namespace (#503): PSA enforcement, default-deny
+egress on sandbox pods, and quota/limits. The Namespace itself (with its PSA labels) is
+rendered only for a dedicated sandbox namespace this release does not live in; labeling a
+pre-existing release namespace from a chart is not reliably possible and stays an operator
+step (see the README's sandbox worker section).
+*/}}
+{{- $ns := include "agent-kernel.sandboxPodsNamespace" . }}
+{{- if and .Values.sandboxWorker.hardening.podSecurityStandard (ne $ns .Release.Namespace) }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $ns }}
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "sandbox-pod") | nindent 4 }}
+    pod-security.kubernetes.io/enforce: {{ .Values.sandboxWorker.hardening.podSecurityStandard }}
+---
+{{- end }}
+{{- if .Values.sandboxWorker.hardening.defaultDenyEgress }}
+{{/*
+Egress is denied for every sandbox pod (the provider labels them agentkernel.io/sandbox=true);
+egressAllow entries re-open only the peers the platform needs (typically the API server).
+Per-pod allowlists from SandboxPolicy come from the provider's own NetworkPolicies
+(kubernetes.network_policy: true) and are additive to this baseline.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-sandbox-deny-egress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "sandbox-pod") | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      agentkernel.io/sandbox: "true"
+  policyTypes:
+    - Egress
+  {{- with .Values.sandboxWorker.hardening.egressAllow }}
+  egress:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+---
+{{- end }}
+{{- with .Values.sandboxWorker.hardening.resourceQuota }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "agent-kernel.fullname" $ }}-sandbox-quota
+  namespace: {{ $ns }}
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" $ "component" "sandbox-pod") | nindent 4 }}
+spec:
+  {{- toYaml . | nindent 2 }}
+---
+{{- end }}
+{{- with .Values.sandboxWorker.hardening.limitRange }}
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "agent-kernel.fullname" $ }}-sandbox-limits
+  namespace: {{ $ns }}
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" $ "component" "sandbox-pod") | nindent 4 }}
+spec:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}

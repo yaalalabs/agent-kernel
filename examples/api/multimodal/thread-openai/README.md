@@ -33,6 +33,21 @@ curl -X POST http://localhost:8000/api/v1/chat \
   }'
 ```
 
+`image_data` also accepts a URL, in which case the bytes are never copied into the attachment store —
+the address is recorded instead and the agent framework's adapter resolves it. `mime_type` is optional
+for this form:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "prompt": "What animal is this?",
+    "session_id": "ses-2",
+    "user_id": "alice",
+    "images": [{"name": "animal.jpg", "image_data": "https://example.com/animal.jpg"}]
+  }'
+```
+
 Read the thread — the user message carries an attachment reference (`attachment_id`), not the image bytes:
 
 ```bash

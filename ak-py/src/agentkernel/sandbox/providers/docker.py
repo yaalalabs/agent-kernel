@@ -31,8 +31,9 @@ WORKDIR = "/workspace"
 
 
 def _safe_rel(path: str) -> str:
-    """Resolve a caller path to a WORKDIR-relative POSIX path, rejecting absolute paths and
-    ``..`` traversal that would escape the workdir (mirrors the local_subprocess escape check)."""
+    """Resolve a caller path to a WORKDIR-relative POSIX path: an absolute path is treated
+    as workdir-relative (its leading ``/`` is stripped), and ``..`` traversal that would
+    escape the workdir is rejected (mirrors the local_subprocess escape check)."""
     rel = path.lstrip("/")
     resolved = posixpath.normpath(posixpath.join(WORKDIR, rel))
     if resolved != WORKDIR and not resolved.startswith(WORKDIR + "/"):

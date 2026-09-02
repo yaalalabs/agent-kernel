@@ -5,12 +5,12 @@ description = "Demo of structured output from OpenAI Agents SDK based agents run
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,openai]>=0.8.1",
+    "agentkernel[cli,openai]>=0.9.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.8.1",
+    "agentkernel[test]>=0.9.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -18,8 +18,6 @@ dev = [
 
 [tool.uv]
 package = false
-# ragas 0.4.3 imports langchain_community.chat_models.vertexai, removed in langchain-community 0.4.2
-constraint-dependencies = ["langchain-community<0.4.2"]
 
 [tool.isort]
 profile = "black"

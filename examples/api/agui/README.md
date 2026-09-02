@@ -143,9 +143,10 @@ carrying bare base64.
 
 Worth knowing:
 
-- **Bare base64 is what the frontend sends**, and it is the form that works on every path. A `data:`
-  URI and an `http(s)://` or `s3://` URL are also accepted, but a URL is passed through untouched —
-  never described or stored — because the hook does not fetch it. See
+- **Bare base64 is what the frontend sends**, since that is what AG-UI's `data` source is specified
+  as. A `data:` URI and an `http(s)://` or `s3://` URL are also accepted, but a URL is passed through
+  to the adapter undescribed — the hook never fetches it. With Conversation Thread Support enabled it
+  is also recorded by address, so the thread's history keeps one entry per attachment. See
   [Multimodal](../../../docs/docs/advanced/multimodal.md).
 - **Audio and video are rejected with a 400.** Agent Kernel has no equivalent request type, and
   mapping them onto the generic file type produces misleading model output.

@@ -162,6 +162,118 @@ through the `serviceLB` fallback instead of a Gateway API implementation, that t
 via kube-proxy with no pod identity and the policy blocks it on most CNIs: append an
 `ipBlock` rule through `networkPolicy.extraIngress`, or set `networkPolicy.enabled: false`.
 
+## Sandbox worker tier (#503)
+
+Enable the sandbox broker worker to run queue-decoupled sandbox execution next to the
+pipeline:
+
+```yaml
+sandboxWorker:
+  enabled: true
+```
+
+The worker consumes sandbox execution requests from the sandbox input queue, drives the
+sandbox provider (typically `kubernetes` pods), and returns completions over the sandbox
+output queue into the shared response store; agents wait a bounded time and recover late
+results with the `check_sandbox_task` tool. The transport type and broker connection follow
+the top-level `transport` block; only the queue names are sandbox-specific
+(`sandboxWorker.queue.<transport>`), and completions land in the `responseStore` backend
+under the `ak:sandbox:` prefix.
+
+The split of responsibilities stays the chart's usual one: the chart injects the broker
+wiring as `AK_SANDBOX__BROKER__*` env vars, while the application image's `config.yaml`
+declares the sandbox capability itself (profiles, policies, provider config) and provides
+the entry file that calls `QueueBrokerWorker.run()` (`sandboxWorker.command`, default
+`app_sandbox_worker.py`).
+
+The sandbox queues are provisioned like the chat ones: with the in-cluster brokers,
+`natsResources.enabled` renders NACK Stream/Consumer CRs and `kafka.enabled` renders
+Strimzi KafkaTopic CRs for the `sandboxWorker.queue.<transport>` pair (plus Kafka
+dead-letter topics) whenever `sandboxWorker.enabled` is set. On NATS the dev alternative is
+`transport.nats.autoProvision: true`, which the chart mirrors into the sandbox broker's
+config; on SQS, bring your own queues and set `sandboxWorker.queue.sqs.*`. Keep
+`sandboxWorker.queue.nats.ackWait` (default 900) above your longest sandbox
+`policy.timeout`, or a still-running execution is redelivered and re-run.
+
+This is the chart's first tier with its own identity:
+
+- The **worker SA** (`<fullname>-sandbox-worker`) is bound to a Role in the sandbox-pods
+  namespace with exactly the pod-lifecycle and `pods/exec` verbs, plus `networkpolicies`
+  create/delete only when `sandboxWorker.rbac.networkPolicies: true` (needed for the app
+  config's `kubernetes.network_policy: true` posture). For `identity.mode: user` profiles
+  (RBAC impersonation), `sandboxWorker.rbac.impersonate: true` additionally grants the
+  worker the cluster-scoped `impersonate` verb on users/groups, the chart's only
+  ClusterRole; sandboxed code then runs under the invoking user's own RBAC.
+- The **sandbox-pod SA** (`<fullname>-sandbox-pod`) is what sandbox pods run as; point the
+  app config's `kubernetes.service_account` at it. The chart deliberately binds it to
+  nothing: what code inside a sandbox may do against the cluster is application policy, so
+  bind it to `view` (read-only kubectl) or a custom role in your app manifests. That RBAC is
+  the security boundary; Agent Kernel never treats command-string parsing as one.
+
+`sandboxWorker.hardening` gates namespace guardrails: a default-deny egress NetworkPolicy
+over all sandbox pods (with `egressAllow` re-opening required peers such as the API server),
+optional ResourceQuota/LimitRange, and Pod Security Admission labels. The PSA-labeled
+Namespace is rendered only when `sandboxWorker.sandboxPods.namespace` names a dedicated
+namespace the release does not live in; labeling a pre-existing release namespace is an
+operator step (`kubectl label ns <ns> pod-security.kubernetes.io/enforce=restricted`). Under
+PSA `restricted`, the sandbox image must run as non-root (set
+`kubernetes.container_security_context` accordingly in the app config); the provider's
+hardened defaults (no privilege escalation, seccomp `RuntimeDefault`, all capabilities
+dropped) already satisfy the rest.
+
+With `keda.enabled: true` the tier scales on the sandbox input queue's backlog, mirroring
+the agent-runner scaler; drain follows the same SIGTERM discipline, so keep
+`sandboxWorker.terminationGracePeriodSeconds` (default 600) above your longest sandbox
+`policy.timeout`.
+
+### Standalone sandbox worker (agents in Lambda or ECS)
+
+The sandbox worker does not require the rest of the pipeline in the same cluster. When the
+agent side of Agent Kernel runs elsewhere (Lambda mode, ECS), this chart can deploy the
+worker tier alone; the two sides meet only on the sandbox queues and the response store:
+
+```yaml
+ioHandler:
+  enabled: false          # no API tier in this cluster
+agentRunner:
+  enabled: false          # no agent execution in this cluster
+sandboxWorker:
+  enabled: true
+
+# Point the transport at the broker both sides share, e.g. an existing Kafka cluster:
+transport:
+  type: kafka
+  kafka:
+    bootstrapServers: kafka.example.internal:9092
+nats:
+  enabled: false          # no in-cluster broker needed
+kafka:
+  enabled: false          # the cluster already exists; no Strimzi CRs
+
+# The response store must be the SAME backend the agent side reads its completions from:
+responseStore:
+  type: redis
+  url: redis://cache.example.internal:6379
+valkey:
+  enabled: false
+session:
+  type: redis             # unused by the worker, but the value must be renderable
+  url: redis://cache.example.internal:6379
+```
+
+With every pipeline tier disabled, the ConfigMap omits the chat pipeline's
+`AK_EXECUTION__QUEUES__*` values entirely (nothing in this cluster consumes them), so an SQS
+deployment does not have to invent chat queue URLs; only `sandboxWorker.queue.<transport>`
+and the response store matter. Backends the values do not model (a DynamoDB response store
+for a Lambda deployment, for example) are configured through `extraEnv` /
+`sandboxWorker.extraEnv` as `AK_SANDBOX__BROKER__RESPONSE_STORE__*` variables.
+
+The agent side needs the mirror-image configuration: `sandbox.broker.flavor: queue` with the
+same queue names and the same response store (and, on Lambda, `worker_timeout_ceiling` per
+its runtime limit). Its tool calls then submit over the shared queue, this cluster's worker
+executes and persists, and the agent's bounded wait or a later `check_sandbox_task` reads
+the completion from the shared store.
+
 ## Autoscaling and drain
 
 - **agent-runner** scales on queue depth (`keda.enabled`, KEDA prerequisite): Kafka consumer
@@ -170,6 +282,8 @@ via kube-proxy with no pod identity and the policy blocks it on most CNIs: appen
   slow (image pull + Python imports); `maxReplicaCount` defaults to
   `partitions / input.noOfConsumers`, past which a new replica finds no free partition.
 - **io-handler** scales on plain CPU (`ioHandler.autoscaling`), being request-bound.
+- **sandbox-worker** (when enabled) scales on the sandbox input queue the same way; see the
+  sandbox worker tier section above.
 - Drain: runner consumers observe SIGTERM, stop claiming work, and finish in-flight runs;
   `agentRunner.terminationGracePeriodSeconds` (default 120) must exceed your longest agent
   turn, and a short `preStop` sleep covers endpoint deregistration.

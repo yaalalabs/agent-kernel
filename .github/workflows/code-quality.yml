@@ -5,6 +5,10 @@ on:
     branches:
       - develop
 
+# Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions): checkout only.
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
