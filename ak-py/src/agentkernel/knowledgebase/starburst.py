@@ -6,6 +6,8 @@ import trino
 import trino.exceptions
 
 from .base import KnowledgeBase
+from .errors import KnowledgeCapabilityError
+from .model import KnowledgeCapabilities
 
 logger = logging.getLogger("ak.StarburstManager")
 
@@ -57,14 +59,17 @@ class StarburstManager(KnowledgeBase):
         :param description: Optional human-readable backend description.
         :return: None.
         """
-        super().__init__()
+        super().__init__(
+            capabilities=KnowledgeCapabilities(kinds=["structured"], query=True, query_language="sql", writable=False),
+            name=name,
+        )
 
         self.host = host or STARBURST_HOST
         self.port = port or STARBURST_PORT
         self.user = user or STARBURST_USER
         self.password = password or STARBURST_PASSWORD
         self.catalog = catalog
-        self.schema = schema
+        self.db_schema = schema
         self.table_name = table_name
         self.name = name
         self.description = description or (f"Starburst Galaxy read-only backend. " f"Query target: {catalog}.{schema}.{table_name}")
@@ -108,12 +113,12 @@ class StarburstManager(KnowledgeBase):
             port=self.port,
             user=self.user,
             catalog=self.catalog or None,
-            schema=self.schema or None,
+            schema=self.db_schema or None,
             http_scheme="https",
             auth=trino.auth.BasicAuthentication(self.user, self.password),
             request_timeout=60,
         )
-        logger.info(f"[KB][{self.name}] Connected → {self.host} " f"| {self.catalog}.{self.schema}.{self.table_name}")
+        logger.info(f"[KB][{self.name}] Connected → {self.host} " f"| {self.catalog}.{self.db_schema}.{self.table_name}")
 
     def close(self) -> None:
         """
@@ -136,9 +141,9 @@ class StarburstManager(KnowledgeBase):
         :param records: Unused write payload.
         :param kwargs: Reserved for interface compatibility.
         :return: None.
-        :raises NotImplementedError: Always raised for this backend.
+        :raises KnowledgeCapabilityError: Always raised for this backend.
         """
-        raise NotImplementedError(f"[KB][{self.name}] StarburstManager is read-only.")
+        raise KnowledgeCapabilityError(self.backend_name, "write")
 
     def get_description(self) -> str:
         """
@@ -148,7 +153,7 @@ class StarburstManager(KnowledgeBase):
         """
         return f"{self.backend_name}: {self.description}"
 
-    def read(self, query: str = "", limit: int = 5, **kwargs) -> List[Mapping[str, Any]]:
+    def query(self, statement: str = "", limit: int = 3, **kwargs) -> List[Mapping[str, Any]]:
         """
         Execute a validated read-only SQL query against Starburst Galaxy.
 
@@ -156,29 +161,29 @@ class StarburstManager(KnowledgeBase):
         ``DESCRIBE``. If no ``LIMIT`` clause is present, a safe fallback limit is
         appended before execution.
 
-        :param query: Agent-generated SQL statement.
+        :param statement: Agent-generated SQL statement.
         :param limit: Fallback row limit applied when SQL has no LIMIT clause.
         :param kwargs: Reserved for interface compatibility.
         :return: Normalized list of records with ``text`` and ``metadata`` keys.
         """
-        if not query or not query.strip():
+        if not statement or not statement.strip():
             logger.warning(f"[KB][{self.name}] Empty query received.")
             return []
 
-        sql = query.strip().rstrip(";")
+        sql = statement.strip().rstrip(";")
         if not sql:
             logger.warning(f"[KB][{self.name}] Empty query after normalization.")
             return []
 
-        statement = sql.upper().split()[0]
+        verb = sql.upper().split()[0]
 
         # Only allow read-safe statements
-        if statement not in ("SELECT", "SHOW", "DESCRIBE"):
+        if verb not in ("SELECT", "SHOW", "DESCRIBE"):
             logger.error(f"[KB][{self.name}] Rejected non-read SQL: {sql[:80]}")
             return []
 
         # Append a safe LIMIT if the agent omitted one for SELECT statements.
-        if statement == "SELECT" and "LIMIT" not in sql.upper():
+        if verb == "SELECT" and "LIMIT" not in sql.upper():
             sql = f"{sql} LIMIT {limit}"
 
         return self._execute(sql, retried=False)
@@ -201,7 +206,7 @@ class StarburstManager(KnowledgeBase):
 
             columns = [desc[0] for desc in cursor.description]
             rows = cursor.fetchall()
-            source = f"{self.catalog}.{self.schema}.{self.table_name}"
+            source = f"{self.catalog}.{self.db_schema}.{self.table_name}"
 
             results = [
                 {
