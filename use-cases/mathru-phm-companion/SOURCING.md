@@ -4,9 +4,11 @@ The three files in `data/` hold every clinical value in this system. All three s
 `status: placeholder`. This document records what has been verified so far, so the sourcing
 session does not start from a blank page.
 
-**Nothing here has been entered into the data files.** `provenance_test.py` enforces that a
-file cannot claim `status: sourced` until its provenance block names a document, its date, a
-`.gov.lk` or `who.int` URL, and a second cross-check.
+The immunisation values are now captured in `data/immunization_schedule.yaml` with their
+provenance recorded; the antenatal and danger-sign files are still empty. **No file has been
+flipped to `sourced`,** so nothing here reaches a mother yet. `provenance_test.py` enforces
+that a file cannot claim `sourced` until its provenance block names a document, its printed
+date, a `.gov.lk` or `who.int` URL, and a second cross-check.
 
 ## Rules
 
@@ -67,6 +69,46 @@ CHDR wins and this document is stale.
 The 9-month MMR is the line to check first: the timing of the first measles-containing dose
 has moved before, and it is the value most likely to be out of date.
 
+### Corroborated by a second source, still not authoritative
+
+A second compilation, citing the **Sri Lanka Essential Health Services Package 2019**
+(`previousmoh.health.gov.lk`), agrees with the 2017 poster on **every immunisation line**:
+BCG at birth; OPV + Pentavalent + fIPV at 2 and 4 months; OPV + Pentavalent at 6; MMR-1 at 9;
+Live JE at 12; OPV + DPT booster at 18; MMR-2 at 36; OPV booster + DT at 60.
+
+Those values are now in `data/immunization_schedule.yaml` with that provenance recorded. The
+file **remains `placeholder`**, for three reasons:
+
+1. **The 2022 CHDR circular does not carry the schedule.** It mandates the CHDR as the
+   national child health record covering birth to 19 years; it does not reproduce the visit
+   table. So the newest document in play cannot be the citation for these values.
+2. **Both sources that do carry the schedule predate it.** A 2017 poster and a 2019 services
+   package. Two old sources agreeing is weaker than it looks — they may share an origin rather
+   than independently confirming each other.
+3. **`previousmoh.health.gov.lk` is a legacy domain**, the same class of hazard as
+   `old.epid.gov.lk`. It passes the `.gov.lk` URL check, which is exactly why `document_date`
+   is a required provenance field.
+
+The line to check first is **MMR-1 at 9 months**. The timing of the first measles-containing
+dose has moved before, and it is the single value most likely to be stale.
+
+### The other three CHDR schedules are not modelled
+
+The CHDR carries four overlapping schedules. Only immunisation maps onto the current data
+file:
+
+| Schedule | Status here |
+| --- | --- |
+| Immunisation | Captured, `placeholder` pending the CHDR booklet check |
+| Developmental screening (2, 4, 6, 9, 12, 18, 24, 36, 48, 60 months) | **Not modelled** |
+| Vitamin A (6-monthly, 6 months to 5 years) | **Not modelled** |
+| MMN supplementation (60-day periods at 6, 12, 18 months) | **Not modelled** |
+
+Adding them is a scope decision, not a data one. Developmental screening in particular has
+four points with no immunisation attached — 24, 48 months, and the 60-month school-entry
+assessment — so a mother told only about immunisation visits would miss them. MMN is also not
+a single appointment but a 60-day period, which the current `visits` schema cannot express.
+
 ### Still open
 
 - The **2025 National Immunization Summit report** exists
@@ -96,6 +138,8 @@ form. The FHB lists `dmch@fhb.health.gov.lk` and +94 112 681 309, which may be f
 library search.
 
 `term_gestational_weeks` in `data/antenatal_schedule.yaml` should come from this same document.
+
+The antenatal and danger-sign files remain fully unpopulated.
 
 ## Danger signs — FHB, supplemented by WHO
 
