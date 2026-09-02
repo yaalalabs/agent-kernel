@@ -8,6 +8,9 @@ and enqueues; the Agent Runner stays platform-agnostic; the outbound adapter del
 through the platform API. The one design idea: **a platform integration is two pure translation
 functions with a queue between them.**
 
+§14 covers a second consumer of the same pieces: conversation-thread recording, which does not work
+on the queue pipeline at all today and is split across it here.
+
 ## Motivation
 
 - **The agent runs inside the webhook turn on all seven platforms**, so a slow LLM call becomes a
@@ -353,6 +356,13 @@ graph LR
   (`test_slack_integration.py:57`, `:71-196`). Both anchors disappear.
 - A test that `RESTAPI.run` rejects a `requires_pipeline` handler, and that the no-handlers
   delegation path (`api/http.py:99-106`) still reaches `IOHandler` unchanged (Decision Q9).
+- For §14, a new `test_thread_pipeline_recording.py`: the marker stamped only by
+  `ThreadRequestHandler`, the user message and attachment offload committed before enqueue, the
+  rejections (missing `user_id`, unavailable agent) leaving no phantom thread, deferred requests
+  unmarked, `AgentRunner`/`StreamAgentRunner` appending only for a marked message and only after
+  the output send, a thread-store failure never retrying the run,
+  `IOHandler.run(request_handler=...)` replacing rather than joining the chat route, and an
+  end-to-end read-back through the thread routes.
 
 ### 13. Compatibility
 
@@ -365,11 +375,116 @@ graph LR
 - Non-integration surfaces are untouched: `RESTAPI.run`'s delegation rule keeps its three
   conditions, and the new `requires_pipeline` check sits after it, so no existing handler is
   affected (its default is `False`).
-- No transport change; no new queue; no change to `QueueMessage`'s shape beyond one new attribute
-  constant.
+- No transport change; no new queue; no change to `QueueMessage`'s shape beyond two new attribute
+  constants (`integration`, and `thread` for §14).
+- §14 is **additive**: `AgentThreadRequestHandler` and its direct path are unchanged, and a
+  pipeline app that mounts nothing new behaves exactly as before.
 - Legacy ECS/serverless runners (`ECSAgentRunner`, `ECSOutputConsumer`, `ServerlessAgentRunner`)
   are untouched — they inherit the seam through #495's recorded "ECS runtime classes become
   pipeline instantiations" follow-up (`docs/specs/495-onprem-kubernetes/plan.md:318`).
+
+### 14. Conversation-thread recording on the pipeline
+
+Threads are **not** a messaging platform and do not use the adapter seam (§1). They are recorded
+here because they are the second consumer of the pieces this CR builds — a marker attribute (§3), a
+prebuilt `requests` list on the body (§4), edge-side attachment offload (§8), and the
+`requires_pipeline` marker (§7) — and because moving integrations onto the queue makes the queue the
+normal way to run chat, which is the topology where threads currently do not work at all.
+
+**The gap.** `grep -r 'ThreadRecorder\|ConversationThreadManager' ak-py/src/agentkernel/pipeline/`
+returns nothing. `IOHandler.run` always mounts `RequestHandler` (`io_handler.py:91`), which enqueues
+and returns, so thread support works only on the direct path,
+`RESTAPI.run([AgentThreadRequestHandler()])`. An application that adopts queue mode silently loses
+thread history — no error, no warning. The previously documented position ("thread recording does
+not apply to queue-mode/deployment adapters") described that gap; it was never a design constraint.
+
+**Why not the adapter seam.** Considered and rejected — the seam is for surfaces whose reply leaves
+out-of-band over a platform API, and threads are a caller-waits surface:
+
+| Seam contract | Threads |
+|---|---|
+| `InboundAdapter`'s side effects are limited to platform calls and attachment storage (§1) | Recording writes thread rows — outside the contract |
+| `OutboundAdapter.deliver(reply, reply_context)` pushes out-of-band; `reply_context` is flat strings under 8 KB (§3) | The caller waits on the open connection; the reply returns through the response store |
+| `parse(raw) -> InboundParseResult` | Redundant — `RequestHandler.run_chat` already normalizes a chat body |
+| — | `ThreadRESTRequestHandler`'s GET routes have no delivery at all |
+
+The seam that fits is the one already in the pipeline: **producer → queue → runner**.
+
+**Shape.** The existing `ThreadRecorder` bracket splits across the queue, because the run already
+does:
+
+```
+POST /api/v1/chat
+   │
+   ▼  ThreadRequestHandler  (IOHandler process)
+   ├─ ensure_agent_available          ─┐
+   ├─ RequestBuilder                   │  everything that must commit before the
+   ├─ pre_run: offload attachments,    │  caller can be told the request was accepted
+   │           open thread, append     │
+   │           the user message       ─┘
+   ├─ body.requests = rebuilt list; body.files/images = None
+   └─ enqueue with attribute  thread=1
+   │
+   ▼  input queue
+   │
+   ▼  AgentRunner  (may be a different process)
+   ├─ ChatService.process_chat_request(req=body, requests=body.requests)
+   ├─ _send_to_output(...)             ← the reply is safe first
+   └─ post_run: append the assistant message
+```
+
+- **14.1 A `thread` message attribute is the join.** `ATTR_THREAD` in `pipeline/envelope.py`,
+  stamped only by `ThreadRequestHandler`. Without it the runner records nothing, so a request
+  enqueued by any other producer — the plain `RequestHandler`, a schedule provider, a messaging
+  integration — never grows a thread nobody opened. Same shape as `ATTR_INTEGRATION` (§3), and it
+  is what keeps the "integrations never record threads" non-goal true by construction rather than
+  by convention.
+- **14.2 Recording runs after `_send_to_output`, not before** (Decision Q10). Recording first
+  duplicates the assistant message whenever the send then fails and the message is redelivered.
+  This order instead risks losing a recording if the process dies in between — the safer direction,
+  since the caller still got its answer.
+- **14.3 Recording failures are logged, never raised.** The reply is already delivered, so a failing
+  thread store must not retry the message and run the agent a second time to fix bookkeeping.
+- **14.4 Attachments are offloaded at the edge** and the originals cleared from the body — the same
+  rule and the same shared helper as §8. `pre_run` stores the bytes and substitutes
+  `AgentRequestAttachmentRef`; `BaseRunRequest.requests` (§4) carries that list over the queue.
+  Leaving `files`/`images` on the body would send every attachment through the broker a second
+  time, into its message-size limit, for a field the runner ignores once `requests` is set.
+- **14.5 `ThreadRequestHandler` replaces the pipeline's chat route; it does not join it**
+  (Decision Q11). New `IOHandler.run(request_handler=...)` parameter. Both handlers own
+  `POST /api/v1/chat`, so mounting the thread handler through `handlers=[...]` — the way §7 mounts
+  a webhook host — would leave FastAPI serving whichever registered first, silently unrecorded.
+- **14.6 `RequestHandler` declares `requires_pipeline`** (inherited by `ThreadRequestHandler`),
+  reusing the §7/Q9 marker. It is a queue producer: on a bare `RESTAPI.run([...])` app it would
+  enqueue into a queue no runner drains while the caller waits out its response-store budget —
+  exactly the silent failure Q2 rejects. `RestHandler` does not declare it, so
+  `ECSQueueRequestHandler` and the legacy ECS surfaces (§13) are unaffected.
+- **14.7 Deferred requests are unmarked.** A `schedule` block registers a task instead of running
+  it, so there is no exchange to record, and the 202 acknowledgement must never appear in a thread
+  as something the agent said. Matches `AgentThreadRequestHandler`, which checks `req.schedule`
+  before `pre_run`. Occurrences reach the queue from the schedule provider, which stamps no marker.
+- **14.8 Streaming accumulates in `StreamAgentRunner`.** Chunks fan out as separate output
+  messages, so the runner's own loop is the only place the reply exists as one thing. A halted
+  stream (error chunk) or an empty one records nothing — the rule `_stream_with_recording` already
+  applies on the direct path.
+- **14.9 The thread package is imported lazily inside the runner method**, the same rule §6's
+  outbound dispatch follows: threads are an `integration` capability, and a module-scope import
+  would make every runner process pay for the thread stores.
+
+**Behaviour differences from the direct handler**, accepted:
+
+- **Both processes need the `thread` block.** The API process opens the thread; the runner appends
+  the reply. A runner without it warns naming the missing block and drops the reply, rather than
+  failing the run.
+- **A loss window.** A crash between the output send and the append loses one assistant message.
+  The direct handler has no such window because it does both inline.
+- **Error shapes follow the pipeline surface** (`HTTPException(400, {"error", "session_id"})`),
+  not `ResponseBuilder`, since this is a `RequestHandler` subclass.
+
+**Not in scope here:** migrating `AgentThreadRequestHandler` (it stays the direct-execution
+handler); thread recording for integrations or scheduled occurrences (both remain non-goals below);
+and store-level deduplication of a redelivered append — 14.2's ordering makes that window
+vanishingly small and a dedup would touch all six thread backends.
 
 ## Non-goals
 
@@ -379,10 +494,14 @@ graph LR
 - Touching `deployment/aws/*` runners — this change targets `agentkernel.pipeline` only.
 - Streaming replies to messaging platforms.
 - Adding new messaging platforms.
-- Conversation-thread recording for integrations — the platforms own their history, and this is
-  unchanged.
+- Conversation-thread recording for **integrations** — the platforms own their history, and this is
+  unchanged; the `thread` marker (§14.1) is what keeps integration traffic out of the recording
+  path. §14 adds recording for *chat* traffic on the pipeline, which is a different surface.
 - Outbound-initiated (agent-first) messaging; every flow here starts from an inbound event.
-- Replacing the AG-UI or thread integration handlers, which are not messaging platforms.
+- Replacing the AG-UI handler, or the direct-execution `AgentThreadRequestHandler`, neither of
+  which is a messaging platform. §14 adds a queue-mode *sibling* to the thread handler; it does not
+  migrate the existing one, and AG-UI is untouched (it runs in-process inside its own SSE route and
+  never enqueues, so it has no queue hop to fix).
 - Helm chart support for the poller tier. `PollerRunner.run(adapter)` ships as the container entry
   point and the topology is documented, but the `ak-k8s` poller Deployment and its `values.yaml`
   block are a follow-up CR.
@@ -428,6 +547,27 @@ Resolved with the requester, 2026-08-27. Each is reflected in the requirements a
    leaks between tests, the `ThreadRunner.shutdown_event` hazard) and a context var (brittle
    coupling to `get_router()` running inside one specific call). See §7.
 
+Taken during implementation, 2026-09-02, covering §14. Q12 was raised with the requester, who
+directed the pipeline route; Q10 and Q11 are implementation calls recorded here for review.
+
+10. **Thread recording happens after the reply reaches the output queue, not before.** The two
+    orderings trade a duplicate against a loss: recording first duplicates the assistant message on
+    any redelivered send, recording last loses one if the process dies in the gap. Losing a
+    recording is the better failure, because the caller already has its answer and the thread is
+    history rather than delivery. Rejected: a store-level dedup on `request_id`, which would touch
+    all six thread backends to close a window this ordering already makes negligible. See §14.2.
+11. **`ThreadRequestHandler` replaces the pipeline's chat route through a new
+    `IOHandler.run(request_handler=...)` parameter**, rather than joining it via `handlers=[...]`.
+    Both own `POST /api/v1/chat`; joining would leave FastAPI serving whichever registered first
+    with no error, which is the same class of silent failure Q2 rejects. Rejected: making
+    `RequestHandler` itself thread-aware behind a config check (puts an `integration` capability
+    inside `pipeline`, against the coupling rule) and giving the thread handler a different chat
+    path (breaks client parity with the direct handler). See §14.5.
+12. **Threads do not use the adapter seam.** They are a caller-waits surface with no out-of-band
+    delivery, so `OutboundAdapter` has no target and `InboundAdapter`'s side-effect contract
+    excludes recording. The pipeline's own producer/runner seam is the fit. See §14.
+
 ## Open questions
 
-None outstanding. All nine resolved with the requester on 2026-08-27.
+None outstanding. Nine resolved with the requester on 2026-08-27; Q10-Q12 taken during the §14
+implementation on 2026-09-02 and open to review.

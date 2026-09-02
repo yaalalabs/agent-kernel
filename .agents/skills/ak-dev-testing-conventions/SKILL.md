@@ -73,6 +73,7 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_whatsapp_integration.py` | WhatsApp handler on the ChatService core: text/media paths, rejections before execute |
 | `test_gmail_integration.py` | Gmail handler on the ChatService core: prompt assembly, session fallback, attachments, error paths |
 | `test_thread_integration.py` | Thread integration: `ThreadRecorder` ordering/enforcement, `AgentThreadRequestHandler` recording + no-phantom-thread prechecks, stream accumulation, end-to-end read-back |
+| `test_thread_pipeline_recording.py` | Thread recording split across the queue: `ThreadRequestHandler` marking the message and committing the user message (and offloading attachments) before enqueue, its rejections leaving no phantom thread, deferred requests staying unmarked, `AgentRunner`/`StreamAgentRunner` appending the reply only for a marked message and only after the output send, a thread-store failure never retrying the run, `IOHandler.run(request_handler=...)` replacing rather than joining the chat route, and the end-to-end read-back |
 | `test_thread_router.py` | Thread read routes (`ThreadRESTRequestHandler`): pagination, `Authoriser` 401/403 semantics |
 | `test_authoriser_shared.py` | Shared `Authoriser` in `agentkernel.auth`: package-export identity, guard that the thread package no longer exposes it, `AuthValidatorAuthoriser` adapter, `AuthorisedRESTRequestHandler` inheritance |
 | `test_akagentrunner_stream.py` | Serverless `ServerlessStreamAgentRunner` (SQS streaming) |

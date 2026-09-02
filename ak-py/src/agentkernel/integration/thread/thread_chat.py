@@ -1,11 +1,17 @@
 """
 Conversation Thread Support as an integration-style handler.
 
-AgentThreadRequestHandler serves the standard chat routes with thread recording
-wrapped around the ChatService execution core, plus the thread read routes.
-Mount it instead of the default AgentRESTRequestHandler to enable threads:
+Two chat surfaces, one per execution topology, both mounted instead of the
+default chat handler — mounting is what enables threads, on either:
 
-    RESTAPI.run(handlers=[AgentThreadRequestHandler()])
+    RESTAPI.run(handlers=[AgentThreadRequestHandler()])           # direct, in-process
+    IOHandler.run(request_handler=ThreadRequestHandler())         # queue pipeline
+
+AgentThreadRequestHandler runs the agent inside its own route, so it brackets
+one call: pre_run -> execute -> post_run. ThreadRequestHandler cannot, because
+the agent runs on the far side of the input queue: it records the user message
+before enqueueing and marks the message, and AgentRunner records the reply.
+Both serve the thread read routes.
 """
 
 import logging
@@ -20,6 +26,9 @@ from ...core import Config
 from ...core.chat_service import RequestBuilder, ResponseBuilder
 from ...core.model import BaseChatRequest, BaseRunRequest, ExecutionMode, StreamChunk
 from ...core.service import AgentService
+from ...pipeline.envelope import ATTR_THREAD
+from ...pipeline.producer import RequestProducer
+from ...pipeline.request_handler import RequestHandler
 from .manager import ConversationThreadManager
 from .recorder import ThreadRecorder
 
@@ -206,6 +215,90 @@ class AgentThreadRequestHandler(AgentRESTRequestHandler):
         :raises ValueError: If no matching agent is available
         """
         AgentService.ensure_agent_available(name)
+
+
+class ThreadRequestHandler(RequestHandler):
+    """
+    Pipeline chat handler with Conversation Thread Support: the queue-mode
+    counterpart of AgentThreadRequestHandler. Mount it in place of the pipeline's
+    own RequestHandler, which it extends, so the chat route stays a single route:
+
+        IOHandler.run(request_handler=ThreadRequestHandler())
+
+    The recording is split across the queue because the run is: the user message,
+    the thread itself and the attachment offload happen here, before anything is
+    enqueued, and AgentRunner appends the assistant message on the other side (it
+    is the only process holding the reply). The `thread` message attribute carries
+    that intent across, so a request enqueued by any other producer grows no thread.
+
+    Endpoints: the inherited pipeline chat/agents/poll routes, plus the thread read
+    routes (see ThreadRESTRequestHandler).
+    """
+
+    def __init__(self, authoriser: Optional[Authoriser] = None):
+        """
+        :param authoriser: Optional user-supplied Authoriser protecting the thread read routes.
+        :raises ValueError: If no 'thread' block is present in the configuration.
+        """
+        super().__init__()
+        self._log = logging.getLogger("ak.integration.thread.pipeline")
+        manager = ConversationThreadManager.get()
+        if manager is None:
+            raise ValueError("Conversation Thread Support is not configured. Add a 'thread' block to config.yaml")
+        self._recorder = ThreadRecorder(manager)
+        self._read_handler = ThreadRESTRequestHandler(authoriser=authoriser)
+
+    def get_router(self) -> APIRouter:
+        """The inherited pipeline chat routes plus the thread read routes."""
+        router = super().get_router()
+        router.include_router(self._read_handler.get_router())
+        return router
+
+    def _enqueue_request(self, body: BaseRunRequest, request_id: str):
+        """Enqueue, marking the message for reply recording unless the request was deferred.
+
+        A `schedule` block registers a task instead of running it, so there is no exchange to
+        record — and the 202 acknowledgement must never be appended to a thread as if the agent
+        had said it. Its occurrences reach the queue from the schedule provider, which stamps no
+        thread marker, so they are not recorded either.
+        """
+        attributes = {} if body.schedule is not None else {ATTR_THREAD: "1"}
+        return RequestProducer(self.get_transport()).enqueue(body, request_id, attributes=attributes)
+
+    async def run_chat(self, body: BaseRunRequest):
+        """POST /api/v1/chat: record the user message, then enqueue as the pipeline normally does."""
+        if not body.session_id:
+            raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
+        if not body.prompt:
+            raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
+        if body.schedule is None:
+            await self._record_user_message(body)
+        return await super().run_chat(body)
+
+    async def _record_user_message(self, body: BaseRunRequest) -> None:
+        """Do the pre-run thread work at the edge and rewrite the body for the queue.
+
+        The rebuilt request list replaces `files`/`images` on the body: `pre_run` has already
+        stored the bytes and swapped in AgentRequestAttachmentRef entries, so leaving the
+        originals on the body would send every attachment through the broker a second time
+        (where a real broker's message-size limit is waiting), for a field the runner ignores
+        once `requests` is set.
+
+        :param body: The chat request, mutated in place into its queue-ready form.
+        :raises HTTPException: 400 when the agent is unavailable, `user_id` is missing, or the
+            attachment configuration rejects the request — all of them before any thread write,
+            so an unanswerable request leaves no phantom thread behind.
+        """
+        try:
+            AgentService.ensure_agent_available(body.agent)
+            requests = await RequestBuilder.from_base_request_async(body)
+            requests, _ = self._recorder.pre_run(body, requests)
+        except ValueError as e:
+            self._log.error(f"Rejected before recording: {e}")
+            raise HTTPException(status_code=400, detail={"error": str(e), "session_id": body.session_id})
+        body.requests = requests
+        body.files = None
+        body.images = None
 
 
 class ThreadRESTRequestHandler(AuthorisedRESTRequestHandler):

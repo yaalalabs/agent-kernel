@@ -219,7 +219,15 @@ class RestHandler(AgentRESTRequestHandler):
 
 class RequestHandler(RestHandler):
     """Pipeline REST surface (spec #495 §8): enqueues to the configured transport and serves
-    the poll/SSE routes. Always queue mode; the transport decides the topology."""
+    the poll/SSE routes. Always queue mode; the transport decides the topology.
+
+    ``requires_pipeline``, for the same reason the messaging webhook host declares it: this is a
+    queue producer, so on a bare ``RESTAPI.run([...])`` app it would enqueue into a queue no
+    runner drains while the caller still waits out its response-store budget. Mount it (and its
+    subclasses) through ``IOHandler.run``, which starts the runner behind it.
+    """
+
+    requires_pipeline = True
 
     def __init__(self):
         super().__init__(logger_name="ak.pipeline.request_handler")

@@ -36,7 +36,13 @@ class IOHandler:
     _log = logging.getLogger("ak.pipeline.io_handler")
 
     @classmethod
-    def run(cls,auth_validator: Optional[AuthValidator] = None, handlers: Optional[list[RESTRequestHandler]] = None,pollers: Optional[list["PollerRunner"]] = None) -> None:
+    def run(
+        cls,
+        auth_validator: Optional[AuthValidator] = None,
+        handlers: Optional[list[RESTRequestHandler]] = None,
+        pollers: Optional[list["PollerRunner"]] = None,
+        request_handler: Optional[RequestHandler] = None,
+    ) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
 
         :param auth_validator: Only meaningful on the ``in_memory`` transport, where it co-hosts
@@ -44,14 +50,19 @@ class IOHandler:
             modes; mandatory there for ASYNC. Broker topologies authenticate at their standalone
             gateway instead (``WebSocketGateway.run(auth_validator=...)``). Claims must include
             a ``userId``.
-        :param handlers: Optional REST handlers mounted alongside the pipeline's own chat route,
-            which is always served (it is the queue producer, not a replaceable default).
-            Mounting an optional surface is the application's job here, as it is for the Slack
-            and thread handlers.
+        :param handlers: Optional REST handlers mounted **alongside** the pipeline's chat route,
+            which is always served (a queue producer is not optional — see ``request_handler`` to
+            substitute a different one). Mounting an optional surface is the application's job
+            here, as it is for the Slack and schedule handlers.
         :param pollers: Optional integration pollers (``PollerRunner``), co-hosted as peer
             threads on the ``in_memory`` transport only. On a broker transport they are their own
             containers (``PollerRunner.run(adapter)``), so poller count never tracks the replica
             count of this request-bound tier; passing them there logs a warning and starts none.
+        :param request_handler: Replaces the pipeline's own ``RequestHandler`` on the chat route
+            — it does not join it, because both own ``POST /api/v1/chat`` and FastAPI would serve
+            whichever registered first, silently. This is the seam a capability that has to act on
+            a chat request *before* it is enqueued mounts on: ``ThreadRequestHandler`` records the
+            user message here. Must be a ``RequestHandler`` (the queue producer is not optional).
         :raises AKConfigError: If the topology is unusable.
         """
         config = AKConfig.get()
@@ -77,7 +88,7 @@ class IOHandler:
 
         from ..api.http import RESTAPI  # local import: RESTAPI.run() lazily imports this module
 
-        handlers = [RequestHandler(), *(handlers or [])]
+        handlers = [request_handler or RequestHandler(), *(handlers or [])]
         if ws_cohosted:
             from .ws.endpoint import PushEndpointHandler
             from .ws.handler import PipelineWebSocketHandler

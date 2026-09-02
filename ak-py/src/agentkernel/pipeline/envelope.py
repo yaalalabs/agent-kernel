@@ -10,6 +10,7 @@ ATTR_USER_ID = "user_id"
 ATTR_ENDPOINT_URL = "endpoint_url"
 ATTR_STATUS_CODE = "status_code"
 ATTR_INTEGRATION = "integration"
+ATTR_THREAD = "thread"
 REPLY_CONTEXT_PREFIX = "reply_"
 
 
