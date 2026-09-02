@@ -1,141 +1,78 @@
-import logging
+"""Customising the WhatsApp integration by subclassing its inbound adapter.
 
-from agentkernel.api import RESTAPI
+An adapter is a translation function, so a customisation is an override of `_to_request`: you
+answer the messages you want to handle yourself and return None, and hand everything else to the
+built-in normalisation. Nothing here runs the agent — that happens on the far side of the queue.
+"""
+
+import logging
+from typing import Optional
+
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.integration.adapter.base import InboundRequest
 from agentkernel.openai import OpenAIModule
-from agentkernel.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.whatsapp import WhatsAppInboundAdapter
 from agents import Agent as OpenAIAgent
 
 logger = logging.getLogger(__name__)
 
-
-class CustomWhatsAppHandler(AgentWhatsAppRequestHandler):
-    """
-    Custom WhatsApp handler with enhanced features:
-    - Command support (/help, /status)
-    - Message preprocessing
-    - Custom error messages
-    """
-
-    async def _handle_message(self, message: dict, value: dict):
-        """
-        Override to add custom message handling logic.
-        """
-        message_type = message.get("type")
-        from_number = message.get("from")
-        message_id = message.get("id")
-
-        # Extract text
-        text = None
-        if message_type == "text":
-            text = message.get("text", {}).get("body", "").strip()
-        elif message_type == "interactive":
-            interactive = message.get("interactive", {})
-            if interactive.get("type") == "button_reply":
-                text = interactive.get("button_reply", {}).get("title")
-            elif interactive.get("type") == "list_reply":
-                text = interactive.get("list_reply", {}).get("title")
-
-        if not text:
-            # Handle unsupported message types
-            await self._send_message(
-                from_number,
-                "Sorry, I can only process text messages at the moment.",
-                message_id,
-            )
-            return
-
-        # Handle commands
-        if text.startswith("/"):
-            await self._handle_command(text, from_number, message_id)
-            return
-
-        # Preprocess message
-        processed_text = self._preprocess_message(text)
-
-        # Create a modified message dict with processed text
-        modified_message = message.copy()
-        if message_type == "text":
-            modified_message["text"] = {"body": processed_text}
-
-        # Call parent handler with processed message
-        await super()._handle_message(modified_message, value)
-
-    async def _handle_command(self, command: str, from_number: str, message_id: str):
-        """
-        Handle special commands.
-        """
-        command = command.lower().split()[0]  # Get first word
-
-        if command == "/help":
-            help_text = """*Available Commands:*
+COMMANDS = {
+    "/help": """*Available Commands:*
 
 /help - Show this help message
 /status - Check bot status
 /start - Start a new conversation
 
-Just send a message to chat with the AI assistant!"""
-            await self._send_message(from_number, help_text, message_id)
-
-        elif command == "/status":
-            status_text = "✅ Bot is online and ready to help!"
-            await self._send_message(from_number, status_text, message_id)
-
-        elif command == "/start":
-            welcome_text = """👋 Welcome! I'm your AI assistant.
+Just send a message to chat with the AI assistant!""",
+    "/status": "✅ Bot is online and ready to help!",
+    "/start": """👋 Welcome! I'm your AI assistant.
 
 Send me any question and I'll do my best to help you.
-Type /help to see available commands."""
-            await self._send_message(from_number, welcome_text, message_id)
+Type /help to see available commands.""",
+}
 
-        else:
-            await self._send_message(
-                from_number,
-                f"Unknown command: {command}\nType /help for available commands.",
-                message_id,
-            )
-
-    def _preprocess_message(self, text: str) -> str:
-        """
-        Preprocess message text before sending to agent.
-        """
-        # Convert common WhatsApp shorthand
-        replacements = {
-            "u": "you",
-            "r": "are",
-            "ur": "your",
-            "pls": "please",
-            "thx": "thanks",
-            "ty": "thank you",
-        }
-
-        words = text.split()
-        processed_words = []
-
-        for word in words:
-            lower_word = word.lower()
-            # Only replace if it's a standalone shorthand
-            if lower_word in replacements and len(word) <= 3:
-                processed_words.append(replacements[lower_word])
-            else:
-                processed_words.append(word)
-
-        return " ".join(processed_words)
+# Common WhatsApp shorthand, expanded before the agent sees the message.
+SHORTHAND = {"u": "you", "r": "are", "ur": "your", "pls": "please", "thx": "thanks", "ty": "thank you"}
 
 
-# Create agent
+class CustomWhatsAppInboundAdapter(WhatsAppInboundAdapter):
+    """WhatsApp adapter with command handling and message preprocessing."""
+
+    async def _to_request(self, message: dict) -> Optional[InboundRequest]:
+        text = self._text_of(message)
+
+        # Commands are answered here and never reach the agent.
+        if text and text.startswith("/"):
+            command = text.lower().split()[0]
+            reply = COMMANDS.get(command, f"Unknown command: {command}\nType /help for available commands.")
+            await self._say(message.get("from"), reply, message.get("id"))
+            return None
+
+        if text:
+            message = {**message, "text": {"body": self._expand_shorthand(text)}}
+
+        return await super()._to_request(message)
+
+    @staticmethod
+    def _text_of(message: dict) -> str:
+        if message.get("type") == "text":
+            return (message.get("text", {}).get("body") or "").strip()
+        return ""
+
+    @staticmethod
+    def _expand_shorthand(text: str) -> str:
+        return " ".join(SHORTHAND.get(word.lower(), word) if len(word) <= 3 else word for word in text.split())
+
+
 general_agent = OpenAIAgent(
     name="general",
-    handoff_description="General purpose assistant",
-    instructions="""You are a helpful assistant communicating via WhatsApp.
-    - Keep responses concise and formatted for mobile
-    - Use emojis appropriately to make messages friendly
-    - Break long responses into shorter paragraphs
-    - Be conversational and friendly""",
+    handoff_description="Agent for general questions",
+    instructions="You provide assistance with general queries. Give short and clear answers suitable for WhatsApp messaging.",
 )
 
 OpenAIModule([general_agent])
 
 
 if __name__ == "__main__":
-    handler = CustomWhatsAppHandler()
-    RESTAPI.run([handler])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(CustomWhatsAppInboundAdapter())])

@@ -4,7 +4,7 @@ The Slack integration allows you to deploy Agent Kernel agents as Slack bots tha
 
 ## Overview
 
-The `AgentSlackRequestHandler` class handles simple conversations with agents of your choice in API deployments. The integration provides the following workflow:
+The `SlackInboundAdapter` class handles simple conversations with agents of your choice in API deployments. The integration provides the following workflow:
 
 1. **Message Reception**: When a message is received from Slack addressed to the bot, it will first acknowledge with a message ("agent_acknowledgement") and processing emoji, if it's defined in the config
 2. **Question Processing**: The question is extracted and passed to your chosen agent
@@ -73,7 +73,7 @@ export SLACK_BOT_TOKEN=xoxb-your-bot-token
 ## Webhook URL Setup
 The integration automatically handles Slack's URL verification challenge. When you first configure the webhook URL, Slack will send a verification request that the handler processes automatically.
 
-The `AgentSlackRequestHandler` listens on the `/slack/events` endpoint. Configure your Slack app's Event Request URL as:
+The `SlackInboundAdapter` listens on the `/slack/events` endpoint. Configure your Slack app's Event Request URL as:
 
 ```
 https://your-domain.com:port/slack/events
@@ -98,9 +98,10 @@ Here's a simple example of setting up a Slack integration:
 
 ```python
 from agents import Agent as OpenAIAgent
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.slack import AgentSlackRequestHandler
+from agentkernel.slack import SlackInboundAdapter
 
 # Create your agent
 general_agent = OpenAIAgent(
@@ -114,9 +115,22 @@ OpenAIModule([general_agent])
 
 # Create and run the server with Slack handler
 if __name__ == "__main__":
-    handler = AgentSlackRequestHandler()
-    RESTAPI.run(handler=handler)
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(SlackInboundAdapter())])
 ```
+
+
+:::note Mounting
+Integrations run on the queue execution pipeline, so they are mounted with `IOHandler.run(...)`
+rather than `RESTAPI.run(...)`. The webhook answers as soon as the message is queued; the agent
+runs behind it, so a slow model call can no longer become a platform delivery timeout.
+:::
+
+:::caution Attachments need multimodal storage
+Attachment bytes are stored before the request is queued, so a message carrying an image or a file
+requires `multimodal.enabled: true` with a shared `storage_type` (`in_memory`, `redis` or
+`dynamodb`). `session_cache` is rejected: the agent runs in a different process and would never
+see it.
+:::
 
 ## Configuration Options
 
@@ -135,7 +149,7 @@ slack:
 
 ## Custom Request Handler
 
-For more advanced Slack integrations, you can extend the `RESTRequestHandler` class. Please study the **AgentSlackRequestHandler** implementation.
+For more advanced Slack integrations, you can extend the `RESTRequestHandler` class. Please study the **SlackInboundAdapter** implementation.
 
 
 ## Troubleshooting

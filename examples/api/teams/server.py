@@ -1,6 +1,7 @@
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.teams import AgentTeamsRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.teams import TeamsInboundAdapter
 from agents import Agent as OpenAIAgent
 
 general_agent = OpenAIAgent(
@@ -13,4 +14,4 @@ OpenAIModule([general_agent])
 
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentTeamsRequestHandler()])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(TeamsInboundAdapter())])

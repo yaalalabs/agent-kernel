@@ -2,7 +2,7 @@
 
 WhatsApp Business API integration for Agent Kernel using webhooks.
 
-The `AgentWhatsAppRequestHandler` class handles conversations with agents via WhatsApp Business API webhooks. This integration uses the WhatsApp Cloud API (https://developers.facebook.com/docs/whatsapp/cloud-api) without requiring third-party libraries beyond standard HTTP clients.
+The `WhatsAppInboundAdapter` class handles conversations with agents via WhatsApp Business API webhooks. This integration uses the WhatsApp Cloud API (https://developers.facebook.com/docs/whatsapp/cloud-api) without requiring third-party libraries beyond standard HTTP clients.
 
 ## How It Works
 
@@ -54,9 +54,10 @@ The handler automatically responds to WhatsApp's webhook verification challenge 
 
 ```python
 from agents import Agent as OpenAIAgent
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.whatsapp import WhatsAppInboundAdapter
 
 # Create your agent
 general_agent = OpenAIAgent(
@@ -69,8 +70,7 @@ general_agent = OpenAIAgent(
 OpenAIModule([general_agent])
 
 if __name__ == "__main__":
-    handler = AgentWhatsAppRequestHandler()
-    RESTAPI.run(handler=handler)
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(WhatsAppInboundAdapter())])
 ```
 
 ## Configuration Options
@@ -109,9 +109,9 @@ It is strongly recommended not to keep secrets and keys in the config file. Set 
 ## Testing
 
 ### Local Development
-The AgentWhatsAppRequestHandler listens on /whatsapp/webhook, hence you need to setup the webhook URL as `https://<your-domain-or-ip>:<port>/whatsapp/webhook`
+The WhatsAppInboundAdapter listens on /whatsapp/webhook, hence you need to setup the webhook URL as `https://<your-domain-or-ip>:<port>/whatsapp/webhook`
 
-During URL registration, WhatsApp sends a challenge to the URL before enabling. The AgentWhatsAppRequestHandler handles this, hence you don't need any separate code to activate.
+During URL registration, WhatsApp sends a challenge to the URL before enabling. The WhatsAppInboundAdapter handles this, hence you don't need any separate code to activate.
 
 You can use https://pinggy.io/ or similar for local testing (e.g. ssh -p 443 -R0:localhost:8000 a.pinggy.io). [How to use pinggy to test Slack](https://pinggy.io/blog/how_to_get_slack_webhook/)
 
@@ -157,9 +157,9 @@ export AK_MULTIMODAL__MAX_ATTACHMENTS=5         # Keep last N files in session
 You can extend the handler for custom behavior:
 
 ```python
-from agentkernel.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.whatsapp import WhatsAppInboundAdapter
 
-class CustomWhatsAppHandler(AgentWhatsAppRequestHandler):
+class CustomWhatsAppHandler(WhatsAppInboundAdapter):
     async def _handle_message(self, message: dict, value: dict):
         # Add custom preprocessing
         message_text = message.get("text", {}).get("body", "")

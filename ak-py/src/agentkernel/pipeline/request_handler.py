@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ..api.handler import AgentRESTRequestHandler
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, FileData, ImageData
-from .envelope import ATTR_REQUEST_ID, QueueMessage, QueueName
+from .producer import RequestProducer
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
@@ -58,18 +58,12 @@ class RestHandler(AgentRESTRequestHandler):
         return self._transport
 
     def _enqueue_request(self, body: BaseRunRequest, request_id: str) -> Dict[str, Any]:
-        """Build the input-queue envelope for a chat request and send it.
+        """Send a chat request to the input queue through the shared producer seam.
 
-        ``exclude_none`` keeps the body JSON identical to the pre-#495 SQS path (which dumped
-        the validated body model with ``exclude_none=True``).
+        Stays a method so ``get_transport()`` remains the transport injection point subclasses
+        (and tests) rely on; the envelope itself is built by RequestProducer (spec #524 §3).
         """
-        message = QueueMessage(
-            body=json.dumps(body.model_dump(exclude_none=True)),
-            attributes={ATTR_REQUEST_ID: request_id},
-            group_id=body.session_id,
-            dedup_id=request_id,
-        )
-        return self.get_transport().send(QueueName.INPUT, message) or {}
+        return RequestProducer(self.get_transport()).enqueue(body, request_id)
 
     def _is_queue_mode(self) -> bool:
         """True when an input queue is configured (enqueue mode); False for direct mode."""

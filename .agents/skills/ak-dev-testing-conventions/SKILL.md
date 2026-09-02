@@ -67,7 +67,9 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_api_http.py` | REST API handler |
 | `test_chat_service_core.py` | ChatService execution core (`execute`/`execute_stream`): typed replies, prebuilt request lists, validation, error propagation, wrapper wire shapes |
 | `test_chat_service_streaming.py` | ChatService SSE/stream chunk formatting |
-| `test_slack_integration.py` | Slack handler on the ChatService core: request/identity mapping, attachment-only, error paths, chunking (pattern for integration handler tests) |
+| `test_integration_adapter_contract.py` | `IntegrationAdapterContract` subclassed once per built-in messaging adapter: identifier resolution, ignorable deliveries, reply-context budget, queue round trip (start here for a new platform) |
+| `test_slack_integration.py` | Slack adapter: event -> `InboundRequest` and reply -> Slack messages, plus Bolt's signed dispatch through the webhook host (pattern for per-platform adapter tests) |
+| `test_integration_roundtrip.py` | A platform event through the whole `in_memory` topology to a recording outbound adapter |
 | `test_whatsapp_integration.py` | WhatsApp handler on the ChatService core: text/media paths, rejections before execute |
 | `test_gmail_integration.py` | Gmail handler on the ChatService core: prompt assembly, session fallback, attachments, error paths |
 | `test_thread_integration.py` | Thread integration: `ThreadRecorder` ordering/enforcement, `AgentThreadRequestHandler` recording + no-phantom-thread prechecks, stream accumulation, end-to-end read-back |

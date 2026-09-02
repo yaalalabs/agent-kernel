@@ -1,8 +1,7 @@
-import asyncio
-import logging
-
-from agentkernel.gmail import AgentGmailRequestHandler
+from agentkernel.gmail import GmailInboundAdapter
+from agentkernel.integration.adapter import PollerRunner
 from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import IOHandler
 from agents import Agent as OpenAIAgent
 
 # Create your agent
@@ -33,31 +32,7 @@ When replying to emails:
 OpenAIModule([general_agent])
 
 
-async def main():
-
-    handler = AgentGmailRequestHandler()
-
-    # Authenticate with Gmail
-    handler.authenticate()
-
-    logging.info("Gmail bot started! Polling for new emails...")
-
-    try:
-        # Start polling loop
-        await handler.start_polling()
-    except KeyboardInterrupt:
-        logging.info("Stopping Gmail bot...")
-        handler.stop_polling()
-
-
 if __name__ == "__main__":
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            asyncio.run(main())
-        else:
-            loop.run_until_complete(main())
-
-    except RuntimeError:
-        asyncio.run(main())
+    adapter = GmailInboundAdapter()
+    adapter.authenticate()
+    IOHandler.run(pollers=[PollerRunner(adapter)])

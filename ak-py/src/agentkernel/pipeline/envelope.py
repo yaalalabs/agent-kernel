@@ -9,6 +9,8 @@ ATTR_REQUEST_ID = "request_id"
 ATTR_USER_ID = "user_id"
 ATTR_ENDPOINT_URL = "endpoint_url"
 ATTR_STATUS_CODE = "status_code"
+ATTR_INTEGRATION = "integration"
+REPLY_CONTEXT_PREFIX = "reply_"
 
 
 class QueueName(StrEnum):

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from agentkernel.core.base import Agent, Runner
 from agentkernel.core.config import AKConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
-from agentkernel.core.model import AgentReplyText, AgentRequestText
+from agentkernel.core.model import AgentReplyText, AgentRequestText, BaseRunRequest
 from agentkernel.core.runtime import Runtime
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.consumer import ConsumerLoop
@@ -360,3 +360,32 @@ class TestWebSocketModeGuards:
 
         # Nothing was enqueued: the input queue stays empty.
         assert InMemoryTransport().create_consumer(QueueName.INPUT).fetch(1, 0.05) == []
+
+
+class TestEnqueueSeam:
+    """#524 moved the envelope into RequestProducer; the REST envelope must not have moved with it."""
+
+    def test_the_rest_envelope_is_unchanged(self, monkeypatch):
+        _configure(monkeypatch)
+        transport = InMemoryTransport()
+        handler = RequestHandler()
+        monkeypatch.setattr(handler, "get_transport", lambda: transport)
+
+        handler._enqueue_request(BaseRunRequest(prompt="hi", session_id="s1", agent=None), "r1")
+
+        [message] = transport.create_consumer(QueueName.INPUT).fetch(1, 0.5)
+        # exclude_none, request_id attribute only, session_id as the group, request_id as dedup.
+        assert json.loads(message.body) == {"prompt": "hi", "session_id": "s1"}
+        assert message.attributes == {"request_id": "r1"}
+        assert message.group_id == "s1"
+        assert message.dedup_id == "r1"
+
+    def test_get_transport_is_still_the_injection_point(self, monkeypatch):
+        _configure(monkeypatch)
+        injected = InMemoryTransport()
+        handler = RequestHandler()
+        monkeypatch.setattr(handler, "get_transport", lambda: injected)
+
+        handler._enqueue_request(BaseRunRequest(prompt="hi", session_id="s1"), "r1")
+
+        assert len(injected.create_consumer(QueueName.INPUT).fetch(1, 0.5)) == 1

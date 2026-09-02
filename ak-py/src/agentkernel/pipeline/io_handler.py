@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import uvicorn
 
@@ -13,6 +13,9 @@ from .request_handler import RequestHandler
 from .response_handler import ResponseHandler
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransportFactory
+
+if TYPE_CHECKING:  # pragma: no cover: typing only, so pipeline keeps importing core and api only
+    from ..integration.adapter.poller import PollerRunner
 
 
 class IOHandler:
@@ -33,7 +36,7 @@ class IOHandler:
     _log = logging.getLogger("ak.pipeline.io_handler")
 
     @classmethod
-    def run(cls, auth_validator: Optional[AuthValidator] = None, handlers: Optional[list[RESTRequestHandler]] = None) -> None:
+    def run(cls,auth_validator: Optional[AuthValidator] = None, handlers: Optional[list[RESTRequestHandler]] = None,pollers: Optional[list["PollerRunner"]] = None) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
 
         :param auth_validator: Only meaningful on the ``in_memory`` transport, where it co-hosts
@@ -45,6 +48,10 @@ class IOHandler:
             which is always served (it is the queue producer, not a replaceable default).
             Mounting an optional surface is the application's job here, as it is for the Slack
             and thread handlers.
+        :param pollers: Optional integration pollers (``PollerRunner``), co-hosted as peer
+            threads on the ``in_memory`` transport only. On a broker transport they are their own
+            containers (``PollerRunner.run(adapter)``), so poller count never tracks the replica
+            count of this request-bound tier; passing them there logs a warning and starts none.
         :raises AKConfigError: If the topology is unusable.
         """
         config = AKConfig.get()
@@ -114,6 +121,19 @@ class IOHandler:
                 ThreadRunner.Task(
                     execution_function=lambda: runner.start(exit_on_shutdown=False), thread_name="agent-runner", stop_all_on_failure=True
                 )
+            )
+            for poller in pollers or []:
+                tasks.append(
+                    ThreadRunner.Task(
+                        execution_function=lambda p=poller: p.start(exit_on_shutdown=False),
+                        thread_name=f"poller-{poller.adapter.name}",
+                        stop_all_on_failure=True,
+                    )
+                )
+        elif pollers:
+            cls._log.warning(
+                f"pollers ignored: they are co-hosted here only on the in_memory transport "
+                f"(transport={transport_type}); on broker transports start PollerRunner.run(adapter) as its own container"
             )
 
         ThreadRunner.run(tasks=tasks, max_workers=len(tasks))

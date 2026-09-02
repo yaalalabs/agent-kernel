@@ -252,7 +252,7 @@ graph LR
   - Rationale: as an unconditional `IOHandler` peer thread, scaling the webhook tier for Slack
     load would silently multiply Gmail pollers. Poller lifetime must not be coupled to webhook
     replica count.
-  - Deployed at **`replicas: 1`**. Duplicate polling is not a correctness failure — `dedup_id` is
+  - Run at **one replica**. Duplicate polling is not a correctness failure — `dedup_id` is
     the platform message id, and every transport deduplicates on it (SQS natively, NATS via
     `Nats-Msg-Id`, Kafka via `BookkeepingStore.claim_dedup`, in-memory via a window) — so a second
     poller wastes API quota rather than double-running the agent.
@@ -263,8 +263,7 @@ graph LR
 - **Mounting changes for applications.** Integration apps must move from
   `RESTAPI.run([AgentSlackRequestHandler()])` to `IOHandler.run(handlers=[...])`, because explicit
   handlers disable `RESTAPI.run`'s pipeline delegation (`api/http.py:99-106`). All seven examples
-  under `examples/api/` and the seven pages under `docs/docs/integrations/` must be updated, and
-  the `ak-k8s` chart gains a poller Deployment.
+  under `examples/api/` and the seven pages under `docs/docs/integrations/` must be updated.
 - Both broker and `in_memory` transports must work. On `in_memory` the whole path runs in the
   single-process topology, which is what local development and the existing integration tests use.
 
@@ -384,6 +383,9 @@ graph LR
   unchanged.
 - Outbound-initiated (agent-first) messaging; every flow here starts from an inbound event.
 - Replacing the AG-UI or thread integration handlers, which are not messaging platforms.
+- Helm chart support for the poller tier. `PollerRunner.run(adapter)` ships as the container entry
+  point and the topology is documented, but the `ak-k8s` poller Deployment and its `values.yaml`
+  block are a follow-up CR.
 
 ## Decisions
 

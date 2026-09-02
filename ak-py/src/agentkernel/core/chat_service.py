@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import json
 import logging
@@ -21,6 +20,7 @@ from .model import (
     StreamChunk,
 )
 from .service import AgentService
+from .util.async_bridge import run_async_sync
 
 
 class RequestBuilder:
@@ -138,6 +138,7 @@ class RequestBuilder:
             "schedule",
             "scheduled_task_id",
             "scheduled_time",
+            "requests",
         }
         for key, value in req.model_dump().items():
             if key in known_fields:
@@ -225,21 +226,13 @@ class AgentHandler:
     def _run_async_sync(coro) -> Any:
         """Run an async coroutine from sync code, handling event loop state.
 
-        Only a RuntimeError from get_event_loop() itself (no loop in this thread) falls back to
-        asyncio.run: a RuntimeError raised by the coroutine must propagate as-is, not trigger a
-        second await of the already-consumed coroutine.
+        Kept as a method because callers (and their tests) reach the bridge through it; the
+        loop handling itself is shared with the pipeline's synchronous consumers.
 
         :param coro: Coroutine to execute
         :return: Result of the coroutine
         """
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
-        if loop.is_closed():
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            return asyncio.run(coro)
-        return loop.run_until_complete(coro)
+        return run_async_sync(coro)
 
     def run_sync(self, requests: List[Any], acting_user_id: Optional[str] = None) -> Any:
         """Run agent requests synchronously.
@@ -575,15 +568,18 @@ class ChatService:
         self._validate(req, requests)
         return RequestBuilder.from_base_request_sync(req) if requests is None else requests
 
-    def process_chat_request(self, req: BaseRunRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
+    def process_chat_request(
+        self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None
+    ) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request synchronously.
 
         :param req: Base run request with prompt, session_id, agent, and attachments
+        :param requests: Optional prebuilt AgentRequest list (see execute_sync())
         :return: When rest_api_mode=False: tuple of (status_code, response_dict).
                  When rest_api_mode=True: response_dict only.
         """
         try:
-            result, session_id = self.execute_sync(req)
+            result, session_id = self.execute_sync(req, requests)
             return ResponseBuilder.build_response(self._success_status(req), session_id, self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
@@ -642,6 +638,7 @@ class ChatService:
         self,
         req: BaseRunRequest,
         sse_format: bool = False,
+        requests: Optional[List[AgentRequest]] = None,
     ) -> Generator[str, None, None]:
         """Process a streaming chat request synchronously.
 
@@ -652,11 +649,12 @@ class ChatService:
         :param req: Base run request with prompt, session_id, agent, and attachments
         :param sse_format: When True, yield Server-Sent Events formatted frames.
                            When False, yield raw StreamChunk JSON payloads.
+        :param requests: Optional prebuilt AgentRequest list (see execute_stream_sync())
         :return: Generator yielding StreamChunk payloads as JSON or SSE-formatted strings
         :raises ValueError: If session_id or prompt is missing, or no agent is available
         """
         session_id = req.session_id
-        chunks = self.execute_stream_sync(req)
+        chunks = self.execute_stream_sync(req, requests)
 
         def _stream() -> Generator[str, None, None]:
             try:

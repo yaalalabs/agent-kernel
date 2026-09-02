@@ -92,9 +92,10 @@ gmail:
 
 ```python
 from agents import Agent as OpenAIAgent
+from agentkernel.gmail import GmailInboundAdapter
+from agentkernel.integration.adapter import PollerRunner
 from agentkernel.openai import OpenAIModule
-from agentkernel.gmail import AgentGmailRequestHandler
-import asyncio
+from agentkernel.pipeline import IOHandler
 
 general_agent = OpenAIAgent(
     name="general",
@@ -110,10 +111,25 @@ general_agent = OpenAIAgent(
 OpenAIModule([general_agent])
 
 if __name__ == "__main__":
-    handler = AgentGmailRequestHandler()
-    handler.authenticate()
-    asyncio.run(handler.start_polling())
+    adapter = GmailInboundAdapter()
+    # Fail at startup rather than on the first poll if the OAuth token is unusable.
+    adapter.authenticate()
+
+    # Single-process topology: the poller runs alongside the agent runner.
+    # On a broker transport it is its own container instead: PollerRunner.run(adapter).
+    IOHandler.run(pollers=[PollerRunner(adapter)])
 ```
+
+
+:::note Mounting and scaling
+Gmail is the only *polled* integration: there is no webhook, so its adapter is hosted by
+`PollerRunner`. Run it at **one replica** — the poller remembers which messages it has already
+handed to the queue, and a message stays unread until its reply is sent.
+
+Attachments are stored before the request is queued, so a message carrying an image or a document
+requires `multimodal.enabled: true` with a shared `storage_type` (`in_memory`, `redis` or
+`dynamodb`).
+:::
 
 ## Email Threading & Conversation Context
 
