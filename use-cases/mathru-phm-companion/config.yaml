@@ -22,8 +22,11 @@ session:
 # See guardrails/README.md for why the moderation categories are narrow.
 guardrail:
   input:
+    # Not the built-in `openai` type. That one fails CLOSED: any error during validation,
+    # including a rate limit or an outage, halts the run and the agent never executes, which
+    # would silently disable danger-sign screening and escalation. See resilient_guardrail.py.
     enabled: true
-    type: openai
+    type: resilient_guardrail.ResilientInputGuardrail
     model: gpt-4o-mini
     config_path: guardrails/input.json
   output:
