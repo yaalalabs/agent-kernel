@@ -1,0 +1,59 @@
+# Multiple micronutrient (MMN) supplementation schedule.
+#
+# THIS TABLE REQUIRES CLINICIAN REVIEW BEFORE ANY REAL-WORLD USE.
+#
+# Each entry is a SUPPLEMENTATION PERIOD, not a single appointment. `age_months` is when the
+# period starts and `duration_days` is how long it runs:
+#   start_date = add_months(child_dob, age_months)
+#
+# This is the only schedule in the project whose items have duration. Anything presenting
+# these to a mother must say "starting on" rather than naming an appointment date, or it will
+# read as a clinic visit that does not exist.
+#
+# ---------------------------------------------------------------------------
+# PROVENANCE
+#
+# Sourcing rules, enforced by provenance_test.py:
+#   - Never cite Scribd or any re-upload. Get the .gov.lk original, or do not
+#     use the value.
+#   - Two sources per value. If they disagree, the newer official one wins and
+#     the discrepancy is noted here.
+#   - Check the date printed ON THE FACE of the document, not its file
+#     metadata.
+#
+# `status` must be exactly `sourced` before any value here is used.
+# ---------------------------------------------------------------------------
+provenance:
+  source: "National Strategy for Prevention and Control of Micronutrient Deficiencies in Sri Lanka 2017-2022"
+  publisher: "Nutrition Division, Ministry of Health, Sri Lanka"
+  document_date: TODO # cover date not yet confirmed; the title spans 2017-2022
+  url: "https://nutrition.health.gov.lk/wp-content/uploads/2020/11/National-Strategy-for-Prevention-and-Control-of-Micronutrient-Deficiencies-in-Sri-Lanka-2017-2022.pdf"
+  retrieved: TODO # YYYY-MM-DD
+  cross_checked_against: TODO # second source, or "CHDR, physical copy"
+  clinician_review: "NOT PERFORMED. See Known Limitations in README.md."
+
+# ---------------------------------------------------------------------------
+# WHY THIS IS `placeholder`
+#
+# The regime below is for the standard term / normal-birth-weight pathway only. Low
+# birth weight and preterm infants follow a different regime that this project does not
+# model and does not store the data to identify. Presenting this schedule to the mother of a
+# preterm infant would be wrong, and nothing here currently prevents that.
+#
+# Resolve that before flipping to `sourced`, along with the outstanding provenance fields.
+# ---------------------------------------------------------------------------
+status: placeholder
+
+visits:
+  - id: mmn_06m
+    age_months: 6
+    duration_days: 60
+    label: "MMN supplementation, 60 days"
+  - id: mmn_12m
+    age_months: 12
+    duration_days: 60
+    label: "MMN supplementation, 60 days"
+  - id: mmn_18m
+    age_months: 18
+    duration_days: 60
+    label: "MMN supplementation, 60 days"
