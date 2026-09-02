@@ -375,8 +375,8 @@ class GuardRailHook(PreHook):
             if keyword in prompt_lower:
                 # Halt execution and return rejection message
                 return AgentReplyText(
-                    text=f"I cannot assist with requests related to '{keyword}'. "
-                         "Please ask a different question."
+                    response=f"I cannot assist with requests related to '{keyword}'. "
+                             "Please ask a different question."
                 )
         
         # Prompt is safe - continue with execution
@@ -444,8 +444,8 @@ class ModerationHook(PostHook):
         # Check reply for inappropriate content
         if self._contains_sensitive_info(reply_text):
             return AgentReplyText(
-                text="I apologize, but I cannot provide that information. "
-                     "Please rephrase your question."
+                response="I apologize, but I cannot provide that information. "
+                         "Please rephrase your question."
             )
         
         return agent_reply
