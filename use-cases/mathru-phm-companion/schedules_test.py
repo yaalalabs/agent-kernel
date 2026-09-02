@@ -150,12 +150,12 @@ def test_antenatal_visits_reject_a_non_iso_edd():
 # --- immunization_visits ----------------------------------------------------------------
 
 
-def test_immunization_visit_date_is_dob_plus_the_age_in_weeks():
+def test_immunization_visit_date_is_dob_plus_the_age_in_calendar_months():
     dob = date(2026, 1, 5)
     calendar = schedules.immunization_visits(dob.isoformat(), today=TODAY)
 
     for visit in calendar["visits"]:
-        expected = dob + timedelta(days=visit["age_weeks"] * 7)
+        expected = schedules.add_months(dob, visit["age_months"])
         assert visit["date_iso"] == expected.isoformat()
 
 
@@ -197,3 +197,120 @@ def test_next_due_returns_none_when_every_visit_is_past():
 
 def test_next_due_returns_none_for_an_empty_calendar():
     assert schedules.next_due([], today=TODAY) is None
+
+
+# --- add_months: calendar arithmetic, not four-week approximation -----------------------
+
+
+def test_add_months_ordinary_case():
+    assert schedules.add_months(date(2026, 1, 15), 2) == date(2026, 3, 15)
+
+
+def test_add_months_crosses_a_year_boundary():
+    assert schedules.add_months(date(2026, 11, 10), 4) == date(2027, 3, 10)
+
+
+def test_add_months_zero_is_the_same_day():
+    assert schedules.add_months(date(2026, 6, 15), 0) == date(2026, 6, 15)
+
+
+@pytest.mark.parametrize(
+    "start,months,expected",
+    [
+        (date(2026, 1, 31), 1, date(2026, 2, 28)),  # short month
+        (date(2028, 1, 31), 1, date(2028, 2, 29)),  # leap February
+        (date(2026, 3, 31), 1, date(2026, 4, 30)),  # 30-day month
+        (date(2026, 8, 31), 6, date(2027, 2, 28)),
+    ],
+)
+def test_add_months_clamps_onto_the_last_valid_day(start, months, expected):
+    assert schedules.add_months(start, months) == expected
+
+
+def test_months_are_not_four_weeks():
+    # Mapping each month onto four weeks is the worse of the two approximations: sixty months
+    # becomes 1680 days against 1826 actual, landing almost five months early.
+    born = date(2026, 1, 1)
+    calendar_result = schedules.add_months(born, 60)
+    four_week_result = born + timedelta(days=60 * 4 * 7)
+    assert calendar_result == date(2031, 1, 1)
+    assert (calendar_result - four_week_result).days == 146
+
+
+def test_sixty_months_as_260_weeks_drifts_by_six_days():
+    born = date(2026, 1, 1)
+    assert (schedules.add_months(born, 60) - (born + timedelta(weeks=260))).days == 6
+
+
+# --- month-based immunisation entries ---------------------------------------------------
+
+MONTH_TABLE = {
+    "status": "sourced",
+    "visits": [
+        {"id": "birth", "age_months": 0, "label": "BCG"},
+        {"id": "two_months", "age_months": 2, "label": "Penta 1"},
+        {"id": "five_years", "age_months": 60, "label": "DT"},
+    ],
+}
+
+
+@pytest.fixture
+def month_table(monkeypatch):
+    monkeypatch.setattr(schedules, "load_schedule", lambda name: MONTH_TABLE)
+
+
+def test_month_based_visits_use_calendar_months(month_table):
+    calendar_data = schedules.immunization_visits("2026-01-31", today=TODAY)
+    by_id = {visit["id"]: visit["date_iso"] for visit in calendar_data["visits"]}
+
+    assert by_id["birth"] == "2026-01-31"
+    assert by_id["two_months"] == "2026-03-31"
+    assert by_id["five_years"] == "2031-01-31"
+
+
+def test_an_entry_with_neither_unit_is_skipped(monkeypatch):
+    monkeypatch.setattr(schedules, "load_schedule", lambda name: {"status": "sourced", "visits": [{"id": "bad"}]})
+    assert schedules.immunization_visits("2026-01-01", today=TODAY)["visits"] == []
+
+
+def test_an_entry_with_both_units_is_skipped_rather_than_guessed(monkeypatch):
+    # Ambiguous data must not be silently resolved one way.
+    monkeypatch.setattr(
+        schedules,
+        "load_schedule",
+        lambda name: {"status": "sourced", "visits": [{"id": "bad", "age_months": 2, "age_weeks": 8}]},
+    )
+    assert schedules.immunization_visits("2026-01-01", today=TODAY)["visits"] == []
+
+
+def test_week_based_entries_still_work(monkeypatch):
+    monkeypatch.setattr(
+        schedules,
+        "load_schedule",
+        lambda name: {"status": "sourced", "visits": [{"id": "w", "age_weeks": 6, "label": "x"}]},
+    )
+    visits = schedules.immunization_visits("2026-01-01", today=TODAY)["visits"]
+    assert visits[0]["date_iso"] == "2026-02-12"
+
+
+# --- the shipped immunisation file ------------------------------------------------------
+
+
+def test_shipped_immunisation_entries_are_month_based():
+    data = schedules.load_schedule(schedules.IMMUNIZATION_FILE)
+    for entry in data["visits"]:
+        assert "age_months" in entry, f"{entry.get('id')} is not month-based"
+        assert "age_weeks" not in entry, f"{entry.get('id')} carries both units"
+
+
+def test_shipped_immunisation_entries_are_ordered_and_unique():
+    data = schedules.load_schedule(schedules.IMMUNIZATION_FILE)
+    ages = [entry["age_months"] for entry in data["visits"]]
+    assert ages == sorted(ages)
+    assert len(ages) == len(set(ages))
+
+
+def test_shipped_immunisation_ages_are_within_the_registration_window():
+    # The service covers children under 5, so a visit past 60 months could never be reached.
+    data = schedules.load_schedule(schedules.IMMUNIZATION_FILE)
+    assert max(entry["age_months"] for entry in data["visits"]) <= schedules.MAX_CHILD_AGE_YEARS * 12

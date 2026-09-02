@@ -10,6 +10,7 @@ behaviour is deterministic under test.
 
 from __future__ import annotations
 
+import calendar
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -158,10 +159,25 @@ def antenatal_visits(edd_iso: str, today: date | None = None) -> dict[str, Any]:
     }
 
 
+def add_months(start: date, months: int) -> date:
+    """Add calendar months, clamping onto the last valid day of the target month.
+
+    The national schedule is written in months, so it has to be computed in months. Treating
+    a month as 4 weeks drifts: 60 months as 260 weeks lands six days early, and the error
+    grows with age. 31 January plus one month clamps to 28 or 29 February.
+    """
+    month_index = start.month - 1 + months
+    year = start.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, min(start.day, calendar.monthrange(year, month)[1]))
+
+
 def immunization_visits(child_dob_iso: str, today: date | None = None) -> dict[str, Any]:
     """The immunisation calendar derived from a child's date of birth.
 
-    A visit at age W weeks falls on `child_dob + W * 7 days`.
+    An entry carries either `age_months` or `age_weeks`. Months are calendar months from the
+    date of birth; weeks are `child_dob + W * 7 days`. An entry with both is a data error and
+    is skipped rather than silently resolved one way.
     """
     now = _today(today)
     dob = parse_iso_date(child_dob_iso)
@@ -172,11 +188,17 @@ def immunization_visits(child_dob_iso: str, today: date | None = None) -> dict[s
 
     visits = []
     for entry in data.get("visits") or []:
+        months = entry.get("age_months")
         weeks = entry.get("age_weeks")
-        if not isinstance(weeks, int):
+        has_months = isinstance(months, int) and not isinstance(months, bool)
+        has_weeks = isinstance(weeks, int) and not isinstance(weeks, bool)
+
+        if has_months == has_weeks:  # neither, or ambiguously both
             continue
-        visit_date = dob + timedelta(days=weeks * 7)
-        visits.append(_visit_entry(visit_date, entry, now, "age_weeks"))
+        if has_months:
+            visits.append(_visit_entry(add_months(dob, months), entry, now, "age_months"))
+        else:
+            visits.append(_visit_entry(dob + timedelta(days=weeks * 7), entry, now, "age_weeks"))
 
     visits.sort(key=lambda visit: visit["date_iso"])
     return {
