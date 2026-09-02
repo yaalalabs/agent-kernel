@@ -58,6 +58,12 @@ The tools relay that marker to the agent as `data_status: placeholder`, and `sch
 instructed that when it sees it, it must **refuse to read out any dates** and tell the mother the
 schedule is not available yet and that her PHM can tell her when her next visit is due.
 
+Each file carries a `provenance:` block, and `provenance_test.py` makes it load-bearing: a file
+cannot claim `status: sourced` until it names its document, that document's printed date, a
+`.gov.lk` or `who.int` URL, and a second cross-check. Citing a Scribd re-upload fails the suite.
+Only the exact string `sourced` is trusted, so a typo fails toward escalation rather than away
+from it.
+
 The danger-sign table guards the same way, but in the opposite direction. A schedule it cannot
 trust, it declines to read out. A symptom it cannot screen, it escalates. **While
 `data/danger_signs.yaml` is a placeholder, every reported symptom is treated as `red` and
@@ -92,7 +98,9 @@ is hardcoded anywhere in the Python.
 - `hooks.py` is the post-execution hook blocking unsafe outbound language.
 - `redaction.py` redacts phone numbers from log output only.
 - `data/*.yaml` hold the visit schedules, the danger-sign table, and the hook's block list.
+- `provenance.py` enforces that a clinical file cannot claim `sourced` without a citation.
 - `guardrails/` holds the guardrail configs and the reasoning behind them.
+- `SOURCING.md` records verified sources, dead ends, and the stale-document traps found.
 - `*_test.py` are the unit tests.
 - `config.yaml` configures the WhatsApp agent binding, sessions, and logging.
 - `.env.example` is the template for the gitignored `.env` holding secrets.
@@ -288,11 +296,14 @@ recipient list first.
   per-mother continuity. Mother records are persisted separately by tool-owned `sqlite3` storage
   in `tool.py` from phase 2; sqlite is not an Agent Kernel session backend, so `session.type`
   stays `in_memory`.
-- **Danger-sign sources.** `data/danger_signs.yaml` carries a header stating that it requires
-  clinician review before any real-world use. Its entries are placeholders; the Ministry of
-  Health and WHO source citations belong here once the real signs are sourced:
+- **Clinical sources.** Each file in `data/` carries a `provenance:` block naming the document
+  its values came from. All three are still `placeholder`, so every block reads `TODO`.
+  [SOURCING.md](SOURCING.md) records what has been verified so far, including a live trap: the
+  current Epidemiology Unit site serves a **2017** immunisation schedule as its top result, with
+  2023 file metadata that masks its age. Citations belong here once values land:
 
-  | Source | Citation |
-  | --- | --- |
-  | Ministry of Health, Sri Lanka | _TODO: add the specific maternal and newborn danger-sign publication used_ |
-  | WHO | _TODO: add the specific danger-sign patient education material used_ |
+  | File | Source | Citation |
+  | --- | --- | --- |
+  | `antenatal_schedule.yaml` | Family Health Bureau | _TODO: Maternal Care Package_ |
+  | `immunization_schedule.yaml` | Epidemiology Unit | _TODO: current EPI schedule, cross-checked against CHDR_ |
+  | `danger_signs.yaml` | FHB, supplemented by WHO | _TODO_ |
