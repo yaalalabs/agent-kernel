@@ -10,7 +10,7 @@ halves share only the sandbox topics and the response store.
 flowchart LR
     CLI[agent CLI<br/>python app.py] -->|ExecutionRequest| IN[(sandbox-input)]
     IN --> W[QueueBrokerWorker<br/>python app.py worker]
-    W -->|kubectl pod exec| K8S[kind cluster<br/>bitnami/kubectl pod<br/>SA bound to `view`]
+    W -->|kubectl pod exec| K8S[kind cluster<br/>alpine/k8s pod<br/>SA bound to `view`]
     W -->|completion record| OUT[(sandbox-output)]
     OUT --> W2[output loop] --> RS[(Valkey<br/>response store)]
     CLI -->|bounded poll /<br/>check_sandbox_task| RS
@@ -52,8 +52,8 @@ done
 kind create cluster --name ak-sandbox-demo --wait 120s
 kind export kubeconfig --name ak-sandbox-demo --kubeconfig kind-kubeconfig
 kubectl --kubeconfig kind-kubeconfig apply -f k8s/rbac.yaml
-# optional but recommended: pre-load the sandbox image so the first pod starts fast
-docker pull bitnami/kubectl:1.33 && kind load docker-image bitnami/kubectl:1.33 --name ak-sandbox-demo
+# optional but recommended: pre-pull the sandbox image inside the node so the first pod starts fast
+docker exec ak-sandbox-demo-control-plane crictl pull docker.io/alpine/k8s:1.33.4
 
 # 4. The two processes (separate terminals)
 uv run app.py worker

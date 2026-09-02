@@ -114,8 +114,8 @@ impersonation iteration are deliberately last (design resolutions 2026-08-24).
   `sandboxWorker.hardening`; README walks submit → turn ends pending → `check_sandbox_task`
   fetches the finished result on the next turn.
 - **Verify:** the README walkthrough end to end on a local cluster (k3d/kind); `helm template`
-  with the overlay renders clean. Not registered in `.github/test-config.yaml` (chart-coupled,
-  the `openai-queue-mode` precedent).
+  with the overlay renders clean. Registered in `.github/test-config.yaml` as
+  `type: containerized` with a self-skipping `app_test.py` (resolution 2026-09-01).
 
 ## Iteration 8: RBAC impersonation (kubernetes user mode)
 

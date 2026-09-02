@@ -119,17 +119,27 @@ class KubernetesSandbox(Sandbox):
         expiry make a best-effort kill of the exec'd process and raise ``SandboxTimeoutError``."""
 
         def run() -> tuple[str, str, int]:
-            resp = kubernetes.stream.stream(
-                self._api.connect_get_namespaced_pod_exec,
-                self._pod,
-                self._namespace,
-                command=argv,
-                stdout=True,
-                stderr=True,
-                stdin=stdin_data is not None,
-                tty=False,
-                _preload_content=False,
-            )
+            try:
+                resp = kubernetes.stream.stream(
+                    self._api.connect_get_namespaced_pod_exec,
+                    self._pod,
+                    self._namespace,
+                    command=argv,
+                    stdout=True,
+                    stderr=True,
+                    stdin=stdin_data is not None,
+                    tty=False,
+                    _preload_content=False,
+                )
+            except AttributeError as exc:
+                # The kubernetes client masks a failed WebSocket handshake behind an
+                # AttributeError while re-raising it (api_client decodes a None body).
+                # The overwhelmingly common cause is missing RBAC: WebSocket exec is a GET,
+                # so pods/exec needs BOTH 'create' and 'get'.
+                raise SandboxError(
+                    f"exec into pod '{self._namespace}/{self._pod}' failed during the WebSocket handshake; "
+                    "check that the caller's RBAC grants both 'create' and 'get' on pods/exec"
+                ) from exc
             if stdin_data is not None:
                 resp.write_stdin(stdin_data)
             stdout_parts: list[str] = []

@@ -29,6 +29,11 @@ esac
 
 IMAGE_TAG="${IMAGE_TAG-dev}"
 
+# Keep the built images single-manifest: buildkit's default provenance attestation turns them
+# into OCI indexes that `kind load docker-image` cannot import under docker's containerd
+# image store. Harmlessly ignored by builders without attestation support.
+export BUILDX_NO_DEFAULT_ATTESTATIONS=1
+
 create_deployment_package() {
   local component="$1" entry="$2"
   local dist="dist-${component}"

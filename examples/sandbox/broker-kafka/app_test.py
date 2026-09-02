@@ -27,7 +27,7 @@ BOOTSTRAP_SERVERS = "localhost:9092"
 TOPICS = ["sandbox-input", "sandbox-output", "sandbox-input.dlq", "sandbox-output.dlq"]
 CONSUMER_GROUP = "ak-sandbox-demo-input"
 KIND_CLUSTER = "ak-sandbox-demo"
-SANDBOX_IMAGE = "bitnami/kubectl:1.33"
+SANDBOX_IMAGE = "alpine/k8s:1.33.4"
 HERE = Path(__file__).parent
 COMPOSE_FILE = HERE / "docker-compose.yaml"
 RBAC_FILE = HERE / "k8s" / "rbac.yaml"
@@ -70,8 +70,10 @@ def _kind_cluster_up() -> bool:
         _run("kind", "create", "cluster", "--name", KIND_CLUSTER, "--wait", "120s")
     _run("kind", "export", "kubeconfig", "--name", KIND_CLUSTER, "--kubeconfig", str(KUBECONFIG_FILE))
     _run("kubectl", "--kubeconfig", str(KUBECONFIG_FILE), "apply", "-f", str(RBAC_FILE))
-    _run("docker", "pull", SANDBOX_IMAGE)
-    _run("kind", "load", "docker-image", SANDBOX_IMAGE, "--name", KIND_CLUSTER)
+    # Pre-pull the sandbox image INSIDE the kind node (kind load docker-image chokes on
+    # multi-arch images under docker's containerd image store), so the first pod create
+    # stays inside the profile's create_timeout.
+    _run("docker", "exec", f"{KIND_CLUSTER}-control-plane", "crictl", "pull", f"docker.io/{SANDBOX_IMAGE}")
     return created
 
 
@@ -99,6 +101,8 @@ def stack():
     if not os.environ.get("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY is not set; skipping integration test")
 
+    # Clean slate: a stack left behind by an interrupted run can hold a wedged broker.
+    subprocess.run(["docker", "compose", "-f", str(COMPOSE_FILE), "down", "-v"], check=False)
     _run("docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d", "--wait")
     created_cluster = _kind_cluster_up()
     _ensure_topics()

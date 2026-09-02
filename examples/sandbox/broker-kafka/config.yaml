@@ -15,7 +15,7 @@ sandbox:
       idle_timeout: 900 # pods carry activeDeadlineSeconds = 2 x this as the orphan ceiling
       kubernetes:
         namespace: default
-        image: bitnami/kubectl:1.33 # kubectl + shell; talks to the API with its pod SA token
+        image: alpine/k8s:1.33.4 # kubectl + shell; talks to the API with its pod SA token
         service_account: ak-sandbox-pod # bound to `view` by k8s/rbac.yaml (the security boundary)
         kubeconfig: kind-kubeconfig # written by `kind export kubeconfig` (see the README)
   broker:

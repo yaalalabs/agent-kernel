@@ -528,6 +528,17 @@ class TestQueueBrokerWorker:
         worker = _worker(monkeypatch)
         worker._on_completion_permanent_failure(QueueMessage(body="not json", receive_count=9))
 
+    def test_failed_completion_with_a_live_sandbox_is_inventoried(self, monkeypatch):
+        # A failed operation may still have provisioned a sandbox; the sweep must see it.
+        worker = _worker(monkeypatch)
+        session = _session()
+        session.sandbox_id = "sb-9"
+        completion = ExecutionCompletion(task_id="t-1", status="failed", error="boom", error_type="SandboxError", sandbox_session=session)
+        record = {"request_id": "t-1", "session_id": "ak-1", "status_code": 500, "body": BrokerWireCodec.encode_completion(completion)}
+        worker._process_completion(QueueMessage(body=json.dumps(record), attributes={ATTR_REQUEST_ID: "t-1"}))
+        inventory = InMemoryResponseStore().get_record("session:default:default")
+        assert inventory is not None and inventory["body"]["sandbox_id"] == "sb-9"
+
     @pytest.mark.asyncio
     async def test_inventory_upsert_and_destroy_cleanup(self, monkeypatch):
         worker = _worker(monkeypatch)

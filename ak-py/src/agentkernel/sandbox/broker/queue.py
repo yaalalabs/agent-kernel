@@ -6,7 +6,7 @@ serialization contract across the worker fleet; ``dedup_id = task_id``), then po
 response store until the effective wait expires:
 
 * ``wait=N`` bounds the poll; ``wait=None`` is bounded by ``sandbox.broker.wait_timeout``,
-  never indefinite on this flavor — an unbounded await against a possibly-down remote worker
+  never indefinite on this flavor: an unbounded await against a possibly-down remote worker
   would hang the agent turn, and the worker's terminal-completion guarantee plus the
   ``check_sandbox_task`` recovery path cover the tail.
 * ``destroy`` is fire-and-forget: per-group FIFO orders it after every operation submitted
@@ -117,7 +117,7 @@ class QueueExecutionBroker(ExecutionBroker):
     async def _poll(self, task_id: str, deadline: float) -> Optional[ExecutionCompletion]:
         """Poll the store every ``wait_poll_interval`` seconds until the completion record
         lands or ``deadline`` passes. Store read failures are treated as transient: log and
-        keep polling — a store blip must not fail an execution that is still running."""
+        keep polling: a store blip must not fail an execution that is still running."""
         store = self._get_store()
         while True:
             body = None
@@ -153,5 +153,5 @@ class QueueExecutionBroker(ExecutionBroker):
         body = await asyncio.to_thread(self._get_store().get_message, task_id)
         return None if body is None else BrokerWireCodec.decode_completion(body)
 
-    # discard(): inherited no-op — the store is durable and its TTL owns cleanup.
-    # close(): inherited no-op — the send side of a QueueTransport holds no consumer resources.
+    # discard(): inherited no-op: the store is durable and its TTL owns cleanup.
+    # close(): inherited no-op: the send side of a QueueTransport holds no consumer resources.

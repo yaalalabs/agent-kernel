@@ -62,6 +62,9 @@ e2e:
     # Self-skips unless docker, kind, kubectl, and OPENAI_API_KEY are all available.
     - type: containerized
       path: examples/sandbox/broker-kafka
+    # Self-skips unless docker, kind, kubectl, helm, and OPENAI_API_KEY are all available.
+    - type: containerized
+      path: examples/sandbox/broker-nats
 
     # API examples
     - type: api

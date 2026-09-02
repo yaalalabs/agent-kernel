@@ -145,7 +145,7 @@ class QueueBrokerWorker:
 
     async def _process_request(self, message: QueueMessage) -> None:
         """Execute one request and queue its ready-to-store record. A decode failure raises
-        (nack, bounded redelivery, permanent-failure path — no silent drop); a send failure
+        (nack, bounded redelivery, permanent-failure path; no silent drop); a send failure
         raises and the redelivery re-executes (the documented at-least-once window, closed
         once the record is queued)."""
         request = BrokerWireCodec.decode_request(message.body)
@@ -234,15 +234,17 @@ class QueueBrokerWorker:
 
     def _process_completion(self, message: QueueMessage) -> None:
         """Persist one ready-to-store record (the ``ECSOutputConsumer`` role). A decode or
-        store-write failure raises: redelivery retries the persist only — the sandbox
+        store-write failure raises: redelivery retries the persist only; the sandbox
         operation is never re-executed from here."""
         record = json.loads(message.body)
         self._store.add_message(record)
-        if record.get("status_code") == 200:
-            try:
-                self._update_inventory(BrokerWireCodec.decode_completion(record["body"]))
-            except Exception:  # noqa: BLE001 — inventory is best-effort; the persisted record must not loop
-                logger.exception("Failed to update the sweep inventory for request %s", record.get("request_id"))
+        try:
+            # Every terminal status updates the inventory: a failed operation may still have
+            # provisioned a sandbox (its session carries the sandbox_id), and that sandbox
+            # must be sweepable; a cleared sandbox_id (destroy) drops the record.
+            self._update_inventory(BrokerWireCodec.decode_completion(record["body"]))
+        except Exception:  # noqa: BLE001 — inventory is best-effort; the persisted record must not loop
+            logger.exception("Failed to update the sweep inventory for request %s", record.get("request_id"))
 
     def _update_inventory(self, completion: ExecutionCompletion) -> None:
         """Upsert the idle-sweep inventory for a successful managed-profile completion; a

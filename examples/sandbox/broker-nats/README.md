@@ -15,6 +15,7 @@ config.nats.yaml          baked in as config.yaml by package.sh (sandbox block i
 sandbox-values.yaml       chart overlay: images + sandboxWorker + hardening
 deploy/Dockerfile.*       one image per component, python:3.12-slim + staged dependencies
 deploy/package.sh         stages dependencies and builds the three images
+app_test.py               the automated walkthrough (kind + helm; self-skips without them)
 ```
 
 This example builds on [examples/k8s/openai-queue-mode](../../k8s/openai-queue-mode/) (read

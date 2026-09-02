@@ -18,7 +18,10 @@ rules:
     verbs: ["create", "get", "list", "watch", "delete"]
   - apiGroups: [""]
     resources: ["pods/exec"]
-    verbs: ["create"]
+    # Both verbs are required: SPDY exec (kubectl) is a POST ("create"), while the WebSocket
+    # exec the Python client uses is a GET ("get"). Granting only "create" makes every
+    # worker exec fail its WebSocket handshake with a 403.
+    verbs: ["create", "get"]
   {{- if .Values.sandboxWorker.rbac.networkPolicies }}
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]

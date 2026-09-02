@@ -285,8 +285,9 @@ QueueMessage(
   `scan_records(prefix: str) -> list[Dict]` (default `NotImplementedError`). Implemented for
   `in_memory` (dict scan), `redis`/`valkey` (driver `SCAN` on `<prefix>*`), and `dynamodb`
   (`Scan` with `begins_with(request_id, prefix)`); a BYO store opts in by overriding both.
-- Worker inventory: the output loop, after persisting each successful managed-profile
-  completion, upserts record
+- Worker inventory: the output loop, after persisting each managed-profile completion (any
+  terminal status: a failed operation may still have provisioned a sandbox, and a completion
+  whose session no longer holds a `sandbox_id` deletes the record), upserts record
   `request_id=f"session:{sandbox_session_id}"`, `body={"provider_type", "sandbox_id", "profile",
   "idle_timeout", "last_used_at"}`. Records ride the store's TTL like completions, so a dead
   worker's records still expire (#494: `max(2 × idle_timeout, response_ttl)` is approximated by
@@ -562,7 +563,10 @@ Templates, following the surveyed patterns exactly:
   ConfigMap, command/resources/preStop/nodeSelector blocks; see `deployment-agent-runner.yaml:1-79`)
   plus `serviceAccountName` (the first tier to set one).
 - `serviceaccount-sandbox.yaml` / `rbac-sandbox.yaml`: worker SA; Role in the sandbox-pods
-  namespace with `pods` (`create/get/list/watch/delete`), `pods/exec` (`create`), and, when the
+  namespace with `pods` (`create/get/list/watch/delete`), `pods/exec` (`create` AND `get`:
+  the Python client's WebSocket exec is a GET, and with only the SPDY verb `create` every
+  exec fails its handshake with a 403, which kubernetes-client masks as an
+  `AttributeError`; the provider re-raises that case with the RBAC hint), and, when the
   app config uses `network_policy: true`, `networkpolicies` (`create/delete`), gated by a
   `sandboxWorker.rbac.networkPolicies` flag; RoleBinding worker-SA → Role; the sandbox-pod SA
   (deliberately bound to nothing: the application example binds it to `view` or a custom role,
@@ -622,7 +626,7 @@ required coverage is normative.
   process runs the CLI with `broker.flavor: queue` over Kafka and a valkey response store; the
   worker process consumes and drives a `kubernetes` profile against a kind cluster whose
   `k8s/rbac.yaml` binds the sandbox-pod ServiceAccount to the `view` ClusterRole; the sandbox
-  image is `bitnami/kubectl` (in-cluster SA credentials). `app_test.py` (self-skipping when
+  image is `alpine/k8s` (in-cluster SA credentials; the bitnami catalog restructuring removed the kubectl tags). `app_test.py` (self-skipping when
   `docker`/`kind`/`OPENAI_API_KEY` are unavailable, the `examples/transport/kafka/app_test.py:58-64`
   pattern) covers: a read-only kubectl command returning within the bounded poll; a write
   command rejected by RBAC (Forbidden), asserted with a sentinel; and a promoted long execution
@@ -637,9 +641,11 @@ required coverage is normative.
   `security_context`, `service_account`), and a chart values overlay enabling `sandboxWorker`
   and `sandboxWorker.hardening`. The README demonstrates the promotion recovery end to end:
   submit a long-running task, watch the turn end with a pending task, and fetch the finished
-  result with `check_sandbox_task` on the next turn. Not registered in `.github/test-config.yaml` (chart-coupled
-  examples are gated by `chart-test.yaml`; `examples/k8s/openai-queue-mode` has the same
-  status).
+  result with `check_sandbox_task` on the next turn. Registered in `.github/test-config.yaml`
+  as `type: containerized` (resolution 2026-09-01, superseding the walkthrough-only choice):
+  its `app_test.py` builds the images, installs the chart on a kind cluster with the values
+  overlay, and drives the walkthrough as deterministic curl sentinels, self-skipping when
+  docker/kind/kubectl/helm or the OpenAI key is unavailable.
 
 ### Behavioural changes
 
