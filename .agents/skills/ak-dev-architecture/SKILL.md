@@ -246,12 +246,12 @@ Provides image and file attachment support via a pluggable storage and PreHook a
 
 ### Key Components
 
-- **`MultimodalPreHook`** (`hooks.py`): System `PreHook` that intercepts `AgentRequestImage` / `AgentRequestFile` entries, calls a vision LLM (via LiteLLM) for a brief description, saves binary data to a storage backend, strips consumed attachments from the request list, and injects attachment metadata (IDs + descriptions) into the last `AgentRequestText`. `_extract_attachment`/`_resolve_source` (spec #523 §8) classify each attachment's source form on the thread-off path — bare base64 and base64 `data:` URIs are described and stored as before; `http://`/`https://`/`s3://` references and non-base64 `data:` URIs are **not** fetched or stored (no network I/O/SSRF exposure in a system pre-hook) and are instead left on the request list so the adapter resolves them itself. This source-form classification does not run in thread mode: `ConversationThreadManager.store_attachments` persists `image_data`/`file_data` verbatim before the hook runs (tracked as a follow-up in `docs/specs/523-ag-ui-support/design.md`)
+- **`MultimodalPreHook`** (`hooks.py`): System `PreHook` that intercepts `AgentRequestImage` / `AgentRequestFile` entries, calls a vision LLM (via LiteLLM) for a brief description, saves binary data to a storage backend, strips consumed attachments from the request list, and injects attachment metadata (IDs + descriptions) into the last `AgentRequestText`. Source-form classification lives in `AttachmentSource` (`core/multimodal/source.py`, spec #523 §8, extended to the thread path by #669) and is shared by **both** paths, so a form one handles and the other mishandles is structurally impossible: bare base64 and base64 `data:` URIs are described and stored; `http://`/`https://`/`s3://` references and non-base64 `data:` URIs are **not** fetched or stored (no network I/O/SSRF exposure in a system pre-hook) and are left on the request list so the adapter resolves them itself. Thread mode adds one thing on top of the same verdict: `ConversationThreadManager.store_attachments` gives every attachment a store record and an `attachment_id` so a thread's history is uniform — base64 as bytes, a remote reference as a `url` with no bytes and its request passed through unreplaced (a ref would be stripped before the agent runs)
 - **`MultimodalPreHookFactory`** (`factory.py`): Returns `MultimodalPreHook` when `config.multimodal.enabled` is `True`, otherwise a `NoOpPreHook`
 - **`AnalyzeAttachmentsTool`** (`tools.py`): A `SystemTool` auto-registered on all agents when multimodal is enabled. Lets the agent retrieve and analyze stored attachments (images and PDFs) on demand via the `analyze_attachments(attachment_ids, prompt)` function
 - **`AttachmentStorageManager`** (`storage/storage_manager.py`): High-level API that delegates to the configured `AttachmentStore` backend. Generates UUIDs for attachment IDs and serializes `AttachmentData` dicts
 - **`AttachmentStore`** (`storage/base.py`): Abstract base with `save()`, `get()`, `delete()` methods
-- **`AttachmentData`** (`storage/base.py`): Dataclass: `id`, `type`, `data` (base64), `name`, `mime_type`, `description`, `timestamp`
+- **`AttachmentData`** (`storage/base.py`): Dataclass: `id`, `type`, `data` (base64; empty when `url` is set), `name`, `mime_type`, `description`, `timestamp`, `url` (a remote reference recorded without its bytes — a reader wanting bytes checks `url` first rather than trusting `data`)
 
 ### Storage Backends
 
@@ -267,7 +267,7 @@ Provides image and file attachment support via a pluggable storage and PreHook a
 ```
 User sends {text + image/file}
   → MultimodalPreHook.on_run()
-    → _extract_attachment() / _resolve_source()   # classify source form (thread-off only)
+    → AttachmentSource.extract()                  # classify source form (shared with the thread path)
     → is_base64 (bare base64 or data:<mime>;base64,<payload>):
         → _describe_attachment_briefly()          # Vision LLM via LiteLLM
         → AttachmentStorageManager.save_attachment()  # store binary

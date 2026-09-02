@@ -21,8 +21,6 @@ dev = [
 
 [tool.uv]
 package = false
-# ragas 0.4.3 imports langchain_community.chat_models.vertexai, removed in langchain-community 0.4.2
-constraint-dependencies = ["langchain-community<0.4.2"]
 
 [tool.isort]
 profile = "black"

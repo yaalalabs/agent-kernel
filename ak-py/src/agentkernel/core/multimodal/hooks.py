@@ -9,7 +9,6 @@ This module provides a PreHook that:
 """
 
 import logging
-from dataclasses import dataclass
 from typing import Optional
 
 import litellm
@@ -24,34 +23,11 @@ from ..model import (
     AgentRequestImage,
     AgentRequestText,
 )
+from .source import AttachmentSource, ExtractedAttachment
 from .storage import AttachmentStorageManager
 
 # (attachment_id, description) as injected into the request text.
 _AttachmentDescription = tuple[str, str]
-
-
-@dataclass(frozen=True)
-class _ExtractedAttachment:
-    """
-    One attachment's data pulled off a request, with its source form resolved.
-
-    `is_base64` is what decides whether this hook handles the attachment or hands it on, and it is
-    False for two different sources:
-
-    * **A remote reference** (`http://`, `https://`, `s3://`) — not fetched, because that would put
-      network I/O and SSRF exposure inside a system pre-hook running on every request.
-    * **A `data:` URI without the base64 marker** (`data:text/plain,hello%20world`) — its bytes are
-      percent-encoded text, so storing them as base64 would store the wrong thing.
-
-    Either way the request must survive into the returned list, so the adapter receives the
-    attachment and resolves it itself.
-    """
-
-    data: str
-    att_type: str
-    name: str
-    mime_type: str
-    is_base64: bool
 
 
 class MultimodalPreHook(PreHook):
@@ -192,7 +168,7 @@ class MultimodalPreHook(PreHook):
                 continue  # a ref never travels on: resolved, its id is injected; unresolved, it is dangling
 
             if isinstance(req, (AgentRequestImage, AgentRequestFile)):
-                extracted = self._extract_attachment(req)
+                extracted = AttachmentSource.extract(req)
                 if extracted is None:
                     continue  # no bytes at all, so there is nothing to forward either
                 if not extracted.is_base64:
@@ -247,7 +223,7 @@ class MultimodalPreHook(PreHook):
 
     async def _store(
         self,
-        extracted: _ExtractedAttachment,
+        extracted: ExtractedAttachment,
         manager: AttachmentStorageManager,
         config: _MultimodalConfig,
     ) -> _AttachmentDescription:
@@ -288,72 +264,6 @@ class MultimodalPreHook(PreHook):
         """
         description = await self._describe_attachment_briefly(data=data, mime_type=mime_type)
         return description[: config.description_max_length]
-
-    @staticmethod
-    def _extract_attachment(req: AgentRequest) -> Optional[_ExtractedAttachment]:
-        """
-        Extract attachment data from a request if it is an image or file, and classify its source.
-
-        :param req: An agent request.
-        :return: The extracted attachment, or None if the request carries no attachment data.
-        """
-        if isinstance(req, AgentRequestImage) and req.image_data:
-            resolved = MultimodalPreHook._resolve_source(req.image_data, req.mime_type, "image/jpeg")
-            if resolved is None:
-                return None
-            data, mime_type, is_base64 = resolved
-            return _ExtractedAttachment(data, "image", req.name, mime_type, is_base64)
-        if isinstance(req, AgentRequestFile) and req.file_data:
-            resolved = MultimodalPreHook._resolve_source(req.file_data, req.mime_type, "application/octet-stream")
-            if resolved is None:
-                return None
-            data, mime_type, is_base64 = resolved
-            return _ExtractedAttachment(data, "file", req.name, mime_type, is_base64)
-        return None
-
-    @staticmethod
-    def _resolve_source(source: str, declared_mime: Optional[str], default_mime: str) -> Optional[tuple[str, str, bool]]:
-        """
-        Resolve one attachment source string into its bytes, its mime type, and whether those bytes are base64.
-
-        - `http://`, `https://`, `s3://`: a remote reference, returned unchanged and not base64.
-        - `data:<mime>;base64,<payload>`: split into the payload plus the mime type the URI itself
-          declares. The URI wins over `declared_mime` and over `default_mime`, neither of which is
-          consulted unless the URI omits its own — this is what stops a PNG being stored as JPEG.
-        - Anything else is treated as bare base64, keeping `declared_mime` or `default_mime`.
-
-        A `data:` URI with nothing after the comma resolves to `None`: it carries no bytes, so it is
-        the same case as an empty `image_data`, and the caller drops it rather than handing an adapter
-        a payloadless URI.
-
-        A `data:` URI that is not base64-encoded is passed through rather than decoded, since its
-        bytes are not what this hook would store. Per RFC 2397 the marker is the final parameter of
-        the header, so a header that merely contains the text `;base64` does not qualify.
-
-        Scheme and header matching is case-insensitive, since URI schemes (RFC 3986 §3.1), media
-        types and parameter names all are. Only the leading bytes and the short header are folded —
-        an attachment payload can be megabytes of base64, and lowercasing it would copy the lot.
-
-        :param source: The raw source string from the request.
-        :param declared_mime: The request's own mime_type, if it set one.
-        :param default_mime: Fallback when neither the source nor the request declares one.
-        :return: (data, mime_type, is_base64), or None when the source carries no bytes at all.
-        """
-        scheme = source[:8].lower()  # 8 == len("https://"), the longest prefix matched below
-
-        if scheme.startswith(("http://", "https://", "s3://")):
-            return source, declared_mime or default_mime, False
-
-        if scheme.startswith("data:"):
-            header, _, payload = source.partition(",")
-            if not payload:
-                return None
-            if not header.lower().endswith(";base64"):
-                return source, declared_mime or default_mime, False
-            uri_mime = header[len("data:") :].split(";", 1)[0].lower()
-            return payload, uri_mime or declared_mime or default_mime, True
-
-        return source, declared_mime or default_mime, True
 
     def name(self) -> str:
         return "MultimodalPreHook"

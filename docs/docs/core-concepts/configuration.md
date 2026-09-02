@@ -17,7 +17,7 @@ For detailed information about session and memory management configuration, see:
 Agent Kernel supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.
 
 :::note
-Test harness configuration (comparison mode, judge models) is **not** part of `config.yaml`. It lives in a separate `test-config.yaml` file that is only loaded when running tests; see the [Test Configuration](#test-configuration) section below and [Testing](/docs/testing/overview). A legacy `test:` section in `config.yaml` is ignored.
+Test harness configuration (comparison mode, evaluator, llm models) is **not** part of `config.yaml`. It lives in a separate `test-config.yaml` file that is only loaded when running tests; see the [Test Configuration](#test-configuration) section below and [Testing](/docs/testing/overview). A legacy `test:` section in `config.yaml` is ignored.
 :::
 
 ### Basic Configuration File
@@ -491,16 +491,19 @@ export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Sessio
 
 ### Test Configuration {#test-configuration-env-vars}
 
-These variables configure the test harness (`AKTestConfig`), which is separate from the application configuration; see the [Test Configuration](#test-configuration) section below for the `test-config.yaml` file and full details. The variable names are unchanged from previous releases:
+These variables configure the test harness (`AKTestConfig`), which is separate from the application configuration; see the [Test Configuration](#test-configuration) section below for the `test-config.yaml` file and full details. `AK_TEST__MODE` accepts the renamed `score`/`llm`/`fallback` values, and `AK_TEST__JUDGE__*` was renamed to `AK_TEST__LLM__*`:
 
 ```bash
 # Test comparison mode
-export AK_TEST__MODE=fallback  # Options: 'fuzzy', 'judge', 'fallback' (default: 'fallback')
+export AK_TEST__MODE=fallback  # Options: 'score', 'llm', 'fallback' (default: 'fallback')
 
-# Judge configuration (for LLM-based evaluation)
-export AK_TEST__JUDGE__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
-export AK_TEST__JUDGE__PROVIDER=openai  # LLM provider (default: openai)
-export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
+# Evaluator backend: built-in short name, or a dotted path to your own AKEvaluator subclass
+export AK_TEST__EVALUATOR=deepeval  # default: 'deepeval'
+
+# Llm configuration (for LLM-based evaluation)
+export AK_TEST__LLM__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__LLM__PROVIDER=openai  # LLM provider (default: openai)
+export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
 ```
 
 ### Messaging Platform Integrations
@@ -667,28 +670,31 @@ If the `logging` section is omitted from the configuration, default loggers will
 
 ## Test Configuration
 
-Test harness configuration (comparison mode and judge models) is separate from the application configuration described above. It is defined by the `AKTestConfig` class (exported from `agentkernel.test`) and loaded from its own file, `test-config.yaml`, resolved from the current working directory. It is only loaded when the testing utilities are used; importing `agentkernel` or running your application never reads it, and the application's `config.yaml` never carries test settings.
+Test harness configuration (comparison mode, evaluator backend, llm models) is separate from the application configuration described above. It is defined by the `AKTestConfig` class (exported from `agentkernel.test`) and loaded from its own file, `test-config.yaml`, resolved from the current working directory. It is only loaded when the testing utilities are used; importing `agentkernel` or running your application never reads it, and the application's `config.yaml` never carries test settings.
 
 ### Test Configuration File
 
 Create `test-config.yaml` in the directory you run your tests from:
 
 ```yaml
-mode: fallback  # Test comparison mode: fuzzy, judge, or fallback (default: fallback)
-judge:
-  model: gpt-4o-mini  # LLM model for judge evaluation (default: gpt-4o-mini)
-  provider: openai  # LLM provider for judge evaluation (default: openai)
-  embedding_model: text-embedding-3-small  # Embedding model for similarity evaluation (default: text-embedding-3-small)
+mode: fallback  # Test comparison mode: score, llm, or fallback (default: fallback)
+evaluator: deepeval  # Built-in evaluator short name, or a dotted path to your own AKEvaluator subclass (default: deepeval)
+llm:
+  model: gpt-4o-mini  # LLM model for llm evaluation (default: gpt-4o-mini)
+  provider: openai  # LLM provider for llm evaluation (default: openai)
+  embedding_model: text-embedding-3-small  # Embedding model, unconsumed by any built-in v1 metric (default: text-embedding-3-small)
 ```
 
 Note that the file is un-nested: since it contains only test configuration, there is no top-level `test:` key.
 
-If `test-config.yaml` is missing, defaults apply silently (no warning is printed). Fuzzy and fallback tests need no configuration file at all.
+If `test-config.yaml` is missing, defaults apply silently (no warning is printed). Score and fallback tests need no configuration file at all.
 
 **Test Modes:**
-- `fuzzy` - Uses fuzzy string matching (RapidFuzz)
-- `judge` - Uses LLM-based evaluation (Ragas) for semantic similarity
-- `fallback` - Tries fuzzy first, falls back to judge if fuzzy fails
+- `score` - Deterministic, offline string-match scoring via the configured evaluator (the built-in DeepEval evaluator uses `Scorer.quasi_exact_match_score`)
+- `llm` - LLM-as-judge evaluation via the configured evaluator (the built-in DeepEval evaluator uses `GEval`) for semantic similarity
+- `fallback` - Tries score first, falls back to llm if score fails
+
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. `deepeval` (the default) is the only built-in; any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.core.akevaluators.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator).
 
 ### Custom Test Configuration File Path
 
@@ -704,16 +710,21 @@ All test configuration parameters can be set using environment variables with th
 
 ```bash
 # Test comparison mode
-export AK_TEST__MODE=fallback  # Options: 'fuzzy', 'judge', 'fallback' (default: 'fallback')
+export AK_TEST__MODE=fallback  # Options: 'score', 'llm', 'fallback' (default: 'fallback')
 
-# Judge configuration (for LLM-based evaluation)
-export AK_TEST__JUDGE__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
-export AK_TEST__JUDGE__PROVIDER=openai  # LLM provider (default: openai)
-export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
+# Evaluator backend
+export AK_TEST__EVALUATOR=deepeval  # Built-in short name, or a dotted path (default: 'deepeval')
+
+# Llm configuration (for LLM-based evaluation)
+export AK_TEST__LLM__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__LLM__PROVIDER=openai  # LLM provider (default: openai)
+export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
 ```
 
 :::warning Migration note
-Earlier versions read test configuration from a `test:` section in the application's `config.yaml`. That section is now ignored; move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`. The `AK_TEST__*` environment variables are unchanged, so CI pipelines that use them need no updates.
+Earlier versions read test configuration from a `test:` section in the application's `config.yaml`. That section is now ignored; move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`.
+
+A later release renamed the comparison modes (`fuzzy`→`score`, `judge`→`llm`) and the `judge:`/`AK_TEST__JUDGE__*` block to `llm:`/`AK_TEST__LLM__*`. Setting `mode: fuzzy` or `mode: judge` (or `AK_TEST__MODE=fuzzy`/`judge`) now raises a configuration error naming the new spelling. A leftover `judge:` key in `test-config.yaml` or `AK_TEST__JUDGE__*` environment variable, however, is silently ignored rather than raising — it is treated as an unknown field, and `llm` keeps its own default instead of reading from it, so rename it to `llm:`/`AK_TEST__LLM__*` to have it take effect. It also added the `evaluator` key (default `deepeval`) and moved thresholds from a 0-100 scale to `[0.0, 1.0]`.
 :::
 
 For how the test harness uses these settings, see [Testing](../testing/overview.md).

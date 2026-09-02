@@ -10,7 +10,5 @@ fi
 if [[ ${1-} != "local" ]]; then
   uv sync --all-extras
 else
-  # For local development of agentkernel, you can force reinstall from local dist
-  uv sync --find-links ../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --no-deps --no-index --find-links ../../../ak-py/dist agentkernel[api,openai,teams] || true
+  uv sync --find-links ../../../ak-py/dist --upgrade-package agentkernel || true
 fi

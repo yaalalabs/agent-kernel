@@ -3,7 +3,7 @@ name: ak-test
 description: >
   Set up testing and debug common issues in Agent Kernel projects. This skill guides
   you through configuring the built-in test framework, writing agent tests, choosing
-  test modes (fuzzy, judge, fallback), and troubleshooting common errors.
+  test modes (score, llm, fallback), and troubleshooting common errors.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -35,26 +35,42 @@ Run `uv sync` to install test dependencies.
 
 #### 2. Choose a Test Mode
 
-Update `config.yaml`:
+Create `test-config.yaml` in the directory you run tests from — it is a separate, un-nested file
+(no top-level `test:` key), loaded only when the test harness runs. A `test:` section left over in
+`config.yaml` is ignored:
 
 ```yaml
-test:
-  mode: fuzzy       # Options: fuzzy | judge | fallback
+mode: score       # Options: score | llm | fallback (default: fallback)
 ```
 
 | Mode | How it Works | Best For |
 |------|-------------|----------|
-| **fuzzy** | String similarity matching (rapidfuzz) | Deterministic responses, exact answers |
-| **judge** | LLM evaluates if response is semantically correct | Open-ended responses, creative agents |
-| **fallback** | Tries fuzzy first, falls back to judge if fuzzy fails | General-purpose testing |
+| **score** | Deterministic string-match scoring (DeepEval `Scorer.quasi_exact_match_score`) | Deterministic responses, exact answers |
+| **llm** | LLM evaluates if response is semantically correct (DeepEval `GEval`) | Open-ended responses, creative agents |
+| **fallback** | Tries score first, falls back to llm if score fails | General-purpose testing |
 
-For judge mode, configure the judge model:
+For llm mode, configure the llm model:
 ```yaml
-test:
-  mode: judge
-  judge:
-    model: gpt-4o-mini
+mode: llm
+llm:
+  model: gpt-4o-mini
+  provider: openai
 ```
+
+**Evaluator backend:** `evaluator` selects the scoring backend used by both `score` and `llm`
+modes — `deepeval` (the default) is the only built-in. Set it to a dotted path (e.g.
+`my_evaluator.MyEvaluator`) to bring your own `AKEvaluator` subclass instead:
+
+```yaml
+mode: fallback
+evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to your test file
+```
+
+A custom evaluator implements `score_based_evaluation(case)` and `llm_based_evaluation(case)`,
+both synchronous, returning an `AKEvaluationResult` — import the interface from
+`agentkernel.test.core.akevaluators` (`AKEvaluator`, `AKEvaluationCase`, `AKEvaluationResult`,
+`AKMissingInput`, `AKEvaluationError`). See `examples/cli/custom-evaluator/` for a full worked
+example.
 
 #### 3. Write CLI Agent Tests
 
@@ -102,6 +118,9 @@ async def test_follow_up(test_client):
 - Use `scope="session"` fixtures so the agent stays running across tests
 - `expect()` takes a list of acceptable answer patterns
 - The test framework uses the configured mode to compare responses
+- Pass `return_metrics=True` to `expect()` (or `Test.compare()`) to get back an
+  `AKEvaluationResult` (score, evaluator, metric, reason) instead of raising `AssertionError` on a
+  mismatch — useful for asserting on the score itself rather than just pass/fail
 
 #### 4. Write API Agent Tests
 

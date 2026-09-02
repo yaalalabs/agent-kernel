@@ -169,19 +169,22 @@ class OpenAIRunner(BaseRunner):
 
         return prompt, message_content
 
-    def _get_run_input(self, agent: Any, session: Session, prompt: str, message_content: list[dict]) -> tuple[Any, Session | None]:
+    @staticmethod
+    def _get_run_input(prompt: str, message_content: list[dict]) -> Any:
         """
         Determine the input format for OpenAI agent (text-only vs multimodal).
-        :param agent: The OpenAI agent.
-        :param session: The AgentKernel session.
+
+        A single text request is passed as the bare prompt string; anything else is passed as the
+        message list the SDK needs for structured content. The choice is about shape only — the
+        session goes with either, so a turn carrying an attachment is remembered like any other.
+
         :param prompt: The prompt text.
         :param message_content: The message content list.
-        :return: Tuple of (input, session_to_use).
+        :return: The input to hand to the SDK runner.
         """
         if len(message_content) == 1 and isinstance(message_content[0].get("content"), str):
-            return prompt, self._session(session)
-        else:
-            return message_content, None
+            return prompt
+        return message_content
 
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
@@ -200,12 +203,12 @@ class OpenAIRunner(BaseRunner):
             if not message_content:
                 return AgentReplyText(response="Sorry. No valid content found in the requests")
 
-            input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
+            input_data = self._get_run_input(prompt, message_content)
             # Injected as the run context, so tools read and write it via RunContextWrapper.context.
             # A deep copy is passed in so tools mutating it in place don't also mutate `incoming`.
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
-            reply = (await Runner.run(agent.agent, input_data, session=session_to_use, context=produced)).final_output
+            reply = (await Runner.run(agent.agent, input_data, session=self._session(session), context=produced)).final_output
 
             self._store_framework_context(session, incoming, produced)
 
@@ -248,10 +251,10 @@ class OpenAIRunner(BaseRunner):
             if not message_content:
                 return
 
-            input_data, session_to_use = self._get_run_input(agent, session, prompt, message_content)
+            input_data = self._get_run_input(prompt, message_content)
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
-            result = Runner.run_streamed(agent.agent, input_data, session=session_to_use, context=produced)
+            result = Runner.run_streamed(agent.agent, input_data, session=self._session(session), context=produced)
 
             async for event in result.stream_events():
                 if event.type == "raw_response_event":

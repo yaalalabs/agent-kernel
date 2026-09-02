@@ -3,6 +3,11 @@ name: Test GitHub App
 on:
   workflow_dispatch:
 
+# Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions). This workflow never
+# touches repo content with GITHUB_TOKEN: it only checks the App secrets and calls the API with the
+# App token it mints, so the default token needs no scopes at all.
+permissions: {}
+
 jobs:
   test-app:
     runs-on: ubuntu-latest

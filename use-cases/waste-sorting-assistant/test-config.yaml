@@ -1,2 +1,2 @@
 # Agent Kernel test harness configuration (loaded only when running tests).
-mode: fuzzy
+mode: score
