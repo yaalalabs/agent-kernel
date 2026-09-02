@@ -1,0 +1,17 @@
+session:
+  type: in_memory
+  cache:
+    size: 512
+
+whatsapp:
+  verify_token: "${WHATSAPP_VERIFY_TOKEN}"
+  access_token: "${WHATSAPP_ACCESS_TOKEN}"
+  phone_number_id: "${WHATSAPP_PHONE_NUMBER_ID}"
+
+logging:
+  ak:
+    level: INFO
+
+modules:
+  - name: server
+    agent: dagaya_triage
