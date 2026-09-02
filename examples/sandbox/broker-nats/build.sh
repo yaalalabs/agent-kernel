@@ -8,12 +8,14 @@ else
 fi
 
 if [[ ${1-} != "local" ]]; then
-  uv sync --all-extras
+  # Installs exactly the extras this example declares in pyproject.toml, plus the dev group.
+  uv sync
 else
-  # For local development of agentkernel, you can force reinstall from local dist.
-  # --no-cache matters here: a locally built wheel usually carries the same version as the
-  # published one, so without it uv can satisfy the install from its cache and quietly hand you
-  # the release instead of your build.
-  uv sync --find-links ../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --no-deps --no-index --no-cache --find-links ../../../ak-py/dist "agentkernel[openai,api,nats,valkey,kubernetes,test]"
+  # Local development of agentkernel: re-resolve it (and the extras this example declares in
+  # pyproject.toml) against the freshly built local dist instead of PyPI. --upgrade-package
+  # forces re-resolution so the local wheel wins even when its version matches the published
+  # one, pulling a newly added extra's dependencies that the published release doesn't have yet.
+  # Note: this rewrites uv.lock to the local dist source for the duration; do not commit that
+  # lock — commit the PyPI-resolved lock produced by `uv lock` after the extra is published.
+  uv sync --find-links ../../../ak-py/dist --upgrade-package agentkernel
 fi
