@@ -900,9 +900,13 @@ environment. When enabled, agents automatically gain sandbox tools (`run_code`, 
 `new_sandbox_session`, `destroy_sandbox_session`) and the usage guidance is injected into their
 system prompt — the agent's own instructions need not mention the sandbox.
 
-**Ask:** Which provider — `local_subprocess` (no isolation; dev/test only) or `docker`
-(container isolation; needs the `sandbox-docker` extra and a Docker daemon)? Should it apply to
-all agents or only some (the `agents` list)?
+**Ask:** Which provider — `local_subprocess` (no isolation; dev/test only), `docker`
+(container isolation; needs the `sandbox-docker` extra and a Docker daemon), or another
+shipped provider (`kubernetes` pods, `e2b` micro-VMs, `daytona` cloud containers, `ec2_ssm`
+attach-only; see the [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox))? Should
+it apply to all agents or only some (the `agents` list)? For executions longer than the
+process can wait, the `queue` broker flavor runs them on a separate worker
+(`sandbox.broker.flavor: queue`; same guide).
 
 **1. Install the extra (docker only):**
 

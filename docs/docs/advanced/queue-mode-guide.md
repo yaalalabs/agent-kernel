@@ -54,6 +54,14 @@ Delivery sub-modes (`execution.mode`):
 inline, outside the pipeline.
 :::
 
+:::note
+The **sandbox queue broker** (`sandbox.broker.flavor: queue`) rides these same transports
+with its own queue configuration: `sandbox.broker.queue` reuses the `execution.queues`
+shape, and sandbox executions travel a separate input/output queue pair to a
+`QueueBrokerWorker`, independent of the chat pipeline described here. See the
+[Sandbox guide's queue flavor section](./sandbox#the-queue-flavor).
+:::
+
 ---
 
 ## Running Queue Mode Locally (`in_memory`)

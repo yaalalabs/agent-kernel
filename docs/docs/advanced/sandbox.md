@@ -177,7 +177,7 @@ profiles:
 The mode is validated at startup against the provider's declared lifecycle capabilities
 (`provisions` / `attaches_external`), in both directions:
 
-| Profile mode | Provider can only provision (`e2b`, `daytona`, `local_subprocess`) | Provider supports both (`docker`) | Provider is attach-only (`ec2_ssm`) |
+| Profile mode | Provider can only provision (`e2b`, `daytona`, `local_subprocess`) | Provider supports both (`docker`, `kubernetes`) | Provider is attach-only (`ec2_ssm`) |
 |---|---|---|---|
 | `managed` (default) | OK | OK (`attach_to` must be unset) | **rejected** — attach-only providers require `environment: attached` |
 | `attached` | **rejected** — cannot attach to an existing environment | OK (`attach_to` required) | OK (`attach_to` required) |
@@ -298,9 +298,9 @@ Providers available today:
 | `e2b` | `e2b` | `micro_vm` | Managed Firecracker micro-VMs on the E2B cloud (native async SDK). Stateful Jupyter-kernel execution (variables persist across calls); shell, files, `pip install`. Maps `deny`→no internet access, `allowlist`→`allow_out` network rules; the profile's `idle_timeout` becomes E2B's native auto-kill timeout. Needs `E2B_API_KEY` (name configurable via `api_key_env`). |
 | `daytona` | `daytona` | `container` | Container sandboxes on the Daytona cloud (sync SDK via `to_thread`). Shell, files, `pip install`. Maps `deny`→block-all, `allowlist`→CIDR allow list, cpu/memory→`Resources` (image-based sandbox); `idle_timeout` becomes Daytona's native `auto_stop_interval`. Needs `DAYTONA_API_KEY` (name configurable via `api_key_env`). |
 | `ec2_ssm` | `aws` | `none` | **Attach-only** (requires `environment: attached`): executes on an existing EC2 instance via SSM Run Command — binds to `attach_to`, never provisions or disposes. Shell + `python` (heredoc); no policy enforcement beyond the execution timeout. Supports **user identity** (`sts:AssumeRole` + optional `run_as` OS user). No persistent shell: each command is its own process, so cwd/env/`sudo su` do not carry across commands (`stateful=False`); chain dependent steps (`cd /app && ./run.sh`). |
+| `kubernetes` | `kubernetes` | `container` | Pod per sandbox (`sleep infinity`) via the Kubernetes API; exec over the stream API, files as tar streams, `pip install`. Hardened container defaults (no privilege escalation, seccomp `RuntimeDefault`, all capabilities dropped) under your `security_context` overlays. Maps cpu/memory→requests=limits, fs→read-only rootfs + emptyDir workdir, and egress→per-pod NetworkPolicies only when `network_policy: true` asserts the cluster CNI enforces them. Supports **user identity** via RBAC impersonation (see Identity). Pods carry `activeDeadlineSeconds = 2 × idle_timeout` as the orphan ceiling; the pod ServiceAccount's RBAC is the security boundary. |
 
-Additional providers (`kubernetes`, `bedrock_agentcore`) and the AWS `sqs` broker for
-queue-based deployments are planned in later iterations.
+Additional providers (`bedrock_agentcore`) are planned in later iterations.
 
 ### `docker` setup
 
@@ -363,6 +363,35 @@ default snapshot). Resource limits (`policy.cpu` / `policy.memory_mb`) only atta
 **image-based** sandbox, so a resource policy forces the image path (using your `image`, or
 `python:3.12-slim` if unset); pinning both a `snapshot` and resource limits is rejected.
 
+### `kubernetes` setup
+
+```yaml
+profiles:
+  cluster:
+    type: kubernetes
+    kubernetes:
+      namespace: sandboxes            # where sandbox pods run
+      image: python:3.12-slim         # substitute your hardened image in production
+      service_account: sandbox-pod    # the pods' identity; its RBAC is the security boundary
+      kubeconfig: null                # null = in-cluster config, then the default kubeconfig
+      network_policy: false           # true only when the cluster CNI enforces NetworkPolicy
+```
+
+Install with `pip install "agentkernel[kubernetes]"`.
+
+**RBAC is the boundary, never command parsing.** What sandboxed code may do against the
+cluster is decided by the ServiceAccount assigned to sandbox pods and enforced by the API
+server: bind it to `view` for read-only kubectl, or to nothing for pure compute. A
+"read-only command filter" is not a boundary and Agent Kernel never implements one. The
+calling process (the broker worker, or the agent process on in-process flavors) needs
+pod-lifecycle verbs plus both `create` and `get` on `pods/exec` (WebSocket exec is a GET);
+the ak-k8s chart's `sandboxWorker.rbac` renders exactly this.
+
+`network_policy: true` flips the provider's `policy_network` capability per instance and
+maps `deny`/`allowlist` egress onto per-pod NetworkPolicies (CIDR entries only; domain names
+fail closed under `strict`). Set it only when the cluster's CNI actually enforces
+NetworkPolicy: the provider cannot detect that, so it is an operator assertion.
+
 ### `ec2_ssm` setup
 
 ```bash
@@ -419,6 +448,7 @@ The **broker** decouples the agent from execution. It is chosen with `sandbox.br
 |---|---|---|
 | `thread` (default) | A dedicated daemon thread + event loop in the agent process. | CLI and REST deployments. |
 | `embedded` | Inline in the caller's event loop (always synchronous). | Simple/co-located execution and tests. |
+| `queue` | A separate worker fleet (`QueueBrokerWorker`), decoupled by any queue transport (`in_memory`, `sqs`, `kafka`, `nats`). | Executions longer than the agent runtime allows, cluster-side worker tiers, Lambda/ECS agents with a remote worker. |
 
 `wait_timeout` (default `60` s) bounds how long a synchronous call waits before the execution is
 **promoted** to a background task (thread flavor): `run_code`/`run_command` then return
@@ -426,8 +456,44 @@ The **broker** decouples the agent from execution. It is chosen with `sandbox.br
 `wait_timeout: 0` always promotes. The `embedded` flavor is always synchronous and never
 promotes, so `wait_timeout` does not apply to it.
 
-The AWS `sqs` broker (a remote worker plane with queue-based delivery for serverless/queue-mode
-deployments) is planned in a later iteration.
+### The `queue` flavor
+
+`flavor: queue` moves execution out of the agent process entirely. The client sends each
+request over the `sandbox.broker.queue` block's **input** queue (the same shape and
+transports as `execution.queues`; `group_id = sandbox_session_id` keeps one execution in
+flight per sandbox session across the whole worker fleet). A `QueueBrokerWorker` executes it
+and returns the completion over the block's **output** queue, where the worker's own output
+loop persists it to the shared `sandbox.broker.response_store`. The client polls that store
+for the bounded wait; on this flavor `wait=None` is bounded by `wait_timeout`, and expiry
+promotes to a pending task.
+
+**Recovery is wait-then-check.** There are no completion events and no agent re-invocation:
+when a turn ends with a pending task, `check_sandbox_task` on a later turn returns the
+finished task's status and its bounded output. `destroy` is fire-and-forget (per-session
+FIFO ordering makes that safe).
+
+**At-least-once semantics.** A worker that dies mid-execution has the request redelivered up
+to `queue.input.max_receive_count` deliveries, after which a permanent-failure completion is
+recorded; side-effectful commands are therefore not exactly-once. Size the transport's
+visibility window above your largest profile `policy.timeout` (NATS `ack_wait`, the SQS
+visibility timeout), or a still-running execution is redelivered and runs twice. Once a
+completion has been queued, a response-store outage only retries the persist, never the
+execution. The worker also sweeps managed sandboxes idle past their profile's `idle_timeout`
+when the response store supports key scans (all four built-ins do).
+
+The worker is a public entry point, run wherever the sandbox backends live:
+
+```python
+from agentkernel.sandbox import QueueBrokerWorker
+
+QueueBrokerWorker.run()
+```
+
+Both target topologies ship as examples: `sandbox/broker-kafka` (agents outside the cluster,
+e.g. Lambda or ECS, with the worker beside it) and `sandbox/broker-nats` (everything
+in-cluster via the ak-k8s chart's `sandboxWorker` tier, including its standalone worker-only
+install); see the chart README's sandbox worker section for KEDA scaling and namespace
+hardening.
 
 ## Configuration reference
 
@@ -442,8 +508,18 @@ sandbox:
   tool_output_max_chars: 8000    # truncation limit for tool output
 
   broker:
-    flavor: thread               # thread | embedded | (sqs, planned) | dotted path
-    wait_timeout: 60.0           # seconds before a sync wait promotes to a task (0 = always promote)
+    flavor: thread               # thread | embedded | queue | dotted path
+    wait_timeout: 60.0           # seconds before a sync wait promotes to a task (0 = always promote);
+                                 #   on the queue flavor this also bounds wait=None
+    wait_poll_interval: 0.5      # queue flavor: seconds between response-store polls
+    inline_payload_max_bytes: 131072   # queue flavor: request rejection + result truncation limit
+    response_ttl: 86400          # queue flavor: TTL for completion and inventory records
+    sweep_interval: 300          # queue flavor: seconds between idle-session sweeps
+    worker_timeout_ceiling: null # queue flavor: reject policy timeouts above the worker's runtime limit
+    queue: null                  # queue flavor: the sandbox queues (the execution.queues shape;
+                                 #   input carries requests, output returns completions)
+    response_store: null         # queue flavor: the shared response store (execution shape, required);
+                                 #   its ttl fields are overridden by response_ttl
 
   profiles:                      # named workload profiles
     <name>:
@@ -469,6 +545,20 @@ sandbox:
         image: python:3.12-slim
         runtime: docker
         attach_to: null          # existing container id to attach to (mode 3)
+      kubernetes:
+        namespace: default
+        image: python:3.12-slim
+        service_account: null    # ServiceAccount for sandbox pods (their RBAC boundary)
+        kubeconfig: null         # null = in-cluster config, then the default kubeconfig
+        attach_to: null          # existing '<namespace>/<pod>' to attach to (mode 3)
+        network_policy: false    # per-pod egress NetworkPolicies (CNI must enforce them)
+        create_timeout: 120.0    # seconds for a pod to reach Running
+        labels: {}               # merged onto sandbox pods
+        env: {}                  # container environment variables
+        node_selector: {}
+        image_pull_secrets: []
+        security_context: {}     # pod-level overlay
+        container_security_context: {}   # overlays the hardened defaults
 
   # Single-backend sugar (used only when `profiles` is empty): synthesizes profiles[default_profile]
   type: null                     # provider short name or dotted path
@@ -490,3 +580,5 @@ e.g. `AK_SANDBOX__ENABLED=true`, `AK_SANDBOX__BROKER__FLAVOR=embedded`,
 - [`sandbox/e2b`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/e2b) — the `e2b` provider: Firecracker micro-VM sandboxes with a stateful Jupyter kernel and enforced network policy (needs an E2B API key).
 - [`sandbox/identity`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/identity) — a REST app running sandboxed code under the authenticated end user's identity, end-to-end.
 - [`sandbox/ec2-ssm`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/ec2-ssm) — the `ec2_ssm` provider attaching to an existing EC2 instance over SSM (manual; needs a real instance).
+- [`sandbox/broker-kafka`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/broker-kafka) — the `queue` broker flavor over Kafka: a worker running read-only kubectl pods in kind, RBAC as the boundary, bounded waits and `check_sandbox_task` recovery (needs Docker, kind, kubectl).
+- [`sandbox/broker-nats`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/sandbox/broker-nats) — the `queue` broker fully in-cluster: pipeline plus sandbox worker deployed by the ak-k8s chart over NATS, sandbox pods in a hardened namespace (needs a micro-cluster and Helm).

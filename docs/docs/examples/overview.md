@@ -60,6 +60,8 @@ Sandbox capability examples (execute code/commands in an isolated, permission-bo
 - **`e2b/`** - The e2b provider: Firecracker micro-VM sandboxes with a stateful Jupyter kernel (variables persist across executions) and enforced network policy (requires an E2B API key)
 - **`identity/`** - Sandbox code running under the authenticated end user's identity, end-to-end over REST (custom pre-hook, principal resolver, and bring-your-own provider)
 - **`ec2-ssm/`** - The ec2_ssm provider (mode-3 attach): execute code on an existing EC2 instance over SSM (manual; requires a real instance and AWS credentials)
+- **`broker-kafka/`** - The queue broker flavor over Kafka: a two-process split where the worker runs read-only kubectl pods in a kind cluster via the kubernetes provider, with RBAC as the security boundary (requires Docker, kind, kubectl)
+- **`broker-nats/`** - The queue broker fully in-cluster: pipeline plus sandbox worker deployed by the ak-k8s Helm chart over NATS, with sandbox pods in a hardened namespace (requires a micro-cluster and Helm)
 
 ### 📁 Containerized Examples (`/examples/containerized`)
 

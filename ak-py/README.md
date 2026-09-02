@@ -11,7 +11,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, and Pydantic AI
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
-- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity
+- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
 - **MCP Server**: Built-in Model Context Protocol server for exposing agents as MCP tools and exposing any custom tool
@@ -44,6 +44,7 @@ the `aws` extra):
 
 ```bash
 pip install "agentkernel[sandbox-docker]"   # docker provider
+pip install "agentkernel[kubernetes]"       # kubernetes provider (pod per sandbox)
 pip install "agentkernel[e2b]"              # e2b cloud provider
 pip install "agentkernel[daytona]"          # daytona cloud provider
 pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
