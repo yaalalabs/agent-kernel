@@ -1,11 +1,11 @@
 # Sourcing the clinical data
 
-The three files in `data/` hold every clinical value in this system. All three still ship as
+Six files in `data/` hold every clinical value in this system, and all six still ship as
 `status: placeholder`. This document records what has been verified so far, so the sourcing
 session does not start from a blank page.
 
-The immunisation values are now captured in `data/immunization_schedule.yaml` with their
-provenance recorded; the antenatal and danger-sign files are still empty. **No file has been
+The four child-health schedules are captured with their provenance recorded. The **antenatal**
+and **danger-sign** files are still empty: no source to hand covers either. **No file has been
 flipped to `sourced`,** so nothing here reaches a mother yet. `provenance_test.py` enforces
 that a file cannot claim `sourced` until its provenance block names a document, its printed
 date, a `.gov.lk` or `who.int` URL, and a second cross-check.
@@ -92,22 +92,45 @@ file **remains `placeholder`**, for three reasons:
 The line to check first is **MMR-1 at 9 months**. The timing of the first measles-containing
 dose has moved before, and it is the single value most likely to be stale.
 
-### The other three CHDR schedules are not modelled
+### The four CHDR child schedules
 
-The CHDR carries four overlapping schedules. Only immunisation maps onto the current data
-file:
+The CHDR carries several overlapping schedules that do not share their ages. Each now has its
+own data file, its own provenance block, and its own placeholder guard. All four are captured
+and all four are gated:
 
-| Schedule | Status here |
-| --- | --- |
-| Immunisation | Captured, `placeholder` pending the CHDR booklet check |
-| Developmental screening (2, 4, 6, 9, 12, 18, 24, 36, 48, 60 months) | **Not modelled** |
-| Vitamin A (6-monthly, 6 months to 5 years) | **Not modelled** |
-| MMN supplementation (60-day periods at 6, 12, 18 months) | **Not modelled** |
+| Schedule | File | Entries | Blocker |
+| --- | --- | --- | --- |
+| Immunisation | `immunization_schedule.yaml` | 9 | Both sources predate the 2022 CHDR circular |
+| Developmental screening | `developmental_screening.yaml` | 10 | Relayed from a secondary description, not the schedule document |
+| Vitamin A | `vitamin_a.yaml` | 10 | **Unresolved discrepancy**, see below |
+| MMN supplementation | `mmn_supplementation.yaml` | 3 periods | Term / normal-birth-weight pathway only |
 
-Adding them is a scope decision, not a data one. Developmental screening in particular has
-four points with no immunisation attached — 24, 48 months, and the 60-month school-entry
-assessment — so a mother told only about immunisation visits would miss them. MMN is also not
-a single appointment but a 60-day period, which the current `visits` schema cannot express.
+**Developmental screening** is the one with independent value: 24, 48 and 60 months carry no
+immunisation, so a mother told only about immunisation visits would miss all three, and the
+60-month point is the school-entry assessment. There is a test asserting exactly that gap.
+
+**Vitamin A carries an unresolved conflict** between the two readings available:
+
+| Reading | Ages | Doses |
+| --- | --- | --- |
+| A — national strategy, "every 6 months from 6 months through 5 years" | 6, 12, 18, 24, 30, 36, 42, 48, 54, 60 | 10 |
+| B — reported service data | 6, 18, 36 | 3 |
+
+That is 6-month spacing against 12-month spacing, not a rounding difference. The file encodes
+reading A, because a stated national recommendation is the stronger claim and expanding its
+own interval is mechanical rather than a judgement about dosing; the three ages that also
+appear in reading B are marked in the file. The discrepancy is recorded in the file itself and
+a test asserts it stays recorded. It must be resolved before that file is flipped.
+
+**MMN is the only schedule whose items have duration** — 60-day periods, not appointments. The
+`visits` schema now carries an optional `duration_days` for this. Anything presenting them
+must say "starting on" rather than naming an appointment date. The regime is also the term /
+normal-birth-weight pathway only; preterm and low-birth-weight infants follow a different one
+that this project neither models nor stores the data to identify.
+
+None of the four is wired into a tool. `schedules.py` exposes a loader for each, but
+`next_appointment` still reads immunisation and antenatal only — surfacing the others is a
+product decision, not a data one.
 
 ### Still open
 

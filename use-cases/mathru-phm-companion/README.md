@@ -97,7 +97,9 @@ is hardcoded anywhere in the Python.
 - `escalation.py` delivers and persists escalations. Not model-callable.
 - `hooks.py` is the post-execution hook blocking unsafe outbound language.
 - `redaction.py` redacts phone numbers from log output only.
-- `data/*.yaml` hold the visit schedules, the danger-sign table, and the hook's block list.
+- `data/*.yaml` hold the six clinical schedules, the danger-sign table, and the hook's block
+  list. The four child-health schedules (immunisation, developmental screening, vitamin A, MMN
+  supplementation) do not share their ages, so each has its own file and its own guard.
 - `provenance.py` enforces that a clinical file cannot claim `sourced` without a citation.
 - `guardrails/` holds the guardrail configs and the reasoning behind them.
 - `SOURCING.md` records verified sources, dead ends, and the stale-document traps found.
@@ -302,8 +304,11 @@ recipient list first.
   current Epidemiology Unit site serves a **2017** immunisation schedule as its top result, with
   2023 file metadata that masks its age. Citations belong here once values land:
 
-  | File | Source | Citation |
+  | File | Source | State |
   | --- | --- | --- |
-  | `antenatal_schedule.yaml` | Family Health Bureau | _TODO: Maternal Care Package_ |
-  | `immunization_schedule.yaml` | Epidemiology Unit | _TODO: current EPI schedule, cross-checked against CHDR_ |
-  | `danger_signs.yaml` | FHB, supplemented by WHO | _TODO_ |
+  | `immunization_schedule.yaml` | Epidemiology Unit | Values captured; both sources predate the 2022 CHDR circular |
+  | `developmental_screening.yaml` | Ministry of Health | Values captured; primary schedule document still needed |
+  | `vitamin_a.yaml` | Nutrition Division | Values captured; **two sources disagree on the interval** |
+  | `mmn_supplementation.yaml` | Nutrition Division | Values captured; term / normal-birth-weight pathway only |
+  | `antenatal_schedule.yaml` | Family Health Bureau | **Empty** — Maternal Care Package not located |
+  | `danger_signs.yaml` | FHB, supplemented by WHO | **Empty** |
