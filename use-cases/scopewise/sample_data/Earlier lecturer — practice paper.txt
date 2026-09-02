@@ -1,0 +1,6 @@
+SYNTHETIC DEMONSTRATION MATERIAL
+Q1. Define a primary key and a candidate key.
+Q2. Given Enrolment(student_id, student_name, course_id, course_name), with student_id determining student_name and course_id determining course_name, decompose into third normal form and explain each dependency.
+Q3. Define a primary key and a candidate key.
+Q4. Prove that every BCNF relation is in third normal form.
+Q5. Explain why indexing can improve query performance.

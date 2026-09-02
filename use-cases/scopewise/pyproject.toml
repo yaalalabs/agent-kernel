@@ -1,0 +1,30 @@
+[project]
+name = "scopewise"
+version = "0.1.0"
+description = "Syllabus-aware practice packs with inspectable evidence, powered by Agent Kernel"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "agentkernel[pydanticai,api,telegram]==0.8.1",
+  "pydantic-ai-slim[openai]>=2.13,<2.14",
+  "pypdf>=6.0,<7",
+  "python-multipart>=0.0.22",
+  "python-dotenv>=1.0,<2",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "httpx>=0.28,<1", "ruff>=0.12,<1"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 150
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

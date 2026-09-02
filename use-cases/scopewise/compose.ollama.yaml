@@ -1,0 +1,18 @@
+# Linux/CPU alternative: keep Ollama on the private Compose network.
+# docker compose -f compose.yaml -f compose.ollama.yaml up -d --build
+services:
+  app:
+    environment:
+      SCOPEWISE_MODEL_URL: http://ollama:11434/v1
+    depends_on: [ollama]
+  ollama:
+    image: ollama/ollama:0.33.2
+    restart: unless-stopped
+    environment:
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+    volumes:
+      - ollama_data:/root/.ollama
+    # No host ports: the model endpoint is private to the Compose network.
+volumes:
+  ollama_data:
