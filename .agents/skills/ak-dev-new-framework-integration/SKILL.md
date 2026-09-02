@@ -410,6 +410,7 @@ Create at minimum:
 
 - Add a page under `docs/docs/frameworks/<name>.md` — note the page slug may differ from the adapter directory name (e.g. the `adk` adapter's page is `docs/docs/frameworks/google-adk.md`, referenced as `'frameworks/google-adk'` in `docs/sidebars.js`)
 - Update `docs/sidebars.js` to include the new framework
+- Update the docs-site React pages that enumerate frameworks: the `frameworks` list in `FrameworksStrip` in `docs/src/pages/index.tsx` (logo under `docs/static/img/integrations/`, link to the new page) and the `integrations` list in `docs/src/pages/features.tsx`, plus the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card there. Grep `docs/src/pages/*.tsx` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
 
 ## Checklist
 
@@ -425,3 +426,4 @@ Create at minimum:
 - [ ] Unit tests in `ak-py/tests/`
 - [ ] CLI example in `examples/cli/<name>/`
 - [ ] Documentation in `docs/docs/frameworks/<name>.md`
+- [ ] Framework inventories on the docs-site pages (`docs/src/pages/index.tsx` `FrameworksStrip`, `docs/src/pages/features.tsx` `integrations` and SDK count) and in `docs/docs/intro.md`

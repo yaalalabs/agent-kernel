@@ -1,0 +1,51 @@
+name: Reset Reviewed Label
+
+# Maintainers add the `Reviewed` label after going through a PR so the review queue can be
+# filtered with `-label:Reviewed`. Any new push (commit, rebase, force-push) invalidates that
+# review, so this workflow removes the label again and the PR reappears in the queue.
+#
+# `pull_request_target` is used deliberately so the label can be removed on fork PRs too: the
+# plain `pull_request` event runs fork PRs with a read-only GITHUB_TOKEN. The job never checks
+# out or executes PR code, it only calls the issues API, so the untrusted-checkout hazard that
+# normally comes with pull_request_target does not apply. Keep it that way.
+
+on:
+  pull_request_target:
+    types: [synchronize]
+
+# Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions). Default to no
+# scopes; the single job is granted only the pull-requests write it needs to remove the label.
+permissions: {}
+
+jobs:
+  remove-label:
+    # Skip the runner entirely when the label is not present. Expression `contains` is
+    # case-insensitive, matching GitHub's own label-name uniqueness rule.
+    if: contains(github.event.pull_request.labels.*.name, 'Reviewed')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Remove the Reviewed label
+        uses: actions/github-script@v8
+        env:
+          REVIEWED_LABEL: Reviewed
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = Number(process.env.PR_NUMBER);
+            const name = process.env.REVIEWED_LABEL;
+
+            try {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+              core.info(`Removed '${name}' from #${issue_number}: new commits pushed (${process.env.HEAD_SHA}).`);
+            } catch (error) {
+              // Label already gone (removed by hand between the push and this run): nothing to do.
+              if (error.status === 404) {
+                core.info(`'${name}' was already absent from #${issue_number}.`);
+                return;
+              }
+              throw error;
+            }

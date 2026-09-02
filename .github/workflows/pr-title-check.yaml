@@ -1,0 +1,57 @@
+name: PR Title Check
+
+# Enforces Conventional Commits on the pull request title. The develop ruleset allows squash
+# merges only, so the PR title becomes the commit subject on develop and the auto-sync workflow
+# parses it to build the docs PR title. Keep the accepted type list in sync with CONTRIBUTING.md.
+#
+# `synchronize` is included even though a push cannot change the title: status checks are
+# recorded per head SHA, so a required check must re-report on every new commit.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+# Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions). The job only reads
+# the event payload and never touches the repo or the API, so no scopes are needed.
+permissions: {}
+
+jobs:
+  check-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate pull request title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          TYPES='feat|fix|docs|style|refactor|test|chore|ci|build|perf'
+          PATTERN="^(${TYPES})(\([a-z0-9][a-z0-9._/-]*\))?!?: [^[:space:]].*$"
+
+          if [[ "$PR_TITLE" =~ $PATTERN ]]; then
+            echo "✅ PR title follows Conventional Commits: '$PR_TITLE'"
+            {
+              echo "### PR Title Check"
+              echo
+              echo "✅ \`$PR_TITLE\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "❌ PR title does not follow Conventional Commits: '$PR_TITLE'"
+          echo
+          echo "Expected:  <type>: <description>   or   <type>(<scope>): <description>"
+          echo "Types:     ${TYPES//|/, }"
+          echo "Examples:  feat: add telegram messaging integration"
+          echo "           fix(ws): reconnect gateway after broker restart"
+          echo "           chore(auto): sync skills/docs for abc123"
+          echo
+          echo "Edit the PR title (not the description) and this check re-runs automatically."
+          {
+            echo "### PR Title Check"
+            echo
+            echo "❌ \`$PR_TITLE\` does not follow Conventional Commits."
+            echo
+            echo "Expected \`<type>: <description>\` or \`<type>(<scope>): <description>\` where type is one of: ${TYPES//|/, }."
+            echo
+            echo "Examples: \`feat: add telegram messaging integration\`, \`fix(ws): reconnect gateway after broker restart\`, \`chore(auto): sync skills/docs for abc123\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1

@@ -1,0 +1,102 @@
+name: Request Copilot Review
+
+# Requests a GitHub Copilot code review on every newly opened pull request.
+#
+# Why: the Protect Develop ruleset already carries a copilot_code_review rule, but ruleset-driven
+# reviews only fire when the PR author holds a Copilot license (the review is billed to the
+# author). For every other author a maintainer had to click "request review from Copilot" by
+# hand. This workflow makes that request with COPILOT_REQUEST_TOKEN, the fine-grained PAT of a
+# licensed maintainer, so the review is billed to that license instead. It skips PRs where
+# Copilot is already a requested reviewer, so licensed authors are not double-requested.
+#
+# PAT requirements for COPILOT_REQUEST_TOKEN (shared with auto-sync-skills-docs.yaml):
+#   - the owner holds a Copilot license
+#   - repository access to this repo with "Pull requests: Read and write"
+#
+# `pull_request_target` is used deliberately: fork PRs are common here and the plain
+# `pull_request` event does not expose secrets to them. The job never checks out or executes PR
+# code, it only calls the pulls API, so the untrusted-checkout hazard that normally comes with
+# pull_request_target does not apply. Keep it that way.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to request a Copilot review on'
+        required: true
+        type: string
+
+# Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions). Every API call is
+# made with the PAT, so the default token needs no scopes at all.
+permissions: {}
+
+jobs:
+  request-review:
+    # Bot-authored PRs (Dependabot bumps, agent-kernel-ci docs syncs) are skipped: a Copilot
+    # review of generated output is not worth a premium request. Drop the second clause to
+    # include them. Manual dispatch always runs.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check COPILOT_REQUEST_TOKEN is configured
+        env:
+          COPILOT_REQUEST_TOKEN: ${{ secrets.COPILOT_REQUEST_TOKEN }}
+        run: |
+          if [ -z "$COPILOT_REQUEST_TOKEN" ]; then
+            echo "::error::COPILOT_REQUEST_TOKEN secret is not configured. Create a fine-grained PAT owned by a Copilot license holder with 'Pull requests: Read and write' on this repository and store it as COPILOT_REQUEST_TOKEN."
+            exit 1
+          fi
+
+      - name: Request review from Copilot
+        uses: actions/github-script@v8
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+        with:
+          github-token: ${{ secrets.COPILOT_REQUEST_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const pull_number = Number(process.env.PR_NUMBER);
+            // Reviewer identifier documented by GitHub for REST review requests. It shows up as
+            // login "Copilot" on the PR once requested.
+            const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
+            const isCopilot = (login) => /copilot/i.test(login || '');
+
+            if (!Number.isInteger(pull_number) || pull_number <= 0) {
+              core.setFailed(`Invalid pull request number: '${process.env.PR_NUMBER}'`);
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number });
+            if (pr.state !== 'open') {
+              core.info(`PR #${pull_number} is ${pr.state}; nothing to request.`);
+              return;
+            }
+
+            // The develop ruleset already requests Copilot for licensed authors; don't double up.
+            if ((pr.requested_reviewers || []).some((r) => isCopilot(r.login))) {
+              core.info(`Copilot is already a requested reviewer on #${pull_number}; nothing to do.`);
+              return;
+            }
+
+            try {
+              const { data } = await github.rest.pulls.requestReviewers({
+                owner,
+                repo,
+                pull_number,
+                reviewers: [COPILOT_REVIEWER],
+              });
+              const logins = (data.requested_reviewers || []).map((r) => r.login);
+              if (!logins.some(isCopilot)) {
+                core.setFailed(`Request succeeded but Copilot is not among the requested reviewers of #${pull_number}: [${logins.join(', ')}]`);
+                return;
+              }
+              core.info(`Requested Copilot review on #${pull_number}. Requested reviewers: ${logins.join(', ')}`);
+            } catch (error) {
+              core.setFailed(
+                `Could not request a Copilot review on #${pull_number} (HTTP ${error.status}): ${error.message}. ` +
+                  `COPILOT_REQUEST_TOKEN must be a fine-grained PAT of a Copilot license holder with ` +
+                  `"Pull requests: Read and write" on ${owner}/${repo}.`,
+              );
+            }

@@ -105,6 +105,26 @@ The workflow runs the selected target and pushes a `chore:` commit with any form
 changes back to the chosen branch. Protected branches (currently `develop`) are rejected —
 the workflow fails before making any changes.
 
+### Pull Request Automation (CI)
+
+Three small workflows run on every pull request without any manual step:
+
+- **PR Title Check** (`.github/workflows/pr-title-check.yaml`): fails unless the PR title follows
+  Conventional Commits (`type: description` or `type(scope): description`, with the types listed
+  in [CONTRIBUTING.md](CONTRIBUTING.md)). `develop` accepts squash merges only, so the title
+  becomes the commit subject. Fix a failure by editing the title; the check re-runs on the edit.
+- **Request Copilot Review** (`.github/workflows/copilot-review-request.yaml`): requests a GitHub
+  Copilot code review when a PR is opened, reopened, or marked ready for review, using the
+  `COPILOT_REQUEST_TOKEN` PAT of a licensed maintainer. The develop ruleset's own Copilot rule
+  only fires for authors who hold a license, which is why this workflow exists. Bot-authored PRs
+  are skipped. It can also be run from the Actions tab (`workflow_dispatch`) with a PR number.
+- **Reset Reviewed Label** (`.github/workflows/reviewed-label-reset.yaml`): maintainers add the
+  `Reviewed` label after going through a PR; any new push removes it again so the PR reappears
+  in the review queue (`is:pr is:open -label:Reviewed`).
+
+The last two use `pull_request_target` so they also work for fork PRs. Neither checks out PR
+code; they only call the GitHub API. Keep it that way when editing them.
+
 ## Contributing
 
 ### Development Workflow

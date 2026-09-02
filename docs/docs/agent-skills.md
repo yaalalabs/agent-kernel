@@ -120,7 +120,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 
 | Skill | What It Teaches Your Coding Assistant |
 |---|---|
-| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`, `AgentService`, `ChatService`), design principles, adapter pattern, execution flow, the unified queue execution pipeline (`agentkernel.pipeline`: `QueueMessage`/`QueueTransport`/`ConsumerLoop`, the `in_memory` transport, `AgentRunner`/`ResponseHandler`/`RequestHandler`/`IOHandler`, the `RESTAPI.run` delegation rule, and the relocation shims), and the AWS ECS containerized deployment classes (`ECSIOHandler`, `ECSOutputConsumer`, `ECSAgentRunner`, `ECSStreamAgentRunner`, `ECSSQSConsumer`, `RawQueueConsumer`, `ThreadRunner`), everything needed to understand the codebase |
+| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`, `AgentService`, `ChatService`), design principles, the house patterns every new feature follows (pluggable by default, reuse of existing configuration over new knobs, classes over script-style functions), adapter pattern, execution flow, the unified queue execution pipeline (`agentkernel.pipeline`: `QueueMessage`/`QueueTransport`/`ConsumerLoop`, the `in_memory` transport, `AgentRunner`/`ResponseHandler`/`RequestHandler`/`IOHandler`, the `RESTAPI.run` delegation rule, and the relocation shims), and the AWS ECS containerized deployment classes (`ECSIOHandler`, `ECSOutputConsumer`, `ECSAgentRunner`, `ECSStreamAgentRunner`, `ECSSQSConsumer`, `RawQueueConsumer`, `ThreadRunner`), everything needed to understand the codebase |
 | `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK, Smolagents): subclass creation, dependency wiring, exports, tests |
 | `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail): handler class, webhook routes, message parsing, config |
 | `ak-dev-new-knowledgebase-integration` | How to add a new knowledge base backend (beyond ChromaDB, Neo4j, Starburst): implement `KnowledgeBase`, wire dependencies, add tests/docs/examples |
@@ -135,7 +135,7 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 | `ak-dev-write-spec` | How to spec a planned change under `docs/specs/<issue-number>-<short-title>/` in three ordered stages: a concise point-form design spec (`design.md`) reviewed first, then a detailed implementation spec (`spec.md`), then a concise iteration-by-iteration plan (`plan.md`) the PR review checks the code against — plus an optional `research/` subfolder preserving the supporting investigation the design cites |
 | `ak-dev-review-pr` | Given a PR number or URL, fetch it with the GitHub CLI, review the delta against the architecture/code-quality/testing skills, dedupe findings, and post a single batched review with inline comments |
 | `ak-dev-testing-conventions` | Pytest patterns, async testing, mocking external services, pluggable `AKEvaluator` test backends, CI/CD test workflows |
-| `ak-dev-code-quality` | Formatting with `black`/`isort`, commit conventions, PR checklist, review workflow |
+| `ak-dev-code-quality` | Formatting with `black`/`isort`, Python style rules (classes over script-style functions, configuration-field rules), commit conventions, PR checklist, review workflow |
 
 ### How Contributors Benefit
 

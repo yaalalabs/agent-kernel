@@ -3,7 +3,9 @@ name: ak-dev-architecture
 description: >
   Agent Kernel architectural principles, core abstractions, and design patterns.
   Use this skill when you need to understand the codebase structure, how components
-  interact, or before making changes to core functionality. Covers Session, Agent,
+  interact, or before making changes to core functionality. Covers the house patterns
+  every new feature follows (pluggable by default, reuse of existing configuration over
+  new knobs, classes over script-style functions), Session, Agent,
   Runner, Module, Runtime, AgentService, ChatService (execution core + presentation wrappers,
   and which layer each surface calls), AKConfig, tools, hooks, multimodal, conversation
   threads (the integration/thread package), the adapter pattern, the queue execution pipeline
@@ -30,6 +32,39 @@ metadata:
 5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
 6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core` and `api`; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
 7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default, `sqs`, `kafka`, `nats`) and process topology selected by configuration.
+
+## House Patterns for New Features
+
+The design principles above describe what exists. These rules describe how every *new* feature is shaped so it fits alongside them. `ak-dev-write-spec` designs against them and `ak-dev-review-pr` reviews against them; a design or PR that departs from one must say so explicitly and justify it.
+
+### 1. Pluggable by default: adapter architecture is the first principle
+
+Every new capability that touches an external system, backend, or provider is designed as a **stable core interface plus thin adapters**, even when only one backend ships in the first PR.
+
+- Define the contract as an ABC in the owning package (`SessionStore`, `QueueTransport`, `SandboxProvider`, `BaseTrace`, `KnowledgeBase`, `AttachmentStore`, `ThreadStore`, `ScheduleProvider`, guardrail hooks are the existing ones). Concrete backends subclass it; the core consumes only the ABC.
+- Selection goes through a factory in the `core/util/factory.py` shape: a `type` field resolved by `if/elif` real-import branches for the built-ins, `require_extra` around optional SDK imports, and a dotted-path bring-your-own branch (`resolve_dotted`) on every surface. Never special-case a backend with `if/else` chains in core, and never make the first backend the only possible one.
+- Adapters wrap the native object or API as-is and translate at the boundary. No feature-forcing (raise `NotImplementedError` where the backend has no native mapping), no hidden defaults that differ from the native tool's own, and no invented intermediate abstraction "for consistency" across adapters. Consistent *shape* with the siblings in the same category (file location, factory branch, config block, contract test, example) is required; consistent *behavior* across backends is not.
+- Ship a reusable contract test suite next to the ABC when the interface has semantics worth conformance-testing (`QueueTransportContract`, `SandboxProviderContract`); every backend, including the first, subclasses it.
+- Lifecycle and cross-cutting behavior (retries, health checks, TTLs) belong in one shared place the adapters reuse (the shared DB drivers, `ConsumerLoop`, `BrokerWorkerCore`), not re-implemented per backend.
+
+### 2. Reuse existing configuration; do not add knobs the feature does not need
+
+`AKConfig` is the single configuration surface, and its shape is part of the product. A new feature first asks what existing config already describes it, and only then adds fields.
+
+- **Reuse whole config models where the shape already exists.** `_QueuesConfig` is the transport block for `execution.queues` *and* `sandbox.broker.queue`; `_ResponseStoreConfig` backs `execution.response_store` *and* `sandbox.broker.response_store`. A feature that needs a queue, a response store, a Redis/Valkey/DynamoDB/Cosmos/Firestore connection, or a store `type` selector reuses those models rather than defining a parallel one. The factories accept an explicit config block for exactly this purpose (`QueueTransportFactory.create(queues_config=...)`, `ResponseStoreFactory.create(response_store_config=...)`).
+- **Extend by subclassing when only defaults differ.** `_ThreadRedisConfig(_RedisConfig)`, `_MultimodalStorageRedisConfig(_RedisConfig)`, and `_ScheduleStoreDynamoDBConfig(_DynamoDBConfig)` override `ttl`/`prefix`/`table_name` defaults and nothing else. Do not copy the fields of an existing model into a new class.
+- **Existing configuration implicitly enables the feature where it applies.** When a feature is meaningful exactly when some already-configured component is present, the feature keys off that configuration instead of adding an `enabled` flag or a duplicate `type` field. The WebSocket connection store is provided by whichever session backend `session.type` already selects (`SessionStore.get_connection_store()`), so WebSocket modes need no second store `type`; a `thread` or `schedule` block's presence is its own enablement. Add an explicit `enabled` flag only when the feature has a real cost or behavior change that a user must opt into deliberately (`sandbox.enabled`, `trace.enabled`, `guardrail.enabled`, `multimodal.enabled`) and nothing already configured can stand in for that decision.
+- **Every new field must earn its place.** Before adding one, check: is it already expressed elsewhere in `AKConfig`; would the native backend's own default do; does the factory or store that owns the section already derive it. A field that exists "for flexibility" with no caller that reads it is a defect. Every field that survives gets a real `description` (they surface in generated docs) and a default that keeps existing YAML and `AK_*` env vars working unchanged.
+- Config reading stays in the stores and factories that own a section; drivers, transports, and adapters take explicit constructor parameters and never call `AKConfig.get()` in methods (the shared DB driver and transport rules).
+
+### 3. Classes, not scripts
+
+Behavior lives in classes with a single responsibility. Do not write feature logic as procedural, script-style module-level functions that pass state around as arguments.
+
+- A new component is a class: an ABC for the contract, concrete subclasses for the backends, a `*Factory` class for selection, a `*Manager`/`*Handler`/`*Runner` class for orchestration, a Pydantic `BaseModel` for data. Mutable state belongs to instances (or explicitly class-level state where the design calls for process-wide sharing, as in `InMemoryTransport`), never to module globals.
+- Module-level functions are the exception, reserved for small, stateless, genuinely shared utilities that belong to no single concept (`resolve_dotted`, `require_extra`, `pod_endpoint_url`) and for the agent-facing tool functions the framework tool builders bind. If a helper only makes sense next to one class, it is a method (static or class method when it needs no instance) of that class.
+- No `main()`-style orchestration inside the package: entry points (`RESTAPI.run()`, `IOHandler.run()`, `WebSocketGateway.run()`, `QueueBrokerWorker`) are classes with a `run` method, so deployments subclass or compose them rather than copying a script.
+- Prefer extending an existing class hierarchy over introducing a sibling that duplicates part of it; when two classes start sharing logic, lift it into a base class or a shared component (the `_RedisLikeDriver`, `BrokerWorkerCore`, and `ConsumerLoop` extractions are the pattern).
 
 ## Core Abstractions
 

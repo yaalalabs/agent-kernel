@@ -341,6 +341,8 @@ Add or update `docs/docs/advanced/multimodal.md` with:
 - Required environment variables or credentials
 - Any infrastructure setup steps (e.g., creating tables, buckets)
 
+Grep `docs/src/pages/*.tsx` for the existing backend names (for example "DynamoDB") in case a landing or features page card enumerates storage backends; the Smart Memory Management card in `docs/src/pages/features.tsx` lists session backends and is the usual place such a roll call appears.
+
 ## Reference: Existing Implementations
 
 ### Redis (`storage/redis.py`)

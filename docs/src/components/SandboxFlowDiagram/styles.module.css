@@ -68,13 +68,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 54rem;
+  min-width: 60rem;
   margin: 0 auto;
-  max-width: 72rem;
+  max-width: 76rem;
 }
 
 .diagramDetailed {
-  min-width: 64rem;
+  min-width: 70rem;
 }
 
 /* ── Nodes ─────────────────────────────────────────────────────────────── */
@@ -319,6 +319,190 @@
   animation-delay: var(--node-delay, 0ms);
 }
 
+/* ── Broker flavor lanes (in-process beside queue-decoupled) ──────────── */
+
+.lanesRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  max-width: 50rem;
+}
+
+/* bottom bus joining the two lane centers before the single stem continues */
+.lanesRow::after {
+  content: "";
+  position: absolute;
+  left: 25%;
+  right: 25%;
+  bottom: 0;
+  height: 1px;
+  background: rgba(0, 221, 255, 0.3);
+}
+
+.laneCol {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.6rem 0.75rem 0;
+}
+
+/* top bus segment from the broker stem */
+.laneCol::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(0, 221, 255, 0.3);
+}
+
+.laneCol:first-child::before {
+  left: 50%;
+}
+
+.laneCol:last-child::before {
+  right: 50%;
+}
+
+/* vertical drop from the top bus to the lane card */
+.laneCol::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1px;
+  height: 1.6rem;
+  background: linear-gradient(180deg,
+      rgba(0, 221, 255, 0.3),
+      rgba(0, 221, 255, 0.45));
+}
+
+.laneNode {
+  width: 100%;
+  padding: 0.7rem 0.9rem 0.8rem;
+  border-radius: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.laneInProcess {
+  max-width: 17rem;
+  border: 1px solid rgba(0, 221, 255, 0.28);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.laneQueue {
+  max-width: 27rem;
+  border: 1px solid rgba(255, 181, 71, 0.45);
+  background: rgba(255, 181, 71, 0.05);
+}
+
+.laneEyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.4;
+}
+
+.laneQueue .laneEyebrow {
+  color: #ffb547;
+}
+
+.laneNode .nodeSub {
+  margin-top: 0.4rem;
+}
+
+/* request path (top row) and completion path (bottom row) inside the queue lane */
+.chain {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.chainBox {
+  font-family: var(--ifm-font-family-monospace, monospace);
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(0, 221, 255, 0.35);
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  line-height: 1.5;
+}
+
+.chainBoxWorker {
+  color: #ffd69c;
+  border-color: rgba(255, 181, 71, 0.6);
+  background: rgba(255, 181, 71, 0.08);
+}
+
+.chainReturn .chainBox {
+  color: rgba(255, 255, 255, 0.6);
+  border-style: dashed;
+  border-color: rgba(0, 221, 255, 0.25);
+}
+
+.chainLink {
+  position: relative;
+  width: 1.6rem;
+  height: 1px;
+  flex-shrink: 0;
+  background: rgba(0, 221, 255, 0.5);
+}
+
+/* arrowhead on the receiving end */
+.chainLink::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -1px;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  border-left: 5px solid rgba(0, 221, 255, 0.8);
+}
+
+.chainLinkBack::after {
+  right: auto;
+  left: -1px;
+  border-left: none;
+  border-right: 5px solid rgba(0, 221, 255, 0.8);
+}
+
+.chainReturn .chainLink {
+  background: rgba(0, 221, 255, 0.3);
+}
+
+.chainReturn .chainLink::after {
+  border-right-color: rgba(0, 221, 255, 0.5);
+}
+
+/* vertical drop from each lane card to the bottom bus; grows so both reach it */
+.laneDrop {
+  flex: 1 1 auto;
+  min-height: 1.4rem;
+  width: 1px;
+  background: linear-gradient(180deg,
+      rgba(0, 221, 255, 0.45),
+      rgba(0, 221, 255, 0.3));
+  opacity: 0;
+}
+
+.panelVisible .laneDrop {
+  animation: sbFadeUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--node-delay, 0ms);
+}
+
 /* ── Provider fan-out ──────────────────────────────────────────────────── */
 
 .providersRow {
@@ -545,6 +729,7 @@
   .node,
   .stem,
   .colStem,
+  .laneDrop,
   .footerCard {
     opacity: 1;
     transform: none;

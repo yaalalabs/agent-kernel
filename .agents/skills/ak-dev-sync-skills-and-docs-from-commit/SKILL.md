@@ -162,7 +162,7 @@ Do not stop after one side if the capability impact clearly affects both contrib
 Evaluate and update all relevant documentation surfaces:
 
 1. `ak-py/README.md`
-2. docs website pages under `docs/` (including intro/getting-started/reference and example pages)
+2. docs website pages under `docs/` (including intro/getting-started/reference and example pages, the What's New tip in `docs/docs/intro.md`, and the hard-coded inventories in the React landing and features pages `docs/src/pages/index.tsx` and `docs/src/pages/features.tsx`; the surface table in `ak-dev-sync-docs-from-branch` maps change types to the data lists on those pages)
 3. README files under `ak-deployment/`
 4. changed/new example READMEs under `examples/` plus docs-site references to those examples
 5. root `README.md`
@@ -196,7 +196,9 @@ If developer skill inventory changes, update:
 
 - `docs/docs/agent-skills.md`
 
-Ensure skill counts, tables, and file inventories match `.agents/skills/` exactly.
+If user (bundled) skill inventory changes, also update the `AGENT_SKILLS` list in `docs/src/pages/index.tsx`.
+
+Ensure skill counts, tables, and file inventories match `.agents/skills/` and `ak-py/src/agentkernel/skills/` exactly.
 
 Also update other contributor docs if they explicitly enumerate developer skills.
 
@@ -217,10 +219,12 @@ Documentation files:
 - `ak-py/README.md`
 - `docs/docs/**`
 - `docs/sidebars.js`
+- `docs/src/pages/index.tsx`
+- `docs/src/pages/features.tsx`
 - `ak-deployment/**/README.md`
 - `examples/**/README.md`
 
-If example inventory changed, update docs-site overview/index pages that reference examples.
+If example inventory changed, update docs-site overview/index pages that reference examples. If a `.tsx` page was edited, confirm the docs site still builds (`cd docs && NODE_ENV=production NODE_OPTIONS=--max-old-space-size=6144 npm run build`; TypeScript is not installed in `docs/`, so the production build is the compile check).
 
 ## Step 7: Authoring Rules
 
@@ -265,6 +269,7 @@ When this skill runs successfully, produce:
 - Updating skills but not documentation, or documentation but not skills.
 - Updating docs references to examples without updating the example README (or vice versa).
 - Updating only one documentation surface when the same capability appears in multiple surfaces.
+- Updating `docs/docs/` markdown but not the hard-coded lists in `docs/src/pages/index.tsx` and `docs/src/pages/features.tsx` when the commit adds, removes, or renames a framework, integration, provider, transport, deployment target, bundled skill, or headline capability.
 - Describing behavior from memory instead of checking live code, examples, or Terraform inputs.
 
 ## Quick Heuristic
