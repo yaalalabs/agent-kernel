@@ -217,11 +217,15 @@ class QueueBrokerWorker:
      `broker.inline_payload_max_bytes` (2026-09-02, PR #699 review: per-field caps let
      stdout, stderr, and files each approach the limit and the combined record blow the
      transport's message-size cap, failing the very send truncation exists to protect). When
-     the encoded record exceeds the limit: the notice is stamped first ("output truncated to
-     fit the N-byte record limit; rerun with a file redirection to keep full output"), then
-     `output_files` are dropped from the end, then `stdout`/`stderr` give up characters
-     longest-first until the record fits. `result_ref` stays reserved and always `None` in v1
-     (design resolution 2026-08-24).
+     the encoded record exceeds the limit, fields give up bytes most-expendable first: the
+     notice is stamped ("output truncated to fit the N-byte record limit; rerun with a file
+     redirection to keep full output"), then `provider_data` is dropped (the escape hatch,
+     never required by callers), then `output_files` from the end, then `stdout`/`stderr`
+     characters longest-first, and finally the `error` text (the whole payload of a
+     failed/timed-out completion, which carries no result and can embed arbitrary provider
+     output) is cut with a ` ...[truncated]` marker. A record still over the limit after all
+     of that (pathological envelope/session fields) logs one WARNING and is sent anyway.
+     `result_ref` stays reserved and always `None` in v1 (design resolution 2026-08-24).
   4. **Send the ready-to-store record to the output queue** (shape in the next section). A send
      failure raises → nack → redelivery re-executes the operation: the same at-least-once
      semantics the chat pipeline has, stated in the docs (side-effectful commands are not

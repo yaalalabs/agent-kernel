@@ -173,28 +173,45 @@ class QueueBrokerWorker:
             return lock
 
     def _truncate(self, completion: ExecutionCompletion) -> None:
-        """Truncate an oversized result in place so the whole encoded record fits within
+        """Truncate an oversized completion in place so the whole encoded record fits within
         ``inline_payload_max_bytes`` (v1, no offload: ``result_ref`` stays None): a per-field
-        cap would let stdout, stderr, and files each approach the limit and the combined
-        record blow the transport's message-size cap, failing the very send the truncation
-        exists to protect. Output files are dropped first, then the streams give up bytes,
-        longest first. The notice is stamped before trimming so it never re-overflows."""
-        result = completion.result
+        cap would let the combined record blow the transport's message-size cap, failing the
+        very send the truncation exists to protect. Fields give up bytes most-expendable
+        first: ``provider_data`` (the escape hatch, never required by callers), then output
+        files, then the streams (longest first), then the ``error`` text (the whole payload
+        of a failed/timed-out completion, which carries no result and can embed arbitrary
+        provider output). The notice is stamped before trimming so it never re-overflows."""
         limit = self._broker.inline_payload_max_bytes
-        if result is None or self._encoded_size(completion) <= limit:
+        if self._encoded_size(completion) <= limit:
             return
-        note = f"output truncated to fit the {limit}-byte record limit; rerun with a file redirection to keep full output"
-        result.notice = note if result.notice is None else f"{result.notice}; {note}"
-        while result.output_files and self._encoded_size(completion) > limit:
-            result.output_files = result.output_files[:-1]
-        # Every trimmed character frees at least one encoded byte, so cutting by the overshoot
-        # converges in a few passes despite JSON-escaping inflation.
-        while (overshoot := self._encoded_size(completion) - limit) > 0:
-            stream = "stdout" if len(result.stdout) >= len(result.stderr) else "stderr"
-            text: str = getattr(result, stream)
-            if not text:
-                break
-            setattr(result, stream, text[: max(len(text) - overshoot, 0)])
+        result = completion.result
+        if result is not None:
+            note = f"output truncated to fit the {limit}-byte record limit; rerun with a file redirection to keep full output"
+            result.notice = note if result.notice is None else f"{result.notice}; {note}"
+            if result.provider_data and self._encoded_size(completion) > limit:
+                result.provider_data = {}
+            while result.output_files and self._encoded_size(completion) > limit:
+                result.output_files = result.output_files[:-1]
+            # Every trimmed character frees at least one encoded byte, so cutting by the
+            # overshoot converges in a few passes despite JSON-escaping inflation.
+            while (overshoot := self._encoded_size(completion) - limit) > 0:
+                stream = "stdout" if len(result.stdout) >= len(result.stderr) else "stderr"
+                text: str = getattr(result, stream)
+                if not text:
+                    break
+                setattr(result, stream, text[: max(len(text) - overshoot, 0)])
+        if completion.error and (overshoot := self._encoded_size(completion) - limit) > 0:
+            marker = " ...[truncated]"
+            completion.error = completion.error[: max(len(completion.error) - overshoot - len(marker), 0)] + marker
+        excess = self._encoded_size(completion) - limit
+        if excess > 0:
+            logger.warning(
+                "Sandbox completion record for task %s is still %d bytes over inline_payload_max_bytes=%d after "
+                "truncating every trimmable field; the output-queue send may be rejected by the transport",
+                completion.task_id,
+                excess,
+                limit,
+            )
 
     def _encoded_size(self, completion: ExecutionCompletion) -> int:
         """The completion body's wire size: what ``_send_completion`` will enqueue as ``body``."""

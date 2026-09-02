@@ -528,6 +528,23 @@ class TestQueueBrokerWorker:
         worker._truncate(completion)  # must terminate even though the envelope exceeds the limit
         assert completion.result.stdout == ""
 
+    def test_truncation_trims_the_error_of_a_result_less_completion(self, monkeypatch):
+        # A failed/timed-out completion has no result: its error text is the payload, and a
+        # provider exception can embed arbitrary output. It must fit the record limit too.
+        worker = _worker(monkeypatch, inline_payload_max_bytes=1024)
+        completion = _completion(status="failed", error="e" * 5000, error_type="SandboxError", result=None)
+        worker._truncate(completion)
+        assert worker._encoded_size(completion) <= 1024
+        assert completion.error.startswith("e") and completion.error.endswith(" ...[truncated]")
+
+    def test_truncation_drops_oversized_provider_data(self, monkeypatch):
+        worker = _worker(monkeypatch, inline_payload_max_bytes=1024)
+        completion = _completion(result=SandboxResult(stdout="ok", exit_code=0, provider_data={"blob": "p" * 5000}))
+        worker._truncate(completion)
+        assert worker._encoded_size(completion) <= 1024
+        assert completion.result.provider_data == {}
+        assert completion.result.stdout == "ok"  # streams were already within budget; only the escape hatch went
+
     def test_same_session_requests_never_run_concurrently_across_threads(self, monkeypatch):
         # The redelivery-overlap case (design.md ordering requirement): two request-loop
         # threads, each with its own asyncio.run(), processing the same session must
