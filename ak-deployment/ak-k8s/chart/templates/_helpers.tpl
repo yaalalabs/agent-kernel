@@ -145,3 +145,20 @@ transports (past that ceiling an extra replica finds no free partition), or 10 f
 {{- 10 }}
 {{- end }}
 {{- end }}
+
+{{/*
+Sandbox-worker KEDA maxReplicaCount: explicit value, or the sandbox queues' partition count
+(the worker's per-pod consumer count is app config the chart cannot see, so the partition
+count is the ceiling past which an extra replica holds no partition at all), or 10 for sqs.
+*/}}
+{{- define "agent-kernel.sandboxKedaMaxReplicas" -}}
+{{- if .Values.keda.maxReplicaCount }}
+{{- .Values.keda.maxReplicaCount }}
+{{- else if eq .Values.transport.type "nats" }}
+{{- .Values.sandboxWorker.queue.nats.partitions }}
+{{- else if eq .Values.transport.type "kafka" }}
+{{- .Values.sandboxWorker.queue.kafka.partitions }}
+{{- else }}
+{{- 10 }}
+{{- end }}
+{{- end }}

@@ -2,20 +2,43 @@
 {{/*
 Declarative JetStream objects (NACK CRs): the production posture, paired with
 transport.nats.autoProvision false so a missing object fails loudly instead of being created
-with defaults. Shapes mirror exactly what the transport verifies at startup: two work-queue
-streams, and per stream one durable consumer per partition filtering
-<prefix>.<partition>.> with max_ack_pending 1 (one in-flight message per partition keeps a
-session's turns ordered). Partitioning is computed client-side, so no subject transform is
-needed. Prerequisite: the NACK controller, configured with this cluster's NATS URL.
+with defaults. Shapes mirror exactly what the transport verifies at startup: work-queue
+streams (the chat pair, plus the sandbox pair when sandboxWorker.enabled), and per stream one
+durable consumer per partition filtering <prefix>.<partition>.> with max_ack_pending 1 (one
+in-flight message per partition keeps a session's turns ordered). Partitioning is computed
+client-side, so no subject transform is needed. Prerequisite: the NACK controller, configured
+with this cluster's NATS URL.
 */}}
 {{- $root := . }}
 {{- $streams := list
       (dict "stream" .Values.transport.nats.inputStream
             "prefix" .Values.transport.nats.inputSubjectPrefix
-            "maxReceiveCount" .Values.transport.input.maxReceiveCount)
+            "maxReceiveCount" .Values.transport.input.maxReceiveCount
+            "partitions" (int .Values.transport.nats.partitions)
+            "ackWait" .Values.transport.nats.ackWait)
       (dict "stream" .Values.transport.nats.outputStream
             "prefix" .Values.transport.nats.outputSubjectPrefix
-            "maxReceiveCount" .Values.transport.output.maxReceiveCount) }}
+            "maxReceiveCount" .Values.transport.output.maxReceiveCount
+            "partitions" (int .Values.transport.nats.partitions)
+            "ackWait" .Values.transport.nats.ackWait) }}
+{{- if .Values.sandboxWorker.enabled }}
+{{- /*
+The sandbox broker's own queue pair (#503). maxReceiveCount 3 matches the sandbox broker's
+config default (sandbox.broker.queue.*.max_receive_count, not set by this chart); keep the
+two in step if the app config overrides it.
+*/}}
+{{- $streams = concat $streams (list
+      (dict "stream" .Values.sandboxWorker.queue.nats.inputStream
+            "prefix" .Values.sandboxWorker.queue.nats.inputSubjectPrefix
+            "maxReceiveCount" 3
+            "partitions" (int .Values.sandboxWorker.queue.nats.partitions)
+            "ackWait" .Values.sandboxWorker.queue.nats.ackWait)
+      (dict "stream" .Values.sandboxWorker.queue.nats.outputStream
+            "prefix" .Values.sandboxWorker.queue.nats.outputSubjectPrefix
+            "maxReceiveCount" 3
+            "partitions" (int .Values.sandboxWorker.queue.nats.partitions)
+            "ackWait" .Values.sandboxWorker.queue.nats.ackWait)) }}
+{{- end }}
 {{- range $spec := $streams }}
 ---
 apiVersion: jetstream.nats.io/v1beta2
@@ -34,7 +57,7 @@ spec:
   storage: file
   maxAge: {{ $root.Values.transport.nats.maxAge }}s
   duplicateWindow: {{ $root.Values.transport.nats.duplicateWindow }}s
-{{- range $partition := until (int $root.Values.transport.nats.partitions) }}
+{{- range $partition := until $spec.partitions }}
 ---
 apiVersion: jetstream.nats.io/v1beta2
 kind: Consumer
@@ -48,7 +71,7 @@ spec:
   filterSubject: {{ printf "%s.%d.>" $spec.prefix $partition | quote }}
   ackPolicy: explicit
   # The visibility timeout: a message unacknowledged past this is redelivered.
-  ackWait: {{ $root.Values.transport.nats.ackWait }}s
+  ackWait: {{ $spec.ackWait }}s
   # The server-side backstop, one past the client's own permanent-failure ceiling.
   maxDeliver: {{ add $spec.maxReceiveCount 1 }}
   # One in-flight message per partition: the per-session ordering guarantee.

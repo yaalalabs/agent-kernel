@@ -232,7 +232,9 @@ sandboxWorker:
       name: ""
   # Sandbox queue names per transport (input carries execution requests to the worker, output
   # carries completions back to the response store). The transport type and broker connection
-  # follow the top-level transport block.
+  # follow the top-level transport block. With the in-cluster brokers these queues are
+  # provisioned declaratively alongside the chat ones (natsResources.enabled renders their
+  # NACK CRs, kafka.enabled their KafkaTopic CRs); on sqs, bring your own queues.
   queue:
     nats:
       inputStream: SANDBOX_REQUESTS
@@ -240,12 +242,19 @@ sandboxWorker:
       outputStream: SANDBOX_COMPLETIONS
       outputSubjectPrefix: sandbox.done
       partitions: 32
+      # Visibility timeout in seconds: must exceed the longest sandbox policy.timeout, or a
+      # still-running execution is redelivered and re-run (the drain settings above already
+      # anticipate executions up to 600s).
+      ackWait: 900
     kafka:
       inputTopic: sandbox-input
       outputTopic: sandbox-output
       # Distinct from transport.kafka.groupId: sharing one Kafka consumer group across the
       # chat and sandbox pipelines would mix subscriptions in one group and churn rebalances.
       groupId: agent-kernel-sandbox
+      # Partition count for the KafkaTopic CRs (kafka.enabled); same up-front sizing caveat
+      # as kafka.partitions.
+      partitions: 32
     sqs:
       inputUrl: ""
       outputUrl: ""
@@ -320,6 +329,8 @@ keda:
   minReplicaCount: 1
   # Empty derives partitions / input.noOfConsumers (nats: transport.nats.partitions,
   # kafka: kafka.partitions), the point past which extra replicas find no free partition.
+  # The sandbox-worker scaler derives its ceiling from sandboxWorker.queue.<transport>
+  # partitions instead (its per-pod consumer count is app config, not a chart value).
   maxReplicaCount: ""
   pollingInterval: 30
   cooldownPeriod: 300

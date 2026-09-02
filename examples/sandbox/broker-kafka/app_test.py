@@ -60,13 +60,18 @@ def _ensure_topics() -> None:
             future.result()
 
 
-def _kind_cluster_up() -> bool:
-    """Create the kind cluster if absent (returning whether this run created it), export a
-    local kubeconfig for the worker, apply the RBAC, and pre-pull the sandbox image so the
-    first pod start stays inside the bounded wait."""
+def _kind_cluster_missing() -> bool:
+    """Whether this run will create the kind cluster. Decided before any setup runs so the
+    fixture's finally can delete a cluster whose later setup steps failed."""
     clusters = subprocess.run(["kind", "get", "clusters"], capture_output=True, text=True, check=True).stdout.split()
-    created = KIND_CLUSTER not in clusters
-    if created:
+    return KIND_CLUSTER not in clusters
+
+
+def _kind_cluster_up(create: bool) -> None:
+    """Create the kind cluster when absent, export a local kubeconfig for the worker, apply
+    the RBAC, and pre-pull the sandbox image so the first pod start stays inside the bounded
+    wait."""
+    if create:
         _run("kind", "create", "cluster", "--name", KIND_CLUSTER, "--wait", "120s")
     _run("kind", "export", "kubeconfig", "--name", KIND_CLUSTER, "--kubeconfig", str(KUBECONFIG_FILE))
     _run("kubectl", "--kubeconfig", str(KUBECONFIG_FILE), "apply", "-f", str(RBAC_FILE))
@@ -74,7 +79,6 @@ def _kind_cluster_up() -> bool:
     # multi-arch images under docker's containerd image store), so the first pod create
     # stays inside the profile's create_timeout.
     _run("docker", "exec", f"{KIND_CLUSTER}-control-plane", "crictl", "pull", f"docker.io/{SANDBOX_IMAGE}")
-    return created
 
 
 def _wait_for_worker(timeout: float = 60.0) -> None:
@@ -103,20 +107,25 @@ def stack():
 
     # Clean slate: a stack left behind by an interrupted run can hold a wedged broker.
     subprocess.run(["docker", "compose", "-f", str(COMPOSE_FILE), "down", "-v"], check=False)
-    _run("docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d", "--wait")
-    created_cluster = _kind_cluster_up()
-    _ensure_topics()
-    worker = subprocess.Popen([sys.executable, "app.py", "worker"], stdout=sys.stdout, stderr=sys.stderr)
+    # All setup runs inside the try so a mid-setup failure still tears down whatever was
+    # already created instead of leaking the cluster and stack into every later run.
+    created_cluster = _kind_cluster_missing()
+    worker = None
     try:
+        _run("docker", "compose", "-f", str(COMPOSE_FILE), "up", "-d", "--wait")
+        _kind_cluster_up(created_cluster)
+        _ensure_topics()
+        worker = subprocess.Popen([sys.executable, "app.py", "worker"], stdout=sys.stdout, stderr=sys.stderr)
         _wait_for_worker()
         yield
     finally:
-        worker.terminate()
-        try:
-            worker.wait(timeout=30)
-        except subprocess.TimeoutExpired:
-            worker.kill()
-            worker.wait(timeout=10)
+        if worker is not None:
+            worker.terminate()
+            try:
+                worker.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                worker.kill()
+                worker.wait(timeout=10)
         subprocess.run(["docker", "compose", "-f", str(COMPOSE_FILE), "down", "-v"], check=False)
         if created_cluster:
             subprocess.run(["kind", "delete", "cluster", "--name", KIND_CLUSTER], check=False)

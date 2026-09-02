@@ -1,6 +1,6 @@
 """``kubernetes`` provider — pod-per-sandbox via the Kubernetes Python client (``kubernetes`` extra).
 
-Each sandbox is a pod running ``sleep infinity``; executions are exec calls through the
+Each sandbox is a pod running ``sleep infinity`` as PID 1; executions are exec calls through the
 stream API (which inherit the container's ``/workspace`` working directory), and files
 travel as single-member tars framed in base64 over the exec channels (``head -c N`` gives
 the remote pipeline its EOF, since a WebSocket exec cannot half-close stdin). The SDK is
@@ -263,7 +263,7 @@ class KubernetesSandboxProvider(SandboxProvider):
             await asyncio.to_thread(networking.create_namespaced_network_policy, namespace=namespace, body=netpol)
         try:
             await asyncio.to_thread(core.create_namespaced_pod, namespace=namespace, body=manifest)
-        except kubernetes.client.rest.ApiException as exc:
+        except Exception as exc:  # noqa: BLE001 — any create failure must not orphan the pre-created NetworkPolicy
             await self._cleanup(name, namespace)
             raise SandboxProvisionError(f"creating sandbox pod '{namespace}/{name}' failed: {exc}") from exc
         try:
@@ -281,7 +281,9 @@ class KubernetesSandboxProvider(SandboxProvider):
         container: dict = {
             "name": "sandbox",
             "image": self._config.image,
-            "command": ["sh", "-c", "sleep infinity"],
+            # sleep runs as PID 1 directly: under `sh -c` PID 1 would be `sh`, and the
+            # timeout path's best-effort `pkill sh` could kill it and take down the pod.
+            "command": ["sleep", "infinity"],
             "workingDir": WORKDIR,
             "securityContext": container_sc,
         }

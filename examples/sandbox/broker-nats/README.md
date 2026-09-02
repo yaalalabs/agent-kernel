@@ -128,8 +128,8 @@ k3d cluster delete ak
   give it whatever interpreters your agents need. The image is the operator's contract:
   `install_packages` is pip against that image, and OS packages belong in the image build.
 - Set `auto_provision: false` and manage the four JetStream streams (chat + sandbox) as
-  NACK CRs (`natsResources` in the chart renders the chat pair; add the sandbox pair the
-  same way).
+  NACK CRs: `natsResources.enabled` in the chart renders all four (the sandbox pair is
+  included whenever `sandboxWorker.enabled` is set).
 - Size `sandbox.broker.queue.nats.ack_wait` above your largest profile `policy.timeout`,
   or a still-running execution gets redelivered and runs twice (at-least-once semantics).
 - With KEDA installed, `keda.enabled: true` also scales the sandbox worker on the

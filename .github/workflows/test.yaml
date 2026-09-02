@@ -13,11 +13,12 @@ on:
         type: boolean
         default: false
 
-# Cancel superseded runs: a new push to the same PR or branch cancels the
-# in-flight run instead of queueing behind it
+# Cancel superseded PR runs: a new push to the same PR cancels the in-flight run instead of
+# queueing behind it. Pushes to develop always run to completion so every merged commit keeps
+# a full test record (back-to-back merges must not cancel the intermediate run).
 concurrency:
   group: test-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions). Only reads are
 # needed here: update-lock-files pushes with the GitHub App token persisted by actions/checkout,

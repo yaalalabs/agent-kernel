@@ -1614,7 +1614,8 @@ async def test_k8s_pod_manifest_shape(k8s_env):
     assert spec["securityContext"] == {"fsGroup": 2000}
     assert spec["volumes"] == [{"name": "workspace", "emptyDir": {}}]
     container = spec["containers"][0]
-    assert container["image"] == "hardened:1" and container["command"] == ["sh", "-c", "sleep infinity"]
+    # sleep must be PID 1 directly: under `sh -c` the timeout path's `pkill sh` could kill PID 1.
+    assert container["image"] == "hardened:1" and container["command"] == ["sleep", "infinity"]
     assert container["workingDir"] == "/workspace"
     assert container["env"] == [{"name": "PYTHONUNBUFFERED", "value": "1"}]
     assert container["resources"] == {"requests": {"cpu": "1.5", "memory": "512Mi"}, "limits": {"cpu": "1.5", "memory": "512Mi"}}
@@ -1709,6 +1710,24 @@ async def test_k8s_create_failure_leaves_no_orphan(k8s_env):
     with pytest.raises(SandboxProvisionError, match="terminated during provisioning"):
         await provider.create(principal=principal, policy=policy)
     assert cluster.pods == {}
+
+
+@pytest.mark.asyncio
+async def test_k8s_non_api_create_failure_cleans_up_the_network_policy(k8s_env, monkeypatch):
+    # A connection-level failure (not an ApiException) from the pod create must still
+    # delete the NetworkPolicy created just before it, or it is orphaned forever (destroy
+    # and the sweep are keyed by pod, and this pod never existed).
+    module, cluster = k8s_env
+    principal, _ = _principal_policy()
+    provider = _k8s_provider(module, _SandboxKubernetesConfig(network_policy=True))
+
+    def broken_create(self, namespace, body):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(FakeCoreV1, "create_namespaced_pod", broken_create)
+    with pytest.raises(SandboxProvisionError, match="connection reset"):
+        await provider.create(principal=principal, policy=SandboxPolicy(network_egress="deny"))
+    assert cluster.netpols == {} and cluster.netpol_deletes
 
 
 @pytest.mark.asyncio

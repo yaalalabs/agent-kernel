@@ -1,6 +1,7 @@
 # #503: Sandbox queue broker: transport-agnostic queue-decoupled sandbox execution
 
-> Status: **Draft** (pending design review). Stage 2 ([spec.md](spec.md)) follows after review.
+> Status: **Approved** (design review rounds resolved 2026-08-24 through 2026-09-01; see Open
+> questions). Implemented per [spec.md](spec.md) and [plan.md](plan.md).
 
 Add the queue-backed sandbox broker flavor planned in #494, generalized over the #495 queue
 transport layer: one `queue` broker flavor whose client submits `ExecutionRequest`s over any

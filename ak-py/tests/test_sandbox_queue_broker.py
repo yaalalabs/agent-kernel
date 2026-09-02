@@ -7,6 +7,7 @@ iteration 3 covers ``QueueBrokerWorker``'s two consumer loops (request loop → 
 output loop → store), truncation, the permanent-failure hooks, the sweep inventory, and one
 end-to-end run over real consumer threads."""
 
+import asyncio
 import json
 import threading
 import time
@@ -248,6 +249,14 @@ class TestQueueBrokerClient:
         with pytest.raises(SandboxConfigError, match="sandbox.broker.response_store"):
             QueueExecutionBroker(_ExecutionBrokerConfig(flavor="queue", queue=_QueuesConfig(type="in_memory")))
 
+    def test_constructor_rejects_mixed_in_memory_pairings(self):
+        # A broker transport with an in_memory store would poll a process-local store the
+        # remote worker can never write: the client must refuse it like the worker does.
+        with pytest.raises(SandboxConfigError, match="only valid together"):
+            _queue_broker(queue=_QueuesConfig(type="kafka"))
+        with pytest.raises(SandboxConfigError, match="only valid together"):
+            _queue_broker(response_store=_ResponseStoreConfig(type="redis"))
+
     @pytest.mark.asyncio
     async def test_wait_zero_promotes_and_sends_the_wire_shape(self):
         broker = _queue_broker()
@@ -480,24 +489,75 @@ class TestQueueBrokerWorker:
 
     @pytest.mark.asyncio
     async def test_oversized_stdout_truncated_with_notice(self, monkeypatch):
-        worker = _worker(monkeypatch, inline_payload_max_bytes=16)
-        await worker._process_request(_request_message(_request(payload={"code": "x" * 100})))
+        worker = _worker(monkeypatch, inline_payload_max_bytes=2048)
+        await worker._process_request(_request_message(_request(payload={"code": "x" * 5000})))
         completion = BrokerWireCodec.decode_completion(json.loads(_fetch_one(QueueName.OUTPUT).body)["body"])
-        assert completion.result.stdout == "x" * 16
-        assert "truncated at 16 bytes" in completion.result.notice
+        assert 0 < len(completion.result.stdout) < 5000
+        assert completion.result.stdout == "x" * len(completion.result.stdout)
+        assert "truncated" in completion.result.notice
+        assert worker._encoded_size(completion) <= 2048
 
     @pytest.mark.asyncio
     async def test_oversized_output_files_dropped_with_notice(self, monkeypatch):
-        worker = _worker(monkeypatch, inline_payload_max_bytes=16)
+        worker = _worker(monkeypatch, inline_payload_max_bytes=1024)
 
         async def big_download(self, path):
-            return b"y" * 100
+            return b"y" * 5000
 
         monkeypatch.setattr(FakeSandbox, "download_file", big_download)
         await worker._process_request(_request_message(_request(operation="download_file", payload={"path": "big.bin"})))
         completion = BrokerWireCodec.decode_completion(json.loads(_fetch_one(QueueName.OUTPUT).body)["body"])
         assert completion.result.output_files == []
-        assert "truncated at 16 bytes" in completion.result.notice
+        assert "truncated" in completion.result.notice
+        assert worker._encoded_size(completion) <= 1024
+
+    def test_truncation_budgets_the_whole_record_not_each_field(self, monkeypatch):
+        # stdout and stderr each under the limit but over it combined: the whole encoded
+        # record must fit, or the output-queue send would blow the transport's message cap.
+        worker = _worker(monkeypatch, inline_payload_max_bytes=2048)
+        completion = _completion(result=SandboxResult(stdout="a" * 3000, stderr="b" * 500, exit_code=0))
+        worker._truncate(completion)
+        assert worker._encoded_size(completion) <= 2048
+        assert completion.result.stderr == "b" * 500  # only the longest stream gave up bytes
+        assert 0 < len(completion.result.stdout) < 3000
+        assert "truncated" in completion.result.notice
+
+    def test_truncation_terminates_when_the_envelope_alone_overflows(self, monkeypatch):
+        worker = _worker(monkeypatch, inline_payload_max_bytes=16)
+        completion = _completion(result=SandboxResult(stdout="x" * 100, exit_code=0))
+        worker._truncate(completion)  # must terminate even though the envelope exceeds the limit
+        assert completion.result.stdout == ""
+
+    def test_same_session_requests_never_run_concurrently_across_threads(self, monkeypatch):
+        # The redelivery-overlap case (design.md ordering requirement): two request-loop
+        # threads, each with its own asyncio.run(), processing the same session must
+        # serialize on the worker's cross-thread per-session lock.
+        worker = _worker(monkeypatch)
+        state = {"active": 0, "max_active": 0}
+        gate = threading.Lock()
+        real_execute = FakeSandbox.execute_code
+
+        async def slow(self, code, language="python", timeout=None):
+            with gate:
+                state["active"] += 1
+                state["max_active"] = max(state["max_active"], state["active"])
+            await asyncio.sleep(0.05)
+            with gate:
+                state["active"] -= 1
+            return await real_execute(self, code, language, timeout=timeout)
+
+        monkeypatch.setattr(FakeSandbox, "execute_code", slow)
+
+        def run(task_id):
+            asyncio.run(worker._process_request(_request_message(_request(task_id=task_id))))
+
+        threads = [threading.Thread(target=run, args=(f"t-{n}",)) for n in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        assert all(not thread.is_alive() for thread in threads)
+        assert state["max_active"] == 1
 
     def test_request_permanent_failure_sends_the_failed_record(self, monkeypatch):
         worker = _worker(monkeypatch)

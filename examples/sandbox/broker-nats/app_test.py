@@ -73,35 +73,39 @@ def deployment():
 
     _run("./package.sh", "local", cwd=HERE / "deploy")
 
+    # All cluster setup runs inside the try so a mid-setup failure (helm --wait timing out
+    # is the realistic one) still tears down whatever was already created.
     clusters = subprocess.run(["kind", "get", "clusters"], capture_output=True, text=True, check=True).stdout.split()
     created_cluster = KIND_CLUSTER not in clusters
-    if created_cluster:
-        _run("kind", "create", "cluster", "--name", KIND_CLUSTER, "--wait", "120s")
-    _run("kind", "load", "docker-image", *IMAGES, "--name", KIND_CLUSTER)
-    # Pre-pull the sandbox pod image INSIDE the node (kind load docker-image chokes on
-    # multi-arch registry images under docker's containerd image store), so the first pod
-    # create stays inside the profile's create_timeout.
-    _run("docker", "exec", f"{KIND_CLUSTER}-control-plane", "crictl", "pull", "docker.io/library/python:3.12-slim")
-
-    _kubectl("delete", "secret", "openai", "--ignore-not-found")
-    _kubectl("create", "secret", "generic", "openai", f"--from-literal=api-key={os.environ['OPENAI_API_KEY']}")
-    _run("helm", "dependency", "build", str(CHART))
-    _run(
-        "helm", "--kube-context", KUBE_CONTEXT, "upgrade", "--install", "ak", str(CHART),
-        "-f", str(CHART / "values-dev.yaml"), "-f", str(HERE / "sandbox-values.yaml"),
-        "--wait", "--timeout", "600s",
-    )  # fmt: skip
-
-    port_forward = subprocess.Popen(
-        ["kubectl", "--context", KUBE_CONTEXT, "port-forward", "service/ak-agent-kernel-io", f"{API_PORT}:80"],
-        stdout=sys.stdout,
-        stderr=sys.stderr,
-    )
+    port_forward = None
     try:
+        if created_cluster:
+            _run("kind", "create", "cluster", "--name", KIND_CLUSTER, "--wait", "120s")
+        _run("kind", "load", "docker-image", *IMAGES, "--name", KIND_CLUSTER)
+        # Pre-pull the sandbox pod image INSIDE the node (kind load docker-image chokes on
+        # multi-arch registry images under docker's containerd image store), so the first pod
+        # create stays inside the profile's create_timeout.
+        _run("docker", "exec", f"{KIND_CLUSTER}-control-plane", "crictl", "pull", "docker.io/library/python:3.12-slim")
+
+        _kubectl("delete", "secret", "openai", "--ignore-not-found")
+        _kubectl("create", "secret", "generic", "openai", f"--from-literal=api-key={os.environ['OPENAI_API_KEY']}")
+        _run("helm", "dependency", "build", str(CHART))
+        _run(
+            "helm", "--kube-context", KUBE_CONTEXT, "upgrade", "--install", "ak", str(CHART),
+            "-f", str(CHART / "values-dev.yaml"), "-f", str(HERE / "sandbox-values.yaml"),
+            "--wait", "--timeout", "600s",
+        )  # fmt: skip
+
+        port_forward = subprocess.Popen(
+            ["kubectl", "--context", KUBE_CONTEXT, "port-forward", "service/ak-agent-kernel-io", f"{API_PORT}:80"],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
         _wait_for_api()
         yield
     finally:
-        port_forward.terminate()
+        if port_forward is not None:
+            port_forward.terminate()
         # Diagnostics before teardown, so a red run is explainable from the pytest output alone.
         for deployment_name in ("ak-agent-kernel-sandbox-worker", "ak-agent-kernel-agent-runner"):
             subprocess.run(

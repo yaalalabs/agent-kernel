@@ -120,11 +120,12 @@ class QueueTransportFactory:
         return queues.type
 
     @classmethod
-    def create(cls, queues_config: Optional[Any] = None) -> QueueTransport:
+    def create(cls, queues_config: Optional[Any] = None, config_path: str = "execution.queues") -> QueueTransport:
         """Create the configured transport (send side).
 
         ``queues_config=None`` reads ``execution.queues`` (the default path, unchanged); an
-        explicit block builds a transport over that block's queues instead.
+        explicit block builds a transport over that block's queues instead, with
+        ``config_path`` naming that block so configuration errors point at the right section.
         """
         transport_type = cls.resolve_type(queues_config)
         queues = queues_config if queues_config is not None else AKConfig.get().execution.queues
@@ -142,15 +143,15 @@ class QueueTransportFactory:
             input_url = queues.input.url if queues is not None else None
             output_url = queues.output.url if queues is not None else None
             if not input_url or not output_url:
-                raise AKConfigError("the sqs transport requires both execution.queues.input.url and execution.queues.output.url")
+                raise AKConfigError(f"the sqs transport requires both {config_path}.input.url and {config_path}.output.url")
             return SQSTransport(input_url=input_url, output_url=output_url)
         if transport_type == "kafka":
-            with require_extra("kafka", "execution.queues.type: kafka"):
+            with require_extra("kafka", f"{config_path}.type: kafka"):
                 from .kafka import KafkaTransport
 
             kafka_config = getattr(queues, "kafka", None) if queues is not None else None
             if kafka_config is None:
-                raise AKConfigError("the kafka transport requires an execution.queues.kafka configuration block")
+                raise AKConfigError(f"the kafka transport requires a {config_path}.kafka configuration block")
             return KafkaTransport(
                 bootstrap_servers=kafka_config.bootstrap_servers,
                 input_topic=kafka_config.input_topic,
@@ -161,14 +162,15 @@ class QueueTransportFactory:
                 delivery_timeout=kafka_config.delivery_timeout,
                 metadata_timeout=kafka_config.metadata_timeout,
                 client_config=kafka_config.client_config,
+                config_path=config_path,
             )
         if transport_type == "nats":
-            with require_extra("nats", "execution.queues.type: nats"):
+            with require_extra("nats", f"{config_path}.type: nats"):
                 from .nats import NatsTransport
 
             nats_config = getattr(queues, "nats", None) if queues is not None else None
             if nats_config is None:
-                raise AKConfigError("the nats transport requires an execution.queues.nats configuration block")
+                raise AKConfigError(f"the nats transport requires a {config_path}.nats configuration block")
             return NatsTransport(
                 url=nats_config.url,
                 input_stream=nats_config.input_stream,
@@ -188,6 +190,7 @@ class QueueTransportFactory:
                     QueueName.INPUT: queues.input.max_receive_count + 1,
                     QueueName.OUTPUT: queues.output.max_receive_count + 1,
                 },
+                config_path=config_path,
             )
         if transport_type in cls._BUILTIN_TYPES:
             # Reachable only if a name is added to _BUILTIN_TYPES before its branch above: a clear
@@ -201,10 +204,10 @@ class QueueTransportFactory:
         return resolve_dotted(transport_type, base=QueueTransport)()
 
     @classmethod
-    def create_consumer(cls, queue: QueueName, queues_config: Optional[Any] = None) -> TransportConsumer:
+    def create_consumer(cls, queue: QueueName, queues_config: Optional[Any] = None, config_path: str = "execution.queues") -> TransportConsumer:
         """Create a consumer for the given queue on the configured transport.
 
         ``queues_config`` threads an explicit block through (#503 seam); ``None`` keeps the
         default ``execution.queues`` path and its full validation.
         """
-        return cls.create(queues_config=queues_config).create_consumer(queue)
+        return cls.create(queues_config=queues_config, config_path=config_path).create_consumer(queue)

@@ -3,9 +3,11 @@
 The chat pipeline's Agent Runner / Output Consumer split applied inside one process, over the
 ``sandbox.broker.queue`` block's two queues:
 
-* the **request loop** consumes the input queue, drives ``BrokerWorkerCore`` (fail-closed
-  checks, self-heal, per-session locking all unchanged), truncates oversized results, and
-  sends the ready-to-store record to the output queue;
+* the **request loop** consumes the input queue, serializes per sandbox session with a
+  cross-thread lock (each message runs under its own event loop, so the core's asyncio lock
+  cannot carry this here), drives ``BrokerWorkerCore`` (fail-closed checks and self-heal
+  unchanged), truncates oversized results, and sends the ready-to-store record to the
+  output queue;
 * the **output loop** consumes the output queue and persists each record verbatim to the
   shared response store, then upserts the idle-sweep inventory.
 
@@ -18,6 +20,7 @@ via the store's optional key-scan capability.
 import asyncio
 import json
 import logging
+import threading
 import time
 from typing import Any, Optional
 
@@ -32,6 +35,7 @@ from ..errors import SandboxConfigError
 from ..factory import SandboxProviderFactory
 from ..model import SandboxSession
 from .base import ExecutionCompletion
+from .queue import check_store_pairing
 from .wire import BrokerWireCodec
 from .worker import BrokerWorkerCore
 
@@ -52,7 +56,7 @@ class QueueBrokerWorker:
         config = sandbox_config if sandbox_config is not None else AKConfig.get().sandbox
         self._broker = self._validated_broker(config)
         transport_type = QueueTransportFactory.resolve_type(self._broker.queue)
-        self._transport: QueueTransport = QueueTransportFactory.create(queues_config=self._broker.queue)
+        self._transport: QueueTransport = QueueTransportFactory.create(queues_config=self._broker.queue, config_path="sandbox.broker.queue")
         self._store: ResponseStore = ResponseStoreFactory.create(
             response_store_config=self._broker.response_store,
             transport_type=transport_type,
@@ -60,11 +64,14 @@ class QueueBrokerWorker:
         )
         # Truncation happens here in the worker (against inline_payload_max_bytes), never in core.
         self._core = BrokerWorkerCore(inline_payload_max_bytes=None)
+        # Per-session serialization across the request-loop threads (see _process_request).
+        self._session_locks: dict[str, threading.Lock] = {}
+        self._session_locks_guard = threading.Lock()
 
     @staticmethod
     def _validated_broker(config: Any) -> Any:
         """The startup fail-fasts: enabled, the right flavor, both blocks, and the
-        in_memory pairing rule (mirroring ``ResponseStoreFactory``'s, sandbox-side)."""
+        in_memory pairing rule (shared with the client via ``check_store_pairing``)."""
         if not config.enabled:
             raise SandboxConfigError("QueueBrokerWorker requires sandbox.enabled: true")
         broker = config.broker
@@ -74,15 +81,7 @@ class QueueBrokerWorker:
             raise SandboxConfigError("the 'queue' broker flavor requires the sandbox.broker.queue block")
         if broker.response_store is None:
             raise SandboxConfigError("the 'queue' broker flavor requires the sandbox.broker.response_store block")
-        in_memory_transport = QueueTransportFactory.resolve_type(broker.queue) == "in_memory"
-        store_type = broker.response_store.type
-        in_memory_store = store_type == "in_memory" or (store_type is None and in_memory_transport)
-        if in_memory_transport != in_memory_store:
-            raise SandboxConfigError(
-                "the in_memory sandbox transport and the in_memory response store are only valid together "
-                "(the single-process test topology); pair a broker transport (sqs/kafka/nats) with a shared "
-                "response store (redis/valkey/dynamodb)"
-            )
+        check_store_pairing(broker.queue, broker.response_store)
         return broker
 
     # -- lifecycle ------------------------------------------------------------ #
@@ -149,36 +148,56 @@ class QueueBrokerWorker:
         raises and the redelivery re-executes (the documented at-least-once window, closed
         once the record is queued)."""
         request = BrokerWireCodec.decode_request(message.body)
-        completion = await self._core.process(request)  # never raises: terminal guarantee
+        # Serialize per session with a threading.Lock: each message runs under its own
+        # asyncio.run() in one of several consumer threads, so the core's asyncio.Lock cannot
+        # be contended safely across those loops. Contention only arises when a redelivery
+        # overlaps a still-running execution (ack_wait below the policy timeout); otherwise
+        # the transport's one-in-flight-per-group FIFO already carries the guarantee.
+        lock = self._session_lock(request.sandbox_session.sandbox_session_id)
+        await asyncio.to_thread(lock.acquire)
+        try:
+            completion = await self._core.process(request)  # never raises: terminal guarantee
+        finally:
+            lock.release()
         self._truncate(completion)
         self._send_completion(completion, ak_session_id=request.ak_session_id)
 
+    def _session_lock(self, sandbox_session_id: str) -> threading.Lock:
+        """Return (creating on first use) the cross-thread lock for one sandbox session."""
+        with self._session_locks_guard:
+            lock = self._session_locks.get(sandbox_session_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._session_locks[sandbox_session_id] = lock
+            return lock
+
     def _truncate(self, completion: ExecutionCompletion) -> None:
-        """Truncate oversized results in place (v1, no offload: ``result_ref`` stays None).
-        Streams are cut at ``inline_payload_max_bytes``; output files are dropped once their
-        cumulative base64-encoded size would push the record past the same limit."""
+        """Truncate an oversized result in place so the whole encoded record fits within
+        ``inline_payload_max_bytes`` (v1, no offload: ``result_ref`` stays None): a per-field
+        cap would let stdout, stderr, and files each approach the limit and the combined
+        record blow the transport's message-size cap, failing the very send the truncation
+        exists to protect. Output files are dropped first, then the streams give up bytes,
+        longest first. The notice is stamped before trimming so it never re-overflows."""
         result = completion.result
         limit = self._broker.inline_payload_max_bytes
-        if result is None:
+        if result is None or self._encoded_size(completion) <= limit:
             return
-        truncated = False
-        for stream in ("stdout", "stderr"):
+        note = f"output truncated to fit the {limit}-byte record limit; rerun with a file redirection to keep full output"
+        result.notice = note if result.notice is None else f"{result.notice}; {note}"
+        while result.output_files and self._encoded_size(completion) > limit:
+            result.output_files = result.output_files[:-1]
+        # Every trimmed character frees at least one encoded byte, so cutting by the overshoot
+        # converges in a few passes despite JSON-escaping inflation.
+        while (overshoot := self._encoded_size(completion) - limit) > 0:
+            stream = "stdout" if len(result.stdout) >= len(result.stderr) else "stderr"
             text: str = getattr(result, stream)
-            if len(text.encode("utf-8")) > limit:
-                setattr(result, stream, text.encode("utf-8")[:limit].decode("utf-8", "ignore"))
-                truncated = True
-        kept, encoded_total = [], 0
-        for file in result.output_files:
-            encoded_total += 4 * ((len(file.content) + 2) // 3)  # base64 wire size
-            if encoded_total > limit:
-                truncated = True
+            if not text:
                 break
-            kept.append(file)
-        if len(kept) < len(result.output_files):
-            result.output_files = kept
-        if truncated:
-            note = f"output truncated at {limit} bytes; rerun with a file redirection to keep full output"
-            result.notice = note if result.notice is None else f"{result.notice}; {note}"
+            setattr(result, stream, text[: max(len(text) - overshoot, 0)])
+
+    def _encoded_size(self, completion: ExecutionCompletion) -> int:
+        """The completion body's wire size: what ``_send_completion`` will enqueue as ``body``."""
+        return len(json.dumps(BrokerWireCodec.encode_completion(completion)).encode("utf-8"))
 
     def _send_completion(self, completion: ExecutionCompletion, *, ak_session_id: str) -> None:
         """Send the ready-to-store record to the output queue, where the output loop

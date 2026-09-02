@@ -186,6 +186,15 @@ declares the sandbox capability itself (profiles, policies, provider config) and
 the entry file that calls `QueueBrokerWorker.run()` (`sandboxWorker.command`, default
 `app_sandbox_worker.py`).
 
+The sandbox queues are provisioned like the chat ones: with the in-cluster brokers,
+`natsResources.enabled` renders NACK Stream/Consumer CRs and `kafka.enabled` renders
+Strimzi KafkaTopic CRs for the `sandboxWorker.queue.<transport>` pair (plus Kafka
+dead-letter topics) whenever `sandboxWorker.enabled` is set. On NATS the dev alternative is
+`transport.nats.autoProvision: true`, which the chart mirrors into the sandbox broker's
+config; on SQS, bring your own queues and set `sandboxWorker.queue.sqs.*`. Keep
+`sandboxWorker.queue.nats.ackWait` (default 900) above your longest sandbox
+`policy.timeout`, or a still-running execution is redelivered and re-run.
+
 This is the chart's first tier with its own identity:
 
 - The **worker SA** (`<fullname>-sandbox-worker`) is bound to a Role in the sandbox-pods

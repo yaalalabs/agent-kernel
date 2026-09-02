@@ -203,15 +203,25 @@ class QueueBrokerWorker:
   1. `request = BrokerWireCodec.decode_request(message.body)`: a decode failure raises, so the loop nacks and
      the message retries into the permanent-failure path (no silent drop).
   2. `completion = await core.process(request)`, which never raises (`worker.py:99-109`); fail-closed
-     principal/policy checks, attach-or-create self-heal, and per-session in-process locking are
-     all inside `BrokerWorkerCore` and unchanged. The in-process lock is the second line; the
-     transport's one-in-flight-per-group guarantee is the cross-worker line.
-  3. **Truncation (v1, no offload):** `completion.result.stdout`/`.stderr` longer than
-     `broker.inline_payload_max_bytes` are cut to the limit and
-     `completion.result.notice` gains "output truncated at N bytes; rerun with a file
-     redirection to keep full output". `output_files` whose total encoded size would push the
-     record past the limit are dropped with the same notice mechanism. `result_ref` stays
-     reserved and always `None` in v1 (design resolution 2026-08-24).
+     principal/policy checks and attach-or-create self-heal are inside `BrokerWorkerCore` and
+     unchanged. Per-session serialization, however, is the queue worker's own (2026-09-02, PR
+     #699 review): a cross-thread `threading.Lock` per `sandbox_session_id` acquired via
+     `asyncio.to_thread` around `core.process`, because each message runs under its own
+     `asyncio.run()` in one of several consumer threads, where the core's `asyncio.Lock`
+     cannot be safely contended across loops (a waiter's future would be completed from a
+     foreign thread; a lock bound to a dead loop raises). The core's asyncio lock stays the
+     second line for the in-process flavors; the transport's one-in-flight-per-group
+     guarantee remains the cross-worker line, and the worker lock only sees contention when a
+     redelivery overlaps a still-running execution (`ack_wait` below the policy timeout).
+  3. **Truncation (v1, no offload):** the WHOLE encoded completion record is budgeted against
+     `broker.inline_payload_max_bytes` (2026-09-02, PR #699 review: per-field caps let
+     stdout, stderr, and files each approach the limit and the combined record blow the
+     transport's message-size cap, failing the very send truncation exists to protect). When
+     the encoded record exceeds the limit: the notice is stamped first ("output truncated to
+     fit the N-byte record limit; rerun with a file redirection to keep full output"), then
+     `output_files` are dropped from the end, then `stdout`/`stderr` give up characters
+     longest-first until the record fits. `result_ref` stays reserved and always `None` in v1
+     (design resolution 2026-08-24).
   4. **Send the ready-to-store record to the output queue** (shape in the next section). A send
      failure raises → nack → redelivery re-executes the operation: the same at-least-once
      semantics the chat pipeline has, stated in the docs (side-effectful commands are not
@@ -311,6 +321,10 @@ QueueMessage(
     mandatory, per the develop-side rule merged 2026-09-02) and the SQS both-URLs validation
     (the sandbox broker uses both of its block's queues, so no relaxation is needed).
   - `create_consumer(queue, queues_config=None)` threads the block through.
+  - `create`/`create_consumer` also take `config_path="execution.queues"` (2026-09-02, PR
+    #699 review), threaded into the factory's error messages, the `require_extra` contexts,
+    and the kafka/nats transports' own diagnostics, so a `sandbox.broker.queue`
+    misconfiguration is reported against that block instead of `execution.queues`.
 - `ResponseStoreFactory.create(response_store_config=None, transport_type=None, ttl=None)`
   (`pipeline/response_store/factory.py:23-75`): `None` arguments read
   `execution.response_store` / `QueueTransportFactory.resolve_type()` as today. The sandbox path
@@ -368,7 +382,9 @@ class KubernetesSandboxProvider(SandboxProvider):
     `{"app.kubernetes.io/managed-by": "agent-kernel", "agentkernel.io/sandbox": "true"}` merged
     under `config.labels` (config wins on conflicts); the sweep and operators find sandbox pods
     by these labels.
-  - `spec`: one container from `config.image`, `command=["sh", "-c", "sleep infinity"]`, workdir
+  - `spec`: one container from `config.image`, `command=["sleep", "infinity"]` (sleep as PID 1
+    directly, 2026-09-02 PR #699 review: under `sh -c` the timeout path's best-effort
+    `pkill sh` could kill PID 1 and take the pod down), workdir
     `/workspace`, `config.env` as env vars, `serviceAccountName=config.service_account` when
     set, `imagePullSecrets`, `nodeSelector`, `restartPolicy=Never`,
     `activeDeadlineSeconds=2 * idle_timeout` (the platform-side orphan ceiling; a session pod
@@ -776,7 +792,11 @@ Asserts:
   request message is dead-lettered; the undecodable-body fallback writes the
   placeholder-session completion keyed by the `ATTR_REQUEST_ID` attribute; an output record
   that cannot be persisted within its own `max_receive_count` logs the ERROR and dead-letters.
-- **Truncation**: oversized stdout is cut with the notice; oversized request rejected at submit.
+- **Truncation**: an oversized stream is cut with the notice and the whole encoded record
+  fits the limit (including the streams-individually-under-but-combined-over case); oversized
+  request rejected at submit.
+- **Ordering**: two worker threads processing the same session serialize on the worker's
+  cross-thread lock (never concurrent), the design.md ordering requirement.
 - **Sweep**: with a scan-capable fake store, an idle inventory record triggers
   `provider.destroy` and record deletion; attached profiles untouched; scan-less store logs the
   WARNING and idles.

@@ -82,11 +82,14 @@ data:
   AK_SANDBOX__BROKER__QUEUE__NATS__OUTPUT_STREAM: {{ .Values.sandboxWorker.queue.nats.outputStream | quote }}
   AK_SANDBOX__BROKER__QUEUE__NATS__OUTPUT_SUBJECT_PREFIX: {{ .Values.sandboxWorker.queue.nats.outputSubjectPrefix | quote }}
   AK_SANDBOX__BROKER__QUEUE__NATS__PARTITIONS: {{ .Values.sandboxWorker.queue.nats.partitions | quote }}
+  AK_SANDBOX__BROKER__QUEUE__NATS__ACK_WAIT: {{ .Values.sandboxWorker.queue.nats.ackWait | quote }}
+  AK_SANDBOX__BROKER__QUEUE__NATS__AUTO_PROVISION: {{ .Values.transport.nats.autoProvision | quote }}
   {{- else if eq .Values.transport.type "kafka" }}
   AK_SANDBOX__BROKER__QUEUE__KAFKA__BOOTSTRAP_SERVERS: {{ include "agent-kernel.kafkaBootstrap" . | quote }}
   AK_SANDBOX__BROKER__QUEUE__KAFKA__INPUT_TOPIC: {{ .Values.sandboxWorker.queue.kafka.inputTopic | quote }}
   AK_SANDBOX__BROKER__QUEUE__KAFKA__OUTPUT_TOPIC: {{ .Values.sandboxWorker.queue.kafka.outputTopic | quote }}
   AK_SANDBOX__BROKER__QUEUE__KAFKA__GROUP_ID: {{ .Values.sandboxWorker.queue.kafka.groupId | quote }}
+  AK_SANDBOX__BROKER__QUEUE__KAFKA__DLQ_SUFFIX: {{ .Values.transport.kafka.dlqSuffix | quote }}
   {{- else if eq .Values.transport.type "sqs" }}
   AK_SANDBOX__BROKER__QUEUE__INPUT__URL: {{ required "sandboxWorker.queue.sqs.inputUrl is required when transport.type is sqs" .Values.sandboxWorker.queue.sqs.inputUrl | quote }}
   AK_SANDBOX__BROKER__QUEUE__OUTPUT__URL: {{ required "sandboxWorker.queue.sqs.outputUrl is required when transport.type is sqs" .Values.sandboxWorker.queue.sqs.outputUrl | quote }}

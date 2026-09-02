@@ -19,7 +19,7 @@ TTL owns cleanup), so ``result()`` serves ``ExecutionManager.task_status`` from 
 import asyncio
 import logging
 import time
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel
 
@@ -36,18 +36,36 @@ from .wire import BrokerWireCodec
 logger = logging.getLogger("ak.sandbox.broker")
 
 
+def check_store_pairing(queue_config: Any, response_store_config: Any) -> None:
+    """The transport/store pairing fail-fast shared by the client and the worker: the
+    in_memory transport and the in_memory response store are only valid together (the
+    single-process test topology). Enforced on both sides because a client polling a
+    process-local store for completions a remote worker writes elsewhere would report
+    every task pending forever."""
+    in_memory_transport = QueueTransportFactory.resolve_type(queue_config) == "in_memory"
+    store_type = response_store_config.type
+    in_memory_store = store_type == "in_memory" or (store_type is None and in_memory_transport)
+    if in_memory_transport != in_memory_store:
+        raise SandboxConfigError(
+            "the in_memory sandbox transport and the in_memory response store are only valid together "
+            "(the single-process test topology); pair a broker transport (sqs/kafka/nats) with a shared "
+            "response store (redis/valkey/dynamodb)"
+        )
+
+
 class QueueExecutionBroker(ExecutionBroker):
     """Transport-backed broker client: submits over a queue, reads completions from the store."""
 
     def __init__(self, config: BaseModel) -> None:
         """``config`` is the ``sandbox.broker`` block (factory-injected). Fail fast on the two
         blocks the flavor cannot run without; the transport and store are built lazily on first
-        use via the #503 factory seams, whose own errors (missing backend block, missing extra,
-        the store/transport pairing rule) propagate as-is."""
+        use via the #503 factory seams, whose own errors (missing backend block, missing
+        extra) propagate as-is."""
         if getattr(config, "queue", None) is None:
             raise SandboxConfigError("sandbox.broker.flavor 'queue' requires the sandbox.broker.queue block")
         if getattr(config, "response_store", None) is None:
             raise SandboxConfigError("sandbox.broker.flavor 'queue' requires the sandbox.broker.response_store block")
+        check_store_pairing(config.queue, config.response_store)
         self._config = config
         self._transport: Optional[QueueTransport] = None
         self._store: Optional[ResponseStore] = None
@@ -56,7 +74,7 @@ class QueueExecutionBroker(ExecutionBroker):
 
     def _get_transport(self) -> QueueTransport:
         if self._transport is None:
-            self._transport = QueueTransportFactory.create(queues_config=self._config.queue)
+            self._transport = QueueTransportFactory.create(queues_config=self._config.queue, config_path="sandbox.broker.queue")
         return self._transport
 
     def _get_store(self) -> ResponseStore:

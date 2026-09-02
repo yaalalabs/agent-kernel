@@ -66,6 +66,12 @@ class TestTransportFactorySeam:
         with pytest.raises(AKConfigError, match="requires both execution.queues.input.url and execution.queues.output.url"):
             QueueTransportFactory.create(queues_config=_sqs_block(input_url="https://sqs.example/in"))
 
+    def test_error_messages_name_the_callers_block(self):
+        # config_path relabels the factory's errors so a sandbox.broker.queue misconfiguration
+        # is not reported as an execution.queues one.
+        with pytest.raises(AKConfigError, match=r"sandbox\.broker\.queue\.input\.url"):
+            QueueTransportFactory.create(queues_config=_sqs_block(input_url="https://sqs.example/in"), config_path="sandbox.broker.queue")
+
     def test_create_consumer_threads_the_block_through(self):
         block = _QueuesConfig(type="in_memory")
         consumer = QueueTransportFactory.create_consumer(QueueName.INPUT, queues_config=block)

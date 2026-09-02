@@ -14,7 +14,7 @@ spec:
   scaleTargetRef:
     name: {{ include "agent-kernel.fullname" . }}-sandbox-worker
   minReplicaCount: {{ .Values.keda.minReplicaCount }}
-  maxReplicaCount: {{ .Values.keda.maxReplicaCount | default 10 }}
+  maxReplicaCount: {{ include "agent-kernel.sandboxKedaMaxReplicas" . }}
   pollingInterval: {{ .Values.keda.pollingInterval }}
   cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
   triggers:
