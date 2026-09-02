@@ -114,7 +114,7 @@ OpenAIModule([general_agent])
 # Create and run the server with WhatsApp handler
 if __name__ == "__main__":
     handler = AgentWhatsAppRequestHandler()
-    RESTAPI.run(handler=handler)
+    RESTAPI.run([handler])
 ```
 
 ## Configuration Options
