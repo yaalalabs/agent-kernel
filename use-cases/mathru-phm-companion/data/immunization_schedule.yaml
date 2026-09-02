@@ -1,16 +1,16 @@
 # Childhood immunisation schedule.
 #
-# TODO: POPULATE FROM MINISTRY OF HEALTH / EPI PUBLICATIONS.
-# Every value below is a structural placeholder. None of it is clinical guidance and none
-# of it may be shown to a mother as a real immunisation date. This table requires clinician
-# review before any real-world use.
+# THIS TABLE REQUIRES CLINICIAN REVIEW BEFORE ANY REAL-WORLD USE.
 #
-# While `status` is `placeholder`, the tools relay that marker and schedule_agent must
-# decline to read out dates rather than presenting fabricated ones.
+# Visits are keyed by the child's age in calendar months. A visit date is derived as pure
+# arithmetic:
+#   visit_date = add_months(child_dob, age_months)
 #
-# Visits are keyed by the child's age in weeks. A visit date is derived as pure arithmetic:
-#   visit_date = child_dob + age_weeks * 7 days
-
+# Months, not weeks. The national schedule is written in months, and treating a month as four
+# weeks drifts: 60 months as 260 weeks lands six days early. An entry may alternatively carry
+# `age_weeks` for anything genuinely week-based; carrying both is a data error and the entry
+# is skipped.
+#
 # ---------------------------------------------------------------------------
 # PROVENANCE
 #
@@ -30,26 +30,69 @@
 # filled in; the test suite will fail otherwise.
 # ---------------------------------------------------------------------------
 provenance:
-  source: TODO # exact document title
-  publisher: TODO # Epidemiology Unit, Ministry of Health, Sri Lanka
-  document_date: TODO # as printed on the document, not the file metadata
-  url: TODO # direct .gov.lk link
-  retrieved: TODO # YYYY-MM-DD
-  cross_checked_against: TODO # second source, or "CHDR, physical copy"
+  source: "National Immunization Schedule - Sri Lanka (poster)"
+  publisher: "Epidemiology Unit, Ministry of Health, Sri Lanka"
+  document_date: "2017 (printed copyright on the face of the poster)"
+  url: "https://www.epid.gov.lk/storage/post/pdfs/en_6403b42a75fa4_Doc2.pdf"
+  retrieved: "2026-09-02"
+  cross_checked_against: >-
+    Sri Lanka Essential Health Services Package 2019, previousmoh.health.gov.lk. The two agree
+    on every line below. Both predate the 2022 CHDR circular, and NEITHER is the current CHDR
+    booklet.
   clinician_review: "NOT PERFORMED. See Known Limitations in README.md."
 
+# ---------------------------------------------------------------------------
+# WHY THIS IS STILL `placeholder` DESPITE HAVING TWO AGREEING SOURCES
+#
+# The 2022 CHDR circular mandates the CHDR as the national child health record but does not
+# reproduce the schedule, so it cannot be the citation for these values. Both sources that DO
+# carry the schedule are older than it: a 2017 poster and a 2019 services package.
+#
+# Two old sources agreeing is weaker than it looks. They may simply share an origin, and the
+# first measles-containing dose in particular has moved before. Every value below therefore
+# needs checking item by item against the current CHDR booklet, which is a physical document
+# this project could not obtain remotely.
+#
+# Flip `status` to `sourced` only after that check, and update
+# test_all_clinical_files_currently_ship_as_placeholders in the same commit.
+# ---------------------------------------------------------------------------
 status: placeholder
 
 visits:
-  # TODO: replace the entries below with the real EPI immunisation schedule.
-  - id: placeholder_epi_1
-    age_weeks: 0 # TODO: placeholder, not clinical guidance
-    label: "PLACEHOLDER immunisation visit 1 - not clinical guidance"
+  - id: bcg_birth
+    age_months: 0
+    label: "BCG"
 
-  - id: placeholder_epi_2
-    age_weeks: 8 # TODO: placeholder, not clinical guidance
-    label: "PLACEHOLDER immunisation visit 2 - not clinical guidance"
+  - id: penta_1
+    age_months: 2
+    label: "OPV + Pentavalent (DTP-HepB-Hib) 1st dose, fIPV 1st dose"
 
-  - id: placeholder_epi_3
-    age_weeks: 26 # TODO: placeholder, not clinical guidance
-    label: "PLACEHOLDER immunisation visit 3 - not clinical guidance"
+  - id: penta_2
+    age_months: 4
+    label: "OPV + Pentavalent (DTP-HepB-Hib) 2nd dose, fIPV 2nd dose"
+
+  - id: penta_3
+    age_months: 6
+    label: "OPV + Pentavalent (DTP-HepB-Hib) 3rd dose"
+
+  # The value most likely to be out of date. The timing of the first measles-containing dose
+  # has moved before; check this one first against the current CHDR booklet.
+  - id: mmr_1
+    age_months: 9
+    label: "MMR 1st dose"
+
+  - id: je_live
+    age_months: 12
+    label: "Live JE"
+
+  - id: opv_dpt_booster
+    age_months: 18
+    label: "OPV + DPT booster (4th dose)"
+
+  - id: mmr_2
+    age_months: 36
+    label: "MMR 2nd dose"
+
+  - id: opv_dt_booster
+    age_months: 60
+    label: "OPV booster + DT (5th dose)"
