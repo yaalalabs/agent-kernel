@@ -27,12 +27,12 @@ guardrail:
     # would silently disable danger-sign screening and escalation. See resilient_guardrail.py.
     enabled: true
     type: resilient_guardrail.ResilientInputGuardrail
-    model: gpt-4o-mini
+    model: gpt-5.4-mini
     config_path: guardrails/input.json
   output:
     enabled: true
     type: openai
-    model: gpt-4o-mini
+    model: gpt-5.4-mini
     config_path: guardrails/output.json
 
 logging:

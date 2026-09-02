@@ -1,3 +1,5 @@
+import os
+
 from agentkernel.openai import OpenAIToolBuilder
 from agents import Agent
 
@@ -13,6 +15,12 @@ from tool import (
     resolve_role,
     screen_danger_signs,
 )
+
+# Every agent runs the same model. The OpenAI Agents SDK would otherwise default to gpt-4o,
+# which is not necessarily available on a given account, and free-tier accounts are limited by
+# requests per day rather than tokens - so the model choice is really a rate-limit choice.
+# Override with MATHRU_MODEL.
+MODEL = os.environ.get("MATHRU_MODEL") or "gpt-5.4-mini"
 
 # Repeated in every agent's instructions. These hold in every phase and are not negotiable.
 SAFETY_RULES = """
@@ -153,6 +161,7 @@ about visits or dates yourself, even if you think you know the answer. Hand off 
 intake_agent = Agent(
     name="intake_agent",
     handoff_description="Registers a mother: first name, MOH division, expected delivery date or child date of birth, and assigned PHM number.",
+    model=MODEL,
     instructions=INTAKE_INSTRUCTIONS,
     tools=OpenAIToolBuilder.bind([register_mother, get_mother_profile]),
 )
@@ -160,6 +169,7 @@ intake_agent = Agent(
 schedule_agent = Agent(
     name="schedule_agent",
     handoff_description="Answers questions about a registered mother's antenatal visits and her child's immunisation, screening, and supplementation schedule.",
+    model=MODEL,
     instructions=SCHEDULE_INSTRUCTIONS,
     tools=OpenAIToolBuilder.bind(
         [
@@ -176,6 +186,7 @@ schedule_agent = Agent(
 danger_sign_agent = Agent(
     name="danger_sign_agent",
     handoff_description="Screens reported symptoms against the danger-sign table. Escalation happens inside the tool.",
+    model=MODEL,
     instructions=DANGER_SIGN_INSTRUCTIONS,
     tools=OpenAIToolBuilder.bind([screen_danger_signs, get_mother_profile]),
 )
@@ -183,6 +194,7 @@ danger_sign_agent = Agent(
 phm_agent = Agent(
     name="phm_agent",
     handoff_description="Serves a registered Public Health Midwife: caseload queries and escalation acknowledgement.",
+    model=MODEL,
     instructions=PHM_INSTRUCTIONS,
     tools=OpenAIToolBuilder.bind([phm_caseload, acknowledge_escalation]),
 )
@@ -190,6 +202,7 @@ phm_agent = Agent(
 mathru_triage_agent = Agent(
     name="mathru_triage",
     handoff_description="Entry agent for the Mathru maternal health companion. Greets senders and routes them.",
+    model=MODEL,
     instructions=TRIAGE_INSTRUCTIONS,
     tools=OpenAIToolBuilder.bind([resolve_role]),
     handoffs=[intake_agent, schedule_agent, danger_sign_agent, phm_agent],

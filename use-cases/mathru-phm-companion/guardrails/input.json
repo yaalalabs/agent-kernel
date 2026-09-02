@@ -23,7 +23,7 @@
         "name": "Jailbreak",
         "config": {
           "confidence_threshold": 0.7,
-          "model": "gpt-4o-mini",
+          "model": "gpt-5.4-mini",
           "include_reasoning": false
         }
       }
