@@ -227,6 +227,15 @@ jobs:
           key: ak-py-${{ inputs.checkout_ref }}
           fail-on-cache-miss: true
 
+      - name: Set up kind (sandbox broker examples)
+        # The sandbox queue-broker examples run their sandbox pods in a kind cluster their
+        # harnesses create and tear down themselves; without the binary they self-skip.
+        # install_only: the harness owns the cluster lifecycle.
+        if: ${{ contains(matrix.path, 'examples/sandbox/broker-') }}
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+
       - name: Run test - ${{ matrix.path }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
