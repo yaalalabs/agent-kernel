@@ -9,3 +9,29 @@
 .impact-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:30px;padding:24px 27px;margin:-4px 0 24px;background:#fff8e9;border:1px solid #e4cfa7;border-radius:var(--radius)}.impact-card h2{margin:7px 0 7px}.impact-card p{max-width:760px;margin-bottom:12px;color:#675a43}.impact-counts{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.impact-counts span{padding:6px 9px;background:#fffdf7;border:1px solid #eadabc;border-radius:7px;font-size:11px;color:#725f3e}.impact-card details{font-size:11px;color:var(--muted)}.impact-card summary{cursor:pointer;color:var(--green);font-weight:650}.impact-card ol{margin:10px 0 0;padding-left:20px}.impact-card li{margin:7px 0;padding-left:3px}.impact-card li strong{font-weight:550;color:var(--ink)}.impact-card li span{display:block;margin-top:2px}.impact-action{display:grid;gap:7px;min-width:190px}.impact-action .small-copy{color:var(--muted)}.run-details{padding:14px 16px;margin:4px 0 17px;background:#f0f5f0;border:1px solid #dbe7dc;border-radius:10px;font-size:11px;color:#53645a}.run-details>div{display:flex;align-items:flex-start;gap:11px}.run-details p{margin:2px 0 0}.run-mark{display:grid;place-items:center;flex:0 0 31px;height:31px;border-radius:8px;background:var(--green);color:white;font-size:9px;font-weight:750;letter-spacing:.6px}.human-check{display:block;margin:10px 0 8px;color:var(--green)}.run-details ul{margin:8px 0;padding-left:18px}.run-details details{border-top:1px solid #d7e1d7;padding-top:9px;margin-top:9px}.run-details summary{cursor:pointer;font-weight:650;color:var(--green)}.run-details code{font-size:10px}.run-details-missing{margin:2px 0 15px;font-size:11px;color:var(--muted)}
 
 @media(max-width:760px){.sidebar nav{display:grid;grid-template-columns:repeat(2,1fr);overflow:visible}.sidebar>.nav-button{display:none}.nav-button{white-space:normal}.workflow{grid-template-columns:repeat(2,1fr)}.workflow-step{justify-content:flex-start}.source-pipeline{grid-template-columns:1fr 1fr;gap:14px}.source-pipeline i{display:none}.search-box,.recovery{display:block}.search-box button,.recovery .actions{margin-top:9px}.search-box button{width:100%}.judgment-disclosure>summary{align-items:flex-start;flex-direction:column}.impact-card{grid-template-columns:1fr;gap:18px;padding:20px}.impact-action{min-width:0}.impact-action button{min-height:44px;width:100%}.run-details{padding:13px}.run-details summary{min-height:44px;display:flex;align-items:center}}
+
+/* Readability and task focus */
+:root{font-size:16px}
+body{font-size:1rem}
+button{min-height:44px}
+button.small{min-height:40px;font-size:.8125rem}
+label,.small-copy,.notice,.evidence,.judgment p,.step p,.coverage-item,.job-bar{font-size:.875rem}
+.footer-note,.stat-label,.stat-detail,.objective-quote,.source-disclosure summary,.judgment-disclosure summary,.topbar-path,.sidebar select{font-size:.8125rem}
+.eyebrow,.side-label,.pill{font-size:.75rem}
+.nav-button{font-size:.9375rem;min-height:44px}
+.question-card h3,h3{font-size:1rem}
+.workflow{grid-template-columns:repeat(3,1fr)}
+.side-more{margin-top:1rem;border-top:1px solid var(--line);padding-top:.5rem}
+.side-more summary,.advanced-section>summary,.card-options>summary{cursor:pointer;color:var(--green);font-weight:650;min-height:44px;display:flex;align-items:center}
+.side-more .nav-button{width:100%}
+.advanced-section{margin:1rem 0 1.5rem;background:#fbfcf8;border:1px solid var(--line);border-radius:var(--radius);padding:.3rem 1rem}
+.advanced-section[open]>summary{margin-bottom:1rem}
+.advanced-section>.panel:last-child,.advanced-section>.pack-card:last-child{margin-bottom:1rem}
+.focus-panel h2{margin:.5rem 0;font-size:1.35rem}
+.focus-panel p{margin-bottom:0}
+.nested-panel{margin-top:1rem;box-shadow:none}
+.compact-stats{grid-template-columns:repeat(3,1fr);margin:1rem 0}
+.card-options{margin-top:.75rem;border-top:1px solid #edf0e9;padding-top:.35rem}
+.card-options p{margin-bottom:.6rem}
+.question-list>.question-card:last-child{margin-bottom:1rem}
+@media(max-width:760px){.workflow{grid-template-columns:repeat(3,minmax(0,1fr))}.workflow-step{justify-content:center;font-size:.75rem;padding:.65rem .35rem}.workflow-step span{display:none}.compact-stats{grid-template-columns:1fr}.side-more{margin-top:.75rem}.side-more summary{min-height:40px}.advanced-section{padding:.25rem .75rem}}

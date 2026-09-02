@@ -79,8 +79,20 @@ class PackInput(BaseModel):
     limit: int = Field(default=8, ge=1, le=30)
 
 
+class GeneratedPackInput(PackInput):
+    difficulty: Literal["easy", "medium", "difficult"] = "medium"
+
+
 class ChatInput(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
+
+
+class PrepareInput(BaseModel):
+    document_ids: list[str] = Field(min_length=2, max_length=3)
+
+
+class BatchReviewInput(BaseModel):
+    confirmed: Literal[True]
 
 
 def create_app(settings=None, engine_factory=KernelEngine):
@@ -341,6 +353,10 @@ def create_app(settings=None, engine_factory=KernelEngine):
     async def analyze(course_id: str, identity=Depends(user)):
         return jobs.submit(identity["id"], course_id, "analyze")
 
+    @app.post("/api/courses/{course_id}/prepare")
+    async def prepare(course_id: str, body: PrepareInput, identity=Depends(user)):
+        return jobs.submit(identity["id"], course_id, "prepare", document_ids=body.document_ids)
+
     @app.post("/api/courses/{course_id}/manual-review")
     def manual_review(course_id: str, identity=Depends(user)):
         return service.manual_review(identity["id"], course_id)
@@ -349,9 +365,17 @@ def create_app(settings=None, engine_factory=KernelEngine):
     def review(analysis_id: str, body: Match, identity=Depends(user)):
         return service.review_match(identity["id"], analysis_id, body.model_dump())
 
+    @app.patch("/api/analyses/{analysis_id}/matches/review-suitable")
+    def review_suitable(analysis_id: str, body: BatchReviewInput, identity=Depends(user)):
+        return service.review_suitable_matches(identity["id"], analysis_id)
+
     @app.post("/api/courses/{course_id}/packs")
     def pack(course_id: str, body: PackInput, identity=Depends(user)):
         return service.prepare_pack(identity["id"], course_id, body.limit)
+
+    @app.post("/api/courses/{course_id}/packs/generate")
+    async def generated_pack(course_id: str, body: GeneratedPackInput, identity=Depends(user)):
+        return jobs.submit(identity["id"], course_id, "generate_pack", limit=body.limit, difficulty=body.difficulty)
 
     @app.get("/api/packs/{pack_id}/export")
     def export(pack_id: str, identity=Depends(user)):
@@ -370,11 +394,18 @@ def create_app(settings=None, engine_factory=KernelEngine):
         for index, question in enumerate(pack["questions"], 1):
             evidence = question["evidence"]
             name = docs.get(evidence["document_id"], {}).get("name", "Source")
+            generated = question.get("generated", False)
             lines.extend(
                 [
                     f"<h2>{index}. {esc(question['label'] or 'Practice question')}</h2>",
+                    (
+                        f"<p><strong>AI-generated {esc(question.get('difficulty', 'medium'))} practice question.</strong> "
+                        "Inspect before studying; this is not an exam prediction.</p>"
+                        if generated
+                        else ""
+                    ),
                     f"<p>{esc(question['text'])}</p>",
-                    f"<p>Source: {esc(name)}, page {evidence['page']}</p>",
+                    f"<p>{'Grounding source' if generated else 'Source'}: {esc(name)}, page {evidence['page']}</p>",
                     f"<p>Syllabus fit: {esc(question['match']['scope_status'])}. Assessment fit: {esc(question['match']['assessment_status'])}.</p>",
                     f"<p>{esc(question['match']['reason'])}</p>",
                 ]

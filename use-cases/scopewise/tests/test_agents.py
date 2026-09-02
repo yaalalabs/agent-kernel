@@ -5,6 +5,8 @@ from scopewise.agents import (
     approved_course_overview,
     approved_source_page,
     register_missing_agents,
+    repair_evidence_quote,
+    source_exclusions,
     validate_analysis,
     validate_extraction,
 )
@@ -78,6 +80,48 @@ def test_extraction_cannot_approve_itself_or_cite_another_document():
     result.objectives[0].evidence.document_id = "other-user-file"
     with pytest.raises(ValueError):
         validate_extraction(result, document)
+
+
+def test_extraction_repairs_minor_model_quote_drift_to_exact_pdf_text():
+    document = {
+        "id": "scope",
+        "role": "syllabus",
+        "pages": ["Learning outcome:\nExplain data commu-\nnication models, transmission media, and layered protocols."],
+    }
+    evidence = Evidence(
+        document_id="scope",
+        page=1,
+        quote="Explain data communication models transmission media and layered protocols",
+    )
+
+    repaired = repair_evidence_quote(evidence, document)
+
+    assert repaired.quote == "Explain data commu-\nnication models, transmission media, and layered protocols"
+
+
+def test_extraction_rejects_unrelated_model_quote_instead_of_attaching_evidence():
+    document = {"id": "scope", "role": "syllabus", "pages": ["Explain primary keys and relational integrity."]}
+    evidence = Evidence(document_id="scope", page=1, quote="Describe neural network backpropagation")
+
+    with pytest.raises(ValueError, match="does not occur"):
+        repair_evidence_quote(evidence, document)
+
+
+def test_explicit_source_exclusions_are_kept_when_the_model_omits_them():
+    document = {
+        "id": "scope",
+        "role": "syllabus",
+        "pages": [
+            "Learning objectives:\nExplain primary keys.\nBCNF proofs are explicitly excluded from this module.\nThis is not an exam prediction."
+        ],
+    }
+
+    exclusions = source_exclusions(document)
+
+    assert len(exclusions) == 1
+    assert exclusions[0].kind == "excluded"
+    assert exclusions[0].text == "BCNF proofs are explicitly excluded from this module."
+    assert exclusions[0].evidence == Evidence(document_id="scope", page=1, quote="BCNF proofs are explicitly excluded from this module.")
 
 
 def test_analysis_requires_one_result_per_requested_question():

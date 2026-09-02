@@ -66,3 +66,13 @@ class Decision(StrictModel):
     assessment_reason: str = Field(min_length=1, max_length=1200)
     assessment_status: Literal["matches_guidance", "different_format", "unknown"]
     guidance: list[GuidanceQuote] = Field(max_length=4)
+
+
+class GeneratedQuestionDraft(StrictModel):
+    text: str = Field(min_length=10, max_length=5000)
+    objective_keys: list[str] = Field(min_length=1, max_length=4)
+    guidance: list[GuidanceQuote] = Field(default_factory=list, max_length=2)
+
+
+class QuestionGeneration(StrictModel):
+    questions: list[GeneratedQuestionDraft] = Field(min_length=1, max_length=30)

@@ -53,6 +53,18 @@ async def main():
             documents, objectives, questions = service.materials("smoke-user", sample["id"])
             comparison = await engine.analyze("smoke-user", sample, documents, objectives, questions)
             print("LIVE COMPARISON (unreviewed):", comparison.model_dump_json(indent=2))
+            generated = await engine.generate_questions("smoke-user", sample, documents, objectives, questions, 2, "medium")
+            assert generated and all(question["generated"] for question in generated)
+            print(
+                "LIVE GENERATED PRACTICE:",
+                json.dumps(
+                    [
+                        {"text": question["text"], "difficulty": question["difficulty"], "objective_ids": question["match"]["objective_ids"]}
+                        for question in generated
+                    ],
+                    indent=2,
+                ),
+            )
         finally:
             await engine.close()
 

@@ -85,6 +85,9 @@ def test_pack_covers_objectives_and_omits_exact_repeats():
     assert [q["id"] for q in pack["questions"]] == ["q1", "q2"]
     assert pack["uncovered_objective_ids"] == []
     assert pack["duplicates_omitted"] == 1
+    assert pack["requested_limit"] == 3
+    assert pack["available_unique_questions"] == 2
+    assert pack["not_confirmed_suitable"] == 0
 
 
 def test_partial_match_does_not_claim_full_coverage():

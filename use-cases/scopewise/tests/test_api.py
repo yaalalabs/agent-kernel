@@ -125,6 +125,41 @@ def test_changing_a_review_invalidates_packs_built_from_it(app):
         assert client.get(f"/api/packs/{pack['id']}/export").status_code == 409
 
 
+def test_user_can_confirm_all_suitable_recommendations_once(app):
+    with TestClient(app) as client:
+        account(client)
+        owner = client.get("/api/me").json()["id"]
+        course = client.post("/api/sample").json()
+        analysis = client.get(f"/api/courses/{course['id']}").json()["analyses"][-1]
+        analysis["matches"] = [{**match, "reviewed": False} for match in analysis["matches"]]
+        app.state.store.put(owner, "analysis", course["id"], analysis, analysis["id"])
+
+        response = client.patch(
+            f"/api/analyses/{analysis['id']}/matches/review-suitable",
+            json={"confirmed": True},
+        )
+
+        assert response.status_code == 200
+        matches = response.json()["matches"]
+        assert all(match["reviewed"] for match in matches if match["scope_status"] in {"aligned", "partial"})
+        assert all(not match["reviewed"] for match in matches if match["scope_status"] in {"beyond_scope", "uncertain"})
+        assert client.post(f"/api/courses/{course['id']}/packs", json={"limit": 5}).status_code == 200
+
+
+def test_generated_pack_rejects_unknown_difficulty_before_queuing(app):
+    with TestClient(app) as client:
+        account(client)
+        course = client.post("/api/sample").json()
+
+        response = client.post(
+            f"/api/courses/{course['id']}/packs/generate",
+            json={"limit": 12, "difficulty": "impossible"},
+        )
+
+        assert response.status_code == 422
+        assert not any(job["action"] == "generate_pack" for job in client.get(f"/api/courses/{course['id']}").json()["jobs"])
+
+
 def test_manual_review_is_explicitly_labeled_and_works_without_model(app):
     with TestClient(app) as client:
         account(client)

@@ -52,9 +52,12 @@ def build_pack(objectives: list[Objective], questions: list[Question], matches: 
         raise ValueError("Choose between 1 and 30 questions.")
     required = {o.id for o in objectives if o.kind == "required"}
     by_id = {q.id: q for q in questions}
-    eligible, seen, duplicates = [], set(), 0
+    eligible, seen, duplicates, not_confirmed_suitable = [], set(), 0, 0
     for match in matches:
-        if not match.reviewed or match.scope_status not in {"aligned", "partial"} or match.question_id not in by_id:
+        if match.question_id not in by_id:
+            continue
+        if not match.reviewed or match.scope_status not in {"aligned", "partial"}:
+            not_confirmed_suitable += 1
             continue
         question = by_id[match.question_id]
         fingerprint = " ".join(re.findall(r"\w+", question.text.casefold()))
@@ -63,6 +66,7 @@ def build_pack(objectives: list[Objective], questions: list[Question], matches: 
             continue
         seen.add(fingerprint)
         eligible.append((question, match))
+    available_unique_questions = len(eligible)
     chosen, covered = [], set()
     while eligible and len(chosen) < limit:
         eligible.sort(
@@ -82,6 +86,9 @@ def build_pack(objectives: list[Objective], questions: list[Question], matches: 
         "covered_objective_ids": sorted(covered),
         "uncovered_objective_ids": sorted(required - covered),
         "duplicates_omitted": duplicates,
+        "requested_limit": limit,
+        "available_unique_questions": available_unique_questions,
+        "not_confirmed_suitable": not_confirmed_suitable,
         "notice": (
             "Coverage describes reviewed links to supplied objectives, not exam readiness or predicted questions. Assessment fit may remain unknown."
         ),

@@ -263,6 +263,34 @@ class CourseService:
         )
         return result
 
+    def review_suitable_matches(self, owner, analysis_id):
+        analysis = self.store.get(owner, "analysis", analysis_id)
+        course = self.store.get(owner, "course", analysis["course_id"])
+        if analysis["revision"] != course["revision"]:
+            raise ValueError("This analysis is stale. Re-analyze the current course before reviewing it.")
+        documents, objectives, questions = self.materials(owner, course["id"])
+        updated, changed = [], 0
+        for raw in analysis["matches"]:
+            match = validate_match(Match.model_validate(raw), documents, objectives, questions)
+            if match.scope_status in {"aligned", "partial"} and not match.reviewed:
+                match.reviewed = True
+                changed += 1
+            updated.append(match.model_dump())
+        if not changed:
+            return analysis
+        analysis["matches"] = updated
+        analysis["review_version"] = analysis.get("review_version", 0) + 1
+        result = self.store.put(owner, "analysis", course["id"], analysis, analysis_id)
+        affected_packs = sum(pack.get("analysis_id") == analysis_id for pack in self.store.list(owner, "pack", course["id"]))
+        self.record_change(
+            owner,
+            course["id"],
+            "judgments_batch_confirmed",
+            f"{changed} suitable recommendations were confirmed together by the user.",
+            affected={"matches": changed, "packs": affected_packs},
+        )
+        return result
+
     def prepare_pack(self, owner, course_id, limit=8):
         course = self.store.get(owner, "course", course_id)
         analyses = self.store.list(owner, "analysis", course_id)

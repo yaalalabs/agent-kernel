@@ -19,8 +19,10 @@ The winning claim is narrow and demonstrable: ScopeWise makes curriculum change 
 - **Exclusion-first hybrid candidate selection:** keyword overlap always keeps direct explicit exclusions; local embeddings may add relevant required objectives but cannot certify a match.
 - **Inspectable Agent Kernel execution:** each saved comparison records the registered agent, retrieval mode, bounded candidate counts, guidance-excerpt count, discarded aliases, and human-review gate.
 - **Small-course local RAG without a paid vector service:** page/slide chunks, embeddings, exact citations, and metadata stay in SQLite. Ollama failure falls back to keyword search.
+- **Upload-to-review onboarding:** a student selects current scope, past questions and optional assessment guidance once; ScopeWise assigns the roles and prepares cited, unreviewed judgments without repeated setup forms.
+- **Grounded pack completion:** reviewed uploaded questions are prioritized, then an opt-in local Agent Kernel agent can fill missing slots at Easy, Medium or Difficult depth from confirmed objectives and cited current guidance. Every generated item stays labeled and never claims to predict an exam.
 - **Useful failure behavior:** unknown aliases become an uncertain judgment; malformed or incomplete results are rejected; manual evidence review stays available and is labeled.
-- **One reviewed artifact:** the pack removes exact repeats, retains citations and the two judgments, and lists objectives that still lack suitable practice.
+- **One inspectable artifact:** the pack removes exact repeats, retains source or grounding citations and both fit judgments, labels generated practice, and lists objectives that still lack suitable practice.
 
 ## Submission checklist
 

@@ -14,7 +14,7 @@ Expected evidence: the page says “Not exam readiness,” the sample is labeled
 
 ## 0:35–1:15 — prove the evidence boundary
 
-**Click:** Review questions → open Q1 **Review both decisions** → open its source citation. Then open Q4 and Q5.
+**Click:** **Check results** → open Q1 **Review both decisions** → open its source citation. Then open Q4 and Q5.
 
 **Show:** Q1 is syllabus-relevant but asks for a different format; Q4 cites an explicit BCNF-proof exclusion; Q5 indexing remains uncertain.
 
@@ -34,9 +34,9 @@ Expected evidence: the card uses that caveat exactly and never predicts a questi
 
 ## 1:55–3:00 — show real Agent Kernel execution
 
-Use a prepared module made from the original files in `sample_data/`, or permission-cleared material. If the run is prepared, say how long it took and do not imply it happened during the previous minute.
+Use **Start from my material** to prepare a module from the original files in `sample_data/`, or permission-cleared material. Choose the current outline, past paper and optional current guidance once; the guided job assigns their roles, extracts cited items and creates the unreviewed comparison. If the run is prepared, say how long it took and do not imply it happened during the previous minute.
 
-**Click:** Review questions → open a result → **Review both decisions** → inspect **How this comparison was made** → expand **Technical details for judges**.
+**Click:** **Check results** → open a result → **Review both decisions** → inspect **How this comparison was made** → expand **Technical details for judges**.
 
 **Show:** “Compared by the local ScopeWise agent,” Meaning search or Keyword fallback, candidate/exclusion counts, guidance excerpts, the final-decision reminder, `AgentService`, and `scopewise_align`.
 
@@ -48,7 +48,7 @@ Fallback: if Ollama is unavailable, show the saved run details and run `python -
 
 ## 3:00–3:45 — demonstrate human correction
 
-**Click:** Review questions → open one judgment → **Correct evidence or decision**. Change or confirm the evidence and tick the human-review checkbox → **Save judgment**.
+**Click:** **Check results** → open one judgment → **Correct evidence or decision**. Change or confirm the evidence and tick the human-review checkbox → **Save judgment**.
 
 **Show:** model output began unreviewed; only the user's reviewed judgment can enter a pack; changing it invalidates packs built from the earlier review.
 
@@ -56,11 +56,11 @@ Fallback: if Ollama is unavailable, show the saved run details and run `python -
 
 ## 3:45–4:20 — produce useful practice
 
-**Click:** Make a pack → **Build practice pack** → **Download / print**.
+**Click:** **Check results** → **Make recommended pack** → request 8 questions, enable missing-question generation, choose **Medium**, then **Confirm and make pack** → **Download / print**.
 
 **Show:** source references, the omitted exact duplicate, independent fit labels, and the uncovered SQL-join objective.
 
-**Say:** “The pack optimizes reviewed objective coverage, removes exact repeats, and keeps the gaps visible. Coverage describes these supplied objectives, not the student's mastery.”
+**Say:** “Uploaded suitable questions come first. The local generation agent fills only missing slots at my chosen difficulty from confirmed objectives and current guidance. Every new question is labeled, grounded and presented as practice rather than an exam prediction.”
 
 ## 4:20–4:40 — supported user interface
 
