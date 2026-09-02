@@ -25,15 +25,18 @@ from agentkernel.core.config import (
     _ExecutionBrokerConfig,
     _SandboxConfig,
     _SandboxDockerConfig,
+    _SandboxIdentityConfig,
     _SandboxKubernetesConfig,
     _SandboxLocalSubprocessConfig,
     _SandboxProfileConfig,
 )
 from agentkernel.core.session.in_memory import InMemorySessionStore
+from agentkernel.sandbox.broker.base import ExecutionRequest
+from agentkernel.sandbox.broker.worker import BrokerWorkerCore
 from agentkernel.sandbox.errors import SandboxCapabilityError, SandboxGoneError, SandboxPolicyError, SandboxProvisionError, SandboxTimeoutError
 from agentkernel.sandbox.factory import SandboxProviderFactory
 from agentkernel.sandbox.manager import ExecutionManager
-from agentkernel.sandbox.model import SandboxPolicy, SandboxPrincipal
+from agentkernel.sandbox.model import SandboxPolicy, SandboxPrincipal, SandboxSession
 from agentkernel.sandbox.providers.local_subprocess import LocalSubprocessSandboxProvider
 from agentkernel.sandbox.testing import FAIL_MARKER, SandboxProviderContract
 
@@ -1341,16 +1344,19 @@ class FakeK8sCluster:
         self.pod_deletes: list[tuple[str, str]] = []
         self.netpol_deletes: list[tuple[str, str]] = []
         self.exec_calls: list[tuple[str, list, int]] = []  # (pod, command, thread ident)
+        self.headers_log: list[tuple[str, dict]] = []  # (operation, request headers) for impersonation asserts
+        self.api_clients: list = []  # every FakeApiClient the provider constructed
         self.default_phase = "Running"
         self.kubeconfig_loads: list = []
         self.incluster_loads: list = []
         self.exec_handler = self._default_exec
 
-    def open_exec(self, name, namespace, kwargs):
+    def open_exec(self, name, namespace, kwargs, headers=None):
         pod = self.pods.get((namespace, name))
         if pod is None:
             raise FakeApiException(404)
         self.exec_calls.append((name, kwargs["command"], threading.get_ident()))
+        self.headers_log.append(("exec", dict(headers or {})))
         return _FakeExecClient(pod, kwargs["command"], kwargs.get("stdin", False), self)
 
     @staticmethod
@@ -1428,17 +1434,33 @@ class _FakeExecClient:
         self._open = False
 
 
+class FakeApiClient:
+    """Records the default headers set on it (the impersonation surface)."""
+
+    def __init__(self, configuration=None):
+        self.configuration = configuration
+        self.headers: dict = {}
+
+    def set_default_header(self, name, value):
+        self.headers[name] = value
+
+
 class FakeCoreV1:
-    def __init__(self, cluster):
+    def __init__(self, cluster, api_client=None):
         self._cluster = cluster
-        self.connect_get_namespaced_pod_exec = object()  # handed to stream(); the fake keys off the pod name
+        self._headers = dict(api_client.headers) if api_client is not None else {}
+
+    def connect_get_namespaced_pod_exec(self):
+        raise NotImplementedError("handed to stream(); the fake stream keys off the pod name and this method's __self__")
 
     def create_namespaced_pod(self, namespace, body):
         name = body["metadata"]["name"]
         self._cluster.pods[(namespace, name)] = _FakeK8sPod(name, namespace, body, phase=self._cluster.default_phase)
         self._cluster.pod_creates.append(body)
+        self._cluster.headers_log.append(("create_pod", dict(self._headers)))
 
     def read_namespaced_pod(self, name, namespace):
+        self._cluster.headers_log.append(("read_pod", dict(self._headers)))
         pod = self._cluster.pods.get((namespace, name))
         if pod is None:
             raise FakeApiException(404)
@@ -1448,6 +1470,7 @@ class FakeCoreV1:
         )
 
     def delete_namespaced_pod(self, name, namespace, **kwargs):
+        self._cluster.headers_log.append(("delete_pod", dict(self._headers)))
         if (namespace, name) not in self._cluster.pods:
             raise FakeApiException(404)
         del self._cluster.pods[(namespace, name)]
@@ -1455,13 +1478,16 @@ class FakeCoreV1:
 
 
 class FakeNetworkingV1:
-    def __init__(self, cluster):
+    def __init__(self, cluster, api_client=None):
         self._cluster = cluster
+        self._headers = dict(api_client.headers) if api_client is not None else {}
 
     def create_namespaced_network_policy(self, namespace, body):
         self._cluster.netpols[(namespace, body["metadata"]["name"])] = body
+        self._cluster.headers_log.append(("create_netpol", dict(self._headers)))
 
     def delete_namespaced_network_policy(self, name, namespace, **kwargs):
+        self._cluster.headers_log.append(("delete_netpol", dict(self._headers)))
         if (namespace, name) not in self._cluster.netpols:
             raise FakeApiException(404)
         del self._cluster.netpols[(namespace, name)]
@@ -1472,15 +1498,28 @@ class FakeNetworkingV1:
 def k8s_env(monkeypatch):
     """Import the provider module against a fake kubernetes SDK and return (module, cluster)."""
     cluster = FakeK8sCluster()
-    core, networking = FakeCoreV1(cluster), FakeNetworkingV1(cluster)
+
+    def _api_client(configuration=None):
+        client = FakeApiClient(configuration)
+        cluster.api_clients.append(client)
+        return client
+
     client_ns = types.SimpleNamespace(
-        CoreV1Api=lambda: core, NetworkingV1Api=lambda: networking, rest=types.SimpleNamespace(ApiException=FakeApiException)
+        CoreV1Api=lambda api_client=None: FakeCoreV1(cluster, api_client),
+        NetworkingV1Api=lambda api_client=None: FakeNetworkingV1(cluster, api_client),
+        ApiClient=_api_client,
+        Configuration=types.SimpleNamespace(get_default_copy=lambda: object()),
+        rest=types.SimpleNamespace(ApiException=FakeApiException),
     )
     config_ns = types.SimpleNamespace(
         load_kube_config=lambda config_file=None: cluster.kubeconfig_loads.append(config_file),
         load_incluster_config=lambda: cluster.incluster_loads.append(True),
     )
-    stream_ns = types.SimpleNamespace(stream=lambda api_method, name, namespace, **kwargs: cluster.open_exec(name, namespace, kwargs))
+    # The fake stream resolves the calling client through the bound api method, so exec calls
+    # carry that client's impersonation headers into the log.
+    stream_ns = types.SimpleNamespace(
+        stream=lambda api_method, name, namespace, **kwargs: cluster.open_exec(name, namespace, kwargs, api_method.__self__._headers)
+    )
     fake_sdk = types.SimpleNamespace(client=client_ns, config=config_ns, stream=stream_ns)
     for module_name, module in [
         ("kubernetes", fake_sdk),
@@ -1688,3 +1727,100 @@ def test_factory_passes_profile_idle_timeout_to_kubernetes(k8s_env):
     profile = _SandboxProfileConfig(type="kubernetes", kubernetes=_SandboxKubernetesConfig(), idle_timeout=450)
     provider = SandboxProviderFactory._build("p", profile)
     assert provider._idle_timeout == 450
+
+
+# --------------------------------------------------------------------------- #
+# kubernetes user mode — RBAC impersonation (#503 iteration 8)
+# --------------------------------------------------------------------------- #
+
+
+def _user_principal(user="alice", groups=None):
+    return SandboxPrincipal(mode="user", subject=user, credentials={"user": user, "groups": groups if groups is not None else ["devs"]})
+
+
+@pytest.mark.asyncio
+async def test_k8s_user_mode_impersonates_every_authorized_call_shape(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module, _SandboxKubernetesConfig(network_policy=True))
+    sandbox = await provider.create(principal=_user_principal(), policy=SandboxPolicy(network_egress="deny"))
+    await sandbox.execute_code("print(1)")
+    expected = {"Impersonate-User": "alice", "Impersonate-Group": "devs"}
+    impersonated_ops = {op for op, headers in cluster.headers_log if headers == expected}
+    assert {"create_pod", "read_pod", "create_netpol", "exec"} <= impersonated_ops
+    # destroy stays the worker's own identity: disposal is platform-owned (no principal on the ABC,
+    # and the idle sweep destroys without a user in context either).
+    cluster.headers_log.clear()
+    await provider.destroy(sandbox.id)
+    assert [headers for op, headers in cluster.headers_log if op in ("delete_pod", "delete_netpol")] == [{}, {}]
+
+
+@pytest.mark.asyncio
+async def test_k8s_impersonating_clients_cached_per_subject(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    policy = SandboxPolicy()
+    await provider.create(principal=_user_principal(), policy=policy)
+    await provider.create(principal=_user_principal(), policy=policy)
+    assert len(cluster.api_clients) == 1  # same (user, groups) subject reuses the client pair
+    await provider.create(principal=_user_principal(user="bob"), policy=policy)
+    assert len(cluster.api_clients) == 2
+
+
+@pytest.mark.asyncio
+async def test_k8s_agent_mode_sends_no_impersonation_headers(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    principal, policy = _principal_policy()
+    sandbox = await provider.create(principal=principal, policy=policy)
+    await sandbox.execute_command("echo hi")
+    assert cluster.api_clients == []  # no impersonating client was ever built
+    assert all(headers == {} for _, headers in cluster.headers_log)
+
+
+@pytest.mark.asyncio
+async def test_k8s_user_mode_fail_closed_rejections(k8s_env):
+    module, cluster = k8s_env
+    provider = _k8s_provider(module)
+    with pytest.raises(SandboxPolicyError, match="at most one group"):
+        await provider.create(
+            principal=SandboxPrincipal(mode="user", subject="alice", credentials={"user": "alice", "groups": ["a", "b"]}),
+            policy=SandboxPolicy(),
+        )
+    with pytest.raises(SandboxPolicyError, match="no user identity"):
+        await provider.create(principal=SandboxPrincipal(mode="user", subject="", credentials={}), policy=SandboxPolicy())
+    assert cluster.pod_creates == []  # both rejected before any API call
+
+
+@pytest.mark.asyncio
+async def test_k8s_worker_admits_user_mode_and_fails_closed_without_one(k8s_env, monkeypatch):
+    # The worker's existing fail-closed check starts admitting identity.mode: user on this
+    # provider purely because principal_user is now True; an agent-mode principal on a
+    # user-mode profile still fails closed. No worker change.
+    module, _cluster = k8s_env
+    profile = _SandboxProfileConfig(type="kubernetes", kubernetes=_SandboxKubernetesConfig(), identity=_SandboxIdentityConfig(mode="user"))
+    sandbox_cfg = _SandboxConfig(enabled=True, broker=_ExecutionBrokerConfig(flavor="embedded"), profiles={"default": profile})
+
+    class _Cfg:
+        sandbox = sandbox_cfg
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+    provider = _k8s_provider(module)
+    core = BrokerWorkerCore()
+
+    def _request(principal):
+        session = SandboxSession(sandbox_session_id="s", profile="default", provider_type="kubernetes", created_at=1.0, last_used_at=1.0)
+        return ExecutionRequest(
+            task_id="t",
+            operation="execute_code",
+            payload={},
+            profile="default",
+            principal=principal,
+            policy=SandboxPolicy(),
+            sandbox_session=session,
+            ak_session_id="",
+            agent="a",
+        )
+
+    core._check_principal(provider, _request(_user_principal()))  # admitted
+    with pytest.raises(SandboxPolicyError, match="requires user identity"):
+        core._check_principal(provider, _request(SandboxPrincipal(mode="agent", subject="agent")))

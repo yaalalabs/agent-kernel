@@ -218,6 +218,9 @@ sandboxWorker:
     # Add networkpolicies create/delete to the Role. Needed only when the app config sets
     # kubernetes.network_policy: true (per-pod egress policies).
     networkPolicies: false
+    # Grant the worker the cluster-scoped impersonate verb on users/groups. Needed only for
+    # profiles with identity.mode: user (RBAC impersonation); the chart's only ClusterRole.
+    impersonate: false
   sandboxPods:
     # Namespace sandbox pods run in; empty uses the release namespace.
     namespace: ""

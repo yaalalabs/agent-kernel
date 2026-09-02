@@ -415,21 +415,34 @@ class KubernetesSandboxProvider(SandboxProvider):
   (Cluster)Role and the API server rejects writes regardless of the command string. Command
   parsing is never a boundary (#587 documents the injection gap this rule exists to prevent).
 
-### RBAC impersonation (later iteration of this story)
-
-Staged after the two examples (plan.md orders it); specified here so the design is complete:
+### RBAC impersonation (iteration 8)
 
 - `SandboxPrincipal.credentials` carries `{"user": <name>, "groups": [<g>...]}` (the
   `principal.py` resolver contract; the `ec2_ssm` provider's `role_arn`/`run_as` precedent,
-  `providers/ec2_ssm.py:11-15`).
-- Under a `user`-mode principal the provider builds a per-`(user, groups)` API client whose
-  configuration sets the impersonation headers (`Impersonate-User`, `Impersonate-Group`) on
-  every call (pod create/read/delete, exec, and NetworkPolicy operations), so the API server
-  enforces the invoking user's own RBAC. Clients are cached per subject (the `ec2_ssm`
-  per-subject client cache pattern, `ec2_ssm.py:171-174`).
+  `providers/ec2_ssm.py:11-15`); `user` falls back to the principal's `subject` and `groups`
+  to the principal's first-class `groups` list.
+- Under a `user`-mode principal, `_apis_for(principal)` builds a per-`(user, groups)` API
+  client pair whose default headers carry `Impersonate-User` and `Impersonate-Group`, so the
+  API server enforces the invoking user's own RBAC on pod create/read, exec, and
+  NetworkPolicy creation. Clients are cached per subject (the `ec2_ssm` per-subject cache
+  pattern, `ec2_ssm.py:171-174`); the sandbox handle keeps the impersonated client, so exec
+  stays under the user for the handle's lifetime.
+- Two fail-closed limits (resolution 2026-09-02): a user-mode principal with no resolvable
+  user rejects with `SandboxPolicyError`, and **at most one group** is supported: the Python
+  client's plain-dict default headers cannot repeat `Impersonate-Group`, so multiple groups
+  reject with an actionable error (bind RBAC to the user or a single group) instead of
+  silently dropping groups.
+- **Disposal stays under the worker's own identity** (resolution 2026-09-02, amending the
+  every-call wording): the `destroy` ABC carries no principal, and the idle sweep destroys
+  with no user in context; disposal is platform-owned, exactly like the sweep.
 - `capabilities.principal_user` flips to `True`; the worker's existing fail-closed check
   (`worker.py:113-127`) starts admitting `identity.mode: user` profiles on this provider with
   no worker change.
+- The chart gains the worker-side prerequisite the original sketch missed: honoring
+  `Impersonate-*` headers requires the caller to hold the cluster-scoped `impersonate` verb
+  on `users`/`groups`, so `rbac-sandbox.yaml` renders a ClusterRole + ClusterRoleBinding
+  (the chart's first and only ClusterRole) gated behind `sandboxWorker.rbac.impersonate`
+  (default false).
 
 ### Consumer changes
 
@@ -532,6 +545,8 @@ sandboxWorker:
     create: true                              # Role + RoleBinding in the sandbox namespace
     networkPolicies: false                    # add networkpolicies create/delete to the Role
                                               #   (needed only with kubernetes.network_policy: true)
+    impersonate: false                        # ClusterRole granting the impersonate verb
+                                              #   (needed only for identity.mode: user profiles)
   sandboxPods:
     namespace: ""                             # default: the release namespace
     serviceAccount:

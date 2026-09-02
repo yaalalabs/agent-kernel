@@ -191,7 +191,10 @@ This is the chart's first tier with its own identity:
 - The **worker SA** (`<fullname>-sandbox-worker`) is bound to a Role in the sandbox-pods
   namespace with exactly the pod-lifecycle and `pods/exec` verbs, plus `networkpolicies`
   create/delete only when `sandboxWorker.rbac.networkPolicies: true` (needed for the app
-  config's `kubernetes.network_policy: true` posture).
+  config's `kubernetes.network_policy: true` posture). For `identity.mode: user` profiles
+  (RBAC impersonation), `sandboxWorker.rbac.impersonate: true` additionally grants the
+  worker the cluster-scoped `impersonate` verb on users/groups, the chart's only
+  ClusterRole; sandboxed code then runs under the invoking user's own RBAC.
 - The **sandbox-pod SA** (`<fullname>-sandbox-pod`) is what sandbox pods run as; point the
   app config's `kubernetes.service_account` at it. The chart deliberately binds it to
   nothing: what code inside a sandbox may do against the cluster is application policy, so

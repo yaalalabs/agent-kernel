@@ -43,4 +43,38 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ include "agent-kernel.fullname" . }}-sandbox-worker
+{{- if .Values.sandboxWorker.rbac.impersonate }}
+---
+{{/*
+User-mode profiles (identity.mode: user) need the worker itself to be ALLOWED to impersonate:
+the API server checks the impersonate verb on the worker's identity before honoring any
+Impersonate-* headers. Cluster-scoped by necessity (users and groups are not namespaced
+resources), which makes this the chart's only ClusterRole; it stays off unless asked for.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-sandbox-impersonation
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "sandbox-worker") | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["users", "groups"]
+    verbs: ["impersonate"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-sandbox-impersonation
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "sandbox-worker") | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "agent-kernel.sandboxWorkerServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "agent-kernel.fullname" . }}-sandbox-impersonation
+{{- end }}
 {{- end }}

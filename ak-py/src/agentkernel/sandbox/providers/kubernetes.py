@@ -183,7 +183,7 @@ class KubernetesSandboxProvider(SandboxProvider):
         attach=True,
         provisions=True,
         attaches_external=True,  # attach_to binds to a '<namespace>/<pod>' the framework did not create
-        principal_user=False,  # flips True in the RBAC-impersonation iteration
+        principal_user=True,  # user mode via RBAC impersonation headers (see _apis_for)
         policy_network=False,  # flips True per instance via network_policy (operator-asserted CNI enforcement)
         policy_filesystem=True,  # readOnlyRootFilesystem + emptyDir workdir
         policy_resources=True,  # requests=limits from policy cpu/memory_mb
@@ -196,6 +196,8 @@ class KubernetesSandboxProvider(SandboxProvider):
         self._idle_timeout = idle_timeout
         self._core_api: Optional[Any] = None
         self._networking_api: Optional[Any] = None
+        # Impersonating client pairs cached per (user, groups) subject (the ec2_ssm pattern).
+        self._subject_apis: dict[tuple[str, tuple[str, ...]], tuple[Any, Any]] = {}
         if config.network_policy:
             # Instance-level capability override (#503): whether NetworkPolicy is actually
             # enforced depends on the cluster CNI, which the provider cannot detect; the
@@ -216,12 +218,41 @@ class KubernetesSandboxProvider(SandboxProvider):
             self._networking_api = kubernetes.client.NetworkingV1Api()
         return self._core_api, self._networking_api
 
+    def _apis_for(self, principal: SandboxPrincipal) -> tuple[Any, Any]:
+        """The ``(CoreV1Api, NetworkingV1Api)`` pair for this principal: the worker's own
+        identity in agent mode, or a cached per-(user, groups) client whose ``Impersonate-*``
+        headers make the API server enforce the invoking user's own RBAC on every call it is
+        used for (pod create/read, exec, NetworkPolicy creation)."""
+        if principal.mode != "user":
+            return self._apis()
+        user = principal.credentials.get("user") or principal.subject
+        groups = tuple(principal.credentials.get("groups") or principal.groups or ())
+        if not user:
+            raise SandboxPolicyError("user-mode principal carries no user identity to impersonate (set credentials['user'] or subject)")
+        if len(groups) > 1:
+            raise SandboxPolicyError(
+                "the kubernetes python client cannot send repeated Impersonate-Group headers, so user-mode "
+                f"impersonation supports at most one group (got {list(groups)}); bind RBAC to the user or a single group"
+            )
+        key = (user, groups)
+        cached = self._subject_apis.get(key)
+        if cached is not None:
+            return cached
+        self._apis()  # loads kubeconfig/in-cluster credentials into the default client configuration
+        api_client = kubernetes.client.ApiClient(kubernetes.client.Configuration.get_default_copy())
+        api_client.set_default_header("Impersonate-User", user)
+        if groups:
+            api_client.set_default_header("Impersonate-Group", groups[0])
+        pair = (kubernetes.client.CoreV1Api(api_client), kubernetes.client.NetworkingV1Api(api_client))
+        self._subject_apis[key] = pair
+        return pair
+
     async def create(self, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
         """Provision a sandbox pod with the policy mapped onto the manifest and wait for it
         to reach Running; with ``attach_to`` configured, attach to that pod instead (mode 3)."""
         if self._config.attach_to:
             return await self.attach(self._config.attach_to, principal=principal, policy=policy)
-        core, networking = self._apis()
+        core, networking = self._apis_for(principal)
         name = f"ak-sandbox-{uuid.uuid4().hex[:12]}"
         namespace = self._config.namespace
         # Built (and validated) before any API call so an unenforceable allowlist rejects cleanly.
@@ -236,7 +267,7 @@ class KubernetesSandboxProvider(SandboxProvider):
             await self._cleanup(name, namespace)
             raise SandboxProvisionError(f"creating sandbox pod '{namespace}/{name}' failed: {exc}") from exc
         try:
-            await self._wait_running(name, namespace)
+            await self._wait_running(core, name, namespace)
         except Exception:
             await self._cleanup(name, namespace)  # no orphan from a failed create
             raise
@@ -315,9 +346,9 @@ class KubernetesSandboxProvider(SandboxProvider):
             "spec": {"podSelector": {"matchLabels": {_NAME_LABEL: name}}, "policyTypes": ["Egress"], "egress": egress},
         }
 
-    async def _wait_running(self, name: str, namespace: str) -> None:
-        """Poll the pod until Running, failing on a terminal phase or after ``create_timeout``."""
-        core, _ = self._apis()
+    async def _wait_running(self, core: Any, name: str, namespace: str) -> None:
+        """Poll the pod until Running, failing on a terminal phase or after ``create_timeout``.
+        Reads with the caller's client, so user-mode waits run under the same impersonated RBAC."""
         deadline = time.monotonic() + self._config.create_timeout
         while True:
             pod = await asyncio.to_thread(core.read_namespaced_pod, name, namespace)
@@ -342,7 +373,7 @@ class KubernetesSandboxProvider(SandboxProvider):
     async def attach(self, sandbox_id: str, *, principal: SandboxPrincipal, policy: SandboxPolicy) -> Sandbox:
         """Reattach to a pod by ``<namespace>/<pod>`` (a bare name uses the configured
         namespace); a missing, terminating, or terminated pod raises ``SandboxGoneError``."""
-        core, _ = self._apis()
+        core, _ = self._apis_for(principal)
         namespace, name = self._parse_id(sandbox_id)
         try:
             pod = await asyncio.to_thread(core.read_namespaced_pod, name, namespace)
@@ -353,11 +384,13 @@ class KubernetesSandboxProvider(SandboxProvider):
         if getattr(pod.metadata, "deletion_timestamp", None) is not None or getattr(pod.status, "phase", None) in _TERMINAL_PHASES:
             raise SandboxGoneError(f"sandbox pod '{namespace}/{name}' is terminating or terminated")
         if getattr(pod.status, "phase", None) == "Pending":
-            await self._wait_running(name, namespace)  # the same bounded wait as create
+            await self._wait_running(core, name, namespace)  # the same bounded wait as create
         return KubernetesSandbox(core, namespace, name)
 
     async def destroy(self, sandbox_id: str) -> None:
-        """Delete the pod and its NetworkPolicy if one exists. Idempotent; 404s are no-ops."""
+        """Delete the pod and its NetworkPolicy if one exists. Idempotent; 404s are no-ops.
+        Runs under the worker's own identity: disposal is platform-owned (the ABC carries no
+        principal here, and the idle sweep destroys with no user in context either)."""
         namespace, name = self._parse_id(sandbox_id)
         await self._cleanup(name, namespace)
 

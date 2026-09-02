@@ -249,8 +249,22 @@ sandbox:
 ```
 
 The shipped `local_subprocess` and `docker` providers declare `principal_user=False`, so
-`identity.mode: user` needs a bring-your-own provider (dotted path) or a planned cloud provider
-(kubernetes via impersonation, bedrock_agentcore / ec2_ssm via `sts:AssumeRole`).
+`identity.mode: user` on them is rejected. Two shipped providers support user identity:
+
+- **`kubernetes`** maps a user-mode principal onto RBAC impersonation headers:
+  `Impersonate-User` from `credentials["user"]` (falling back to the principal's `subject`)
+  and at most one `Impersonate-Group` from `credentials["groups"]` (or the principal's
+  `groups`); the Python client cannot send repeated group headers, so more than one group is
+  rejected fail-closed. The API server then enforces the invoking user's own RBAC on pod
+  creation, exec, and per-pod NetworkPolicies; impersonating clients are cached per
+  `(user, groups)`. Two operational notes: the worker's own identity must hold the
+  cluster-scoped `impersonate` verb (the ak-k8s chart gates this behind
+  `sandboxWorker.rbac.impersonate`), and disposal (`destroy`, the idle sweep) runs under the
+  worker's own identity because it is a platform action with no user in context.
+- **`ec2_ssm`** assumes `credentials["role_arn"]` via `sts:AssumeRole` and runs commands as
+  `credentials["run_as"]` when set (see the provider table).
+
+A bring-your-own provider (dotted path) can implement any other mapping.
 
 The resolver runs agent-side (it has the session in context); the resolved principal travels
 in the broker request and is enforced provider-side where the credentials live. **Fail-closed
