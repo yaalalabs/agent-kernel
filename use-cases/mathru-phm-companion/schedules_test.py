@@ -314,3 +314,94 @@ def test_shipped_immunisation_ages_are_within_the_registration_window():
     # The service covers children under 5, so a visit past 60 months could never be reached.
     data = schedules.load_schedule(schedules.IMMUNIZATION_FILE)
     assert max(entry["age_months"] for entry in data["visits"]) <= schedules.MAX_CHILD_AGE_YEARS * 12
+
+
+# --- the other CHDR child schedules -----------------------------------------------------
+
+
+@pytest.mark.parametrize("filename", schedules.CHILD_SCHEDULE_FILES)
+def test_every_child_schedule_entry_is_month_based_and_unambiguous(filename):
+    data = schedules.load_schedule(filename)
+    for entry in data["visits"]:
+        assert "age_months" in entry, f"{filename}:{entry.get('id')} is not month-based"
+        assert "age_weeks" not in entry, f"{filename}:{entry.get('id')} carries both units"
+
+
+@pytest.mark.parametrize("filename", schedules.CHILD_SCHEDULE_FILES)
+def test_every_child_schedule_is_ordered_unique_and_within_five_years(filename):
+    ages = [entry["age_months"] for entry in schedules.load_schedule(filename)["visits"]]
+    assert ages == sorted(ages)
+    assert len(ages) == len(set(ages))
+    assert max(ages) <= schedules.MAX_CHILD_AGE_YEARS * 12
+
+
+@pytest.mark.parametrize("filename", schedules.CHILD_SCHEDULE_FILES)
+def test_every_child_schedule_entry_has_a_unique_id(filename):
+    ids = [entry["id"] for entry in schedules.load_schedule(filename)["visits"]]
+    assert len(ids) == len(set(ids))
+
+
+def test_developmental_screening_has_the_ten_documented_points():
+    ages = [entry["age_months"] for entry in schedules.load_schedule(schedules.DEVELOPMENTAL_SCREENING_FILE)["visits"]]
+    assert ages == [2, 4, 6, 9, 12, 18, 24, 36, 48, 60]
+
+
+def test_screening_points_exist_that_no_immunisation_covers():
+    # The reason this schedule is modelled separately: a mother told only about immunisation
+    # visits would miss these three entirely.
+    screening = {e["age_months"] for e in schedules.load_schedule(schedules.DEVELOPMENTAL_SCREENING_FILE)["visits"]}
+    immunisation = {e["age_months"] for e in schedules.load_schedule(schedules.IMMUNIZATION_FILE)["visits"]}
+    assert screening - immunisation == {24, 48}
+    assert 60 in screening
+
+
+def test_vitamin_a_encodes_the_six_monthly_reading():
+    ages = [entry["age_months"] for entry in schedules.load_schedule(schedules.VITAMIN_A_FILE)["visits"]]
+    assert ages == [6, 12, 18, 24, 30, 36, 42, 48, 54, 60]
+
+
+def test_vitamin_a_file_records_the_unresolved_discrepancy():
+    # Two sources disagree on the interval. The file must say so, not silently pick one.
+    raw = (schedules.DATA_DIR / schedules.VITAMIN_A_FILE).read_text(encoding="utf-8")
+    assert "DISCREPANCY" in raw
+    assert "6, 18 and 36" in raw
+
+
+def test_mmn_entries_are_periods_with_a_duration():
+    visits = schedules.load_schedule(schedules.MMN_SUPPLEMENTATION_FILE)["visits"]
+    assert [entry["age_months"] for entry in visits] == [6, 12, 18]
+    for entry in visits:
+        assert entry["duration_days"] == 60
+
+
+def test_duration_is_carried_through_to_the_computed_visit():
+    calendar_data = schedules.mmn_supplementation_visits("2026-01-15", today=TODAY)
+    for visit in calendar_data["visits"]:
+        assert visit["duration_days"] == 60
+
+
+def test_duration_is_absent_when_the_entry_has_none():
+    calendar_data = schedules.immunization_visits("2026-01-15", today=TODAY)
+    assert all("duration_days" not in visit for visit in calendar_data["visits"])
+
+
+@pytest.mark.parametrize(
+    "loader,kind",
+    [
+        (schedules.immunization_visits, "immunization"),
+        (schedules.developmental_screening_visits, "developmental_screening"),
+        (schedules.vitamin_a_visits, "vitamin_a"),
+        (schedules.mmn_supplementation_visits, "mmn_supplementation"),
+    ],
+)
+def test_each_child_schedule_loader_reports_its_kind_and_placeholder_status(loader, kind):
+    calendar_data = loader("2026-01-15", today=TODAY)
+    assert calendar_data["kind"] == kind
+    assert calendar_data["status"] == "placeholder"
+
+
+def test_child_schedule_dates_use_calendar_months():
+    calendar_data = schedules.developmental_screening_visits("2026-01-31", today=TODAY)
+    by_id = {visit["id"]: visit["date_iso"] for visit in calendar_data["visits"]}
+    assert by_id["screening_02m"] == "2026-03-31"
+    assert by_id["screening_60m"] == "2031-01-31"

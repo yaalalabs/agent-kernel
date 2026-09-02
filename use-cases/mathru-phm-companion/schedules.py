@@ -22,6 +22,19 @@ DATA_DIR = Path(__file__).parent / "data"
 ANTENATAL_FILE = "antenatal_schedule.yaml"
 IMMUNIZATION_FILE = "immunization_schedule.yaml"
 
+# The CHDR carries several overlapping schedules that do not share their ages. Each gets its
+# own data file, its own provenance, and its own placeholder guard.
+DEVELOPMENTAL_SCREENING_FILE = "developmental_screening.yaml"
+VITAMIN_A_FILE = "vitamin_a.yaml"
+MMN_SUPPLEMENTATION_FILE = "mmn_supplementation.yaml"
+
+CHILD_SCHEDULE_FILES = (
+    IMMUNIZATION_FILE,
+    DEVELOPMENTAL_SCREENING_FILE,
+    VITAMIN_A_FILE,
+    MMN_SUPPLEMENTATION_FILE,
+)
+
 MAX_EDD_WEEKS = 43
 MAX_EDD_DAYS = MAX_EDD_WEEKS * 7
 MAX_CHILD_AGE_YEARS = 5
@@ -172,19 +185,23 @@ def add_months(start: date, months: int) -> date:
     return date(year, month, min(start.day, calendar.monthrange(year, month)[1]))
 
 
-def immunization_visits(child_dob_iso: str, today: date | None = None) -> dict[str, Any]:
-    """The immunisation calendar derived from a child's date of birth.
+def child_visits(filename: str, kind: str, child_dob_iso: str, today: date | None = None) -> dict[str, Any]:
+    """A calendar of age-based child visits derived from a date of birth.
 
-    An entry carries either `age_months` or `age_weeks`. Months are calendar months from the
-    date of birth; weeks are `child_dob + W * 7 days`. An entry with both is a data error and
-    is skipped rather than silently resolved one way.
+    Shared by every child-health schedule, since they differ only in their data file. An entry
+    carries either `age_months` or `age_weeks`. Months are calendar months from the date of
+    birth; weeks are `child_dob + W * 7 days`. An entry with both is a data error and is
+    skipped rather than silently resolved one way.
+
+    An entry may also carry `duration_days`, for a schedule item that is a period rather than
+    a single appointment. The date is then the day the period starts.
     """
     now = _today(today)
     dob = parse_iso_date(child_dob_iso)
     if dob is None:
         raise ValueError(f"Not an ISO date: {child_dob_iso!r}")
 
-    data = load_schedule(IMMUNIZATION_FILE)
+    data = load_schedule(filename)
 
     visits = []
     for entry in data.get("visits") or []:
@@ -196,18 +213,43 @@ def immunization_visits(child_dob_iso: str, today: date | None = None) -> dict[s
         if has_months == has_weeks:  # neither, or ambiguously both
             continue
         if has_months:
-            visits.append(_visit_entry(add_months(dob, months), entry, now, "age_months"))
+            visit = _visit_entry(add_months(dob, months), entry, now, "age_months")
         else:
-            visits.append(_visit_entry(dob + timedelta(days=weeks * 7), entry, now, "age_weeks"))
+            visit = _visit_entry(dob + timedelta(days=weeks * 7), entry, now, "age_weeks")
+
+        duration = entry.get("duration_days")
+        if isinstance(duration, int) and not isinstance(duration, bool):
+            visit["duration_days"] = duration
+        visits.append(visit)
 
     visits.sort(key=lambda visit: visit["date_iso"])
     return {
-        "kind": "immunization",
+        "kind": kind,
         "status": data.get("status"),
-        "source_file": f"data/{IMMUNIZATION_FILE}",
+        "source_file": f"data/{filename}",
         "child_dob_iso": dob.isoformat(),
         "visits": visits,
     }
+
+
+def immunization_visits(child_dob_iso: str, today: date | None = None) -> dict[str, Any]:
+    """The immunisation calendar derived from a child's date of birth."""
+    return child_visits(IMMUNIZATION_FILE, "immunization", child_dob_iso, today)
+
+
+def developmental_screening_visits(child_dob_iso: str, today: date | None = None) -> dict[str, Any]:
+    """The developmental screening calendar derived from a child's date of birth."""
+    return child_visits(DEVELOPMENTAL_SCREENING_FILE, "developmental_screening", child_dob_iso, today)
+
+
+def vitamin_a_visits(child_dob_iso: str, today: date | None = None) -> dict[str, Any]:
+    """The vitamin A calendar derived from a child's date of birth."""
+    return child_visits(VITAMIN_A_FILE, "vitamin_a", child_dob_iso, today)
+
+
+def mmn_supplementation_visits(child_dob_iso: str, today: date | None = None) -> dict[str, Any]:
+    """The micronutrient supplementation calendar. Each entry is a period, not an appointment."""
+    return child_visits(MMN_SUPPLEMENTATION_FILE, "mmn_supplementation", child_dob_iso, today)
 
 
 def next_due(visits: list[dict[str, Any]], today: date | None = None) -> dict[str, Any] | None:

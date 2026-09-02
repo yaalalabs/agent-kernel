@@ -14,7 +14,14 @@ import yaml
 import provenance
 
 DATA_DIR = pathlib.Path(__file__).parent / "data"
-CLINICAL_FILES = ("antenatal_schedule.yaml", "immunization_schedule.yaml", "danger_signs.yaml")
+CLINICAL_FILES = (
+    "antenatal_schedule.yaml",
+    "immunization_schedule.yaml",
+    "developmental_screening.yaml",
+    "vitamin_a.yaml",
+    "mmn_supplementation.yaml",
+    "danger_signs.yaml",
+)
 
 
 def load(name):
