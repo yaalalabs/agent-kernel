@@ -118,13 +118,16 @@ class DocumentStore(ABC):
 
         The default reads the whole document and slices it. A store whose transport can
         serve a partial read should override this: a caller that only needs a header must
-        not have to pay for every document in full.
+        not have to pay for every document in full. Any override owes the same answer for a
+        non-positive ``max_bytes`` — no bytes, rather than a slice counted from the end.
 
         :param path: Store-relative path.
-        :param max_bytes: Maximum number of bytes to return.
+        :param max_bytes: Maximum number of bytes to return; ``0`` or less returns ``b""``.
         :return: Leading bytes of the document.
         :raises FileNotFoundError: If no document exists at that path.
         """
+        if max_bytes <= 0:
+            return b""
         return self.read_bytes(path)[:max_bytes]
 
     def close(self) -> None:

@@ -97,14 +97,14 @@ class OKFManager(DocumentKnowledgeBase):
     """
 
     def __init__(
-            self,
-            store: DocumentStore,
-            name: str = "",
-            description: Optional[str] = None,
-            refresh_seconds: Optional[float] = 300.0,
-            max_concepts: int = 10_000,
-            producer: Optional[str] = None,
-            write_prefix: str = "generated",
+        self,
+        store: DocumentStore,
+        name: str = "",
+        description: Optional[str] = None,
+        refresh_seconds: Optional[float] = 300.0,
+        max_concepts: int = 10_000,
+        producer: Optional[str] = None,
+        write_prefix: str = "generated",
     ) -> None:
         """
         Open an OKF bundle held in a document store.
@@ -214,8 +214,7 @@ class OKFManager(DocumentKnowledgeBase):
 
         scored = [(self._score(concept, tokens), concept) for concept in manifest.concepts.values()]
         # Ties break on path so two processes holding the same bundle agree on the order.
-        ranked = sorted(((score, concept) for score, concept in scored if score > 0),
-                        key=lambda pair: (-pair[0], pair[1].path))
+        ranked = sorted(((score, concept) for score, concept in scored if score > 0), key=lambda pair: (-pair[0], pair[1].path))
         return [self._concept_record(concept) for _, concept in ranked[:limit]]
 
     def fetch(self, ids: List[str], **kwargs) -> List[Record]:
@@ -274,6 +273,9 @@ class OKFManager(DocumentKnowledgeBase):
         back and inserted into the live manifest, so the concept is visible to the very next
         ``fetch``/``browse``/``search`` rather than after up to ``refresh_seconds``.
 
+        Paths for the whole batch are resolved before any of it is written, so a bad id fails
+        the call while it is still a no-op instead of half way through.
+
         :param records: Records to persist; ``text`` becomes the body, ``metadata`` the frontmatter.
         :param kwargs: Accepted for contract compatibility; unused.
         :return: None.
@@ -283,12 +285,15 @@ class OKFManager(DocumentKnowledgeBase):
         if not self.capabilities.writable:
             raise KnowledgeCapabilityError(self.backend_name, "write")
 
-        manifest = self._ensure_manifest()
+        prepared: List[tuple[str, str, dict]] = []
         for record in records or []:
             metadata = dict(record.get("metadata", {}) or {})
-            path = self._write_path(metadata)
-            document = self._render_document(record.get("text", "") or "", metadata)
+            prepared.append((self._write_path(metadata), record.get("text", "") or "", metadata))
 
+        self._ensure_manifest()
+        written: dict[str, OKFConcept] = {}
+        for path, text, metadata in prepared:
+            document = self._render_document(text, metadata)
             self._store.write_bytes(path, document.encode("utf-8"))
             concept, diagnostics = OKFParserUtil.parse_concept(path, document, body_complete=True)
             if concept is None:
@@ -296,7 +301,15 @@ class OKFManager(DocumentKnowledgeBase):
                 # mean a durable write invisible until the next walk.
                 log.warning("[%s.write] wrote %s but could not parse it back: %s", self.backend_name, path, diagnostics)
                 continue
-            manifest.concepts[path] = concept
+            written[path] = concept
+
+        if written:
+            # Held under the refresh lock and applied to whatever manifest is current, not to
+            # the one this call started with: a refresh that replaced it meanwhile would
+            # otherwise discard the write-through and hide a durable concept until the next walk.
+            with self._refresh_lock:
+                if self._manifest is not None:
+                    self._manifest.concepts.update(written)
 
     def format_results(self, rows: List[Record]) -> str:
         """
@@ -437,15 +450,13 @@ class OKFManager(DocumentKnowledgeBase):
                 if not bundle.truncated:
                     bundle.truncated = True
                     message = f"bundle exceeds max_concepts={self._max_concepts}; kept the first {len(bundle.concepts)} concepts"
-                    bundle.diagnostics.append(
-                        OKFDiagnostic(path="", code=DiagnosticCode.TRUNCATED.value, message=message))
+                    bundle.diagnostics.append(OKFDiagnostic(path="", code=DiagnosticCode.TRUNCATED.value, message=message))
                 continue
 
             self._absorb_concept(bundle, path)
 
         for diagnostic in bundle.diagnostics:
-            log.warning("[%s.walk] %s at %s: %s", self.backend_name, diagnostic.code, diagnostic.path or "<bundle>",
-                        diagnostic.message)
+            log.warning("[%s.walk] %s at %s: %s", self.backend_name, diagnostic.code, diagnostic.path or "<bundle>", diagnostic.message)
         return bundle
 
     def _absorb_reserved(self, bundle: OKFBundle, path: str) -> None:
@@ -465,8 +476,7 @@ class OKFManager(DocumentKnowledgeBase):
         if data is None:
             return
 
-        _, okf_version, diagnostics = OKFParserUtil.parse_index(path, OKFParserUtil.decode_document(data),
-                                                                is_root=directory == "")
+        _, okf_version, diagnostics = OKFParserUtil.parse_index(path, OKFParserUtil.decode_document(data), is_root=directory == "")
         bundle.index_files[directory] = path
         bundle.diagnostics.extend(diagnostics)
         if okf_version is not None:
@@ -517,11 +527,9 @@ class OKFManager(DocumentKnowledgeBase):
                 return self._store.read_bytes(path)
             return self._store.read_prefix_bytes(path, FRONTMATTER_MAX_BYTES + BODY_INDEX_MAX_BYTES)
         except FileNotFoundError as error:
-            bundle.diagnostics.append(OKFDiagnostic(path=path, code=DiagnosticCode.UNREADABLE.value,
-                                                    message=f"document disappeared: {error}"))
+            bundle.diagnostics.append(OKFDiagnostic(path=path, code=DiagnosticCode.UNREADABLE.value, message=f"document disappeared: {error}"))
         except KnowledgePathError as error:
-            bundle.diagnostics.append(
-                OKFDiagnostic(path=path, code=DiagnosticCode.PATH_ESCAPE.value, message=str(error)))
+            bundle.diagnostics.append(OKFDiagnostic(path=path, code=DiagnosticCode.PATH_ESCAPE.value, message=str(error)))
         return None
 
     def _score(self, concept: OKFConcept, tokens: set[str]) -> int:
@@ -579,15 +587,16 @@ class OKFManager(DocumentKnowledgeBase):
 
         is_root = posixpath.dirname(index_path) == ""
         body, _, _ = OKFParserUtil.parse_index(index_path, OKFParserUtil.decode_document(data), is_root=is_root)
-        return [
-            {"text": body, "metadata": {"id": index_path, "source": index_path, "title": index_path, "kind": "index"}}]
+        return [{"text": body, "metadata": {"id": index_path, "source": index_path, "title": index_path, "kind": "index"}}]
 
     def _derived_listing(self, manifest: OKFBundle, directory: str, limit: int) -> List[Record]:
         """
         Derive a directory listing from the manifest when no index curates one.
 
         The store cannot help: its ``list`` is recursive and emits files only, so immediate
-        subdirectories are inferred from the concept paths already held.
+        subdirectories are inferred from the paths the manifest already holds — the reserved
+        ones included, or a directory curated by nothing but an ``index.md`` would be
+        unreachable, and that index is the listing this operation exists to serve.
 
         :param manifest: The loaded manifest.
         :param directory: Normalised bundle-relative directory.
@@ -601,12 +610,18 @@ class OKFManager(DocumentKnowledgeBase):
         for path, concept in manifest.concepts.items():
             if not path.startswith(prefix):
                 continue
-            remainder = path[len(prefix):]
+            remainder = path[len(prefix) :]
             head, separator, _ = remainder.partition("/")
             if separator:
                 subdirectories.add(head)
             else:
                 concepts.append(concept)
+
+        for reserved in (*manifest.index_files.values(), *manifest.log_files):
+            if reserved.startswith(prefix):
+                head, separator, _ = reserved[len(prefix) :].partition("/")
+                if separator:
+                    subdirectories.add(head)
 
         if not concepts and not subdirectories and directory:
             log.warning("[%s.browse] no such directory in the bundle: %r", self.backend_name, directory)

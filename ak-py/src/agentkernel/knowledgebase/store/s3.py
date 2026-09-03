@@ -102,7 +102,7 @@ class S3DocumentStore(DocumentStore):
         document header must not pay to transfer whole documents out of S3.
 
         :param path: Store-relative path.
-        :param max_bytes: Maximum number of bytes to return.
+        :param max_bytes: Maximum number of bytes to return; ``0`` or less returns ``b""``.
         :return: Leading bytes of the document.
         :raises FileNotFoundError: If no object exists at that key.
         """
