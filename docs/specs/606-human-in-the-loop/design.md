@@ -21,7 +21,7 @@ Supporting research: [`research/framework-hitl-survey.md`](research/framework-hi
   - *Silently empty*: ADK's `get_response` keeps only `is_final_response()` text
     (`adk.py:220-229`) and never inspects `event.long_running_tool_ids`, so a pending
     long-running call yields an empty or partial reply.
-  - *Ignored*: OpenAI reads `.final_output` and never `.interruptions` (`openai.py:208`).
+  - *Ignored*: OpenAI reads `.final_output` and never `.interruptions` (`openai.py:211`).
   - *Stringified*: Pydantic AI reads `result.output` (`pydanticai.py:171`). `DeferredToolRequests`
     is a **dataclass, not a `BaseModel`** (verified — `research/verification.md`), so
     `AgentReplyAny.from_output` returns `None` for it (`model.py:157-161`) and the adapter falls
@@ -29,7 +29,7 @@ Supporting research: [`research/framework-hitl-survey.md`](research/framework-hi
     `AgentReplyText` containing a dataclass repr.
 - **A raised pause would be swallowed too.** All six runners end in
   `except Exception as e: return AgentReplyText(response=user_facing_error_message(e), ...)` —
-  `openai.py:218`, `langgraph.py:429`, `pydanticai.py:184`, `adk.py:266`, `crewai.py:405`,
+  `openai.py:221`, `langgraph.py:429`, `pydanticai.py:184`, `adk.py:266`, `crewai.py:405`,
   `smolagents.py:181`.
 - **The durable store the issue asks for already exists.** `Runtime.run` calls
   `SessionStore.store(session)` after post-hooks (`runtime.py:228`), and every non-volatile
@@ -336,13 +336,13 @@ graph LR
     right and is wrong: **a resume can pause again**, the adapter writes the new record inside its
     success path, and a clear afterwards would delete it. Clear-or-replace belongs to the adapter,
     via `PausedRunState`, at the same **point in the code path** `_store_framework_context` sits
-    today (`openai.py:210`) — inside the `try`, after a successful native call. The comparison is
+    today (`openai.py:213`) — inside the `try`, after a successful native call. The comparison is
     about *placement*, not about where the helper lives; the store is standalone, not a `Runner`
     method. Rule 2 holds partly *because* of this rule — a halt leaves the record alone only if
     nothing cleared it earlier.
   - **Validation happens in `Runtime`, before the branch — never inside the adapter.** Every
     adapter ends in `except Exception: return AgentReplyText(user_facing_error_message(e))`
-    (`openai.py:218`, `langgraph.py:429`, `pydanticai.py:184`, `adk.py:266`), and `resume()` will
+    (`openai.py:221`, `langgraph.py:429`, `pydanticai.py:184`, `adk.py:266`), and `resume()` will
     be written the same way. The five resume failure modes raised there would be swallowed into
     *"Sorry, something went wrong"* — precisely what this design forbids. They are also generic,
     needing no framework knowledge, so adapter-side checks would be written four times.
@@ -455,7 +455,7 @@ graph LR
     error, so it must **not** be reported through `StreamChunk.error`.
 - Per-adapter streaming pause support:
   - **OpenAI** — supported. Drain `stream_events()`, then read `RunResultStreaming.interruptions`
-    at the point the adapter already writes framework context (`openai.py:264-269`).
+    at the point the adapter already writes framework context (`openai.py:268-272`).
   - **Pydantic AI** — supported. `DeferredToolRequestsEvent` arrives on `run_stream_events()`,
     which the adapter already consumes (`pydanticai.py:190+`).
   - **LangGraph** — supported. The adapter uses `astream_events(version="v2")`
@@ -487,7 +487,7 @@ that ordering is what distinguishes this from the current silent-loss behaviour.
 
 | Adapter | Detect | Persist as `payload` | Resume call |
 |---|---|---|---|
-| **OpenAI** | `result.interruptions` non-empty, checked before `.final_output` (`openai.py:208`) | `result.to_state().to_json()` | `RunState.from_json(initial_agent=agent.agent, state_json=payload)`, apply `approve`/`reject`, `Runner.run(agent.agent, state)` |
+| **OpenAI** | `result.interruptions` non-empty, checked before `.final_output` (`openai.py:211`) | `result.to_state().to_json()` | `RunState.from_json(initial_agent=agent.agent, state_json=payload)`, apply `approve`/`reject`, `Runner.run(agent.agent, state)` |
 | **LangGraph** | `"__interrupt__" in result`, checked before `result["messages"][-1]` (`langgraph.py:427`) | interrupt ids + `.value`s only — the checkpointer already holds the state | `ainvoke(Command(resume=...), config)` on the same `thread_id` (= `session.id`) |
 | **Pydantic AI** | `isinstance(result.output, DeferredToolRequests)`, checked before `AgentReplyAny.from_output` (`pydanticai.py:178`) | `to_jsonable_python(result.all_messages())` (already written at `pydanticai.py:173-174`) + the requests | `run(content, message_history=..., deferred_tool_results=DeferredToolResults(...))` |
 | **Google ADK** | per-event: `event.long_running_tool_ids` ∩ part `function_call.id`, **or** a `function_call` named `adk_request_confirmation` — in `get_response` (`adk.py:204-230`) | pending `FunctionCall` id + name, confirmation hint/payload, `invocation_id` | `run_async(new_message=Content(parts=[Part(function_response=...)]))`, plus `invocation_id=` when the app is resumable |
@@ -565,16 +565,22 @@ the two negative cases distinguishable to the model**:
   back the #526 context (`openai.py:206-210`, `langgraph.py:408-422`, `pydanticai.py:169-176`,
   `adk.py:184-199`); `resume()` must do the same, or a resumed turn silently drops the caller's
   context.
-- **OpenAI multimodal runs currently pass no SDK session** (`_get_run_input` returns
-  `(content, None)`, `openai.py:181-184`), which would leave a paused multimodal run with no
-  session to resume against. **This is already being fixed independently by PR #679** ("Keep
-  session memory on multimodal OpenAI runs (`openai-agents>=0.7.0`)"), which changes
-  `openai.py` and bumps the dependency. *(Open question 6 is therefore withdrawn.)*
-  - **Ordering constraint: this change lands after #679 merges.** `spec.md` must re-read
-    `_get_run_input` against the merged result rather than the current code — the PR's diff was
-    not readable at the time of writing, only its commit list and changed files.
-  - If #679 changes shape or slips, the question reopens as: refuse to pause on multimodal
-    input, or pause with weaker resume semantics.
+- **OpenAI multimodal runs now carry the SDK session — dependency satisfied.** *(Open question 6
+  withdrawn; the ordering constraint is discharged.)* PR #679 has merged (`ad189723`) and the
+  merged code was read directly rather than inferred from its commit message:
+  - `_get_run_input(prompt, message_content)` (`openai.py:173-187`) is now a `@staticmethod`
+    returning only the input **shape**. It no longer returns a session, and no longer returns
+    `None` for multimodal. Its docstring states the rule: *"The choice is about shape only — the
+    session goes with either, so a turn carrying an attachment is remembered like any other."*
+  - `run()` passes `session=self._session(session)` **unconditionally** (`openai.py:211`), as does
+    `stream()` (`openai.py:257`).
+  - **Why this mattered to HITL, precisely:** before the merge a multimodal turn ran with
+    `session=None`, so the SDK never recorded that turn in AK's `OpenAISession`. A pause on such a
+    turn produced a `RunState` describing work that AK's own conversation history had no record
+    of — and a resume would then run against a session missing the very turn being resumed. The
+    inconsistency was in the history, not in `RunState` itself, which is self-contained.
+  - Nothing in this design now needs a multimodal special case for OpenAI: a paused multimodal run
+    resumes on the same path as a paused text run.
 
 ### Presentation and transport
 
@@ -730,9 +736,9 @@ Rules for the stack:
 - **PRs 1 and 2 are behaviour-neutral.** Nothing in the shipped product pauses until PR 3. That is
   deliberate: it lets the contract and the wiring be reviewed without any framework specifics in
   the diff, and it means a problem found in PR 3 does not block merging 1 and 2.
-- **PR 3 depends on #679 merging first** (multimodal OpenAI session memory — see Adapters). If
-  #679 slips, PR 3 ships with multimodal OpenAI runs refusing to pause, and a follow-up lifts the
-  restriction.
+- **PR 3's dependency on #679 is satisfied** — it merged as `ad189723` and `develop` is already
+  merged into this branch, so multimodal OpenAI runs carry their session (see Adapters). No
+  multimodal special case is needed and no follow-up is pending.
 - **Each PR carries its own tests.** Only the docs/skills sync is deferred to PR 5, because it
   describes the finished capability.
 - Titles follow the repo's Conventional Commits rule: `feat:` for 1–5, with the spec commit inside
