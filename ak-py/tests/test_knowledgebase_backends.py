@@ -12,7 +12,7 @@ from typing import Any, Mapping
 import pytest
 
 from agentkernel.knowledgebase.chroma import ChromaManager
-from agentkernel.knowledgebase.errors import KnowledgeCapabilityError
+from agentkernel.knowledgebase.errors import KnowledgeCapabilityError, KnowledgeError
 from agentkernel.knowledgebase.neo4j import Neo4jManager
 from agentkernel.knowledgebase.starburst import StarburstManager
 
@@ -191,16 +191,36 @@ class TestNeo4jManager:
 
     def test_a_record_carrying_no_query_is_skipped_rather_than_executed(self, neo4j, neo4j_driver):
         # It used to reach the driver as _run(None, {}).
-        neo4j.write([{"text": "just prose", "metadata": {"source": "agent"}}])
+        with pytest.raises(KnowledgeError):
+            neo4j.write([{"text": "just prose", "metadata": {"source": "agent"}}])
         assert neo4j_driver.executed == []
 
     def test_a_skipped_record_does_not_stop_the_rest_of_the_batch(self, neo4j, neo4j_driver):
-        neo4j.write(
-            [
-                {"text": "just prose", "metadata": {"source": "agent"}},
-                {"text": "", "metadata": {"query": "CREATE (:N)"}},
-            ]
-        )
+        with pytest.raises(KnowledgeError):
+            neo4j.write(
+                [
+                    {"text": "just prose", "metadata": {"source": "agent"}},
+                    {"text": "", "metadata": {"query": "CREATE (:N)"}},
+                ]
+            )
+        # Raised only once the batch was through, so the healthy record still landed.
+        assert neo4j_driver.executed == [("CREATE (:N)", {})]
+
+    def test_the_skip_report_names_what_was_stored_and_what_was_not(self, neo4j, neo4j_driver):
+        # write_kb turns this into "Failed to write...", which is the whole point: a
+        # text-only write to Neo4j used to be reported to the agent as a success.
+        with pytest.raises(KnowledgeError) as excinfo:
+            neo4j.write(
+                [
+                    {"text": "just prose", "metadata": {"source": "agent"}},
+                    {"text": "", "metadata": {"query": "CREATE (:N)"}},
+                ]
+            )
+        assert "1 of 2" in str(excinfo.value)
+        assert "1 stored" in str(excinfo.value)
+
+    def test_a_batch_that_is_entirely_writable_does_not_report(self, neo4j, neo4j_driver):
+        neo4j.write([{"text": "", "metadata": {"query": "CREATE (:N)"}}])
         assert neo4j_driver.executed == [("CREATE (:N)", {})]
 
     def test_schema_carries_the_declaration(self, neo4j):
@@ -249,6 +269,39 @@ class TestStarburstManager:
         starburst.query("SELECT * FROM orders")
         assert starburst.connection.cursors[0].executed == ["SELECT * FROM orders LIMIT 3"]
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            # The bug: "LIMIT" in sql.upper() matched inside the identifier, so the whole
+            # table was read into the agent's context unbounded.
+            "SELECT * FROM credit_limits",
+            "SELECT rate_limit FROM policies",
+            # A word boundary alone still matches these two, which is why the clause has
+            # to carry its count to count.
+            "SELECT * FROM t WHERE note = 'limit'",
+            "SELECT limit FROM policies",
+        ],
+    )
+    def test_an_identifier_containing_limit_does_not_disable_the_fallback(self, starburst, sql: str):
+        starburst.query(sql)
+        assert starburst.connection.cursors[0].executed == [f"{sql} LIMIT 3"]
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT * FROM orders LIMIT 10",
+            "select * from orders limit 10",
+            # A subquery LIMIT already bounds the result, and appending a second clause
+            # to a statement that has one would be invalid SQL.
+            "SELECT * FROM (SELECT * FROM orders LIMIT 10) t",
+            "SELECT * FROM t LIMIT ALL",
+            "SELECT * FROM orders OFFSET 5 LIMIT 10",
+        ],
+    )
+    def test_a_statement_that_already_bounds_itself_is_left_alone(self, starburst, sql: str):
+        starburst.query(sql)
+        assert starburst.connection.cursors[0].executed == [sql]
+
     def test_non_read_sql_is_still_rejected(self, starburst):
         assert starburst.query("DELETE FROM orders") == []
         assert starburst.connection.cursors == []
@@ -259,6 +312,6 @@ class TestStarburstManager:
         assert excinfo.value.subject == "starburst"
         assert excinfo.value.capability == "write"
 
-    def test_write_with_no_arguments_also_raises_the_capability_error(self, starburst):
-        with pytest.raises(KnowledgeCapabilityError):
-            starburst.write()
+    def test_write_is_refused_by_the_base_declaration_not_by_an_override(self, starburst):
+        # StarburstManager no longer overrides write(); writable=False is what refuses it.
+        assert "write" not in vars(type(starburst))

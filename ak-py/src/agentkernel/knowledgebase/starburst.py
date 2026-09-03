@@ -1,12 +1,12 @@
 import logging
 import os
-from typing import Any, Iterable, List, Mapping, Optional
+import re
+from typing import Any, List, Mapping
 
 import trino
 import trino.exceptions
 
 from .base import KnowledgeBase
-from .errors import KnowledgeCapabilityError
 from .model import KnowledgeCapabilities
 
 logger = logging.getLogger("ak.StarburstManager")
@@ -16,6 +16,10 @@ STARBURST_USER = os.getenv("STARBURST_USER", "")
 STARBURST_PASSWORD = os.getenv("STARBURST_PASSWORD", "")
 STARBURST_PORT = int(os.getenv("STARBURST_PORT", "443"))
 
+# Match a real LIMIT clause: the keyword as its own token, followed by its required count.
+# A bare `"LIMIT" in sql` also matched identifiers like `credit_limits`, incorrectly skipping
+# the fallback and exposing the whole table; requiring the count also excludes columns/string literals.
+LIMIT_CLAUSE = re.compile(r"\bLIMIT\s+(?:\d+|ALL)\b", re.IGNORECASE)
 
 class StarburstManager(KnowledgeBase):
     """
@@ -134,17 +138,6 @@ class StarburstManager(KnowledgeBase):
             finally:
                 self.connection = None
 
-    def write(self, records: Optional[Iterable[Mapping[str, Any]]] = None, **kwargs) -> None:
-        """
-        Reject write attempts because this backend is read-only.
-
-        :param records: Unused write payload.
-        :param kwargs: Reserved for interface compatibility.
-        :return: None.
-        :raises KnowledgeCapabilityError: Always raised for this backend.
-        """
-        raise KnowledgeCapabilityError(self.backend_name, "write")
-
     def get_description(self) -> str:
         """
         Return a human-readable backend summary.
@@ -182,8 +175,10 @@ class StarburstManager(KnowledgeBase):
             logger.error(f"[KB][{self.name}] Rejected non-read SQL: {sql[:80]}")
             return []
 
-        # Append a safe LIMIT if the agent omitted one for SELECT statements.
-        if verb == "SELECT" and "LIMIT" not in sql.upper():
+        # Append a safe LIMIT if the agent omitted one for SELECT statements. Any LIMIT
+        # token counts, wherever it sits: one in a subquery already bounds the result, and
+        # appending a second clause to a statement that has one would be invalid SQL.
+        if verb == "SELECT" and not LIMIT_CLAUSE.search(sql):
             sql = f"{sql} LIMIT {limit}"
 
         return self._execute(sql, retried=False)

@@ -115,32 +115,34 @@ class KnowledgeBuilder:
         capabilities = self._capabilities_of(backend)
         return bool(capabilities and getattr(capabilities, capability, False))
 
-    def _backends_declaring(self, capability: str) -> List[str]:
+    def _backends_declaring(self, *capabilities: str) -> List[str]:
         """
-        List the registered backends declaring a capability.
+        List the registered backends declaring at least one of the given capabilities.
 
         Used both to gate which tools ``build()`` emits and to tell an agent which
-        backends a mis-routed call should have gone to.
+        backends a mis-routed call should have gone to. More than one capability is
+        passed when a single tool is served by several, as read_kb is by search and query.
 
-        :param capability: KnowledgeCapabilities field name, for example "browse".
-        :return: Backend names declaring that capability, in registration order.
+        :param capabilities: KnowledgeCapabilities field names, for example "browse".
+        :return: Backend names declaring at least one of them, in registration order.
         """
-        return [name for name, backend in self.backends.items() if self._declares(backend, capability)]
+        return [name for name, backend in self.backends.items() if any(self._declares(backend, field) for field in capabilities)]
 
-    def _unsupported(self, backend_name: str, capability: str, label: str = "") -> str:
+    def _unsupported(self, backend_name: str, label: str, *capabilities: str) -> str:
         """
         Build the message returned when a tool is routed at a backend that cannot serve it.
 
-        ``label`` exists because the message and the lookup need different words for one
-        capability: the field is named ``writable``, which does not read as a verb in the
-        sentence, while every other field name doubles as its own description.
+        The label is what the agent reads, and the capability fields are what decides who
+        can serve it instead. They differ where no single field carries the tool's name:
+        read_kb needs search or query, and write_kb needs the field spelled ``writable``.
 
         :param backend_name: Backend the agent addressed.
-        :param capability: KnowledgeCapabilities field name the tool needs.
-        :param label: Wording for the message; defaults to the field name.
+        :param label: What the tool needs, phrased for the agent.
+        :param capabilities: Fields that satisfy the need; defaults to the label itself.
         :return: Message naming the backends that do declare the capability.
         """
-        return f"Backend '{backend_name}' does not support {label or capability}. Backends that do: {self._backends_declaring(capability)}."
+        alternatives = self._backends_declaring(*(capabilities or (label,)))
+        return f"Backend '{backend_name}' does not support {label}. Backends that do: {alternatives}."
 
     def build(self):
         """
@@ -194,6 +196,11 @@ class KnowledgeBuilder:
             if not db:
                 return f"Unknown backend '{backend}'. Available: {list(self.backends.keys())}"
 
+            # read() falls through to search() whenever query is undeclared, so a backend
+            # declaring neither would report a missing search the agent never asked for.
+            if not self._declares(db, "search") and not self._declares(db, "query"):
+                return self._unsupported(backend, "reads", "search", "query")
+
             resolved_query = self._resolve_placeholders(query)
             if resolved_query != query:
                 log.debug(f"[read_kb] Translated query to: {resolved_query!r}")
@@ -222,7 +229,7 @@ class KnowledgeBuilder:
                 return f"Unknown backend '{backend}'."
 
             if not self._declares(db, "writable"):
-                return self._unsupported(backend, "writable", label="writing")
+                return self._unsupported(backend, "writes", "writable")
 
             if not text and not query:
                 return "Error: provide at least one of 'text' or 'query'."
