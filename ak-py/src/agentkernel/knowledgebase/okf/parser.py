@@ -86,10 +86,15 @@ class OKFParserUtil:
         a bounded *prefix* of each file, which can cut a multi-byte character in half. A
         strict decode would abort the walk over one non-ASCII concept.
 
+        The codec is ``utf-8-sig`` for the same reason ``is_reserved`` compares
+        case-insensitively: bundles travel as git repos and tarballs from Windows editors, and
+        under plain ``utf-8`` a leading byte-order marker becomes content — enough to make the
+        opening ``---`` unrecognisable and drop the whole concept.
+
         :param data: Raw document bytes, possibly a truncated prefix.
-        :return: Decoded text.
+        :return: Decoded text, without any leading byte-order marker.
         """
-        return data.decode("utf-8", errors="replace")
+        return data.decode("utf-8-sig", errors="replace")
 
     @staticmethod
     def tokenise(text: str) -> set[str]:
@@ -231,7 +236,14 @@ class OKFParserUtil:
             target = match.group(1)
             # An absolute URL is a reference out of the bundle, not an edge within it, and is
             # never dereferenced anywhere in this layer.
-            if _SCHEME.match(target) or not target.endswith(".md"):
+            if _SCHEME.match(target):
+                continue
+
+            # A fragment or query addresses a place *inside* a document, so `./x.md#columns`
+            # is the same edge as `./x.md`. Both are stripped before the suffix test, which
+            # would otherwise drop every section link from the graph without a diagnostic.
+            target = target.split("#", 1)[0].split("?", 1)[0]
+            if not target.endswith(".md"):
                 continue
 
             raw = target.lstrip("/") if target.startswith("/") else posixpath.join(directory, target)

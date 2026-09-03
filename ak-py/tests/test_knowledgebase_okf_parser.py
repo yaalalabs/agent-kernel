@@ -61,6 +61,15 @@ class TestSplitFrontmatter:
         assert frontmatter is None
         assert body == data
 
+    def test_a_byte_order_marker_does_not_hide_the_opening_delimiter(self):
+        # Bundles travel as git repos and tarballs from Windows editors. Left in place, a BOM
+        # makes the first line something other than `---` and drops the whole concept.
+        data = OKFParserUtil.decode_document("---\ntype: Table\n---\nbody\n".encode("utf-8-sig"))
+        frontmatter, body = OKFParserUtil.split_frontmatter(data)
+
+        assert frontmatter == "type: Table\n"
+        assert body == "body\n"
+
     def test_a_delimiter_inside_the_body_does_not_reopen_the_block(self):
         frontmatter, body = OKFParserUtil.split_frontmatter("---\ntype: Table\n---\nbefore\n---\nafter\n")
         assert frontmatter == "type: Table\n"
@@ -262,6 +271,18 @@ class TestExtractLinks:
     @pytest.mark.parametrize("target", ["https://example.com/x.md", "mailto:a@b.md", "./notes.txt", "#section"])
     def test_targets_that_are_not_bundle_documents_are_ignored(self, target):
         assert OKFParserUtil.extract_links("tables/orders.md", f"see [x]({target})") == ([], [])
+
+    @pytest.mark.parametrize("target", ["./customers.md#columns", "/tables/customers.md#columns", "./customers.md?v=2"])
+    def test_a_fragment_or_query_addresses_a_place_inside_the_same_edge(self, target):
+        # A section link is how a concept points at part of another concept; dropping it would
+        # silently thin the graph, with no diagnostic to say a link had gone missing.
+        links, diagnostics = OKFParserUtil.extract_links("tables/orders.md", f"see [x]({target})")
+        assert links == ["tables/customers.md"]
+        assert diagnostics == []
+
+    def test_a_fragment_link_is_the_same_edge_as_the_plain_one(self):
+        body = "[a](./customers.md#cols) then [b](./customers.md)"
+        assert OKFParserUtil.extract_links("tables/orders.md", body)[0] == ["tables/customers.md"]
 
     def test_a_broken_but_contained_link_is_kept_because_nothing_is_resolved_at_parse_time(self):
         links, diagnostics = OKFParserUtil.extract_links("tables/orders.md", "see [gone](./missing.md)")

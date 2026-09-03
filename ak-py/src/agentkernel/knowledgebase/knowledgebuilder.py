@@ -152,6 +152,10 @@ class KnowledgeBuilder:
         some registered backend declares the capability behind it, so an application's
         agent never sees a tool nothing can serve.
 
+        ``write_kb`` is emitted unconditionally, unlike the other capability-bearing tools:
+        the design freezes the original four as a compatibility promise, so its gate is the
+        per-call check inside the tool rather than its presence in this list.
+
         :return: List of callable tool functions.
         """
         for name, backend in self.backends.items():
