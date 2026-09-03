@@ -39,7 +39,9 @@ general_agent = CustomAgent(
     name="general",
     description="Agent for general questions",
     model=model,
-    system_prompt="You provide assistance with general queries. Give short and direct answers.",
+    system_prompt="You provide assistance with general queries. Give short and direct answers. "
+    "When asked about a specific historical event (e.g. a particular year's tournament), "
+    "answer only for that exact event and do not mix in details from other editions of the same event.",
 ).graph
 
 # Weather agent: Handles weather-related queries using the get_weather tool
