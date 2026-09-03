@@ -17,8 +17,8 @@ async def test_client():
 
 @pytest.mark.order(1)
 async def test_first_question(test_client):
-    await test_client.send("Who won the 1996 cricket world cup? Just give the answer and don't repeat the question.")
-    await test_client.expect(["Sri Lanka won the 1996 cricket world cup."])
+    await test_client.send("Who won the 1996 cricket world cup?, answer with only the country name")
+    await test_client.expect(["Sri Lanka"])
 
 
 @pytest.mark.order(2)
@@ -34,12 +34,11 @@ async def test_score_mode_gives_partial_credit(test_client):
 @pytest.mark.order(3)
 async def test_llm_mode_uses_the_custom_judge(test_client):
     await test_client.send(
-        "Which country hosted the 1996 cricket world cup? Make sure to mention all the countries that hosted it. "
-        "Just give the answer and don't repeat the question."
+        "Which countries hosted the tournament? Answer with only the country names, listing all of them."
     )
     result = Test.compare(
         actual=test_client.last_agent_response,
-        expected=["The tournament was co-hosted by India, Pakistan and Sri Lanka."],
+        expected=["Sri Lanka, India and Pakistan"],
         user_input=test_client.last_user_input,
         threshold=0.6,
         return_metrics=True,
