@@ -53,9 +53,10 @@ The Runtime:
 `Runtime.stream(agent, session, requests)` is the streaming counterpart (used when `execution.mode: stream`). It shares the same pre-hook pipeline, then:
 
 - Iterates `agent.runner.stream(...)`. Adapters that still yield raw token strings (rather than typed `StreamEvent`s) have those strings normalised into a synthesized `MessageStart`/`TextDelta`/`MessageEnd` sequence.
-- Passes only `TextDelta`/`ReasoningDelta` content through every post-hook's `on_stream_chunk()`; a hook returning `None` drops the whole chunk, event included (useful for redaction/filtering). A hook's edit is written back into the event so `delta` and `event` never disagree.
-- Yields a `StreamChunk(delta=..., event=...)` per surviving event — `delta` is populated only when the event is a `TextDelta` — then a final `StreamChunk(done=True)`.
+- Passes **every** event through each post-hook's `on_stream_event()`. A hook may pass it, rewrite it in place, return `None` to drop it, or return a list to emit several events in its place; a returned list is emitted as-is and ends the chain for that event.
+- Yields a `StreamChunk(delta=..., event=...)` per surviving event — `delta` is populated only when the event is a `TextDelta`, and is taken from the event finally emitted so the two can never disagree — then a final `StreamChunk(done=True)`.
 - If a pre-hook halts, yields a single `StreamChunk(error=..., done=True)`.
+- If a post-hook raises `StreamHalt`, emits the closing event for any boundary the stream left open, then a single `StreamChunk(error=..., done=True)`, and does **not** store the session. Any other exception propagates unchanged.
 - Stores the session and clears the volatile cache in `finally`, same as `run()`.
 
 ```python

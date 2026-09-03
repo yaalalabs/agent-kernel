@@ -175,8 +175,9 @@ Reading the table:
 - **Audio and video content is rejected with a 400.** AK has no equivalent request type, and mapping
   them onto the generic file type produces misleading model output. Images and documents are accepted,
   from an inline base64 `data` source or a `url` source.
-- **Tool-call payloads reach the client uninspected.** No post-hook can see `ToolCallArgs` or
-  `ToolCallResult` — `on_stream_chunk` only sees text, and `on_run` does not run on a streamed path at
-  all. On an AG-UI run `on_stream_chunk` is the entire output-side defence, so if a tool's arguments or
-  return value can contain data you would redact from prose, redact it inside the tool. See
-  [Hooks](./hooks#streaming-hooks-on_stream_chunk).
+- **Tool-call payloads are inspectable, but only if you write a hook.** Every event an AG-UI run emits
+  passes through `PostHook.on_stream_event`, including `ToolCallArgs` and `ToolCallResult`, so a hook
+  can rewrite or drop them before they reach the client, or raise `StreamHalt` to end the run. The
+  built-in guardrail providers do **not** implement it, so a configured output guardrail still does
+  nothing on a streamed run — the capability is there, the wiring for those providers is not. See
+  [Hooks](./hooks#streaming-hooks-on_stream_event).

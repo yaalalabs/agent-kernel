@@ -171,18 +171,16 @@ sequenceDiagram
     participant API as REST API (SSE)
     participant RT as Runtime.stream()
     participant Run as Runner.stream()
-    participant Post as PostHook.on_stream_chunk()
+    participant Post as PostHook.on_stream_event()
 
     User->>API: POST /api/v1/chat (same payload)
     API->>RT: stream(agent, session, requests)
     RT->>RT: pre-hook pipeline (same as run)
     loop each event
-        Run-->>RT: StreamEvent (or legacy str, normalised)
-        opt event is TextDelta/ReasoningDelta
-            RT->>Post: on_stream_chunk(content)
-            Post-->>RT: content (or None to drop the whole chunk)
-        end
-        RT-->>API: StreamChunk(delta=..., event=...)
+        Run-->>RT: StreamEvent
+        RT->>Post: on_stream_event(event)
+        Post-->>RT: the event, a list, or None to drop it
+        RT-->>API: StreamChunk(delta=..., event=...) per emitted event
         API-->>User: data: {"delta": "...", "event": {...}, "done": false, "session_id": "..."}
     end
     Run-->>RT: MessageEnd(message_id)

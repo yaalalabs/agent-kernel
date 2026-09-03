@@ -207,41 +207,121 @@ configuration in the [framework docs](../frameworks/overview).
 
 See [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai_structured) for a complete example with a post-execution hook that modifies a structured reply.
 
-### Streaming Hooks (`on_stream_chunk`)
+### Streaming Hooks (`on_stream_event`)
 
-When the application runs in streaming mode (`execution.mode: stream`), or over the AG-UI surface, the agent reply arrives as a sequence of typed **events** rather than one final reply. Post-execution hooks can intercept the **text** those events carry before it reaches the client by overriding `on_stream_chunk`:
+When the application runs in streaming mode (`execution.mode: stream`), or over the AG-UI surface, the agent reply arrives as a sequence of typed **events** rather than one final reply. Post-execution hooks see every one of them — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them — by overriding `on_stream_event`.
+
+The cheapest useful case needs no bookkeeping at all. A tool's return value arrives whole, in one event, on every adapter:
 
 ```python
 from agentkernel import PostHook
 
-class TokenRedactionHook(PostHook):
+class ToolResultRedactionHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         return agent_reply  # non-streaming path
 
-    async def on_stream_chunk(self, session, requests, agent, delta: str) -> str | None:
-        if "secret" in delta.lower():
-            return None          # drop this token entirely
-        return delta.replace("internal", "[redacted]")  # or modify it
+    async def on_stream_event(self, session, requests, agent, event):
+        if event.type == "tool_call_result":
+            return event.model_copy(update={"content": scrub(event.content)})
+        return event
 
     def name(self):
-        return "TokenRedactionHook"
+        return "ToolResultRedactionHook"
 ```
 
-- The default implementation passes each delta through unchanged, so existing hooks keep working in streaming mode without changes.
-- Returning `None` drops the whole chunk — the event with it, not just the text. Returning a modified string replaces it, **and the replacement is written back into the event**, so a client reading `event` sees the redacted text too. A hook cannot be bypassed by looking at the event instead of the delta.
-- The hook sees text from **two** event kinds: `TextDelta` (the answer) and `ReasoningDelta` (a thinking model's summary). Reasoning is user-visible text, so a redaction hook that skipped it would be a hole — but it is never projected into `StreamChunk.delta`, so it does not leak into plain-text surfaces or recorded threads.
-- Pre-execution hooks run **before** streaming starts; if one halts, the client receives a single error chunk (`done: true`) and the agent never runs.
-- `on_run` post-hooks are **not** called for streamed runs (there is no single final reply to transform); filtering via `on_stream_chunk` is the streaming counterpart.
+Four return shapes:
 
-:::warning Tool-call payloads are not filtered
-No hook can see them. `ToolCallArgs` and `ToolCallResult` carry no text through `on_stream_chunk`, and
-`on_run` does not run on a streamed path either — so on a streamed run `on_stream_chunk` is the entire
-output-side defence and tool-call arguments and results reach the client **uninspected**. If a tool's
-arguments or return value can contain data you would redact from prose, do not rely on hooks to catch
-it on a streamed surface; redact inside the tool.
+- **The event** — pass it on, or return a modified event of the **same** `type` to rewrite it in place. A different `type` raises `TypeError`; use a list to emit another type.
+- **`None`** — drop it. Nothing is sent to the client for that event. Dropping a whole pair is ordinary (hiding a reasoning block means dropping `reasoning_start`, `reasoning_delta` and `reasoning_end` alike); dropping only a closing event leaves the client with something that never finishes, which is your responsibility.
+- **A list** — emitted in order, in place of the event. This is how a hook emits *more* than it was given.
+- **Raise `StreamHalt`** — end the run. See below.
+
+:::warning A returned list ends the chain
+`return event` and `return [event]` are **not** equivalent. A list is emitted as-is and the hooks after yours never see those events. Return a bare event unless you specifically mean to emit a different number of them.
 :::
 
-**Use Cases:** token-level redaction/PII masking, profanity filtering, stop-sequence enforcement, streaming analytics.
+`StreamChunk.delta` is populated only for `TextDelta`, and it is taken from whatever event is finally emitted — so a rewrite reaches both `delta` and `event`, and plain-text consumers and recorded threads carry the redacted version. Reasoning text still reaches your hook but is never projected into `delta`, so it does not leak into surfaces that concatenate it as the answer.
+
+#### Holding text back to rewrite it
+
+Prose arrives one fragment at a time, so a pattern can straddle two events. To rewrite text rather than merely observe it, hold the fragments and release the assembled whole at the boundary:
+
+```python
+class MessageRedactionHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        return agent_reply
+
+    async def on_stream_event(self, session, requests, agent, event):
+        # The buffer belongs on the session, never on `self`: one hook instance serves every
+        # concurrent request in the process, while the volatile cache is per session and is
+        # cleared when the run ends.
+        buf = session.get_volatile_cache()
+
+        if event.type == "text_delta":
+            key = f"redact.{event.message_id}"
+            buf.set(key, (buf.get(key) or "") + event.content)
+            return None                                   # held: nothing sent yet
+
+        if event.type == "message_end":
+            key = f"redact.{event.message_id}"
+            held = buf.get(key)
+            if held is None:
+                return event                              # message carried no text
+            buf.delete(key)
+            return [TextDelta(message_id=event.message_id, content=scrub(held)), event]
+
+        return event
+
+    def name(self):
+        return "MessageRedactionHook"
+```
+
+The client then sees the message start, nothing, then the whole redacted message and its close. **Incremental delivery is gone for whatever you hold** — the answer appears at once instead of typing out.
+
+To keep most of the streaming feel, hold back only a bounded tail: emit everything except the last N-1 characters (N being your longest pattern), scrubbed, and flush the remainder at `message_end`. Text then lags by a fixed, small amount rather than by the whole message. Size the window to your longest pattern — anything longer can straddle the boundary and slip through.
+
+#### Refusing instead of redacting
+
+Some content is not worth rewriting. Raising `StreamHalt` ends the run:
+
+```python
+from agentkernel import PostHook, StreamHalt
+
+class CredentialBrake(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        return agent_reply
+
+    async def on_stream_event(self, session, requests, agent, event):
+        if event.type == "tool_call_result" and looks_like_a_key(event.content):
+            raise StreamHalt("Response withheld: credential material detected")
+        return event
+
+    def name(self):
+        return "CredentialBrake"
+```
+
+Agent Kernel then emits the closing event for any boundary the stream left open — so a client is not left with an unfinished message or tool call — followed by a single chunk carrying your reason as its `error` with `done: true`. The session is **not** stored, and a recorded thread keeps no assistant message, so a halted turn leaves no trace in conversation state. Because it acts on a fragment rather than a finished unit, halting costs no latency.
+
+Treat a halted response as invalid rather than truncated: discard the partial rather than rendering it as a short answer. Any exception that is **not** `StreamHalt` propagates unchanged — a bug in a hook is a defect, not an orderly end of stream.
+
+:::note Tool events are observations, not gates
+Adapters emit `ToolCall*` events after the framework has already made the call. Halting on one prevents the result being **disclosed**; it does not prevent the tool from having **run**.
+:::
+
+#### Migrating from `on_stream_chunk`
+
+`on_stream_chunk` has been removed. It took a `str` and returned a `str`, so it only ever saw text and could not inspect a tool call. Replace it with `on_stream_event`:
+
+| Before | After |
+| --- | --- |
+| `async def on_stream_chunk(self, session, requests, agent, delta: str)` | `async def on_stream_event(self, session, requests, agent, event)` |
+| `return delta` | `return event` |
+| `return modified_text` | `return event.model_copy(update={"content": modified_text})` |
+| `return None` | `return None` (unchanged) |
+
+A hook that still defines `on_stream_chunk` will not raise — the method is simply never called, and its filtering silently stops applying. Check for it when upgrading.
+
+**Use Cases:** redacting tool arguments and results, PII masking over assembled text, profanity filtering, hiding reasoning traces from clients, refusing a response outright, streaming analytics.
 
 ## Implementing Hooks
 

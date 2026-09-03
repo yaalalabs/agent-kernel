@@ -95,7 +95,7 @@ Global orchestrator and agent registry:
 - **`stream(agent, session, requests, acting_user_id=None) -> AsyncGenerator[StreamChunk, None]`**: Streaming counterpart of `run()`, sharing the same pre-hook pipeline via `_prepare_requests()`:
   1. Runs pre-hooks; if halted, yields a `StreamChunk(error=..., done=True)` and returns
   2. Iterates `agent.runner.stream(agent, session, requests)`; a legacy `str` (TRANSITIONAL) is wrapped into a synthesised `TextDelta` before anything else runs, and its first occurrence allocates a `uuid4().hex` `message_id` shared by a synthesised `MessageStart`/`MessageEnd` pair bracketing the run
-  3. Only `TextDelta`/`ReasoningDelta` content passes through `PostHook.on_stream_chunk()` (a hook can drop the whole chunk, event included, by returning `None`; a hook's edit is written back into the event via `model_copy` so `delta` and `event` never disagree)
+  3. **Every** event passes through `PostHook.on_stream_event()` (return the event to pass it, a modified event of the same `type` to rewrite it, `None` to drop the whole chunk, or a `list[StreamEvent]` to emit several in its place — a list is emitted as-is and ends the chain for that event). A post-hook raising `StreamHalt` ends the run: `StreamBoundaryTracker` (`core/stream.py`, unexported) supplies the closes for any boundary still open, then one `StreamChunk(error=..., done=True)` is yielded and the session is **not** stored; any other exception propagates unchanged
   4. Yields a `StreamChunk(delta=..., event=...)` per event — `delta` is populated only for `TextDelta` (every other event type carries `event` alone) — then a final `StreamChunk(done=True)`
   5. Stores session and clears volatile cache in `finally`, same as `run()`
 - **System hooks**: Automatically includes `InputGuardrailFactory` as system pre-hook, `OutputGuardrailFactory` as system post-hook
@@ -237,7 +237,7 @@ Pydantic-based configuration:
 
 - **`PreHook`**: `on_run(session, agent, requests) -> list[AgentRequest] | AgentReply`: return modified requests to continue, or an `AgentReply` to halt execution
 - **`PostHook`**: `on_run(session, requests, agent, agent_reply) -> AgentReply`: return modified or unmodified reply
-- **`PostHook.on_stream_chunk(session, requests, agent, delta) -> str | None`**: Optional override called for each streaming `TextDelta`/`ReasoningDelta` content string before it reaches the client (other event types skip the hook chain entirely). Default implementation passes the text through unchanged; return `None` to drop the whole chunk, event included
+- **`PostHook.on_stream_event(session, requests, agent, event) -> StreamEvent | list[StreamEvent] | None`**: Optional override called for **every** event a streamed run produces, boundaries and tool calls included (#670 — it replaced the text-only `on_stream_chunk`, which is deleted). Default passes the event through unchanged. A single returned event must keep the incoming `type` or `Runtime` raises `TypeError` naming the hook; a returned list may emit any types and ends the chain for that event. Raising `StreamHalt` (also `core/hooks.py`) ends the run. Agent Kernel accumulates nothing: a hook that needs a whole unit holds fragments by returning `None` and buffering in `session.get_volatile_cache()`, then releases `[rewritten, closing_event]` at the boundary
 - Use cases: RAG injection, input/output guardrails, logging, disclaimers, prompt modification, multimodal preprocessing, streaming token filtering/redaction
 
 ## Multimodal (`ak-py/src/agentkernel/core/multimodal/`)
@@ -1012,10 +1012,10 @@ User Input
         → Runtime.stream(agent, session, requests)
             → async with session:                    # acquire lock, set context
             → PreHooks (agent hooks, then system)    # halt → yield StreamChunk(error, done=True)
-            → agent.runner.stream(agent, session, requests)  # async generator of StreamEvents (or legacy str, TRANSITIONAL)
-                → legacy str normalised into TextDelta, bracketed by a synthesised MessageStart/MessageEnd
-                → for each TextDelta/ReasoningDelta: PostHook.on_stream_chunk() # can drop the chunk or edit the text
-                → yield StreamChunk(delta=..., event=...)  # delta set only for TextDelta
+            → agent.runner.stream(agent, session, requests)  # async generator of StreamEvents
+                → for every event: PostHook.on_stream_event()  # pass, rewrite, drop, or emit a list
+                → yield StreamChunk(delta=..., event=...)  # delta set only for TextDelta, taken from the emitted event
+                → on StreamHalt: closes for open boundaries, then StreamChunk(error=..., done=True), session NOT stored
             → session_store.store(session)           # persist state
             → yield StreamChunk(done=True)
             → clear volatile cache                   # cleanup

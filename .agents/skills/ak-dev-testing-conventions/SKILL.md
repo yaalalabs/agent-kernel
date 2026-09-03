@@ -38,7 +38,8 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_base.py` | Session, Agent, Runner abstractions |
 | `test_runtime.py` | Runtime registration, execution, hooks |
 | `test_stream_events.py` | `core/event.py`'s `StreamEvent` discriminated union: every member round-trips through JSON (`type` discriminator), rejects an unknown `type`, and stays JSON/pickle-safe (no framework-native fields) |
-| `test_runtime_stream_events.py` | `Runtime.stream()`'s streaming contract (spec `docs/specs/523-ag-ui-support/`): legacy `str` yields normalised into a `MessageStart`/`TextDelta`/`MessageEnd` sequence, `PostHook.on_stream_chunk()` only sees `TextDelta`/`ReasoningDelta` content and a hook's edit is written back into the event, a hook returning `None` drops the whole chunk, `delta` is populated only for `TextDelta`, and the final chunk is a bare `StreamChunk(done=True)` |
+| `test_runtime_stream_events.py` | `Runtime.stream()`'s streaming contract (specs `docs/specs/523-ag-ui-support/` and `docs/specs/670-streaming-post-hooks/`): a bare `str` from an unmigrated runner fails loudly as a pydantic `ValidationError`, **every** event reaches `PostHook.on_stream_event()`, a returned list emits N chunks and ends the chain, a single return of a different `type` raises `TypeError`, a hook returning `None` drops the whole chunk, `delta` is populated only for `TextDelta` and taken from the emitted event, `StreamHalt` closes open boundaries then yields one error chunk and stores no session, any other exception propagates, and the final chunk is a bare `StreamChunk(done=True)` |
+| `test_stream_boundaries.py` | `StreamBoundaryTracker` (`core/stream.py`) directly: open/close pairing per kind, innermost-first drain order, `drain()` clearing, and the two malformed-sequence cases it tolerates (closing an id never opened, opening one twice) |
 | `test_module.py` | Module load/unload, wrapping |
 | `test_session.py` | Session state, caches, context vars |
 | `test_session_cache.py` | LRU SessionCache |
@@ -190,11 +191,15 @@ class StreamingDummyRunner(Runner):
         yield MessageEnd(message_id="m-1")
 ```
 
-Only `TextDelta` and `ReasoningDelta` reach `PostHook.on_stream_chunk()`, and only `TextDelta` is
-projected into `StreamChunk.delta` — so a test that accumulates the reply must filter on
-`chunk.delta is not None` rather than slice by position. (`delta` is a model field, so the attribute
-always exists; it is `None` on every non-text frame. Key *presence* is the wire-format rule, which
-applies to the serialised SSE frames, not to the objects a test sees.)
+Every event reaches `PostHook.on_stream_event()`, but only `TextDelta` is projected into
+`StreamChunk.delta` — so a test that accumulates the reply must filter on `chunk.delta is not None`
+rather than slice by position. (`delta` is a model field, so the attribute always exists; it is `None`
+on every non-text frame. Key *presence* is the wire-format rule, which applies to the serialised SSE
+frames, not to the objects a test sees.)
+
+A test double for a hook implements `on_stream_event`, and a double that returns a **list** ends the
+chain for that event — so a two-hook test asserting what the second hook saw is the way to pin that
+rule. See `RecordingHook` and `HaltingHook` in `tests/test_runtime_stream_events.py`.
 
 ### Async Test Patterns
 
