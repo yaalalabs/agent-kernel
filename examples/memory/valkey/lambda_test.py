@@ -59,5 +59,5 @@ async def test_history_agent(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_history_agent_followup(http_client):
-    response = await http_client.send("Which countries hosted the tournament? Answer with only the country names, listing all of them.")
+    response = await http_client.send("Which country hosted the tournament?, answer with only the country names")
     Test.compare(response, ["Sri Lanka, India and Pakistan"])

@@ -17,11 +17,11 @@ async def test_client():
 
 @pytest.mark.order(1)
 async def test_first_question(test_client):
-    await test_client.send("Who won the 1996 cricket world cup?, answer with only the country name")
-    await test_client.expect(["Sri Lanka"])
+    await test_client.send("Who won the 1996 cricket world cup?")
+    await test_client.expect(["The 1996 Cricket World Cup was won by Sri Lanka"])
 
 
 @pytest.mark.order(2)
 async def test_follow_up_question(test_client):
-    await test_client.send("Which countries hosted the tournament? Answer with only the country names, listing all of them.")
-    await test_client.expect(["Sri Lanka, India and Pakistan"])
+    await test_client.send("Which country hosted the tournament?")
+    await test_client.expect(["Co-hosted by India, Pakistan and Sri Lanka."])

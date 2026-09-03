@@ -40,11 +40,11 @@ async def mcp_client():
 
 @pytest.mark.asyncio
 async def test_call_api(mcp_client: MCPHttpClient):
-    response = await mcp_client.send("Who won the 1996 cricket world cup?, answer with only the country name")
-    Test.compare(response, ["Sri Lanka"])
+    response = await mcp_client.send("Who won the 1996 cricket world cup?")
+    Test.compare(response, ["Sri Lanka won the 1996 cricket world cup."])
 
-    response = await mcp_client.send("Which countries hosted the tournament? Answer with only the country names, listing all of them.")
-    Test.compare(response, ["Sri Lanka, India and Pakistan"])
+    response = await mcp_client.send("Which country hosted the tournament?")
+    Test.compare(response, ["Co-hosted by India, Pakistan and Sri Lanka."])
 
     response = await mcp_client.send("What protocols are supported by Agent Kernel?", tool="agent_kernel_knowledge")
     Test.compare(response, ["Agent Kernel supports both MCP and A2A"])
