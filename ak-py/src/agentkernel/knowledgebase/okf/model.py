@@ -97,8 +97,11 @@ class OKFConcept(BaseModel):
     # cannot retain. `body` is None and `links` empty in that case; `fetch` re-reads the
     # whole document and is the only operation whose records carry links.
     body: str | None = None
-    body_tokens: set[str] = Field(default_factory=set)
     links: list[str] = Field(default_factory=list)
+
+    # Every field the lexical ranker weighs, tokenised once and keyed by the ranker's field
+    # name. Scoring reads it for every concept in the bundle, so it is not built per query.
+    field_tokens: dict[str, set[str]] = Field(default_factory=dict)
 
 
 class OKFBundle(BaseModel):
