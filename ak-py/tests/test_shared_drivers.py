@@ -4,12 +4,20 @@ from unittest.mock import MagicMock
 
 import pytest
 import redis
+from botocore.exceptions import ClientError
 
 from agentkernel.core.util.driver import base as driver_base
 from agentkernel.core.util.driver import dynamodb as dynamodb_module
 from agentkernel.core.util.driver import redis as redis_driver_module
+from agentkernel.core.util.driver import s3 as s3_module
 from agentkernel.core.util.driver.dynamodb import DynamoDBDriver
 from agentkernel.core.util.driver.redis import RedisDriver
+from agentkernel.core.util.driver.s3 import S3Driver
+
+
+def _s3_error(code: str, operation: str = "GetObject") -> ClientError:
+    """Build a real botocore ClientError carrying the given S3 error code."""
+    return ClientError({"Error": {"Code": code, "Message": code}}, operation)
 
 
 @pytest.fixture
@@ -61,6 +69,32 @@ class TestRetry:
             _ = driver.client
         assert calls["n"] == 1
         assert sleep_calls["n"] == 0
+
+    def test_s3_connect_reraises_last_error_after_retries(self, sleep_calls, monkeypatch):
+        calls = {"n": 0}
+
+        def always_fail(*a, **k):
+            calls["n"] += 1
+            raise RuntimeError("no credentials")
+
+        monkeypatch.setattr(s3_module.boto3, "client", always_fail)
+        driver = S3Driver(bucket="b")
+        with pytest.raises(RuntimeError):
+            _ = driver.client
+        assert calls["n"] == 3
+        assert sleep_calls["n"] == 2
+
+    def test_s3_client_is_created_once_and_reused(self, monkeypatch):
+        calls = {"n": 0}
+
+        def make_client(*a, **k):
+            calls["n"] += 1
+            return MagicMock()
+
+        monkeypatch.setattr(s3_module.boto3, "client", make_client)
+        driver = S3Driver(bucket="b", region="eu-west-1")
+        assert driver.client is driver.client
+        assert calls["n"] == 1
 
     def test_dynamodb_connect_reraises_last_error_after_retries(self, sleep_calls, monkeypatch):
         calls = {"n": 0}
@@ -258,3 +292,133 @@ class TestDynamoDBDriver:
         driver._table.delete_item.assert_called_once_with(Key={"pk": "p"})
         with pytest.raises(ValueError):
             driver.query_sort_keys("p")
+
+
+class TestS3Driver:
+    """Byte-oriented object semantics of the shared S3 driver."""
+
+    def _driver(self, client: MagicMock = None) -> S3Driver:
+        """Build an S3Driver with an already-established mocked client."""
+        return S3Driver(bucket="b", client=client if client is not None else MagicMock())
+
+    def test_a_bucket_is_required(self):
+        with pytest.raises(ValueError, match="requires a bucket"):
+            S3Driver(bucket="")
+
+    def test_an_injected_client_is_used_without_connecting(self, monkeypatch):
+        def never(*a, **k):
+            raise AssertionError("boto3.client must not be called when a client is injected")
+
+        monkeypatch.setattr(s3_module.boto3, "client", never)
+        client = MagicMock()
+        assert self._driver(client).client is client
+
+    def test_get_bytes_returns_the_body(self):
+        client = MagicMock()
+        client.get_object.return_value = {"Body": MagicMock(read=lambda: b"payload")}
+        driver = self._driver(client)
+
+        assert driver.get_bytes("k") == b"payload"
+        client.get_object.assert_called_once_with(Bucket="b", Key="k")
+
+    @pytest.mark.parametrize("code", ["NoSuchKey", "NotFound", "404"])
+    def test_an_absent_object_becomes_file_not_found(self, code: str):
+        client = MagicMock()
+        client.get_object.side_effect = _s3_error(code)
+
+        # Consumers of every driver see one exception type for "absent".
+        with pytest.raises(FileNotFoundError, match="no such object"):
+            self._driver(client).get_bytes("k")
+
+    def test_a_missing_bucket_is_a_misconfiguration_not_an_absent_object(self):
+        client = MagicMock()
+        client.get_object.side_effect = _s3_error("NoSuchBucket")
+
+        # Mapped to FileNotFoundError, a typo'd bucket would read as an empty collection
+        # everywhere a consumer treats absence as an ordinary empty answer.
+        with pytest.raises(ClientError):
+            self._driver(client).get_bytes("k")
+
+    def test_an_unrelated_client_error_propagates(self):
+        client = MagicMock()
+        client.get_object.side_effect = _s3_error("AccessDenied")
+
+        with pytest.raises(ClientError):
+            self._driver(client).get_bytes("k")
+
+    def test_get_range_bytes_sends_an_inclusive_range_header(self):
+        client = MagicMock()
+        client.get_object.return_value = {"Body": MagicMock(read=lambda: b"0123")}
+        driver = self._driver(client)
+
+        assert driver.get_range_bytes("k", 0, 3) == b"0123"
+        assert client.get_object.call_args.kwargs["Range"] == "bytes=0-3"
+
+    def test_an_invalid_range_falls_back_to_a_full_get(self):
+        client = MagicMock()
+        client.get_object.side_effect = [_s3_error("InvalidRange"), {"Body": MagicMock(read=lambda: b"")}]
+
+        # A zero-length object rejects any range; the whole object is the prefix.
+        assert self._driver(client).get_range_bytes("k", 0, 15) == b""
+        assert client.get_object.call_count == 2
+        assert "Range" not in client.get_object.call_args.kwargs
+
+    def test_a_missing_object_in_a_ranged_get_becomes_file_not_found(self):
+        client = MagicMock()
+        client.get_object.side_effect = _s3_error("NoSuchKey")
+
+        with pytest.raises(FileNotFoundError):
+            self._driver(client).get_range_bytes("k", 0, 15)
+
+    def test_put_bytes_writes_the_body(self):
+        client = MagicMock()
+        self._driver(client).put_bytes("k", b"payload")
+        client.put_object.assert_called_once_with(Bucket="b", Key="k", Body=b"payload")
+
+    def test_exists_is_false_for_a_missing_object(self):
+        client = MagicMock()
+        client.head_object.side_effect = _s3_error("404", "HeadObject")
+        assert self._driver(client).exists("k") is False
+
+    def test_exists_is_true_for_a_present_object(self):
+        client = MagicMock()
+        client.head_object.return_value = {"ContentLength": 3}
+        assert self._driver(client).exists("k") is True
+
+    def test_exists_propagates_an_unrelated_client_error(self):
+        client = MagicMock()
+        client.head_object.side_effect = _s3_error("AccessDenied", "HeadObject")
+        with pytest.raises(ClientError):
+            self._driver(client).exists("k")
+
+    def test_list_keys_follows_continuation_pagination(self):
+        client = MagicMock()
+        client.list_objects_v2.side_effect = [
+            {"Contents": [{"Key": "p/a"}, {"Key": "p/b"}], "IsTruncated": True, "NextContinuationToken": "t1"},
+            {"Contents": [{"Key": "p/c"}], "IsTruncated": False},
+        ]
+        driver = self._driver(client)
+
+        assert driver.list_keys("p/") == ["p/a", "p/b", "p/c"]
+        assert client.list_objects_v2.call_count == 2
+        assert client.list_objects_v2.call_args.kwargs["ContinuationToken"] == "t1"
+
+    def test_a_truncated_page_without_a_token_stops_the_loop(self):
+        client = MagicMock()
+        # A malformed response must not spin forever.
+        client.list_objects_v2.return_value = {"Contents": [{"Key": "p/a"}], "IsTruncated": True}
+
+        assert self._driver(client).list_keys("p/") == ["p/a"]
+        assert client.list_objects_v2.call_count == 1
+
+    def test_an_empty_listing_is_an_empty_list(self):
+        client = MagicMock()
+        client.list_objects_v2.return_value = {}
+        assert self._driver(client).list_keys() == []
+
+    def test_list_keys_preserves_the_paging_order(self):
+        client = MagicMock()
+        client.list_objects_v2.return_value = {"Contents": [{"Key": "z"}, {"Key": "a"}]}
+
+        # Ordering guarantees belong to the consuming store, not the driver.
+        assert self._driver(client).list_keys() == ["z", "a"]
