@@ -170,6 +170,32 @@ class TestRouting:
         # The gate, not the backend, is what stopped the call.
         assert vector.calls == []
 
+    def test_read_kb_at_a_backend_that_can_neither_search_nor_query_names_the_right_tools(self):
+        # read() would have fallen through to search() and reported a capability the agent
+        # never asked for; nothing here can serve a read, so the alternatives list is empty.
+        identities = StubBackend(KnowledgeCapabilities(kinds=["document"], fetch=True), name="ids")
+        read_kb = _tool(KnowledgeBuilder([identities]), "read_kb")
+
+        assert read_kb("ids", "anything") == "Backend 'ids' does not support reads. Backends that do: []."
+        assert identities.calls == []
+
+    def test_read_kb_points_at_the_backends_that_can_serve_a_read(self):
+        identities = StubBackend(KnowledgeCapabilities(kinds=["document"], fetch=True), name="ids")
+        builder = KnowledgeBuilder([identities, _vector(), _sql()])
+
+        result = _tool(builder, "read_kb")("ids", "anything")
+
+        # Both a search backend and a query backend satisfy a read.
+        assert result == "Backend 'ids' does not support reads. Backends that do: ['vector', 'sql']."
+
+    def test_write_kb_at_a_read_only_backend_is_gated_rather_than_raised_through(self):
+        sql = _sql()
+        result = _tool(KnowledgeBuilder([sql, _vector()]), "write_kb")("sql", text="an order")
+
+        # The field is spelled "writable"; the agent is told "writes".
+        assert result == "Backend 'sql' does not support writes. Backends that do: ['vector']."
+        assert sql.written == []
+
     def test_an_unknown_backend_keeps_the_existing_message(self):
         builder = KnowledgeBuilder([_documents()])
         assert _tool(builder, "browse_kb")("nope") == "Unknown backend 'nope'. Available: ['okf']"

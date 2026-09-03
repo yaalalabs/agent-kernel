@@ -1,12 +1,11 @@
 import logging
 import os
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any, List, Mapping
 
 import trino
 import trino.exceptions
 
 from .base import KnowledgeBase
-from .errors import KnowledgeCapabilityError
 from .model import KnowledgeCapabilities
 
 logger = logging.getLogger("ak.StarburstManager")
@@ -133,17 +132,6 @@ class StarburstManager(KnowledgeBase):
                 logger.warning(f"[KB][{self.name}] Close error: {exc}")
             finally:
                 self.connection = None
-
-    def write(self, records: Optional[Iterable[Mapping[str, Any]]] = None, **kwargs) -> None:
-        """
-        Reject write attempts because this backend is read-only.
-
-        :param records: Unused write payload.
-        :param kwargs: Reserved for interface compatibility.
-        :return: None.
-        :raises KnowledgeCapabilityError: Always raised for this backend.
-        """
-        raise KnowledgeCapabilityError(self.backend_name, "write")
 
     def get_description(self) -> str:
         """
