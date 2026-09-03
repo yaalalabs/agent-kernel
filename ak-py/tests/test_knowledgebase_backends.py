@@ -269,6 +269,39 @@ class TestStarburstManager:
         starburst.query("SELECT * FROM orders")
         assert starburst.connection.cursors[0].executed == ["SELECT * FROM orders LIMIT 3"]
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            # The bug: "LIMIT" in sql.upper() matched inside the identifier, so the whole
+            # table was read into the agent's context unbounded.
+            "SELECT * FROM credit_limits",
+            "SELECT rate_limit FROM policies",
+            # A word boundary alone still matches these two, which is why the clause has
+            # to carry its count to count.
+            "SELECT * FROM t WHERE note = 'limit'",
+            "SELECT limit FROM policies",
+        ],
+    )
+    def test_an_identifier_containing_limit_does_not_disable_the_fallback(self, starburst, sql: str):
+        starburst.query(sql)
+        assert starburst.connection.cursors[0].executed == [f"{sql} LIMIT 3"]
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT * FROM orders LIMIT 10",
+            "select * from orders limit 10",
+            # A subquery LIMIT already bounds the result, and appending a second clause
+            # to a statement that has one would be invalid SQL.
+            "SELECT * FROM (SELECT * FROM orders LIMIT 10) t",
+            "SELECT * FROM t LIMIT ALL",
+            "SELECT * FROM orders OFFSET 5 LIMIT 10",
+        ],
+    )
+    def test_a_statement_that_already_bounds_itself_is_left_alone(self, starburst, sql: str):
+        starburst.query(sql)
+        assert starburst.connection.cursors[0].executed == [sql]
+
     def test_non_read_sql_is_still_rejected(self, starburst):
         assert starburst.query("DELETE FROM orders") == []
         assert starburst.connection.cursors == []
