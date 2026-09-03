@@ -1,7 +1,7 @@
 """AG-UI surface: discovery, run routes, and the run lifecycle."""
 
 import logging
-from typing import Any, AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, List, NamedTuple, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from ...api.handler import AuthorisedRESTRequestHandler
 from ...auth.authoriser import Authoriser, AuthValidatorAuthoriser
 from ...auth.handler import AuthValidator
-from ...core.base import Agent
+from ...core.base import Agent, Session
 from ...core.chat_service import AgentHandler, ChatService
 from ...core.config import AKConfig
 from ...core.runtime import Runtime
@@ -17,6 +17,23 @@ from ...core.service import AgentService
 from .mapping import AGUIMapper
 from .run_input import AGUIRunInput
 from .state import AGUIState
+
+
+class AGUIEdge(NamedTuple):
+    """One validated AG-UI run, resolved as far as it can be while a status can still be returned.
+
+    Produced by :meth:`AGUIRequestHandler._prepare` and consumed by both the direct handler and
+    the queue-mode one, which is why it is a value rather than a set of instance attributes: two
+    handlers, two topologies, one resolution.
+    """
+
+    agent: Agent
+    handler: AgentHandler
+    session: Session
+    run_input: Any  # ag_ui.core.RunAgentInput; typed loosely so the module imports without the extra
+    requests: List[Any]
+    encoder: Any  # ag_ui.encoder.EventEncoder
+    user_id: Optional[str]
 
 
 class AGUIRequestHandler(AuthorisedRESTRequestHandler):
@@ -174,20 +191,23 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
 
         return router
 
-    async def _run(self, agent_name: str, request: Request) -> StreamingResponse:
-        """Validate a run request and hand back the event stream.
+    async def _prepare(self, agent_name: str, request: Request) -> "AGUIEdge":
+        """Do everything that can still be reported as an HTTP status, and stop there.
 
-        Everything that can still be reported as an HTTP status happens here, before the response
-        begins: authorisation, agent resolution, body parsing, and request mapping. `to_requests`
-        runs before the session is written so a rejected part (audio, video) cannot leave state
-        behind. Once `_events` starts yielding, the status is already sent and the only way to
-        report a failure is a `RunError` event.
+        Authorisation, agent resolution, body parsing, request mapping, session preparation and
+        the encoder — all of it before any response has begun. `to_requests` runs before the
+        session is written so a rejected part (audio, video) cannot leave state behind.
+
+        Shared verbatim with the queue-mode sibling (`AGUIPipelineRequestHandler`) so the two
+        cannot drift on the 404/400/422 contract: whichever topology serves a run, a client sees
+        the same rejection for the same request.
 
         :param agent_name: Agent to run.
         :param request: Incoming request carrying the RunAgentInput body.
-        :return: A streaming response of encoded AG-UI events.
+        :return: The resolved run context.
         :raises HTTPException: 400 for an unparsable or unusable body, 404/400 from agent
-                               resolution, 500 when no session could be created.
+                               resolution, 422 for a malformed RunAgentInput, 500 when no session
+                               could be created.
         """
         from ag_ui.encoder import EventEncoder
 
@@ -214,10 +234,24 @@ class AGUIRequestHandler(AuthorisedRESTRequestHandler):
         AGUIRunInput.set_agui_session_keys(session, run_input)
         self._warn_if_unreadable(agent, run_input)
 
-        state_before = AGUIState.snapshot_state(session)
         encoder = EventEncoder(accept=request.headers.get("accept"))  # type: ignore[arg-type]
-        stream = self._events(encoder, handler, requests, run_input, state_before, user_id)
-        return StreamingResponse(stream, media_type=encoder.get_content_type())
+        return AGUIEdge(agent=agent, handler=handler, session=session, run_input=run_input, requests=requests, encoder=encoder, user_id=user_id)
+
+    async def _run(self, agent_name: str, request: Request) -> StreamingResponse:
+        """Validate a run request and hand back the event stream.
+
+        Once `_events` starts yielding, the status is already sent and the only way to report a
+        failure is a `RunError` event.
+
+        :param agent_name: Agent to run.
+        :param request: Incoming request carrying the RunAgentInput body.
+        :return: A streaming response of encoded AG-UI events.
+        :raises HTTPException: See :meth:`_prepare`.
+        """
+        edge = await self._prepare(agent_name, request)
+        state_before = AGUIState.snapshot_state(edge.session)
+        stream = self._events(edge.encoder, edge.handler, edge.requests, edge.run_input, state_before, edge.user_id)
+        return StreamingResponse(stream, media_type=edge.encoder.get_content_type())
 
     async def _events(
         self,

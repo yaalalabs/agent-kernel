@@ -204,6 +204,34 @@ class TestRedisCommandSurface:
         driver._client.lpop.return_value = None
         assert driver.lpop("k") is None
 
+    def test_blpop_returns_only_the_value_decoded(self):
+        driver = _driver()
+        # redis-py hands back (key, value); callers want the value.
+        driver._client.blpop.return_value = (b"k", b"a1")
+        assert driver.blpop("k", 5) == "a1"
+        driver._client.blpop.assert_called_with(["k"], timeout=5)
+
+    def test_blpop_returns_none_on_timeout(self):
+        driver = _driver()
+        driver._client.blpop.return_value = None
+        assert driver.blpop("k", 5) is None
+
+    def test_blpop_floors_a_non_positive_timeout(self):
+        # The Redis protocol reads timeout=0 as "block forever", which would strand the calling
+        # thread; the driver refuses to pass it through.
+        driver = _driver()
+        driver._client.blpop.return_value = None
+        driver.blpop("k", 0)
+        driver._client.blpop.assert_called_with(["k"], timeout=1)
+        driver.blpop("k", 0.4)
+        driver._client.blpop.assert_called_with(["k"], timeout=1)
+
+    def test_blpop_truncates_a_fractional_timeout_to_whole_seconds(self):
+        driver = _driver()
+        driver._client.blpop.return_value = None
+        driver.blpop("k", 7.9)
+        driver._client.blpop.assert_called_with(["k"], timeout=7)
+
 
 class TestDynamoDBDriver:
     """Item-dict semantics of the shared DynamoDB driver."""

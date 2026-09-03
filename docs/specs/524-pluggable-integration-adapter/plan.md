@@ -1,8 +1,12 @@
 # #524: Pluggable request/response adapter for messaging integrations — Implementation Plan
 
-Ten iterations. Iterations 1–4 add seams without removing anything, so the branch stays green
+Thirteen iterations. Iterations 1–4 add seams without removing anything, so the branch stays green
 throughout; the seven handler classes only disappear in iterations 5–7, and each of those
 iterations rewrites its own platform's tests so the suite never goes red between iterations.
+Iteration 11 covers design §14 (conversation threads on the pipeline) and 12–13 cover design §15
+(AG-UI on the pipeline); both are purely additive, so they could land in any order after iteration
+4. Iteration 10 (docs and skills) is written once but **re-run after 13**, since §14 and §15 add
+surfaces of their own.
 
 ## Iteration 1: Core and pipeline seams
 
@@ -175,3 +179,83 @@ nothing else moved.
 - **Deliberately not updated** (verified): `docs/versioned_docs/**` (frozen release snapshots) and
   `docs/blog/2025-11-21-messaging-platform-integrations.md` (a dated post describing the shipped
   state at the time).
+
+Added by iterations 11–13 (re-run this iteration after 13):
+
+- `docs/docs/integrations/agui.md` — a queue-mode section:
+  `IOHandler.run(handlers=[AGUIPipelineRequestHandler(...)])`, the chunk-streaming response-store
+  requirement, the shared-session-store requirement, and the burst-not-live caveat (design §15.9).
+- `docs/docs/integrations/threads.md` (or wherever §14's surface is documented) —
+  `IOHandler.run(request_handler=ThreadRequestHandler())`.
+- `.agents/skills/ak-dev-architecture/SKILL.md` — the pipeline component table gains the `agui`
+  marker on the `agent_runner.py`/`response_handler.py` rows; the response-store row notes that
+  chunk streaming is now a redis/valkey capability, not in-memory-only; the AG-UI section gains the
+  queue-mode sibling.
+- `.agents/skills/ak-dev-new-multimodal-storage/SKILL.md` — unaffected (verified: attachment
+  stores, not response stores).
+- No new `ak-dev-new-*` skill is needed: §15 adds no pluggable component type — it adds an optional
+  capability to an existing interface. The response-store capability trio belongs in the
+  architecture skill's response-store description instead.
+
+## Iteration 11: Conversation threads on the pipeline (design §14)
+
+*Landed in `7cdb320d`; recorded here so the plan matches the branch.*
+
+- **Goal:** a queue-mode app records thread history, which it silently could not do before.
+- **Files:** `pipeline/envelope.py`, `pipeline/agent_runner.py`, `pipeline/io_handler.py`,
+  `pipeline/request_handler.py`, `integration/thread/thread_chat.py`
+- **Steps:**
+  1. `ATTR_THREAD` in `pipeline/envelope.py` (design §14.1).
+  2. `ThreadRequestHandler(RequestHandler)`: `run_chat` records the user message and rewrites the
+     body, `_enqueue_request` stamps the marker unless the request is deferred (design §14.4, §14.7).
+  3. `IOHandler.run(request_handler=...)`; `RequestHandler.requires_pipeline = True`
+     (design §14.5, §14.6).
+  4. `AgentRunner._record_thread_reply` after `_send_to_output`, lazily imported, failures logged
+     (design §14.2, §14.3, §14.9).
+- **Verify:** `uv run pytest tests/test_thread_pipeline_recording.py tests/test_pipeline_io_handler.py`
+
+## Iteration 12: Chunk streaming on the shared response stores (design §15.4)
+
+- **Goal:** `redis` and `valkey` can carry a per-request chunk stream across processes. This
+  iteration is independently useful — it also lifts `RequestHandler`'s existing STREAM SSE route
+  onto broker transports, where it answers HTTP 400 today — and carries no AG-UI code.
+- **Files:** `core/util/driver/redis_like.py`, `pipeline/response_store/chunk_stream.py` (new),
+  `pipeline/response_store/redis.py`, `pipeline/response_store/valkey.py`
+- **Steps:**
+  1. `blpop(key, timeout)` on `_RedisLikeDriver`, beside the existing list commands; a
+     non-positive timeout floors to 1 s (spec §10.1).
+  2. `_ChunkStreamMixin` with `supports_chunk_streaming`/`add_chunk`/`stream`/`close_stream`,
+     mirroring `InMemoryResponseStore`'s contract exactly — stop on `done`, sentinel-based
+     `close_stream`, `TimeoutError` with the in-memory store's message text, key deleted in a
+     `finally` (spec §10.2).
+  3. Mix it into both stores; extend each `delete_message` to drop the chunk key.
+  4. Leave `dynamodb` alone — it keeps the base's `False` (spec §10.2).
+- **Verify:** `uv run pytest tests/test_response_store_chunk_stream.py tests/test_driver_redis_like.py
+  tests/test_response_store_in_memory.py`
+
+## Iteration 13: AG-UI on the pipeline (design §15)
+
+- **Goal:** `IOHandler.run(handlers=[AGUIPipelineRequestHandler(...)])` serves the AG-UI protocol
+  with the run on the far side of the queue, and the direct handler is untouched.
+- **Files:** `pipeline/envelope.py`, `pipeline/agent_runner.py`, `pipeline/response_handler.py`,
+  `integration/agui/handler.py`, `integration/agui/pipeline.py` (new),
+  `integration/agui/__init__.py`; `tests/test_agui_pipeline.py` (new) plus edits to
+  `tests/test_pipeline_agent_runner.py`, `tests/test_pipeline_response_handler.py`,
+  `tests/test_agui_handler.py`
+- **Steps:**
+  1. `ATTR_AGUI` in `pipeline/envelope.py`, and add it to `_FORWARDED_ATTRIBUTES` (spec §2, §5).
+  2. Move the streaming body into `AgentRunner._process_stream`; `AgentRunner.process` routes an
+     `ATTR_AGUI` message into it; scope the `ATTR_USER_ID` guard so the marker exempts it
+     (spec §5, design §15.2).
+  3. `AgentRunner._send_agui_state` after the chunk loop, lazily importing `AGUIState`, emitting
+     `{"agui_state": …}` only on a change (spec §5, design §15.5).
+  4. `ResponseHandler.process` gains the `ATTR_AGUI` → `_store_chunk` branch before the mode
+     branch (spec §6, design §15.3).
+  5. Extract `AGUIRequestHandler._prepare` out of `_run`, verbatim, leaving `state_before` in the
+     direct handler (spec §10.3).
+  6. `AGUIPipelineRequestHandler`: construction fail-fasts, `_run` stores the session then
+     enqueues, `_events_from_store` drains and maps with exactly one terminal event (spec §10.4).
+  7. Export it from `integration/agui/__init__.py`.
+- **Verify:** `uv run pytest tests/test_agui_pipeline.py tests/test_agui_handler.py
+  tests/test_pipeline_agent_runner.py tests/test_pipeline_response_handler.py`, then
+  `cd ak-py && uv run pytest tests/`

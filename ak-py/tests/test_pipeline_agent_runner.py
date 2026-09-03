@@ -6,7 +6,7 @@ import pytest
 
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
-from agentkernel.pipeline.envelope import ATTR_INTEGRATION, QueueMessage, QueueName
+from agentkernel.pipeline.envelope import ATTR_AGUI, ATTR_INTEGRATION, QueueMessage, QueueName
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
@@ -248,3 +248,147 @@ class TestIntegrationTraffic:
         assert json.loads(out.body) == {"error": "Failed to process message after 3 retries"}
         assert out.attributes["status_code"] == "500"
         assert out.attributes[ATTR_INTEGRATION] == "slack"
+
+
+class TestAGUIMessages:
+    """A message carrying the AG-UI marker streams and stores its state (spec #524 §5)."""
+
+    @staticmethod
+    def _agui_msg(attributes=None, **kwargs):
+        return _input_msg(attributes=attributes if attributes is not None else {"request_id": "r1", ATTR_AGUI: "1"}, **kwargs)
+
+    def test_a_plain_agent_runner_streams_an_agui_message(self, monkeypatch):
+        """The marker beats the mode: IOHandler only builds StreamAgentRunner when
+        execution.mode is stream, so without this an AG-UI app on the default rest_sync would
+        get one lump reply and no typed events."""
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_stream_chat_sync.return_value = iter(
+            [json.dumps({"delta": "he", "session_id": "s1"}), json.dumps({"done": True, "session_id": "s1"})]
+        )
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(self._agui_msg())
+
+        chat_service.process_stream_chat_sync.assert_called_once()
+        chat_service.process_chat_request.assert_not_called()
+
+    def test_the_chunks_are_fanned_out_one_message_each(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_stream_chat_sync.return_value = iter(
+            [json.dumps({"delta": "he"}), json.dumps({"done": True})]
+        )
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(self._agui_msg())
+
+        consumer = transport.create_consumer(QueueName.OUTPUT)
+        [first] = consumer.fetch(10, 0.5)
+        consumer.ack(first)
+        [second] = consumer.fetch(10, 0.5)
+        assert json.loads(first.body) == {"delta": "he"}
+        assert json.loads(second.body) == {"done": True}
+
+    def test_the_marker_is_forwarded_to_every_output_message(self, monkeypatch):
+        # The Response Handler dispatches on it, so it has to survive the hop.
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_stream_chat_sync.return_value = iter([json.dumps({"done": True})])
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(self._agui_msg())
+
+        [out] = _fetch_output(transport)
+        assert out.attributes[ATTR_AGUI] == "1"
+
+    def test_the_user_id_guard_does_not_apply_to_an_agui_message(self, monkeypatch):
+        """user_id is the WebSocket-entered marker; AG-UI chunks go to the response store, so
+        the guard that protects WS delivery must not reject them."""
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_stream_chat_sync.return_value = iter([json.dumps({"done": True})])
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(self._agui_msg())
+
+        assert len(_fetch_output(transport)) == 1
+
+    def test_the_user_id_guard_still_applies_without_the_marker(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "kafka"))
+        runner = StreamAgentRunner(transport=InMemoryTransport(), chat_service=MagicMock())
+        with pytest.raises(ValueError, match="user_id"):
+            runner.process(_input_msg(attributes={"request_id": "r1"}))
+
+    def test_a_changed_state_is_sent_as_one_extra_chunk(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_stream_chat_sync.return_value = iter([json.dumps({"done": True})])
+        runner = AgentRunner(transport=transport, chat_service=chat_service)
+        monkeypatch.setattr(type(runner), "_agui_state_before", classmethod(lambda cls, m, b: {"city": "Colombo"}))
+        monkeypatch.setattr(
+            "agentkernel.integration.agui.state.AGUIState.read_state", staticmethod(lambda session: {"city": "Kandy"})
+        )
+        monkeypatch.setattr("agentkernel.core.runtime.Runtime.current", staticmethod(lambda: MagicMock()))
+
+        runner.process(self._agui_msg())
+
+        consumer = transport.create_consumer(QueueName.OUTPUT)
+        bodies = []
+        while True:
+            fetched = consumer.fetch(10, 0.2)
+            if not fetched:
+                break
+            for message in fetched:
+                bodies.append(json.loads(message.body))
+                consumer.ack(message)
+        assert {"agui_state": {"city": "Kandy"}} in bodies
+        # After the run's own chunks: the edge emits the snapshot before its terminal event.
+        assert bodies[-1] == {"agui_state": {"city": "Kandy"}}
+
+    def test_an_unchanged_state_sends_no_extra_chunk(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_stream_chat_sync.return_value = iter([json.dumps({"done": True})])
+        runner = AgentRunner(transport=transport, chat_service=chat_service)
+        monkeypatch.setattr(type(runner), "_agui_state_before", classmethod(lambda cls, m, b: {"city": "Colombo"}))
+        monkeypatch.setattr(
+            "agentkernel.integration.agui.state.AGUIState.read_state", staticmethod(lambda session: {"city": "Colombo"})
+        )
+        monkeypatch.setattr("agentkernel.core.runtime.Runtime.current", staticmethod(lambda: MagicMock()))
+
+        runner.process(self._agui_msg())
+
+        consumer = transport.create_consumer(QueueName.OUTPUT)
+        [only] = consumer.fetch(10, 0.5)
+        assert json.loads(only.body) == {"done": True}
+
+    def test_a_failing_state_read_does_not_fail_the_run(self, monkeypatch):
+        """The chunks are already on the output queue, so retrying would run the agent twice."""
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_stream_chat_sync.return_value = iter([json.dumps({"done": True})])
+        runner = AgentRunner(transport=transport, chat_service=chat_service)
+
+        def boom(*_a, **_k):
+            raise RuntimeError("session store down")
+
+        monkeypatch.setattr("agentkernel.core.runtime.Runtime.current", staticmethod(boom))
+
+        runner.process(self._agui_msg())
+
+        assert len(_fetch_output(transport)) == 1
+
+    def test_an_agui_permanent_failure_carries_an_error_the_edge_can_surface(self, monkeypatch):
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _FakeCfg))
+        transport = InMemoryTransport()
+
+        AgentRunner(transport=transport, chat_service=MagicMock()).on_permanent_failure(self._agui_msg(receive_count=4))
+
+        [out] = _fetch_output(transport)
+        # The edge turns any chunk carrying `error` into exactly one RunError.
+        assert "after 3 retries" in json.loads(out.body)["error"]
+        assert out.attributes[ATTR_AGUI] == "1"

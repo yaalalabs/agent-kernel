@@ -2,9 +2,12 @@ import json
 
 from ...core.util.driver.redis import RedisDriver
 from .base import ResponseStore
+from .chunk_stream import ChunkStreamMixin
 
 
-class RedisResponseStore(ResponseStore):
+class RedisResponseStore(ChunkStreamMixin, ResponseStore):
+    """Redis-backed response store: the record mailbox, plus per-request chunk streaming
+    (``ChunkStreamMixin``) so a caller waiting on a stream can be served across processes."""
 
     def __init__(self, url: str, prefix: str = "ak:responses:", ttl: int = 0):
 
@@ -39,4 +42,4 @@ class RedisResponseStore(ResponseStore):
 
     def delete_message(self, request_id: str) -> None:
         self._log.debug("Deleting Redis response message for request_id=%s", request_id)
-        self._driver.delete(self._driver.key(request_id))
+        self._driver.delete(self._driver.key(request_id), self._chunk_key(request_id))

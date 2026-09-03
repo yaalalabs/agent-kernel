@@ -11,6 +11,7 @@ ATTR_ENDPOINT_URL = "endpoint_url"
 ATTR_STATUS_CODE = "status_code"
 ATTR_INTEGRATION = "integration"
 ATTR_THREAD = "thread"
+ATTR_AGUI = "agui"
 REPLY_CONTEXT_PREFIX = "reply_"
 
 

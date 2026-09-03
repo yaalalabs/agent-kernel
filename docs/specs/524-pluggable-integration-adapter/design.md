@@ -8,8 +8,11 @@ and enqueues; the Agent Runner stays platform-agnostic; the outbound adapter del
 through the platform API. The one design idea: **a platform integration is two pure translation
 functions with a queue between them.**
 
-§14 covers a second consumer of the same pieces: conversation-thread recording, which does not work
-on the queue pipeline at all today and is split across it here.
+§14 and §15 cover two further consumers of the same pieces — conversation-thread recording and the
+AG-UI surface. Neither works on the queue pipeline today, and neither is a messaging platform, so
+both travel the pipeline's own producer/queue/runner seam rather than the adapter seam. §15 adds the
+one piece §14 did not need: a **return path** for a caller who is still holding the connection when
+the reply is produced somewhere else.
 
 ## Motivation
 
@@ -356,6 +359,16 @@ graph LR
   (`test_slack_integration.py:57`, `:71-196`). Both anchors disappear.
 - A test that `RESTAPI.run` rejects a `requires_pipeline` handler, and that the no-handlers
   delegation path (`api/http.py:99-106`) still reaches `IOHandler` unchanged (Decision Q9).
+- For §15, a new `test_agui_pipeline.py`: the marker stamped only by the queue-mode handler, the
+  session stored before the enqueue, the enqueue happening before any event is yielded, a store
+  error chunk becoming exactly one `RunError`, `{"agui_state": …}` becoming a `StateSnapshotEvent`
+  and its absence yielding none, `AgentRunner` streaming an `ATTR_AGUI` message under
+  `mode: rest_sync`, the `ATTR_USER_ID` guard not applying to it, and construction failing on a
+  non-chunk-streaming response store.
+- For §15.4, the chunk-streaming half of the response-store contract run against `in_memory`,
+  `redis` and `valkey` (fakes), plus a `dynamodb` case asserting it still declines: in-order
+  delivery, stop at `done`, `close_stream` releasing a parked reader, and a timeout raising
+  `TimeoutError`.
 - For §14, a new `test_thread_pipeline_recording.py`: the marker stamped only by
   `ThreadRequestHandler`, the user message and attachment offload committed before enqueue, the
   rejections (missing `user_id`, unavailable agent) leaving no phantom thread, deferred requests
@@ -375,10 +388,17 @@ graph LR
 - Non-integration surfaces are untouched: `RESTAPI.run`'s delegation rule keeps its three
   conditions, and the new `requires_pipeline` check sits after it, so no existing handler is
   affected (its default is `False`).
-- No transport change; no new queue; no change to `QueueMessage`'s shape beyond two new attribute
-  constants (`integration`, and `thread` for §14).
+- No transport change; no new queue; no change to `QueueMessage`'s shape beyond three new attribute
+  constants (`integration`, `thread` for §14, and `agui` for §15).
 - §14 is **additive**: `AgentThreadRequestHandler` and its direct path are unchanged, and a
   pipeline app that mounts nothing new behaves exactly as before.
+- §15 is **additive**: `AGUIRequestHandler` and its direct SSE path are unchanged and stay the
+  documented default; `agui` config keeps every field, name, type and default. The new
+  `add_chunk`/`stream`/`close_stream` methods on the redis and valkey stores are additions to an
+  optional capability the base class already declares (`response_store/base.py:54-72`), so a
+  bring-your-own store is unaffected and existing `execution.response_store` YAML keeps working.
+  The one visible change outside AG-UI is that `POST /api/v1/chat` in STREAM mode now serves SSE on
+  redis/valkey instead of answering HTTP 400 (§15.4) — strictly more working than before.
 - Legacy ECS/serverless runners (`ECSAgentRunner`, `ECSOutputConsumer`, `ServerlessAgentRunner`)
   are untouched — they inherit the seam through #495's recorded "ECS runtime classes become
   pipeline instantiations" follow-up (`docs/specs/495-onprem-kubernetes/plan.md:318`).
@@ -486,6 +506,145 @@ handler); thread recording for integrations or scheduled occurrences (both remai
 and store-level deduplication of a redelivered append — 14.2's ordering makes that window
 vanishingly small and a dedup would touch all six thread backends.
 
+### 15. AG-UI on the pipeline
+
+AG-UI is the **third** consumer of the pieces this CR builds, and the second caller-waits one. It
+does not use the adapter seam (§1), for the reasons §14 gives for threads (Decision Q12) — it reuses
+a marker attribute (§3), the public enqueue seam (§4), and the pipeline's own
+producer → queue → runner. What it needs that threads did not is a **return path**: the caller is
+still holding an SSE connection when the reply is produced in another process.
+
+**The gap.** `AGUIRequestHandler._run` hands back `StreamingResponse(self._events(...))`, and
+`_events` runs `handler.run_stream_async(...)` — the agent, its tools and the model — inside the
+still-open HTTP request (`integration/agui/handler.py:213-285`). A slow model holds a connection,
+and the run cannot be retried or scaled apart from the web tier: the identical problem the seven
+platforms and §14 are moved off. AG-UI touches no pipeline component today —
+`grep -rn 'response_store\|pipeline' integration/agui/` returns nothing.
+
+**Why not the adapter seam.** Same table as §14, one row different — and that row is why §15 needs
+work §14 did not:
+
+| Seam contract | AG-UI |
+|---|---|
+| `OutboundAdapter.deliver(reply, reply_context)` pushes out-of-band once, with a finished `AgentReply` | The reply is *n* events (`RunStarted`, token deltas, tool calls, `StateSnapshot`, `RunFinished`) down a socket the caller still holds |
+| `reply_context` is flat `Dict[str, str]` under 8 KB (§3), enforced in `IntegrationProducer._reply_attributes` (`integration/adapter/producer.py:61-67`) | The delivery address is a file descriptor owned by a live task in one process — not serialisable at any size |
+| `ATTR_INTEGRATION` routes a message *away* from streaming (§5) | AG-UI rejects any agent whose runner cannot stream (`handler.py:_resolve_agent`, 400) |
+
+**Shape.** The direction inverts: a messaging adapter *pushes* from the runner; AG-UI *pulls* into
+the process that never let go of the socket. `request_id` is a string, so it fits a queue
+attribute where a socket does not.
+
+```
+POST /agui/{agent}
+   │
+   ▼  AGUIPipelineRequestHandler   (IOHandler process — keeps the socket)
+   ├─ authorise · resolve agent · parse · to_requests   (shared with the direct handler)
+   ├─ set_agui_session_keys, then sessions().store(session)   ← the runner reads it there
+   ├─ enqueue(body{requests}, request_id, attributes={agui: "1"}, group_id=thread_id)
+   └─ return StreamingResponse(_events(request_id))
+   │
+   ▼  input queue
+   │
+   ▼  AgentRunner  (different process; streams on the marker, whatever execution.mode says)
+   ├─ per chunk → _send_to_output(chunk)
+   └─ state changed during the run → one extra chunk {"agui_state": {...}}
+   │
+   ▼  output queue
+   │
+   ▼  ResponseHandler → store.add_chunk(request_id, chunk)
+   │
+   ▼  back on the socket: _events drains store.stream(request_id) → AGUIMapper → encoder
+```
+
+- **15.1 An `agui` message attribute is the join.** `ATTR_AGUI` in `pipeline/envelope.py`, stamped
+  only by the queue-mode AG-UI handler. Same shape as `ATTR_INTEGRATION` (§3) and `ATTR_THREAD`
+  (§14.1), and it carries three separable facts no existing marker carries: run the streaming path,
+  deliver chunks to the response store, and compute the AG-UI state snapshot. (Decision Q14.)
+- **15.2 The runner streams on the marker, regardless of `execution.mode`.** `IOHandler` selects
+  `StreamAgentRunner` only when `mode == stream` (`pipeline/io_handler.py:130`), so an app whose
+  mode is the default `rest_sync` would otherwise run an AG-UI message through
+  `process_chat_request` and produce one non-streamed reply. `AgentRunner.process` therefore routes
+  an `ATTR_AGUI` message to the shared streaming implementation. (Decision Q15.)
+  - The `ATTR_USER_ID` guard in the streaming path (`agent_runner.py:218-219`) is the
+    WebSocket-entered marker and must not apply: AG-UI chunks go to the store, never to a socket
+    the gateway owns. AG-UI stamps no `ATTR_USER_ID`, for the same reason `IntegrationProducer`
+    does not (`producer.py:29-33`); `user_id` travels in the body.
+- **15.3 The Response Handler dispatches on `ATTR_AGUI` before the `execution.mode` branch**
+  (`pipeline/response_handler.py:52-72`), writing each chunk with `store.add_chunk`. A message
+  without the attribute takes today's path unchanged.
+  - `on_permanent_failure` writes one error chunk (`done=True`) so the edge can close the run with
+    exactly one `RunError` — the protocol's terminal event, so no client hangs.
+- **15.4 Chunk streaming becomes a shared-store capability.** `supports_chunk_streaming()` is
+  `True` in exactly one implementation today (`response_store/in_memory.py:29`) and defaults `False`
+  on the base (`base.py:54`); `ResponseStoreFactory` *requires* a shared store on a broker
+  transport (`factory.py:38-42`). So the two properties AG-UI needs — chunk streaming and
+  cross-process visibility — exist in different stores and in no single one.
+  - `redis` and `valkey` implement `add_chunk` / `stream` / `close_stream` and return `True`. A
+    list per `request_id` with a blocking pop, not a Redis Stream: this is single-consumer,
+    at-most-once and drop-on-close, so consumer groups buy nothing. (Decision Q17.)
+  - One new method on the shared driver, `blpop`
+    (`core/util/driver/redis_like.py`) — both backends inherit it, since the `valkey` client is a
+    `redis-py` fork with an identical API (`redis_like.py:16-19`).
+  - `dynamodb` stays a mailbox and keeps returning `False`: it has no blocking read, and polling it
+    per chunk is the thing §15 exists to avoid. An AG-UI queue app configured with it fails fast
+    (§15.7).
+  - This also lifts `RequestHandler`'s existing `POST /api/v1/chat` SSE route
+    (`request_handler.py:275-289`) onto broker transports, where it answers HTTP 400 today.
+- **15.5 The runner owns the state comparison; the edge does not reload the session**
+  (Decision Q18). Forced, not chosen: `SessionStore.load` returns the **process-local cached copy**
+  when one exists (`core/session/redis.py:39-43`, and the same in every cached backend), so an
+  edge-side `state_after` would compare the session the edge itself cached against its own snapshot
+  and always conclude nothing changed. The runner holds one session lifecycle in one process, takes
+  its own before/after, and emits one extra chunk `{"agui_state": {...}}` only when they differ.
+  - The AG-UI state helper is imported **lazily inside the runner method**, the same rule §14.9
+    follows for the thread package: AG-UI is an `integration` capability and a module-scope import
+    would make every runner process pay for it.
+  - The edge no longer needs `state_before` on the queue path at all; it maps the chunk to
+    `StateSnapshotEvent`.
+- **15.6 The edge must persist the session before enqueueing.** `set_agui_session_keys` writes
+  `state`, `forwardedProps` and `context` onto the session object
+  (`integration/agui/run_input.py:61-76`); today the same object is used by the run, so nothing is
+  stored. Over the queue the runner loads the session in another process, so the edge calls
+  `sessions().store(session)` — otherwise the client's inbound state silently never reaches the
+  tools.
+- **15.7 A chunk-streaming response store and a shared session store are both mandatory, and both
+  are checked at construction.** `AGUIPipelineRequestHandler.__init__` raises `AKConfigError` —
+  before the first request, the same fail-fast posture as Q2 — when either:
+  - the resolved response store returns `False` from `supports_chunk_streaming()`, naming the
+    configured store and the supported ones; or
+  - the transport is a broker and `session.type` is the literal `in_memory`. That is the
+    *accidental default* (`core/config.py:94-96`), and it silently costs the client's inbound
+    `state`/`forwardedProps`: the runner loads a session the edge never shared. The same failure §8
+    rejects `multimodal.storage_type: session_cache` for.
+  - A dotted-path bring-your-own session store cannot be classified, so it is left to the
+    deployer — the check names only what it can prove wrong.
+- **15.8 A queue-mode sibling class, not a mode-aware handler** (Decision Q16).
+  `AGUIPipelineRequestHandler` subclasses `AGUIRequestHandler`, reusing its routes, its authoriser
+  contract, its 404/400 gates and its parse — mirroring `AgentThreadRequestHandler` /
+  `ThreadRequestHandler` (Q11). It declares `requires_pipeline = True` (§7/Q9), so a bare
+  `RESTAPI.run([...])` app crashes at boot instead of enqueueing into a queue no runner drains.
+  - It mounts through `IOHandler.run(handlers=[...])`, **not** `request_handler=`: AG-UI owns
+    `agui.prefix`, so unlike `ThreadRequestHandler` it collides with no pipeline route (§14.5). No
+    `IOHandler` change is needed.
+  - The edge half of `_run` is extracted so both handlers share it verbatim and cannot drift on the
+    404/400 contract.
+- **15.9 Behaviour differences from the direct handler**, accepted:
+  - **The events arrive as a burst, not progressively.** `AgentHandler.run_stream_sync` collects
+    every chunk before returning (`core/chat_service.py:255-271`), so `StreamAgentRunner` fans out a
+    finished run. The client receives the same events in the same order and the bracket holds, but
+    token-by-token liveness is lost. Making the runner incremental would also fix the existing
+    broker STREAM/WebSocket path, so it is a separate CR, not a §15 requirement.
+  - **A loss window.** If the API replica dies mid-run its socket dies with it and the remaining
+    chunks sit in the store until TTL. AG-UI has no resume token, so the client must start a new
+    run. The direct handler loses the run on the same failure, so this is not a regression — but it
+    is now a two-process surface.
+  - **`_warn_if_unreadable` runs at the edge** and so still works; the tools it warns about run in
+    the runner.
+- **15.10 Not in scope here:** migrating `AGUIRequestHandler` (it stays the direct-execution
+  handler and the documented default); a `dynamodb` chunk-streaming implementation; incremental
+  fan-out (above); and AG-UI thread recording, which stays out by construction because
+  `ATTR_AGUI` is not `ATTR_THREAD` (§14.1).
+
 ## Non-goals
 
 - Namespacing `session_id` across platforms to avoid collisions (e.g. a Telegram `chat_id`
@@ -498,10 +657,16 @@ vanishingly small and a dedup would touch all six thread backends.
   unchanged; the `thread` marker (§14.1) is what keeps integration traffic out of the recording
   path. §14 adds recording for *chat* traffic on the pipeline, which is a different surface.
 - Outbound-initiated (agent-first) messaging; every flow here starts from an inbound event.
-- Replacing the AG-UI handler, or the direct-execution `AgentThreadRequestHandler`, neither of
-  which is a messaging platform. §14 adds a queue-mode *sibling* to the thread handler; it does not
-  migrate the existing one, and AG-UI is untouched (it runs in-process inside its own SSE route and
-  never enqueues, so it has no queue hop to fix).
+- Replacing the direct-execution `AgentThreadRequestHandler` or `AGUIRequestHandler`, neither of
+  which is a messaging platform. §14 and §15 add queue-mode *siblings* to each; the existing
+  direct handlers are untouched and remain the documented default.
+  - The earlier form of this non-goal said AG-UI "has no queue hop to fix". That was wrong on its
+    own terms: `AGUIRequestHandler._events` runs the agent inside the open SSE request
+    (`integration/agui/handler.py:213-285`), which is the same shape §14 and the seven platforms
+    are moved off. §15 corrects it.
+- Truly incremental streaming through the queue. `AgentHandler.run_stream_sync` collects every
+  chunk before returning (`core/chat_service.py:255-271`), so `StreamAgentRunner` fans out a
+  completed run, not a live one — §15.9 accepts that and records the follow-up.
 - Helm chart support for the poller tier. `PollerRunner.run(adapter)` ships as the container entry
   point and the topology is documented, but the `ak-k8s` poller Deployment and its `values.yaml`
   block are a follow-up CR.
@@ -567,7 +732,55 @@ directed the pipeline route; Q10 and Q11 are implementation calls recorded here 
     delivery, so `OutboundAdapter` has no target and `InboundAdapter`'s side-effect contract
     excludes recording. The pipeline's own producer/runner seam is the fit. See §14.
 
+Taken during implementation, 2026-09-03, covering §15. All are implementation calls recorded here
+for review.
+
+13. **AG-UI does not use the adapter seam either.** Q12's argument applies unchanged — a
+    caller-waits surface has no out-of-band target — plus one AG-UI-specific reason: the reply is
+    *n* typed events, and `OutboundAdapter.deliver` is one call with a finished `AgentReply`. The
+    fit is the pipeline's producer/queue/runner *plus the response store* as the return path.
+    See §15.
+14. **A distinct `ATTR_AGUI`, not a reused or generalised marker.** `ATTR_INTEGRATION` means
+    "deliver out-of-band through an outbound adapter" and routes a message *away* from streaming
+    (§5); `ATTR_THREAD` means "record a thread". AG-UI means "stream, store the chunks, snapshot the
+    state" — three facts neither carries. Rejected: reusing `ATTR_THREAD` (would make AG-UI grow
+    threads, breaking the §14 non-goal by construction), and collapsing all three into one
+    `delivery` attribute with values (rewrites §3 and §14.1 for no gain today; the right move if a
+    fourth caller-waits surface arrives). See §15.1.
+15. **The marker, not `execution.mode`, decides that a message streams.** `AgentRunner.process`
+    routes an `ATTR_AGUI` message to the shared streaming implementation. Rejected: requiring
+    `execution.mode: stream` for AG-UI (couples an app-global switch to one surface and breaks a
+    mixed app serving plain REST alongside AG-UI), and having `IOHandler` start both runners on the
+    input queue (two consumers competing for messages, each rejecting the other's). See §15.2.
+16. **A queue-mode sibling class, `AGUIPipelineRequestHandler`, not a mode-aware
+    `AGUIRequestHandler`.** Mirrors the Q11 thread pair exactly: the direct handler stays the
+    default, the sibling declares `requires_pipeline`. Rejected: branching inside
+    `AGUIRequestHandler` on the resolved transport (puts a pipeline concern inside `integration/`
+    and makes `requires_pipeline` — a class attribute read before construction — undecidable).
+    See §15.8.
+17. **`redis`/`valkey` chunk streaming is a list plus a blocking pop, not a Redis Stream.**
+    The contract is single-consumer, at-most-once and drop-on-close, so `XADD`/consumer groups add
+    machinery with nothing to show for it. One `blpop` on the shared `_RedisLikeDriver` serves both
+    backends. `dynamodb` is left as a mailbox — it has no blocking read. See §15.4.
+18. **The runner computes the AG-UI state snapshot, not the edge.** Forced by
+    `SessionStore.load` returning the process-local cached copy (`core/session/redis.py:39-43`): an
+    edge-side `state_after` would compare the edge's own cached session against its own snapshot and
+    always report no change, silently dropping every `StateSnapshot`. The runner has one session
+    lifecycle in one process and emits `{"agui_state": …}` as a chunk only when the state differs.
+    Rejected: a cache-bypassing `load(refresh=True)` (a new argument threaded through all six
+    session stores to serve one caller). See §15.5.
+19. **The burst-not-stream behaviour is accepted, and its fix is a separate CR.**
+    `AgentHandler.run_stream_sync` collects every chunk before returning
+    (`core/chat_service.py:255-271`), so a queue-mode AG-UI client receives the whole event stream
+    at the end of the run. Correct and ordered, but not live. Fixing it means making the sync
+    streaming bridge incremental, which changes the existing broker STREAM/WebSocket path too — so
+    it is its own change, with its own tests, rather than a §15 side effect. See §15.9.
+
 ## Open questions
 
 None outstanding. Nine resolved with the requester on 2026-08-27; Q10-Q12 taken during the §14
-implementation on 2026-09-02 and open to review.
+implementation on 2026-09-02, and Q13-Q19 during the §15 implementation on 2026-09-03 — all open to
+review.
+
+Q19 is the one worth a reviewer's explicit yes or no: it ships a queue-mode AG-UI surface whose
+events arrive in a burst. The alternative is to hold §15 until the incremental-streaming CR lands.

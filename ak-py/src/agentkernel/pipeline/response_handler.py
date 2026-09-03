@@ -7,7 +7,7 @@ from ..core.model import AgentReplyText, ExecutionMode, StreamChunk
 from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
+from .envelope import ATTR_AGUI, ATTR_INTEGRATION, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
@@ -55,6 +55,9 @@ class ResponseHandler:
         if integration:
             self._deliver_integration(message, integration)
             return
+        if message.attributes.get(ATTR_AGUI):
+            self._store_chunk(message)
+            return
 
         mode = AKConfig.get().execution.mode
         if mode == ExecutionMode.STREAM:
@@ -87,6 +90,15 @@ class ResponseHandler:
             request_id = message.attributes.get(ATTR_REQUEST_ID)
             error_text = f"Failed to process message after {max_receive_count} retries"
             mode = AKConfig.get().execution.mode
+
+            if message.attributes.get(ATTR_AGUI):
+                if not request_id:
+                    self._log.warning("Cannot deliver permanent-failure AG-UI chunk: request_id missing")
+                    return
+                error_chunk = StreamChunk(error=error_text, done=True).model_dump(exclude_none=True)
+                self._get_store().add_chunk(request_id, error_chunk)
+                self._log.info(f"Stored permanent-failure AG-UI chunk: request_id={request_id}")
+                return
 
             if mode == ExecutionMode.STREAM:
                 error_chunk = StreamChunk(error=error_text, done=True).model_dump(exclude_none=True)
