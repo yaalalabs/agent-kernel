@@ -50,13 +50,37 @@ _FIELD_WEIGHTS = {"title": 4, "tags": 3, "type": 2, "description": 2, "body": 1}
 
 # Frontmatter emitted by write() in this exact order, so two writes of the same content produce
 # byte-identical documents. Caller extras follow, in the order the caller supplied them.
-_WRITE_KEY_ORDER = ("type", "title", "description", "tags", "status", "generated", "sources")
+_WRITE_KEY_ORDER = ("type", "title", "description", "resource", "tags", "status", "stale_after", "generated", "sources")
 
 # `generated` and `verified` are reserved provenance metadata; allowing callers to supply them would let writers forge the producer or trust tier.
+# `source`, `kind`, `trust`, `stale` and `links` are derived on read, so writing a fetched record back would persist a derived signal as frontmatter.
 # Other unknown metadata is preserved as `extra` rather than dropped.
-_WRITE_RESERVED_METADATA = frozenset({"id", "type", "title", "description", "tags", "status", "sources", "generated", "verified"})
+_WRITE_RESERVED_METADATA = frozenset(
+    {
+        "id",
+        "type",
+        "title",
+        "description",
+        "resource",
+        "tags",
+        "status",
+        "stale_after",
+        "sources",
+        "generated",
+        "verified",
+        "source",
+        "kind",
+        "trust",
+        "stale",
+        "links",
+    }
+)
 
 _DEFAULT_CONCEPT_TYPE = "Note"
+
+# The read side invents these for the bundle's own structure and puts them in `kind`, next to real
+# concept types. Neither is an OKF type, so the write side must not take one for one.
+_STRUCTURAL_RECORD_KINDS = frozenset({"directory", "index"})
 _SLUG_SEPARATOR = re.compile(r"[^a-z0-9]+")
 _FALLBACK_SLUG = "concept"
 _SLUG_MAX_LENGTH = 48
@@ -73,14 +97,14 @@ class OKFManager(DocumentKnowledgeBase):
     """
 
     def __init__(
-        self,
-        store: DocumentStore,
-        name: str = "",
-        description: Optional[str] = None,
-        refresh_seconds: Optional[float] = 300.0,
-        max_concepts: int = 10_000,
-        producer: Optional[str] = None,
-        write_prefix: str = "generated",
+            self,
+            store: DocumentStore,
+            name: str = "",
+            description: Optional[str] = None,
+            refresh_seconds: Optional[float] = 300.0,
+            max_concepts: int = 10_000,
+            producer: Optional[str] = None,
+            write_prefix: str = "generated",
     ) -> None:
         """
         Open an OKF bundle held in a document store.
@@ -190,7 +214,8 @@ class OKFManager(DocumentKnowledgeBase):
 
         scored = [(self._score(concept, tokens), concept) for concept in manifest.concepts.values()]
         # Ties break on path so two processes holding the same bundle agree on the order.
-        ranked = sorted(((score, concept) for score, concept in scored if score > 0), key=lambda pair: (-pair[0], pair[1].path))
+        ranked = sorted(((score, concept) for score, concept in scored if score > 0),
+                        key=lambda pair: (-pair[0], pair[1].path))
         return [self._concept_record(concept) for _, concept in ranked[:limit]]
 
     def fetch(self, ids: List[str], **kwargs) -> List[Record]:
@@ -412,13 +437,15 @@ class OKFManager(DocumentKnowledgeBase):
                 if not bundle.truncated:
                     bundle.truncated = True
                     message = f"bundle exceeds max_concepts={self._max_concepts}; kept the first {len(bundle.concepts)} concepts"
-                    bundle.diagnostics.append(OKFDiagnostic(path="", code=DiagnosticCode.TRUNCATED.value, message=message))
+                    bundle.diagnostics.append(
+                        OKFDiagnostic(path="", code=DiagnosticCode.TRUNCATED.value, message=message))
                 continue
 
             self._absorb_concept(bundle, path)
 
         for diagnostic in bundle.diagnostics:
-            log.warning("[%s.walk] %s at %s: %s", self.backend_name, diagnostic.code, diagnostic.path or "<bundle>", diagnostic.message)
+            log.warning("[%s.walk] %s at %s: %s", self.backend_name, diagnostic.code, diagnostic.path or "<bundle>",
+                        diagnostic.message)
         return bundle
 
     def _absorb_reserved(self, bundle: OKFBundle, path: str) -> None:
@@ -438,7 +465,8 @@ class OKFManager(DocumentKnowledgeBase):
         if data is None:
             return
 
-        _, okf_version, diagnostics = OKFParserUtil.parse_index(path, OKFParserUtil.decode_document(data), is_root=directory == "")
+        _, okf_version, diagnostics = OKFParserUtil.parse_index(path, OKFParserUtil.decode_document(data),
+                                                                is_root=directory == "")
         bundle.index_files[directory] = path
         bundle.diagnostics.extend(diagnostics)
         if okf_version is not None:
@@ -489,9 +517,11 @@ class OKFManager(DocumentKnowledgeBase):
                 return self._store.read_bytes(path)
             return self._store.read_prefix_bytes(path, FRONTMATTER_MAX_BYTES + BODY_INDEX_MAX_BYTES)
         except FileNotFoundError as error:
-            bundle.diagnostics.append(OKFDiagnostic(path=path, code=DiagnosticCode.UNREADABLE.value, message=f"document disappeared: {error}"))
+            bundle.diagnostics.append(OKFDiagnostic(path=path, code=DiagnosticCode.UNREADABLE.value,
+                                                    message=f"document disappeared: {error}"))
         except KnowledgePathError as error:
-            bundle.diagnostics.append(OKFDiagnostic(path=path, code=DiagnosticCode.PATH_ESCAPE.value, message=str(error)))
+            bundle.diagnostics.append(
+                OKFDiagnostic(path=path, code=DiagnosticCode.PATH_ESCAPE.value, message=str(error)))
         return None
 
     def _score(self, concept: OKFConcept, tokens: set[str]) -> int:
@@ -549,7 +579,8 @@ class OKFManager(DocumentKnowledgeBase):
 
         is_root = posixpath.dirname(index_path) == ""
         body, _, _ = OKFParserUtil.parse_index(index_path, OKFParserUtil.decode_document(data), is_root=is_root)
-        return [{"text": body, "metadata": {"id": index_path, "source": index_path, "title": index_path, "kind": "index"}}]
+        return [
+            {"text": body, "metadata": {"id": index_path, "source": index_path, "title": index_path, "kind": "index"}}]
 
     def _derived_listing(self, manifest: OKFBundle, directory: str, limit: int) -> List[Record]:
         """
@@ -570,7 +601,7 @@ class OKFManager(DocumentKnowledgeBase):
         for path, concept in manifest.concepts.items():
             if not path.startswith(prefix):
                 continue
-            remainder = path[len(prefix) :]
+            remainder = path[len(prefix):]
             head, separator, _ = remainder.partition("/")
             if separator:
                 subdirectories.add(head)
@@ -602,22 +633,46 @@ class OKFManager(DocumentKnowledgeBase):
         """
         Shape one concept as a record.
 
+        A concept with no title carries none, rather than its path: ``format_results`` falls back
+        to the id anyway, and a synthesised title would be written back as real frontmatter.
+
         :param concept: The concept.
         :param include_body: Carry the full body and its links, which only ``fetch`` has read.
         :return: The record.
         """
-        metadata: dict[str, Any] = {
+        derived: dict[str, Any] = {
             "id": concept.path,
             "source": concept.path,
-            "title": concept.title or concept.path,
             "kind": concept.type,
             "trust": concept.trust.value,
             "stale": concept.stale,
         }
-        if include_body:
-            metadata["links"] = list(concept.links)
-            return {"text": concept.body or "", "metadata": metadata}
-        return {"text": concept.description or concept.title or concept.path, "metadata": metadata}
+        if concept.title:
+            derived["title"] = concept.title
+        if not include_body:
+            return {"text": concept.description or concept.title or concept.path, "metadata": derived}
+
+        # An enrich-then-write flow hands a fetched record straight back to `write()`, which
+        # honours the id and so overwrites this same file. Every frontmatter field has to ride
+        # along or the round-trip deletes it; only `generated` and `verified` are the write's to
+        # stamp. Empty values are left out, so a concept that had none gains no empty key.
+        carried: dict[str, Any] = {**concept.computation, **concept.extra}
+        carried.update(
+            {
+                "description": concept.description,
+                "resource": concept.resource,
+                "tags": list(concept.tags),
+                "status": concept.status,
+                "stale_after": concept.stale_after,
+                "sources": list(concept.sources),
+            }
+        )
+        # Derived keys go last and win: a curator's own `trust:` arrives here via `extra`, and
+        # letting it through would make the record lie about a signal this backend computes.
+        metadata = {key: value for key, value in carried.items() if value}
+        metadata.update(derived)
+        metadata["links"] = list(concept.links)
+        return {"text": concept.body or "", "metadata": metadata}
 
     def _write_path(self, metadata: dict) -> str:
         """
@@ -665,13 +720,14 @@ class OKFManager(DocumentKnowledgeBase):
         :param metadata: Record metadata supplying the frontmatter.
         :return: The complete document.
         """
-        concept_type = metadata.get("type")
         frontmatter: dict[str, Any] = {
-            "type": concept_type if isinstance(concept_type, str) and concept_type.strip() else _DEFAULT_CONCEPT_TYPE,
+            "type": self._concept_type(metadata),
             "title": metadata.get("title"),
             "description": metadata.get("description"),
+            "resource": metadata.get("resource"),
             "tags": metadata.get("tags"),
             "status": metadata.get("status"),
+            "stale_after": metadata.get("stale_after"),
             "generated": {"by": self._producer, "at": datetime.now(timezone.utc).replace(microsecond=0).isoformat()},
             "sources": metadata.get("sources"),
         }
@@ -679,7 +735,28 @@ class OKFManager(DocumentKnowledgeBase):
         ordered.update({key: value for key, value in metadata.items() if key not in _WRITE_RESERVED_METADATA})
 
         rendered = yaml.safe_dump(ordered, sort_keys=False, default_flow_style=False, allow_unicode=True)
-        return f"---\n{rendered}---\n\n{text}"
+        # A parsed body keeps the blank line after the frontmatter, so re-adding one grew the
+        # document by a line on every fetch-then-write cycle.
+        body = text.lstrip("\r\n")
+        return f"---\n{rendered}---\n\n{body}"
+
+    @staticmethod
+    def _concept_type(metadata: Mapping[str, Any]) -> str:
+        """
+        Resolve the OKF ``type`` for a document about to be written.
+
+        ``kind`` is read too because that is the only key the read side puts a concept's type in
+        (it is what ``format_results`` renders). Reading ``type`` alone retyped every fetched
+        record to the default, on top of the file it came from.
+
+        :param metadata: The record's metadata.
+        :return: The concept type, or ``_DEFAULT_CONCEPT_TYPE`` when the record names none.
+        """
+        for key in ("type", "kind"):
+            value = metadata.get(key)
+            if isinstance(value, str) and value.strip() and value not in _STRUCTURAL_RECORD_KINDS:
+                return value
+        return _DEFAULT_CONCEPT_TYPE
 
     @staticmethod
     def _slug(value: str) -> str:
