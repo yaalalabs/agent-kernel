@@ -21,6 +21,7 @@ STARBURST_PORT = int(os.getenv("STARBURST_PORT", "443"))
 # the fallback and exposing the whole table; requiring the count also excludes columns/string literals.
 LIMIT_CLAUSE = re.compile(r"\bLIMIT\s+(?:\d+|ALL)\b", re.IGNORECASE)
 
+
 class StarburstManager(KnowledgeBase):
     """
     Read-only Starburst Galaxy backend.
