@@ -87,17 +87,15 @@ async def http_client():
 @pytest.mark.order(1)
 async def test_history_agent_with_valid_token(http_client):
     """Test agent with a valid Google Identity Token — API Gateway allows the request."""
-    response = await http_client.send("Who won the 1996 cricket world cup?")
-    Test.compare(response, ["Sri Lanka won the 1996 cricket world cup."])
+    response = await http_client.send("Who won the 1996 cricket world cup?, answer with only the country name")
+    Test.compare(response, ["Sri Lanka"])
 
 
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_history_agent_followup_with_valid_token(http_client):
-    response = await http_client.send("Which country hosted the tournament?")
-
-    assert "India" in response
-    assert "Pakistan" in response
+    response = await http_client.send("Which country hosted the tournament?, answer with only the country names and make sure to mention all the contries that hosted this tournament")
+    Test.compare(response, ["Sri Lanka, India and Pakistan"])
 
 
 @pytest.mark.asyncio
