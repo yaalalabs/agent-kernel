@@ -11,6 +11,5 @@ fi
 if [[ ${1-} != "local" ]]; then
   uv sync --all-extras
 else
-  uv sync --find-links ../../../ak-py/dist --all-extras
-  uv pip install --force-reinstall --find-links ../../../ak-py/dist agentkernel[api,openai,aws,test]
+  uv sync --find-links ../../../ak-py/dist --upgrade-package agentkernel
 fi

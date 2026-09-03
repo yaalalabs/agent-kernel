@@ -11,7 +11,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Multi-Framework Support**: OpenAI Agents SDK, CrewAI, LangGraph, Google ADK, Smolagents, and Pydantic AI
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
-- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity
+- **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
 - **Scheduled Tasks**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider (`local`, `eventbridge`) and store (`in_memory`, `redis`, `valkey`, `dynamodb`) backends
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
@@ -52,6 +52,7 @@ the `aws` extra):
 
 ```bash
 pip install "agentkernel[sandbox-docker]"   # docker provider
+pip install "agentkernel[kubernetes]"       # kubernetes provider (pod per sandbox)
 pip install "agentkernel[e2b]"              # e2b cloud provider
 pip install "agentkernel[daytona]"          # daytona cloud provider
 pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
@@ -1124,38 +1125,45 @@ Configure test comparison modes for automated testing. Test configuration is sep
 
 - **Mode**
   - **Field**: `mode`
-  - **Options**: `fuzzy`, `judge`, `fallback`
+  - **Options**: `score`, `llm`, `fallback`
   - **Default**: `fallback`
   - **Description**: Test comparison mode
   - **Environment Variable**: `AK_TEST__MODE`
 
-- **Judge Model**
-  - **Field**: `judge.model`
+- **Evaluator**
+  - **Field**: `evaluator`
+  - **Default**: `deepeval`
+  - **Description**: Built-in evaluator short name, or a dotted path to your own `AKEvaluator` subclass
+  - **Environment Variable**: `AK_TEST__EVALUATOR`
+
+- **Llm Model**
+  - **Field**: `llm.model`
   - **Default**: `gpt-4o-mini`
-  - **Description**: LLM model for judge evaluation
-  - **Environment Variable**: `AK_TEST__JUDGE__MODEL`
+  - **Description**: LLM model for llm evaluation
+  - **Environment Variable**: `AK_TEST__LLM__MODEL`
 
-- **Judge Provider**
-  - **Field**: `judge.provider`
+- **Llm Provider**
+  - **Field**: `llm.provider`
   - **Default**: `openai`
-  - **Description**: LLM provider for judge evaluation
-  - **Environment Variable**: `AK_TEST__JUDGE__PROVIDER`
+  - **Description**: LLM provider for llm evaluation
+  - **Environment Variable**: `AK_TEST__LLM__PROVIDER`
 
-- **Judge Embedding Model**
-  - **Field**: `judge.embedding_model`
+- **Llm Embedding Model**
+  - **Field**: `llm.embedding_model`
   - **Default**: `text-embedding-3-small`
-  - **Description**: Embedding model for similarity evaluation
-  - **Environment Variable**: `AK_TEST__JUDGE__EMBEDDING_MODEL`
+  - **Description**: Embedding model, unconsumed by any built-in v1 metric
+  - **Environment Variable**: `AK_TEST__LLM__EMBEDDING_MODEL`
 
 **Test Modes:**
-- `fuzzy`: Uses fuzzy string matching (RapidFuzz)
-- `judge`: Uses LLM-based evaluation (Ragas) for semantic similarity
-- `fallback`: Tries fuzzy first, falls back to judge if fuzzy fails
+- `score`: Deterministic, offline string-match scoring via the configured evaluator (built-in DeepEval evaluator: `Scorer.quasi_exact_match_score`)
+- `llm`: LLM-as-judge evaluation via the configured evaluator (built-in DeepEval evaluator: `GEval`) for semantic similarity
+- `fallback`: Tries score first, falls back to llm if score fails
 
 ```yaml
 # test-config.yaml (separate file — not config.yaml)
 mode: fallback
-judge:
+evaluator: deepeval
+llm:
   model: gpt-4o-mini
   provider: openai
   embedding_model: text-embedding-3-small
@@ -1509,10 +1517,11 @@ export AK_TRACE__TYPE=langfuse  # or openllmetry, logfire
 # For Logfire:
 # export LOGFIRE_TOKEN=your-write-token
 # Test harness (loaded from the separate test-config.yaml — see Test Configuration)
-export AK_TEST__MODE=fallback  # Options: fuzzy, judge, fallback
-export AK_TEST__JUDGE__MODEL=gpt-4o-mini
-export AK_TEST__JUDGE__PROVIDER=openai
-export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
+export AK_TEST__MODE=fallback  # Options: score, llm, fallback
+export AK_TEST__EVALUATOR=deepeval  # Built-in short name, or a dotted path to your own AKEvaluator subclass
+export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__PROVIDER=openai
+export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 # Guardrails configuration
 export AK_GUARDRAIL__INPUT__ENABLED=false
 export AK_GUARDRAIL__INPUT__TYPE=openai
@@ -1777,19 +1786,20 @@ gmail:
 
 ### Test Configuration (test-config.yaml)
 
-Test harness configuration (comparison mode and judge models) is separate from the application configuration. It is not part of `config.yaml` — it lives in its own `test-config.yaml` file, resolved from the current working directory, and is only loaded when the testing utilities (`agentkernel.test`) are used. A legacy `test:` section in `config.yaml` is ignored. See [Test Configuration](#test-configuration) under Configuration Options for the full list of fields and defaults.
+Test harness configuration (comparison mode, evaluator backend, llm models) is separate from the application configuration. It is not part of `config.yaml` — it lives in its own `test-config.yaml` file, resolved from the current working directory, and is only loaded when the testing utilities (`agentkernel.test`) are used. A legacy `test:` section in `config.yaml` is ignored. See [Test Configuration](#test-configuration) under Configuration Options for the full list of fields and defaults.
 
 **test-config.yaml:**
 
 ```yaml
 mode: fallback
-judge:
+evaluator: deepeval
+llm:
   model: gpt-4o-mini
   provider: openai
   embedding_model: text-embedding-3-small
 ```
 
-Note that the file is un-nested — there is no top-level `test:` key. If the file is missing, defaults apply silently (fuzzy and fallback tests need no configuration file at all).
+Note that the file is un-nested — there is no top-level `test:` key. If the file is missing, defaults apply silently (score and fallback tests need no configuration file at all).
 
 **Override the test config file path:**
 
@@ -1800,13 +1810,12 @@ export AK_TEST_CONFIG_PATH_OVERRIDE=/path/to/test-config.yaml
 **Environment variables** use the `AK_TEST__` prefix and override `test-config.yaml` values:
 
 ```bash
-export AK_TEST__MODE=fallback  # Options: fuzzy, judge, fallback
-export AK_TEST__JUDGE__MODEL=gpt-4o-mini
-export AK_TEST__JUDGE__PROVIDER=openai
-export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small
+export AK_TEST__MODE=fallback  # Options: score, llm, fallback
+export AK_TEST__EVALUATOR=deepeval
+export AK_TEST__LLM__MODEL=gpt-4o-mini
+export AK_TEST__LLM__PROVIDER=openai
+export AK_TEST__LLM__EMBEDDING_MODEL=text-embedding-3-small
 ```
-
-> **Migration note:** Earlier versions read test configuration from a `test:` section in `config.yaml`. That section is now ignored — move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`. The `AK_TEST__*` environment variables are unchanged, so CI pipelines that use them need no updates.
 
 ## Extensibility
 

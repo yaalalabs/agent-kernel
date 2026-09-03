@@ -28,10 +28,16 @@ class APITestClient:
             else body
         )
         async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(f"{self.url}{endpoint}", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("result", "")
+            # The model occasionally ends a tool-using turn with no text, which surfaces as
+            # an empty result; retry the same prompt instead of failing the walkthrough on it.
+            result = ""
+            for _ in range(3):
+                resp = await client.post(f"{self.url}{endpoint}", json=payload)
+                resp.raise_for_status()
+                result = resp.json().get("result", "")
+                if result:
+                    break
+            return result
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -58,12 +64,12 @@ async def test_support_agent(http_client):
         [
             " Hello Andy! I noticed that you made a mobile check deposit of $250. Could you tell me how satisfied you were with the mobile check deposit process?"
         ],
-        threshold=10,
+        threshold=0.1,
     )
 
     response = await http_client.send("I was extremely happy")
     Test.compare(
-        response, ["That's great to hear! What specifically made the experience enjoyable for you?"], threshold=10
+        response, ["That's great to hear! What specifically made the experience enjoyable for you?"], threshold=0.1
     )
 
     response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})
@@ -74,7 +80,7 @@ async def test_support_agent(http_client):
         "In which movie my bank agent's name appeared in? Just give me the name of the movie",
         additional_context={"bank_agent": "Ellis Boyd Red Redding"},
     )
-    Test.compare(response, ["the movie 'The Shawshank Redemption'."], threshold=20)
+    Test.compare(response, ["the movie 'The Shawshank Redemption'."], threshold=0.2)
 
 
 @pytest.mark.asyncio

@@ -51,7 +51,7 @@ async def test_history_agent(http_client):
     Test.compare(
         response,
         ["The Battle of Waterloo happened on June 18, 1815."],
-        threshold=10,
+        threshold=0.1,
     )
 
 

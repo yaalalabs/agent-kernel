@@ -37,3 +37,18 @@ class DynamoDBResponseStore(ResponseStore):
     def delete_message(self, request_id: str) -> None:
         self._log.debug("Deleting DynamoDB response message for request_id=%s", request_id)
         self._driver.delete(request_id)
+
+    def supports_key_scan(self) -> bool:
+        return True
+
+    def scan_records(self, prefix: str) -> list[dict]:
+        """Scan the table for items whose request_id begins with ``prefix`` (paginated)."""
+        from boto3.dynamodb.conditions import Attr
+
+        kwargs = {"FilterExpression": Attr("request_id").begins_with(prefix)}
+        response = self._driver.table.scan(**kwargs)
+        items = list(response.get("Items", []))
+        while "LastEvaluatedKey" in response:
+            response = self._driver.table.scan(ExclusiveStartKey=response["LastEvaluatedKey"], **kwargs)
+            items.extend(response.get("Items", []))
+        return items

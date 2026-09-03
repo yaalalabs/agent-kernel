@@ -12,7 +12,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.8.1"
+  version: "0.9.0"
   category: user
 ---
 
@@ -58,7 +58,7 @@ Which capability would you like to add?
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.8.1",
+    "agentkernel[openai,api]>=0.9.0",
     # OpenAI guardrails use the openai extra — already included if using OpenAI framework
 ]
 ```
@@ -112,7 +112,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.8.1",
+    "agentkernel[openai,api,aws]>=0.9.0",
 ]
 ```
 
@@ -138,7 +138,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,walledai]>=0.8.1",
+    "agentkernel[openai,api,walledai]>=0.9.0",
 ]
 ```
 
@@ -175,7 +175,7 @@ export WALLED_API_KEY="your-walledai-api-key"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,langfuse]>=0.8.1",
+    "agentkernel[openai,api,langfuse]>=0.9.0",
 ]
 ```
 
@@ -200,7 +200,7 @@ export LANGFUSE_HOST="https://cloud.langfuse.com"   # or self-hosted URL
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,openllmetry]>=0.8.1",
+    "agentkernel[openai,api,openllmetry]>=0.9.0",
 ]
 ```
 
@@ -218,7 +218,7 @@ trace:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,logfire]>=0.8.1",
+    "agentkernel[openai,api,logfire]>=0.9.0",
 ]
 ```
 
@@ -247,7 +247,7 @@ export LOGFIRE_TOKEN="your-write-token"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.8.1",
+    "agentkernel[openai,api,redis]>=0.9.0",
 ]
 ```
 
@@ -267,7 +267,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.8.1",
+    "agentkernel[openai,api,aws]>=0.9.0",
 ]
 ```
 
@@ -289,7 +289,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,azure]>=0.8.1",
+    "agentkernel[openai,api,azure]>=0.9.0",
 ]
 ```
 
@@ -311,7 +311,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gcp]>=0.8.1",
+    "agentkernel[openai,api,gcp]>=0.9.0",
 ]
 ```
 
@@ -344,9 +344,9 @@ Add durable knowledge tools that your agents can query and update across session
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,chromadb]>=0.8.1",  # for Chroma
-  # or "agentkernel[openai,api,neo4j]>=0.8.1"
-  # or "agentkernel[openai,api,trino]>=0.8.1"
+  "agentkernel[openai,api,chromadb]>=0.9.0",  # for Chroma
+  # or "agentkernel[openai,api,neo4j]>=0.9.0"
+  # or "agentkernel[openai,api,trino]>=0.9.0"
 ]
 ```
 
@@ -427,7 +427,7 @@ Expose your agents as MCP (Model Context Protocol) tools so other AI systems can
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,mcp]>=0.8.1",
+    "agentkernel[openai,api,mcp]>=0.9.0",
 ]
 ```
 
@@ -453,7 +453,7 @@ Enable Agent-to-Agent communication via Google's A2A protocol.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,a2a]>=0.8.1",
+    "agentkernel[openai,api,a2a]>=0.9.0",
 ]
 ```
 
@@ -479,7 +479,7 @@ text, tool calls, reasoning, and an optional shared JSON state, all as one typed
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,agui]>=0.8.1",
+    "agentkernel[openai,api,agui]>=0.9.0",
 ]
 ```
 
@@ -666,7 +666,7 @@ Enable image and file processing in your agents.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,multimodal]>=0.8.1",
+    "agentkernel[openai,api,multimodal]>=0.9.0",
 ]
 ```
 
@@ -691,7 +691,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,multimodal]>=0.8.1",
+    "agentkernel[openai,api,redis,multimodal]>=0.9.0",
 ]
 ```
 
@@ -714,7 +714,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,multimodal]>=0.8.1",
+    "agentkernel[openai,api,aws,multimodal]>=0.9.0",
 ]
 ```
 
@@ -798,7 +798,7 @@ Enable persistent, named conversation threads keyed by `session_id`.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.8.1",
+    "agentkernel[openai,api]>=0.9.0",
 ]
 ```
 
@@ -828,7 +828,7 @@ thread:
 **For LLM-based thread naming**, add the `thread` extra:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,thread]>=0.8.1",
+    "agentkernel[openai,api,thread]>=0.9.0",
 ]
 ```
 ```yaml
@@ -843,7 +843,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,thread]>=0.8.1",
+    "agentkernel[openai,api,redis,thread]>=0.9.0",
 ]
 ```
 ```yaml
@@ -859,7 +859,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,valkey,thread]>=0.8.1",
+    "agentkernel[openai,api,valkey,thread]>=0.9.0",
 ]
 ```
 ```yaml
@@ -875,7 +875,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,thread]>=0.8.1",
+    "agentkernel[openai,api,aws,thread]>=0.9.0",
 ]
 ```
 ```yaml
@@ -964,7 +964,7 @@ means deploying in queue mode.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,cron]>=0.8.1",
+    "agentkernel[openai,api,cron]>=0.9.0",
 ]
 ```
 The `cron` extra brings `croniter`, needed for cron parsing.
@@ -1043,7 +1043,7 @@ curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,cron]>=0.8.1",
+    "agentkernel[openai,api,aws,cron]>=0.9.0",
 ]
 ```
 ```yaml
@@ -1065,7 +1065,7 @@ them. See the `ak-cloud-deploy` skill.
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,cron]>=0.8.1",   # or valkey
+    "agentkernel[openai,api,redis,cron]>=0.9.0",   # or valkey
 ]
 ```
 ```yaml
@@ -1120,9 +1120,13 @@ environment. When enabled, agents automatically gain sandbox tools (`run_code`, 
 `new_sandbox_session`, `destroy_sandbox_session`) and the usage guidance is injected into their
 system prompt — the agent's own instructions need not mention the sandbox.
 
-**Ask:** Which provider — `local_subprocess` (no isolation; dev/test only) or `docker`
-(container isolation; needs the `sandbox-docker` extra and a Docker daemon)? Should it apply to
-all agents or only some (the `agents` list)?
+**Ask:** Which provider — `local_subprocess` (no isolation; dev/test only), `docker`
+(container isolation; needs the `sandbox-docker` extra and a Docker daemon), or another
+shipped provider (`kubernetes` pods, `e2b` micro-VMs, `daytona` cloud containers, `ec2_ssm`
+attach-only; see the [Sandbox guide](https://kernel.yaala.ai/docs/advanced/sandbox))? Should
+it apply to all agents or only some (the `agents` list)? For executions longer than the
+process can wait, the `queue` broker flavor runs them on a separate worker
+(`sandbox.broker.flavor: queue`; same guide).
 
 **1. Install the extra (docker only):**
 

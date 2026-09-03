@@ -107,6 +107,13 @@ import inside, and add the name to `_BUILTIN_TYPES`. Fail with `AKConfigError` w
 block is missing. Anything not in `_BUILTIN_TYPES` resolves as a dotted path (BYO), so a
 transport can also live out of tree; built-in status is for transports we test and document.
 
+The factory has a second consumer (#503): the **sandbox queue broker** passes its own
+`_QueuesConfig`-shaped `sandbox.broker.queue` block through the optional `queues_config`
+parameter on `resolve_type`/`create`/`create_consumer`, so a new transport gets sandbox-broker
+support for free. Read the block handed to you, never `AKConfig` (the no-argument path keeps
+reading `execution.queues` and must stay byte-for-byte unchanged;
+`tests/test_pipeline_factory_seams.py` enforces both properties).
+
 ## Step 4: Tests
 
 Three layers, all required:

@@ -700,6 +700,9 @@ gets its own PR rather than riding inside the integration — see Delivery.
     the same bug this section fixes, in a second place — and out of scope here, since §8 is scoped to
     `MultimodalPreHook`. Tracked as a follow-up; PR 7's `advanced/multimodal.md` must state which
     path each source form works on rather than repeating the unqualified claim.
+      - **Resolved by #669**: the classifier was extracted to `core/multimodal/source.py`
+      (`AttachmentSource`) and `store_attachments` now routes on the same verdict, so both paths
+      agree. `advanced/multimodal.md` was corrected accordingly.
   - New tests must cover each of the five source forms through the pre-hook, because the existing
   suite exercises exactly one of them.
 - AG-UI audio and video content are refused with an explanatory error. AK has no equivalent request

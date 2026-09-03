@@ -70,6 +70,7 @@ const sidebars = {
           items: [
             'deployment/aws-serverless',
             'deployment/aws-containerized',
+            'deployment/aws-queue-mode-scalability',
           ],
         },
         {

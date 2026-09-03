@@ -5,13 +5,13 @@ description = "Demo of per-run framework context/state carried across turns by a
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,langgraph]>=0.8.1",
+    "agentkernel[cli,langgraph]>=0.9.0",
     "langchain-openai>=1.1.16",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.8.1",
+    "agentkernel[test]>=0.9.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -19,9 +19,10 @@ dev = [
 
 [tool.uv]
 package = false
-# ragas 0.4.3 imports langchain_community.chat_models.vertexai, removed in langchain-community 0.4.2
-# langgraph-prebuilt >=1.0.9 imports ExecutionInfo/ServerInfo from langgraph.runtime, which only exists in
-# langgraph >=1.1; agentkernel pins langgraph~=1.0.5, so keep prebuilt at the last compatible release
+# ragas 0.4.3 requires a removed langchain-community module.
+# langgraph-prebuilt >=1.0.9 requires langgraph >=1.1, so pin it for langgraph 1.0 compatibility.
+# ak-py now uses langgraph~=1.2.10 (#586), but PyPI 0.8.1 still caps it at ~=1.0.5.
+# Remove this pin once a release with the new langgraph constraint is published.
 constraint-dependencies = ["langchain-community<0.4.2", "langgraph-prebuilt<=1.0.8"]
 
 [tool.isort]

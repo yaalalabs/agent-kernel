@@ -469,11 +469,53 @@ def test_factory_builtin_local_subprocess_real_import(monkeypatch):
 def test_factory_unknown_short_name_raises_listing_builtins(monkeypatch):
     """A short name with no landed if/elif branch (e.g. a provider from a future iteration)
     is an unknown type: fail loud, naming the available built-ins (#541 shape)."""
-    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="kubernetes", kubernetes=_SandboxKubernetesConfig())})
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="bedrock_agentcore")})
     _install_sandbox_cfg(monkeypatch, cfg)
     with pytest.raises(SandboxConfigError) as exc_info:
         SandboxProviderFactory.get("default")
     assert "local_subprocess" in str(exc_info.value) and "docker" in str(exc_info.value)
+
+
+def test_factory_builtin_kubernetes_real_import(monkeypatch):
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="kubernetes", kubernetes=_SandboxKubernetesConfig())})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    client_ns = types.SimpleNamespace(CoreV1Api=lambda: None, NetworkingV1Api=lambda: None, rest=types.SimpleNamespace(ApiException=Exception))
+    fake_sdk = types.SimpleNamespace(
+        client=client_ns,
+        config=types.SimpleNamespace(load_kube_config=lambda **k: None, load_incluster_config=lambda: None),
+        stream=types.SimpleNamespace(stream=lambda *a, **k: None),
+    )
+    monkeypatch.delitem(sys.modules, "agentkernel.sandbox.providers.kubernetes", raising=False)
+    for name, module in [
+        ("kubernetes", fake_sdk),
+        ("kubernetes.client", fake_sdk.client),
+        ("kubernetes.client.rest", fake_sdk.client.rest),
+        ("kubernetes.config", fake_sdk.config),
+        ("kubernetes.stream", fake_sdk.stream),
+    ]:
+        monkeypatch.setitem(sys.modules, name, module)
+    provider = SandboxProviderFactory.get("default")
+    assert type(provider).__name__ == "KubernetesSandboxProvider"
+
+
+def test_factory_builtin_kubernetes_missing_extra_raises_import_error(monkeypatch):
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="kubernetes", kubernetes=_SandboxKubernetesConfig())})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    monkeypatch.delitem(sys.modules, "agentkernel.sandbox.providers.kubernetes", raising=False)
+    for name in ("kubernetes.stream", "kubernetes.config", "kubernetes.client.rest", "kubernetes.client"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    monkeypatch.setitem(sys.modules, "kubernetes", None)  # simulate the kubernetes SDK not being installed
+    with pytest.raises(ImportError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "agentkernel[kubernetes]" in str(exc_info.value)
+
+
+def test_factory_builtin_kubernetes_missing_config_block_raises(monkeypatch):
+    cfg = _sandbox_cfg(profiles={"default": _SandboxProfileConfig(type="kubernetes")})
+    _install_sandbox_cfg(monkeypatch, cfg)
+    with pytest.raises(SandboxConfigError) as exc_info:
+        SandboxProviderFactory.get("default")
+    assert "'kubernetes' config block is missing" in str(exc_info.value)
 
 
 def test_factory_builtin_ec2_ssm_real_import(monkeypatch):

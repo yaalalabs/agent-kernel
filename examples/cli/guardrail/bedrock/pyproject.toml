@@ -5,7 +5,7 @@ description = "Demo of LangGraph based agents running in Agent Kernel with AWS B
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,langgraph,aws]>=0.8.1",
+    "agentkernel[cli,langgraph,aws]>=0.9.0",
     "langchain-litellm>=0.2.2",
     "langchain-openai>=1.1.16",
     "langgraph-supervisor>=0.0.29",
@@ -14,7 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.8.1",
+    "agentkernel[test]>=0.9.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -22,6 +22,9 @@ dev = [
 
 [tool.uv]
 package = false
+# langgraph-prebuilt >=1.0.9 imports ExecutionInfo/ServerInfo from langgraph.runtime, which only exists in
+# langgraph >=1.1; the published agentkernel pins langgraph~=1.0.5, so keep prebuilt at the last compatible release
+constraint-dependencies = ["langgraph-prebuilt<=1.0.8"]
 
 [tool.isort]
 profile = "black"

@@ -254,7 +254,11 @@ class _MultimodalConfig(BaseModel):
     )
     analysis_model: str = Field(
         default="gpt-4o",
-        description="LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment",
+        description=(
+            "LiteLLM model used by the analyze_attachments tool when the agent requests a full analysis of an attachment; "
+            "a remote image is handed to it as a fetchable image URL, so the model must be able to fetch that address, "
+            "while other remote attachment types are only named by their address"
+        ),
     )
     redis: Optional[_MultimodalStorageRedisConfig] = None
     dynamodb: Optional[_MultimodalStorageDynamoDBConfig] = None
@@ -661,6 +665,24 @@ class _SandboxKubernetesConfig(BaseModel):
     image: str = Field(default="python:3.12-slim", description="Container image used for launched sandbox pods")
     attach_to: Optional[str] = Field(default=None, description="Existing '<namespace>/<pod>' to exec into instead of launching a pod (mode 3)")
     kubeconfig: Optional[str] = Field(default=None, description="Path to a kubeconfig file; None uses in-cluster or default configuration")
+    service_account: Optional[str] = Field(
+        default=None,
+        description="ServiceAccount assigned to sandbox pods; bind it to the (read-only) RBAC role that is the execution's security boundary",
+    )
+    image_pull_secrets: List[str] = Field(default_factory=list, description="imagePullSecrets names for the sandbox pod")
+    labels: Dict[str, str] = Field(default_factory=dict, description="Extra labels merged onto sandbox pods")
+    node_selector: Dict[str, str] = Field(default_factory=dict, description="nodeSelector for sandbox pods")
+    env: Dict[str, str] = Field(default_factory=dict, description="Environment variables set in the sandbox container")
+    security_context: Dict[str, Any] = Field(default_factory=dict, description="Pod-level securityContext overlay")
+    container_security_context: Dict[str, Any] = Field(
+        default_factory=dict, description="Container-level securityContext overlay (over the hardened defaults)"
+    )
+    network_policy: bool = Field(
+        default=False,
+        description="Create per-pod NetworkPolicies for deny/allowlist egress and declare policy_network; "
+        "set only when the cluster CNI enforces NetworkPolicy",
+    )
+    create_timeout: float = Field(default=120.0, description="Seconds to wait for a sandbox pod to reach Running before failing provisioning")
 
 
 class _SandboxEC2SSMConfig(BaseModel):
@@ -671,25 +693,35 @@ class _SandboxEC2SSMConfig(BaseModel):
 class _ExecutionBrokerConfig(BaseModel):
     flavor: str = Field(
         default="thread",
-        description="Broker flavor: 'embedded' | 'thread' (in-process, available now) | a dotted path to an ExecutionBroker subclass. The AWS 'sqs' flavor is planned in a later iteration.",
+        description="Broker flavor: 'embedded' | 'thread' (in-process) | 'queue' (transport-backed, #503) | a dotted path to an ExecutionBroker subclass",
     )
-    wait_timeout: float = Field(default=60.0, description="Max seconds a synchronous wait blocks before promotion to a task (0 = always promote)")
+    wait_timeout: float = Field(
+        default=60.0,
+        description="Max seconds a synchronous wait blocks before promotion to a task (0 = always promote); "
+        "on the 'queue' flavor this also bounds waits submitted without an explicit wait",
+    )
+    wait_poll_interval: float = Field(
+        default=0.5, description="Seconds between response-store polls while a 'queue'-flavor caller waits synchronously"
+    )
     inline_payload_max_bytes: int = Field(
-        default=131072, description="Results larger than this are offloaded to the object store instead of returned inline"
+        default=131072,
+        description="On the 'queue' flavor: requests larger than this are rejected at submit, and result output beyond it is truncated with a notice",
     )
-    response_ttl: int = Field(default=86400, description="TTL in seconds for stored task completions")
+    response_ttl: int = Field(default=86400, description="TTL in seconds for stored task completions and broker-side session-inventory records")
     sweep_interval: int = Field(default=300, description="Interval in seconds between broker-side idle-session sweeps")
-    request_queue_url: Optional[str] = Field(default=None, description="SQS request queue URL for the 'sqs' flavor (terraform output)")
-    object_store_bucket: Optional[str] = Field(
-        default=None, description="Object store bucket for offloaded payloads for the 'sqs' flavor (terraform output)"
-    )
     worker_timeout_ceiling: Optional[float] = Field(
         default=None,
         description="Max effective execution timeout (s) the provisioned worker supports; terraform output — 840 in serverless mode, null in server_based. None = no ceiling.",
     )
+    queue: Optional[_QueuesConfig] = Field(
+        default=None,
+        description="Sandbox broker queues for the 'queue' flavor; reuses the execution.queues shape "
+        "(input carries execution requests to the worker, output carries completions back to the response store)",
+    )
     response_store: Optional[_ResponseStoreConfig] = Field(
         default=None,
-        description="Response storage configuration for the 'sqs' flavor; reuses the execution response store model",
+        description="Response storage for the 'queue' flavor (required by it); reuses the execution response store model. "
+        "Its ttl fields are overridden by response_ttl, and retry_count/delay are unused (queue-flavor waits are deadline-driven)",
     )
 
 
