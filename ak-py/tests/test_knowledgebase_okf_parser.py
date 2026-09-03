@@ -189,7 +189,27 @@ class TestBodyHandling:
         concept, _ = OKFParserUtil.parse_concept("tables/orders.md", document("type: Table", "see [c](./customers.md)"), body_complete=False)
         assert concept.body is None
         assert concept.links == []
-        assert "customers" in concept.body_tokens
+        assert "customers" in concept.field_tokens["body"]
+
+
+class TestFieldTokens:
+    def test_every_weighted_field_is_indexed_at_parse_time(self):
+        # The ranker reads this index rather than tokenising the fields on each match.
+        frontmatter = "\n".join(["type: BigQuery Table", "title: Orders", "description: One per purchase", "tags: [sales, revenue]"])
+        concept, _ = OKFParserUtil.parse_concept("tables/orders.md", document(frontmatter, "customer rows"), body_complete=True)
+
+        assert concept.field_tokens["type"] == {"bigquery", "table"}
+        assert concept.field_tokens["title"] == {"orders"}
+        assert concept.field_tokens["description"] == {"one", "per", "purchase"}
+        assert concept.field_tokens["tags"] == {"sales", "revenue"}
+        assert concept.field_tokens["body"] == {"customer", "rows"}
+
+    def test_a_field_the_concept_does_not_carry_is_indexed_as_empty(self):
+        concept, _ = OKFParserUtil.parse_concept("n.md", document("type: Note", ""), body_complete=True)
+
+        assert concept.field_tokens["title"] == set()
+        assert concept.field_tokens["description"] == set()
+        assert concept.field_tokens["tags"] == set()
 
 
 class TestTokenise:

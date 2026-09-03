@@ -532,22 +532,20 @@ class OKFManager(DocumentKnowledgeBase):
             bundle.diagnostics.append(OKFDiagnostic(path=path, code=DiagnosticCode.PATH_ESCAPE.value, message=str(error)))
         return None
 
-    def _score(self, concept: OKFConcept, tokens: set[str]) -> int:
+    @staticmethod
+    def _score(concept: OKFConcept, tokens: set[str]) -> int:
         """
         Score one concept against a tokenised query.
+
+        Matched against the index the parser built, because this runs once per concept in the
+        bundle on every search.
 
         :param concept: Concept to score.
         :param tokens: Distinct query tokens.
         :return: Sum of the weights of the fields containing each token.
         """
-        fields = {
-            "title": OKFParserUtil.tokenise(concept.title or ""),
-            "tags": OKFParserUtil.tokenise(" ".join(concept.tags)),
-            "type": OKFParserUtil.tokenise(concept.type),
-            "description": OKFParserUtil.tokenise(concept.description or ""),
-            "body": concept.body_tokens,
-        }
-        return sum(weight for field, weight in _FIELD_WEIGHTS.items() for token in tokens if token in fields[field])
+        # A weighted field the index does not cover scores nothing, rather than raising.
+        return sum(weight for field, weight in _FIELD_WEIGHTS.items() for token in tokens if token in concept.field_tokens.get(field, frozenset()))
 
     def _load_full_concept(self, raw_id: str) -> Optional[OKFConcept]:
         """

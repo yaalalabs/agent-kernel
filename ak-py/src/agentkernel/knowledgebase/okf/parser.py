@@ -274,7 +274,7 @@ class OKFParserUtil:
         :param data: Document text — the whole document, or the bounded prefix the walk read.
         :param body_complete: Whether ``data`` holds the whole document. When it does not,
             ``body`` and ``links`` are left empty, because a truncated body would yield a
-            truncated link set; ``body_tokens`` is still built from what was read.
+            truncated link set; the body's token index is still built from what was read.
         :param now: The instant staleness is judged against; defaults to the current UTC time.
         :return: The concept (or ``None`` if skipped) and every diagnostic raised parsing it.
         """
@@ -317,12 +317,15 @@ class OKFParserUtil:
             links, link_diagnostics = OKFParserUtil.extract_links(path, body)
             diagnostics.extend(link_diagnostics)
 
+        title = OKFParserUtil._as_optional_str(loaded.get("title"))
+        description = OKFParserUtil._as_optional_str(loaded.get("description"))
+
         try:
             concept = OKFConcept(
                 path=path,
                 type=concept_type,
-                title=OKFParserUtil._as_optional_str(loaded.get("title")),
-                description=OKFParserUtil._as_optional_str(loaded.get("description")),
+                title=title,
+                description=description,
                 resource=OKFParserUtil._as_optional_str(loaded.get("resource")),
                 tags=tags,
                 status=OKFParserUtil._as_optional_str(loaded.get("status")),
@@ -335,8 +338,14 @@ class OKFParserUtil:
                 trust=OKFParserUtil.derive_trust(verified),
                 stale=stale,
                 body=body if body_complete else None,
-                body_tokens=OKFParserUtil.tokenise(body),
                 links=links,
+                field_tokens={
+                    "type": OKFParserUtil.tokenise(concept_type),
+                    "title": OKFParserUtil.tokenise(title),
+                    "description": OKFParserUtil.tokenise(description),
+                    "tags": OKFParserUtil.tokenise(" ".join(tags)),
+                    "body": OKFParserUtil.tokenise(body),
+                },
             )
         except ValidationError as error:
             # A backstop, not a normal path: the coercions above cover every shape seen in the
