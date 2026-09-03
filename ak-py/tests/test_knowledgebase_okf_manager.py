@@ -25,7 +25,7 @@ import yaml
 
 from agentkernel.knowledgebase.errors import KnowledgeCapabilityError, KnowledgePathError
 from agentkernel.knowledgebase.okf import manager as manager_module
-from agentkernel.knowledgebase.okf.manager import OKFManager
+from agentkernel.knowledgebase.okf.manager import _DEFAULT_CONCEPT_TYPE, OKFManager
 from agentkernel.knowledgebase.okf.model import DiagnosticCode, TrustTier
 from agentkernel.knowledgebase.store import LocalDocumentStore
 
@@ -56,6 +56,23 @@ title: Orders DB
 ---
 # Overview
 the warehouse
+"""
+
+ATTESTED = """---
+type: Attested Computation
+title: Revenue check
+description: the check
+resource: bq://p/d/t
+tags: [sales]
+status: stable
+stale_after: '2030-01-01T00:00:00+00:00'
+sources: [{by: etl}]
+runtime: python:3.12
+owner: analytics
+---
+
+# Body
+rows
 """
 
 BUNDLE = {
@@ -379,6 +396,80 @@ class TestWrite:
             return "\n".join(line for line in text.splitlines() if "at:" not in line)
 
         assert without_stamp(first) == without_stamp(second)
+
+
+class TestFetchWriteRoundTrip:
+    """Enriching a concept means fetching it and writing it back, and `_write_path` honours the
+    id, so that write lands on the file it came from. Anything the round-trip fails to carry is
+    not merely absent from the new record — it is deleted from the bundle."""
+
+    def test_a_fetched_concept_written_back_keeps_its_type(self, tmp_path):
+        # The read side emits the type as `kind`; reading only `type` on the way back out
+        # retyped the document to the default and overwrote the original with it.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([manager.fetch(["tables/orders.md"])[0]])
+
+        assert manager.fetch(["tables/orders.md"])[0]["metadata"]["kind"] == "BigQuery Table"
+
+    def test_a_round_trip_preserves_every_frontmatter_family(self, tmp_path):
+        # The conformance rules forbid dropping an unrecognised key, and a round-trip that
+        # overwrites the file it read is exactly where dropping one deletes it from the bundle.
+        manager = make_manager(tmp_path, {"t.md": ATTESTED}, refresh_seconds=None)
+        manager.write([manager.fetch(["t.md"])[0]])
+
+        frontmatter = yaml.safe_load((tmp_path / "t.md").read_text(encoding="utf-8").split("---\n")[1])
+        assert frontmatter["type"] == "Attested Computation"
+        assert frontmatter["title"] == "Revenue check"
+        assert frontmatter["description"] == "the check"
+        assert frontmatter["resource"] == "bq://p/d/t"
+        assert frontmatter["tags"] == ["sales"]
+        assert frontmatter["status"] == "stable"
+        assert frontmatter["stale_after"] == "2030-01-01T00:00:00+00:00"
+        assert frontmatter["sources"] == [{"by": "etl"}]
+        assert frontmatter["runtime"] == "python:3.12"  # the computation family
+        assert frontmatter["owner"] == "analytics"  # an unrecognised key, carried through `extra`
+
+    def test_a_round_trip_is_byte_identical_apart_from_the_generated_stamp(self, tmp_path):
+        manager = make_manager(tmp_path, {"t.md": ATTESTED}, refresh_seconds=None, producer="process:demo")
+        manager.write([manager.fetch(["t.md"])[0]])
+        first = (tmp_path / "t.md").read_text(encoding="utf-8")
+        manager.write([manager.fetch(["t.md"])[0]])
+
+        assert (tmp_path / "t.md").read_text(encoding="utf-8") == first
+
+    def test_an_untitled_concept_does_not_gain_its_own_path_as_a_title(self, tmp_path):
+        # The record's display title used to fall back to the path, which write() then persisted.
+        manager = make_manager(tmp_path, {"u.md": "---\ntype: Note\n---\n\nbody\n"}, refresh_seconds=None)
+        manager.write([manager.fetch(["u.md"])[0]])
+
+        assert "title" not in yaml.safe_load((tmp_path / "u.md").read_text(encoding="utf-8").split("---\n")[1])
+
+    def test_a_round_trip_persists_no_derived_signal_as_frontmatter(self, tmp_path):
+        # trust and stale are advisory answers this backend computes, and `source`/`kind`/`links`
+        # are record shape. Writing any of them back would forge state a curator never wrote.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([manager.fetch(["tables/orders.md"])[0]])
+
+        frontmatter = yaml.safe_load((tmp_path / "tables" / "orders.md").read_text(encoding="utf-8").split("---\n")[1])
+        assert not {"source", "kind", "trust", "stale", "links"} & set(frontmatter)
+
+    def test_repeated_round_trips_do_not_grow_the_body(self, tmp_path):
+        # The parsed body already carries the blank line after the frontmatter, so re-adding one
+        # per write appended a line to the document on every cycle.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([manager.fetch(["tables/orders.md"])[0]])
+        first = (tmp_path / "tables" / "orders.md").read_text(encoding="utf-8")
+        manager.write([manager.fetch(["tables/orders.md"])[0]])
+
+        assert (tmp_path / "tables" / "orders.md").read_text(encoding="utf-8").count("\n") == first.count("\n")
+
+    def test_a_structural_record_kind_is_never_read_as_a_concept_type(self, tmp_path):
+        # browse hands the agent index and directory records whose `kind` is the bundle's own
+        # structure, not an OKF type; writing one back must fall to the default.
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "b", "metadata": {"id": "n.md", "kind": "directory"}}])
+
+        assert manager.fetch(["n.md"])[0]["metadata"]["kind"] == _DEFAULT_CONCEPT_TYPE
 
 
 class TestWriteThrough:
