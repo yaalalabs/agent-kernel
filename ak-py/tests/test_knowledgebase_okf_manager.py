@@ -123,6 +123,20 @@ class CountingStore(LocalDocumentStore):
         return super().list(prefix)
 
 
+class RefreshingStore(LocalDocumentStore):
+    """A store that refreshes the manifest just before each write lands, which is the race the
+    write-through has to survive: the manifest a write started with is no longer the live one."""
+
+    def __init__(self, root: str) -> None:
+        super().__init__(root, writable=True)
+        self.manager = None
+
+    def write_bytes(self, path: str, data: bytes) -> None:
+        if self.manager is not None:
+            self.manager.reload()
+        super().write_bytes(path, data)
+
+
 class FakeClock:
     """Stands in for the manager module's ``time``, so refresh timing is not wall-clock bound."""
 
@@ -277,6 +291,20 @@ class TestBrowse:
 
     def test_a_curated_listing_is_never_truncated_by_limit(self, tmp_path):
         assert len(make_manager(tmp_path).browse("tables", limit=0)) == 1
+
+    def test_a_directory_holding_only_an_index_is_still_listed(self, tmp_path):
+        # The manifest infers subdirectories from the paths it holds, and this one contributes
+        # no concept path — so without its index.md counting, `notes` could not be reached from
+        # the root and its curated listing was unservable.
+        manager = make_manager(tmp_path, {"a.md": ORDERS_DB, "notes/index.md": "# Notes\n- soon\n"})
+
+        assert ids(manager.browse("")) == ["notes/", "a.md"]
+        assert ids(manager.browse("notes")) == ["notes/index.md"]
+
+    def test_a_directory_holding_only_a_log_is_still_listed(self, tmp_path):
+        manager = make_manager(tmp_path, {"a.md": ORDERS_DB, "audit/log.md": "# Log\n- created\n"})
+
+        assert ids(manager.browse("")) == ["audit/", "a.md"]
 
     def test_an_unknown_directory_is_empty_rather_than_an_error(self, tmp_path):
         assert make_manager(tmp_path).browse("nowhere") == []
@@ -486,6 +514,32 @@ class TestWriteThrough:
         manager = make_manager(tmp_path, refresh_seconds=None)
         manager.write([{"text": "b", "metadata": {"id": "tables/orders.md", "type": "Note", "title": "Replaced"}}])
         assert manager.fetch(["tables/orders.md"])[0]["metadata"]["title"] == "Replaced"
+
+
+class TestWriteBatching:
+    def test_a_bad_id_fails_the_batch_before_any_of_it_is_written(self, tmp_path):
+        # Paths used to be resolved inside the write loop, so the records ahead of a bad id were
+        # already durable when it raised — and write_kb reports the whole call as failed.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        records = [
+            {"text": "a", "metadata": {"id": "first.md", "type": "Note", "title": "First"}},
+            {"text": "b", "metadata": {"id": "../escape.md"}},
+        ]
+
+        with pytest.raises(KnowledgePathError):
+            manager.write(records)
+        assert not (tmp_path / "first.md").exists()
+
+    def test_a_refresh_landing_mid_write_does_not_discard_the_write_through(self, tmp_path):
+        # The write-through used to be applied to the manifest captured when write() began, so a
+        # refresh replacing it meanwhile threw the new concept away until the next walk.
+        store = RefreshingStore(write_bundle(tmp_path, BUNDLE))
+        manager = OKFManager(store, refresh_seconds=None)
+        store.manager = manager
+
+        manager.write([{"text": "Body.", "metadata": {"id": "n.md", "type": "Note", "title": "Zebra"}}])
+
+        assert ids(manager.search("Zebra")) == ["n.md"]
 
 
 class TestRefreshAndConcurrency:

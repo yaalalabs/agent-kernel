@@ -90,10 +90,14 @@ class LocalDocumentStore(DocumentStore):
         Return at most the first ``max_bytes`` of a document, reading no further.
 
         :param path: Store-relative path.
-        :param max_bytes: Maximum number of bytes to return.
+        :param max_bytes: Maximum number of bytes to return; ``0`` or less returns ``b""``.
         :return: Leading bytes of the document.
         :raises FileNotFoundError: If no document exists at that path.
         """
+        if max_bytes <= 0:
+            # read() takes a negative size as "the whole file", which is the opposite of the
+            # bound this method promises.
+            return b""
         with open(self._contained_path(path), "rb") as handle:
             return handle.read(max_bytes)
 

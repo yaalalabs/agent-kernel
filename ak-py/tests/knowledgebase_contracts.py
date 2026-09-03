@@ -107,6 +107,14 @@ class DocumentStoreContract:
         store.write_bytes("doc.md", b"short")
         assert store.read_prefix_bytes("doc.md", 4096) == b"short"
 
+    @pytest.mark.parametrize("max_bytes", [0, -1])
+    def test_contract_read_prefix_bytes_of_a_non_positive_size_returns_nothing(self, store: DocumentStore, max_bytes: int):
+        # Left to the transport the three implementations disagreed: read() takes a negative
+        # size as the whole file, a slice counts it from the end, and a ranged GET returns
+        # nothing. The method promises at most max_bytes, so nothing is the only answer.
+        store.write_bytes("doc.md", b"0123456789")
+        assert store.read_prefix_bytes("doc.md", max_bytes) == b""
+
     def test_contract_read_prefix_bytes_on_a_missing_document_raises_file_not_found(self, store: DocumentStore):
         with pytest.raises(FileNotFoundError):
             store.read_prefix_bytes("nothing/here.md", 16)

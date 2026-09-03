@@ -192,6 +192,27 @@ class TestLocalDocumentStore:
         assert store.read_prefix_bytes("doc.md", 3) == b"012"
 
 
+class TestBaseReadPrefixBytes:
+    """The default a store inherits when its transport cannot serve a partial read."""
+
+    class WholeReadStore(LocalDocumentStore):
+        """Drops the local override, so the base default does the slicing."""
+
+        read_prefix_bytes = DocumentStore.read_prefix_bytes
+
+    def test_the_default_slices_the_leading_bytes(self, tmp_path):
+        store = self.WholeReadStore(str(tmp_path), writable=True)
+        store.write_bytes("doc.md", b"0123456789")
+        assert store.read_prefix_bytes("doc.md", 4) == b"0123"
+
+    @pytest.mark.parametrize("max_bytes", [0, -1])
+    def test_the_default_returns_nothing_for_a_non_positive_size(self, tmp_path, max_bytes: int):
+        # A negative size would otherwise slice from the end, which is not a prefix at all.
+        store = self.WholeReadStore(str(tmp_path), writable=True)
+        store.write_bytes("doc.md", b"0123456789")
+        assert store.read_prefix_bytes("doc.md", max_bytes) == b""
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
 class TestLocalDocumentStoreSymlinks:
     @pytest.fixture
