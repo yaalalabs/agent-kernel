@@ -52,9 +52,9 @@ _FIELD_WEIGHTS = {"title": 4, "tags": 3, "type": 2, "description": 2, "body": 1}
 # byte-identical documents. Caller extras follow, in the order the caller supplied them.
 _WRITE_KEY_ORDER = ("type", "title", "description", "tags", "status", "generated", "sources")
 
-# Metadata keys write() consumes to build frontmatter; anything else the caller sent is carried
-# through as an extra key rather than dropped.
-_WRITE_RESERVED_METADATA = frozenset({"id", "type", "title", "description", "tags", "status", "sources"})
+# `generated` and `verified` are reserved provenance metadata; allowing callers to supply them would let writers forge the producer or trust tier.
+# Other unknown metadata is preserved as `extra` rather than dropped.
+_WRITE_RESERVED_METADATA = frozenset({"id", "type", "title", "description", "tags", "status", "sources", "generated", "verified"})
 
 _DEFAULT_CONCEPT_TYPE = "Note"
 _SLUG_SEPARATOR = re.compile(r"[^a-z0-9]+")
@@ -253,7 +253,7 @@ class OKFManager(DocumentKnowledgeBase):
         :param kwargs: Accepted for contract compatibility; unused.
         :return: None.
         :raises KnowledgeCapabilityError: If the backend or its store is not writable.
-        :raises KnowledgePathError: If a supplied id escapes the bundle or contains a ``,``.
+        :raises KnowledgePathError: If a supplied id is not a writable bundle path.
         """
         if not self.capabilities.writable:
             raise KnowledgeCapabilityError(self.backend_name, "write")
@@ -275,25 +275,60 @@ class OKFManager(DocumentKnowledgeBase):
 
     def format_results(self, rows: List[Record]) -> str:
         """
-        Render records so routing information survives into the prompt.
+        Render records so both the content and the routing signals reach the prompt.
 
-        The base format flattens everything to text and source. OKF's tier and staleness are
-        the signals an agent needs in order to decide what to trust, so they are rendered.
+        The base format carries text and source; OKF adds tier and staleness, the signals an
+        agent needs in order to decide what to trust. Both are rendered, because the text *is*
+        the answer: dropping it would leave ``fetch`` reporting metadata about a document it
+        had just gone out of its way to re-read in full.
 
         :param rows: Records returned by a read.
-        :return: One line per record.
+        :return: One line per record, followed by the document's own lines when a fetched body
+            makes the record multi-line.
         """
         if not rows:
             return "No relevant knowledge found."
 
-        lines = []
+        lines: List[str] = []
         for row in rows:
             metadata = row.get("metadata", {}) or {}
             record_id = metadata.get("id", "")
             label = metadata.get("title") or record_id
-            stale = " · STALE" if metadata.get("stale") else ""
-            lines.append(f"- [{record_id}] {label} — {metadata.get('kind', '')} · trust={metadata.get('trust', '')}{stale}")
+            header = f"- [{record_id}] {label}{self._signals(metadata)}"
+            text = (row.get("text", "") or "").strip()
+
+            if not text or text in (label, record_id):
+                # A concept with no description falls back to its own title, and a directory
+                # record to its own path; repeating either after the header says nothing.
+                lines.append(header)
+            elif "\n" in text:
+                # A fetched body is a whole markdown document. Inlining or indenting it would
+                # mangle its own headings and tables, so it follows the header verbatim.
+                lines.append(f"{header}\n{text}")
+            else:
+                lines.append(f"{header}: {text}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _signals(metadata: Mapping[str, Any]) -> str:
+        """
+        Render the routing signals riding on one record.
+
+        Assembled from what the record actually carries rather than from a fixed template,
+        because directory and index records have neither a type nor a trust tier, and an empty
+        ``trust=`` reads as a lost value rather than as a record that never had one.
+
+        :param metadata: The record's metadata.
+        :return: The signal suffix, or ``""`` when the record carries no signals.
+        """
+        parts: List[str] = []
+        if metadata.get("kind"):
+            parts.append(str(metadata["kind"]))
+        if metadata.get("trust"):
+            parts.append(f"trust={metadata['trust']}")
+        if metadata.get("stale"):
+            parts.append("STALE")
+        return f" — {' · '.join(parts)}" if parts else ""
 
     def _derived_schema(self) -> Mapping[str, Any]:
         """
@@ -371,10 +406,14 @@ class OKFManager(DocumentKnowledgeBase):
                 continue
 
             if len(bundle.concepts) >= self._max_concepts:
-                bundle.truncated = True
-                message = f"bundle exceeds max_concepts={self._max_concepts}; kept the first {len(bundle.concepts)} concepts"
-                bundle.diagnostics.append(OKFDiagnostic(path="", code=DiagnosticCode.TRUNCATED.value, message=message))
-                break
+                # Truncation drops concepts, not the walk: `list()` is globally lexicographic,
+                # so breaking here would also abandon every reserved file sorting after the
+                # cap — losing a bundle's curated root index.md to a deep `aaa/` directory.
+                if not bundle.truncated:
+                    bundle.truncated = True
+                    message = f"bundle exceeds max_concepts={self._max_concepts}; kept the first {len(bundle.concepts)} concepts"
+                    bundle.diagnostics.append(OKFDiagnostic(path="", code=DiagnosticCode.TRUNCATED.value, message=message))
+                continue
 
             self._absorb_concept(bundle, path)
 
@@ -587,17 +626,29 @@ class OKFManager(DocumentKnowledgeBase):
         A supplied id is honoured; otherwise one is synthesised, because the ``write_kb`` tool
         signature carries no id and an agent would otherwise have no way to name a bundle path.
         Either way the result is comma-free, so every id this backend hands out round-trips
-        through the fetch tool's comma-separated id list.
+        through the fetch tool's comma-separated id list, and it ends in ``.md``, so the next
+        walk still recognises it — a suffix-less path would write, serve through the
+        write-through, then silently vanish from the manifest one refresh later.
 
         :param metadata: The record's metadata.
         :return: Bundle-relative path to write.
-        :raises KnowledgePathError: If a supplied id escapes the bundle or contains a ``,``.
+        :raises KnowledgePathError: If a supplied id escapes the bundle, contains a ``,``,
+            resolves to the bundle root, or names a reserved OKF file.
         """
         supplied = metadata.get("id")
         if isinstance(supplied, str) and supplied.strip():
             path = DocumentStore.normalise_relative(supplied)
+            if not path:
+                raise KnowledgePathError(f"concept path may not be the bundle root: {supplied!r}")
             if "," in path:
                 raise KnowledgePathError(f"concept path may not contain ',': {supplied!r}")
+            if not path.endswith(_MARKDOWN_SUFFIX):
+                path = f"{path}{_MARKDOWN_SUFFIX}"
+            # Refused rather than renamed: index.md and log.md are the bundle's own structure,
+            # and a write landing on one would overwrite a curated listing with a concept the
+            # walk then declines to read back.
+            if OKFParserUtil.is_reserved(path):
+                raise KnowledgePathError(f"concept path may not name a reserved OKF file: {supplied!r}")
             return path
 
         slug = self._slug(metadata.get("title") or metadata.get("type") or _FALLBACK_SLUG)

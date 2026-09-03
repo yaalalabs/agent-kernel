@@ -8,7 +8,7 @@ from botocore.exceptions import ClientError
 from .base import BaseDriver
 
 # The codes S3 reports for "that object is not there", across get_object and head_object.
-_MISSING_CODES = frozenset({"NoSuchKey", "NoSuchBucket", "NotFound", "404"})
+_MISSING_CODES = frozenset({"NoSuchKey", "NotFound", "404"})
 
 
 class S3Driver(BaseDriver):

@@ -115,6 +115,8 @@ class TestToolGating:
         assert _tool_names(KnowledgeBuilder([_vector()])) == BASE_TOOLS
 
     def test_a_query_only_application_gets_exactly_the_four_existing_tools(self):
+        # write_kb is among the four, so a read-only application still sees it. Its gate is
+        # the per-call check, asserted in TestRouting, not its absence from the list.
         assert _tool_names(KnowledgeBuilder([_sql()])) == BASE_TOOLS
 
     def test_fetch_adds_only_fetch_kb(self):
@@ -169,6 +171,16 @@ class TestRouting:
         assert result == "Backend 'vector' does not support fetch. Backends that do: ['okf']."
         # The gate, not the backend, is what stopped the call.
         assert vector.calls == []
+
+    def test_writing_at_a_read_only_backend_reports_the_mismatch(self):
+        sql, vector = _sql(), _vector()
+        write_kb = _tool(KnowledgeBuilder([sql, vector]), "write_kb")
+
+        result = write_kb("sql", text="a fact")
+
+        assert result == "Backend 'sql' does not support writing. Backends that do: ['vector']."
+        # The gate, not the backend, is what stopped the call.
+        assert sql.calls == []
 
     def test_an_unknown_backend_keeps_the_existing_message(self):
         builder = KnowledgeBuilder([_documents()])

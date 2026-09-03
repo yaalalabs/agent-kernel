@@ -69,14 +69,22 @@ class DocumentKnowledgeBase(KnowledgeBase, ABC):
         propagate: an escaping path is a different situation, and each operation handles it at
         its own boundary.
 
+        "Nothing here" covers more than absence. A ``browse`` hands the agent directory
+        records, and feeding one back to ``fetch`` reaches ``open()`` on a directory — an
+        ``OSError`` that is not a ``FileNotFoundError``, and one that would otherwise abort a
+        whole batch over a single unusable id.
+
         :param path: Store-relative path.
-        :return: The document bytes, or ``None`` when no document exists there.
+        :return: The document bytes, or ``None`` when no document can be read there.
         :raises KnowledgePathError: If the path escapes the store namespace.
         """
         try:
             return self._store.read_bytes(path)
         except FileNotFoundError:
             log.warning("[%s] document not found: %s", self.backend_name, path)
+            return None
+        except OSError as error:
+            log.warning("[%s] document not readable: %s (%s)", self.backend_name, path, error)
             return None
 
     def close(self) -> None:

@@ -321,13 +321,22 @@ class TestS3Driver:
         assert driver.get_bytes("k") == b"payload"
         client.get_object.assert_called_once_with(Bucket="b", Key="k")
 
-    @pytest.mark.parametrize("code", ["NoSuchKey", "NoSuchBucket", "NotFound", "404"])
+    @pytest.mark.parametrize("code", ["NoSuchKey", "NotFound", "404"])
     def test_an_absent_object_becomes_file_not_found(self, code: str):
         client = MagicMock()
         client.get_object.side_effect = _s3_error(code)
 
         # Consumers of every driver see one exception type for "absent".
         with pytest.raises(FileNotFoundError, match="no such object"):
+            self._driver(client).get_bytes("k")
+
+    def test_a_missing_bucket_is_a_misconfiguration_not_an_absent_object(self):
+        client = MagicMock()
+        client.get_object.side_effect = _s3_error("NoSuchBucket")
+
+        # Mapped to FileNotFoundError, a typo'd bucket would read as an empty collection
+        # everywhere a consumer treats absence as an ordinary empty answer.
+        with pytest.raises(ClientError):
             self._driver(client).get_bytes("k")
 
     def test_an_unrelated_client_error_propagates(self):

@@ -127,15 +127,20 @@ class KnowledgeBuilder:
         """
         return [name for name, backend in self.backends.items() if self._declares(backend, capability)]
 
-    def _unsupported(self, backend_name: str, capability: str) -> str:
+    def _unsupported(self, backend_name: str, capability: str, label: str = "") -> str:
         """
         Build the message returned when a tool is routed at a backend that cannot serve it.
 
+        ``label`` exists because the message and the lookup need different words for one
+        capability: the field is named ``writable``, which does not read as a verb in the
+        sentence, while every other field name doubles as its own description.
+
         :param backend_name: Backend the agent addressed.
-        :param capability: Capability the tool needs.
+        :param capability: KnowledgeCapabilities field name the tool needs.
+        :param label: Wording for the message; defaults to the field name.
         :return: Message naming the backends that do declare the capability.
         """
-        return f"Backend '{backend_name}' does not support {capability}. Backends that do: {self._backends_declaring(capability)}."
+        return f"Backend '{backend_name}' does not support {label or capability}. Backends that do: {self._backends_declaring(capability)}."
 
     def build(self):
         """
@@ -144,6 +149,10 @@ class KnowledgeBuilder:
         Four tools are always returned. Up to three more are appended, each only when
         some registered backend declares the capability behind it, so an application's
         agent never sees a tool nothing can serve.
+
+        ``write_kb`` is emitted unconditionally, unlike the other capability-bearing tools:
+        the design freezes the original four as a compatibility promise, so its gate is the
+        per-call check inside the tool rather than its presence in this list.
 
         :return: List of callable tool functions.
         """
@@ -211,6 +220,9 @@ class KnowledgeBuilder:
             db = self.backends.get(backend)
             if not db:
                 return f"Unknown backend '{backend}'."
+
+            if not self._declares(db, "writable"):
+                return self._unsupported(backend, "writable", label="writing")
 
             if not text and not query:
                 return "Error: provide at least one of 'text' or 'query'."

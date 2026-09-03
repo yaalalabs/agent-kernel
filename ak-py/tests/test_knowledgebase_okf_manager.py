@@ -216,6 +216,15 @@ class TestFetch:
     def test_an_escaping_id_is_dropped_not_raised(self, tmp_path):
         assert make_manager(tmp_path).fetch(["../../etc/passwd"]) == []
 
+    def test_a_directory_id_from_browse_is_dropped_rather_than_aborting_the_batch(self, tmp_path):
+        # browse hands the agent directory records and the fetch tool invites it to browse
+        # first, so a directory id is a routine mistake. Reading one is an OSError that is not
+        # a FileNotFoundError, which is what used to take every other id in the call with it.
+        manager = make_manager(tmp_path, {"tables/orders.md": ORDERS, "top.md": ORDERS_DB})
+
+        assert ids(manager.browse("")) == ["tables/", "top.md"]
+        assert ids(manager.fetch(["tables/", "top.md"])) == ["top.md"]
+
     def test_fetch_is_the_only_operation_carrying_the_full_body_and_links(self, tmp_path):
         manager = make_manager(tmp_path)
         record = manager.fetch(["tables/orders.md"])[0]
@@ -281,6 +290,21 @@ class TestWrite:
         assert any(path.startswith("generated/attested-computation-") for path in written)
         assert any(path.startswith("generated/concept-") for path in written)
 
+    def test_a_supplied_id_without_the_markdown_suffix_still_survives_the_next_walk(self, tmp_path):
+        # The write-through makes any path visible immediately, so only a rewalk proves the
+        # document is really in the bundle rather than an orphan the walk declines to read.
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "body", "metadata": {"id": "notes/decision", "type": "Note"}}])
+
+        assert ids(manager.fetch(["notes/decision.md"])) == ["notes/decision.md"]
+        assert "notes/decision.md" in manager.reload().concepts
+
+    def test_a_supplied_id_naming_a_reserved_file_is_refused(self, tmp_path):
+        # index.md is a directory's curated listing, not a concept slot.
+        manager = make_manager(tmp_path)
+        with pytest.raises(KnowledgePathError, match="reserved OKF file"):
+            manager.write([{"text": "x", "metadata": {"id": "tables/index.md"}}])
+
     def test_a_comma_in_a_supplied_id_is_refused(self, tmp_path):
         manager = make_manager(tmp_path)
         with pytest.raises(KnowledgePathError, match="may not contain"):
@@ -324,6 +348,24 @@ class TestWrite:
         stamped = yaml.safe_load((tmp_path / "a.md").read_text(encoding="utf-8").split("---\n")[1])
         assert stamped["generated"]["by"].startswith("agentkernel/")
         assert stamped["generated"]["at"].endswith("+00:00")
+
+    def test_the_provenance_stamp_is_the_backends_to_make_not_the_callers(self, tmp_path):
+        root = write_bundle(tmp_path, BUNDLE)
+        manager = OKFManager(LocalDocumentStore(root, writable=True), producer="process:demo")
+        manager.write([{"text": "x", "metadata": {"id": "g.md", "generated": {"by": "someone-else", "at": "1999-01-01"}}}])
+
+        stamped = yaml.safe_load((tmp_path / "g.md").read_text(encoding="utf-8").split("---\n")[1])
+        assert stamped["generated"]["by"] == "process:demo"
+        assert stamped["generated"]["at"] != "1999-01-01"
+
+    def test_a_caller_cannot_mint_its_own_trust_tier(self, tmp_path):
+        # derive_trust reads `verified` and nothing else, so a writer able to supply it could
+        # promote its own output to the tier a human reviewer is supposed to confer.
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "x", "metadata": {"id": "v.md", "verified": [{"by": "human:nobody"}]}}])
+
+        assert manager.fetch(["v.md"])[0]["metadata"]["trust"] == TrustTier.UNVERIFIED.value
+        assert "verified" not in (tmp_path / "v.md").read_text(encoding="utf-8")
 
     def test_two_writes_of_the_same_content_differ_only_in_the_generated_stamp(self, tmp_path):
         manager = make_manager(tmp_path, producer="process:demo")
@@ -446,6 +488,20 @@ class TestTruncation:
         assert any(d.code == DiagnosticCode.TRUNCATED.value for d in manifest.diagnostics)
         assert manager._derived_schema()["truncated"] is True
 
+    def test_truncation_drops_concepts_without_abandoning_later_reserved_files(self, tmp_path):
+        # store.list() is globally lexicographic, so a bundle whose concepts live under `aaa/`
+        # hits the cap before the root index.md, which a `break` would never read.
+        files = {"aaa/c00.md": ORDERS_DB, "aaa/c01.md": CUSTOMERS, "index.md": BUNDLE["index.md"]}
+        manager = make_manager(tmp_path, files, max_concepts=1)
+        manifest = manager._ensure_manifest()
+
+        assert manifest.truncated is True
+        assert manifest.okf_version == "0.2"
+        assert manifest.index_files == {"": "index.md"}
+        assert ids(manager.browse("")) == ["index.md"]
+        # One diagnostic for the bundle, not one per concept past the cap.
+        assert len([d for d in manifest.diagnostics if d.code == DiagnosticCode.TRUNCATED.value]) == 1
+
     def test_a_skipped_file_does_not_consume_the_budget(self, tmp_path):
         files = {"a.md": "no frontmatter\n", "b.md": ORDERS_DB, "c.md": CUSTOMERS}
         manifest = make_manager(tmp_path, files, max_concepts=2)._ensure_manifest()
@@ -480,9 +536,22 @@ class TestDescriptionAndFormatting:
     def test_a_clean_bundle_describes_itself_plainly(self, tmp_path):
         assert make_manager(tmp_path, {"a.md": ORDERS_DB}).get_description() == "okf: Open Knowledge Format bundle"
 
-    def test_format_results_keeps_the_routing_signals_the_base_would_flatten(self, tmp_path):
+    def test_format_results_carries_the_text_and_the_routing_signals(self, tmp_path):
         manager = make_manager(tmp_path)
-        assert manager.format_results(manager.search("revenue")) == "- [tables/orders.md] Orders — BigQuery Table · trust=human-reviewed"
+        rendered = manager.format_results(manager.search("revenue"))
+        assert rendered == "- [tables/orders.md] Orders — BigQuery Table · trust=human-reviewed: One row per completed purchase."
+
+    def test_a_fetched_body_reaches_the_prompt_verbatim(self, tmp_path):
+        manager = make_manager(tmp_path)
+        rendered = manager.format_results(manager.fetch(["tables/orders.md"]))
+        header, _, body = rendered.partition("\n")
+        assert header == "- [tables/orders.md] Orders — BigQuery Table · trust=human-reviewed"
+        assert body == "# Schema\nFK to [customers](/tables/customers.md)."
+
+    def test_a_record_with_no_type_or_tier_renders_no_empty_signals(self, tmp_path):
+        manager = make_manager(tmp_path)
+        rendered = manager.format_results(manager.browse("datasets"))
+        assert rendered == "- [datasets/orders_db.md] Orders DB — Dataset · trust=unverified"
 
     def test_a_stale_record_is_marked(self, tmp_path):
         manager = make_manager(tmp_path, TestTrustAndStaleness.STALE_BUNDLE)
