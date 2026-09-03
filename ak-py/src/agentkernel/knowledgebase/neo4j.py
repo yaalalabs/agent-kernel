@@ -7,6 +7,7 @@ from typing import Any, Iterable, List, Mapping
 from neo4j import GraphDatabase
 
 from .base import KnowledgeBase
+from .errors import KnowledgeError
 from .model import KnowledgeCapabilities
 
 log = logging.getLogger("ak.Neo4jManager")
@@ -116,13 +117,17 @@ class Neo4jManager(KnowledgeBase):
         Persist records to Neo4j by executing the Cypher carried in each record's metadata.
 
         Reads ``metadata["query"]`` and ``metadata["params"]``, falling back to the
-        legacy ``cypher_query`` / ``cypher_params`` names. A record carrying neither is
-        skipped with a warning.
+        legacy ``cypher_query`` / ``cypher_params`` names. A record carrying neither
+        cannot be stored by this backend: it is skipped so the rest of the batch still
+        runs, and the skips are reported once the batch is through. Reporting them is
+        what stops the tool layer from calling a write that stored nothing a success.
 
         :param records: Iterable of records with text and metadata fields.
         :param kwargs: Additional keyword arguments reserved for interface compatibility.
         :return: None.
+        :raises KnowledgeError: If any record carried no Cypher; raised after the rest ran.
         """
+        stored, skipped = 0, 0
         for record in records:
             meta = dict(record.get("metadata", {}))
             # cypher_* are the pre-#553 key names, still read so a caller that has not
@@ -132,9 +137,17 @@ class Neo4jManager(KnowledgeBase):
 
             if not statement:
                 log.warning("[neo4j.write] record carries no query; skipping. metadata keys=%s", sorted(meta))
+                skipped += 1
                 continue
 
             self._run(statement, params)
+            stored += 1
+
+        if skipped:
+            raise KnowledgeError(
+                f"[KB][{self.backend_name}] {skipped} of {stored + skipped} record(s) carried no Cypher and were not stored "
+                f"({stored} stored). A Neo4j write needs the statement in metadata['query']."
+            )
 
     def query(self, statement: str, limit: int = 3, **kwargs) -> List[Mapping[str, Any]]:
         """
