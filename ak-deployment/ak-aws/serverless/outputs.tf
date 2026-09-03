@@ -40,6 +40,11 @@ output "private_subnet_ids" {
   value       = local.subnet_ids
 }
 
+output "security_group_id" {
+  description = "Security group ID used for Lambda functions"
+  value       = local.security_group_id
+}
+
 output "api_gateway_id" {
   description = "API Gateway REST API ID"
   value       = try(module.api_gateway[0].api_gateway_rest_api_id, null)

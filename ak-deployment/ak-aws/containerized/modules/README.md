@@ -131,6 +131,11 @@ rest_service = {
 }
 ```
 
+Two more top-level (not part of the `rest_service` object) variables control the ALB and ECS service
+security groups: `alb_security_group_id` and `ecs_service_security_group_id`, each `string`, default
+`null`. Unset, the module creates its own SG as before; set, the module uses the provided ID instead and
+skips creating that SG. Independent of each other.
+
 **Outputs**:
 
 - `service_arn`
@@ -230,6 +235,10 @@ scaling_config = {
   scale_out_cooldown = 30
 }
 ```
+
+One more top-level (not part of the `agent_runner` object) variable controls its security group:
+`security_group_id`, `string`, default `null`. Unset, the module creates its own SG as before; set, the
+module uses the provided ID instead and skips creating one.
 
 **Outputs**:
 

@@ -40,12 +40,12 @@ output "target_group_arn" {
 
 output "security_group_id" {
   description = "ECS service security group ID"
-  value       = aws_security_group.ecs_service.id
+  value       = local.ecs_service_security_group_id
 }
 
 output "alb_security_group_id" {
   description = "ALB security group ID"
-  value       = aws_security_group.ecs_alb.id
+  value       = local.alb_security_group_id
 }
 
 output "nlb_arn" {

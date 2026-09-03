@@ -511,6 +511,7 @@ module "serverless_api_auth" {
 | `public_subnet_cidrs` | CIDR blocks for the public subnets | `list(string)` | `["10.0.1.0/24", "10.0.2.0/24"]` | no |
 | `vpc_id` | VPC ID. If not provided, a new one will be created | `string` | `null` | no |
 | `private_subnet_ids` | When using an existing VPC to deploy, private subnet IDs need to be provided | `list(string)` | `null` | no |
+| `security_group_id` | Security group ID for Lambda functions. If not provided, a new one will be created | `string` | `null` | no |
 | `private_subnet_cidrs` | CIDR blocks for the private subnets | `list(string)` | `["10.0.3.0/24", "10.0.4.0/24"]` | no |
 
 ### Authorizer Object Structure
