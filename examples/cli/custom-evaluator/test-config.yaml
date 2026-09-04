@@ -4,7 +4,7 @@ mode: fallback  # Test comparison mode: score, llm, or fallback (default: fallba
 # Bring-your-own evaluator: a dotted path to an AKEvaluator subclass, resolved against
 # custom_evaluator.py next to this file (see that file for the implementation).
 evaluator: custom_evaluator.TokenOverlapEvaluator
-# LLM settings are read by TokenOverlapEvaluator.llm_based_evaluation for its judge call:
+# LLM settings are read by TokenOverlapEvaluator.evaluate_by_llm for its judge call:
 llm:
   model: gpt-4o-mini
   provider: openai

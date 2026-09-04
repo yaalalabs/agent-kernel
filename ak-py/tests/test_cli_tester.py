@@ -15,7 +15,7 @@ import pytest
 
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.test.config import AKTestConfig
-from agentkernel.test.core.akevaluators import (
+from agentkernel.test.core.evaluator import (
     AKEvaluationCase,
     AKEvaluationError,
     AKEvaluationResult,
@@ -34,19 +34,19 @@ def _normalize(text: str) -> str:
 class _FakeEvaluator(AKEvaluator):
     """Deterministic, offline stand-in for DeepevalAKEvaluator.
 
-    score_based_evaluation: normalised whole-string equality (mirrors quasi_exact_match_score).
-    llm_based_evaluation: normalised containment (a stand-in "judge" that's more lenient than score).
+    evaluate_by_score: normalised whole-string equality (mirrors quasi_exact_match_score).
+    evaluate_by_llm: normalised containment (a stand-in "judge" that's more lenient than score).
     """
 
-    def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
-            raise AKMissingInput("score_based_evaluation requires AKEvaluationCase.expected")
+            raise AKMissingInput("evaluate_by_score requires AKEvaluationCase.expected")
         score = 1.0 if _normalize(case.actual) == _normalize(case.expected) else 0.0
         return AKEvaluationResult(metric="fake_score", evaluator="fake", score=score, passed=score >= case.threshold)
 
-    def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_llm(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
-            raise AKMissingInput("llm_based_evaluation requires AKEvaluationCase.expected")
+            raise AKMissingInput("evaluate_by_llm requires AKEvaluationCase.expected")
         score = 1.0 if _normalize(case.expected) in _normalize(case.actual) else 0.2
         return AKEvaluationResult(metric="fake_llm", evaluator="fake", score=score, reason="fake reason", passed=score >= case.threshold)
 
@@ -64,23 +64,23 @@ class _CountingFakeEvaluator(_FakeEvaluator):
 class _FailingLlmEvaluator(AKEvaluator):
     """Simulates a broken judge backend: score mode works, llm mode always fails."""
 
-    def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
-            raise AKMissingInput("score_based_evaluation requires AKEvaluationCase.expected")
+            raise AKMissingInput("evaluate_by_score requires AKEvaluationCase.expected")
         return AKEvaluationResult(metric="fake_score", evaluator="fake", score=0.0, passed=0.0 >= case.threshold)
 
-    def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_llm(self, case: AKEvaluationCase) -> AKEvaluationResult:
         raise AKEvaluationError("judge backend unavailable (simulated)")
 
 
 class _ScoreUnsupportedEvaluator(AKEvaluator):
     """Simulates a backend that structurally cannot do score-based evaluation."""
 
-    def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:
         raise AKMetricNotSupported("score mode not supported by this fake backend")
 
-    def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
-        raise AssertionError("llm_based_evaluation must not be called when score raises AKMetricNotSupported")
+    def evaluate_by_llm(self, case: AKEvaluationCase) -> AKEvaluationResult:
+        raise AssertionError("evaluate_by_llm must not be called when score raises AKMetricNotSupported")
 
 
 class _NotAnEvaluator:
@@ -91,7 +91,7 @@ class _NotAnEvaluator:
 # return this for a fake module name, the same pattern test_store_builders.py uses for its
 # bring-your-own dotted-path tests. This decouples the tests from real import machinery for a
 # `tests` package that has no __init__.py.
-_FAKE_MODULE_NAME = "tests._fake_akevaluators"
+_FAKE_MODULE_NAME = "tests._fake_evaluator"
 _fake_module = types.ModuleType(_FAKE_MODULE_NAME)
 _fake_module._FakeEvaluator = _FakeEvaluator
 _fake_module._CountingFakeEvaluator = _CountingFakeEvaluator
@@ -168,16 +168,16 @@ async def test_expect_forwards_return_metrics(monkeypatch):
 # --- mode routing ------------------------------------------------------------------------- #
 
 
-def test_compare_score_mode_routes_to_score_based_evaluation(monkeypatch):
+def test_compare_score_mode_routes_to_evaluate_by_score(monkeypatch):
     _use_evaluator(monkeypatch, "_FakeEvaluator")
     CliTest.compare("Hello World", ["Hello World"], threshold=0.5, mode=Mode.SCORE)
     with pytest.raises(AssertionError, match="didn't pass the score threshold"):
         CliTest.compare("Hello World", ["Goodbye"], threshold=0.5, mode=Mode.SCORE)
 
 
-def test_compare_llm_mode_routes_to_llm_based_evaluation(monkeypatch):
+def test_compare_llm_mode_routes_to_evaluate_by_llm(monkeypatch):
     _use_evaluator(monkeypatch, "_FakeEvaluator")
-    # Score would fail (not an exact match) but llm mode never calls score_based_evaluation.
+    # Score would fail (not an exact match) but llm mode never calls evaluate_by_score.
     CliTest.compare("Paris is lovely", ["Paris"], threshold=0.5, mode=Mode.LLM)
     with pytest.raises(AssertionError, match="didn't pass llm evaluation"):
         CliTest.compare("Hello", ["Goodbye forever"], threshold=0.5, mode=Mode.LLM)
@@ -304,7 +304,7 @@ def test_fallback_propagates_metric_not_supported_without_trying_llm(monkeypatch
 
 
 def test_resolve_evaluator_class_builtin_deepeval():
-    from agentkernel.test.core.akevaluators.deepeval import DeepevalAKEvaluator
+    from agentkernel.test.core.evaluator.deepeval import DeepevalAKEvaluator
 
     assert CliTest._resolve_evaluator_class("deepeval") is DeepevalAKEvaluator
 
@@ -345,7 +345,7 @@ def test_resolve_evaluator_class_deepeval_missing_extra_raises_import_error(monk
             raise ImportError(f"simulated missing dependency: {name}")
         return real_import(name, *args, **kwargs)
 
-    monkeypatch.delitem(sys.modules, "agentkernel.test.core.akevaluators.deepeval", raising=False)
+    monkeypatch.delitem(sys.modules, "agentkernel.test.core.evaluator.deepeval", raising=False)
     monkeypatch.setattr(builtins, "__import__", fake_import)
     with pytest.raises(ImportError, match=r"agentkernel\[test\]"):
         CliTest._resolve_evaluator_class("deepeval")
@@ -354,7 +354,7 @@ def test_resolve_evaluator_class_deepeval_missing_extra_raises_import_error(monk
 def test_deepeval_module_does_not_shadow_third_party_package():
     import deepeval
 
-    import agentkernel.test.core.akevaluators.deepeval as ak_deepeval_module
+    import agentkernel.test.core.evaluator.deepeval as ak_deepeval_module
 
     assert ak_deepeval_module.GEval is deepeval.metrics.GEval
     assert ak_deepeval_module.Scorer is deepeval.scorer.Scorer
@@ -404,7 +404,7 @@ def test_evaluator_cache_explicit_reset_rebuilds_same_config(monkeypatch):
 def test_byo_evaluator_has_no_deepeval_dependency(monkeypatch):
     # Clear any prior caching so this check is meaningful regardless of test execution order.
     monkeypatch.delitem(sys.modules, "deepeval", raising=False)
-    monkeypatch.delitem(sys.modules, "agentkernel.test.core.akevaluators.deepeval", raising=False)
+    monkeypatch.delitem(sys.modules, "agentkernel.test.core.evaluator.deepeval", raising=False)
     _use_evaluator(monkeypatch, "_FakeEvaluator")
 
     result = CliTest.compare("Hello World", ["Hello World"], mode=Mode.SCORE, return_metrics=True)
