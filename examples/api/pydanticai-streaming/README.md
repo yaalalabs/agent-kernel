@@ -9,7 +9,7 @@ under the hood).
 ## Model provider
 
 `agentkernel[pydanticai]` installs the provider-agnostic `pydantic-ai-slim` core only. This demo
-declares `pydantic-ai-slim[openai]` and uses `openai:gpt-4o-mini`, so it needs an `OPENAI_API_KEY`.
+declares `pydantic-ai-slim[openai]` and uses `openai:gpt-4.1-mini`, so it needs an `OPENAI_API_KEY`.
 Switching the agent provider is a one-line change to the model string in `app.py`.
 
 Install dependencies using:

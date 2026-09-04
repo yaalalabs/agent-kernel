@@ -7,7 +7,7 @@ carry a `user_id` (all chat routes here are the thread handler's), a thread is a
 `session_id`, and the full conversation history is readable over REST.
 
 Threads created without an explicit `thread_name` are named by the default LLM naming strategy: a single
-LiteLLM call (`gpt-4o-mini`, using `OPENAI_API_KEY` from the environment) derives a concise title from the
+LiteLLM call (`gpt-4.1-mini`, using `OPENAI_API_KEY` from the environment) derives a concise title from the
 first prompt — a gibberish first message gets a generic title instead of becoming the name. When the call
 cannot be made (no `litellm`, no API key), the name falls back to the first prompt's leading characters.
 

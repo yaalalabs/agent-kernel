@@ -99,7 +99,7 @@ class AppendCartPostHook(PostHook):
 
 shopping_agent = Agent(
     name="shopping",
-    model=LiteLlm(model="openai/gpt-4o-mini"),
+    model=LiteLlm(model="openai/gpt-4.1-mini"),
     description="Grocery shopping assistant that keeps a cart across turns",
     instruction="""
     You are a grocery shopping assistant.

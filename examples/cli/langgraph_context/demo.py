@@ -15,7 +15,7 @@ logger = logging.getLogger("ak.example.langgraph_context")
 
 CART_PREFIX = "Current cart:"
 
-model = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+model = ChatOpenAI(model="gpt-4.1-mini", temperature=0.0)
 
 SYSTEM_PROMPT = (
     "You are a grocery shopping assistant. Call `add_to_cart` only when the user clearly asks to "
