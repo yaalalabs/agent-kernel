@@ -13,7 +13,7 @@ create_deployment_packages() {
     if [[ ${1-} != "local" ]]; then
         uv pip install -r requirements.txt --target=dist-rest-service/data
     else
-        uv pip install -r requirements.txt --target=dist-rest-service/data --find-links ../../../ak-py/dist --upgrade-package agentkernel
+        uv pip install -r requirements.txt --target=dist-rest-service/data --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel
     fi
 	cp config.yaml app_rest_service.py dist-rest-service/data/
 
@@ -23,7 +23,7 @@ create_deployment_packages() {
     if [[ ${1-} != "local" ]]; then
         uv pip install -r requirements.txt --target=dist-agent-runner/data
     else
-        uv pip install -r requirements.txt --target=dist-agent-runner/data --find-links ../../../ak-py/dist --upgrade-package agentkernel
+        uv pip install -r requirements.txt --target=dist-agent-runner/data --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel
     fi
     cp config.yaml app_agent_runner.py dist-agent-runner/data/
 
