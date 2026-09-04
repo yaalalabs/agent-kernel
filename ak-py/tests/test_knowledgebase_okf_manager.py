@@ -17,6 +17,7 @@ No test touches a live bucket or a network: every store here is a LocalDocumentS
 tmp_path, sometimes subclassed to count or to fail.
 """
 
+import sys
 import threading
 import time
 
@@ -27,6 +28,7 @@ from agentkernel.knowledgebase.errors import KnowledgeCapabilityError, Knowledge
 from agentkernel.knowledgebase.okf import manager as manager_module
 from agentkernel.knowledgebase.okf.manager import _DEFAULT_CONCEPT_TYPE, OKFManager
 from agentkernel.knowledgebase.okf.model import DiagnosticCode, TrustTier
+from agentkernel.knowledgebase.okf.parser import BODY_INDEX_MAX_BYTES, FRONTMATTER_MAX_BYTES
 from agentkernel.knowledgebase.store import LocalDocumentStore
 
 ORDERS = """---
@@ -121,6 +123,18 @@ class CountingStore(LocalDocumentStore):
         if self.walk_delay:
             time.sleep(self.walk_delay)
         return super().list(prefix)
+
+
+class WholeReadCountingStore(LocalDocumentStore):
+    """A store recording every whole-document read, which is the cost the bounded walk avoids."""
+
+    def __init__(self, root: str) -> None:
+        super().__init__(root, writable=True)
+        self.whole_reads: list[str] = []
+
+    def read_bytes(self, path: str) -> bytes:
+        self.whole_reads.append(path)
+        return super().read_bytes(path)
 
 
 class RefreshingStore(LocalDocumentStore):
@@ -256,6 +270,20 @@ class TestFetch:
         assert ids(manager.browse("")) == ["tables/", "top.md"]
         assert ids(manager.fetch(["tables/", "top.md"])) == ["top.md"]
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
+    def test_an_id_escaping_through_a_symlink_is_dropped_rather_than_aborting_the_batch(self, tmp_path):
+        # The store enforces containment twice, and the second check — the one that resolves
+        # symlinks — raises from inside the read rather than from `normalise_relative`. Only the
+        # first refusal used to be caught, so one planted symlink took every other id with it.
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.md").write_text(ORDERS_DB, encoding="utf-8")
+        root = write_bundle(tmp_path / "bundle", {"tables/orders.md": ORDERS})
+        (tmp_path / "bundle" / "link.md").symlink_to(outside / "secret.md")
+        manager = OKFManager(LocalDocumentStore(root, writable=True))
+
+        assert ids(manager.fetch(["link.md", "tables/orders.md"])) == ["tables/orders.md"]
+
     def test_fetch_is_the_only_operation_carrying_the_full_body_and_links(self, tmp_path):
         manager = make_manager(tmp_path)
         record = manager.fetch(["tables/orders.md"])[0]
@@ -305,6 +333,22 @@ class TestBrowse:
         manager = make_manager(tmp_path, {"a.md": ORDERS_DB, "audit/log.md": "# Log\n- created\n"})
 
         assert ids(manager.browse("")) == ["audit/", "a.md"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
+    def test_an_index_escaping_after_the_walk_is_empty_rather_than_raised(self, tmp_path):
+        # The walk skips an escaping entry, so a curated index reaches the manifest only while it
+        # is contained — and is then replaced. The refusal has to be caught where the manifest is
+        # read, or a browse the agent asked for by directory raises instead of listing nothing.
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.md").write_text("# Elsewhere\n", encoding="utf-8")
+        root = write_bundle(tmp_path / "bundle", {"index.md": "# Root listing\n", "a.md": ORDERS_DB})
+        manager = OKFManager(LocalDocumentStore(root, writable=True), refresh_seconds=None)
+
+        (tmp_path / "bundle" / "index.md").unlink()
+        (tmp_path / "bundle" / "index.md").symlink_to(outside / "secret.md")
+
+        assert manager.browse("") == []
 
     def test_an_unknown_directory_is_empty_rather_than_an_error(self, tmp_path):
         assert make_manager(tmp_path).browse("nowhere") == []
@@ -457,6 +501,19 @@ class TestFetchWriteRoundTrip:
         assert frontmatter["runtime"] == "python:3.12"  # the computation family
         assert frontmatter["owner"] == "analytics"  # an unrecognised key, carried through `extra`
 
+    def test_a_round_trip_preserves_a_false_or_zero_frontmatter_value(self, tmp_path):
+        # Carrying only truthy values dropped `deprecated: false` and `row_count: 0` from the
+        # fetched record, and writing that record back then deleted both keys from the document.
+        # An empty value is still left out, so a concept that had none gains no empty key.
+        source = "---\ntype: Note\ntitle: Counts\ndeprecated: false\nrow_count: 0\nnote: ''\n---\n\nbody\n"
+        manager = make_manager(tmp_path, {"t.md": source}, refresh_seconds=None)
+        manager.write([manager.fetch(["t.md"])[0]])
+
+        frontmatter = yaml.safe_load((tmp_path / "t.md").read_text(encoding="utf-8").split("---\n")[1])
+        assert frontmatter["deprecated"] is False
+        assert frontmatter["row_count"] == 0
+        assert "note" not in frontmatter
+
     def test_a_round_trip_is_byte_identical_apart_from_the_generated_stamp(self, tmp_path):
         manager = make_manager(tmp_path, {"t.md": ATTESTED}, refresh_seconds=None, producer="process:demo")
         manager.write([manager.fetch(["t.md"])[0]])
@@ -510,6 +567,16 @@ class TestWriteThrough:
         assert "tables/new.md" in ids(manager.browse("datasets") + manager.search("New", limit=10))
         assert manager._derived_schema()["concept_count"] == 4
 
+    def test_the_write_through_retains_no_body_in_the_manifest(self, tmp_path):
+        # The manifest bounds its memory at a body-token index per concept. A write-through
+        # parsed with a complete body escaped that bound, permanently with refresh_seconds=None.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([{"text": "zebra " * 4000, "metadata": {"id": "n.md", "type": "Note", "title": "Zebra"}}])
+
+        assert manager._manifest.concepts["n.md"].body is None
+        assert ids(manager.search("zebra")) == ["n.md"]
+        assert "zebra" in manager.fetch(["n.md"])[0]["text"]
+
     def test_a_write_replaces_the_manifest_entry_at_that_path(self, tmp_path):
         manager = make_manager(tmp_path, refresh_seconds=None)
         manager.write([{"text": "b", "metadata": {"id": "tables/orders.md", "type": "Note", "title": "Replaced"}}])
@@ -540,6 +607,62 @@ class TestWriteBatching:
         manager.write([{"text": "Body.", "metadata": {"id": "n.md", "type": "Note", "title": "Zebra"}}])
 
         assert ids(manager.search("Zebra")) == ["n.md"]
+
+
+class TestBoundedWalkReads:
+    """The walk reads one bounded prefix per concept, so a second unbounded read is a real
+    cost — over S3, another GET per object on every refresh."""
+
+    def test_a_document_that_opened_no_frontmatter_block_is_not_re_read_in_full(self, tmp_path):
+        # `split_frontmatter` finds no block for frontmatter past the window and for a document
+        # that never opened one. Re-reading on the second cost a full read of every plain note.
+        store = WholeReadCountingStore(write_bundle(tmp_path, BUNDLE))
+        OKFManager(store)
+
+        # Only the curated indexes earn a whole read; log.md is recorded without being parsed.
+        assert store.whole_reads == ["index.md", "tables/index.md"]
+
+    def test_frontmatter_running_past_the_window_is_still_re_read_in_full(self, tmp_path):
+        padding = "x" * (FRONTMATTER_MAX_BYTES + BODY_INDEX_MAX_BYTES)
+        padded = f"---\ntype: Note\ntitle: Padded\npadding: '{padding}'\n---\n\nbody\n"
+        store = WholeReadCountingStore(write_bundle(tmp_path, {"big.md": padded}))
+        manager = OKFManager(store)
+
+        assert store.whole_reads == ["big.md"]
+        assert ids(manager.search("Padded")) == ["big.md"]
+
+
+class TestConcurrentReadsAndWrites:
+    def test_a_write_landing_during_a_search_does_not_break_the_iteration(self, tmp_path):
+        # The write-through took the refresh lock, but `search` and `_derived_schema` iterate the
+        # manifest without one — and the tools KnowledgeBuilder emits are sync callables a
+        # framework runs on a thread pool. Growing that dict in place under a live iterator
+        # raises RuntimeError("dictionary changed size during iteration").
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        failures: list[Exception] = []
+        stop = threading.Event()
+
+        def read_until_stopped() -> None:
+            while not stop.is_set():
+                try:
+                    manager.search("orders sales")
+                    manager.schema()
+                except Exception as error:
+                    failures.append(error)
+                    stop.set()
+
+        readers = [threading.Thread(target=read_until_stopped) for _ in range(2)]
+        for reader in readers:
+            reader.start()
+        try:
+            for index in range(200):
+                manager.write([{"text": "body", "metadata": {"id": f"w{index}.md", "type": "Note", "title": "Orders"}}])
+        finally:
+            stop.set()
+            for reader in readers:
+                reader.join()
+
+        assert failures == []
 
 
 class TestRefreshAndConcurrency:

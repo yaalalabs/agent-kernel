@@ -428,9 +428,14 @@ classDiagram
 - **Declared scale.** The manifest is held per *process*, so its cost is paid once per pod in the
   ECS/pipeline topology and once per cold start on Lambda. The design targets a stated envelope
   rather than leaving it open:
-  - **Design target: bundles up to 10,000 concepts**, at which the eagerly parsed frontmatter is
-    expected to stay under ~50 MB. Both numbers are asserted by a test over a generated bundle, so a
-    regression in per-concept overhead is caught rather than discovered in a pod.
+  - **Design target: bundles up to 10,000 concepts**, at which the manifest is expected to stay
+    under 250 MB — ~19 KB per concept measured, 25 KB budgeted. Both numbers are asserted by a test
+    over a generated bundle, so a regression in per-concept overhead is caught rather than discovered
+    in a pod.
+    - The original ~50 MB figure was corrected during implementation: 45 MB is the floor for 10,000
+      parsed concepts with *no* body index at all, and the index itself was bounded in bytes read
+      rather than tokens retained, which put a bundle of ordinary prose at 770 MB. `spec.md`'s
+      Manifest section carries the measurements and the `BODY_INDEX_MAX_TOKENS` cap that fixed it.
     - The memory assertion is measured with `tracemalloc` around the manifest build — allocations
       attributable to the manifest — **not** process RSS, which moves with the interpreter, the
       allocator's retained arenas, and whatever else the test session has loaded. RSS is not
@@ -694,7 +699,8 @@ Resolved with the maintainer on 2026-08-31. The requirements above already refle
    (`sandbox/base.py:88`); a KB's shape depends on its constructor arguments — `writable` follows the
    injected `DocumentStore`. Validated in `KnowledgeBase.__init__`, which is what makes the
    at-least-one-capability invariant enforceable.
-7. **Manifest envelope — 10,000 concepts / ~50 MB, `max_concepts` truncates with a diagnostic.** A
+7. **Manifest envelope — 10,000 concepts / 250 MB (~19 KB per concept measured; the ~50 MB first
+   stated was corrected against measurement), `max_concepts` truncates with a diagnostic.** A
    declared and tested bound, rather than an open-ended in-process cache, because the manifest is
    held per pod and per Lambda cold start. Raising it is an explicit, application-owned decision.
 8. **Verification gate — stands.** Every `[SPEC]`-marked claim in `research/okf-format-survey.md` must

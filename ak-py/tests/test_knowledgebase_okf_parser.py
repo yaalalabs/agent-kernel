@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 import pytest
 
 from agentkernel.knowledgebase.okf.model import DiagnosticCode, OKFConcept, TrustTier
-from agentkernel.knowledgebase.okf.parser import OKF_VERSION, OKFParserUtil
+from agentkernel.knowledgebase.okf.parser import BODY_INDEX_MAX_TOKENS, OKF_VERSION, OKFParserUtil
 
 NOW = datetime(2026, 6, 1, tzinfo=timezone.utc)
 
@@ -211,6 +211,32 @@ class TestFieldTokens:
         assert concept.field_tokens["description"] == set()
         assert concept.field_tokens["tags"] == set()
 
+    def test_the_body_index_is_bounded_but_the_frontmatter_fields_are_not(self):
+        # The manifest holds one token set per concept for the life of the process, so an
+        # unbounded body index makes memory a function of how much prose an author wrote.
+        # Frontmatter fields are bounded by their own schema and stay whole.
+        long_body = " ".join(f"w{index}" for index in range(BODY_INDEX_MAX_TOKENS * 4))
+        many_tags = ", ".join(f"tag{index}" for index in range(BODY_INDEX_MAX_TOKENS * 2))
+        concept, _ = OKFParserUtil.parse_concept("big.md", document(f"type: Note\ntags: [{many_tags}]", long_body), body_complete=True)
+
+        assert len(concept.field_tokens["body"]) == BODY_INDEX_MAX_TOKENS
+        assert len(concept.field_tokens["tags"]) == BODY_INDEX_MAX_TOKENS * 2
+
+    def test_the_body_index_keeps_the_head_of_the_body(self):
+        long_body = " ".join(f"w{index}" for index in range(BODY_INDEX_MAX_TOKENS * 4))
+        concept, _ = OKFParserUtil.parse_concept("big.md", document("type: Note", long_body), body_complete=True)
+
+        assert "w0" in concept.field_tokens["body"]
+        assert f"w{BODY_INDEX_MAX_TOKENS * 4 - 1}" not in concept.field_tokens["body"]
+
+    def test_two_parses_of_one_document_index_identically(self):
+        # Reproducible ranking across processes is the reason the truncation is ordered.
+        long_body = " ".join(f"w{index}" for index in range(BODY_INDEX_MAX_TOKENS * 4))
+        first, _ = OKFParserUtil.parse_concept("big.md", document("type: Note", long_body), body_complete=True)
+        second, _ = OKFParserUtil.parse_concept("big.md", document("type: Note", long_body), body_complete=True)
+
+        assert first.field_tokens == second.field_tokens
+
 
 class TestTokenise:
     def test_tokens_are_lowercased_split_on_non_alphanumerics_and_at_least_two_characters(self):
@@ -218,6 +244,24 @@ class TestTokenise:
 
     def test_empty_text_yields_no_tokens(self):
         assert OKFParserUtil.tokenise("") == set()
+
+    def test_an_unbounded_call_keeps_every_distinct_token(self):
+        assert len(OKFParserUtil.tokenise(" ".join(f"w{index}" for index in range(500)))) == 500
+
+    def test_a_bound_keeps_the_first_distinct_tokens_in_document_order(self):
+        # Document order, not set order: truncating a set would depend on the hash seed and
+        # rank the same bundle differently in two processes.
+        text = " ".join(f"w{index}" for index in range(500))
+
+        assert OKFParserUtil.tokenise(text, max_tokens=5) == {"w0", "w1", "w2", "w3", "w4"}
+
+    def test_a_repeated_token_does_not_consume_the_budget_twice(self):
+        # The budget counts distinct tokens, so a preamble that repeats itself does not
+        # crowd out the terms that follow it.
+        assert OKFParserUtil.tokenise("aa aa aa bb cc", max_tokens=2) == {"aa", "bb"}
+
+    def test_a_bound_larger_than_the_text_changes_nothing(self):
+        assert OKFParserUtil.tokenise("orders and revenue", max_tokens=1000) == OKFParserUtil.tokenise("orders and revenue")
 
 
 class TestTrust:

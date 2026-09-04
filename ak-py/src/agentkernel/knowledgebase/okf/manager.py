@@ -295,7 +295,9 @@ class OKFManager(DocumentKnowledgeBase):
         for path, text, metadata in prepared:
             document = self._render_document(text, metadata)
             self._store.write_bytes(path, document.encode("utf-8"))
-            concept, diagnostics = OKFParserUtil.parse_concept(path, document, body_complete=True)
+            # Parsed as the walk parses it. Nothing reads the manifest's `body` (`fetch`
+            # re-reads the document), and a complete one grows the manifest without bound.
+            concept, diagnostics = OKFParserUtil.parse_concept(path, document, body_complete=False)
             if concept is None:
                 # Unreachable for a document this class rendered, but a silent hole here would
                 # mean a durable write invisible until the next walk.
@@ -309,7 +311,7 @@ class OKFManager(DocumentKnowledgeBase):
             # otherwise discard the write-through and hide a durable concept until the next walk.
             with self._refresh_lock:
                 if self._manifest is not None:
-                    self._manifest.concepts.update(written)
+                    self._manifest.concepts = {**self._manifest.concepts, **written}
 
     def format_results(self, rows: List[Record]) -> str:
         """
@@ -490,6 +492,9 @@ class OKFManager(DocumentKnowledgeBase):
         from. A document whose frontmatter runs past that window is re-read in full rather than
         skipped, because an unusually large block is not a malformed one.
 
+        A document that opened no block is not re-read: no further bytes turn a README into a
+        concept, and re-reading every plain markdown file would cost a GET on every walk.
+
         :param bundle: Manifest under construction.
         :param path: Bundle-relative path of the concept document.
         :return: None.
@@ -499,7 +504,7 @@ class OKFManager(DocumentKnowledgeBase):
             return
 
         text = OKFParserUtil.decode_document(data)
-        if OKFParserUtil.split_frontmatter(text)[0] is None:
+        if OKFParserUtil.split_frontmatter(text)[0] is None and OKFParserUtil.opens_frontmatter(text):
             whole = self._read_walk_document(bundle, path, whole=True)
             if whole is None:
                 return
@@ -551,19 +556,23 @@ class OKFManager(DocumentKnowledgeBase):
         """
         Re-read and re-parse one concept with a complete body.
 
+        Containment is refused twice, because the store checks it twice: once on the path as
+        the caller wrote it, and again on the path symlinks resolve it to. Both refusals are
+        caught here, at the boundary `_read_document` leaves them to, so one unusable id costs
+        its own record rather than every other record in the batch.
+
         :param raw_id: Bundle path as the caller supplied it.
         :return: The concept, or ``None`` when the id is unusable, unknown or unreadable.
         """
         try:
             path = DocumentStore.normalise_relative(raw_id or "")
-        except KnowledgePathError:
-            log.warning("[%s.fetch] refusing an id outside the bundle: %r", self.backend_name, raw_id)
+            if not path:
+                return None
+            data = self._read_document(path)
+        except KnowledgePathError as error:
+            log.warning("[%s.fetch] refusing an id outside the bundle: %r (%s)", self.backend_name, raw_id, error)
             return None
 
-        if not path:
-            return None
-
-        data = self._read_document(path)
         if data is None:
             return None
 
@@ -576,10 +585,19 @@ class OKFManager(DocumentKnowledgeBase):
         """
         Serve a curated listing from a directory's ``index.md``.
 
+        The path comes from the manifest, where the walk already refused an escaping entry, but
+        a symlink planted since that walk resolves outside the bundle now. An empty listing is
+        the answer, rather than an exception out of a browse the agent asked for by directory.
+
         :param index_path: Bundle-relative path of the index file.
         :return: A one-record listing, or an empty list when the index cannot be read.
         """
-        data = self._read_document(index_path)
+        try:
+            data = self._read_document(index_path)
+        except KnowledgePathError as error:
+            log.warning("[%s.browse] index at %s resolves outside the bundle: %s", self.backend_name, index_path, error)
+            return []
+
         if data is None:
             return []
 
@@ -668,7 +686,8 @@ class OKFManager(DocumentKnowledgeBase):
         # An enrich-then-write flow hands a fetched record straight back to `write()`, which
         # honours the id and so overwrites this same file. Every frontmatter field has to ride
         # along or the round-trip deletes it; only `generated` and `verified` are the write's to
-        # stamp. Empty values are left out, so a concept that had none gains no empty key.
+        # stamp. Empty values are left out, so a concept that had none gains no empty key —
+        # emptiness rather than falsehood, because `deprecated: false` is a field a curator wrote.
         carried: dict[str, Any] = {**concept.computation, **concept.extra}
         carried.update(
             {
@@ -682,10 +701,30 @@ class OKFManager(DocumentKnowledgeBase):
         )
         # Derived keys go last and win: a curator's own `trust:` arrives here via `extra`, and
         # letting it through would make the record lie about a signal this backend computes.
-        metadata = {key: value for key, value in carried.items() if value}
+        metadata = {key: value for key, value in carried.items() if OKFManager._carries_value(value)}
         metadata.update(derived)
         metadata["links"] = list(concept.links)
         return {"text": concept.body or "", "metadata": metadata}
+
+    @staticmethod
+    def _carries_value(value: Any) -> bool:
+        """
+        Report whether one frontmatter value is worth carrying onto a record.
+
+        Emptiness is not falsehood. Frontmatter is arbitrary — ``extra`` and ``computation``
+        hold whatever a curator wrote — so a truthiness test would drop ``deprecated: false``
+        and ``row_count: 0`` from a fetched record, and handing that record back to ``write()``
+        would then delete those keys from the document. Only an absent value and an empty
+        container are left out, so a concept that had neither still gains no empty key.
+
+        :param value: The frontmatter value.
+        :return: True when the value belongs on the record.
+        """
+        if value is None:
+            return False
+        if isinstance(value, (str, bytes, list, tuple, set, dict)):
+            return bool(value)
+        return True
 
     def _write_path(self, metadata: dict) -> str:
         """
