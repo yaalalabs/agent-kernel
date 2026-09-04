@@ -295,7 +295,9 @@ class OKFManager(DocumentKnowledgeBase):
         for path, text, metadata in prepared:
             document = self._render_document(text, metadata)
             self._store.write_bytes(path, document.encode("utf-8"))
-            concept, diagnostics = OKFParserUtil.parse_concept(path, document, body_complete=True)
+            # Parsed as the walk parses it. Nothing reads the manifest's `body` (`fetch`
+            # re-reads the document), and a complete one grows the manifest without bound.
+            concept, diagnostics = OKFParserUtil.parse_concept(path, document, body_complete=False)
             if concept is None:
                 # Unreachable for a document this class rendered, but a silent hole here would
                 # mean a durable write invisible until the next walk.
@@ -490,6 +492,9 @@ class OKFManager(DocumentKnowledgeBase):
         from. A document whose frontmatter runs past that window is re-read in full rather than
         skipped, because an unusually large block is not a malformed one.
 
+        A document that opened no block is not re-read: no further bytes turn a README into a
+        concept, and re-reading every plain markdown file would cost a GET on every walk.
+
         :param bundle: Manifest under construction.
         :param path: Bundle-relative path of the concept document.
         :return: None.
@@ -499,7 +504,7 @@ class OKFManager(DocumentKnowledgeBase):
             return
 
         text = OKFParserUtil.decode_document(data)
-        if OKFParserUtil.split_frontmatter(text)[0] is None:
+        if OKFParserUtil.split_frontmatter(text)[0] is None and OKFParserUtil.opens_frontmatter(text):
             whole = self._read_walk_document(bundle, path, whole=True)
             if whole is None:
                 return

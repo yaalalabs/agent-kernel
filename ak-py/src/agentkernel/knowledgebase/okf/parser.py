@@ -151,6 +151,21 @@ class OKFParserUtil:
         return None, data
 
     @staticmethod
+    def opens_frontmatter(data: str) -> bool:
+        """
+        Report whether a document opens a frontmatter block at all.
+
+        Separates the two reasons :meth:`split_frontmatter` finds no block: a document that
+        never opened one, and one whose block did not close inside the text it was handed. Only
+        the second is worth re-reading in full.
+
+        :param data: Whole document text, or a bounded prefix of one.
+        :return: True when the first line is the frontmatter delimiter.
+        """
+        first_line, _, _ = data.partition("\n")
+        return first_line.rstrip() == _DELIMITER
+
+    @staticmethod
     def derive_trust(verified: list[dict[str, Any]]) -> TrustTier:
         """
         Derive a concept's trust tier from its ``verified`` entries and nothing else.

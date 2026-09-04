@@ -28,6 +28,7 @@ from agentkernel.knowledgebase.errors import KnowledgeCapabilityError, Knowledge
 from agentkernel.knowledgebase.okf import manager as manager_module
 from agentkernel.knowledgebase.okf.manager import _DEFAULT_CONCEPT_TYPE, OKFManager
 from agentkernel.knowledgebase.okf.model import DiagnosticCode, TrustTier
+from agentkernel.knowledgebase.okf.parser import BODY_INDEX_MAX_BYTES, FRONTMATTER_MAX_BYTES
 from agentkernel.knowledgebase.store import LocalDocumentStore
 
 ORDERS = """---
@@ -122,6 +123,18 @@ class CountingStore(LocalDocumentStore):
         if self.walk_delay:
             time.sleep(self.walk_delay)
         return super().list(prefix)
+
+
+class WholeReadCountingStore(LocalDocumentStore):
+    """A store recording every whole-document read, which is the cost the bounded walk avoids."""
+
+    def __init__(self, root: str) -> None:
+        super().__init__(root, writable=True)
+        self.whole_reads: list[str] = []
+
+    def read_bytes(self, path: str) -> bytes:
+        self.whole_reads.append(path)
+        return super().read_bytes(path)
 
 
 class RefreshingStore(LocalDocumentStore):
@@ -554,6 +567,16 @@ class TestWriteThrough:
         assert "tables/new.md" in ids(manager.browse("datasets") + manager.search("New", limit=10))
         assert manager._derived_schema()["concept_count"] == 4
 
+    def test_the_write_through_retains_no_body_in_the_manifest(self, tmp_path):
+        # The manifest bounds its memory at a body-token index per concept. A write-through
+        # parsed with a complete body escaped that bound, permanently with refresh_seconds=None.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([{"text": "zebra " * 4000, "metadata": {"id": "n.md", "type": "Note", "title": "Zebra"}}])
+
+        assert manager._manifest.concepts["n.md"].body is None
+        assert ids(manager.search("zebra")) == ["n.md"]
+        assert "zebra" in manager.fetch(["n.md"])[0]["text"]
+
     def test_a_write_replaces_the_manifest_entry_at_that_path(self, tmp_path):
         manager = make_manager(tmp_path, refresh_seconds=None)
         manager.write([{"text": "b", "metadata": {"id": "tables/orders.md", "type": "Note", "title": "Replaced"}}])
@@ -584,6 +607,29 @@ class TestWriteBatching:
         manager.write([{"text": "Body.", "metadata": {"id": "n.md", "type": "Note", "title": "Zebra"}}])
 
         assert ids(manager.search("Zebra")) == ["n.md"]
+
+
+class TestBoundedWalkReads:
+    """The walk reads one bounded prefix per concept, so a second unbounded read is a real
+    cost — over S3, another GET per object on every refresh."""
+
+    def test_a_document_that_opened_no_frontmatter_block_is_not_re_read_in_full(self, tmp_path):
+        # `split_frontmatter` finds no block for frontmatter past the window and for a document
+        # that never opened one. Re-reading on the second cost a full read of every plain note.
+        store = WholeReadCountingStore(write_bundle(tmp_path, BUNDLE))
+        OKFManager(store)
+
+        # Only the curated indexes earn a whole read; log.md is recorded without being parsed.
+        assert store.whole_reads == ["index.md", "tables/index.md"]
+
+    def test_frontmatter_running_past_the_window_is_still_re_read_in_full(self, tmp_path):
+        padding = "x" * (FRONTMATTER_MAX_BYTES + BODY_INDEX_MAX_BYTES)
+        padded = f"---\ntype: Note\ntitle: Padded\npadding: '{padding}'\n---\n\nbody\n"
+        store = WholeReadCountingStore(write_bundle(tmp_path, {"big.md": padded}))
+        manager = OKFManager(store)
+
+        assert store.whole_reads == ["big.md"]
+        assert ids(manager.search("Padded")) == ["big.md"]
 
 
 class TestConcurrentReadsAndWrites:
