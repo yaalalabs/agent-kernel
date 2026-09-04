@@ -51,7 +51,10 @@ When the CLI starts, ask questions such as:
 ## What Happens In demo.py
 
 1. A Chroma backend is configured with schema metadata.
-2. `KnowledgeBuilder` creates `get_schemas`, `read_kb`, and `write_kb` tools.
+2. `KnowledgeBuilder` creates the four base tools - `get_schemas`, `read_kb`, `write_kb` and
+   `get_all_kb_descriptions`. Chroma declares only `search` and `writable`, so this app gets no
+   `search_kb`, `fetch_kb` or `browse_kb`: the capability-gated tools appear only when a registered
+   backend declares the operation behind them.
 3. `OpenAIToolBuilder.bind(...)` attaches those tools to the router agent.
 4. The agent is registered in `OpenAIModule`.
 5. `CLI.main()` starts the interactive chat loop.
