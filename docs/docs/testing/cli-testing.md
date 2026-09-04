@@ -176,10 +176,10 @@ Any dotted path to an `AKEvaluator` subclass works as `evaluator` in `test-confi
 evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to your test file
 ```
 
-Implement `score_based_evaluation(case)` and `llm_based_evaluation(case)`, both synchronous,
+Implement `evaluate_by_score(case)` and `evaluate_by_llm(case)`, both synchronous,
 returning `AKEvaluationResult`. Raise `AKMetricNotSupported` from a method your backend can't
 provide, and `AKEvaluationError` on a backend failure (missing credentials, transport error) —
-never return a `0.0` for either. See `agentkernel.test.core.akevaluators` for the interface and
+never return a `0.0` for either. See `agentkernel.test.core.evaluator` for the interface and
 payload models, and [`examples/cli/custom-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/custom-evaluator)
 for a complete working example (a stdlib-only token-overlap scorer plus a raw `litellm` judge, no
 DeepEval dependency at all).

@@ -694,7 +694,7 @@ If `test-config.yaml` is missing, defaults apply silently (no warning is printed
 - `llm` - LLM-as-judge evaluation via the configured evaluator (the built-in DeepEval evaluator uses `GEval`) for semantic similarity
 - `fallback` - Tries score first, falls back to llm if score fails
 
-**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. `deepeval` (the default) is the only built-in; any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.core.akevaluators.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator).
+**Evaluator backend:** `evaluator` selects the pluggable scoring backend used by both `score` and `llm` modes. `deepeval` (the default) is the only built-in; any other value is treated as a dotted path to your own `AKEvaluator` subclass (`agentkernel.test.core.evaluator.AKEvaluator`) — see [Bring your own evaluator](../testing/cli-testing.md#bring-your-own-evaluator).
 
 ### Custom Test Configuration File Path
 
