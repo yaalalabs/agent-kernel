@@ -333,15 +333,15 @@ llm:
   provider: openai
 ```
 
-- **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `score_based_evaluation` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call)
-- **llm**: LLM-as-judge scoring via `llm_based_evaluation` — the built-in `DeepevalAKEvaluator` uses DeepEval's `GEval` metric against the expected answer(s) (ground truth). Evaluation backends are pluggable (`agentkernel.test.core.akevaluators.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
+- **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `evaluate_by_score` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call)
+- **llm**: LLM-as-judge scoring via `evaluate_by_llm` — the built-in `DeepevalAKEvaluator` uses DeepEval's `GEval` metric against the expected answer(s) (ground truth). Evaluation backends are pluggable (`agentkernel.test.core.evaluator.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
 - **fallback**: Tries score first, falls back to llm if score fails
 
 `evaluator` is resolved by `Test._resolve_evaluator` (`agentkernel/test/test.py`), the same
 bring-your-own-dotted-path pattern `resolve_dotted`/`require_extra` (`core/util/factory.py`) use
 for session stores, sandbox providers, and trace backends — a custom evaluator subclasses
-`AKEvaluator` (`agentkernel.test.core.akevaluators`) and implements `score_based_evaluation`/
-`llm_based_evaluation`, each returning an `AKEvaluationResult`. See
+`AKEvaluator` (`agentkernel.test.core.evaluator`) and implements `evaluate_by_score`/
+`evaluate_by_llm`, each returning an `AKEvaluationResult`. See
 `examples/cli/custom-evaluator/` for a full worked example, and
 `docs/specs/555-pluggable-test-evaluators/` for the design/spec behind this interface.
 
