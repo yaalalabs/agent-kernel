@@ -41,6 +41,9 @@ locals {
       AK_WEBSOCKET_API__ENDPOINT_URL                 = var.websocket_endpoint_url
     } : {}
   )
+
+  alb_security_group_id         = var.alb_security_group_id != null ? var.alb_security_group_id : aws_security_group.ecs_alb[0].id
+  ecs_service_security_group_id = var.ecs_service_security_group_id != null ? var.ecs_service_security_group_id : aws_security_group.ecs_service[0].id
 }
 
 # Service Discovery
@@ -142,6 +145,7 @@ resource "aws_iam_policy" "dynamodb_schedule_policy" {
 # Security Groups
 
 resource "aws_security_group" "ecs_alb" {
+  count       = var.alb_security_group_id == null ? 1 : 0
   name        = "${var.product_alias}-${var.env_alias}-ecs-alb-sg"
   description = "ALB SG for ECS"
   vpc_id      = var.vpc_id
@@ -162,6 +166,7 @@ resource "aws_security_group" "ecs_alb" {
 }
 
 resource "aws_security_group" "ecs_service" {
+  count       = var.ecs_service_security_group_id == null ? 1 : 0
   name        = "${var.product_alias}-${var.env_alias}-ecs-svc-sg"
   description = "ECS service SG"
   vpc_id      = var.vpc_id
@@ -169,7 +174,7 @@ resource "aws_security_group" "ecs_service" {
     from_port       = var.rest_service.container_port
     to_port         = var.rest_service.container_port
     protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_alb.id]
+    security_groups = [local.alb_security_group_id]
   }
   egress {
     from_port   = 0
@@ -188,7 +193,7 @@ resource "aws_lb" "app" {
   internal           = true
   load_balancer_type = "application"
   subnets            = var.subnet_ids
-  security_groups    = [aws_security_group.ecs_alb.id]
+  security_groups    = [local.alb_security_group_id]
 
   tags = var.tags
 }
@@ -292,7 +297,7 @@ module "ecs_service" {
   launch_type        = "FARGATE"
   platform_version   = "LATEST"
   subnet_ids         = var.subnet_ids
-  security_group_ids = [aws_security_group.ecs_service.id]
+  security_group_ids = [local.ecs_service_security_group_id]
 
   health_check_grace_period_seconds = var.rest_service.health_check_grace_period_seconds
 

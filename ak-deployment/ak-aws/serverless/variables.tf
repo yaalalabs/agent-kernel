@@ -107,6 +107,12 @@ variable "private_subnet_ids" {
   default     = null
 }
 
+variable "security_group_id" {
+  type        = string
+  description = "Security group ID for Lambda functions. If not provided, a new one will be created"
+  default     = null
+}
+
 variable "create_redis_cluster" {
   type        = bool
   description = "Create a redis cluster to store Agent memory"

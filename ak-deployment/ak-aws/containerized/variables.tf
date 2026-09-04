@@ -109,6 +109,24 @@ variable "private_subnet_ids" {
   default     = null
 }
 
+variable "alb_security_group_id" {
+  type        = string
+  description = "ALB security group ID. If not provided, a new one will be created"
+  default     = null
+}
+
+variable "ecs_service_security_group_id" {
+  type        = string
+  description = "ECS service security group ID. If not provided, a new one will be created"
+  default     = null
+}
+
+variable "agent_runner_security_group_id" {
+  type        = string
+  description = "Agent Runner security group ID (queue mode only). If not provided, a new one will be created"
+  default     = null
+}
+
 variable "create_redis_cluster" {
   type        = bool
   description = "Agent memory type. Accepted values are redis or in_memory"
