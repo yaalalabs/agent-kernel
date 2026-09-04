@@ -172,7 +172,9 @@ await test.expect(["Hello! How can I help?"])  # Uses configured mode
 (requires `pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet).
 Opik's `score` mode uses its `LevenshteinRatio` metric and `llm` mode uses its `GEval` judge —
 both run locally against the LLM configured under `llm:` and never require an Opik Cloud account,
-API key, or self-hosted server.
+API key, or self-hosted server. See
+[`examples/cli/opik-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/opik-evaluator)
+for a complete working example.
 
 ### Bring your own evaluator
 
