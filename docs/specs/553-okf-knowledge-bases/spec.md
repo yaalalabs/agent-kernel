@@ -45,7 +45,6 @@ ak-py/src/agentkernel/knowledgebase/
 ├── base.py               # CHANGED: capability-aware ABC, concrete read(), schema derivation
 ├── document.py           # NEW: DocumentKnowledgeBase
 ├── knowledgebuilder.py   # CHANGED: capability-gated tools, generic write metadata
-├── testing.py            # NEW: KnowledgeBaseContract, DocumentStoreContract, FakeKnowledgeBase
 ├── chroma.py             # CHANGED: read -> search, declares capabilities
 ├── neo4j.py              # CHANGED: read -> query, generic write metadata, declares capabilities
 ├── starburst.py          # CHANGED: schema -> db_schema, read -> query, declares capabilities
@@ -70,8 +69,10 @@ Rules governing the package, each stated so a reviewer can check it mechanically
    `store/`.
 3. **Stores take explicit constructor parameters and never read `AKConfig`** — the shared-driver and
    transport rule. `from_uri` is a string parser, not a config reader.
-4. **`testing.py` imports `pytest`** and is therefore excluded from the package's lazy export map, the
-   `sandbox/testing.py` precedent.
+4. **The contract suites import `pytest`** and therefore live outside the package's lazy export map.
+   *As built* they live in `ak-py/tests/knowledgebase_contracts.py` rather than a
+   `knowledgebase/testing.py`, because unlike `sandbox/testing.py` they are not intended as a
+   published helper for out-of-tree backend authors.
 
 ### `knowledgebase/model.py` — capability declaration and record typing
 
@@ -821,7 +822,8 @@ real types:
 This fixes the import documented at `docs/docs/core-concepts/overview.md:353` without making
 `chromadb`/`neo4j`/`trino`/`boto3` eager. `ChromaManager`, `Neo4jManager`, and `StarburstManager` are
 **deliberately not exported** — each pulls an optional SDK at module import, and the existing examples
-import them from their concrete modules. `testing.py` is not exported (it imports `pytest`).
+import them from their concrete modules. The contract suites are not exported (they import `pytest`,
+and as built they live under `ak-py/tests/` rather than in the package).
 
 Asserted by test: every name in `__all__` resolves; importing `agentkernel.knowledgebase` and touching
 `KnowledgeBase`/`OKFManager` leaves `chromadb`, `neo4j`, `trino`, and `boto3` out of `sys.modules`.
@@ -1010,12 +1012,18 @@ still mocked; no test touches a live service.
 | `tests/test_knowledgebase_okf_manager.py` | capabilities built from the store (writable folding both ways); `_derived_schema()` keys against a known bundle; `schema()` working with no `add_schema()`; search ranking — weights, presence-not-frequency, `(-score, path)` determinism across two managers, zero-score exclusion; `fetch` order/dedup/unknown-id omission and links present only here; `browse` index-vs-derived at root **and** at `tables/`, `limit` truncation, unknown directory; `write` — synthesised vs supplied id, comma refusal at both ends, fixed key order and byte-identical re-render, `generated` stamp, producer default and override; **write-through visibility with `refresh_seconds=None`** (proving it is not a refresh); refresh timing with a monkeypatched `time.monotonic`; a failed refresh serving the stale manifest and resetting the clock; `reload()`; **one walk under two concurrent boundary-crossing callers** (a `threading.Barrier` plus a walk counter); `max_concepts` truncation keeping a lexicographic prefix with a `truncated` diagnostic; nothing filtered on trust or staleness; diagnostics surfaced through `get_description()` |
 | `tests/test_knowledgebase_okf_envelope.py` | the declared scale. A session-scoped fixture generates a 10,000-concept bundle in `tmp_path`; the test asserts the walk keeps all 10,000, that every concept's body index sits at the cap, that ranking is deterministic, and that `max_concepts` truncates to a lexicographic prefix with a diagnostic. Memory is measured as the sum of `size_diff` over a `snapshot_after.compare_to(snapshot_before, "filename")` around `_walk()` — **not** process RSS, which moves with the interpreter and the allocator's retained arenas — and asserted **per concept** against a 25 KB budget (250 MB projected at 10,000), because the cost is linear in the concept count and the per-concept figure is what stays true at every size. The measurement runs over a 2,000-concept slice: `tracemalloc` around a full 10,000-concept walk costs 75 s under coverage to learn the same number |
 | `tests/test_knowledgebase_contract.py` | `KnowledgeBaseContract` run against `FakeKnowledgeBase` (four capability shapes), `OKFManager` over a real local bundle, and the three existing backends with mocked clients — `monkeypatch` on `chromadb.PersistentClient`, `neo4j.GraphDatabase.driver`, and `trino.dbapi.connect` (plus host/user/password constructor args for Starburst) |
-| `tests/test_knowledgebase_exports.py` | every `__all__` name resolves; `chromadb`/`neo4j`/`trino`/`boto3` stay out of `sys.modules` after importing the package and touching `KnowledgeBase`/`OKFManager`; `testing.py` is not exported; the `overview.md:353` import works verbatim |
+| `tests/test_knowledgebase_exports.py` | every `__all__` name resolves; `chromadb`/`neo4j`/`trino`/`boto3` stay out of `sys.modules` after importing the package and touching `KnowledgeBase`/`OKFManager`; no contract suite is exported; the `overview.md:353` import works verbatim |
 | `examples/cli/knowledgebase/openai/okf/demo_test.py` | the example-level convention (`Test("demo.py")`, ordered cases): the agent browses the bundle, fetches a concept by its real path, and answers from it |
 
-`knowledgebase/testing.py` ships two reusable suites in the `SandboxProviderContract`
-(`sandbox/testing.py:130`) / `QueueTransportContract` shape — subclass, override one fixture, and
-pytest collects the contract against your backend. Neither class name is prefixed `Test`.
+> **As built:** the contract suites shipped as `ak-py/tests/knowledgebase_contracts.py`, not as a
+> `knowledgebase/testing.py` inside the package. They are a suite this repo holds its own backends
+> to, not a published helper for out-of-tree authors, so there is no
+> `agentkernel.knowledgebase.testing` module to import.
+
+Two reusable suites ship in the `SandboxProviderContract` (`sandbox/testing.py:130`) /
+`QueueTransportContract` shape — subclass, override one fixture, and pytest collects the contract
+against your backend. Neither class name is prefixed `Test`, and the module holding them is not
+named `test_*`, so pytest collects neither on its own.
 
 `KnowledgeBaseContract` asserts, for any backend: declared capabilities match implemented operations
 (each declared one returns a list; each undeclared one raises `KnowledgeCapabilityError`); `schema()`

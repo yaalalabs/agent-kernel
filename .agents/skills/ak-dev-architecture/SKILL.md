@@ -515,11 +515,53 @@ flag, unlike the thread wiring which is nulled in queue mode: an app can mount
 
 ## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
 
-Pluggable storage backends agents can read from and write to as tools:
+Pluggable storage backends agents retrieve from and persist to as tools. Each backend declares what
+it honestly supports, and both the ABC and the agent's tool set route on that declaration. To add a
+backend, use the `ak-dev-new-knowledgebase-integration` skill.
 
-- **`KnowledgeBase`** (`base.py`): ABC: backends implement `connect()`, `write()`, `read()`, `backend_name`, `get_description()`; `schema()`, `add_schema()`, `format_results()`, `close()` are provided by the base
-- **`KnowledgeBuilder`** (`knowledgebuilder.py`): Wraps one or more `KnowledgeBase` instances and `build()`s plain-function tools (`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`) for binding via a framework's `ToolBuilder`
-- **Backends**: `ChromaManager` (vector, `chroma.py`), `Neo4jManager` (graph, `neo4j.py`), `StarburstManager` (read-only SQL via Trino, `starburst.py`): each behind an optional dependency extra (`chromadb`, `neo4j`, `trino`)
+- **`KnowledgeBase`** (`base.py`): the ABC. Only three members are abstract: `backend_name`,
+  `connect()`, `get_description()`. Five operations are optional and each raises
+  `KnowledgeCapabilityError` unless the backend declares it: `search(query, limit)`,
+  `query(statement, limit)`, `fetch(ids)`, `browse(path, limit)`, `write(records)`. `read()` is
+  **concrete** and routes to `query()` when `query` is declared and `search()` otherwise, which is what
+  lets one agent tool serve every backend. `schema()`, `add_schema()`, `_derived_schema()`,
+  `format_results()`, `close()` and the static `validate_capabilities()` come from the base;
+  `schema()` writes `capabilities` last and unoverridably.
+- **`KnowledgeCapabilities`** (`model.py`): the per-instance declaration — `kinds` (open taxonomy),
+  `search`/`search_mode`, `query`/`query_language`, `fetch`, `browse`, `writable`, `derives_schema`.
+  `__init__` rejects a declaration that reaches nothing, or `query` without a `query_language` (and the
+  reverse). `KnowledgeMetadata`/`KnowledgeRecord` document the record shape and are never validated —
+  `Record = Mapping[str, Any]` stays the annotation.
+- **Errors** (`errors.py`): `KnowledgeError` base; `KnowledgeCapabilityError` (an undeclared operation,
+  deliberately *not* a `NotImplementedError`); `KnowledgePathError` (a path escaping a store namespace).
+- **`KnowledgeBuilder`** (`knowledgebuilder.py`): wraps one or more `KnowledgeBase` instances and
+  `build()`s plain-function tools for binding via a framework's `ToolBuilder`. Four are always emitted
+  (`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`) and up to three more are appended on
+  their gates: `fetch_kb` (any backend declares `fetch`), `browse_kb` (any declares `browse`), and
+  `search_kb` (one backend declares **both** `search` and `query` — a per-backend check no built-in
+  satisfies). `write_kb` is the exception: the original four are a compatibility promise, so it is
+  always emitted and gated per call. It also resolves `semantic_map` placeholders in queries, browse
+  paths and each comma-separated `fetch` id segment.
+- **Storage axis** (`store/`): `DocumentStore` (`store/base.py`) is bytes at paths, owning path
+  containment for every caller; `LocalDocumentStore` (`local.py`, probes writability) and
+  `S3DocumentStore` (`s3.py`, declares it, needs `boto3`). `DocumentStore.from_uri()` resolves a bare
+  path, `file://`, `s3://bucket/prefix`, or `python:pkg.mod.Class`.
+- **`DocumentKnowledgeBase`** (`document.py`): the abstract middle tier for backends addressed by
+  document path. Holds the store, folds `store.writable` into the declaration with `and` so the more
+  restrictive side wins, and maps a missing document to `None` rather than an exception.
+- **Backends**: `ChromaManager` (vector, `chroma.py`, declares `search`+`writable`), `Neo4jManager`
+  (graph, `neo4j.py`, declares `query`/`cypher`+`writable`), `StarburstManager` (read-only SQL via
+  Trino, `starburst.py`, declares `query`/`sql` and `writable=False`; its Trino schema attribute is
+  `db_schema`, not `schema`, which would shadow the method) — each behind an optional extra
+  (`chromadb`, `neo4j`, `trino`) and deliberately **not** exported from `knowledgebase/__init__.py`,
+  because each imports its SDK at module import. `OKFManager` (`okf/`) is the document backend: an Open
+  Knowledge Format bundle over any `DocumentStore`, declaring `search` (lexical), `fetch`, `browse`,
+  `writable` and `derives_schema`, with `OKFParserUtil`/`OKFConcept` in `okf/parser.py`/`okf/model.py`.
+  It needs no extra — `pyyaml` is core.
+- **Exports** (`__init__.py`): PEP 562 `_LAZY_EXPORTS` with a `TYPE_CHECKING` mirror, so importing the
+  package pulls no optional SDK. The reusable `KnowledgeBaseContract` / `DocumentStoreContract` live in
+  `ak-py/tests/knowledgebase_contracts.py`, not in the package — they are a suite this repo holds its
+  own backends to, not a published helper.
 
 ## Sandbox (`ak-py/src/agentkernel/sandbox/`)
 
@@ -729,8 +771,19 @@ ak-py/src/agentkernel/
 │   ├── teams/
 │   └── gmail/
 ├── knowledgebase/           # Knowledge base backends
-│   ├── base.py              # KnowledgeBase ABC
-│   ├── knowledgebuilder.py  # KnowledgeBuilder (exposes KB tools to agents)
+│   ├── base.py              # KnowledgeBase ABC (3 abstract members, 5 gated operations)
+│   ├── model.py             # KnowledgeCapabilities + record TypedDicts
+│   ├── errors.py            # KnowledgeError / KnowledgeCapabilityError / KnowledgePathError
+│   ├── knowledgebuilder.py  # KnowledgeBuilder (exposes capability-gated KB tools to agents)
+│   ├── document.py          # DocumentKnowledgeBase (store composition, writability folding)
+│   ├── store/               # Storage axis: bytes at paths
+│   │   ├── base.py          # DocumentStore ABC + from_uri()
+│   │   ├── local.py         # LocalDocumentStore
+│   │   └── s3.py            # S3DocumentStore (boto3)
+│   ├── okf/                 # Representation axis: Open Knowledge Format
+│   │   ├── manager.py       # OKFManager (search/fetch/browse/write over a store)
+│   │   ├── model.py         # OKFConcept / OKFBundle / TrustTier / DiagnosticCode
+│   │   └── parser.py        # OKFParserUtil (pure text -> concepts)
 │   ├── chroma.py            # ChromaDB (vector)
 │   ├── neo4j.py             # Neo4j (graph)
 │   └── starburst.py         # Starburst/Trino (read-only SQL)

@@ -6,7 +6,9 @@ This example shows how to use **Neo4j as a graph knowledge base** with an OpenAI
 
 1. How to configure a Neo4j backend and expose query rules to the agent.
 2. How to keep Cypher generation safe and predictable through schema guidance.
-3. How to build and bind KB tools (`get_schemas`, `read_kb`, `write_kb`).
+3. How to build and bind KB tools - the four base tools (`get_schemas`, `read_kb`, `write_kb`,
+   `get_all_kb_descriptions`). Neo4j declares `query` and `writable` but not `search`, so `search_kb`
+   is not emitted: its gate needs one backend declaring both.
 4. How to run the demo through the Agent Kernel CLI.
 
 > These have been implemneted in demo.py please refer that 

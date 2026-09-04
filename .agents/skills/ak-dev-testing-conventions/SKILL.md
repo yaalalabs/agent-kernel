@@ -31,7 +31,17 @@ addopts = "--cov=src --cov-report=term --cov-report=html --html=report.html"
 
 ## Test File Organization
 
-Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`:
+Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`.
+
+Three subsystems ship a **reusable contract suite** a new backend must be run against, rather than
+per-backend assertions written from scratch: `QueueTransportContract` (`pipeline/testing.py`),
+`SandboxProviderContract` (`sandbox/testing.py`), and `KnowledgeBaseContract` /
+`DocumentStoreContract` (`ak-py/tests/knowledgebase_contracts.py`). The knowledge-base pair lives under
+`tests/` rather than in the package on purpose — it is a suite this repo holds its own backends to, not
+a published helper for out-of-tree authors, so there is no `agentkernel.knowledgebase.testing` module.
+In all three cases the contract classes are deliberately not named `Test*` (and
+`knowledgebase_contracts.py` is not named `test_*`), so pytest collects them only through the
+subclasses that supply a fixture.
 
 | Test File | Tests |
 |-----------|-------|
@@ -128,6 +138,16 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_ecs_agent_runner_schedule.py` | ECS runners' body fallback (`_get_record_attributes` with/without a parsed body) and `status_code` custom attribute |
 | `test_ecs_output_consumer_status.py` | `ECSOutputConsumer` stores `status_code` (present / absent → 200 / permanent failure → 500) |
 | `test_serverless_agent_runner_schedule.py` | Serverless runners' body fallback in both `_get_record_attributes` implementations |
+| `test_knowledgebase_model.py` | `KnowledgeCapabilities` defaults and `model_dump()` shape, the record `TypedDict`s, and `KnowledgeBase.validate_capabilities`'s two invariants (unreachable declaration, `query` ⇔ `query_language`) — asserting a bare capabilities object never validates on its own |
+| `test_knowledgebase_base.py` | The reshaped ABC: three abstract members, the five capability-gated operations raising `KnowledgeCapabilityError`, `read()` routing on `capabilities.query`, `schema()` merge order with `capabilities` written last and unoverridable, `_derived_schema()`, and the `fetch`-gated `[<id>]` prefix in `format_results()` |
+| `test_knowledgebase_builder.py` | `KnowledgeBuilder` gating: the tool matrix and emission order, `search_kb`'s per-backend both-`search`-and-`query` gate, `write_kb`'s always-emitted/per-call check, capability mismatches returning an actionable string rather than raising, `semantic_map` resolution across queries/browse paths/`fetch` id segments, and the generic `query`/`params` write metadata |
+| `test_knowledgebase_backends.py` | The three SDK-backed backends with their clients monkeypatched: the `read`→`search`/`query` renames, each declaration, Neo4j's generic-with-`cypher_*`-fallback write metadata, and Starburst's `db_schema` no longer shadowing `schema()` |
+| `test_knowledgebase_stores.py` | `DocumentStoreContract` over a real `tmp_path` and a fake boto3 client, plus the containment matrix (`..`, absolute, normalising escapes, symlinks) and the global-lexicographic `list()` ordering case (`a/z.md` before `ab/b.md`) |
+| `test_knowledgebase_okf_parser.py` | `OKFParserUtil`: frontmatter splitting, every diagnostic code reachable, trust derived from `verified` alone, staleness against an injected `now`, link extraction, the bounded `field_tokens` index, and a guard that the module pulls in no store or HTTP client |
+| `test_knowledgebase_okf_manager.py` | `OKFManager` end to end: manifest walk and truncation, ranking determinism, browse-at-a-namespace with and without a curated `index.md`, write-through visibility, one walk under two concurrent boundary-crossing callers, and that nothing is ever filtered on trust or staleness |
+| `test_knowledgebase_contract.py` | The reusable `KnowledgeBaseContract` (`ak-py/tests/knowledgebase_contracts.py`) run against `FakeKnowledgeBase` in four capability shapes, `OKFManager` over a real local bundle, and the three SDK backends with their clients monkeypatched. The `schema()`-is-callable assertion is the Starburst-collision regression guard |
+| `test_knowledgebase_okf_envelope.py` | The declared scale envelope: a generated 10,000-concept bundle keeps all 10,000, and `tracemalloc` allocations attributable to the manifest walk stay under 50 MB (allocations, not RSS) |
+| `test_knowledgebase_exports.py` | Every `agentkernel.knowledgebase.__all__` name resolves through the PEP 562 lazy map, and `chromadb`/`neo4j`/`trino`/`boto3` stay out of `sys.modules` on import — the gate a new export has to pass |
 | `test_factory.py` | Shared pluggable-backend helpers (`resolve_dotted`, `require_extra`, `AKConfigError`) in `core/util/factory.py` |
 | `test_store_builders.py` | Session/thread/multimodal store builders: fail-loud on unknown type, BYO dotted-path subclass resolution |
 | `test_trace.py` | Trace factory built-in resolution, BYO dotted path, unknown-type error |

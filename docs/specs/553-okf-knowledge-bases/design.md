@@ -503,8 +503,11 @@ classDiagram
   tools, or any framework adapter.
 - Adding a **storage** backend for an existing representation requires only a `DocumentStore`
   subclass — an HTTP-served or git-backed OKF bundle is a store, not a new KB.
-- `knowledgebase/testing.py` ships `KnowledgeBaseContract` and `DocumentStoreContract`, reusable
-  suites in the `SandboxProviderContract` (`sandbox/testing.py:130`) / `QueueTransportContract` shape.
+- `KnowledgeBaseContract` and `DocumentStoreContract` ship as reusable suites in the
+  `SandboxProviderContract` (`sandbox/testing.py:130`) / `QueueTransportContract` shape. *As built they
+  live in `ak-py/tests/knowledgebase_contracts.py`, not in the package* — a suite this repo holds its
+  own backends to rather than a published helper, so nothing imports
+  `agentkernel.knowledgebase.testing`.
   `KnowledgeBaseContract` asserts, for any backend: declared capabilities match implemented
   operations; undeclared operations raise `KnowledgeCapabilityError`; `schema()` is callable and
   returns a mapping (the `StarburstManager` collision above); records carry `metadata["id"]` when
