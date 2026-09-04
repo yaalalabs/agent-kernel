@@ -552,8 +552,42 @@ minutes *per pod*. The backend's docstring and `docs/docs/advanced/knowledge-bas
 so, and recommend a larger `refresh_seconds` — or `None` for an immutable bundle — for large S3
 bundles.
 
-**Envelope:** the ~50 MB target covers frontmatter plus token sets for 10,000 concepts (~5 KB each).
-Bodies are excluded because they are never retained between calls.
+**Envelope — corrected against measurement during iteration 8.** The design's "~50 MB for 10,000
+concepts (~5 KB each)" does not survive contact with the implementation, in two independent ways:
+
+- **The floor alone is 45 MB.** A 10,000-concept manifest whose concepts have *empty* bodies retains
+  45 MB, dominated by ~190,000 pydantic objects (`pydantic/main.py:263`) — the `OKFConcept` instances
+  and their field containers. Nothing about the token index is involved; that is the cost of holding
+  10,000 parsed concepts at all.
+- **The body token index was never actually bounded.** `BODY_INDEX_MAX_BYTES` bounds the bytes *read*,
+  not the tokens *retained*, so `field_tokens["body"]` was an unbounded set over an 8 KiB window.
+  Memory was therefore O(concepts x distinct body tokens), and the same 10,000-concept bundle with
+  ordinary prose bodies measured **770 MB** — a real OOM risk in a 1 GB container, not a rounding error.
+
+Iteration 8 adds `BODY_INDEX_MAX_TOKENS = 128`, applied to `body` only and collected in document order
+so the kept subset is reproducible across processes. Measured on the same bundle:
+
+| `BODY_INDEX_MAX_TOKENS` | 10,000-concept manifest |
+|---|---|
+| unbounded (as designed) | 770 MB |
+| 256 | 253 MB |
+| **128 (chosen)** | **182 MB** — ~19 KB per concept |
+| 64 | 96 MB |
+| no body index at all | 45 MB (the floor) |
+
+`128` is chosen because `body` carries the lowest ranking weight (1, against `title` 4 and `tags` 3):
+its job is recall on terms the frontmatter missed, so losing its tail costs far less than any other
+field's would. The **declared envelope is therefore 250 MB, not 50 MB**, and the cost is stated per
+concept — ~19 KB measured, 25 KB budgeted — because that is the figure that stays true at every bundle
+size (measured constant to within 4 bytes at 1,000, 2,000 and 10,000 concepts).
+
+A further ~80 MB is available without changing the ranking: `field_tokens` holds five `set`s per
+concept, and a CPython set over-allocates its table to 5x its size, so the same tokens as sorted
+tuples cost 85 MB where the sets cost 165 MB. That would need `OKFManager._score` to switch to
+`bisect` membership and is **not** part of iteration 8 — recorded here so it is a decision someone
+takes deliberately rather than a saving nobody knew was on the table.
+
+Bodies themselves are still excluded from the manifest entirely; they are never retained between calls.
 
 `max_concepts` truncation: the walk consumes `store.list()` in its contractual lexicographic order and
 stops after `max_concepts` **accepted** concepts (skipped files do not consume budget), sets
@@ -974,7 +1008,7 @@ still mocked; no test touches a live service.
 | `tests/test_knowledgebase_stores.py` | `DocumentStoreContract` over `LocalDocumentStore` (real `tmp_path`) and `S3DocumentStore` (fake boto3 client, including a paginated `list_objects_v2` and `NoSuchKey` → `FileNotFoundError`); containment matrix (`..`, absolute, backslash, normalising escapes) on every entrypoint; a symlink out of `root` skipped by `list()` and refused on read; global lexicographic ordering including the `a/z.md` vs `ab/b.md` case; `writable` probing vs declaration; `write_bytes` refused on a read-only store; `read_prefix_bytes` default vs the S3 ranged GET; `from_uri`'s five branches including `python:` and an `AKConfigError` scheme |
 | `tests/test_knowledgebase_okf_parser.py` | frontmatter splitting (missing open/close, non-mapping YAML); `type` required, unknown `type` kept; unknown keys → `extra`; bare `verified` → one-element list; scalar `tags`; the three trust tiers; staleness against an injected `now`, and the unparseable case; link extraction in both forms plus relative resolution, escapes dropped, absolute URLs ignored, non-`.md` ignored; **v0.2-only**: a v0.1 `timestamp` lands in `extra` and a body `# Citations` list stays body text; every diagnostic code is reachable; no `urllib`/`httpx` import on any path |
 | `tests/test_knowledgebase_okf_manager.py` | capabilities built from the store (writable folding both ways); `_derived_schema()` keys against a known bundle; `schema()` working with no `add_schema()`; search ranking — weights, presence-not-frequency, `(-score, path)` determinism across two managers, zero-score exclusion; `fetch` order/dedup/unknown-id omission and links present only here; `browse` index-vs-derived at root **and** at `tables/`, `limit` truncation, unknown directory; `write` — synthesised vs supplied id, comma refusal at both ends, fixed key order and byte-identical re-render, `generated` stamp, producer default and override; **write-through visibility with `refresh_seconds=None`** (proving it is not a refresh); refresh timing with a monkeypatched `time.monotonic`; a failed refresh serving the stale manifest and resetting the clock; `reload()`; **one walk under two concurrent boundary-crossing callers** (a `threading.Barrier` plus a walk counter); `max_concepts` truncation keeping a lexicographic prefix with a `truncated` diagnostic; nothing filtered on trust or staleness; diagnostics surfaced through `get_description()` |
-| `tests/test_knowledgebase_okf_envelope.py` | the declared scale. A session-scoped fixture generates a 10,000-concept bundle in `tmp_path`; the test asserts the walk keeps all 10,000 and that `tracemalloc` allocations attributable to the manifest build stay under 50 MB, measured as the sum of `size_diff` over a `snapshot_after.compare_to(snapshot_before, "filename")` around `_walk()` — **not** process RSS, which moves with the interpreter and the allocator's retained arenas |
+| `tests/test_knowledgebase_okf_envelope.py` | the declared scale. A session-scoped fixture generates a 10,000-concept bundle in `tmp_path`; the test asserts the walk keeps all 10,000, that every concept's body index sits at the cap, that ranking is deterministic, and that `max_concepts` truncates to a lexicographic prefix with a diagnostic. Memory is measured as the sum of `size_diff` over a `snapshot_after.compare_to(snapshot_before, "filename")` around `_walk()` — **not** process RSS, which moves with the interpreter and the allocator's retained arenas — and asserted **per concept** against a 25 KB budget (250 MB projected at 10,000), because the cost is linear in the concept count and the per-concept figure is what stays true at every size. The measurement runs over a 2,000-concept slice: `tracemalloc` around a full 10,000-concept walk costs 75 s under coverage to learn the same number |
 | `tests/test_knowledgebase_contract.py` | `KnowledgeBaseContract` run against `FakeKnowledgeBase` (four capability shapes), `OKFManager` over a real local bundle, and the three existing backends with mocked clients — `monkeypatch` on `chromadb.PersistentClient`, `neo4j.GraphDatabase.driver`, and `trino.dbapi.connect` (plus host/user/password constructor args for Starburst) |
 | `tests/test_knowledgebase_exports.py` | every `__all__` name resolves; `chromadb`/`neo4j`/`trino`/`boto3` stay out of `sys.modules` after importing the package and touching `KnowledgeBase`/`OKFManager`; `testing.py` is not exported; the `overview.md:353` import works verbatim |
 | `examples/cli/knowledgebase/openai/okf/demo_test.py` | the example-level convention (`Test("demo.py")`, ordered cases): the agent browses the bundle, fetches a concept by its real path, and answers from it |
@@ -1010,7 +1044,7 @@ too narrowly. Flagged for design re-review per the staged process rather than ab
 | C | **`DocumentStore.read_prefix_bytes`**, a sixth method with a default implementation | Makes the eager frontmatter pass affordable over S3 (a bounded ranged GET per concept instead of a full object). Defaulted, so a bring-your-own store need not implement it |
 | D | **Two behavioural changes the design's list omits** (items 14-15): `StarburstManager`'s default `limit` 5 → 3, and `query()`'s first parameter named `statement` | The design's item 11 quantifies over Neo4j only; `starburst.py:151` is a second instance, and the parameter rename is implied by the base signature the design fixes |
 | E | **Migration item 13's reach** | The design scopes it to "a subclass calling `super().__init__()` with no arguments". A subclass defining no `__init__` at all also breaks — which is exactly the shape of the documented example at `docs/docs/advanced/knowledge-bases.md:212` |
-| F | **The manifest retains a bounded body token index, not bodies** | "Frontmatter parsed eagerly, bodies read lazily" and "search ranks over body text" cannot both hold literally. A bounded token set per concept satisfies both intents and keeps the ~50 MB envelope; full bodies (and therefore complete `links`) are read only by `fetch`, which is how the design already describes traversal |
+| F | **The manifest retains a bounded body token index, not bodies** | "Frontmatter parsed eagerly, bodies read lazily" and "search ranks over body text" cannot both hold literally. A bounded token set per concept satisfies both intents; full bodies (and therefore complete `links`) are read only by `fetch`, which is how the design already describes traversal. **Amended in iteration 8:** the index as first implemented was bounded in *bytes read* but not in *tokens retained*, which is not the same promise — see [Manifest envelope](#manifest-what-is-retained-and-what-it-costs) for the measurements, the `BODY_INDEX_MAX_TOKENS` cap that closes it, and the corrected 250 MB envelope |
 | G | **`capabilities` is not overridable via `add_schema()`**, and `search_mode` is deliberately not bidirectional with `search` | Two precedence/scope questions the design leaves open; both resolved in the direction that keeps the declaration honest |
 
 ## Next stage

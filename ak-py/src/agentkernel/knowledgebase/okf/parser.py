@@ -21,7 +21,7 @@ data and are never dereferenced, here or anywhere else in the knowledge-base tie
 import posixpath
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 from pydantic import ValidationError
@@ -33,6 +33,11 @@ from .model import DiagnosticCode, OKFConcept, OKFDiagnostic, TrustTier
 # frontmatter block; the extra 8 KiB is the body window the token index is built from.
 FRONTMATTER_MAX_BYTES = 16 * 1024
 BODY_INDEX_MAX_BYTES = 8 * 1024
+
+# The byte window above bounds what is read, not what the manifest keeps. Without a token
+# bound too, memory is O(concepts x distinct body tokens): 10,000 prose concepts measured at
+# 770 MB, against 182 MB at this cap. Only `body` is bounded, being the lowest-weighted field.
+BODY_INDEX_MAX_TOKENS = 128
 
 # The only version this reader targets. A v0.1 bundle still loads: the two v0.1 fallbacks
 # (a legacy `timestamp` key, a body `# Citations` list) are MAY in the specification, and
@@ -97,7 +102,7 @@ class OKFParserUtil:
         return data.decode("utf-8-sig", errors="replace")
 
     @staticmethod
-    def tokenise(text: str) -> set[str]:
+    def tokenise(text: str, max_tokens: Optional[int] = None) -> set[str]:
         """
         Reduce text to the token set the lexical ranker matches on.
 
@@ -105,12 +110,26 @@ class OKFParserUtil:
         provably share one definition — that shared definition is what makes search ranking
         reproducible across processes.
 
+        A bound keeps the first ``max_tokens`` distinct tokens in document order. Ordering
+        matters: a set's iteration order follows the interpreter's hash seed, so truncating
+        one would rank the same bundle differently in two processes.
+
         :param text: Any text; empty and ``None``-ish values are tolerated.
+        :param max_tokens: Keep at most this many distinct tokens; ``None`` keeps all of them.
         :return: Lowercase tokens of at least two characters.
         """
         if not text:
             return set()
-        return {token for token in _TOKEN_SEPARATOR.split(text.lower()) if len(token) >= _MIN_TOKEN_LENGTH}
+        tokens = (token for token in _TOKEN_SEPARATOR.split(text.lower()) if len(token) >= _MIN_TOKEN_LENGTH)
+        if max_tokens is None:
+            return set(tokens)
+
+        kept: set[str] = set()
+        for token in tokens:
+            kept.add(token)
+            if len(kept) >= max_tokens:
+                break
+        return kept
 
     @staticmethod
     def is_reserved(path: str) -> bool:
@@ -344,7 +363,8 @@ class OKFParserUtil:
                     "title": OKFParserUtil.tokenise(title),
                     "description": OKFParserUtil.tokenise(description),
                     "tags": OKFParserUtil.tokenise(" ".join(tags)),
-                    "body": OKFParserUtil.tokenise(body),
+                    # Bounded: a body's size is the author's choice, not the schema's.
+                    "body": OKFParserUtil.tokenise(body, max_tokens=BODY_INDEX_MAX_TOKENS),
                 },
             )
         except ValidationError as error:
