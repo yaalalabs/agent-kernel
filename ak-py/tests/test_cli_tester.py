@@ -316,7 +316,7 @@ def test_resolve_evaluator_class_dotted_path_to_fake(monkeypatch):
 
 
 def test_resolve_evaluator_class_unknown_short_name_raises():
-    with pytest.raises(AKConfigError, match=r"\['deepeval'\]"):
+    with pytest.raises(AKConfigError, match=r"\['deepeval', 'opik'\]"):
         CliTest._resolve_evaluator_class("deepval")
 
 
@@ -358,6 +358,38 @@ def test_deepeval_module_does_not_shadow_third_party_package():
 
     assert ak_deepeval_module.GEval is deepeval.metrics.GEval
     assert ak_deepeval_module.Scorer is deepeval.scorer.Scorer
+
+
+def test_resolve_evaluator_class_builtin_opik():
+    from agentkernel.test.core.evaluator.opik import OpikAKEvaluator
+
+    assert CliTest._resolve_evaluator_class("opik") is OpikAKEvaluator
+
+
+def test_resolve_evaluator_class_opik_missing_extra_raises_import_error(monkeypatch):
+    # Same rationale as the deepeval variant above: patch __import__ for any "opik[.*]" name to
+    # force opik.py's top-level import to fail, simulating the extra being absent even though the
+    # real `opik` package (and its submodules) may already be cached in sys.modules.
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "opik" or name.startswith("opik."):
+            raise ImportError(f"simulated missing dependency: {name}")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.delitem(sys.modules, "agentkernel.test.core.evaluator.opik", raising=False)
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(ImportError, match=r"agentkernel\[opik\]"):
+        CliTest._resolve_evaluator_class("opik")
+
+
+def test_opik_module_does_not_shadow_third_party_package():
+    import opik
+
+    import agentkernel.test.core.evaluator.opik as ak_opik_module
+
+    assert ak_opik_module.GEval is opik.evaluation.metrics.GEval
+    assert ak_opik_module.LevenshteinRatio is opik.evaluation.metrics.LevenshteinRatio
 
 
 # --- evaluator caching -----------------------------------------------------------------------#

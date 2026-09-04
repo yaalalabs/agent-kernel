@@ -11,7 +11,7 @@ from agentkernel.core.util.factory import AKConfigError, require_extra, resolve_
 from .config import AKTestConfig
 from .core.evaluator import AKEvaluationCase, AKEvaluationResult, AKEvaluator
 
-_BUILTIN_EVALUATORS = ["deepeval"]
+_BUILTIN_EVALUATORS = ["deepeval", "opik"]
 
 
 class Mode(StrEnum):
@@ -150,6 +150,10 @@ class Test:
             with require_extra("test", "evaluator: deepeval"):
                 from .core.evaluator.deepeval import DeepevalAKEvaluator
             return DeepevalAKEvaluator
+        if configured == "opik":
+            with require_extra("opik", "evaluator: opik"):
+                from .core.evaluator.opik import OpikAKEvaluator
+            return OpikAKEvaluator
         if "." not in configured:
             raise AKConfigError(
                 f"unknown evaluator '{configured}'; expected one of {_BUILTIN_EVALUATORS} or a dotted path to an AKEvaluator subclass"

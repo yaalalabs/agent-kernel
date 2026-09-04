@@ -33,6 +33,7 @@ a **first-party, in-repo** provider that ships with AK and gets its own short `t
 | Provider | Short name | Scoring mode | LLM-judge mode | Extra |
 |---|---|---|---|---|
 | DeepEval | `deepeval` | `Scorer.quasi_exact_match_score` (whole-string, normalised) | `GEval` LLM-as-judge metric | `agentkernel[test]` |
+| Opik | `opik` | `LevenshteinRatio` (fuzzy string similarity) | `GEval` LLM-as-judge metric | `agentkernel[opik]` |
 
 ## Architecture Overview
 
