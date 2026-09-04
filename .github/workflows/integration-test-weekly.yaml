@@ -161,6 +161,7 @@ jobs:
     outputs:
       vpc_id: ${{ steps.base-outputs.outputs.vpc_id }}
       private_subnet_ids: ${{ steps.base-outputs.outputs.private_subnet_ids }}
+      security_group_id: ${{ steps.base-outputs.outputs.security_group_id }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -291,6 +292,11 @@ jobs:
           if [[ "${{ matrix.type }}" == aws-* ]]; then
             ARGS+=(--vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}')
           fi
+          # aws-serverless deploys also reuse the base's Lambda security group (Phase 1 of #716;
+          # aws-containerized needs three separate SG variables and is Phase 2, not wired here).
+          if [[ "${{ matrix.type }}" == "aws-serverless" ]]; then
+            ARGS+=(--security-group-id "${{ needs.get-base-outputs.outputs.security_group_id }}")
+          fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"
 
       - name: Test - ${{ matrix.path }}
@@ -331,6 +337,9 @@ jobs:
           ARGS=(--type ${{ matrix.type }} --path ${{ matrix.path }} --deploy-dir ${{ matrix.deploy_dir }} --action destroy)
           if [[ "${{ matrix.type }}" == aws-* ]]; then
             ARGS+=(--vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}')
+          fi
+          if [[ "${{ matrix.type }}" == "aws-serverless" ]]; then
+            ARGS+=(--security-group-id "${{ needs.get-base-outputs.outputs.security_group_id }}")
           fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"
       - name: Upload test results

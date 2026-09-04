@@ -69,8 +69,19 @@ def main():
     # Validate
     json.loads(private_subnet_ids)  # ensure valid JSON
 
+    # Retrieve security_group_id
+    result = subprocess.run(
+        ["terraform", "output", "-raw", "security_group_id"],
+        cwd=str(deploy_path),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    security_group_id = result.stdout.strip()
+
     print(f"VPC ID: {vpc_id}")
     print(f"Private Subnet IDs: {private_subnet_ids}")
+    print(f"Security Group ID: {security_group_id}")
 
     # Write to GitHub Actions output
     github_output = os.environ.get("GITHUB_OUTPUT", "")
@@ -78,6 +89,7 @@ def main():
         with open(github_output, "a") as f:
             f.write(f"vpc_id={vpc_id}\n")
             f.write(f"private_subnet_ids={private_subnet_ids}\n")
+            f.write(f"security_group_id={security_group_id}\n")
         print("Outputs written to $GITHUB_OUTPUT")
     else:
         print("GITHUB_OUTPUT not set — printing outputs only")

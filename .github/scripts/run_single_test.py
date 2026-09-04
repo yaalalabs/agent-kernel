@@ -569,29 +569,32 @@ def _start_lambda_eni_sweeper(sg_ids: list[str], region: str, stop_event: thread
     return thread
 
 
-def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:
+def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None, security_group_id: str = None) -> bool:
     """Destroy AWS resources."""
     deploy_path = Path(path) / deploy_dir
     deploy_script = deploy_path / 'deploy.sh'
-    
+
     if not deploy_path.exists():
         print(f"⚠️  Skipping {path} - deploy directory not found: {deploy_path}")
         return True
-    
+
     if not deploy_script.exists():
         print(f"⚠️  Skipping {path} - no deploy.sh found at {deploy_path}")
         return True
-    
+
     # Set Terraform automation flags for non-interactive CI execution
     tf_env = {
         'TF_INPUT': '0',  # Disable interactive prompts
     }
-    
+
     # Inject VPC configuration as Terraform variables if provided
     if vpc_id:
         tf_env['TF_VAR_vpc_id'] = vpc_id
-                
+
         print(f"   TF_VAR_vpc_id={vpc_id}")
+    if security_group_id:
+        tf_env['TF_VAR_security_group_id'] = security_group_id
+        print(f"   TF_VAR_security_group_id={security_group_id}")
     if private_subnet_ids:
         try:
             parsed = json.loads(private_subnet_ids)
@@ -634,31 +637,34 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = N
             sweeper.join(timeout=20)
 
 
-def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None) -> bool:
+def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None, security_group_id: str = None) -> bool:
     """Deploy AWS resources only (without running tests)."""
     deploy_path = Path(path) / deploy_dir
     deploy_script = deploy_path / 'deploy.sh'
-    
+
     if not deploy_path.exists():
         print(f"⚠️  Skipping {path} - deploy directory not found: {deploy_path}")
         return True
-    
+
     if not deploy_script.exists():
         print(f"⚠️  Skipping {path} - no deploy.sh found at {deploy_path}")
         return True
-    
+
     # Set Terraform automation flags for non-interactive CI execution
     tf_env = {
         'TF_INPUT': '0',  # Disable interactive prompts
         'TF_CLI_ARGS_apply': '-auto-approve',  # Auto-approve applies
     }
-    
+
     # Inject VPC configuration as Terraform variables if provided
     if vpc_id:
         tf_env['TF_VAR_vpc_id'] = vpc_id
-        
+
         print("\n✅ Injecting VPC configuration as Terraform variables:")
-        print(f"   TF_VAR_vpc_id={vpc_id}")    
+        print(f"   TF_VAR_vpc_id={vpc_id}")
+    if security_group_id:
+        tf_env['TF_VAR_security_group_id'] = security_group_id
+        print(f"   TF_VAR_security_group_id={security_group_id}")
     if private_subnet_ids:
         try:
             parsed = json.loads(private_subnet_ids)
@@ -759,7 +765,8 @@ def main():
     parser.add_argument('--action', choices=['deploy', 'test', 'destroy'], default='test', help='Action to perform')
     parser.add_argument('--vpc-id', default=None, help='VPC ID from base deployment')
     parser.add_argument('--private-subnet-ids', default=None, help='Private subnet IDs (JSON array) from base deployment')
-    
+    parser.add_argument('--security-group-id', default=None, help='Security group ID from base deployment (aws-serverless only in Phase 1)')
+
     args = parser.parse_args()
     
     print(f"\n🚀 Running {args.action} for {args.type}: {args.path}\n")
@@ -768,7 +775,7 @@ def main():
     
     if args.action == 'deploy':
         if args.type in ['aws-containerized', 'aws-serverless']:
-            success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
+            success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.security_group_id)
         elif args.type in ['azure-serverless', 'azure-containerized']:
             success = deploy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['gcp-serverless', 'gcp-containerized']:
@@ -778,7 +785,7 @@ def main():
             success = True
     elif args.action == 'destroy':
         if args.type in ['aws-containerized', 'aws-serverless']:
-            success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
+            success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.security_group_id)
         elif args.type in ['azure-serverless', 'azure-containerized']:
             success = destroy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['gcp-serverless', 'gcp-containerized']:

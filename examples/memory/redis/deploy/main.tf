@@ -12,6 +12,7 @@ module "serverless_agents" {
   create_redis_cluster = false # This is optional. Set to true if you want to create one. Otherwise you can reuse an already existing redis host by setting configurations on config.yaml
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
+  security_group_id    = var.security_group_id
   region               = var.region
 
   # Request handler configuration

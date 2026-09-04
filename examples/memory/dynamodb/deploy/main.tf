@@ -12,6 +12,7 @@ module "serverless_agents" {
   create_dynamodb_memory_table = true
   vpc_id                       = var.vpc_id
   private_subnet_ids           = var.private_subnet_ids
+  security_group_id            = var.security_group_id
   region                       = var.region
 
   # Request handler configuration

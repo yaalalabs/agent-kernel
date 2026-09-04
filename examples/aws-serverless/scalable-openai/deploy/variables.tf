@@ -40,6 +40,12 @@ variable "private_subnet_ids" {
   sensitive   = true
 }
 
+variable "security_group_id" {
+  description = "Security group ID for Lambda deployment"
+  type        = string
+  default     = null
+}
+
 variable "request_handler_lambda_package_s3" {
   description = "External Lambda artifact for request handler"
   type = object({
