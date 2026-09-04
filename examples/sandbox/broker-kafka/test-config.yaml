@@ -3,6 +3,6 @@
 mode: fallback  # Test comparison mode: fuzzy, judge, or fallback (default: fallback)
 # Judge settings are used by the judge and fallback modes (LLM-based evaluation):
 judge:
-  model: gpt-4o-mini
+  model: gpt-4.1-mini
   provider: openai
   embedding_model: text-embedding-3-small

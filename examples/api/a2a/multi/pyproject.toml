@@ -1,11 +1,11 @@
 [project]
 name = "api-a2a-multi"
 version = "0.1.0"
-description = "Demo of CrewAI and OpenAI Agents SDK based agents running in Agent Kernel with a API exposed via A2A"
+description = "Demo of Smolagents and OpenAI Agents SDK based agents running in Agent Kernel with a API exposed via A2A"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,crewai,openai,a2a]>=0.9.0",
+    "agentkernel[cli,smolagents,openai,a2a]>=0.9.0",
 ]
 
 [dependency-groups]

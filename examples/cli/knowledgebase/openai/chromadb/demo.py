@@ -75,7 +75,7 @@ EXECUTION PROTOCOL:
     # bind(...) converts those callables into OpenAI Agent tools.
     return Agent(
         name="KB_Router_Agent",
-        model="gpt-4o-mini",
+        model="gpt-4.1-mini",
         instructions=instructions,
         tools=OpenAIToolBuilder.bind(knowledge_builder.build()),
     )

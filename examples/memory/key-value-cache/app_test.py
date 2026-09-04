@@ -30,7 +30,7 @@ class APITestClient:
             "session_id": self.session_id,
             "agent": agent,
         }
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             # Retry 5xx and timeouts: serverless cold starts can exceed the gateway timeout
             for attempt in range(3):
                 try:
