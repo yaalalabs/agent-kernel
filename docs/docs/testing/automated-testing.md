@@ -43,8 +43,10 @@ Agent Kernel supports three comparison modes for validating responses:
 
 ### Score Mode
 
-Deterministic, offline string-match scoring — no LLM call. The built-in evaluator (DeepEval)
-uses `Scorer.quasi_exact_match_score`, a normalised whole-string equality check:
+Deterministic, offline string-match scoring — no LLM call. Behavior depends on the configured
+evaluator: DeepEval (the default) uses `Scorer.quasi_exact_match_score`, a normalised whole-string
+equality check, while Opik uses its `LevenshteinRatio` metric, a graded fuzzy-similarity score. See
+[Built-in evaluators](./cli-testing#configuration-based-mode) for how to switch:
 
 ```python
 from agentkernel.test import Test, Mode
@@ -66,14 +68,15 @@ async def test_score_matching(test_client):
     )
 ```
 
-**Note:** The `expected` parameter accepts a list of acceptable responses. The test passes if the
-actual response's normalised text exactly equals **any** of the expected values (score `1.0`) —
-there is no partial credit.
+**Note:** The `expected` parameter accepts a list of acceptable responses. With the default DeepEval
+evaluator, the test passes if the actual response's normalised text exactly equals **any** of the
+expected values (score `1.0`) — there is no partial credit. With the Opik evaluator, `LevenshteinRatio`
+gives a graded similarity score instead, so a close-but-not-exact match can still clear the threshold.
 
 ### Llm Mode
 
-Uses LLM-as-judge evaluation for semantic similarity. The built-in evaluator (DeepEval) uses the
-`GEval` metric:
+Uses LLM-as-judge evaluation for semantic similarity. Both built-in evaluators use a `GEval` metric
+here — DeepEval's `GEval` via an `LLMTestCase`, Opik's `GEval` via a single packed `output` string:
 
 ```python
 @pytest.mark.order(2)
@@ -132,7 +135,7 @@ Set the default mode via a `test-config.yaml` file in the directory the tests ru
 ```yaml
 # test-config.yaml
 mode: fallback  # Options: score, llm, fallback
-evaluator: deepeval  # Built-in short name, or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval  # Built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini
   provider: openai
@@ -351,7 +354,7 @@ Configure the default test comparison mode in `test-config.yaml`. The file is re
 ```yaml
 # test-config.yaml
 mode: fallback  # Options: score, llm, fallback (default: fallback)
-evaluator: deepeval  # Built-in short name, or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval  # Built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini  # LLM model for llm mode
   provider: openai  # LLM provider

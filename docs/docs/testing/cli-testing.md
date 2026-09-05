@@ -60,8 +60,10 @@ interface.
 
 ### Score Mode
 
-Deterministic, offline string-match scoring — no LLM call. The built-in evaluator (DeepEval)
-uses `Scorer.quasi_exact_match_score`, a normalised whole-string equality check:
+Deterministic, offline string-match scoring — no LLM call. Behavior depends on the configured
+evaluator: DeepEval (the default) uses `Scorer.quasi_exact_match_score`, a normalised whole-string
+equality check, while Opik uses its `LevenshteinRatio` metric, a graded fuzzy-similarity score. See
+"Built-in evaluators" below for how to switch:
 
 ```python
 from agentkernel.test import Test, Mode
@@ -83,18 +85,21 @@ Test.compare(
 )
 ```
 
-**Note:** The `expected` parameter is a list. The test passes if the actual response's normalised
-text exactly equals **any** of the expected values (score `1.0`); otherwise it scores `0.0` —
-there is no partial credit, so a verbose-but-correct response that merely contains the expected
-phrase does not match under score mode alone.
+**Note:** The `expected` parameter is a list. With the default DeepEval evaluator, the test passes
+if the actual response's normalised text exactly equals **any** of the expected values (score
+`1.0`); otherwise it scores `0.0` — there is no partial credit, so a verbose-but-correct response
+that merely contains the expected phrase does not match under score mode alone. With the Opik
+evaluator, `LevenshteinRatio` gives a graded score based on string similarity, so a close-but-not-
+exact match can still pass above `match_threshold` without partial credit being all-or-nothing.
 
 ### Llm Mode
 
-Uses LLM-as-judge evaluation for semantic similarity. The built-in evaluator (DeepEval) uses the
-`GEval` metric, judging whether the actual response conveys the same information as the expected
-answer. The rubric is written to give credit when `expected` is a short phrase or keyword embedded
-in a longer, otherwise-correct response — llm mode (and the llm fallback in `fallback` mode) is the
-intended way to match the verbose-but-correct case that score mode's exact match rejects:
+Uses LLM-as-judge evaluation for semantic similarity. Both built-in evaluators use a `GEval` metric
+here — DeepEval's `GEval` via an `LLMTestCase`, Opik's `GEval` via a single packed `output` string —
+judging whether the actual response conveys the same information as the expected answer. The rubric
+is written to give credit when `expected` is a short phrase or keyword embedded in a longer,
+otherwise-correct response — llm mode (and the llm fallback in `fallback` mode) is the intended way
+to match the verbose-but-correct case that score mode's exact match rejects:
 
 ```python
 # Initialize with llm mode
@@ -154,7 +159,7 @@ Set default mode via a `test-config.yaml` file (in the directory the tests run f
 ```yaml
 # test-config.yaml
 mode: llm  # Options: score, llm, fallback
-evaluator: deepeval  # Built-in short name, or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval  # Built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini
   provider: openai
@@ -168,6 +173,14 @@ await test.send("Hello")
 await test.expect(["Hello! How can I help?"])  # Uses configured mode
 ```
 
+**Built-in evaluators:** `deepeval` (default, requires `pip install "agentkernel[test]"`) and `opik`
+(requires `pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet).
+Opik's `score` mode uses its `LevenshteinRatio` metric and `llm` mode uses its `GEval` judge —
+both run locally against the LLM configured under `llm:` and never require an Opik Cloud account,
+API key, or self-hosted server. See
+[`examples/cli/opik-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/opik-evaluator)
+for a complete working example.
+
 ### Bring your own evaluator
 
 Any dotted path to an `AKEvaluator` subclass works as `evaluator` in `test-config.yaml`:
@@ -176,10 +189,10 @@ Any dotted path to an `AKEvaluator` subclass works as `evaluator` in `test-confi
 evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to your test file
 ```
 
-Implement `score_based_evaluation(case)` and `llm_based_evaluation(case)`, both synchronous,
+Implement `evaluate_by_score(case)` and `evaluate_by_llm(case)`, both synchronous,
 returning `AKEvaluationResult`. Raise `AKMetricNotSupported` from a method your backend can't
 provide, and `AKEvaluationError` on a backend failure (missing credentials, transport error) —
-never return a `0.0` for either. See `agentkernel.test.core.akevaluators` for the interface and
+never return a `0.0` for either. See `agentkernel.test.core.evaluator` for the interface and
 payload models, and [`examples/cli/custom-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/custom-evaluator)
 for a complete working example (a stdlib-only token-overlap scorer plus a raw `litellm` judge, no
 DeepEval dependency at all).

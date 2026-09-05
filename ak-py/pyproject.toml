@@ -188,6 +188,9 @@ daytona = [
 kubernetes = [
     "kubernetes>=29.0.0",
 ]
+opik = [
+    "opik>=1.7.0",
+]
 
 [project.scripts]
 ak = "agentkernel.cli.ak:main"
