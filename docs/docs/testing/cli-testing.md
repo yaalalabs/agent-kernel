@@ -60,8 +60,10 @@ interface.
 
 ### Score Mode
 
-Deterministic, offline string-match scoring — no LLM call. The built-in evaluator (DeepEval)
-uses `Scorer.quasi_exact_match_score`, a normalised whole-string equality check:
+Deterministic, offline string-match scoring — no LLM call. Behavior depends on the configured
+evaluator: DeepEval (the default) uses `Scorer.quasi_exact_match_score`, a normalised whole-string
+equality check, while Opik uses its `LevenshteinRatio` metric, a graded fuzzy-similarity score. See
+"Built-in evaluators" below for how to switch:
 
 ```python
 from agentkernel.test import Test, Mode
@@ -83,18 +85,21 @@ Test.compare(
 )
 ```
 
-**Note:** The `expected` parameter is a list. The test passes if the actual response's normalised
-text exactly equals **any** of the expected values (score `1.0`); otherwise it scores `0.0` —
-there is no partial credit, so a verbose-but-correct response that merely contains the expected
-phrase does not match under score mode alone.
+**Note:** The `expected` parameter is a list. With the default DeepEval evaluator, the test passes
+if the actual response's normalised text exactly equals **any** of the expected values (score
+`1.0`); otherwise it scores `0.0` — there is no partial credit, so a verbose-but-correct response
+that merely contains the expected phrase does not match under score mode alone. With the Opik
+evaluator, `LevenshteinRatio` gives a graded score based on string similarity, so a close-but-not-
+exact match can still pass above `match_threshold` without partial credit being all-or-nothing.
 
 ### Llm Mode
 
-Uses LLM-as-judge evaluation for semantic similarity. The built-in evaluator (DeepEval) uses the
-`GEval` metric, judging whether the actual response conveys the same information as the expected
-answer. The rubric is written to give credit when `expected` is a short phrase or keyword embedded
-in a longer, otherwise-correct response — llm mode (and the llm fallback in `fallback` mode) is the
-intended way to match the verbose-but-correct case that score mode's exact match rejects:
+Uses LLM-as-judge evaluation for semantic similarity. Both built-in evaluators use a `GEval` metric
+here — DeepEval's `GEval` via an `LLMTestCase`, Opik's `GEval` via a single packed `output` string —
+judging whether the actual response conveys the same information as the expected answer. The rubric
+is written to give credit when `expected` is a short phrase or keyword embedded in a longer,
+otherwise-correct response — llm mode (and the llm fallback in `fallback` mode) is the intended way
+to match the verbose-but-correct case that score mode's exact match rejects:
 
 ```python
 # Initialize with llm mode
@@ -154,7 +159,7 @@ Set default mode via a `test-config.yaml` file (in the directory the tests run f
 ```yaml
 # test-config.yaml
 mode: llm  # Options: score, llm, fallback
-evaluator: deepeval  # Built-in short name, or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval  # Built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini
   provider: openai

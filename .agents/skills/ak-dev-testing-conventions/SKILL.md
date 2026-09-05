@@ -327,14 +327,14 @@ Configured via `test-config.yaml` — a separate, un-nested file resolved from t
 
 ```yaml
 mode: score    # score | llm | fallback (default: fallback)
-evaluator: deepeval   # built-in short name, or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval   # built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini
   provider: openai
 ```
 
-- **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `evaluate_by_score` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call)
-- **llm**: LLM-as-judge scoring via `evaluate_by_llm` — the built-in `DeepevalAKEvaluator` uses DeepEval's `GEval` metric against the expected answer(s) (ground truth). Evaluation backends are pluggable (`agentkernel.test.core.evaluator.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
+- **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `evaluate_by_score` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call); the built-in `OpikAKEvaluator` uses Opik's `LevenshteinRatio` instead (graded fuzzy-similarity, not exact-match)
+- **llm**: LLM-as-judge scoring via `evaluate_by_llm` — both built-ins use a `GEval` metric against the expected answer(s) (ground truth): `DeepevalAKEvaluator` via DeepEval's `GEval` and an `LLMTestCase`, `OpikAKEvaluator` via Opik's `GEval` and a single packed `output` string. Evaluation backends are pluggable (`agentkernel.test.core.evaluator.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
 - **fallback**: Tries score first, falls back to llm if score fails
 
 `evaluator` is resolved by `Test._resolve_evaluator` (`agentkernel/test/test.py`), the same

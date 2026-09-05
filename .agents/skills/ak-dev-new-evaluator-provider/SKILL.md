@@ -125,7 +125,7 @@ Add the short name to `_BUILTIN_EVALUATORS` and a branch in `Test._resolve_evalu
 in `ak-py/src/agentkernel/test/test.py`:
 
 ```python
-_BUILTIN_EVALUATORS = ["deepeval", "<provider>"]          # ADD THIS
+_BUILTIN_EVALUATORS = ["deepeval", "opik", "<provider>"]          # ADD THIS
 
 class Test:
     ...
@@ -135,6 +135,10 @@ class Test:
             with require_extra("test", "evaluator: deepeval"):
                 from .core.evaluator.deepeval import DeepevalAKEvaluator
             return DeepevalAKEvaluator
+        if configured == "opik":
+            with require_extra("opik", "evaluator: opik"):
+                from .core.evaluator.opik import OpikAKEvaluator
+            return OpikAKEvaluator
         if configured == "<provider>":                                        # ADD THIS
             with require_extra("<provider>", "evaluator: <provider>"):
                 from .core.evaluator.<provider> import <Provider>AKEvaluator
@@ -153,8 +157,9 @@ you want addressable by a short name.
 ### 3. Add Optional Dependencies
 
 Add a new extras group to `ak-py/pyproject.toml` for the provider's SDK — don't fold it into the
-existing `test` extra (that one stays DeepEval's, since it's the only built-in today and every test
-user already needs it for the framework itself):
+existing `test` extra (that one stays DeepEval's, since every test user already needs it for the
+framework itself). Follow the pattern of the `opik` extra, the first provider added on top of the
+original DeepEval-only `test` extra:
 
 ```toml
 [project.optional-dependencies]

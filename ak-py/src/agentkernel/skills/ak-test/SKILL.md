@@ -45,8 +45,8 @@ mode: score       # Options: score | llm | fallback (default: fallback)
 
 | Mode | How it Works | Best For |
 |------|-------------|----------|
-| **score** | Deterministic string-match scoring (DeepEval `Scorer.quasi_exact_match_score`) | Deterministic responses, exact answers |
-| **llm** | LLM evaluates if response is semantically correct (DeepEval `GEval`) | Open-ended responses, creative agents |
+| **score** | Deterministic string-match scoring (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: graded `LevenshteinRatio`) | Deterministic responses, exact answers |
+| **llm** | LLM evaluates if response is semantically correct (`GEval`, from either built-in evaluator) | Open-ended responses, creative agents |
 | **fallback** | Tries score first, falls back to llm if score fails | General-purpose testing |
 
 For llm mode, configure the llm model:
@@ -58,8 +58,14 @@ llm:
 ```
 
 **Evaluator backend:** `evaluator` selects the scoring backend used by both `score` and `llm`
-modes — `deepeval` (the default) is the only built-in. Set it to a dotted path (e.g.
-`my_evaluator.MyEvaluator`) to bring your own `AKEvaluator` subclass instead:
+modes — `deepeval` (the default, `pip install "agentkernel[test]"`) and `opik` (`pip install
+"agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally) are
+the two built-ins. Set it to a dotted path (e.g. `my_evaluator.MyEvaluator`) to bring your own
+`AKEvaluator` subclass instead:
+
+```yaml
+evaluator: opik   # switch to the other built-in
+```
 
 ```yaml
 mode: fallback
@@ -68,11 +74,12 @@ evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to
 
 #### 2a. Bring Your Own Evaluator (optional)
 
-Use this when the built-in `deepeval` evaluator's scoring doesn't fit your agent — e.g. you want
-graded partial credit instead of a binary exact-match score, a judge call that doesn't depend on
-DeepEval, or a domain-specific rubric. No AK core change is required: any dotted path to an
-`AKEvaluator` subclass works as the `evaluator:` value, resolved the same way sandbox providers and
-session stores resolve their own bring-your-own backends.
+Use this when neither built-in evaluator's scoring fits your agent — e.g. `deepeval`'s binary
+exact-match score mode is too strict and `opik`'s graded `LevenshteinRatio` still doesn't capture
+what you need, or you want a judge call that doesn't depend on DeepEval/Opik at all, or a
+domain-specific rubric. No AK core change is required: any dotted path to an `AKEvaluator` subclass
+works as the `evaluator:` value, resolved the same way sandbox providers and session stores resolve
+their own bring-your-own backends.
 
 1. Create a module next to your test file (e.g. `my_evaluator.py`) and subclass `AKEvaluator`,
    importing the interface from `agentkernel.test.core.evaluator`:
@@ -132,8 +139,8 @@ session stores resolve their own bring-your-own backends.
    ```
 
 5. No AK extra beyond `agentkernel[test]` is needed unless your evaluator's own dependencies
-   (an LLM client, a scoring library) require one — the built-in's `deepeval` import lives entirely
-   inside its own resolution branch, so a custom evaluator never pulls it in.
+   (an LLM client, a scoring library) require one — each built-in's import (`deepeval`, `opik`)
+   lives entirely inside its own resolution branch, so a custom evaluator never pulls either in.
 
 See `examples/cli/custom-evaluator/` for a complete worked example — a stdlib-only Jaccard
 token-overlap scorer plus a raw `litellm` judge call, no DeepEval dependency at all — and
