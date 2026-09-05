@@ -5,15 +5,12 @@ description = "Demo of the Agent Kernel sandbox capability with the ec2_ssm prov
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,openai,aws]>=0.8.1",
+    "agentkernel[cli,openai,aws]>=0.9.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.8.1",
-    # ragas imports langchain_community.chat_models.vertexai, removed in langchain-community
-    # 0.4.2; pinned until an agentkernel release ships the pin in its `test` extra.
-    "langchain-community==0.4.1",
+    "agentkernel[test]>=0.9.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

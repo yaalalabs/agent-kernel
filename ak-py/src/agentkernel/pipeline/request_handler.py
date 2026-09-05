@@ -297,9 +297,13 @@ class RequestHandler(RestHandler):
                 if chunk is None:
                     return
                 yield f"data: {json.dumps(chunk)}\n\n"
-        except TimeoutError as e:
-            # The store's own timeout text: contains only the request_id and the wait budget.
-            error_chunk = {"error": str(e), "done": True, "session_id": session_id}
+        except TimeoutError:
+            # Fixed text rather than str(e) (CodeQL py/stack-trace-exposure): the in-memory store's
+            # timeout names only the request_id and the wait budget, but a shared store's driver can
+            # raise TimeoutError carrying internal detail (endpoint, driver state). The exception
+            # itself only goes to the log.
+            self._log.warning(f"SSE stream timed out for request_id={request_id}", exc_info=True)
+            error_chunk = {"error": "Stream timed out", "done": True, "session_id": session_id}
             yield f"data: {json.dumps(error_chunk)}\n\n"
         except Exception:
             # Never surface internal exception details to the client; the traceback goes to the log.

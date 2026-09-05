@@ -125,6 +125,23 @@ for the mechanism and the
 [chart README](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s)
 for the values.
 
+## Sandbox Worker Tier
+
+Enabling `sandboxWorker` adds the sandbox broker worker: it consumes sandbox execution
+requests from the sandbox queues (same transport, its own queue names), runs them through a
+sandbox provider (typically `kubernetes` pods with a read-only ServiceAccount as the security
+boundary), and returns completions over the sandbox output queue into the shared response
+store. The tier ships with its own ServiceAccount and RBAC, KEDA scaling on the sandbox input
+backlog, and values-gated namespace hardening (Pod Security Admission, default-deny egress,
+quotas).
+
+The tier also installs **standalone**: when the rest of Agent Kernel runs outside the cluster
+(Lambda mode, ECS), disable `ioHandler` and `agentRunner` and this chart deploys only the
+sandbox worker; the agent side and the worker then meet solely on the shared sandbox queues
+and response store. See the
+[chart README's sandbox worker section](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s)
+for the values and the agent-side mirror configuration.
+
 ## Autoscaling
 
 The `agent-runner` tier scales on queue depth via KEDA (Kafka consumer lag, NATS JetStream

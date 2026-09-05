@@ -121,6 +121,10 @@ class ExecutionManager:
                 if completion is not None:
                     task.status = completion.status
                     task.consumed = data.get("consumed", False)
+                    # Captured NOW, before discard(): in-process flavors retain the completion
+                    # only until it is consumed, and the wait-then-check recovery contract must
+                    # deliver the result, not just the status.
+                    task.result_summary = self._summarize_completion(completion)
                     reg["tasks"][task_id] = task.model_dump()
                     self._save_nv_registry(reg)
                     # Persist the completed run's updated session handle (its newly created
@@ -139,8 +143,28 @@ class ExecutionManager:
                 profile=completion.sandbox_session.profile,
                 status=completion.status,
                 submitted_at=time.time(),
+                result_summary=self._summarize_completion(completion),
             )
         return None
+
+    def _summarize_completion(self, completion: ExecutionCompletion) -> dict:
+        """The bounded terminal outcome stored on a task (stdout/stderr tails at
+        ``tool_output_max_chars``, exit code, error, notice), so ``check_sandbox_task`` can
+        surface the result after the broker's own copy of the completion is gone."""
+        limit = self._config.tool_output_max_chars
+        summary: dict = {}
+        if completion.error:
+            summary["error"] = completion.error
+        result = completion.result
+        if result is not None:
+            summary["exit_code"] = result.exit_code
+            if result.stdout:
+                summary["stdout"] = result.stdout[:limit]
+            if result.stderr:
+                summary["stderr"] = result.stderr[:limit]
+            if result.notice:
+                summary["notice"] = result.notice
+        return summary
 
     def ingest_completion(self, completion: ExecutionCompletion) -> Optional[SandboxTask]:
         """Consume a task-completion event (called by ``SandboxPreHook`` under the session lock).

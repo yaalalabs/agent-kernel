@@ -24,7 +24,11 @@ flowchart TB
     subgraph BROKER["Broker transport (sandbox.broker.flavor)"]
         EMB["EmbeddedBroker<br/>inline, always synchronous"]
         THR["ThreadBroker (default)<br/>daemon thread + private event loop"]
-        SQS["Remote flavor, e.g. sqs (planned)<br/>queue to a remote worker"]
+        QB["QueueExecutionBroker (queue)<br/>submits over sandbox.broker.queue,<br/>polls the shared response_store"]
+    end
+
+    subgraph RWORKER["QueueBrokerWorker (separate process/fleet)"]
+        RCORE["BrokerWorkerCore<br/>same engine, run out-of-process"]
     end
 
     subgraph WORKER["Execution engine"]
@@ -35,6 +39,7 @@ flowchart TB
     subgraph PROV["Providers (profile.type)"]
         LSP["local_subprocess<br/>isolation: none"]
         DKR["docker<br/>isolation: container"]
+        K8S["kubernetes<br/>isolation: container (pod per sandbox)"]
         BYO["Bring-your-own<br/>dotted path to SandboxProvider"]
     end
 
@@ -44,13 +49,15 @@ flowchart TB
     MGR <--> REG
     MGR -- "ExecutionRequest" --> EMB
     MGR -- "ExecutionRequest" --> THR
-    MGR -. "ExecutionRequest over queue" .-> SQS
+    MGR -- "ExecutionRequest" --> QB
+    QB -. "input/output queue + response_store" .-> RCORE
     EMB --> CORE
     THR --> CORE
-    SQS -.-> CORE
+    RCORE --> PF
     CORE --> PF
     PF --> LSP
     PF --> DKR
+    PF --> K8S
     PF --> BYO
 ```
 
@@ -118,11 +125,13 @@ classDiagram
     }
     class LocalSubprocessSandbox
     class DockerSandbox
+    class KubernetesSandbox
     class E2BSandbox
     class DaytonaSandbox
     class EC2SSMEnvironment
     class LocalSubprocessSandboxProvider
     class DockerSandboxProvider
+    class KubernetesSandboxProvider
     class E2BSandboxProvider
     class DaytonaSandboxProvider
     class EC2SSMSandboxProvider
@@ -135,12 +144,14 @@ classDiagram
 
     Sandbox <|-- LocalSubprocessSandbox
     Sandbox <|-- DockerSandbox
+    Sandbox <|-- KubernetesSandbox
     Sandbox <|-- E2BSandbox
     Sandbox <|-- DaytonaSandbox
     Sandbox <|-- AttachedEnvironment
     AttachedEnvironment <|-- EC2SSMEnvironment
     SandboxProvider <|-- LocalSubprocessSandboxProvider
     SandboxProvider <|-- DockerSandboxProvider
+    SandboxProvider <|-- KubernetesSandboxProvider
     SandboxProvider <|-- E2BSandboxProvider
     SandboxProvider <|-- DaytonaSandboxProvider
     SandboxProvider <|-- AttachedEnvironmentProvider
@@ -199,6 +210,11 @@ classDiagram
         -_thread Thread
         -_queue Queue
     }
+    class QueueExecutionBroker {
+        -_transport QueueTransport
+        -_store ResponseStore
+        +submit(request, wait) submits to broker.queue, polls response_store
+    }
     class BrokerWorkerCore {
         -_locks dict per sandbox_session_id
         +run(request) result and session
@@ -227,6 +243,7 @@ classDiagram
 
     ExecutionBroker <|-- EmbeddedBroker
     ExecutionBroker <|-- ThreadBroker
+    ExecutionBroker <|-- QueueExecutionBroker
     PrincipalResolver <|-- AgentPrincipalResolver
     ExecutionManager --> ExecutionBroker : submit / result / discard
     ExecutionManager --> PrincipalResolver : resolve identity
@@ -243,6 +260,8 @@ Two enforcement gates run inside `BrokerWorkerCore.run()` before any provider ca
 
 - **Principal:** a profile demanding `identity.mode: user` requires a provider declaring `principal_user` *and* a resolver that actually produced a user principal; otherwise the request is rejected.
 - **Policy:** every non-default policy dimension (network, filesystem, cpu/memory) is checked against the provider's declared `policy_*` capabilities; unenforceable under `strict: true` raises `SandboxPolicyError`. See [Policy and permissions](../advanced/sandbox.md#policy-and-permissions) for the user-facing semantics.
+
+`QueueExecutionBroker` is the one flavor that does **not** run `BrokerWorkerCore` in the agent process: `submit()` serializes the `ExecutionRequest` with `BrokerWireCodec` and sends it over the `sandbox.broker.queue` input queue (`group_id = sandbox_session_id` keeps one execution in flight per session across the whole worker fleet), then polls the shared `response_store` for the bounded wait. A separate `QueueBrokerWorker` process consumes the input queue, runs the exact same `BrokerWorkerCore.run()`, and delivers the `ExecutionCompletion` to the output queue and `response_store` — see the [Queue-mode guide](../advanced/queue-mode-guide.md) and the `queue` flavor section of the [Sandbox guide](../advanced/sandbox.md#broker-flavors) for the wire contract, transport/store pairing rules, and the `sandbox/broker-kafka` and `sandbox/broker-nats` examples.
 
 ## Data and wire models
 
@@ -269,6 +288,7 @@ classDiagram
         +result SandboxResult
         +result_ref dict when offloaded
         +error str
+        +error_type str SandboxError subclass name, for typed re-raise
         +sandbox_session SandboxSession
     }
     class SandboxPrincipal {
@@ -488,5 +508,8 @@ All paths are under `ak-py/src/agentkernel/`.
 | `sandbox/broker/base.py` | `ExecutionBroker` ABC, `ExecutionRequest`, `ExecutionCompletion`, `BoundedCompletionStore` |
 | `sandbox/broker/worker.py` | `BrokerWorkerCore`, the flavor-independent execution engine |
 | `sandbox/broker/embedded.py`, `thread.py` | The two in-process broker flavors |
-| `sandbox/providers/` | `local_subprocess.py` and `docker.py` reference providers |
+| `sandbox/broker/queue.py` | `QueueExecutionBroker`, the agent-side client for the `queue` flavor |
+| `sandbox/broker/queue_worker.py` | `QueueBrokerWorker`, the out-of-process worker that runs `BrokerWorkerCore` against the input/output queues |
+| `sandbox/broker/wire.py` | `BrokerWireCodec`, the wire (de)serialization contract shared by the client and worker |
+| `sandbox/providers/` | `local_subprocess.py`, `docker.py`, and `kubernetes.py` reference providers |
 | `sandbox/testing.py` | Public `SandboxProviderContract` test suite for new providers |

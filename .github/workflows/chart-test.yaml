@@ -78,6 +78,17 @@ jobs:
           helm template smoke "$CHART_DIR" \
             --set transport.type=kafka --set kafka.enabled=true --set nats.enabled=false \
             --set keda.enabled=true > /dev/null
+          echo "--- sandbox worker tier"
+          helm template smoke "$CHART_DIR" \
+            --set sandboxWorker.enabled=true --set sandboxWorker.hardening.enabled=true \
+            --set sandboxWorker.sandboxPods.namespace=ak-sandboxes --set keda.enabled=true > /dev/null
+          echo "--- standalone sandbox worker (agents outside the cluster)"
+          helm template smoke "$CHART_DIR" \
+            --set sandboxWorker.enabled=true --set ioHandler.enabled=false \
+            --set agentRunner.enabled=false --set nats.enabled=false --set valkey.enabled=false \
+            --set transport.type=kafka --set transport.kafka.bootstrapServers=kafka.shared:9092 \
+            --set responseStore.type=redis --set responseStore.url=redis://shared:6379 \
+            --set session.type=redis --set session.url=redis://shared:6379 > /dev/null
 
   kind-smoke:
     needs: lint

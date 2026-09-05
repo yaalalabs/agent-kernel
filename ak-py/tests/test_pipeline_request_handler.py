@@ -389,3 +389,34 @@ class TestEnqueueSeam:
         handler._enqueue_request(BaseRunRequest(prompt="hi", session_id="s1"), "r1")
 
         assert len(injected.create_consumer(QueueName.INPUT).fetch(1, 0.5)) == 1
+
+
+class TestStreamErrorFrames:
+    """SSE error frames are handler-owned text: a store/driver exception must never reach the client
+    (CodeQL py/stack-trace-exposure), only the log."""
+
+    BACKEND_DETAIL = "redis://cache.internal:6379 read timed out after 5.0s (pool=3, db=0)"
+
+    def _frames(self, monkeypatch, exception):
+        _configure(monkeypatch, mode="stream")
+
+        def _raise(self, request_id, chunk_timeout=None):
+            raise exception
+            yield  # pragma: no cover - keeps _raise a generator function
+
+        monkeypatch.setattr(InMemoryResponseStore, "stream", _raise)
+        with _client().stream("POST", CHAT, json={"prompt": "hi", "session_id": "s1"}) as response:
+            assert response.status_code == 200
+            return [json.loads(line[len("data: ") :]) for line in response.iter_lines() if line.startswith("data: ")]
+
+    def test_timeout_frame_omits_the_backend_exception_text(self, monkeypatch):
+        frames = self._frames(monkeypatch, TimeoutError(self.BACKEND_DETAIL))
+
+        assert frames == [{"error": "Stream timed out", "done": True, "session_id": "s1"}]
+        assert "cache.internal" not in json.dumps(frames)
+
+    def test_failure_frame_omits_the_backend_exception_text(self, monkeypatch):
+        frames = self._frames(monkeypatch, RuntimeError(self.BACKEND_DETAIL))
+
+        assert frames == [{"error": "Stream delivery failed", "done": True, "session_id": "s1"}]
+        assert "cache.internal" not in json.dumps(frames)

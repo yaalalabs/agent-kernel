@@ -1,16 +1,17 @@
 [project]
 name = "api-mcp-multi"
 version = "0.1.0"
-description = "Demo of CrewAI and OpenAI Agents SDK based agents running in Agent Kernel with an API exposed via MCP tools"
+description = "Demo of Smolagents and OpenAI Agents SDK based agents running in Agent Kernel with an API exposed via MCP tools"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[api,crewai,openai,mcp]>=0.8.1",
+    "agentkernel[api,smolagents,openai,mcp]>=0.9.0",
+    "smolagents",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.8.1",
+    "agentkernel[test,smolagents]>=0.9.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

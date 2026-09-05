@@ -23,12 +23,23 @@ where the queues are durable SQS FIFO queues.
 Queue mode decouples the HTTP request from the agent processing by placing a queue between the
 caller and the Agent Runner. This gives you:
 
+- **Independent scaling**: the request/response path and the Agent Runner pool scale separately,
+  instead of being sized as one unit for whichever workload is heavier.
 - **Backpressure control**: the queue absorbs burst traffic.
 - **Ordered processing per session**: the message group (`session_id`) keeps chat turns in order
-  while different sessions run in parallel.
-- **Automatic retries**: unacknowledged messages are redelivered, up to `max_receive_count`;
-  after that a permanent-failure error is delivered so the caller never hangs.
-- **Deduplication**: a per-request deduplication ID prevents the same message being processed twice.
+  while different sessions run fully in parallel.
+- **Crash resilience**: a message is only removed from the queue once fully processed, so a
+  worker crashing, restarting, or hanging mid-turn leaves the turn on the queue for another worker.
+- **Automatic retries**: unacknowledged messages are redelivered, up to `max_receive_count`,
+  absorbing provider rate limits and transient upstream failures without the caller having to
+  notice or retry; after that a permanent-failure error is delivered so the caller never hangs.
+- **Capped provider concurrency**: how hard the model provider gets hit is set by the number of
+  consumers draining the queue, not by request arrival rate: a spike lengthens the queue instead
+  of fanning out into simultaneous provider calls.
+- **Deduplication**: a per-request deduplication ID prevents the same request being enqueued twice
+  and the same reply being delivered twice, so caller retries are safe. (This covers duplicate
+  *enqueues*, not redelivery: a message redelivered after a processed-but-unacknowledged failure is
+  re-run by the Agent Runner, which re-appends that turn to session history.)
 
 The queue transport is pluggable via `execution.queues.type`, which is mandatory once an
 `execution.queues` block is declared — the transport decides the deployment topology, so it is
@@ -57,6 +68,14 @@ Recording is split across the queue — the user message is recorded before the 
 and the Agent Runner appends the reply — so both processes need the same `thread` configuration.
 `AgentThreadRequestHandler` remains the direct-execution handler and does not belong in a pipeline
 topology.
+:::
+
+:::note
+The **sandbox queue broker** (`sandbox.broker.flavor: queue`) rides these same transports
+with its own queue configuration: `sandbox.broker.queue` reuses the `execution.queues`
+shape, and sandbox executions travel a separate input/output queue pair to a
+`QueueBrokerWorker`, independent of the chat pipeline described here. See the
+[Sandbox guide's queue flavor section](./sandbox#the-queue-flavor).
 :::
 
 ---

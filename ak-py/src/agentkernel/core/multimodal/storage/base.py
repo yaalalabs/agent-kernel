@@ -17,7 +17,16 @@ DEFAULT_MAX_ATTACHMENTS = 20
 
 @dataclass
 class AttachmentData:
-    """Full attachment data including the base64 encoded content."""
+    """
+    Full attachment data: either the base64 content, or the address of a remote attachment.
+
+    `url` is what separates the two. A remote reference (`http://`, `https://`, `s3://`, or a
+    `data:` URI that is not base64) is recorded here so a conversation thread has one uniform
+    record per attachment, but its bytes are never fetched — that is the framework adapter's job,
+    deliberately, so no system pre-hook makes outbound network calls. Such a record carries an
+    empty `data`, and any reader wanting bytes must check `url` first rather than trusting `data`
+    to hold base64.
+    """
 
     id: str
     type: str
@@ -26,6 +35,7 @@ class AttachmentData:
     mime_type: str
     description: str
     timestamp: float
+    url: Optional[str] = None
 
 
 class AttachmentStore(ABC):

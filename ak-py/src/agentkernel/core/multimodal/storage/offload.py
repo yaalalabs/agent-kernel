@@ -14,6 +14,7 @@ from typing import List, Tuple
 
 from ...config import AKConfig
 from ...model import AgentRequest, AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage
+from ..source import AttachmentSource
 
 _log = logging.getLogger("ak.multimodal.offload")
 
@@ -42,6 +43,11 @@ def offload_attachments(
     """Save each image/file request's bytes and replace it, in place, with a reference.
 
     Requests that carry no attachment bytes pass through unchanged and keep their order.
+
+    ``AttachmentSource`` decides what each attachment's record holds and whether its request
+    survives: base64 data is stored as bytes and its request replaced by a reference, while a
+    remote reference (``http://``, ``https://``, ``s3://``, or a non-base64 ``data:`` URI) is
+    stored as a url and its request travels on untouched for the adapter to resolve.
     Attachments saved here are exempt from the store's ``max_attachments`` eviction: they are
     part of a request that has not run yet, so evicting one would lose the user's input.
 
@@ -74,21 +80,23 @@ def offload_attachments(
     rebuilt: List[AgentRequest] = []
     stored: List[StoredAttachment] = []
     for req in requests:
-        if isinstance(req, AgentRequestImage) and req.image_data:
-            data, att_type, name, mime_type = req.image_data, "image", req.name, req.mime_type or "image/jpeg"
-        elif isinstance(req, AgentRequestFile) and req.file_data:
-            data, att_type, name, mime_type = req.file_data, "file", req.name, req.mime_type or "application/octet-stream"
-        else:
+        extracted = AttachmentSource.extract(req)
+        if extracted is None:
             rebuilt.append(req)
             continue
+        is_reference = not extracted.is_base64
         attachment_id = manager.save_attachment(
-            data=data,
-            attachment_type=att_type,
-            name=name,
-            mime_type=mime_type,
+            data="" if is_reference else extracted.data,
+            attachment_type=extracted.att_type,
+            name=extracted.name,
+            mime_type=extracted.mime_type,
             max_attachments=sys.maxsize,
+            url=extracted.data if is_reference else None,
         )
-        stored.append(StoredAttachment(attachment_id=attachment_id, name=name, mime_type=mime_type))
-        rebuilt.append(AgentRequestAttachmentRef(attachment_id=attachment_id))
-        _log.debug(f"Stored attachment {attachment_id} ({name}) for session {session_id}")
+        stored.append(StoredAttachment(attachment_id=attachment_id, name=extracted.name, mime_type=extracted.mime_type))
+        # A remote reference must not become an AgentRequestAttachmentRef: MultimodalPreHook
+        # strips every ref before the agent runs, so the attachment would reach the agent as
+        # nothing at all. It travels on untouched and the adapter resolves it.
+        rebuilt.append(req if is_reference else AgentRequestAttachmentRef(attachment_id=attachment_id))
+        _log.debug(f"Stored attachment {attachment_id} ({extracted.name}) for session {session_id}")
     return rebuilt, stored

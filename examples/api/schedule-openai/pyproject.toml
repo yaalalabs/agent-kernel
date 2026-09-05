@@ -8,12 +8,12 @@ dependencies = [
     # 'cron' pulls in croniter for cron-expression schedules; config.yaml's
     # `schedule.provider.type: local` and `schedule.store.type: in_memory` are
     # in-process implementations.
-    "agentkernel[openai,api,cron]>=0.8.1",
+    "agentkernel[openai,api,cron]>=0.9.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.8.1",
+    "agentkernel[test]>=0.9.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

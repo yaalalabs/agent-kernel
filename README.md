@@ -118,7 +118,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 Let agents run code and shell commands in an isolated, permission-bounded environment — the platform handles it, your agent code stays clean.
 
 - **Enable it in config** — agents automatically gain code/command/file tools and the usage guidance is injected into their prompt.
-- **Pluggable providers** — `local_subprocess` (dev), `docker` (container-isolated), `e2b` (managed micro-VMs), `daytona` (cloud containers), and `ec2_ssm` (attach to an existing EC2 instance) today, with `kubernetes` and other cloud-native backends planned; bring your own via a dotted path.
+- **Pluggable providers** — `local_subprocess` (dev), `docker` (container-isolated), `kubernetes` (pod per sandbox, RBAC as the boundary), `e2b` (managed micro-VMs), `daytona` (cloud containers), and `ec2_ssm` (attach to an existing EC2 instance); bring your own via a dotted path.
 - **Workload profiles** — per-call, per-session, or shared lifetimes; each with its own permission policy (network egress, filesystem, CPU/memory, timeout) enforced fail-closed.
 - **Per-user identity** — run sandboxed code under the invoking user's identity, not one shared agent identity, via a pluggable principal resolver.
 
@@ -195,7 +195,7 @@ ak skill install
 | `ak-add-capabilities` | Wire in guardrails, tracing, sessions, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, sandbox, scheduled tasks |
 | `ak-add-integration` | Slack, WhatsApp, Messenger, Instagram, Telegram, Gmail |
 | `ak-cloud-deploy` | AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run with full Terraform |
-| `ak-test` | Fuzzy, judge, and fallback test modes + a debugging playbook |
+| `ak-test` | Score, llm, and fallback test modes (pluggable evaluators) + a debugging playbook |
 
 See the [`use-cases/`](use-cases/) directory for complete end-to-end examples built using these skills — each starting from a `SPEC.md` and generating a fully deployed agent.
 
@@ -207,7 +207,7 @@ See the [`use-cases/`](use-cases/) directory for complete end-to-end examples bu
 pytest tests/
 ```
 
-Built-in fuzzy, semantic, and fallback comparison modes. CI/CD ready. Test agent behavior, not just code.
+Built-in score, llm, and fallback comparison modes, backed by a pluggable evaluator (DeepEval by default, or bring your own). CI/CD ready. Test agent behavior, not just code.
 
 ---
 

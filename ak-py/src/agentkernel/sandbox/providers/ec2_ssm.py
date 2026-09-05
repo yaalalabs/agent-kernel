@@ -44,6 +44,7 @@ logger = logging.getLogger("ak.sandbox.provider")
 _HEREDOC_DELIMITER = "AK_SANDBOX_EOF"
 _POLL_INTERVAL = 1.0  # seconds between get_command_invocation polls
 _PENDING_STATUSES = {"Pending", "InProgress", "Delayed"}
+_MISSING_INVOCATION = "InvocationDoesNotExist"
 # STS RoleSessionName allows [\w+=,.@-] and 2-64 chars; anything else is replaced.
 _ROLE_SESSION_INVALID = re.compile(r"[^\w+=,.@-]")
 
@@ -120,7 +121,13 @@ class EC2SSMEnvironment(AttachedEnvironment):
     async def _poll(self, command_id: str) -> dict:
         """Poll ``get_command_invocation`` until the command reaches a terminal status."""
         while True:
-            invocation = await asyncio.to_thread(self._ssm.get_command_invocation, CommandId=command_id, InstanceId=self.id)
+            try:
+                invocation = await asyncio.to_thread(self._ssm.get_command_invocation, CommandId=command_id, InstanceId=self.id)
+            except Exception as exc:  # noqa: BLE001 — boto3 error type varies; classified by code below
+                if not _is_missing_invocation(exc):
+                    raise
+                await asyncio.sleep(_POLL_INTERVAL)
+                continue
             if invocation.get("Status") not in _PENDING_STATUSES:
                 return invocation
             await asyncio.sleep(_POLL_INTERVAL)
@@ -131,6 +138,12 @@ class EC2SSMEnvironment(AttachedEnvironment):
             await asyncio.to_thread(self._ssm.cancel_command, CommandId=command_id)
         except Exception as exc:  # noqa: BLE001 — the cancel is best-effort by contract
             logger.warning("Best-effort cancel of SSM command %s failed: %s", command_id, exc)
+
+
+def _is_missing_invocation(exc: Exception) -> bool:
+    """True when SSM has accepted the command but not yet registered its invocation."""
+    error_code = getattr(exc, "response", {}).get("Error", {}).get("Code", "")
+    return error_code == _MISSING_INVOCATION or exc.__class__.__name__ == _MISSING_INVOCATION
 
 
 def _map_instance_error(exc: Exception, instance_id: str) -> Exception:

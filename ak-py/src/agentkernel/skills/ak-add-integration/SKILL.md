@@ -49,7 +49,7 @@ Which messaging platform would you like to integrate?
 Add `slack` to the extras:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,slack]>=0.8.1",
+    "agentkernel[openai,api,slack]>=0.9.0",
 ]
 ```
 
@@ -95,7 +95,7 @@ export SLACK_SIGNING_SECRET="..."          # App signing secret
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,whatsapp]>=0.8.1",
+    "agentkernel[openai,api,whatsapp]>=0.9.0",
 ]
 ```
 
@@ -142,7 +142,7 @@ export AK_WHATSAPP__APP_SECRET="..."           # App secret for signature verifi
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,messenger]>=0.8.1",
+    "agentkernel[openai,api,messenger]>=0.9.0",
 ]
 ```
 
@@ -186,7 +186,7 @@ export AK_MESSENGER__APP_SECRET="..."
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,instagram]>=0.8.1",
+    "agentkernel[openai,api,instagram]>=0.9.0",
 ]
 ```
 
@@ -224,7 +224,7 @@ export AK_INSTAGRAM__INSTAGRAM_ACCOUNT_ID="..."
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,telegram]>=0.8.1",
+    "agentkernel[openai,api,telegram]>=0.9.0",
 ]
 ```
 
@@ -266,7 +266,7 @@ export AK_TELEGRAM__WEBHOOK_SECRET="..."       # Your webhook secret
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gmail]>=0.8.1",
+    "agentkernel[openai,api,gmail]>=0.9.0",
 ]
 ```
 
@@ -305,7 +305,7 @@ if __name__ == "__main__":
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,teams]>=0.8.1",
+    "agentkernel[openai,api,teams]>=0.9.0",
 ]
 ```
 
@@ -371,7 +371,7 @@ if __name__ == "__main__":
 Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,slack,whatsapp,telegram]>=0.8.1",
+    "agentkernel[openai,api,slack,whatsapp,telegram]>=0.9.0",
 ]
 ```
 

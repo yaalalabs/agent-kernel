@@ -1,3 +1,4 @@
+{{- if .Values.ioHandler.enabled }}
 {{/*
 ClusterIP in front of the io tier: the backend for the Gateway API route (or the LB fallback)
 and the in-cluster REST address.
@@ -17,6 +18,7 @@ spec:
       protocol: TCP
   selector:
     {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "io-handler") | nindent 4 }}
+{{- end }}
 {{- if .Values.wsGateway.enabled }}
 ---
 {{/*

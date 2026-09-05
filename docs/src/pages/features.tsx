@@ -874,6 +874,7 @@ function CoreFeatures() {
         "Azure Container Apps (Containerized)",
         "GCP Cloud Run (Serverless)",
         "GCP Cloud Run (Containerized)",
+        "Queue-backed scaling: ingress and agent execution scale independently",
       ],
       link: "/docs/deployment/overview",
     },

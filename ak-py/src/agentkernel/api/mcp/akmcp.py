@@ -52,17 +52,14 @@ class MCP:
     @classmethod
     def get_http_app(cls) -> StarletteWithLifespan:
         cls._build()
-        return cls._fastmcp.http_app(path="/")
+        return cls._fastmcp.http_app(path="/", stateless_http=AKConfig.get().mcp.stateless_http)
 
     @classmethod
     def _build(cls):
         if cls._built or not AKConfig.get().mcp.enabled:
             return
         if cls._fastmcp is None:
-            cls._fastmcp = FastMCP(
-                "Agent Kernel FastMCP Instance",
-                stateless_http=AKConfig.get().mcp.stateless_http,
-            )
+            cls._fastmcp = FastMCP("Agent Kernel FastMCP Instance")
         if AKConfig.get().mcp.expose_agents:
             agents: dict[str, Agent] = Runtime.current().agents()
             for name, agent in agents.items():
