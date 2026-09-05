@@ -11,4 +11,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .instagram_chat import AgentInstagramRequestHandler
+from .adapter import InstagramInboundAdapter, InstagramOutboundAdapter

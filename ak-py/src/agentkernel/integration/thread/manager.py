@@ -7,13 +7,12 @@ agent runs. A single shared instance is used by ChatService and ThreadRouter.
 """
 
 import logging
-import sys
 from threading import RLock
 from typing import List, Optional
 
 from ...core.config import AKConfig
-from ...core.model import AgentRequest, AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage
-from ...core.multimodal.source import AttachmentSource
+from ...core.model import AgentRequest
+from ...core.multimodal.storage.offload import offload_attachments
 from ...core.util.pagination import clamp_limit, decode_cursor, encode_cursor
 from .model import MessagePage, Thread, ThreadAttachment, ThreadMessage, ThreadPage
 from .naming import ThreadNamingStrategy
@@ -166,48 +165,21 @@ class ConversationThreadManager:
         :raises ValueError: If the requests carry attachments while multimodal is disabled, or
                             multimodal.storage_type is session_cache (thread mode needs a shared store).
         """
-        if not AKConfig.get().multimodal.enabled:
-            if any(
-                (isinstance(req, AgentRequestImage) and req.image_data) or (isinstance(req, AgentRequestFile) and req.file_data) for req in requests
-            ):
-                raise ValueError(
-                    "Attachments are not supported when thread support is enabled without multimodal support — "
-                    "set multimodal.enabled: true in config.yaml to accept images and files"
-                )
-            return requests, []
-        if AKConfig.get().multimodal.storage_type == "session_cache":
-            # This runs outside the session context, so session_cache writes land in a
+        rebuilt, stored = offload_attachments(
+            session_id,
+            requests,
+            attachments_disabled_error=(
+                "Attachments are not supported when thread support is enabled without multimodal support — "
+                "set multimodal.enabled: true in config.yaml to accept images and files"
+            ),
+            # session_cache runs outside the session context here, so its writes land in a
             # session copy that distributed session stores never persist — silent loss.
-            raise ValueError(
+            session_cache_error=(
                 "multimodal.storage_type 'session_cache' is not supported when thread support is enabled — "
                 "use a shared attachment store (in_memory, redis, or dynamodb) in config.yaml"
-            )
-
-        from ...core.multimodal.storage import AttachmentStorageManager
-
-        manager = AttachmentStorageManager(session_id=session_id)
-        rebuilt: List[AgentRequest] = []
-        references: List[ThreadAttachment] = []
-        for req in requests:
-            extracted = AttachmentSource.extract(req)
-            if extracted is None:
-                rebuilt.append(req)
-                continue
-            is_reference = not extracted.is_base64
-            attachment_id = manager.save_attachment(
-                data="" if is_reference else extracted.data,
-                attachment_type=extracted.att_type,
-                name=extracted.name,
-                mime_type=extracted.mime_type,
-                max_attachments=sys.maxsize,  # thread attachments are exempt from eviction
-                url=extracted.data if is_reference else None,
-            )
-            references.append(ThreadAttachment(attachment_id=attachment_id, name=extracted.name, mime_type=extracted.mime_type))
-            if is_reference:
-                rebuilt.append(req)
-            else:
-                rebuilt.append(AgentRequestAttachmentRef(attachment_id=attachment_id))
-            self._log.debug(f"Stored thread attachment {attachment_id} ({extracted.name}) for session {session_id}")
+            ),
+        )
+        references = [ThreadAttachment(attachment_id=a.attachment_id, name=a.name, mime_type=a.mime_type) for a in stored]
         return rebuilt, references
 
     def get_thread(self, session_id: str, user_id: Optional[str] = None) -> Optional[Thread]:

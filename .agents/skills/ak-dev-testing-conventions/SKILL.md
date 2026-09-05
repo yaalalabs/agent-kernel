@@ -70,10 +70,13 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_api_mcp.py` | `MCP.get_http_app()`: `mcp.stateless_http` is passed to `http_app()` (fastmcp 3 removed the `FastMCP(stateless_http=...)` constructor kwarg, so the constructor must stay name-only), and a second call reuses the built server while still applying the configured mode |
 | `test_chat_service_core.py` | ChatService execution core (`execute`/`execute_stream`): typed replies, prebuilt request lists, validation, error propagation, wrapper wire shapes |
 | `test_chat_service_streaming.py` | ChatService SSE/stream chunk formatting |
-| `test_slack_integration.py` | Slack handler on the ChatService core: request/identity mapping, attachment-only, error paths, chunking (pattern for integration handler tests) |
+| `test_integration_adapter_contract.py` | `IntegrationAdapterContract` subclassed once per built-in messaging adapter: identifier resolution, ignorable deliveries, reply-context budget, queue round trip (start here for a new platform) |
+| `test_slack_integration.py` | Slack adapter: event -> `InboundRequest` and reply -> Slack messages, plus Bolt's signed dispatch through the webhook host (pattern for per-platform adapter tests) |
+| `test_integration_roundtrip.py` | A platform event through the whole `in_memory` topology to a recording outbound adapter |
 | `test_whatsapp_integration.py` | WhatsApp handler on the ChatService core: text/media paths, rejections before execute |
 | `test_gmail_integration.py` | Gmail handler on the ChatService core: prompt assembly, session fallback, attachments, error paths |
 | `test_thread_integration.py` | Thread integration: `ThreadRecorder` ordering/enforcement, `AgentThreadRequestHandler` recording + no-phantom-thread prechecks, stream accumulation, end-to-end read-back |
+| `test_thread_pipeline_recording.py` | Thread recording split across the queue: `ThreadRequestHandler` marking the message and committing the user message (and offloading attachments) before enqueue, its rejections leaving no phantom thread, deferred requests staying unmarked, `AgentRunner`/`StreamAgentRunner` appending the reply only for a marked message and only after the output send, a thread-store failure never retrying the run, `IOHandler.run(request_handler=...)` replacing rather than joining the chat route, and the end-to-end read-back |
 | `test_thread_router.py` | Thread read routes (`ThreadRESTRequestHandler`): pagination, `Authoriser` 401/403 semantics |
 | `test_authoriser_shared.py` | Shared `Authoriser` in `agentkernel.auth`: package-export identity, guard that the thread package no longer exposes it, `AuthValidatorAuthoriser` adapter, `AuthorisedRESTRequestHandler` inheritance |
 | `test_akagentrunner_stream.py` | Serverless `ServerlessStreamAgentRunner` (SQS streaming) |

@@ -2,7 +2,7 @@
 
 Instagram Business Messaging integration for Agent Kernel using **Instagram API with Business Login for Instagram** (without Facebook Login).
 
-The `AgentInstagramRequestHandler` class handles conversations with agents via Instagram Messaging API webhooks. This integration uses the Instagram Graph API (`graph.instagram.com`) directly, allowing Professional accounts to connect without requiring a Facebook Page.
+The `InstagramInboundAdapter` class handles conversations with agents via Instagram Messaging API webhooks. This integration uses the Instagram Graph API (`graph.instagram.com`) directly, allowing Professional accounts to connect without requiring a Facebook Page.
 
 ## How It Works
 
@@ -88,8 +88,9 @@ instagram:
 ## Basic Usage
 
 ```python
-from agentkernel.api import RESTAPI
-from agentkernel.instagram import AgentInstagramRequestHandler
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.instagram import InstagramInboundAdapter
 from agentkernel.openai import OpenAIModule
 from agents import Agent as OpenAIAgent
 
@@ -104,8 +105,7 @@ agent = OpenAIAgent(
 OpenAIModule([agent])
 
 # Start server
-handler = AgentInstagramRequestHandler()
-RESTAPI.run([handler])
+IOHandler.run(handlers=[WebhookRESTRequestHandler(InstagramInboundAdapter())])
 ```
 
 ## Webhook Events Handled

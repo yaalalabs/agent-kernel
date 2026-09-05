@@ -384,8 +384,9 @@ jobs:
           rm -rf dist
           mkdir -p dist/data
           uv venv
-          uv export --no-hashes --no-dev > requirements.txt
+          uv export --no-hashes --no-dev --no-emit-package agentkernel > requirements.txt
           uv pip install -r requirements.txt --target=dist/data
+          uv pip install --no-deps --target=dist/data ../../ak-py/dist/agentkernel-*.whl
           cp app.py config.yaml dist/data
           cp deploy/Dockerfile dist/
 
@@ -429,8 +430,24 @@ jobs:
           cluster="$(read_tfvar product_alias)-$(read_tfvar env_alias)-$(read_tfvar module_name)"
           echo "Waiting for ECS services in cluster '$cluster' (region $region)..."
           services=$(aws ecs list-services --cluster "$cluster" --region "$region" --query 'serviceArns' --output text)
+          deadline=$(( SECONDS + 1500 ))  # 25 minutes
           # Word-splitting on $services is intentional: one --services arg per ARN.
-          aws ecs wait services-stable --cluster "$cluster" --services $services --region "$region"
+          while :; do
+            unstable=$(aws ecs describe-services --cluster "$cluster" --services $services --region "$region" \
+              --query 'length(services[?!(length(deployments)==`1` && runningCount==desiredCount)])' --output text)
+            if [ "$unstable" = "0" ]; then
+              echo "All services stable."
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::Timed out after 25m waiting for ECS services to stabilize."
+              aws ecs describe-services --cluster "$cluster" --services $services --region "$region" \
+                --query 'services[].{name:serviceName,desired:desiredCount,running:runningCount,events:events[0:5].message}'
+              exit 1
+            fi
+            echo "  $unstable service(s) still rolling out; waiting..."
+            sleep 15
+          done
   e2e-messaging-test:
     needs: [e2e-messaging-deploy]
     if: always() && (needs.e2e-messaging-deploy.result == 'success' || needs.e2e-messaging-deploy.result == 'skipped')

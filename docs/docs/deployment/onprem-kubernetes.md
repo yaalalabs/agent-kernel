@@ -70,9 +70,21 @@ the ECS Terraform deployment uses.
 
 | Deployment | Entry point |
 |---|---|
-| io-handler | `IOHandler.run()` |
+| io-handler | `IOHandler.run()`, or `IOHandler.run(handlers=[WebhookRESTRequestHandler(...)])` to serve messaging webhooks alongside the chat route |
 | agent-runner | registers your agent modules, then `AgentRunner.run()` |
 | ws-gateway | `WebSocketGateway.run(auth_validator=...)` |
+
+### The poller tier (Gmail)
+
+A *polled* integration has no webhook, so it runs as its own workload calling
+`PollerRunner.run(GmailInboundAdapter())` — at **one replica**. It serves no HTTP, so it must not
+ride the io tier's CPU autoscaler: scaling the webhook tier for Slack load would otherwise
+multiply the poll rate for no reason, and the poller's already-handled record is per process.
+
+The chart does not template this Deployment yet; run it as your own workload (a copy of the
+`agent-runner` Deployment with `replicas: 1` and your poller entry point is enough). On the
+`in_memory` transport there is no separate container at all: pass
+`IOHandler.run(pollers=[PollerRunner(adapter)])` and it runs as a peer thread.
 
 ## Flavors
 

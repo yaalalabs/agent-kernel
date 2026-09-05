@@ -4,7 +4,7 @@ The WhatsApp integration allows you to deploy Agent Kernel agents as WhatsApp bo
 
 ## Overview
 
-The `AgentWhatsAppRequestHandler` class handles conversations with agents via WhatsApp Business API webhooks. This integration uses the WhatsApp Cloud API without requiring third-party libraries beyond standard HTTP clients.
+The `WhatsAppInboundAdapter` class handles conversations with agents via WhatsApp Business API webhooks. This integration uses the WhatsApp Cloud API without requiring third-party libraries beyond standard HTTP clients.
 
 ## How It Works
 
@@ -97,9 +97,10 @@ Here's a simple example of setting up a WhatsApp integration:
 
 ```python
 from agents import Agent as OpenAIAgent
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.whatsapp import WhatsAppInboundAdapter
 
 # Create your agent
 general_agent = OpenAIAgent(
@@ -113,9 +114,22 @@ OpenAIModule([general_agent])
 
 # Create and run the server with WhatsApp handler
 if __name__ == "__main__":
-    handler = AgentWhatsAppRequestHandler()
-    RESTAPI.run(handler=handler)
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(WhatsAppInboundAdapter())])
 ```
+
+
+:::note Mounting
+Integrations run on the queue execution pipeline, so they are mounted with `IOHandler.run(...)`
+rather than `RESTAPI.run(...)`. The webhook answers as soon as the message is queued; the agent
+runs behind it, so a slow model call can no longer become a platform delivery timeout.
+:::
+
+:::caution Attachments need multimodal storage
+Attachment bytes are stored before the request is queued, so a message carrying an image or a file
+requires `multimodal.enabled: true` with a shared `storage_type` (`in_memory`, `redis` or
+`dynamodb`). `session_cache` is rejected: the agent runs in a different process and would never
+see it.
+:::
 
 ## Configuration Options
 
@@ -134,9 +148,9 @@ It is strongly recommended not to keep secrets and keys in the config file. Set 
 
 ### Local Development
 
-The `AgentWhatsAppRequestHandler` listens on `/whatsapp/webhook`, hence you need to set up the webhook URL as `https://<your-domain-or-ip>:<port>/whatsapp/webhook`
+The `WhatsAppInboundAdapter` listens on `/whatsapp/webhook`, hence you need to set up the webhook URL as `https://<your-domain-or-ip>:<port>/whatsapp/webhook`
 
-During URL registration, WhatsApp sends a challenge to the URL before enabling. The `AgentWhatsAppRequestHandler` handles this, hence you don't need any separate code to activate.
+During URL registration, WhatsApp sends a challenge to the URL before enabling. The `WhatsAppInboundAdapter` handles this, hence you don't need any separate code to activate.
 
 You can use https://pinggy.io/ or similar for local testing (e.g., `ssh -p 443 -R0:localhost:8000 a.pinggy.io`). [How to use pinggy to test Slack](https://pinggy.io/blog/how_to_get_slack_webhook/)
 
@@ -167,9 +181,9 @@ A detailed example is provided in the examples section.
 You can extend the handler for custom behavior:
 
 ```python
-from agentkernel.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.whatsapp import WhatsAppInboundAdapter
 
-class CustomWhatsAppHandler(AgentWhatsAppRequestHandler):
+class CustomWhatsAppHandler(WhatsAppInboundAdapter):
     async def _handle_message(self, message: dict, value: dict):
         # Add custom preprocessing
         message_text = message.get("text", {}).get("body", "")

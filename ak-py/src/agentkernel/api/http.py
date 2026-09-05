@@ -105,10 +105,29 @@ class RESTAPI:
                 cls._log.info("in_memory queue transport resolved: starting the single-process pipeline topology")
                 return IOHandler.run()
 
+        cls._reject_pipeline_only_handlers(handlers)
+
         host = AKConfig.get().api.host
         port = AKConfig.get().api.port
         cls._log.info(f"Agent Kernel REST API listening on http://{host}:{port}")
         uvicorn.run(app=cls.build_app(handlers), host=host, port=port, reload=False)
+
+    @classmethod
+    def _reject_pipeline_only_handlers(cls, handlers: list[RESTRequestHandler] = None) -> None:
+        """Refuse to serve a handler that only works inside the queue pipeline.
+
+        :param handlers: The handlers this run was asked to serve.
+        :raises AKConfigError: If any of them declares ``requires_pipeline``.
+        """
+        offenders = sorted({type(handler).__name__ for handler in handlers or [] if getattr(handler, "requires_pipeline", False) is True})
+        if offenders:
+            from ..core.util.factory import AKConfigError
+
+            raise AKConfigError(
+                f"{', '.join(offenders)} require the queue pipeline: serve them with "
+                "IOHandler.run(handlers=[...]) instead of RESTAPI.run([...]), which builds a bare "
+                "API with no runner to drain what they enqueue"
+            )
 
     @classmethod
     def build_app(cls, handlers: list[RESTRequestHandler] = None) -> FastAPI:

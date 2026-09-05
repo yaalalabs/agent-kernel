@@ -7,14 +7,29 @@ from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, StreamChunk
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_ENDPOINT_URL, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
+from .envelope import (
+    ATTR_ENDPOINT_URL,
+    ATTR_INTEGRATION,
+    ATTR_REQUEST_ID,
+    ATTR_STATUS_CODE,
+    ATTR_THREAD,
+    ATTR_USER_ID,
+    REPLY_CONTEXT_PREFIX,
+    QueueMessage,
+    QueueName,
+)
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransport, QueueTransportFactory
 
 # Attributes forwarded from an input message to its output message(s). ENDPOINT_URL is part of
 # the SQS/ECS wire format only (the pipeline neither stamps nor reads it, spec #495 §2): it is
 # forwarded so ECS-entered messages keep their return address through a pipeline runner.
-_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL)
+_FORWARDED_ATTRIBUTES = (ATTR_REQUEST_ID, ATTR_USER_ID, ATTR_ENDPOINT_URL, ATTR_INTEGRATION)
+
+
+def _is_forwarded(key: str) -> bool:
+    """Whether an input attribute travels on to the output message."""
+    return key in _FORWARDED_ATTRIBUTES or key.startswith(REPLY_CONTEXT_PREFIX)
 
 
 class AgentRunner:
@@ -41,8 +56,9 @@ class AgentRunner:
 
         # ChatService(rest_api_mode=False) returns (status_code, response_dict); unlike ECS,
         # the status travels to the output message as the STATUS_CODE attribute (spec §12.6).
-        status_code, agent_response = self._chat_service.process_chat_request(req=body)
+        status_code, agent_response = self._chat_service.process_chat_request(req=body, requests=body.requests)
         self._send_to_output(message, agent_response, status_code)
+        self._record_thread_reply(message, body, status_code, agent_response.get("result") if isinstance(agent_response, dict) else agent_response)
 
         self._log.info(f"[AGENT DONE] request_id={request_id}, status_code={status_code}")
 
@@ -93,6 +109,49 @@ class AgentRunner:
 
     # -- shared plumbing --------------------------------------------------------------------
 
+    @classmethod
+    def _record_thread_reply(cls, message: QueueMessage, body: BaseRunRequest, status_code: int, result) -> None:
+        """Append the assistant message to the conversation thread this request belongs to.
+
+        The other half of the split: ``ThreadRecorder.pre_run`` ran at the edge (the thread
+        handler, before the request was enqueued), so only the reply is left, and only this
+        process has it. The ``thread`` attribute is what says the edge recorded a user message
+        for this request — without it a plain queue request would grow a thread nothing asked
+        for.
+
+        Called **after** ``_send_to_output`` deliberately. Recording first would duplicate the
+        assistant message whenever the send then failed and the message was redelivered; this
+        order trades that for losing a recording if the process dies in between, which is the
+        safer direction (the caller still got its answer).
+
+        Imported lazily and locally for the same reason as
+        ``ResponseHandler._outbound_adapter``: threads are an ``integration`` capability, and a
+        module-scope import would make every runner process — including ones with no thread
+        block configured — pay for the thread stores.
+
+        :param message: The input message, carrying the ``thread`` marker.
+        :param body: The validated request body; supplies the session the thread is keyed by.
+        :param status_code: The status the run produced; a failure records nothing.
+        :param result: The agent's reply, recorded via ``str()``.
+        """
+        if not message.attributes.get(ATTR_THREAD) or status_code >= 400 or result in (None, ""):
+            return
+        try:
+            from ..integration.thread.manager import ConversationThreadManager
+            from ..integration.thread.recorder import ThreadRecorder
+
+            manager = ConversationThreadManager.get()
+            if manager is None:
+                cls._log.warning(
+                    "Input message is marked for thread recording but this process has no 'thread' "
+                    "config block: the user message was recorded at the edge and the reply is lost. "
+                    "Give the agent-runner process the same thread configuration as the API process."
+                )
+                return
+            ThreadRecorder(manager).post_run(body, result)
+        except Exception:
+            cls._log.exception(f"Failed to record the assistant message for session_id={body.session_id}")
+
     @staticmethod
     def _resolve_request_metadata(message: QueueMessage, body: BaseRunRequest) -> str:
         """Resolve the message's request_id, preferring the attribute over the body.
@@ -122,7 +181,7 @@ class AgentRunner:
         return request_id
 
     def _send_to_output(self, source: QueueMessage, response_body, status_code: Optional[int] = None, dedup_suffix: Optional[str] = None) -> None:
-        attributes = {key: value for key, value in source.attributes.items() if key in _FORWARDED_ATTRIBUTES}
+        attributes = {key: value for key, value in source.attributes.items() if _is_forwarded(key)}
         if status_code is not None:
             attributes[ATTR_STATUS_CODE] = str(status_code)
 
@@ -151,6 +210,9 @@ class StreamAgentRunner(AgentRunner):
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
 
     def process(self, message: QueueMessage) -> None:
+        if message.attributes.get(ATTR_INTEGRATION):
+            return super().process(message)
+
         body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
         if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
@@ -159,14 +221,27 @@ class StreamAgentRunner(AgentRunner):
         self._log.info(f"[STREAM AGENT START] request_id={request_id} (receive_count={message.receive_count})")
 
         chunk_count = 0
-        for raw_chunk in self._chat_service.process_stream_chat_sync(req=body):
+        deltas: list[str] = []
+        error_seen = False
+        for raw_chunk in self._chat_service.process_stream_chat_sync(req=body, requests=body.requests):
+            chunk = json.loads(raw_chunk)
+            if chunk.get("error"):
+                error_seen = True
+            if chunk.get("delta"):
+                deltas.append(chunk["delta"])
             # Retry attempts get distinct chunk dedup ids so a redelivery's chunks never collide.
-            self._send_to_output(message, json.loads(raw_chunk), status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
+            self._send_to_output(message, chunk, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
             chunk_count += 1
+
+        if not error_seen and deltas:
+            self._record_thread_reply(message, body, 200, "".join(deltas))
 
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
+        if message.attributes.get(ATTR_INTEGRATION):
+            return super().on_permanent_failure(message)
+
         self._log.error(f"Permanent failure for message {message.message_id}")
         try:
             max_receive_count = AKConfig.get().execution.queues.input.max_receive_count

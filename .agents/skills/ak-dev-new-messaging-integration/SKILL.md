@@ -3,8 +3,9 @@ name: ak-dev-new-messaging-integration
 description: >
   Step-by-step guide for adding a new messaging platform integration to Agent Kernel.
   Use this skill when you need to add support for a new chat platform (beyond Slack,
-    WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail). Covers creating the integration
-  handler, webhook routes, message parsing, configuration, and examples.
+    WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail). Covers writing the
+  inbound/outbound adapter pair, hosting it, webhook verification, attachments, configuration,
+  and examples.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -13,28 +14,26 @@ metadata:
 
 # Adding a New Messaging Integration
 
-This guide walks through adding a new messaging platform integration to Agent Kernel. Use the Slack integration (`ak-py/src/agentkernel/integration/slack/`) as the canonical reference.
+This guide walks through adding a new messaging platform integration to Agent Kernel. Use the WhatsApp adapter (`ak-py/src/agentkernel/integration/whatsapp/adapter.py`) as the canonical webhook reference, and Gmail (`integration/gmail/adapter.py`) as the polling one.
 
 ## Architecture Overview
 
-Messaging integrations follow a consistent pattern:
+**A platform integration is two pure translation functions with a queue between them** (spec #524):
 
-1. A **request handler** class that extends `RESTRequestHandler`
-2. The handler exposes FastAPI **routes** for webhooks
-3. Incoming messages are parsed into `AgentRequest` models (platform attachments downloaded and base64-encoded by the handler)
-4. The **ChatService execution core** runs the agent: build a `BaseChatRequest` and call
-   `execute(req, requests=<prebuilt list>)`, which returns the typed reply. Integrations own their
-   transport and reply formatting, so they call the core, never the HTTP-shaped `process_*`
-   wrappers and never `AgentService` directly (see the chat execution layering rubric in
-   `ak-dev-architecture`)
-5. The reply is formatted and sent back via the platform's API; a `ValueError` from `execute` maps to
-   the platform's "no agent available" message
-6. Configuration is added to `AKConfig` (accessed via the `Config.get()` alias) for platform-specific settings
+1. An **`InboundAdapter`** turns one platform delivery into normalized `InboundRequest` envelopes: it verifies the delivery, extracts the text, downloads and stores attachments, and resolves `session_id` and `request_id` at the edge. It **never runs the agent**.
+2. The **pipeline** carries the request: `IntegrationProducer` enqueues it, `AgentRunner` executes it platform-agnostically, and the reply travels back on the output queue with the `integration` attribute and the `reply_`-prefixed reply context.
+3. An **`OutboundAdapter`** turns the agent's reply back into platform API calls, using nothing but the flat `reply_context` the inbound half resolved.
 
-> **Exception**: Gmail does not follow the webhook pattern. `AgentGmailRequestHandler`
-> (`integration/gmail/gmail_chat.py`) has no base class and polls email via OAuth instead
-> of exposing webhook routes; its config (`_GmailConfig` in `core/config.py`) has
-> `token_file`, `poll_interval`, and `label_filter` rather than a webhook secret.
+This is why the webhook answers in milliseconds: a slow agent run can no longer hold the turn open past the platform's delivery timeout and cause a redelivery.
+
+Hosting depends on how the platform delivers events:
+
+| Source | Host | Entry point |
+|---|---|---|
+| `Source.WEBHOOK` (pushed) | `WebhookRESTRequestHandler` | `IOHandler.run(handlers=[WebhookRESTRequestHandler(MyInboundAdapter())])` |
+| `Source.POLLER` (pulled) | `PollerRunner` | `IOHandler.run(pollers=[PollerRunner(MyInboundAdapter())])` on `in_memory`, `PollerRunner.run(adapter)` as its own container on a broker |
+
+**Adapters must be mounted inside the pipeline.** `WebhookRESTRequestHandler` sets `requires_pipeline = True`, so `RESTAPI.run([...])` refuses it with an `AKConfigError`: without a queue there would be no runner to drain what it enqueues, and the platform would get its 200 while the user never got a reply.
 
 ## Step-by-Step
 
@@ -43,161 +42,186 @@ Messaging integrations follow a consistent pattern:
 ```
 ak-py/src/agentkernel/integration/<platform>/
 ├── __init__.py
-└── <platform>_chat.py
+└── adapter.py
 ```
 
-### 2. Implement the Request Handler
+### 2. Implement the Inbound Adapter
 
 ```python
-# ak-py/src/agentkernel/integration/<platform>/<platform>_chat.py
+# ak-py/src/agentkernel/integration/<platform>/adapter.py
 import logging
-from agentkernel.api.handler import RESTRequestHandler
-from agentkernel.core import ChatService, Config
-from agentkernel.core.model import AgentRequestText, AgentRequestImage, AgentRequestFile, BaseChatRequest
-from fastapi import APIRouter, Request
+from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("ak.integration.<platform>")
+from fastapi import HTTPException, Request
+
+from ...core.config import AKConfig
+from ...core.model import AgentReply, AgentRequest, AgentRequestImage, AgentRequestText
+from ...core.multimodal.storage.offload import offload_attachments
+from ..adapter.base import (
+    ATTACHMENTS_DISABLED_ERROR,
+    SESSION_CACHE_ERROR,
+    InboundAdapter,
+    InboundParseResult,
+    InboundRequest,
+    OutboundAdapter,
+)
+
+NAME = "<platform>"
+_log = logging.getLogger("ak.integration.<platform>")
 
 
-class Agent<Platform>RequestHandler(RESTRequestHandler):
-    """Handles incoming messages from <Platform> and routes them to Agent Kernel agents."""
+class <Platform>InboundAdapter(InboundAdapter):
+    """<Platform> deliveries -> normalized requests."""
+
+    name = NAME
+    webhook_path = "/<platform>/webhook"
+    challenge_path = None  # set to the same path when the platform has a GET handshake
+
+    _log = _log
 
     def __init__(self):
-        config = Config.get().<platform>
-        self._agent_name = config.agent if config else None
-        self._chat_service = ChatService()
-        # Initialize platform-specific client/SDK here
-        # e.g., self._client = PlatformClient(token=config.bot_token)
+        config = AKConfig.get()
+        self._agent = config.<platform>.agent or None
+        self._max_file_size = config.api.max_file_size
+        self._client = <Platform>Client()   # your API wrapper
 
-    def get_router(self) -> APIRouter:
-        router = APIRouter()
+    async def verify(self, raw: Request) -> None:
+        """Reject a delivery that did not come from the platform. Runs before parse."""
+        if not self._client.verify(await raw.body(), raw.headers.get("x-platform-signature", "")):
+            raise HTTPException(status_code=403, detail="Invalid signature")
 
-        @router.get("/health")
-        async def health():
-            return {"status": "ok"}
+    async def parse(self, raw: Request) -> InboundParseResult:
+        """One delivery can carry several messages; return one InboundRequest per message."""
+        body = await raw.json()
+        requests = [r for r in [await self._to_request(m) for m in body.get("messages", [])] if r is not None]
+        return InboundParseResult(requests=requests)
 
-        @router.post("/<platform>/webhook")
-        async def webhook(request: Request):
-            body = await request.json()
-            await self._handle_message(body)
-            return {"status": "ok"}
+    async def _to_request(self, message: dict) -> Optional[InboundRequest]:
+        text = message.get("text", "")
+        sender = message["from"]
+        if not text:
+            return None   # legitimately ignored: an empty list is not an error
 
-        return router
+        requests: List[AgentRequest] = [AgentRequestText(prompt=text)]
+        # ... download attachments into `requests` here (see step 5) ...
 
-    async def _handle_message(self, body: dict):
-        """Parse platform message and route to agent."""
-        # 1. Extract message content from platform-specific format
-        user_id = body.get("user_id", "unknown")
-        text = body.get("text", "")
-        attachments = body.get("attachments", [])
-
-        # 2. Build request list
-        requests = []
-        if text:
-            requests.append(AgentRequestText(prompt=text))
-
-        for attachment in attachments:
-            # Handle images
-            if attachment.get("type") == "image":
-                image_data = await self._download_file(attachment["url"])
-                requests.append(AgentRequestImage(
-                    image_data=image_data,
-                    name=attachment.get("name", "image"),
-                    mime_type=attachment.get("mime_type")
-                ))
-            # Handle files
-            elif attachment.get("type") == "file":
-                file_data = await self._download_file(attachment["url"])
-                requests.append(AgentRequestFile(
-                    file_data=file_data,
-                    name=attachment.get("name", "file"),
-                    mime_type=attachment.get("mime_type")
-                ))
-
-        if not requests:
-            return
-
-        # 3. Run through the ChatService execution core with the prebuilt request list
-        #    (prompt may be empty for attachment-only messages; user_id/group_id are
-        #    best-effort platform identity)
-        req = BaseChatRequest(prompt=text, agent=self._agent_name, session_id=user_id, user_id=user_id)
-        try:
-            reply, _ = await self._chat_service.execute(req, requests=requests)
-        except ValueError as ve:
-            logger.warning(f"Agent execution rejected: {ve}")
-            await self._send_reply(user_id, "Sorry, no agent is available to handle your request.")
-            return
-
-        # 4. Send reply back via platform API
-        await self._send_reply(user_id, str(reply))
-
-    async def _download_file(self, url: str) -> str:
-        """Download a file and return base64-encoded content."""
-        import base64
-        import httpx
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, headers=self._auth_headers())
-            return base64.b64encode(response.content).decode("utf-8")
-
-    async def _send_reply(self, channel: str, text: str):
-        """Send reply back to the messaging platform."""
-        # Platform-specific API call to send message
-        # e.g., self._client.send_message(channel=channel, text=text)
-        pass
-
-    def _auth_headers(self) -> dict:
-        """Return auth headers for platform API calls."""
-        return {}
+        requests, _ = offload_attachments(
+            sender,
+            requests,
+            attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,
+            session_cache_error=SESSION_CACHE_ERROR,
+        )
+        return InboundRequest(
+            session_id=sender,             # the platform's conversation key
+            request_id=message["id"],      # the platform's own id: this is what dedupes a retry
+            requests=requests,
+            prompt=text,
+            agent=self._agent,
+            user_id=sender,
+            reply_context={"to": sender},  # flat, string-valued delivery coordinates
+        )
 ```
 
-> Handlers conventionally access configuration through the re-exported alias
-> `Config.get().<platform>` (`from agentkernel.core import Config`) rather than
-> importing `AKConfig` directly — see `integration/slack/slack_chat.py`.
+Rules the adapter must hold to:
 
-### 3. Create the `__init__.py`
+1. **Never execute.** No `ChatService`, `AgentService` or `Runtime` import. The only side effects allowed are platform API calls and attachment storage.
+2. **Read only your own config block**, `AKConfig.get().<platform>`.
+3. **`verify` before `parse`, `parse` before enqueue.** `verify` is concrete and a no-op on the base: override it only when verification is separable from parsing. (Slack and Teams verify inside their SDK's dispatch, so theirs stays the default.)
+4. **`request_id` is the platform's message id** wherever one exists; that is what makes a webhook retry deduplicate instead of running the agent twice. Synthesize a stable one only when the platform gives you none (Slack: `f"slack:{channel}:{ts}"`).
+5. **An ignored delivery returns an empty request list**, never an exception.
+
+### 3. Implement the Outbound Adapter
+
+```python
+class <Platform>OutboundAdapter(OutboundAdapter):
+    """Agent replies -> <Platform> messages."""
+
+    name = NAME
+    MESSAGE_LIMIT = 4096          # the platform's per-message limit; split_reply chunks to it
+    MAX_CHUNKS = None             # or a cap, with TRUNCATION_NOTICE appended past it
+
+    _log = _log
+
+    def __init__(self):
+        self._client = <Platform>Client()
+
+    async def acknowledge(self, reply_context: Dict[str, str]) -> Dict[str, str]:
+        """Edge-side feedback: a typing indicator, a read receipt, a "thinking" message.
+
+        The returned dict is merged into reply_context, which is how Slack carries the id of
+        its placeholder message through to delivery.
+        """
+        await self._client.typing(reply_context["to"])
+        return {}
+
+    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+        """Raising hands the message back for retry, then deliver_error."""
+        await self._client.send(reply_context["to"], self.split_reply(str(reply)))
+
+    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+        try:
+            await self._client.send(reply_context["to"], [message])
+        except Exception as e:
+            self._log.error(f"Could not deliver the <Platform> error message: {e}")
+```
+
+- The reply always arrives as an `AgentReplyText`: the Agent Runner serializes the typed reply to its string form before the output queue.
+- Outbound adapters are **cached and shared across consumer threads**, and each call runs on its own event loop. Keep no per-message state on `self`, and build loop-bound clients (an `httpx.AsyncClient`) per call.
+- `deliver_error` receives `OutboundAdapter.ERROR_MESSAGE`, not the raw exception: raw error text is logged, never sent to a platform user.
+
+### 4. Reply Context
+
+`reply_context` is flat, string-valued delivery coordinates: everything `deliver` needs and nothing else. It travels as `reply_`-prefixed message attributes rather than body fields, because `BaseRunRequest` is `extra="allow"` and an unknown body field would reach the agent as `AgentRequestAny` context.
+
+Budget: **8 KB serialized**, enforced in `IntegrationProducer` with a `ValueError` naming the adapter. If the platform's reply address is an object rather than strings, JSON-encode it into one value (Teams does this with its `ConversationReference`).
+
+### 5. Attachments
+
+Attachment bytes must **not** ride the queue: brokers cap a message far below `api.max_file_size`. Download at the edge (that is where the platform token is), then call `offload_attachments`, which stores the bytes in the `AttachmentStore` and replaces each image/file request with an `AgentRequestAttachmentRef`.
+
+This makes `multimodal.enabled: true` a requirement for attachment-bearing messages, and rejects `multimodal.storage_type: session_cache` (it writes into a session copy the runner process never sees). Both messages are shared constants; pass them through as shown in step 2.
+
+### 6. Create the `__init__.py` and the Public Alias
 
 ```python
 # ak-py/src/agentkernel/integration/<platform>/__init__.py
-from .<platform>_chat import Agent<Platform>RequestHandler
+from .adapter import <Platform>InboundAdapter, <Platform>OutboundAdapter
 ```
 
-### 4. Create the Public API Alias
-
-Create `ak-py/src/agentkernel/<platform>.py`. Real alias files use a wildcard import (see `ak-py/src/agentkernel/slack.py`):
+Create `ak-py/src/agentkernel/<platform>.py` with a wildcard import (see `ak-py/src/agentkernel/slack.py`):
 
 ```python
 from .integration.<platform> import *
 ```
 
-This allows `from agentkernel.<platform> import Agent<Platform>RequestHandler`.
+### 7. Register the Built-in with the Factory
 
-### 5. Add Configuration
+The Response Handler holds only the `integration` attribute string, so **the outbound half is resolved by name**. Add the platform to `IntegrationAdapterFactory` (`integration/adapter/factory.py`): its short name in `_BUILTIN_NAMES`, and an `if/elif` branch in `_builtin` importing the class inside `require_extra`.
 
-Add a configuration section to `ak-py/src/agentkernel/core/config.py`. Follow the existing platform config idiom (e.g. `_TelegramConfig`), which uses `Field` with empty-string defaults.
+(The inbound half is never resolved by name: the application constructs it and hands it to a host, so bring-your-own inbound is just passing a different instance.)
+
+### 8. Add Configuration
+
+Add a config section to `ak-py/src/agentkernel/core/config.py`, following the existing idiom (`Field` with empty-string defaults). Every platform block carries an `outbound_adapter` override:
 
 ```python
 class _<Platform>Config(BaseModel):
     agent: str = Field(default="", description="Agent name to handle <Platform> messages")
-    bot_token: str = Field(default="", description="<Platform> bot token")            # platform-specific fields
+    bot_token: str = Field(default="", description="<Platform> bot token")
     webhook_secret: str = Field(default="", description="Webhook verification secret")
-    # Add other platform-specific config fields
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in <Platform> outbound adapter",
+    )
+
 
 class AKConfig(YamlBaseSettingsModified):
-    # ... existing fields ...
-    <platform>: _<Platform>Config = _<Platform>Config()
+    <platform>: _<Platform>Config = Field(description="<Platform> related configurations", default_factory=_<Platform>Config)
 ```
 
-This enables configuration via `config.yaml`:
+Configurable through `config.yaml` or `AK_<PLATFORM>__AGENT` / `AK_<PLATFORM>__BOT_TOKEN` environment variables.
 
-```yaml
-<platform>:
-  agent: general
-  bot_token: "xoxb-..."
-```
-
-Or environment variables: `AK_<PLATFORM>__AGENT=general`, `AK_<PLATFORM>__BOT_TOKEN=xoxb-...`
-
-### 6. Add Optional Dependencies
+### 9. Add Optional Dependencies
 
 In `ak-py/pyproject.toml`:
 
@@ -209,103 +233,80 @@ In `ak-py/pyproject.toml`:
 ]
 ```
 
-### 7. Webhook Verification
+The factory imports the built-in inside `require_extra("<platform>", ...)`, so a missing SDK reports `pip install "agentkernel[<platform>]"` rather than a bare `ModuleNotFoundError`.
 
-Most platforms require webhook verification. Implement it in the webhook route:
+### 10. Polling Platforms
 
-```python
-@router.post("/<platform>/webhook")
-async def webhook(request: Request):
-    body = await request.json()
-
-    # Challenge/verification handling (platform-specific)
-    if body.get("type") == "url_verification":
-        return {"challenge": body.get("challenge")}
-
-    # Signature verification (recommended for security)
-    signature = request.headers.get("X-Platform-Signature")
-    if not self._verify_signature(body, signature):
-        raise HTTPException(status_code=401, detail="Invalid signature")
-
-    await self._handle_message(body)
-    return {"status": "ok"}
-```
-
-### 8. Message Chunking
-
-If the platform has message length limits, implement a reply splitter:
+A platform with no webhook subclasses `PollingInboundAdapter` instead:
 
 ```python
-def _split_reply(self, text: str, max_length: int = 4000) -> list[str]:
-    """Split long replies into platform-compatible chunks."""
-    if len(text) <= max_length:
-        return [text]
-    chunks = []
-    while text:
-        if len(text) <= max_length:
-            chunks.append(text)
-            break
-        split_at = text.rfind("\n", 0, max_length)
-        if split_at == -1:
-            split_at = max_length
-        chunks.append(text[:split_at])
-        text = text[split_at:].lstrip()
-    return chunks
+class <Platform>InboundAdapter(PollingInboundAdapter):
+    name = NAME
+    poll_interval = 30.0   # read it from your config block in __init__
+
+    async def poll(self) -> List[Any]:
+        """Return the raw events to parse this iteration. Must not run the agent."""
+
+    def mark_handled(self, raw: Any) -> None:
+        """Called after an event is enqueued, so the next poll skips it."""
 ```
 
-### 9. Usage Pattern
+`PollerRunner` waits on `ThreadRunner.shutdown_event` between iterations, so a 30-second interval still drains promptly on SIGTERM. Run the poller at **one replica**: `mark_handled` state is per process (see Gmail, where a message stays unread until its reply is sent).
 
-Users will use the integration like this:
+### 11. Usage Pattern
 
 ```python
 # server.py
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.<platform> import Agent<Platform>RequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.<platform> import <Platform>InboundAdapter
 from agents import Agent
 
 agent = Agent(name="general", instructions="You are a helpful assistant.")
 OpenAIModule([agent])
 
 if __name__ == "__main__":
-    RESTAPI.run([Agent<Platform>RequestHandler()])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(<Platform>InboundAdapter())])
 ```
 
-### 10. Add Example
+### 12. Add Example
 
 Create `examples/api/<platform>/` with:
-- `server.py` — minimal working example
+- `server.py` — minimal working example (the pattern above)
 - `pyproject.toml` — with `agentkernel[api,openai,<platform>]` dependency
 - `config.yaml` — platform configuration
 - `server_test.py` — health check and basic functional test
 - `README.md` — setup instructions (bot token, webhook URL, etc.)
 
-### 11. Add Tests
+### 13. Add Tests
 
-Create `ak-py/tests/test_<platform>_integration.py` following the pattern of `test_slack_integration.py` /
-`test_whatsapp_integration.py`: build the handler via `object.__new__` with injected attributes (no config,
-no platform SDK), replace `handler._chat_service` with a fake recording `execute()` calls, and cover:
-- Unit tests for message parsing
-- Unit tests for reply formatting/chunking
-- Mock tests for webhook handling
+Two files:
 
-### 12. Add Documentation
+1. `ak-py/tests/test_integration_adapter_contract.py` — add a `IntegrationAdapterContract` subclass for the platform. The contract covers the invariants the queue hop needs: stable identifiers, an ignorable delivery that is not an error, a flat reply context inside its budget, and a clean round trip through `IntegrationProducer`.
+2. `ak-py/tests/test_<platform>_integration.py` — the platform's own parsing and formatting. Build the adapter via `object.__new__` with a stubbed API client (see `test_whatsapp_integration.py`), and cover: message parsing, ignored deliveries, rejection paths (oversized, unsupported media, download failure), verification, reply chunking and acknowledgement.
+
+### 14. Add Documentation
 
 Add `docs/docs/integrations/<platform>.md` covering:
 - Platform setup (creating a bot, getting tokens)
-- Configuration options
-- Example code
+- Configuration options, including `outbound_adapter`
+- Example code using `IOHandler.run(handlers=[...])`
 - Webhook URL setup
+- The `multimodal.enabled` requirement if the platform accepts attachments
 
 ## Checklist
 
-- [ ] `ak-py/src/agentkernel/integration/<platform>/` directory
-- [ ] `Agent<Platform>RequestHandler` extending `RESTRequestHandler`
-- [ ] Public alias at `ak-py/src/agentkernel/<platform>.py`
-- [ ] Configuration class in `config.py`
+- [ ] `ak-py/src/agentkernel/integration/<platform>/adapter.py` with the inbound/outbound pair
+- [ ] `verify` (or a documented reason it stays the base no-op) and `challenge` if the platform has a handshake
+- [ ] `request_id` set from the platform's own message id
+- [ ] Attachments offloaded with `offload_attachments`, never inlined
+- [ ] `reply_context` flat, string-valued, inside the 8 KB budget
+- [ ] `MESSAGE_LIMIT` (and `MAX_CHUNKS`) set to the platform's limits
+- [ ] Package `__init__.py` and public alias at `ak-py/src/agentkernel/<platform>.py`
+- [ ] Registered in `IntegrationAdapterFactory._BUILTIN_NAMES` and `_builtin`
+- [ ] Configuration class in `config.py`, including `outbound_adapter`
 - [ ] Optional dependency group in `pyproject.toml`
-- [ ] Webhook verification
-- [ ] Message chunking for long replies
-- [ ] Example in `examples/api/<platform>/`
-- [ ] Tests in `ak-py/tests/`
+- [ ] Example in `examples/api/<platform>/` mounting through `IOHandler.run`
+- [ ] `IntegrationAdapterContract` subclass plus the per-platform test file
 - [ ] Documentation in `docs/docs/integrations/<platform>.md`

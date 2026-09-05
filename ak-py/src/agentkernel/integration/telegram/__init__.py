@@ -7,4 +7,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .telegram_chat import AgentTelegramRequestHandler
+from .adapter import TelegramInboundAdapter, TelegramOutboundAdapter

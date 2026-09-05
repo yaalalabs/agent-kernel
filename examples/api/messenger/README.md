@@ -14,7 +14,7 @@ This example demonstrates how to create a Facebook Messenger Platform integratio
 
 ### 1. Get Facebook Messenger Credentials
 
-Follow the setup guide in [AgentMessengerRequestHandler](../../../ak-py/src/agentkernel/integrations/messenger/README.md)
+Follow the setup guide in [MessengerInboundAdapter](../../../ak-py/src/agentkernel/integrations/messenger/README.md)
 
 You'll need:
 - Page Access Token
@@ -131,9 +131,9 @@ Can you answer technical questions?
 See `example_custom_handler.py` for extending the handler with custom logic:
 
 ```python
-from agentkernel.messenger import AgentMessengerRequestHandler
+from agentkernel.messenger import MessengerInboundAdapter
 
-class CustomMessengerHandler(AgentMessengerRequestHandler):
+class CustomMessengerHandler(MessengerInboundAdapter):
     async def _handle_message(self, messaging_event: dict):
         # Custom preprocessing
         message = messaging_event.get("message", {})
