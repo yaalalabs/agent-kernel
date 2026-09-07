@@ -4,7 +4,7 @@ from langchain_openai import ChatOpenAI
 
 from langgraph.prebuilt import create_react_agent
 
-model = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+model = ChatOpenAI(model="gpt-4.1-mini", temperature=0.0)
 
 general_agent = create_react_agent(
     name="general",

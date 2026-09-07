@@ -6,5 +6,5 @@ mode: fallback  # Test comparison mode: score, llm, or fallback (default: fallba
 evaluator: custom_evaluator.TokenOverlapEvaluator
 # LLM settings are read by TokenOverlapEvaluator.llm_based_evaluation for its judge call:
 llm:
-  model: gpt-4o-mini
+  model: gpt-4.1-mini
   provider: openai
