@@ -10,6 +10,10 @@ Supporting research: [`research/README.md`](research/README.md) (payload/carriag
 gap analysis), [`research/changes.md`](research/changes.md) (file-by-file), and the protocol survey at
 [`../523-ag-ui-support/research/a2ui.md`](../523-ag-ui-support/research/a2ui.md).
 
+Every `path:line` below is verified against `develop` at `c9c5d430`. Paths are relative to
+`ak-py/src/agentkernel/` unless stated otherwise. Two facts are marked **unverified** where they
+appear, both third-party SDK symbol names.
+
 ## Motivation
 
 - **An AK agent can only reply with text at the surfaces.** An application wanting a form, a table or
@@ -23,14 +27,22 @@ gap analysis), [`research/changes.md`](research/changes.md) (file-by-file), and 
   - A structured reply type — `AgentReplyAny(content: dict)` (`core/model.py:129`).
   - Optional-dependency gating — the extras pattern (`ak-py/pyproject.toml:88`, `:167`).
 - **Structured replies already reach all six adapters**, so A2UI needs no adapter work and no
-  streaming: `openai.py:215`, `langgraph.py:424`, `pydanticai.py:178`, `smolagents.py:176`,
-  `adk.py:262`, `crewai.py:388,390`. AG-UI reaches four (only those four declare
-  `supports_streaming`).
+  streaming: `framework/openai/openai.py:215`, `framework/langgraph/langgraph.py:424`,
+  `framework/pydanticai/pydanticai.py:178`, `framework/smolagents/smolagents.py:176`,
+  `framework/adk/adk.py:262`, `framework/crewai/crewai.py:388,390`. (Full paths deliberately: every
+  one of those basenames also names an 8-line re-export shim at the package root.) AG-UI reaches
+  four (only those four declare `supports_streaming`).
 - **The surfaces are what is missing, and they fail differently:**
   - `ResponseBuilder.build_response` emits `{"result": str(result)}` for every reply type including
-    `AgentReplyAny` (`core/chat_service.py:317`). Verified: this is the **only** place non-streaming
-    replies are stringified outside A2A — no other `str(reply)` exists across `api/`, `pipeline/` or
-    `integration/agui/`.
+    `AgentReplyAny` (`core/chat_service.py:317`). It is the only such site across `api/`,
+    `pipeline/` and `integration/agui/` — but **not** the only one in the codebase; see the next
+    bullet.
+  - **`AgentService.run(prompt) -> str` stringifies the reply itself** (`core/service.py:156`:
+    `result = str(result)` for an `AgentReplyAny`). This is the second stringify site, it sits
+    *below* the surfaces, and it is what the direct-execution surfaces consume: A2A
+    (`api/a2a/a2a.py:63`), MCP (`api/mcp/akmcp.py:43`) and the CLI (`cli/cli.py:119`) all call
+    `run`, not `run_multi`. So those three never receive a typed reply at all, which is a
+    precondition for PR 3 rather than a detail of it.
   - It is also shared. REST (`chat_service.py:587,605`), conversation threads
     (`integration/thread/thread_chat.py:123,128`) and the queue pipeline
     (`pipeline/agent_runner.py:44` → the same `ChatService.process_chat_request`) all route through
@@ -78,9 +90,28 @@ graph TD
 - Delivered as **five PRs**, in this order. Each lands independently and is useful on its own.
 - **PRs 1–3 contain no A2UI code.** They are structured-reply carriage. If a change in them only
   makes sense for A2UI, it belongs in PR 4 instead — this is the test that the split is real.
-- **This work merges after #678 (streaming post-hooks) and #696 (HITL).** Both are open at the time
-  of writing; the requirements below assume their designs as merged and must be re-checked if either
-  changes:
+- **Which PRs A2UI actually motivates**, stated because it changes how the work can be filed:
+  - **PR 3 is an A2A correctness fix, not A2UI work.** All four defects it addresses exist today
+    with no A2UI anywhere: the agent card advertises `default_output_modes=["json"]`
+    (`core/builder.py:44`) while the executor only ever sends text, so the card misleads any client
+    that reads it; an agent configured for structured output — which
+    `examples/api/openai_structured/` already does — delivers its JSON crammed into a text part when
+    the A2A spec has `DataPart` for exactly that; `AgentService.run` stringifies the reply before
+    A2A can see it (`core/service.py:156`); and A2A publishes no cards and no routes at all, in
+    silence, when the serving process holds no agents. Exactly **one** line of PR 3 is A2UI-specific
+    — adding the A2UI media type to the card's output modes — and the rest **must not** be gated
+    behind `a2ui.enabled`.
+  - **PR 2 also stands alone.** A REST caller using structured output today receives a JSON string
+    it has to double-parse; that is a pre-existing wart, not an A2UI need.
+  - **PR 1 is the only one A2UI motivates.** Without a payload format to name, `media_type` has no
+    user. It is the enabling abstraction, not a standalone fix.
+  - Consequence: **PRs 2 and 3 could each be filed as their own issue** and merge ahead of #706,
+    unblocked by any of its open questions. Whether to split them is a maintainer decision — see
+    Open questions.
+- **This work merges after #678 (streaming post-hooks) and #696 (HITL).** Both were still open when
+  this was last checked — #678 at `969fe222`, #696 at `f0bd330f`, neither touched since 2026-09-03.
+  The requirements below assume their designs as merged; if either head moves, re-check the two
+  summaries here before relying on them:
   - #678 deletes `PostHook.on_stream_chunk` and replaces it with `on_stream_event(session, requests,
     agent, event) -> StreamEvent | list[StreamEvent] | None`, called for every event including
     boundaries, with a list return emitting several events in place of one. It also states
@@ -126,8 +157,25 @@ graph TD
 
 ### PR 3 — A2A data parts
 
-- `A2A.Executor.execute` (`api/a2a/a2a.py:49`) branches on the reply type instead of always calling
-  `new_agent_text_message(str(response), ...)`:
+**This PR fixes A2A; it is not A2UI work.** Every defect below is present today with no A2UI
+involved, and the fixes are correct for A2A on their own terms — A2UI merely needs them to have
+happened. Only the media-type entry on the agent card is A2UI-specific. See Ordering and
+dependencies for why that matters to how this is filed.
+
+- **First, the executor must actually receive a typed reply.** `A2A.Executor._execute_agent`
+  (`api/a2a/a2a.py:63`) calls `AgentService.run(prompt=...)`, which returns a `str` — it has already
+  stringified an `AgentReplyAny` at `core/service.py:156`. The `str(response)` at `a2a.py:49` is
+  therefore a second no-op, and branching on reply type is impossible until this changes.
+  - Switch it to `run_multi([AgentRequestText(prompt=prompt)])` (`core/service.py:162`), which
+    returns the typed `AgentReply`.
+  - **This stays inside `AgentService`** — one method over in the same class. A2A does *not* move to
+    `ChatService`: the architecture rubric puts stateful, self-managing clients (CLI, A2A, MCP) on
+    `AgentService`, A2A already owns its own request envelope and async task model, and routing it
+    through `ChatService` would additionally subject A2A callers to the `schedule` interception and
+    HTTP-shaped responses. Rerouting A2A's execution path is not in this issue.
+  - `_execute_agent`'s return annotation tightens from `Any` to `AgentReply`.
+- `A2A.Executor.execute` (`api/a2a/a2a.py:49`) then branches on the reply type instead of always
+  calling `new_agent_text_message(str(response), ...)`:
   - `AgentReplyAny` → a message carrying a data part with `response.content`, labelled with
     `media_type` when set and `application/json` otherwise.
   - Every other reply type keeps the current text path, byte-for-byte.
@@ -137,6 +185,35 @@ graph TD
   is enabled; the existing `"json"` entry (`:44`) becomes accurate rather than aspirational.
 - **Behavioural change, to be stated in the PR, not discovered:** this changes A2A wire output for
   *all* structured replies, not only A2UI. That is the intended unopinionated outcome.
+- **MCP and the CLI are deliberately left alone.** Both hit the same `AgentService.run` stringify
+  (`akmcp.py:43`, `cli.py:119`), so both would need the identical one-line switch to `run_multi` to
+  carry a structured reply. Out of scope here — recorded so the next person does not re-derive it.
+  A text-only CLI is arguably correct anyway; MCP is a real gap and should get its own issue.
+- **A2A serves nothing, silently, when the process holds no agents — warn instead of staying mute.**
+  A2A executes in whichever process serves its routes, bypassing the queue pipeline entirely. In a
+  split (broker) deployment the IO container registers no agents —
+  `examples/k8s/openai-queue-mode/app_io_handler.py` is just `IOHandler.run()`, while
+  `app_agent_runner.py` loads the module — so `A2A._build()` (`api/a2a/a2a.py:66`) iterates an empty
+  registry and publishes no cards and no routes at all, with `a2a.enabled: true` and no error, no
+  warning, and nothing in the log.
+  - **This is the most severe of the four defects, and the reason it belongs here.** The other three
+    send a client *wrong* data, which is at least visible; this one sends nothing while the config
+    says the surface is on. Diagnosing it requires reading `_build()`.
+  - Fix: when A2A is enabled and `Runtime.current().agents()` is empty, log a warning naming the
+    cause. `_build()` is reached only through `get_cards`/`get_card`/`get_agent_names`
+    (`a2a.py:90,95,100`), all of which pass the `_built` cache, so this is warn-once with no extra
+    machinery, and the disabled path returns before it (`a2a.py:69-70`) so it cannot misfire.
+  - **A warning, not a raise.** An `AKConfigError` would be a behavioural change that could break an
+    app whose construction order differs, and the condition is not unrecoverable — only invisible.
+    Turning a silent no-op into a diagnosable one is the whole requirement.
+  - Still **out of scope**, deliberately: (a) rerouting A2A through the queue — that is the
+    `ChatService` change argued against above; (b) the `_built` cache itself, which caches
+    permanently so agents registered after the first `_build()` never appear. Fixing (b) properly
+    needs `Runtime.register` to notify A2A, i.e. `core/` reaching into `api/` — the wrong coupling
+    direction. The warning surfaces that sharp edge without inverting the dependency.
+  - Also out of scope, because it is a deployment question rather than a code one: whether a split
+    deployment's IO container *should* load the module. Doing so makes A2A work but runs those agents
+    in-process, skipping the pipeline. Document the trade-off; do not choose it here.
 - The exact `a2a-sdk` symbols (`DataPart`, `Part`, whether a `new_agent_parts_message` helper exists)
   are **unverified** — neither package was installed when this was written. Check against the pinned
   `a2a-sdk>=0.3.6` (`ak-py/pyproject.toml:167`) before `spec.md`.
@@ -199,7 +276,8 @@ graph TD
 
 - Unit tests per PR, in `ak-py/tests/`, following `ak-dev-testing-conventions`.
   - PR 1's load-bearing test is the **regression**: `str(AgentReplyAny(...))` unchanged.
-  - PR 3 needs a new `test_a2a_*.py` — no A2A test file exists today.
+  - PR 3 needs a new `test_a2a_*.py` — no A2A test file exists today. See **Why CI missed all four**
+    below for what it must assert and why the existing example cannot.
   - PR 4 covers: valid parse, invalid payload, disabled → no-op hook, `agents` filter honoured,
     prompt suffix contains the catalog.
   - PR 5 extends `test_agui_mapping.py` and the #678 streaming tests.
@@ -214,6 +292,62 @@ graph TD
     A2UI arriving over plain REST with no UI framework involved.
   - PR 5 → extend `examples/api/agui/`, whose React frontend already has an event reducer and
     `node --test` unit tests. Do not build a second frontend.
+
+### Why CI missed all four A2A defects
+
+`examples/api/a2a/multi` **is** in CI — `test-reusable.yaml` runs the `e2e` tier on every PR and
+`.github/test-config.yaml:107-108` lists it. It runs, passes, and is structurally blind to every
+defect PR 3 fixes. Each blindness is a specific, fixable omission, and the new tests should aim at
+these rather than re-cover what `a2a_test.py` already does:
+
+- **No structured output anywhere in the example.** `examples/api/a2a/multi/server.py` builds three
+  plain agents (two OpenAI, one smolagents) with no `output_type`, so the reply is always
+  `AgentReplyText` and the text path — the one that has always worked — is the only path exercised.
+  This alone hides two defects: the missing `DataPart` branch, and `AgentService.run`'s stringify.
+- **The client only ever reads text.** `examples/api/a2a/multi/client.py:53` returns
+  `…parts[0].root.text` — hardcoded, not type-checked. A `DataPart` would raise `AttributeError`
+  there rather than fail an assertion, so the client cannot express the difference it is supposed to
+  detect.
+- **Nothing reads the card's output modes.** `A2ACardResolver` fetches the card only to construct
+  the client. No assertion compares `default_output_modes` against what actually arrives, which is
+  the one-line test that would have caught the inaccurate card immediately.
+- **Single-process, in the order that happens to work.**
+  `examples/api/a2a/multi/server.py:28-29` load the modules at import, then `:32` calls
+  `RESTAPI.run()`, so the registry is full before `A2A._build()` runs. The
+  empty-registry defect needs a process serving A2A routes *without* agents, and **no example
+  combines A2A with queue mode at all** — the queue-mode examples do not enable A2A, and the A2A
+  example is not queue mode.
+
+Three of the four are the same shape: the happy path with the one reply type that already worked.
+
+#### Unit tests PR 3 must add (`ak-py/tests/test_a2a_executor.py`)
+
+- **Reply branches**: an `AgentReplyAny` produces a data part carrying the dict, labelled from
+  `media_type`, and `application/json` when it is unset; an `AgentReplyText` produces the current
+  text part unchanged (regression); the error path stays text.
+- **Card/executor parity** — the assertion nobody wrote: what the card advertises in
+  `default_output_modes` is what the executor actually emits, asserted together in one test so the
+  two cannot drift again.
+- **The typed-reply precondition**: `_execute_agent` returns an `AgentReply`, not a `str`. Paired
+  with a regression that `AgentService.run` itself still returns `str` — it is public API and other
+  callers depend on that.
+- **Empty registry**: `a2a.enabled` true with no agents registered logs exactly one warning
+  (`caplog`), and `get_cards()`/`get_agent_names()` return empty rather than raising.
+  - **Test hygiene requirement:** `A2A` caches on class attributes (`_built`, `_cards`,
+    `_executors`), so cases must reset them in a fixture. Without it the first test to build poisons
+    every later one — the same trap `ThreadRunner.shutdown_event` documents.
+
+#### Example changes PR 3 should make
+
+- Add one structured agent (`output_type`) to `examples/api/a2a/multi/server.py`, so the example
+  exercises a reply type that is not text.
+- Change `client.py` to branch on the part type instead of assuming `.text`. This is the important
+  one: it turns the client from something that hides the defect into something that would catch it,
+  and it doubles as the **migration example** for the declared behavioural change — any existing
+  A2A client reading `parts[0].root.text` breaks when its agent uses structured output, and this is
+  what the fix looks like.
+- Do **not** add an A2A-plus-queue-mode example for the empty-registry case. The unit test covers it,
+  and building that deployment would enshrine a combination the design explicitly does not endorse.
 
 ## Non-goals
 
@@ -261,3 +395,8 @@ graph TD
    this capability. If it is instead defined as a framework hint blob, that use is closed off by
    convention. **The ask is to settle its meaning while #696 is still design-only**, not to reserve
    anything for this issue; the field itself could be added later cheaply either way.
+9. **Split PRs 2 and 3 into their own issues?** Both fix pre-existing structured-output gaps and
+   neither needs anything from #706 (see Ordering and dependencies). Filing them separately lets
+   them merge without waiting on questions 1–6, and keeps this issue honestly scoped to the A2UI
+   capability plus PR 1. Against: three issues to track instead of one, and the carriage work then
+   has no single place stating why it is shaped the way it is. Maintainer's call.
