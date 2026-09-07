@@ -736,15 +736,30 @@ The four existing tools keep their names and signatures. Three are added, each g
   `limit` moves from 10 to 3.
 - `write` reads `metadata["query"]` first and falls back to `metadata["cypher_query"]` (same for
   `params`/`cypher_params`), and **skips a record carrying neither** with a logged warning instead of
-  calling `_run(None, {})`:
+  calling `_run(None, {})`. The skips are then **reported by raising `KnowledgeError` once the batch is
+  through**: the writable records still land, but a write that stored nothing is no longer reported to
+  the agent as a success — see behavioural change 17 and
+  [Deviations and additions](#deviations-and-additions) H.
 
 ```python
-statement = meta.get("query") or meta.get("cypher_query")
-params = meta.get("params") or meta.get("cypher_params") or {}
-if not statement:
-    log.warning("[neo4j.write] record carries no query; skipping. metadata keys=%s", sorted(meta))
-    continue
-self._run(statement, params)
+stored, skipped = 0, 0
+for record in records:
+    meta = dict(record.get("metadata", {}))
+    statement = meta.get("query") or meta.get("cypher_query")
+    params = meta.get("params") or meta.get("cypher_params") or {}
+    if not statement:
+        log.warning("[neo4j.write] record carries no query; skipping. metadata keys=%s", sorted(meta))
+        skipped += 1
+        continue
+    self._run(statement, params)
+    stored += 1
+
+if skipped:
+    raise KnowledgeError(
+        f"[KB][{self.backend_name}] {skipped} of {stored + skipped} record(s) carried no Cypher "
+        f"and were not stored ({stored} stored). A Neo4j write needs the statement in "
+        "metadata['query']."
+    )
 ```
 
 #### `StarburstManager` (`starburst.py`)
@@ -881,7 +896,7 @@ local-in-dev / S3-in-prod a one-string change that the *application* reads from 
 
 ### Behavioural changes
 
-Items 1-13 are `design.md`'s list, restated only where this spec fixes a detail; 14-16 are new and are
+Items 1-13 are `design.md`'s list, restated only where this spec fixes a detail; 14-17 are new and are
 flagged for design review. Each needs a test.
 
 1. `KnowledgeBase.read` becomes concrete, routing on `capabilities.query`. `ChromaManager.read` →
@@ -906,7 +921,8 @@ flagged for design review. Each needs a test.
 11. `Neo4jManager.query` defaults to `limit=3` instead of `limit=10`. `read_kb` always passes `limit`,
     so only direct callers see it.
 12. `Neo4jManager.write` reads the generic keys with the `cypher_*` fallback and skips a record carrying
-    neither, with a warning.
+    neither, with a warning. The batch then **raises `KnowledgeError`** naming what was stored and what
+    was not — see item 17.
 13. `KnowledgeBase.__init__` requires `capabilities` (`name` optional) — the only signature in this
     change that is not backward compatible. **Its reach is wider than the design states**: it breaks
     not only a subclass that calls `super().__init__()` with no arguments, but also one that defines no
@@ -921,6 +937,14 @@ flagged for design review. Each needs a test.
 16. **`read` and `write` are no longer abstract.** Additive for existing subclasses; a new subclass may
     now omit both, and the required abstract surface shrinks to `backend_name`, `connect`,
     `get_description`.
+17. **A text-only Neo4j `write_kb` now reports a failure.** `Neo4jManager.write` raises
+    `KnowledgeError` after the batch when any record carried no Cypher, so
+    `write_kb("neo4j", text="…")` with no query surfaces "Failed to write…" rather than "Stored
+    successfully" for a write that stored nothing. Prompt-visible, and deliberate: on `develop` such a
+    write also failed, but only because `_run(None, {})` happened to error — item 12's skip would have
+    turned that failure into a silent success. Pinned by
+    `test_the_skip_report_names_what_was_stored_and_what_was_not`; see
+    [Deviations and additions](#deviations-and-additions) H.
 
 **Non-changes, to be asserted:**
 
@@ -1012,6 +1036,7 @@ too narrowly. Flagged for design re-review per the staged process rather than ab
 | E | **Migration item 13's reach** | The design scopes it to "a subclass calling `super().__init__()` with no arguments". A subclass defining no `__init__` at all also breaks — which is exactly the shape of the documented example at `docs/docs/advanced/knowledge-bases.md:212` |
 | F | **The manifest retains a bounded body token index, not bodies** | "Frontmatter parsed eagerly, bodies read lazily" and "search ranks over body text" cannot both hold literally. A bounded token set per concept satisfies both intents and keeps the ~50 MB envelope; full bodies (and therefore complete `links`) are read only by `fetch`, which is how the design already describes traversal |
 | G | **`capabilities` is not overridable via `add_schema()`**, and `search_mode` is deliberately not bidirectional with `search` | Two precedence/scope questions the design leaves open; both resolved in the direction that keeps the declaration honest |
+| H | **`Neo4jManager.write` raises `KnowledgeError` after a batch that skipped records** (item 17), rather than only logging the skip | The design has the skip keep the rest of the batch running but leaves the agent-facing result unstated. Logging alone would report a write that stored nothing as a success — strictly worse than pre-#553, where `_run(None, {})` at least errored. Raising after the loop keeps both intents: the writable records land, and the tool layer reports the truth |
 
 ## Next stage
 
