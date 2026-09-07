@@ -115,7 +115,7 @@ OpenAIModule([general_agent])
 # Create and run the server with Slack handler
 if __name__ == "__main__":
     handler = AgentSlackRequestHandler()
-    RESTAPI.run(handler=handler)
+    RESTAPI.run([handler])
 ```
 
 ## Configuration Options
