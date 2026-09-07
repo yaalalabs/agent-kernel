@@ -7,7 +7,7 @@ from pydantic_ai import Agent, RunContext
 
 logger = logging.getLogger("ak.example.pydanticai_context")
 
-MODEL = "openai:gpt-4o-mini"
+MODEL = "openai:gpt-4.1-mini"
 
 CART_PREFIX = "Current cart:"
 
