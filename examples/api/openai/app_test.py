@@ -10,16 +10,6 @@ from agentkernel.test import Test
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
-# The PDF question has one right answer - 12 December 2025 - but the model states it at wildly
-# different lengths from run to run, so both PDF tests accept any of these phrasings.
-PDF_DEADLINE_ANSWERS = [
-    "12 December 2025.",
-    "The new deadline is 12 December 2025.",
-    "The new deadline based on the file is 12 December 2025.",
-    "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
-    "The new deadline for submitting Grade 06 applications is **12 December 2025**. This extension was announced by the Education Ministry due to the current disaster situation, and it follows the initial deadline of **5 December 2025**. Applications from students whose scholarship results had changed started being accepted from **26 November 2025**",
-]
-
 
 class APITestClient:
     def __init__(self, url):
@@ -79,15 +69,7 @@ async def test_support_agent(http_client):
 
     response = await http_client.send("I was extremely happy")
     Test.compare(
-        response,
-        [
-            "That's great to hear! What specifically made the experience enjoyable for you?",
-            # The agent decides when the conversation is over, so it may skip further follow-ups
-            # and close with the summary right after the satisfaction answer.
-            "Great to hear that, Andy.\n\n**Summary:**\n- Customer: Andy Dufresne\n- Activity: Deposit\n"
-            "- Amount: $250 USD\n- Method: Over the counter\n- Satisfaction: Extremely happy",
-        ],
-        threshold=0.1,
+        response, ["That's great to hear! What specifically made the experience enjoyable for you?"], threshold=0.1
     )
 
     response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})
@@ -141,7 +123,15 @@ async def test_pdf_support(http_client):
         ],
     }
     response = await http_client.send("", body=body)
-    Test.compare(response, PDF_DEADLINE_ANSWERS)
+    Test.compare(
+        response,
+        [
+            "The new deadline is 12 December 2025.",
+            "The new deadline based on the file is 12 December 2025.",
+            "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
+            "The new deadline for submitting Grade 06 applications is **12 December 2025**. This extension was announced by the Education Ministry due to the current disaster situation, and it follows the initial deadline of **5 December 2025**. Applications from students whose scholarship results had changed started being accepted from **26 November 2025**",
+        ],
+    )
 
 
 @pytest.mark.asyncio
@@ -190,4 +180,9 @@ async def test_pdf_multipart(http_client):
         result = resp.json()
         response = result.get("result", "")
 
-    Test.compare(response, PDF_DEADLINE_ANSWERS)
+    Test.compare(
+        response,
+        [
+            "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025."
+        ],
+    )
