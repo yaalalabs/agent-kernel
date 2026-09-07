@@ -97,7 +97,7 @@ class <Provider>InputGuardrail(BaseGuardrailUtil, Base<Provider>Guardrail, Input
             message = self._build_intervention_message(result)
             logger.warning(f"Input guardrail triggered: {message}")
             return AgentReplyText(
-                text=message,
+                response=message,
                 prompt=text
             )
 
