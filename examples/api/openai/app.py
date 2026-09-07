@@ -23,12 +23,14 @@ customer_support_agent = Agent(
     "customer itself and mimic the conversation. Ask questions one by one and gather answers and show "
     "the summary once the conversation is over.",
     tools=[fetch_customer_activity],
+    model="gpt-4.1-mini"
 )
 
 triage_agent = Agent(
     name="triage",
     instructions="You determine which agent to use based on the user's question.",
     handoffs=[general_agent, customer_support_agent],
+    model="gpt-4.1-mini"
 )
 
 # Optional custom route to add your own endpoints
