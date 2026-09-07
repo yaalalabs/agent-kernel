@@ -1,10 +1,10 @@
 import os
 
-# Must precede the first `opik` import anywhere in the process: this stops the SDK from writing
-# traces/spans to Opik Cloud (or a self-hosted instance) by default, which would otherwise require
-# an OPIK_API_KEY / `opik configure` the AK test framework never asks users to set up. setdefault,
-# not an unconditional write, so a user who explicitly wants tracking is respected. `track=False`
-# is also passed to each metric below as a second, explicit guard.
+# Must be set before any metric is constructed: this stops the SDK from writing traces/spans to
+# Opik Cloud (or a self-hosted instance) by default, which would otherwise require an OPIK_API_KEY /
+# `opik configure` the AK test framework never asks users to set up. setdefault, not an unconditional
+# write, so a user who explicitly wants tracking is respected. `track=False` is also passed to each
+# metric below as a second, explicit guard.
 os.environ.setdefault("OPIK_TRACK_DISABLE", "True")
 
 from opik.evaluation.metrics import GEval, LevenshteinRatio

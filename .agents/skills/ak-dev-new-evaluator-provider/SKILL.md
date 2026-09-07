@@ -2,7 +2,7 @@
 name: ak-dev-new-evaluator-provider
 description: >
   Step-by-step guide for adding a new built-in test evaluator provider to Agent Kernel
-  (beyond DeepEval). Use this skill when you need to give the test framework's pluggable
+  (beyond DeepEval and Opik). Use this skill when you need to give the test framework's pluggable
   AKEvaluator interface a new first-party scoring/judge backend addressable by a short
   config name (e.g. "ragas"), not a one-off bring-your-own evaluator. Covers implementing
   score-based and LLM-as-judge evaluation, factory registration, configuration, optional
@@ -200,11 +200,35 @@ network-free. At minimum cover:
   `ak-py/tests/test_cli_tester.py` for the pattern (patching `builtins.__import__`, since a
   cached submodule import can otherwise mask the missing dependency).
 
-### 6. Add Documentation
+### 6. Add an Example
 
-Add the provider to the evaluator backend table in
-[`docs/docs/core-concepts/configuration.md`](../../../docs/docs/core-concepts/configuration.md)
-and [`docs/docs/testing/cli-testing.md`](../../../docs/docs/testing/cli-testing.md).
+Add `examples/cli/<provider>-evaluator/`, following the shape of `examples/cli/opik-evaluator/`
+(a minimal agent, a `demo_test.py` exercising the new evaluator, and a `test-config.yaml` pointing
+`evaluator:` at the new short name). Register it in `.github/test-config.yaml`'s e2e matrix so it
+runs in CI, the way every other `examples/cli/*` entry does.
+
+### 7. Add Documentation
+
+Neither doc page carries a literal "evaluator backend table" — both describe the built-ins in
+prose next to the `score`/`llm`/`fallback` mode explanations. Update every prose mention that
+enumerates the built-ins by name, not just one page:
+
+- [`docs/docs/core-concepts/configuration.md`](../../../docs/docs/core-concepts/configuration.md)
+  and [`docs/docs/testing/cli-testing.md`](../../../docs/docs/testing/cli-testing.md) — the
+  `evaluator:` field description and the score/llm mode explanations.
+- [`docs/docs/testing/automated-testing.md`](../../../docs/docs/testing/automated-testing.md) and
+  [`docs/docs/testing/overview.md`](../../../docs/docs/testing/overview.md) — same prose pattern,
+  duplicated across these pages.
+- [`docs/docs/agent-skills.md`](../../../docs/docs/agent-skills.md) — the skill directory rows for
+  this skill and for `ak-dev-testing-conventions`.
+- `.agents/skills/ak-dev-testing-conventions/SKILL.md` — the evaluator config/mode section.
+- `ak-py/README.md` — the Test Configuration reference (`evaluator` field) and the test-config
+  walkthrough section.
+- The user-facing `ak-test` skill (`ak-py/src/agentkernel/skills/ak-test/SKILL.md`) and its
+  `evals/evals.json`.
+- Docs-site pages that describe testing/evaluators (`docs/src/pages/features.tsx`,
+  `docs/src/pages/index.tsx`) — check whether either needs updating, per
+  `ak-dev-sync-docs-from-branch`.
 
 ## Checklist
 
@@ -213,4 +237,9 @@ and [`docs/docs/testing/cli-testing.md`](../../../docs/docs/testing/cli-testing.
       and `_BUILTIN_EVALUATORS`
 - [ ] Optional dependency extra in `ak-py/pyproject.toml`
 - [ ] Unit tests in `ak-py/tests/test_evaluator_<provider>.py`
-- [ ] Documentation updated
+- [ ] Example in `examples/cli/<provider>-evaluator/`, registered in `.github/test-config.yaml`
+- [ ] Documentation updated: `docs/docs/core-concepts/configuration.md`,
+      `docs/docs/testing/cli-testing.md`, `docs/docs/testing/automated-testing.md`,
+      `docs/docs/testing/overview.md`, `docs/docs/agent-skills.md`,
+      `.agents/skills/ak-dev-testing-conventions/SKILL.md`, `ak-py/README.md`, the `ak-test` skill
+      and its `evals/evals.json`, and the docs-site pages if they need it
