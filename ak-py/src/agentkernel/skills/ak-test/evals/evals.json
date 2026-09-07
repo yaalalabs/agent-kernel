@@ -65,8 +65,8 @@
       "expected_outputs": [
         "evaluator:",
         "AKEvaluator",
-        "score_based_evaluation",
-        "llm_based_evaluation"
+        "evaluate_by_score",
+        "evaluate_by_llm"
       ]
     },
     {

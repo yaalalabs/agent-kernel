@@ -39,9 +39,9 @@ class DeepevalAKEvaluator(AKEvaluator):
             self._model = LiteLLMModel(f"{llm.provider}/{llm.model}")
         return self._model
 
-    def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
-            raise AKMissingInput("score_based_evaluation requires AKEvaluationCase.expected")
+            raise AKMissingInput("evaluate_by_score requires AKEvaluationCase.expected")
         score = float(Scorer.quasi_exact_match_score(target=case.expected, prediction=case.actual))
         return AKEvaluationResult(
             metric="quasi_exact_match",
@@ -50,9 +50,9 @@ class DeepevalAKEvaluator(AKEvaluator):
             passed=score >= case.threshold,
         )
 
-    def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_llm(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
-            raise AKMissingInput("llm_based_evaluation requires AKEvaluationCase.expected")
+            raise AKMissingInput("evaluate_by_llm requires AKEvaluationCase.expected")
         if not case.actual:
             # An empty reply can never satisfy a non-empty expected, and GEval hard-rejects an
             # empty actual_output (MissingTestCaseParamsError): report the scored failure so

@@ -489,7 +489,9 @@ classDiagram
     (`neo4j.py:120-121`), so dropping those keys without touching it would call `_run(None, {})` on
     every agent-issued write. It is changed to read `query`/`params` first and fall back to
     `cypher_query`/`cypher_params`, keeping hand-written old-shape records working, and to skip a
-    record carrying neither with a logged warning rather than handing `None` to the driver.
+    record carrying neither with a logged warning rather than handing `None` to the driver. The skips
+    are reported by raising `KnowledgeError` once the batch is through, so the writable records still
+    land but a write that stored nothing is not reported to the agent as a success.
 - `get_schemas` gains the same per-backend `try/except` its sibling `get_all_kb_descriptions` already
   has (`knowledgebuilder.py:185-187`), reporting the failing backend inline instead of failing the
   whole call.
@@ -607,7 +609,11 @@ Each is intentional; each needs a test.
 12. `Neo4jManager.write` reads the generic `query`/`params` metadata keys, falling back to
     `cypher_query`/`cypher_params`, and skips a record carrying neither with a logged warning instead
     of calling the driver with `None` (`neo4j.py:118-123`). Required by item 5: `write_kb` no longer
-    emits the `cypher_*` keys, and the fallback is what keeps old-shape records working.
+    emits the `cypher_*` keys, and the fallback is what keeps old-shape records working. Once the batch
+    is through, a `KnowledgeError` names what was stored and what was not, so a text-only
+    `write_kb("neo4j", …)` reports a failure instead of a success for a write that stored nothing —
+    without it, the skip would turn today's hard failure (`_run(None, {})` erroring) into a silent one.
+    `spec.md` behavioural change 17.
 13. `KnowledgeBase.__init__` requires a `capabilities` argument (`name` stays optional). A
     third-party subclass calling `super().__init__()` with no arguments must pass one — the only
     signature in this change that is not backward compatible, and the reason capability declaration is
