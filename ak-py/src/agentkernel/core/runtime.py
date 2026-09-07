@@ -13,7 +13,8 @@ from ..guardrail.guardrail import InputGuardrailFactory, OutputGuardrailFactory
 from ..sandbox.hooks import SandboxPreHookFactory
 from .base import Agent, Session
 from .builder import SessionStoreBuilder
-from .event import ReasoningDelta, TextDelta
+from .event import MessageEnd, ReasoningEnd, StepEnd, StreamEvent, TextDelta, ToolCallEnd
+from .hooks import StreamHalt
 from .model import (
     AgentReply,
     AgentReplyAny,
@@ -33,6 +34,72 @@ from .session import SessionStore
 # Volatile-cache key under which the run's acting user is published, so hooks and tools can read
 # who the request was made on behalf of without threading user_id through every call.
 ACTING_USER_CACHE_KEY = "ak.acting_user_id"
+
+
+class StreamBoundaryTracker:
+    """
+    Remembers which paired events a streamed run has left open, and how to close them.
+
+    Several of the events in `event.py` come in pairs: a `MessageStart` is closed by a `MessageEnd`, a
+    `ToolCallStart` by a `ToolCallEnd`. A post-hook can end a run part-way through such a pair by
+    raising `StreamHalt`, which would otherwise leave the client holding something that never closes —
+    an AG-UI frontend renders an unclosed tool call as work still in progress. `Runtime.stream` tracks
+    what it has emitted so its halt path can emit the closes the stream still owes.
+
+    Only events that were actually emitted are observed, never what the runner yielded, so a hook that
+    holds, drops or injects a boundary cannot desynchronise the tracker from the client's view.
+
+    Malformed sequences are tolerated rather than rejected: closing an id that was never opened is a
+    no-op, and opening one twice keeps the later close. Validating a runner's event sequence is a wider
+    contract question than this class, and raising mid-stream would turn a third-party adapter's bug
+    into a failed run.
+
+    Internal to `Runtime.stream`, and deliberately not exported from the package.
+    """
+
+    def __init__(self) -> None:
+        self._open: dict[tuple[str, str], StreamEvent] = {}
+
+    def observe(self, event: StreamEvent) -> None:
+        """
+        Records an emitted event, opening or closing the boundary it represents.
+
+        The closing event is built when the boundary opens and stored against it, so `drain` needs no
+        mapping from a boundary back to its event type. Events that open nothing are ignored.
+
+        :param event: An event that has just been emitted to the client.
+        """
+        match event.type:
+            case "message_start":
+                self._open[("message", event.message_id)] = MessageEnd(message_id=event.message_id)
+            case "message_end":
+                self._open.pop(("message", event.message_id), None)
+            case "reasoning_start":
+                self._open[("reasoning", event.message_id)] = ReasoningEnd(message_id=event.message_id)
+            case "reasoning_end":
+                self._open.pop(("reasoning", event.message_id), None)
+            case "tool_call_start":
+                self._open[("tool", event.tool_call_id)] = ToolCallEnd(tool_call_id=event.tool_call_id)
+            case "tool_call_end":
+                self._open.pop(("tool", event.tool_call_id), None)
+            case "step_start":
+                self._open[("step", event.name)] = StepEnd(name=event.name)
+            case "step_end":
+                self._open.pop(("step", event.name), None)
+
+    def drain(self) -> list[StreamEvent]:
+        """
+        Returns the closing events for everything still open, innermost first, and forgets them.
+
+        Insertion order is the order the boundaries opened, so reversing it closes the innermost
+        boundary first — a tool call opened inside a message is closed before the message. The tracker
+        is emptied, since a halted run emits these once and then ends.
+
+        :return: The closing events the run still owes its client, innermost first.
+        """
+        closes = list(reversed(self._open.values()))
+        self._open.clear()
+        return closes
 
 
 class Runtime:
@@ -237,12 +304,14 @@ class Runtime:
         Streams the specified agent response as StreamChunks carrying typed stream events.
 
         Pre-hooks run first; if halted, yields a StreamChunk with error and done=True.
-        The runner's events pass through the post-hook chain via on_stream_chunk(), which sees
-        text only: TextDelta and ReasoningDelta content reaches the hooks, and a hook's edit is
-        written back into the event so `delta` and `event` never disagree. Returning None drops
-        the chunk entirely, event included. Only TextDelta content is projected into `delta`,
-        keeping reasoning out of consumers that concatenate it as the answer; every event still
-        reaches `event`. The volatile cache is cleared on exit.
+        Every event the runner yields passes through the post-hook chain via on_stream_event(), which
+        may pass it, rewrite it in place, drop it by returning None, or return a list to emit several
+        events in its place; a returned list ends the chain for that event. Only TextDelta content is
+        projected into `delta`, keeping reasoning out of consumers that concatenate it as the answer,
+        and `delta` is taken from the event finally emitted so the two can never disagree. A hook
+        raising StreamHalt ends the run: the closing event for any boundary the stream left open is
+        emitted, then a single error chunk, and the session is not stored. Any other exception
+        propagates unchanged. The volatile cache is cleared on exit.
 
         :param agent: The agent to run.
         :param session: The session to use for the agent.
@@ -266,24 +335,39 @@ class Runtime:
                     self._log.debug(f"Streaming agent '{agent.name}' with requests: {requests}")
 
                     post_hooks = self._get_system_post_hooks() + agent.post_hooks
+                    boundaries = StreamBoundaryTracker()
 
-                    async for ev in agent.runner.stream(agent, session, requests):
-                        text = ev.content if isinstance(ev, (TextDelta, ReasoningDelta)) else None
-
-                        if text is not None:
+                    try:
+                        async for ev in agent.runner.stream(agent, session, requests):
                             for hook in post_hooks:
-                                text = await hook.on_stream_chunk(session, requests, agent, text)
-                                if text is None:
+                                result = await hook.on_stream_event(session, requests, agent, ev)
+                                if result is None:
+                                    emitted: list[StreamEvent] = []
                                     break
-                            if text is None:
-                                continue  # hook dropped the whole chunk, event included
-                            if text != ev.content:
-                                ev = ev.model_copy(update={"content": text})
+                                if isinstance(result, list):
+                                    emitted = result
+                                    break
+                                if result.type != ev.type:
+                                    raise TypeError(
+                                        f"PostHook '{hook.name()}' returned event type '{result.type}' for a '{ev.type}'. "
+                                        "Return a list to emit a different type"
+                                    )
+                                ev = result
+                            else:
+                                emitted = [ev]
 
-                        yield StreamChunk(delta=text if isinstance(ev, TextDelta) else None, event=ev)
+                            for event in emitted:
+                                chunk = StreamChunk(delta=event.content if isinstance(event, TextDelta) else None, event=event)
+                                boundaries.observe(event)
+                                yield chunk
 
-                    self.sessions().store(session)
-                    yield StreamChunk(done=True)
+                        self.sessions().store(session)
+                        yield StreamChunk(done=True)
+                    except StreamHalt as halt:
+                        self._log.warning(f"Stream halted for agent '{agent.name}': {halt.reason}")
+                        for closing in boundaries.drain():
+                            yield StreamChunk(event=closing)
+                        yield StreamChunk(error=halt.reason, done=True)
             finally:
                 session.get_volatile_cache().clear()
 

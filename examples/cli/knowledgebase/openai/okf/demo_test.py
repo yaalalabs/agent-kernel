@@ -50,8 +50,9 @@ async def test_search_finds_the_upstream_source(test_client):
 
 @pytest.mark.order(5)
 async def test_trust_signal_is_reported(test_client):
-    # Trust is advisory, never a filter: the concept is returned either way, and the agent is
-    # expected to pass the signal on rather than present unverified knowledge as settled.
+    # customers.md is machine-confirmed, not human-reviewed, so the answer is no. Trust is
+    # advisory, never a filter: the concept is returned either way, and the agent is expected to
+    # pass the signal on rather than present an unreviewed concept as settled.
     await test_client.send("Has the customers table concept been reviewed by a human? Answer yes or no.")
     response = (test_client.last_agent_response or "").lower()
     assert "no" in response

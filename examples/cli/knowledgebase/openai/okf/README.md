@@ -1,8 +1,9 @@
 # Open Knowledge Format Knowledge Base Demo
 
 This example shows how to serve a knowledge base from a **directory of markdown files** — an
-[Open Knowledge Format](https://openknowledgeformat.org) bundle — with no database and no
-service to run. The bundle is checked into this folder as `bundle/`.
+[Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)
+bundle — with no database and no service to run. The bundle is checked into this folder as
+`bundle/`.
 
 ## What This Demo Teaches
 
@@ -65,9 +66,9 @@ bundle/
 ├── tables/
 │   ├── index.md          # a curated listing, honoured by browse("tables")
 │   ├── orders.md         # human-reviewed; links to customers.md
-│   └── customers.md      # unverified
+│   └── customers.md      # machine-confirmed
 ├── datasets/
-│   └── orders_db.md      # an invented `type`, kept verbatim
+│   └── orders_db.md      # unverified; an invented `type`, kept verbatim
 └── malformed.md          # no frontmatter — skipped with a diagnostic
 ```
 
@@ -75,6 +76,12 @@ bundle/
 an `index.md` is browsed by returning that file — a listing a human wrote beats one derived from
 the filesystem. `datasets/` has no `index.md`, so browsing it returns a listing derived from the
 manifest; both halves of that rule are reachable from this bundle.
+
+The three concepts cover all three trust tiers, which are derived from `verified` and nothing
+else: a `human:` actor makes `orders.md` **human-reviewed**, an automated actor makes
+`customers.md` **machine-confirmed**, and an absent `verified` block leaves `orders_db.md`
+**unverified**. No tier is ever filtered out — every concept answers every operation, and the
+signal is passed to the agent to report.
 
 `malformed.md` is checked in deliberately. A bundle containing a file that cannot be parsed must
 still load: the file is skipped with an `unparseable_frontmatter` diagnostic, the other concepts

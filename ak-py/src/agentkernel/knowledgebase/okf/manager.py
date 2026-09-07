@@ -273,8 +273,10 @@ class OKFManager(DocumentKnowledgeBase):
         back and inserted into the live manifest, so the concept is visible to the very next
         ``fetch``/``browse``/``search`` rather than after up to ``refresh_seconds``.
 
-        Paths for the whole batch are resolved before any of it is written, so a bad id fails
-        the call while it is still a no-op instead of half way through.
+        Every id in the batch is normalised before any of it is written, so a malformed id fails
+        the call while it is still a no-op. Normalisation is not the store's containment check,
+        which runs per write: an id that escapes the root only through a symlink is refused part
+        way through the batch, with the records before it already durable.
 
         :param records: Records to persist; ``text`` becomes the body, ``metadata`` the frontmatter.
         :param kwargs: Accepted for contract compatibility; unused.
@@ -385,7 +387,7 @@ class OKFManager(DocumentKnowledgeBase):
             "okf_version": manifest.okf_version,
             "concept_count": len(manifest.concepts),
             "types": sorted({concept.type for concept in manifest.concepts.values()}),
-            "top_level_directories": sorted({path.split("/", 1)[0] for path in manifest.concepts if "/" in path}),
+            "top_level_directories": sorted(self._child_directories(manifest, "")),
             "reserved_files": {"index": sorted(manifest.index_files.values()), "log": sorted(manifest.log_files)},
             "diagnostics": len(manifest.diagnostics),
             "truncated": manifest.truncated,
@@ -605,14 +607,38 @@ class OKFManager(DocumentKnowledgeBase):
         body, _, _ = OKFParserUtil.parse_index(index_path, OKFParserUtil.decode_document(data), is_root=is_root)
         return [{"text": body, "metadata": {"id": index_path, "source": index_path, "title": index_path, "kind": "index"}}]
 
+    @staticmethod
+    def _child_directories(manifest: OKFBundle, prefix: str) -> set[str]:
+        """
+        Name the immediate subdirectories under a bundle prefix.
+
+        The single owner of "what directories does this bundle have", so ``browse`` and
+        ``schema`` cannot disagree: a directory curated by nothing but an ``index.md`` is
+        browsable, and would be missing from the schema the agent reads first if the schema
+        derived its own answer from concept paths alone.
+
+        Reserved files count for exactly that reason; the store cannot help, because its
+        ``list`` is recursive and emits files only.
+
+        :param manifest: The loaded manifest.
+        :param prefix: Bundle-relative directory prefix ending in ``/``, ``""`` at the root.
+        :return: Immediate subdirectory names, unordered.
+        """
+        names: set[str] = set()
+        for path in (*manifest.concepts, *manifest.index_files.values(), *manifest.log_files):
+            if not path.startswith(prefix):
+                continue
+            head, separator, _ = path[len(prefix) :].partition("/")
+            if separator:
+                names.add(head)
+        return names
+
     def _derived_listing(self, manifest: OKFBundle, directory: str, limit: int) -> List[Record]:
         """
         Derive a directory listing from the manifest when no index curates one.
 
-        The store cannot help: its ``list`` is recursive and emits files only, so immediate
-        subdirectories are inferred from the paths the manifest already holds — the reserved
-        ones included, or a directory curated by nothing but an ``index.md`` would be
-        unreachable, and that index is the listing this operation exists to serve.
+        Subdirectories come from :meth:`_child_directories`, the same derivation ``schema``
+        reports, so the two views of the bundle an agent is given cannot disagree.
 
         :param manifest: The loaded manifest.
         :param directory: Normalised bundle-relative directory.
@@ -620,24 +646,8 @@ class OKFManager(DocumentKnowledgeBase):
         :return: Child records in lexicographic order.
         """
         prefix = f"{directory}/" if directory else ""
-        concepts: List[OKFConcept] = []
-        subdirectories: set[str] = set()
-
-        for path, concept in manifest.concepts.items():
-            if not path.startswith(prefix):
-                continue
-            remainder = path[len(prefix) :]
-            head, separator, _ = remainder.partition("/")
-            if separator:
-                subdirectories.add(head)
-            else:
-                concepts.append(concept)
-
-        for reserved in (*manifest.index_files.values(), *manifest.log_files):
-            if reserved.startswith(prefix):
-                head, separator, _ = reserved[len(prefix) :].partition("/")
-                if separator:
-                    subdirectories.add(head)
+        subdirectories = self._child_directories(manifest, prefix)
+        concepts = [concept for path, concept in manifest.concepts.items() if path.startswith(prefix) and "/" not in path[len(prefix) :]]
 
         if not concepts and not subdirectories and directory:
             log.warning("[%s.browse] no such directory in the bundle: %r", self.backend_name, directory)

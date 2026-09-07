@@ -15,7 +15,7 @@ The examples are organized into the following main categories:
 Examples demonstrating Agent Kernel's API capabilities and integrations:
 
 - **`a2a/`** - Agent-to-Agent (A2A) compatibility examples
-  - `multi/` - Multi-agent runtime with CrewAI and OpenAI agents exposed as A2A compatible
+  - `multi/` - Multi-agent runtime with Smolagents and OpenAI agents exposed as A2A compatible
 - **`mcp/`** - Model Context Protocol (MCP) integration examples
   - `multi/` - Multi-agent runtime with agents exposed as MCP tools
 - **`agui/`** - AG-UI protocol example: an OpenAI Agents SDK agent driven by a React/Vite frontend

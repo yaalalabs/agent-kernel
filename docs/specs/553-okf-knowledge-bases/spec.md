@@ -363,9 +363,12 @@ class TrustTier(str, Enum):
     MACHINE_CONFIRMED = "machine-confirmed"
     HUMAN_REVIEWED = "human-reviewed"
 
+class DiagnosticCode(str, Enum):
+    ...                # one member per row of the table below
+
 class OKFDiagnostic(BaseModel):
     path: str          # "" for bundle-level diagnostics
-    code: str          # see the table below
+    code: str          # a DiagnosticCode value, but an open str
     message: str
 
 class OKFConcept(BaseModel):
@@ -385,8 +388,8 @@ class OKFConcept(BaseModel):
     trust: TrustTier = TrustTier.UNVERIFIED     # derived
     stale: bool = False                          # derived
     body: str | None = None                      # None when only a bounded prefix was scanned
-    body_tokens: set[str] = Field(default_factory=set)
     links: list[str] = Field(default_factory=list)   # populated only when body is complete
+    field_tokens: dict[str, set[str]] = Field(default_factory=dict)  # ranker field -> tokens
 
 class OKFBundle(BaseModel):
     concepts: dict[str, OKFConcept] = Field(default_factory=dict)
@@ -401,6 +404,11 @@ class OKFBundle(BaseModel):
   and an enum would force either a rejection or a silent coercion.
 - `tags` accepts a scalar and normalises to a one-element list, the same tolerance the spec mandates
   for `verified`. A non-string scalar is stringified, with a diagnostic.
+
+`DiagnosticCode` is the single source of these strings for both the parser and the manager, which
+would otherwise repeat them. It is deliberately **not** the annotation on `OKFDiagnostic.code`: a code
+emitted by a future producer must still round-trip through the model, so the field stays an open `str`
+and the enum gates nothing.
 
 Diagnostic codes, exhaustively:
 
@@ -423,12 +431,44 @@ Diagnostic codes, exhaustively:
 FRONTMATTER_MAX_BYTES = 16 * 1024
 BODY_INDEX_MAX_BYTES = 8 * 1024
 
-def split_frontmatter(data: str) -> tuple[str | None, str]: ...
-def parse_concept(path: str, data: str, *, body_complete: bool) -> tuple[OKFConcept | None, list[OKFDiagnostic]]: ...
-def extract_links(concept_path: str, body: str) -> tuple[list[str], list[OKFDiagnostic]]: ...
-def derive_trust(verified: list[dict[str, Any]]) -> TrustTier: ...
-def is_stale(stale_after: str | None, now: datetime) -> tuple[bool, list[OKFDiagnostic]]: ...
+class OKFParserUtil:
+    @staticmethod
+    def decode_document(data: bytes) -> str: ...
+    @staticmethod
+    def tokenise(text: str) -> set[str]: ...
+    @staticmethod
+    def is_reserved(path: str) -> bool: ...
+    @staticmethod
+    def split_frontmatter(data: str) -> tuple[str | None, str]: ...
+    @staticmethod
+    def derive_trust(verified: list[dict[str, Any]]) -> TrustTier: ...
+    @staticmethod
+    def is_stale(stale_after: str | None, now: datetime) -> tuple[bool, list[OKFDiagnostic]]: ...
+    @staticmethod
+    def extract_links(concept_path: str, body: str) -> tuple[list[str], list[OKFDiagnostic]]: ...
+    @staticmethod
+    def parse_concept(path: str, data: str, *, body_complete: bool, now: datetime | None = None) -> tuple[OKFConcept | None, list[OKFDiagnostic]]: ...
+    @staticmethod
+    def parse_index(path: str, data: str, *, is_root: bool) -> tuple[str, str | None, list[OKFDiagnostic]]: ...
 ```
+
+- **A class of static methods, not module-level functions.** Parsing an OKF document depends on
+  nothing but the document — no connection, no cache, no configuration — so nothing is held on an
+  instance; the class exists to give the reserved-file rules, the tolerance rules and the tokeniser one
+  named owner, which is what the repo's classes-not-scripts rule asks for and what the manifest walk in
+  `OKFManager` reaches for.
+- `tokenise` lives here, next to the body index it fills, so the query side and the index side
+  provably share one definition — that shared definition is what makes ranking reproducible across
+  processes.
+- `decode_document` decodes `utf-8-sig` with `errors="replace"` and never raises. Both halves are
+  load-bearing: the walk reads a bounded *prefix*, which can cut a multi-byte character in half, and a
+  leading byte-order marker under plain `utf-8` would make the opening `---` unrecognisable and drop the
+  whole concept.
+- `is_reserved` compares the basename case-insensitively, for the same reason: bundles travel as git
+  repos and tarballs across case-insensitive filesystems, where treating `Index.md` as a concept would
+  mint a concept colliding with its directory's index.
+- `parse_concept` takes an injectable `now` so staleness is testable without freezing the clock
+  globally; it defaults to the current UTC time.
 
 - **Frontmatter delimiters**: the document must open with `---` on its own first line; the block ends at
   the next line that is exactly `---`. No closing delimiter → `unparseable_frontmatter`, concept
@@ -533,8 +573,11 @@ text:
   (24 KiB by default). If no closing `---` is found within it, the walk falls back to a full
   `read_bytes` for that one file, because a concept whose frontmatter exceeds 16 KiB is unusual but
   must not be skipped.
-- `body_tokens` is built from the body bytes inside that window; `body` and `links` are left `None`/
-  empty, and `body_complete=False` is recorded.
+- `field_tokens` is built once per concept and keyed by the ranker's field names (`type`, `title`,
+  `description`, `tags`, `body`); the `body` entry is tokenised from the body bytes inside that window.
+  `body` and `links` are left `None`/empty, and `body_complete=False` is recorded. Tokenising per field
+  at parse time rather than per query is what keeps `search` a scan over sets rather than a re-tokenise
+  of the whole bundle.
 - **`fetch` is the only operation that reads a full body.** It re-reads the document, re-parses with
   `body_complete=True`, and therefore is the only operation whose records carry `metadata["links"]` —
   which is exactly how the design describes graph traversal ("attached as `metadata["links"]`, so an
@@ -552,6 +595,15 @@ At the 10,000-concept design target and the 300 s default that is 10,000 ranged 
 minutes *per pod*. The backend's docstring and `docs/docs/advanced/knowledge-bases.md` must both say
 so, and recommend a larger `refresh_seconds` — or `None` for an immutable bundle — for large S3
 bundles.
+
+`reload()` and `write()` are the two calls that can *block* on a walk rather than merely trigger one.
+`reload()` forces one and waits for it by definition. `write()` waits because it applies its
+write-through under `_refresh_lock` (see the concurrency contract below): a write issued while a
+refresh walk is in flight blocks for the remainder of that walk — on a large S3 bundle, up to the full
+`list_objects_v2` pagination plus one ranged GET per concept — before its own concepts enter the
+manifest. The store write itself is already durable by then; what waits is manifest visibility. This
+is another reason a large S3 bundle wants a long `refresh_seconds`: it makes the window a write can
+land in proportionally rarer.
 
 **Envelope — corrected against measurement during iteration 8.** The design's "~50 MB for 10,000
 concepts (~5 KB each)" does not survive contact with the implementation, in two independent ways:
@@ -633,11 +685,15 @@ The concurrency contract, in full:
   `connect()` failing loudly is the right behavior for a misconfigured store.
 - **`reload()`** forces an immediate walk under the blocking lock; `refresh_seconds=None` disables
   automatic refresh entirely.
-- **A write racing a refresh**: `write()` inserts into the live manifest's `concepts` dict (atomic per
-  key under CPython), while a refresh replaces the whole object. A write completing between a refresh's
-  `_walk()` and its assignment is therefore dropped *from the manifest* — never from the store, where
-  the bytes are already durable — and reappears on the next walk. Documented rather than locked
-  against, because bundle-level write concurrency control is an explicit non-goal.
+- **A write racing a refresh is not dropped.** `write()` takes `_refresh_lock` *blocking* and applies
+  its write-through to whatever manifest is current at that moment, not to the one the call started
+  with. A refresh that replaced the manifest between the write's `_walk()`-time and its insert would
+  otherwise discard the write-through and hide an already-durable concept until the next walk; holding
+  the lock closes that window, so a written concept is visible to the very next operation under every
+  interleaving. Pinned by `test_a_refresh_landing_mid_write_does_not_discard_the_write_through`.
+  **[spec-level decision]** — [Deviations and additions](#deviations-and-additions) I. This is *manifest*
+  concurrency only: bundle-level write concurrency control (two processes writing one path) remains an
+  explicit non-goal, and the store is still last-writer-wins.
 
 #### Operations
 
@@ -645,9 +701,10 @@ The concurrency contract, in full:
 
 - Tokenisation: lowercase, split on `[^a-z0-9]+`, drop tokens shorter than two characters, applied
   identically to the query and to every indexed field.
-- Field weights: `title` 4, `tags` 3, `type` 2, `description` 2, `body_tokens` 1. A concept's score is
-  the sum, over distinct query tokens, of the weight of each field containing that token. Presence, not
-  frequency — term frequency over a bounded body window would reward long preambles.
+- Field weights (`_FIELD_WEIGHTS`, keyed to match `OKFConcept.field_tokens`): `title` 4, `tags` 3,
+  `type` 2, `description` 2, `body` 1. A concept's score is the sum, over distinct query tokens, of the
+  weight of each field containing that token. Presence, not frequency — term frequency over a bounded
+  body window would reward long preambles.
 - Only concepts scoring `> 0` are returned. Ordering is `(-score, path)`, so ties break
   lexicographically and the result is reproducible across processes. Asserted by test.
 - Records: `text` = `description` or `title` or `path`; `metadata` = `{id, source, title, kind: type,
@@ -687,9 +744,23 @@ full body as `text` and the complete `links` list. A duplicate id yields one rec
   writes of the same content are byte-identical.
 - `generated` is always stamped: `{"by": <producer>, "at": <ISO-8601 UTC, seconds precision>}`.
 - **Write-through**: after `store.write_bytes` returns, the rendered document is parsed with
-  `body_complete=True` and inserted into the live manifest, replacing any entry at that path. The
-  concept is therefore visible to `fetch`, `browse`, and `search` in the very next call, independent of
-  `refresh_seconds`.
+  `body_complete=False` — the same terms the walk parses on, because a manifest that retained complete
+  bodies would grow without bound — and inserted into the live manifest, replacing any entry at that
+  path. The concept is therefore visible to `fetch`, `browse`, and `search` in the very next call,
+  independent of `refresh_seconds`. `metadata["links"]` appears only after a `fetch` of the written
+  path, exactly as for a walked concept. The batch's inserts are applied **once, under
+  `_refresh_lock`, to whatever manifest is current then** — never to the object the call started with,
+  which a concurrent refresh may already have replaced. See the concurrency contract above for the
+  guarantee and its cost.
+- **Path handling is normalisation, not resolution.** Every id in the batch runs through
+  `normalise_relative` before the first `write_bytes`, so a malformed or comma-bearing id fails the call
+  while it is still a no-op. The store's own containment check (`realpath` against `root`) necessarily
+  runs per write, so an id that escapes only through a symlink is refused part way through a batch, with
+  the records before it already durable. Batch atomicity is not offered; the two checks are stated
+  separately so that is not read as a promise.
+- A document this class rendered that fails to parse back is logged at `warning` and skipped rather than
+  raised: the bytes are durable either way, and the concept reappears on the next walk. It is unreachable
+  in practice, but a silent `continue` would turn it into a durable write invisible until then.
 
 **Producer string.** `producer` defaults to `f"agentkernel/{version}"`, where `version` comes from
 `importlib.metadata.version("agentkernel")` — the idiom already used at
@@ -699,7 +770,11 @@ distribution metadata). It is resolved **once in `__init__`**, not per write. An
 used verbatim after a non-empty check; the `<producer>/<version>` shape is a spec *convention*, and the
 same field legitimately carries `process:<id>` for automation, so the value is not pattern-validated.
 
-**`_derived_schema()`** returns, read from the loaded manifest and never hand-transcribed:
+**`_derived_schema()`** returns, read from the loaded manifest and never hand-transcribed. Its
+`top_level_directories` comes from `_child_directories(manifest, "")` — the same derivation `browse`'s
+listing uses, over concepts **and** reserved files, so a directory curated by nothing but an `index.md`
+is named by the schema the agent reads first as well as reachable from the root listing. Deriving it
+from concept paths alone would let the two views of the bundle disagree:
 
 ```python
 {"okf_version": bundle.okf_version, "concept_count": len(bundle.concepts),
@@ -771,15 +846,30 @@ The four existing tools keep their names and signatures. Three are added, each g
   `limit` moves from 10 to 3.
 - `write` reads `metadata["query"]` first and falls back to `metadata["cypher_query"]` (same for
   `params`/`cypher_params`), and **skips a record carrying neither** with a logged warning instead of
-  calling `_run(None, {})`:
+  calling `_run(None, {})`. The skips are then **reported by raising `KnowledgeError` once the batch is
+  through**: the writable records still land, but a write that stored nothing is no longer reported to
+  the agent as a success — see behavioural change 17 and
+  [Deviations and additions](#deviations-and-additions) H.
 
 ```python
-statement = meta.get("query") or meta.get("cypher_query")
-params = meta.get("params") or meta.get("cypher_params") or {}
-if not statement:
-    log.warning("[neo4j.write] record carries no query; skipping. metadata keys=%s", sorted(meta))
-    continue
-self._run(statement, params)
+stored, skipped = 0, 0
+for record in records:
+    meta = dict(record.get("metadata", {}))
+    statement = meta.get("query") or meta.get("cypher_query")
+    params = meta.get("params") or meta.get("cypher_params") or {}
+    if not statement:
+        log.warning("[neo4j.write] record carries no query; skipping. metadata keys=%s", sorted(meta))
+        skipped += 1
+        continue
+    self._run(statement, params)
+    stored += 1
+
+if skipped:
+    raise KnowledgeError(
+        f"[KB][{self.backend_name}] {skipped} of {stored + skipped} record(s) carried no Cypher "
+        f"and were not stored ({stored} stored). A Neo4j write needs the statement in "
+        "metadata['query']."
+    )
 ```
 
 #### `StarburstManager` (`starburst.py`)
@@ -917,7 +1007,7 @@ local-in-dev / S3-in-prod a one-string change that the *application* reads from 
 
 ### Behavioural changes
 
-Items 1-13 are `design.md`'s list, restated only where this spec fixes a detail; 14-16 are new and are
+Items 1-13 are `design.md`'s list, restated only where this spec fixes a detail; 14-17 are new and are
 flagged for design review. Each needs a test.
 
 1. `KnowledgeBase.read` becomes concrete, routing on `capabilities.query`. `ChromaManager.read` →
@@ -942,7 +1032,8 @@ flagged for design review. Each needs a test.
 11. `Neo4jManager.query` defaults to `limit=3` instead of `limit=10`. `read_kb` always passes `limit`,
     so only direct callers see it.
 12. `Neo4jManager.write` reads the generic keys with the `cypher_*` fallback and skips a record carrying
-    neither, with a warning.
+    neither, with a warning. The batch then **raises `KnowledgeError`** naming what was stored and what
+    was not — see item 17.
 13. `KnowledgeBase.__init__` requires `capabilities` (`name` optional) — the only signature in this
     change that is not backward compatible. **Its reach is wider than the design states**: it breaks
     not only a subclass that calls `super().__init__()` with no arguments, but also one that defines no
@@ -957,6 +1048,14 @@ flagged for design review. Each needs a test.
 16. **`read` and `write` are no longer abstract.** Additive for existing subclasses; a new subclass may
     now omit both, and the required abstract surface shrinks to `backend_name`, `connect`,
     `get_description`.
+17. **A text-only Neo4j `write_kb` now reports a failure.** `Neo4jManager.write` raises
+    `KnowledgeError` after the batch when any record carried no Cypher, so
+    `write_kb("neo4j", text="…")` with no query surfaces "Failed to write…" rather than "Stored
+    successfully" for a write that stored nothing. Prompt-visible, and deliberate: on `develop` such a
+    write also failed, but only because `_run(None, {})` happened to error — item 12's skip would have
+    turned that failure into a silent success. Pinned by
+    `test_the_skip_report_names_what_was_stored_and_what_was_not`; see
+    [Deviations and additions](#deviations-and-additions) H.
 
 **Non-changes, to be asserted:**
 
@@ -1009,7 +1108,7 @@ still mocked; no test touches a live service.
 | `tests/test_knowledgebase_builder.py` | **the riskiest consumer.** Tool-list gating for every combination (vector-only → exactly the four; fetch-only; browse-only; search+query → `search_kb`); tool order; capability-mismatch strings; `write_kb` emitting `query`/`params` and **not** `cypher_*`; `get_schemas` degrading per backend; semantic-map resolution on `search_kb` queries, `fetch_kb` ids (per segment) and `browse_kb` paths; `fetch_kb` id splitting/stripping/empty-dropping; a backend missing `capabilities` warning instead of raising |
 | `tests/test_knowledgebase_stores.py` | `DocumentStoreContract` over `LocalDocumentStore` (real `tmp_path`) and `S3DocumentStore` (fake boto3 client, including a paginated `list_objects_v2` and `NoSuchKey` → `FileNotFoundError`); containment matrix (`..`, absolute, backslash, normalising escapes) on every entrypoint; a symlink out of `root` skipped by `list()` and refused on read; global lexicographic ordering including the `a/z.md` vs `ab/b.md` case; `writable` probing vs declaration; `write_bytes` refused on a read-only store; `read_prefix_bytes` default vs the S3 ranged GET; `from_uri`'s five branches including `python:` and an `AKConfigError` scheme |
 | `tests/test_knowledgebase_okf_parser.py` | frontmatter splitting (missing open/close, non-mapping YAML); `type` required, unknown `type` kept; unknown keys → `extra`; bare `verified` → one-element list; scalar `tags`; the three trust tiers; staleness against an injected `now`, and the unparseable case; link extraction in both forms plus relative resolution, escapes dropped, absolute URLs ignored, non-`.md` ignored; **v0.2-only**: a v0.1 `timestamp` lands in `extra` and a body `# Citations` list stays body text; every diagnostic code is reachable; no `urllib`/`httpx` import on any path |
-| `tests/test_knowledgebase_okf_manager.py` | capabilities built from the store (writable folding both ways); `_derived_schema()` keys against a known bundle; `schema()` working with no `add_schema()`; search ranking — weights, presence-not-frequency, `(-score, path)` determinism across two managers, zero-score exclusion; `fetch` order/dedup/unknown-id omission and links present only here; `browse` index-vs-derived at root **and** at `tables/`, `limit` truncation, unknown directory; `write` — synthesised vs supplied id, comma refusal at both ends, fixed key order and byte-identical re-render, `generated` stamp, producer default and override; **write-through visibility with `refresh_seconds=None`** (proving it is not a refresh); refresh timing with a monkeypatched `time.monotonic`; a failed refresh serving the stale manifest and resetting the clock; `reload()`; **one walk under two concurrent boundary-crossing callers** (a `threading.Barrier` plus a walk counter); `max_concepts` truncation keeping a lexicographic prefix with a `truncated` diagnostic; nothing filtered on trust or staleness; diagnostics surfaced through `get_description()` |
+| `tests/test_knowledgebase_okf_manager.py` | capabilities built from the store (writable folding both ways); `_derived_schema()` keys against a known bundle; `schema()` working with no `add_schema()`; search ranking — weights, presence-not-frequency, `(-score, path)` determinism across two managers, zero-score exclusion; `fetch` order/dedup/unknown-id omission and links present only here; `browse` index-vs-derived at root **and** at `tables/`, `limit` truncation, unknown directory; `write` — synthesised vs supplied id, comma refusal at both ends, fixed key order and byte-identical re-render, `generated` stamp, producer default and override; **write-through visibility with `refresh_seconds=None`** (proving it is not a refresh) and a refresh landing mid-write not discarding it; the schema's `top_level_directories` agreeing with the root listing over a directory holding only an `index.md`; refresh timing with a monkeypatched `time.monotonic`; a failed refresh serving the stale manifest and resetting the clock; `reload()`; **one walk under two concurrent boundary-crossing callers** (a `threading.Barrier` plus a walk counter); `max_concepts` truncation keeping a lexicographic prefix with a `truncated` diagnostic; nothing filtered on trust or staleness; diagnostics surfaced through `get_description()` |
 | `tests/test_knowledgebase_okf_envelope.py` | the declared scale. A session-scoped fixture generates a 10,000-concept bundle in `tmp_path`; the test asserts the walk keeps all 10,000, that every concept's body index sits at the cap, that ranking is deterministic, and that `max_concepts` truncates to a lexicographic prefix with a diagnostic. Memory is measured as the sum of `size_diff` over a `snapshot_after.compare_to(snapshot_before, "filename")` around `_walk()` — **not** process RSS, which moves with the interpreter and the allocator's retained arenas — and asserted **per concept** against a 25 KB budget (250 MB projected at 10,000), because the cost is linear in the concept count and the per-concept figure is what stays true at every size. The measurement runs over a 2,000-concept slice: `tracemalloc` around a full 10,000-concept walk costs 75 s under coverage to learn the same number |
 | `tests/test_knowledgebase_contract.py` | `KnowledgeBaseContract` run against `FakeKnowledgeBase` (four capability shapes), `OKFManager` over a real local bundle, and the three existing backends with mocked clients — `monkeypatch` on `chromadb.PersistentClient`, `neo4j.GraphDatabase.driver`, and `trino.dbapi.connect` (plus host/user/password constructor args for Starburst) |
 | `tests/test_knowledgebase_exports.py` | every `__all__` name resolves; `chromadb`/`neo4j`/`trino`/`boto3` stay out of `sys.modules` after importing the package and touching `KnowledgeBase`/`OKFManager`; no contract suite is exported; the `overview.md:353` import works verbatim |
@@ -1054,6 +1153,8 @@ too narrowly. Flagged for design re-review per the staged process rather than ab
 | E | **Migration item 13's reach** | The design scopes it to "a subclass calling `super().__init__()` with no arguments". A subclass defining no `__init__` at all also breaks — which is exactly the shape of the documented example at `docs/docs/advanced/knowledge-bases.md:212` |
 | F | **The manifest retains a bounded body token index, not bodies** | "Frontmatter parsed eagerly, bodies read lazily" and "search ranks over body text" cannot both hold literally. A bounded token set per concept satisfies both intents; full bodies (and therefore complete `links`) are read only by `fetch`, which is how the design already describes traversal. **Amended in iteration 8:** the index as first implemented was bounded in *bytes read* but not in *tokens retained*, which is not the same promise — see [Manifest envelope](#manifest-what-is-retained-and-what-it-costs) for the measurements, the `BODY_INDEX_MAX_TOKENS` cap that closes it, and the corrected 250 MB envelope |
 | G | **`capabilities` is not overridable via `add_schema()`**, and `search_mode` is deliberately not bidirectional with `search` | Two precedence/scope questions the design leaves open; both resolved in the direction that keeps the declaration honest |
+| I | **`write()` applies its write-through under `_refresh_lock`**, rather than accepting a dropped-write race | The design and this spec first documented a write landing mid-refresh as dropped from the manifest until the next walk. An agent that writes a concept and immediately searches for it would then be told its own write does not exist — indistinguishable, from the agent's side, from a failed write. Taking the lock costs `write()` a wait of up to one refresh walk (over S3, one `list_objects_v2` pagination plus a ranged GET per concept); paying it on the rare writing path is cheaper than an agent-visible lie |
+| H | **`Neo4jManager.write` raises `KnowledgeError` after a batch that skipped records** (item 17), rather than only logging the skip | The design has the skip keep the rest of the batch running but leaves the agent-facing result unstated. Logging alone would report a write that stored nothing as a success — strictly worse than pre-#553, where `_run(None, {})` at least errored. Raising after the loop keeps both intents: the writable records land, and the tool layer reports the truth |
 
 ## Next stage
 
