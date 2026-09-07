@@ -10,7 +10,7 @@ Supporting research: [`research/README.md`](research/README.md) (payload/carriag
 gap analysis), [`research/changes.md`](research/changes.md) (file-by-file), and the protocol survey at
 [`../523-ag-ui-support/research/a2ui.md`](../523-ag-ui-support/research/a2ui.md).
 
-Every `path:line` below is verified against `develop` at `c9c5d430`. Paths are relative to
+Every `path:line` below is verified against `develop` at `497973d0`. Paths are relative to
 `ak-py/src/agentkernel/` unless stated otherwise. Two facts are marked **unverified** where they
 appear, both third-party SDK symbol names.
 
@@ -23,7 +23,7 @@ appear, both third-party SDK symbol names.
     `:845` (`_AGUIConfig`).
   - System-prompt injection — `SystemToolFactory.get_system_prompt_suffix` (`core/tool.py:224`),
     built from `get_all` (`:179`).
-  - Reply post-processing — `PostHook.on_run` (`core/hooks.py:51`).
+  - Reply post-processing — `PostHook.on_run` (`core/hooks.py:72`).
   - A structured reply type — `AgentReplyAny(content: dict)` (`core/model.py:129`).
   - Optional-dependency gating — the extras pattern (`ak-py/pyproject.toml:88`, `:167`).
 - **Structured replies already reach all six adapters**, so A2UI needs no adapter work and no
@@ -108,19 +108,26 @@ graph TD
   - Consequence: **PRs 2 and 3 could each be filed as their own issue** and merge ahead of #706,
     unblocked by any of its open questions. Whether to split them is a maintainer decision — see
     Open questions.
-- **This work merges after #678 (streaming post-hooks) and #696 (HITL).** Both were still open when
-  this was last checked — #678 at `969fe222`, #696 at `f0bd330f`, neither touched since 2026-09-03.
-  The requirements below assume their designs as merged; if either head moves, re-check the two
-  summaries here before relying on them:
-  - #678 deletes `PostHook.on_stream_chunk` and replaces it with `on_stream_event(session, requests,
-    agent, event) -> StreamEvent | list[StreamEvent] | None`, called for every event including
-    boundaries, with a list return emitting several events in place of one. It also states
-    **`PostHook.on_run` on streamed runs is a non-goal** with its own issue — so PR 5 must not take
-    that route.
-  - #696 adds `AgentReplyPaused` as a *subclass* of `AgentReplyAny` (the `AgentReply` union at
-    `core/model.py:126` is unchanged) and a `RunPaused` member to the `StreamEvent` union, and
-    reopens `ResponseBuilder.build_response` to express a third outcome.
-- PRs 1–4 have no hard dependency on either. **PR 5 requires #678 merged.**
+- **#678 (streaming post-hooks) is merged** — `497973d0`, now the tip of `develop`. PR 5's
+  dependency is satisfied and the API below is code, not a plan:
+  - `PostHook.on_stream_chunk` is **gone**. `PostHook.on_stream_event(session, requests, agent,
+    event) -> StreamEvent | list[StreamEvent] | None` (`core/hooks.py:94`) replaces it, called for
+    every event including boundaries. Returning a list emits several events in place of one — the
+    release half of hold-and-release. A returned list ends the hook chain for that event, so
+    `return event` and `return [event]` are **not** equivalent.
+  - `StreamHalt(reason)` (`core/hooks.py:20`) ends a streamed run; `Runtime.stream` closes any open
+    boundary via `StreamBoundaryTracker` (`core/runtime.py:39`) and does not store the session.
+  - `Runtime.stream` is now at `core/runtime.py:300`, its terminal chunk at `:365`.
+  - **It did not touch `core/event.py`.** The `StreamEvent` union still has its original twelve
+    members, so PR 5 still has to add the structured one — that gap is unchanged.
+  - It records **`PostHook.on_run` on streamed runs as a non-goal** with its own issue, so PR 5 must
+    not take that route.
+- **#696 (HITL) is still open** — design only, `f0bd330f`, untouched since 2026-09-03. The
+  requirements below assume its design; re-check this summary if that head moves:
+  - `AgentReplyPaused` as a *subclass* of `AgentReplyAny` (the `AgentReply` union at
+    `core/model.py:126` is unchanged), a `RunPaused` member added to the `StreamEvent` union, and
+    `ResponseBuilder.build_response` reopened to express a third outcome.
+- PRs 1–4 have no hard dependency on #696. **PR 5's blocker is cleared.**
 
 ### PR 1 — the reply carries its media type
 
@@ -228,7 +235,7 @@ dependencies for why that matters to how this is filed.
     otherwise, and a no-op on any initialisation failure — the hook chain must never break the
     runtime.
 - Coupling: `core/` reaches `a2ui/` **only lazily, inside enabled-checks** — the sandbox/schedule
-  precedent already used at `core/tool.py:179` and `core/runtime.py:63`. Nothing in `a2ui/` imports
+  precedent already used at `core/tool.py:179` and `core/runtime.py:130`. Nothing in `a2ui/` imports
   `framework/`, `integration/`, `deployment/` or `api/`.
 - Config: new `_A2UIConfig` beside `_SandboxConfig` (`core/config.py:758`), registered on `AKConfig`.
   - `enabled: bool = False` — inert when off: no tools, no prompt text, no imports.
@@ -244,9 +251,9 @@ dependencies for why that matters to how this is filed.
     There is precedent (the sandbox carries a whole prompt section on one tool), but the type says
     "tool" and it is not one — and `ToolBuilder.bind()` derives names from `func.__name__`, so a
     dummy function is a live footgun.
-- `Runtime._get_system_post_hooks` (`core/runtime.py:63`) returns the literal
-  `[OutputGuardrailFactory.get()]`; add `A2UIPostHookFactory.get()`. The pre-hook line above (`:55`)
-  already chains three factories, so this is the established shape.
+- `Runtime._get_system_post_hooks` (`core/runtime.py:126`) returns the literal
+  `[OutputGuardrailFactory.get()]` (`:130`); add `A2UIPostHookFactory.get()`. The pre-hook line
+  above (`:122`) already chains three factories, so this is the established shape.
 - New `a2ui` extra in `ak-py/pyproject.toml`, near `agui` (`:88`).
 - **Hook behaviour must be specified, not left to the implementation:**
   - Valid payload → an `AgentReplyAny` with `content` set to the parsed payload and `media_type` set.
@@ -260,11 +267,14 @@ dependencies for why that matters to how this is filed.
   plus its media type.
   - It must honour the union's stated invariant that no field carries a framework-native object.
   - #696's `RunPaused` establishes that adding a member is a normal move, not a new pattern.
-- Delivery uses #678's `on_stream_event` hold-and-release, with no further Runtime change:
-  the A2UI hook returns `None` per `TextDelta` while accumulating in the session's volatile cache,
-  then at the closing boundary returns `[<structured event>, <the boundary event>]`.
+- Delivery uses `PostHook.on_stream_event` (`core/hooks.py:94`, merged in #678) with **no further
+  Runtime change**: the A2UI hook returns `None` per `TextDelta` while accumulating in the session's
+  volatile cache, then at the closing boundary returns `[<structured event>, <the boundary event>]`.
+  - Because a returned list ends the chain for that event, the A2UI hook must be positioned aware
+    that hooks after it will not see the released pair. It is a system post-hook, so it runs first
+    (`core/runtime.py:337`) — state this in `spec.md` rather than leaving it to be discovered.
   - The buffer lives in the volatile cache, never on `self` — hook instances are process-wide
-    (`core/runtime.py:59-64`).
+    (`core/runtime.py:126-131`).
 - `AGUIMapper.to_agui` (`integration/agui/mapping.py`) gains one case above its `case _` fallback
   (`:64`), mapping the structured event onto AG-UI's custom event, whose `value` field is structured.
   - The `ag_ui.core` custom-event symbol is **unverified** — check against the pinned
@@ -280,7 +290,7 @@ dependencies for why that matters to how this is filed.
     below for what it must assert and why the existing example cannot.
   - PR 4 covers: valid parse, invalid payload, disabled → no-op hook, `agents` filter honoured,
     prompt suffix contains the catalog.
-  - PR 5 extends `test_agui_mapping.py` and the #678 streaming tests.
+  - PR 5 extends `test_agui_mapping.py`, plus `test_runtime_stream_events.py` and `test_stream_boundaries.py` (both from #678).
 - **One cross-surface parity test** (new): one structured reply, asserted to arrive with the same
   dict and label on REST, WebSocket, A2A and AG-UI. Nothing like it exists. This is what makes the
   unopinionated claim checkable rather than asserted, and it is what catches a future surface
