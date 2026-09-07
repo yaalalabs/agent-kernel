@@ -190,6 +190,17 @@ class TestSchema:
         assert derived["truncated"] is False
         assert derived["diagnostics"] >= 1
 
+    def test_the_schema_names_every_directory_the_root_listing_can_reach(self, tmp_path):
+        # The schema is the first thing the agent reads and browse is the second; a directory
+        # curated by nothing but an index.md is reachable from the root, so it has to be in both.
+        files = {path: text for path, text in BUNDLE.items() if path != "index.md"}
+        files["notes/index.md"] = "# Notes\n- curated by hand, no concepts\n"
+        manager = make_manager(tmp_path, files)
+
+        listed = {record["metadata"]["id"].rstrip("/") for record in manager.browse() if record["metadata"]["kind"] == "directory"}
+        assert "notes" in listed
+        assert listed == set(manager._derived_schema()["top_level_directories"])
+
     def test_capabilities_cannot_be_overridden_by_add_schema(self, tmp_path):
         manager = make_manager(tmp_path)
         manager.add_schema({"capabilities": {"writable": "yes"}, "note": "kept"})
