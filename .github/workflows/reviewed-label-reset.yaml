@@ -14,7 +14,7 @@ on:
     types: [synchronize]
 
 # Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions). Default to no
-# scopes; the single job is granted only the pull-requests write it needs to remove the label.
+# scopes; the single job is granted only the issues write permission it needs to remove the label.
 permissions: {}
 
 jobs:
