@@ -2,8 +2,9 @@
 # See https://kernel.yaala.ai/docs/testing/overview for details.
 mode: fallback  # Test comparison mode: score, llm, or fallback (default: fallback)
 # Built-in evaluator backend, provided by Opik (https://www.comet.com/docs/opik/) by Comet.
-# score mode uses Opik's LevenshteinRatio; llm mode uses Opik's GEval judge. Both run locally
-# against the LLM configured below - no Opik Cloud account, API key, or server needed.
+# score mode uses Opik's LevenshteinRatio, an offline check with no LLM call; llm mode uses
+# Opik's GEval judge, which runs locally against the LLM configured below. Neither mode needs
+# an Opik Cloud account, API key, or server.
 evaluator: opik
 llm:
   model: gpt-4o-mini

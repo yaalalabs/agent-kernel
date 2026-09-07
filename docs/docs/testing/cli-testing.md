@@ -175,9 +175,9 @@ await test.expect(["Hello! How can I help?"])  # Uses configured mode
 
 **Built-in evaluators:** `deepeval` (default, requires `pip install "agentkernel[test]"`) and `opik`
 (requires `pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet).
-Opik's `score` mode uses its `LevenshteinRatio` metric and `llm` mode uses its `GEval` judge —
-both run locally against the LLM configured under `llm:` and never require an Opik Cloud account,
-API key, or self-hosted server. See
+Opik's `score` mode uses its `LevenshteinRatio` metric, an offline string-similarity check that
+never calls an LLM; `llm` mode uses its `GEval` judge, which runs locally against the LLM configured
+under `llm:`. Neither mode requires an Opik Cloud account, API key, or self-hosted server. See
 [`examples/cli/opik-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/opik-evaluator)
 for a complete working example.
 
