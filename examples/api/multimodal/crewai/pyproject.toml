@@ -20,6 +20,8 @@ dev = [
 
 [tool.uv]
 package = false
+# force newer posthog: crewai's chromadb needs posthog<6.0.0 but deepeval needs posthog>=7.0.0; both only use it for telemetry
+override-dependencies = ["posthog>=7.0.0,<8.0.0"]
 
 [tool.isort]
 profile = "black"
