@@ -192,12 +192,18 @@ def supports_streaming(self) -> bool:
     return False
 ```
 
-`Runtime.stream()` wraps each yielded event in a `StreamChunk` (`delta` is populated only for
-`TextDelta`, so a plain-text consumer that only reads `StreamChunk.delta` keeps working unchanged),
-runs it through `PostHook.on_stream_chunk()`, and forwards it to the caller (REST SSE endpoint or AWS
-Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new framework's
-streaming — just implement `Runner.stream()`. See `docs/specs/523-ag-ui-support/spec.md` for the full
-event-mapping rules and per-adapter correlation-id/boundary-derivation decisions.
+`Runtime.stream()` runs every yielded event through `PostHook.on_stream_event()` (#670), wraps what
+survives in a `StreamChunk` (`delta` is populated only for `TextDelta`, so a plain-text consumer that
+only reads `StreamChunk.delta` keeps working unchanged), and forwards it to the caller (REST SSE
+endpoint or AWS Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new
+framework's streaming — just implement `Runner.stream()`. See `docs/specs/523-ag-ui-support/spec.md`
+for the full event-mapping rules and per-adapter correlation-id/boundary-derivation decisions, and
+`docs/specs/670-streaming-post-hooks/` for the hook contract your events pass through.
+
+Two consequences for a new adapter, both from #670: a hook may now drop or rewrite **any** event you
+emit, including boundaries, so do not assume what you yield is what the client receives; and a hook
+raising `StreamHalt` abandons your generator mid-iteration, so anything your `stream()` does after the
+loop (writing back framework context, for instance) will not run on a halted run.
 
 ### 3c. Wire up the per-run framework context
 

@@ -42,6 +42,8 @@ e2e:
       path: examples/cli/pydanticai_context
     - type: cli
       path: examples/cli/custom-evaluator
+    - type: cli
+      path: examples/cli/opik-evaluator
     # - type: cli
     #   path: examples/cli/guardrail/walledai
 

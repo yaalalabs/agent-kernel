@@ -127,7 +127,7 @@ Write through `tool_context.state`, or from application code / a post-hook that 
 
 ## Running
 
-This demo uses `LiteLlm(model="openai/gpt-4o-mini")`, so set `OPENAI_API_KEY` in your environment.
+This demo uses `LiteLlm(model="openai/gpt-4.1-mini")`, so set `OPENAI_API_KEY` in your environment.
 
 Install dependencies:
 
