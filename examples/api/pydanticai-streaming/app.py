@@ -4,7 +4,7 @@ from pydantic_ai import Agent
 
 # Provider-agnostic: swap for "anthropic:...", "google-gla:...", etc. (install the matching provider
 # extra, e.g. pydantic-ai-slim[anthropic]). Requires OPENAI_API_KEY for the model below.
-MODEL = "openai:gpt-4o-mini"
+MODEL = "openai:gpt-4.1-mini"
 
 storyteller_agent = Agent(
     model=MODEL,
