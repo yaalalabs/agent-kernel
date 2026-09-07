@@ -743,11 +743,14 @@ full body as `text` and the complete `links` list. A duplicate id yields one rec
   writes of the same content are byte-identical.
 - `generated` is always stamped: `{"by": <producer>, "at": <ISO-8601 UTC, seconds precision>}`.
 - **Write-through**: after `store.write_bytes` returns, the rendered document is parsed with
-  `body_complete=True` and inserted into the live manifest, replacing any entry at that path. The
-  concept is therefore visible to `fetch`, `browse`, and `search` in the very next call, independent of
-  `refresh_seconds`. The batch's inserts are applied **once, under `_refresh_lock`, to whatever manifest
-  is current then** — never to the object the call started with, which a concurrent refresh may already
-  have replaced. See the concurrency contract above for the guarantee and its cost.
+  `body_complete=False` — the same terms the walk parses on, because a manifest that retained complete
+  bodies would grow without bound — and inserted into the live manifest, replacing any entry at that
+  path. The concept is therefore visible to `fetch`, `browse`, and `search` in the very next call,
+  independent of `refresh_seconds`. `metadata["links"]` appears only after a `fetch` of the written
+  path, exactly as for a walked concept. The batch's inserts are applied **once, under
+  `_refresh_lock`, to whatever manifest is current then** — never to the object the call started with,
+  which a concurrent refresh may already have replaced. See the concurrency contract above for the
+  guarantee and its cost.
 - **Path handling is normalisation, not resolution.** Every id in the batch runs through
   `normalise_relative` before the first `write_bytes`, so a malformed or comma-bearing id fails the call
   while it is still a no-op. The store's own containment check (`realpath` against `root`) necessarily
