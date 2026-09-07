@@ -10,9 +10,9 @@ contract has. A contract green against the fake and red against a backend is a s
 the backend. Then OKFManager over a real bundle on disk, then the three SDK-backed managers
 with their clients faked. No test here touches a live Chroma, Neo4j, Starburst or bucket.
 
-The SDK doubles are imported from test_knowledgebase_backends rather than duplicated: one fake
-per SDK, one place to fix it when a client's shape changes. Importing named symbols binds only
-those names, so that module's own tests are not collected twice.
+The SDK doubles are not duplicated here: the `chroma`, `neo4j` and `starburst` fixtures come
+from `conftest.py`, shared with test_knowledgebase_backends — one fake per SDK, one place to
+fix it when a client's shape changes.
 """
 
 import pytest
@@ -23,7 +23,6 @@ from knowledgebase_contracts import (
     fake_sql_kb,
     fake_vector_kb,
 )
-from test_knowledgebase_backends import chroma, neo4j, neo4j_driver, starburst  # noqa: F401  (pytest fixtures)
 from test_knowledgebase_okf_manager import BUNDLE, write_bundle
 
 from agentkernel.knowledgebase import LocalDocumentStore, OKFManager

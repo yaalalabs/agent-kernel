@@ -230,3 +230,6 @@ target-version = ["py312"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=src --cov-report=term --cov-report=html --html=report.html"
+# CI runs everything; `-m "not slow"` is for a local run that should not spend a minute
+# materialising a 10,000-concept bundle.
+markers = ["slow: builds a large fixture on disk or otherwise takes tens of seconds"]

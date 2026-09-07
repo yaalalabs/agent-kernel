@@ -20,6 +20,10 @@ Measurement notes, because the wrong measurement here is worse than none:
 Concept bodies are deliberately longer than ``BODY_INDEX_MAX_TOKENS``. An envelope measured
 over bodies that fit under the cap would pass while telling us nothing: the cap is the reason
 the number is bounded at all.
+
+The whole module is marked ``slow``: materialising 10,000 files is a minute CI should spend on
+every push and a contributor should be able to decline with ``-m "not slow"``. The bundle is
+built by a session-scoped fixture, so deselecting the module writes nothing at all.
 """
 
 import gc
@@ -30,6 +34,8 @@ import pytest
 from agentkernel.knowledgebase import LocalDocumentStore, OKFManager
 from agentkernel.knowledgebase.okf.model import DiagnosticCode
 from agentkernel.knowledgebase.okf.parser import BODY_INDEX_MAX_TOKENS
+
+pytestmark = pytest.mark.slow
 
 CONCEPT_COUNT = 10_000
 
