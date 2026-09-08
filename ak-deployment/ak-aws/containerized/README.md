@@ -336,6 +336,21 @@ when org policy disallows the default `0.0.0.0/0` egress these modules create, o
 resource (e.g. RDS, ElastiCache) already has ingress rules referencing a specific, pre-approved
 security group. `agent_runner_security_group_id` only has an effect when `queue_mode = true`.
 
+A provided security group must reproduce the rules the module would otherwise create for it, since
+traffic fails at runtime (not at plan/apply) if it doesn't:
+
+- `alb_security_group_id`: inbound TCP 80 from the VPC CIDR (the API Gateway VPC Link ENIs share this
+  SG, and in WebSocket modes the NLB reaches the ALB the same way), plus egress to the tasks on
+  `container_port`.
+- `ecs_service_security_group_id`: inbound `container_port` from the ALB security group (created or
+  provided).
+- `agent_runner_security_group_id`: egress to SQS, DynamoDB and the model endpoints.
+
+If you provide only `ecs_service_security_group_id`, the ALB security group is still module-created, so
+its ID isn't known until the first apply and can't be referenced up front in a security group you
+already created. Provide `alb_security_group_id` too (using the `alb_security_group_id` output from a
+prior apply, or a pre-created SG) if you need its ID ahead of time.
+
 ### Scheduling (EventBridge Scheduler)
 
 | Variable | Description | Type | Default | Required |

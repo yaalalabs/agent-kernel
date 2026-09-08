@@ -23,21 +23,14 @@ Redis/Valkey SGs are explicitly out of scope (user decision).
     a Lambda SG") — **this design deliberately extends scope to containerized's ECS SGs per user
     request**, since the same operational blockers (no `ec2:CreateSecurityGroup`, pre-approved SGs)
     apply equally to ECS task/ALB SGs.
-- Existing precedent for a "create or use provided" toggle lives in `common/modules/authorizer`:
-  - `authorizer/variables.tf:57-61` — `security_group_ids`, `list(string)`, default `[]`.
-  - `authorizer/main.tf:39-40` — `count = length(var.security_group_ids) == 0 && length(var.subnet_ids) > 0 ? 1 : 0`.
-  - `authorizer/main.tf:121` — `vpc_security_group_ids = length(var.security_group_ids) > 0 ? var.security_group_ids : (length(var.subnet_ids) > 0 ? [aws_security_group.authorizer_lambda[0].id] : null)`.
-  - This submodule's own variable is list-shaped, but every current call site only ever feeds it a
-    single-element list (see below) — that stays true after this change, so `authorizer`'s
-    `variables.tf`/`main.tf` need **no changes**.
-  - No `coalesce()` anywhere in the repo's `.tf` files (verified by grep).
-  - The more directly-applicable precedent is the top-level `vpc_id` bring-your-own-VPC pattern
-    (`containerized/state.tf:1-9`, `serverless/state.tf:1-13`), which is singular and nullable:
-    `variable "vpc_id" { type = string, default = null, description = "VPC ID. If not provided, a new
-    one will be created" }`. Every SG in scope for this change (confirmed with the requester: all five
-    serverless Lambdas share exactly one SG; each `containerized` SG below is single-purpose) needs
-    only one ID, so this design follows the `vpc_id` shape — a singular nullable `security_group_id` —
-    rather than `authorizer`'s list shape, which is specific to that one submodule's own interface.
+- A "create or use provided" toggle already exists in `common/modules/authorizer`
+  (`security_group_ids`, list-shaped, default `[]`), but this design instead follows the more directly
+  applicable `var.vpc_id` bring-your-own-VPC pattern — singular and nullable — since every SG in scope
+  here (confirmed with the requester: all five serverless Lambdas share exactly one SG; each
+  `containerized` SG below is single-purpose) needs only one ID. See `spec.md`'s Shared convention
+  section for the detailed precedent comparison.
+  - `authorizer`'s own `variables.tf`/`main.tf` need no changes — its call sites already only ever feed
+    it a single-element list, and that stays true after this change.
 - **containerized/modules/rest-service** creates two SGs with a dependency between them:
   - `rest-service/main.tf:144-162` — `aws_security_group.ecs_alb` (ALB SG, ingress from `var.vpc_cidr`
     on port 80).
@@ -75,24 +68,19 @@ Redis/Valkey SGs are explicitly out of scope (user decision).
 
 ### Shared convention (applies to every module below)
 
-- New variable(s) named `security_group_id`, `type = string`, `default = null` — one per logical SG,
-  mirroring `var.vpc_id`'s exact shape and description style ("...If not provided, a new one will be
-  created").
+- New variable(s) named `security_group_id` (or a module-specific name, see below), `type = string`,
+  `default = null` — one per logical SG, mirroring `var.vpc_id`'s shape and description style ("...If
+  not provided, a new one will be created").
   - `null` (default) → module creates its own SG, exactly as today. No behavior change for existing
     callers that don't set the variable.
   - Non-null → module skips creating its own SG and uses the provided ID directly.
-  - No separate boolean "create" flag — presence of a value is the toggle (same "presence implies
-    external" spirit as `authorizer`'s convention, applied with `vpc_id`'s singular shape since no SG
-    in scope needs more than one ID).
-- Every `aws_security_group` resource this change touches gets `count = var.security_group_id == null ? 1 : 0`.
-- Every consumer of a `count`-based SG resource's `.id` is rewritten to read from a `local` that
-  resolves to the effective ID (provided vs. created) — never `aws_security_group.x.id` directly, since
-  that reference breaks once `count` is added (becomes `aws_security_group.x[0].id`, which errors when
-  the count is 0). Pattern: `local.effective_id = var.security_group_id != null ? var.security_group_id : aws_security_group.x[0].id`.
+  - No separate boolean "create" flag — presence of a value is the toggle.
+- Every SG resource this change touches becomes conditional on its variable.
+- Every consumer of a conditional SG resource's ID is rewritten to read from a resolving local (the
+  provided ID, or the created one) — never the raw resource attribute directly, since that reference
+  breaks once the resource becomes conditional.
 - Anywhere a list-typed argument is required downstream (ECS `network_configuration.security_groups`,
-  `aws_lb.security_groups`, a submodule's `security_group_ids`), wrap the single effective ID:
-  `[local.effective_id]` — same as how `request-handler/main.tf:339` already wraps its singular
-  `var.security_group_id` today.
+  `aws_lb.security_groups`, a submodule's `security_group_ids`), wrap the single effective ID.
 - No new validation that a provided SG belongs to the target VPC — matches this module's existing
   practice of not validating `vpc_id`/`private_subnet_ids` either.
 
@@ -101,74 +89,48 @@ Redis/Valkey SGs are explicitly out of scope (user decision).
 - Two separate variables — `ecs_alb` and `ecs_service` are logically distinct SGs with different rules
   and an ingress dependency between them, and are toggled **independently** (you may provide one and
   let the module create the other; both-or-neither is not required):
-  - `alb_security_group_id` (`string`, default `null`) — toggles `aws_security_group.ecs_alb`.
-  - `ecs_service_security_group_id` (`string`, default `null`) — toggles `aws_security_group.ecs_service`.
-- `aws_security_group.ecs_alb` (`main.tf:144`) gets `count = var.alb_security_group_id == null ? 1 : 0`.
-- `aws_security_group.ecs_service` (`main.tf:164`) gets `count = var.ecs_service_security_group_id == null ? 1 : 0`.
-- New locals resolve the effective IDs:
-  - `local.alb_security_group_id` = `var.alb_security_group_id` if set, else `aws_security_group.ecs_alb[0].id`.
-  - `local.ecs_service_security_group_id` = `var.ecs_service_security_group_id` if set, else `aws_security_group.ecs_service[0].id`.
-- `ecs_service`'s ingress rule (`main.tf:168-173`, currently `security_groups =
-  [aws_security_group.ecs_alb.id]`) must reference `[local.alb_security_group_id]` instead — this holds
-  regardless of whether the ALB SG was created or provided, so the ECS task always allows ingress from
-  whichever ALB SG is actually in effect.
-- `aws_lb.app.security_groups` (`main.tf:191`) → `[local.alb_security_group_id]`.
-- The `ecs_service` submodule call's `security_group_ids` (`main.tf:295`) →
-  `[local.ecs_service_security_group_id]`.
-- `outputs.tf:41-49` (`security_group_id`, `alb_security_group_id`) must expose the **effective** local,
-  not the raw resource attribute — required because `containerized/api_gateway.tf:24` consumes
-  `module.rest_service.alb_security_group_id` for the VPC Link, and that must resolve correctly whether
-  the ALB SG was created or user-provided.
+  - `alb_security_group_id` — toggles the ALB SG.
+  - `ecs_service_security_group_id` — toggles the ECS task SG.
+- The ECS task SG's ingress rule must reference the resolved ALB SG (created or provided), so the ECS
+  task always allows ingress from whichever ALB SG is actually in effect.
+- The ALB itself and the `ecs_service` submodule call read from the resolved locals, not the raw
+  resource attributes.
+- Both module outputs (`security_group_id`, `alb_security_group_id`) must expose the effective ID —
+  required because `containerized/api_gateway.tf:24` consumes `alb_security_group_id` for the VPC Link,
+  and that must resolve correctly whether the ALB SG was created or user-provided.
+
 ### `containerized/modules/agent-runner`
 
-- New variable: `security_group_id` (`string`, default `null`).
-- `aws_security_group.agent_runner` (`main.tf:277`) gets `count = var.security_group_id == null ? 1 : 0`.
-- New local `local.security_group_id` resolves to `var.security_group_id` if set, else
-  `aws_security_group.agent_runner[0].id`.
-- `aws_ecs_service.agent_runner.network_configuration.security_groups` (`main.tf:343`) →
-  `[local.security_group_id]`.
-- `outputs.tf:21-24` (`security_group_id`) exposes the effective value (still not consumed at the
-  containerized root today, but should stay correct for any future/external consumer).
+- New variable: `security_group_id`.
+- The SG resource becomes conditional; the ECS service's network configuration and the module's own
+  output read the resolved local.
+
 ### `containerized` root (`state.tf`, `variables.tf`, `rest_service.tf`, `queue_mode.tf`)
 
-- New root-level variables, one per independently-toggleable SG, each `string` default `null`,
-  following `vpc_id`'s exact convention at this layer:
-  - `alb_security_group_id`
-  - `ecs_service_security_group_id`
-  - `agent_runner_security_group_id`
-- All three are always declared regardless of mode. Confirmed current behavior: `rest_service.tf`'s
-  `module "rest_service"` call is unconditional, so the ALB SG and ECS-service SG exist in **every**
-  mode (2 SGs in normal/non-queue mode). `queue_mode.tf`'s `module "agent_runner"` call has
-  `count = var.queue_mode ? 1 : 0`, so the agent-runner SG (the 3rd) only exists — and
-  `agent_runner_security_group_id` only has any effect — when `queue_mode = true`. This matches how
-  other queue-mode-only variables (e.g. `var.agent_runner`) already behave: harmlessly ignored outside
-  queue mode.
-- `rest_service.tf`'s `module "rest_service"` call passes `alb_security_group_id` and
-  `ecs_service_security_group_id` straight through.
-- `queue_mode.tf`'s `module "agent_runner"` call passes `agent_runner_security_group_id` through as
-  that module's `security_group_id`.
+- New root-level variables, one per independently-toggleable SG, following `vpc_id`'s convention at
+  this layer: `alb_security_group_id`, `ecs_service_security_group_id`, `agent_runner_security_group_id`.
+- All three are always declared regardless of mode. The ALB and ECS-service SGs exist in every mode;
+  the agent-runner SG only exists — and `agent_runner_security_group_id` only has any effect — when
+  `queue_mode = true`, matching how other queue-mode-only variables (e.g. `var.agent_runner`) already
+  behave outside queue mode.
+- Each root variable passes straight through to the corresponding module call.
 - No change to `containerized/api_gateway.tf:24` itself — it keeps consuming
   `module.rest_service.alb_security_group_id`, which now resolves correctly in both create and
   provided-SG cases per the rest-service change above.
 
 ### `serverless/state.tf`
 
-- New root-level variable: `security_group_id` (`string`, default `null`) — one ID shared by all five
-  Lambda submodules, confirmed with the requester (all serverless Lambdas use the same SG; no submodule
-  needs a distinct one).
-- `aws_security_group.lambda` (`state.tf:92`) gets `count = var.security_group_id == null ? 1 : 0`.
-- `local.security_group_id` (`state.tf:14`) changes from `aws_security_group.lambda.id` to:
-  `var.security_group_id != null ? var.security_group_id : aws_security_group.lambda[0].id`.
-- No changes needed at any of the five submodule call sites (`module.authorizer` `state.tf:183`,
-  `module.ws_connection_handler` `state.tf:531`, `module.request_handler` `state.tf:559`,
-  `module.agent_runner` `state.tf:690`, `module.response_handler` `state.tf:708`) — they already
-  reference `local.security_group_id` (wrapped in `[...]` for `authorizer`, singular for the other
-  four), and that local now transparently resolves to either the created or the provided ID.
-- New output at the serverless root: `security_group_id`, exposing `local.security_group_id` — issue
-  #689 explicitly asks for a `lambda_security_group_id`-style output; no SG output currently exists at
-  either root module (`containerized/outputs.tf`, `serverless/outputs.tf` — verified, neither has one
-  today). `containerized` root gets equivalent outputs for its three SGs for the same reason (external
-  consumers need to discover the effective ID either way).
+- New root-level variable: `security_group_id` — one ID shared by all five Lambda submodules,
+  confirmed with the requester (all serverless Lambdas use the same SG; no submodule needs a distinct
+  one).
+- The Lambda SG resource becomes conditional; the existing shared local resolves to either the created
+  or the provided ID.
+- No changes needed at any of the five submodule call sites — they already reference that local, which
+  now transparently resolves to either source.
+- New output at the serverless root exposing the effective ID — issue #689 explicitly asks for a
+  `lambda_security_group_id`-style output, and no SG output currently exists at either root module.
+  `containerized` root gets equivalent outputs for its three SGs for the same reason (external consumers
+  need to discover the effective ID either way).
 
 ## Non-goals
 
@@ -184,8 +146,9 @@ Redis/Valkey SGs are explicitly out of scope (user decision).
 
 ## Open questions
 
-All four questions raised in the previous review cycle are now resolved and folded into the
-Requirements above:
+This change is small and straightforward enough that these were confirmed directly with the requester
+rather than through a formal review cycle; `design.md`/`spec.md`/`plan.md` exist to make implementation
+easier, not as a gate. All four are resolved and folded into the Requirements above:
 
 1. ~~Fan the serverless list out to all five submodules?~~ Moot — all five Lambdas share exactly one SG
    (confirmed), so the variable is singular and no submodule needs changing.
