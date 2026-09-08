@@ -33,7 +33,7 @@ Supporting research: [`research/framework-hitl-survey.md`](research/framework-hi
   `openai.py:221`, `langgraph.py:429`, `pydanticai.py:184`, `adk.py:266`, `crewai.py:405`,
   `smolagents.py:181`.
 - **The durable store the issue asks for already exists.** `Runtime.run` calls
-  `SessionStore.store(session)` after post-hooks (`runtime.py:228`), and every non-volatile
+  `SessionStore.store(session)` after post-hooks (`runtime.py:295`), and every non-volatile
   top-level key is persisted (`base.py:143-152`) via `pickle` (`core/session/serde.py:2,24,36`).
 - **Two patterns for durable per-session state already exist, and this change reuses the lighter
   one.** #526's `framework_context` took a reserved `Session.Keys` entry with three accessors
@@ -91,7 +91,7 @@ graph LR
 - Add **`AgentReplyPaused` as a subclass of `AgentReplyAny`** (`model.py:129`), *not* as a new
   member of the `AgentReply` union. *(Decision: open question 1, resolved.)*
   - **The union is therefore unchanged** (`model.py:126`), and so is every `isinstance` tuple over
-    it: `runtime.py:174`, `:212`, `:224`, `:260`, `chat_service.py:317`,
+    it: `runtime.py:241`, `:212`, `:224`, `:260`, `chat_service.py:317`,
     `slack_chat.py:172`, `teams_chat.py:530`. A subclass satisfies `isinstance(reply,
     AgentReplyAny)`, so all seven keep working untouched and the public type alias gains no member.
   - This is safe because **`AgentReply` is never re-validated from JSON** — no `model_validate`
@@ -148,7 +148,7 @@ graph LR
   wrong.
 - **A post-hook must not be required to handle a paused reply.** Post-hooks run on it (an output
   guardrail should see what is being asked of the human), and the existing type check
-  (`runtime.py:224`) accepts it, but no hook is obliged to change.
+  (`runtime.py:291`) accepts it, but no hook is obliged to change.
 
 ### Core — the paused-run record
 
@@ -178,7 +178,7 @@ graph LR
       `ScheduleStore`, `AttachmentStore`, `ResponseStore`. This is none of those: it is three
       one-line accessors over a dict that already exists, with nothing to configure or
       provision. `AGUIState` is the accurate precedent and the name follows it. Persistence
-      is entirely `SessionStore`'s, which pickles the whole session at `runtime.py:228`.
+      is entirely `SessionStore`'s, which pickles the whole session at `runtime.py:295`.
   - **Accepted risk, stated plainly because it is real.** `nv_cache` is documented as application
     space — "These caches can be used by application code to store data that is not part of the
     agent context" (`base.py:35-38`) — and `KeyValueCache.clear()` (`core/util/key_value_cache.py:68`)
@@ -231,7 +231,7 @@ graph LR
       - Incrementing earlier would make the same pause stale on one backend and live on another.
         `InMemorySessionStore.load()` returns the **live** `Session` object
         (`core/session/in_memory.py:87`), while Redis/DynamoDB only ever see what `store()`
-        pickled. A pre-hook halt returns at `runtime.py:214` without reaching `store()` at
+        pickled. A pre-hook halt returns at `runtime.py:281` without reaching `store()` at
         `:228`, so a pre-chain increment would persist on `in_memory` and vanish everywhere
         else. Counting invocations makes Rule 2 hold identically on every backend.
       - **An adapter-caught error reply counts as an advance.** Each adapter's `except` returns
@@ -293,10 +293,10 @@ graph LR
     | | Inherit existing handling? | Cost of a union member | Choice |
     |---|---|---|---|
     | `AgentReplyPaused` | **Yes** — guardrails, `AgentService.run` and the stringify sites should all see a pause | **7** `isinstance` sites | subclass `AgentReplyAny` |
-    | `AgentRequestResume` | **No** — the existing handling is *skip* | **1** `isinstance` site (`runtime.py:180`) | own union member |
+    | `AgentRequestResume` | **No** — the existing handling is *skip* | **1** `isinstance` site (`runtime.py:247`) | own union member |
 
     - **The cost is one line.** Adding to `AgentRequest` touches only the hook-return validation
-      tuple at `runtime.py:180`. `AgentRequestAttachmentRef` set the precedent: added to this
+      tuple at `runtime.py:247`. `AgentRequestAttachmentRef` set the precedent: added to this
       union for thread support, it touches that same single site plus its own intended consumers.
       Against that, a subclass buys nothing worth a conceptual compromise.
     - **A subclass would inherit being ignored.** All six adapters do
@@ -355,17 +355,17 @@ graph LR
     resumes through the prebuilt-list path.
 - `Runtime.run` dispatches on the request list: an `AgentRequestResume` present ⇒ call
   `agent.runner.resume(agent, session, requests, decisions, record)` instead of `agent.runner.run(...)`
-  (`runtime.py:219`). `Runtime.stream` does the same around `runner.stream` (`runtime.py:270`),
+  (`runtime.py:286`). `Runtime.stream` does the same around `runner.stream` (`runtime.py:341`),
   dispatching to `resume_stream`. **Three numbered rules govern the dispatch**; the pre-hook
   bullet below refers to them by number rather than restating them:
   - **Rule 1 — extract the decisions before the hook chain; take the branch after it.** Two
     separate lines, not one `if` at the call site — `_prepare_requests` reassigns
-    `requests = reply` (`runtime.py:186`), so a hook that filters the list could drop the marker,
+    `requests = reply` (`runtime.py:253`), so a hook that filters the list could drop the marker,
     and a check made at the call site would then dispatch to `run()`, turning a resume silently
     into a fresh turn.
   - **Rule 2 — a halt on the resume path must not consume the decision.** Any pre-hook may end a
-    run by returning an `AgentReply` (`runtime.py:174-175`), and `Runtime.run` then returns
-    without reaching the runner (`runtime.py:212-214`). On an ordinary turn that costs a turn; on
+    run by returning an `AgentReply` (`runtime.py:241-242`), and `Runtime.run` then returns
+    without reaching the runner (`runtime.py:279-214`). On an ordinary turn that costs a turn; on
     a resume it would commit the human's decision, return a reply the client reads as completion,
     and leave `paused_run` still pending — the decision lost with nothing reporting it. So a halt
     on this path leaves the record **intact**, and the client may answer again.
@@ -390,7 +390,7 @@ graph LR
   - **The hook-processed `requests` list is passed too, not just the decisions.** Every adapter
     opens with `ToolContext(Runtime.current(), agent, session, requests)` — nine sites, e.g.
     `openai.py:200`, `langgraph.py:392`, `pydanticai.py:159`, `adk.py:194` — and tools read it
-    via `ToolContext.get().requests`. Post-hooks take `requests` as well (`runtime.py:223`).
+    via `ToolContext.get().requests`. Post-hooks take `requests` as well (`runtime.py:342`).
     Without it a resuming adapter has nothing to put in the tool context.
     - **On a resume, `ToolContext.requests` holds the hook-processed list containing the
       `AgentRequestResume`** — the list as the hook chain left it, not as it arrived, so a
@@ -410,13 +410,13 @@ graph LR
         `Runtime` dispatch — not deferred to an adapter PR, since without it PRs 1–2 ship a
         stated security property they do not deliver.
     - The other two system pre-hooks stay harmless on a decision-only request:
-      `MultimodalPreHookFactory` and `SandboxPreHookFactory` (`runtime.py:55`) no-op. The
+      `MultimodalPreHookFactory` and `SandboxPreHookFactory` (`runtime.py:122`) no-op. The
       rules exist for the halt and rewrite hazards, not for them.
     - Note that "the hooks would no-op anyway" is **not** an argument for skipping the chain — it
       says they are pointless here, not that running them is unsafe. The hazard is the halt, and
       it is present whether or not the hooks do any work.
-  - **Post-hooks do run on the resumed reply**, unchanged (`runtime.py:221-226`).
-  - Session store and volatile-cache clearing are unchanged (`runtime.py:228-231`).
+  - **Post-hooks do run on the resumed reply**, unchanged (`runtime.py:288-293`).
+  - Session store and volatile-cache clearing are unchanged (`runtime.py:295-298`).
 - Failure modes are errors with actionable messages, not silent fallbacks:
   - resume with no paused run in the session;
   - resume whose `runner` does not match the current agent's runner;
@@ -530,8 +530,28 @@ graph LR
     - The docstring and test change belong to **PR 1**, with `RunPaused` itself.
   - The opaque payload stays in the session and never rides the event.
   - `Runtime.stream` yields it as a normal `StreamChunk(event=...)` and then terminates the
-    stream with the existing `StreamChunk(done=True)` (`runtime.py:286`) — a pause is not an
-    error, so it must **not** be reported through `StreamChunk.error`.
+    stream with the existing `StreamChunk(done=True)` (`runtime.py:365`) — a pause is not an
+    error, so it must **not** be reported through `StreamChunk.error`. That field now has a
+    legitimate owner: a post-hook raising `StreamHalt` (`core/hooks.py`), whose `reason` reaches
+    the client as `StreamChunk.error`. **A pause is not a halt** — the run ended in a valid
+    outcome the client can act on, not an invalidated partial the client must discard.
+  - **A pause must drain any open stream boundaries before ending, exactly as the halt path
+    does.** `StreamBoundaryTracker` (`runtime.py:39-102`) exists because ending a stream part-way
+    through a `MessageStart`/`ToolCallStart` pair leaves an AG-UI frontend rendering the tool call
+    as work still in progress; the halt path drains it at `runtime.py:368-369`. **The pause path
+    is the same situation and is arguably the common case** — an agent pauses precisely because a
+    tool call needs approval, so a `ToolCallStart` is very likely open at that moment. Without
+    the drain, a paused stream leaves the client showing a tool call that never completes.
+    - So the terminal sequence is: `RunPaused` → the closing events the tracker still owes →
+      `StreamChunk(done=True)`. `spec.md` decides whether that reuses the halt path's drain or
+      calls `boundaries.drain()` directly; the requirement is that it happens.
+  - **`RunPaused` passes through the post-hook chain, so a hook can drop it.** Since the merge,
+    `on_stream_event` (`runtime.py:342-343`) sees **every** event, not only text deltas as the
+    old `on_stream_chunk` did, and returning `None` drops it. A hook that filters unknown event
+    types would silently swallow the pause — the exact failure this whole change exists to
+    prevent, reintroduced one layer up. `spec.md` must state how this is prevented: either
+    `RunPaused` bypasses the chain, or the chain may not drop it. **This is a new consequence of
+    the merged streaming contract, not a pre-existing gap.**
 - Per-adapter streaming pause support:
   - **OpenAI** — supported. Drain `stream_events()`, then read `RunResultStreaming.interruptions`
     at the point the adapter already writes framework context (`openai.py:268-272`).
@@ -734,6 +754,14 @@ the two negative cases distinguishable to the model**:
   running pre-hooks on a resume. Send a `ResumeDecision.message` that an input guardrail is
   configured to block, and assert it is blocked. Without the `guardrail/` extraction change
   this test fails, which is the point of having it.
+- **A paused stream closes what it opened.** Pause a streamed run while a `ToolCallStart` is open
+  and assert the terminal sequence is `RunPaused` → `ToolCallEnd` → `done=True`. Without the
+  drain an AG-UI client renders that tool call as still running, forever — the same defect
+  `StreamBoundaryTracker` was added for on the halt path.
+- **A post-hook cannot swallow a pause.** Register a post-hook whose `on_stream_event` returns
+  `None` for event types it does not recognise, and assert the pause still reaches the client.
+  This is the one test that would catch the pause being lost to the very chain that now sees
+  every event.
 - **Rejected combinations:** `prompt` + `resume` and `schedule` + `resume` each raise
   `ValueError` → 400 before any agent runs. **The `schedule` + `resume` case must be asserted
   specifically**, because it is the one that catches a guard placed too late: if the check sits
@@ -796,7 +824,7 @@ that no PR needs a later one to be correct.
 | # | Branch | Scope | Proves it works |
 |---|---|---|---|
 | 1 | `feature/606-hitl-1-core` | The contract, purely additive. `core/model.py` types, `core/event.py`'s `RunPaused` **plus the reworded union invariant** (docstring + `test_stream_events.py`), `PausedRunState` (the `ak.paused_run` nv_cache record and its get/set/clear), `Runner.supports_pause` plus the `resume()` / `resume_stream()` raising defaults, generalised picklability helper. CrewAI + smolagents need no change — they inherit the `False` default. | New types round-trip; the record survives a session-store round trip; `resume()` and `resume_stream()` raise by default; **no existing test changes** |
-| 2 | `feature/606-hitl-2-runtime` | The wiring, still with nothing that pauses. `Runtime.run`/`stream` dispatch, Rules 1–3, the `Runtime`-owned `ak.run_seq` counter that backs staleness, `RequestBuilder` (`known_fields` += `resume`), `ChatService` validation, the ambiguous-combination guard run **before** `_maybe_schedule` (`prompt`+`resume`, `schedule`+`resume`), **the `guardrail/` text-extraction change so a resume's free text is actually guarded**, `ResponseBuilder`'s `status: PAUSED`, new-prompt-keeps-pause, the `in_memory` warning. | Driven end-to-end by a `DummyRunner` that pauses — the existing test-double pattern |
+| 2 | `feature/606-hitl-2-runtime` | The wiring, still with nothing that pauses. `Runtime.run`/`stream` dispatch, Rules 1–3, **the paused-stream terminal sequence (boundary drain, and `RunPaused` protected from the post-hook chain)**, the `Runtime`-owned `ak.run_seq` counter that backs staleness, `RequestBuilder` (`known_fields` += `resume`), `ChatService` validation, the ambiguous-combination guard run **before** `_maybe_schedule` (`prompt`+`resume`, `schedule`+`resume`), **the `guardrail/` text-extraction change so a resume's free text is actually guarded**, `ResponseBuilder`'s `status: PAUSED`, new-prompt-keeps-pause, the `in_memory` warning. | Driven end-to-end by a `DummyRunner` that pauses — the existing test-double pattern |
 | 3 | `feature/606-hitl-3-openai-langgraph` | First two adapters, non-streaming and streaming. Chosen together because they exercise the **two different persistence models**: OpenAI writes an opaque `RunState` blob, LangGraph writes almost nothing because AK's checkpointer already holds the state. | Pause → record → resume on both, including resume after a session-store round trip |
 | 4 | `feature/606-hitl-4-pydanticai-adk` | Remaining two adapters. Carries the **ADK `App` + `ResumabilityConfig` change** and its documented routing/session-size effects, which is why it is last among the adapters and not bundled with a lighter one. | Same per-adapter matrix; plus an explicit test that ADK session state survives pickling |
 | 5 | `feature/606-hitl-5-agui-docs` | The AG-UI terminal-outcome surface (`AGUIRequestHandler._events`, `RunAgentInput.resume`), the runnable example, docs, and the skills/docs sync. | Example runs pause → decision → resume; `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` clean |
