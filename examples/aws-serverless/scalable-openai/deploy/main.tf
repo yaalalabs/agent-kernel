@@ -13,6 +13,7 @@ module "serverless_agents" {
   is_production        = var.is_production
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
+  security_group_id    = var.security_group_id
 
   # Execution mode - using for scalable processing
   queue_mode     = true        # recommended for production

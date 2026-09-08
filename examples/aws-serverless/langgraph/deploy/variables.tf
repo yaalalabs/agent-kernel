@@ -38,3 +38,9 @@ variable "private_subnet_ids" {
   description = "List of private subnet IDs for Lambda deployment"
   type        = list(string)
 }
+
+variable "security_group_id" {
+  description = "Security group ID for Lambda deployment"
+  type        = string
+  default     = null
+}

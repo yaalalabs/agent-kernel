@@ -12,6 +12,7 @@ module "serverless_agents" {
   region               = var.region
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
+  security_group_id    = var.security_group_id
 
   # Memory DB Config - use existing Redis cluster
   create_redis_cluster = false

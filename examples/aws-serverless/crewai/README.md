@@ -24,10 +24,11 @@ This demo deploys the following AWS resources:
     cd ../openai/deploy && ./deploy.sh
     ```
 
-2. Get the VPC ID and private subnet IDs from the openai deployment:
+2. Get the VPC ID, private subnet IDs, and security group ID from the openai deployment:
     ```bash
     cd ../openai/deploy && terraform output vpc_id
     cd ../openai/deploy && terraform output private_subnet_ids
+    cd ../openai/deploy && terraform output security_group_id
     ```
 
 3. Configure environment variables:
@@ -35,6 +36,7 @@ This demo deploys the following AWS resources:
     export TF_VAR_openai_api_key=<OPENAI_API_KEY>
     export TF_VAR_vpc_id=<VPC_ID_FROM_OPENAI>
     export TF_VAR_private_subnet_ids='["<SUBNET_ID_1>", "<SUBNET_ID_2>"]'
+    export TF_VAR_security_group_id=<SG_FROM_OPENAI> # optional, reuses the openai deployment's security group
     ```
 
 4. Navigate to the deployment directory and run the deployment script:

@@ -11,6 +11,7 @@ module "serverless_agents" {
   region               = var.region
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
+  security_group_id    = var.security_group_id
   product_display_name = "AK CrewAI Serverless Example"
 
   # Request handler configuration
