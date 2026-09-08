@@ -1,0 +1,32 @@
+[project]
+name = "dagaya"
+version = "0.1.0"
+description = "Dagaya — The Curious AI Learning Companion via WhatsApp"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "agentkernel[cli,openai,whatsapp,aws,api]>=0.8.1",
+    "duckduckgo-search>=6.0.0",
+    "litellm>=1.0.0",
+    "pyreadline3>=3.4.1; sys_platform == 'win32'",
+    "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "agentkernel[test]>=0.8.1",
+    "pytest>=8.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
