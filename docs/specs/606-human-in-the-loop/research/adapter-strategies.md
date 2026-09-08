@@ -5,8 +5,10 @@ framework offers natively. This file maps those mechanisms onto Agent Kernel's a
 each adapter must do, what in the current code stands in the way, and how durable the result
 actually is.
 
-All `path:line` citations are against the `develop` branch at the time of writing and were read,
-not recalled.
+All `path:line` citations were read from the source, not recalled, and were **refreshed after the
+`develop` merge** that shifted `openai.py` by ~3 lines. They drift on every merge; re-run the
+citation checker in `design.md`'s verification notes over *all* files in this folder, not just
+`design.md`.
 
 ---
 
@@ -20,11 +22,11 @@ All six `run()` methods end in a catch-all that converts any exception into a te
 
 | Adapter | `except` site |
 |---|---|
-| OpenAI | `openai.py:218` |
+| OpenAI | `openai.py:221` |
 | LangGraph | `langgraph.py:429` |
 | Pydantic AI | `pydanticai.py:184` |
-| Google ADK | `adk.py:224` |
-| CrewAI | `crewai.py:397` |
+| Google ADK | `adk.py:266` |
+| CrewAI | `crewai.py:405` |
 | smolagents | `smolagents.py:181` |
 
 Each is `except Exception as e: return AgentReplyText(response=user_facing_error_message(e), ...)`.
@@ -50,7 +52,7 @@ text:
   (`adk.py:220-229`). `event.long_running_tool_ids` is never inspected, so a pending
   long-running call or an `adk_request_confirmation` call is dropped and the reply is empty or
   partial.
-- **OpenAI** — the adapter reads `.final_output` off the `RunResult` (`openai.py:208`) and never
+- **OpenAI** — the adapter reads `.final_output` off the `RunResult` (`openai.py:211`) and never
   looks at `.interruptions`.
 - **Pydantic AI** — the adapter reads `result.output` (`pydanticai.py:171,178-182`).
   `DeferredToolRequests` is a **dataclass, not a `BaseModel`** (verified —
@@ -81,17 +83,17 @@ does today (`base.py:329-348`).
 ### Pause
 
 After `Runner.run(...)` returns, check `result.interruptions` before reading `.final_output`
-(`openai.py:208`). Non-empty ⇒ pause.
+(`openai.py:211`). Non-empty ⇒ pause.
 
 ### Persist
 
 `result.to_state()` → `state.to_json()`. That JSON dict is the opaque payload written to the
-session. Also store the **agent name**, because `RunState.from_json(agent, stored)` requires the
+session. Also store the **agent name**, because `RunState.from_json(initial_agent=…, state_json=…)` requires the
 original starting agent and AK resolves agents by name from `Runtime.agents()`.
 
 ### Resume
 
-Rebuild with `RunState.from_json(agent.agent, stored)`, apply the caller's decisions with
+Rebuild with `RunState.from_json(initial_agent=agent.agent, state_json=stored)`, apply the caller's decisions with
 `state.approve(item, always_approve=...)` / `state.reject(item, rejection_message=...)`, then
 `await Runner.run(agent.agent, state)`. Note this is the **same `Runner.run` entry point** the
 adapter already calls, with a `RunState` in place of the input — so resume reuses almost the
@@ -101,8 +103,8 @@ entire existing `run()` body.
 
 Documented as supported: drain `stream_events()` to completion, then check
 `RunResultStreaming.interruptions`, and resume with `Runner.run_streamed(agent, state)`. The AK
-adapter already drains the stream fully (`openai.py:256-262`), so the check slots in right where
-`_store_framework_context` is called at `openai.py:266-267`.
+adapter already drains the stream fully (`openai.py:259-266`), so the check slots in right where
+`_store_framework_context` is called at `openai.py:270`.
 
 ### Adapter-specific problems to solve
 
@@ -111,10 +113,11 @@ adapter already drains the stream fully (`openai.py:256-262`), so the check slot
    the builder grows a way to mark a function as gated, or users must define OpenAI-native tools
    themselves. **This is the single biggest open question for this adapter** and applies equally
    to Pydantic AI and ADK.
-2. **Multimodal runs pass no session.** `_get_run_input` returns `(message_content, None)` for
-   anything but a single text message (`openai.py:181-184`), so a paused multimodal run has no
-   SDK session to resume against. Needs an explicit decision: refuse to pause, or accept the
-   different resume semantics.
+2. ~~**Multimodal runs pass no session.**~~ **Resolved by #679** (merged as `ad189723`).
+   `_get_run_input` (`openai.py:173-187`) now returns only the input *shape*, and both `run()`
+   and `stream()` pass `session=self._session(session)` unconditionally (`openai.py:211`,
+   `:257`). A paused multimodal run resumes on the same path as a text one; no decision needed.
+   See `design.md`'s Adapters section.
 3. **`framework_context` collides with `RunState` context serialization.** AK injects the #526
    context as `context=produced` (`openai.py:206-208`) and the SDK documents context
    serialization as "intentionally conservative" — mapping contexts round-trip, custom types need
@@ -291,8 +294,8 @@ plus `invocation_id=` when the app is resumable.
 3. **Streaming pause: decide by test, do not declare it unsupported up front.** *(Revised.)* The
    earlier recommendation here — spend issue #606's "documents explicit incompatibility"
    allowance on ADK streaming — rested on upstream issues that turned out to be **closed** and
-   against **ADK 1.x**, not the pinned 2.5.0; and on documentation that **does not exist**. See
-   the survey's ADK caveats and `verification.md`. Two mechanisms in 2.5.0's source keep it
+   against **ADK 1.x**, not the pinned 2.8.0; and on documentation that **does not exist**. See
+   the survey's ADK caveats and `verification.md`. Two mechanisms in 2.8.0's source keep it
    risky (the two-event pause window ADK itself calls a known limitation, and the
    partial-vs-persisted id split), but neither has been observed failing. Test it in the ADK PR;
    support it if it works; if it does not, document AK's own finding with a repro rather than

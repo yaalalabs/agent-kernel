@@ -12,25 +12,30 @@ created outside the repo and the four target frameworks installed at their locke
 
 ```
 uv venv hitl-verify --python 3.12
-uv pip install "openai-agents==0.19.0" "langgraph==1.0.10" \
-               "pydantic-ai-slim==2.13.0" "google-adk==2.5.0"
+uv pip install "openai-agents==0.20.0" "langgraph==1.2.11" \
+               "pydantic-ai-slim==2.13.0" "google-adk==2.8.0" \
+               "ag-ui-protocol==0.1.22"
 ```
 
 Versions reported by the venv at run time — matching `uv.lock` exactly:
 
 | Package | Version |
 |---|---|
-| `openai-agents` | 0.19.0 |
-| `langgraph` | 1.0.10 |
+| `openai-agents` | 0.20.0 |
+| `langgraph` | 1.2.11 |
 | `pydantic-ai-slim` | 2.13.0 |
-| `google-adk` | 2.5.0 |
+| `ag-ui-protocol` | 0.1.22 |
+| `google-adk` | 2.8.0 |
 
-**Result: every symbol the design relies on exists at the pinned version.** 26 checks, 0 genuine
-failures (two initial failures were defects in the probe itself, both traced to ground truth below).
+**Result: every symbol and source-level claim the design relies on holds at the pinned versions.**
+The probe was **re-run in full after the `develop` merge bumped four pins** (`openai-agents`
+0.19.0→0.20.0, `langgraph` 1.0.10→1.2.11, `google-adk` 2.5.0→2.8.0, `ag-ui-protocol`
+0.1.20→0.1.22): **20/20 checks pass, 0 failures**, including the four ADK *source-level* reads
+the design's requirements rest on. Nothing in the design changed as a result.
 
 ## Results
 
-### OpenAI Agents SDK 0.19.0 — all present
+### OpenAI Agents SDK 0.20.0 — all present
 
 | Symbol | Verified |
 |---|---|
@@ -41,7 +46,7 @@ failures (two initial failures were defects in the probe itself, both traced to 
 | `RunResult.to_state()` | present (`agents/result.py:473`) |
 | `RunResultStreaming.to_state()` | present (`agents/result.py:977`) |
 | `RunState.approve / reject / to_json / from_json / to_string / from_string` | all present |
-| `ToolApprovalItem` | fields include `call_id`, `name`, `tool_name`, `arguments`, `qualified_name`, `tool_lookup_key` |
+| `ToolApprovalItem` | `arguments`, `call_id`, `name`, `qualified_name` are **properties derived from `raw_item`**, not dataclass fields (they moved between 0.19.0 and 0.20.0); still readable, so `PausedInterruption.arguments` is unaffected |
 | `Runner.run(...)` | accepts `input` (a `RunState` may be passed here) and `starting_agent` |
 
 The SDK's own docstring on `to_state` states the intended pattern verbatim, which is the pattern
@@ -53,7 +58,7 @@ if result.interruptions:
     state.approve(result.interruptions[0])
 ```
 
-### LangGraph 1.0.10 — all present
+### LangGraph 1.2.11 — all present
 
 | Symbol | Verified |
 |---|---|
@@ -75,7 +80,7 @@ if result.interruptions:
 | `Agent.tool_plain(requires_approval=...)` | present |
 | `pydantic_ai.messages.DeferredToolRequestsEvent` | importable |
 
-### Google ADK 2.5.0 — all present, **including the blocker**
+### Google ADK 2.8.0 — all present, **including the blocker**
 
 | Symbol | Verified |
 |---|---|
@@ -97,7 +102,7 @@ existing session store** on any configured backend. The ADK adapter's story stan
 ## Follow-up: ADK `App` break analysis
 
 Run to answer open question 5 — what breaks if the adapter wraps agents in an `App` carrying
-`ResumabilityConfig(is_resumable=True)`. Read from `google-adk` 2.5.0 source, not documentation.
+`ResumabilityConfig(is_resumable=True)`. Read from `google-adk` 2.8.0 source, not documentation.
 
 | Finding | Detail |
 |---|---|
@@ -126,10 +131,10 @@ The cited issues, read directly:
 | [#5064](https://github.com/google/adk-python/issues/5064) — unresolved pause check + streaming id mismatch | **Closed** | 1.27.3 | yes |
 | [#5349](https://github.com/google/adk-python/issues/5349) — sub-agent sequential LRO tools fail to resume | **Closed** | 1.27.0–1.30.0 | **no** |
 
-Both closed, both against ADK 1.x rather than the pinned 2.5.0, and one has nothing to do with
+Both closed, both against ADK 1.x rather than the pinned 2.8.0, and one has nothing to do with
 streaming.
 
-What **can** be stated, read from 2.5.0's installed source rather than inferred:
+What **can** be stated, read from 2.8.0's installed source rather than inferred:
 
 - **The pause check was partly addressed.** `base_llm_flow.py:966-978` now tests whether a
   function call was resolved by the following response (`fc_ids.issubset(fr_ids)`) — the fix
@@ -141,20 +146,20 @@ What **can** be stated, read from 2.5.0's installed source rather than inferred:
   (`base_llm_flow.py:1122`, `:1235`), while only non-partial events are persisted
   (`base_llm_flow.py:1130-1133`). So an id a client reads from a streamed partial event may never
   have been stored.
-- **Neither mechanism has been observed failing at 2.5.0.** They are reasons to test, not
+- **Neither mechanism has been observed failing at 2.8.0.** They are reasons to test, not
   evidence of breakage.
 
 **Conclusion:** ADK streaming pause is *unverified*, not *unsupported*. Decide by test in the ADK
-PR. If it fails, document it as AK's own finding against 2.5.0 with a reproducible case — never
+PR. If it fails, document it as AK's own finding against 2.8.0 with a reproducible case — never
 as an upstream position.
 
 ## Follow-up: AG-UI native interrupt support
 
 Run to answer open question 7, whose original premise ("AG-UI has no equivalent, so the event is
-dropped") turned out to be wrong. Checked against **AK's pinned `ag-ui-protocol` 0.1.20**
+dropped") turned out to be wrong. Checked against **AK's pinned `ag-ui-protocol` 0.1.22**
 (`ak-py/uv.lock`; the declared floor is `>=0.1.16`) — so **no dependency bump is required**.
 
-| Symbol | Verified at 0.1.20 |
+| Symbol | Verified at 0.1.22 |
 |---|---|
 | `RunFinishedEvent.outcome` | present |
 | `RunFinishedInterruptOutcome` | fields `type`, `interrupts` |
@@ -173,8 +178,8 @@ Two type facts that shape the design, both read from the installed package rathe
   routing, not freedom from a mapper, because no mapper was ever required.
 - **`ResumeStatus` *is* closed** — `Literal["resolved", "cancelled"]`. So the outbound direction
   is free and the **return** direction is the constrained one. `resolved` means the human
-  answered; `cancelled` means they abandoned it without answering. AK's proposed
-  a boolean `ResumeDecision.approved` could not have expressed that difference — mapping
+  answered; `cancelled` means they abandoned it without answering. A boolean
+  `ResumeDecision.approved` could not have expressed that difference — mapping
   `cancelled` to `approved=False` would conflate "the human said no" with "the human dismissed it
   without deciding", which the agent should report differently. **Resolved:** `ResumeDecision`
   carries `status: Literal["approved", "denied", "cancelled"]`, so the AG-UI value survives the
@@ -198,8 +203,8 @@ terminal shape, **not** in `AGUIMapper.to_agui`.
 Four claims taken from the documentation do not hold at the pinned versions, or are sharper than
 the docs implied. `spec.md` uses the verified form.
 
-1. **OpenAI: `@tool` is not a decorator at 0.19.0.** The current docs page presents `@tool` as the
-   primary spelling, but in 0.19.0 `agents.tool` resolves to a **module**, not a callable. The
+1. **OpenAI: `@tool` is not a decorator at 0.20.0.** The current docs page presents `@tool` as the
+   primary spelling, but in 0.20.0 `agents.tool` resolves to a **module**, not a callable. The
    decorator is `agents.function_tool`, and that is what carries `needs_approval`. The survey's
    open note about which spelling to use is settled: **`function_tool`**.
 2. **OpenAI: `RunState.from_json`'s agent parameter is named `initial_agent`**, not `agent`, and

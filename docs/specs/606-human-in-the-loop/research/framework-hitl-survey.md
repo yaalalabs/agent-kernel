@@ -22,11 +22,11 @@ Resolved versions (`ak-py/uv.lock`):
 
 | Framework | Pinned version | Declared in `ak-py/pyproject.toml` |
 |---|---|---|
-| OpenAI Agents SDK | `openai-agents` 0.19.0 | `openai-agents>=0.6.5` |
-| LangGraph | `langgraph` 1.0.10 (`langchain` 1.2.10) | `langgraph~=1.0.5` |
+| OpenAI Agents SDK | `openai-agents` 0.20.0 | `openai-agents>=0.7.0` |
+| LangGraph | `langgraph` 1.2.11 (`langchain` 1.2.x) | `langgraph~=1.2.10` |
 | Pydantic AI | `pydantic-ai-slim` 2.13.0 | `pydantic-ai-slim~=2.13.0` |
-| Google ADK | `google-adk` 2.5.0 | `google-adk>=1.14.1` |
-| CrewAI | `crewai` 1.15.7 | `crewai>=1.15.0` |
+| Google ADK | `google-adk` 2.8.0 | `google-adk>=1.14.1` |
+| CrewAI | `crewai` 1.15.18 | `crewai>=1.15.0` |
 | smolagents | `smolagents` 1.26.0 | `smolagents>=1.0.0` |
 
 ---
@@ -48,7 +48,7 @@ justified by the findings below rather than by scope-trimming.
 
 ---
 
-## OpenAI Agents SDK — 0.19.0 [docs, symbols unverified at pin]
+## OpenAI Agents SDK — 0.20.0 [docs, symbols unverified at pin]
 
 The most complete story of the six: the SDK ships an explicit durable pause/resume boundary.
 
@@ -72,7 +72,7 @@ async def send_email(subject: str, body: str) -> str:
 ```
 
 > **Decorator spelling — [corrected].** The docs page presents `@tool` as the primary spelling,
-> but **at the pinned 0.19.0 `agents.tool` is a module, not a callable**. The decorator is
+> but **at the pinned 0.20.0 `agents.tool` is a module, not a callable**. The decorator is
 > `agents.function_tool`, and its signature does carry `needs_approval` (as does the
 > `FunctionTool` dataclass). AK does not define tools this way — `ToolBuilder.bind()` wraps plain
 > functions — so how AK's OpenAI `ToolBuilder` passes `needs_approval` through is still an open
@@ -116,7 +116,7 @@ finishes, then inspect `RunResultStreaming.interruptions`, resolve, and resume w
 4. Resumed runs with a `Session` need "the original Session backend with exclusive history
    access".
 
-## LangGraph — 1.0.10 [docs, symbols unverified at pin]
+## LangGraph — 1.2.11 [docs, symbols unverified at pin]
 
 The canonical implementation, and the one AK is already closest to supporting.
 
@@ -218,7 +218,7 @@ deferred calls in-process, with unresolved ones still bubbling up as output. Thi
 shape for AK (it re-blocks the run), but it is the right shape for an application that wants to
 resolve some calls automatically — worth documenting as a user-side option.
 
-## Google ADK — 2.5.0 [docs, symbols unverified at pin]
+## Google ADK — 2.8.0 [docs, symbols unverified at pin]
 
 Two distinct mechanisms, plus a third that governs durability. This is the framework where the
 documentation and the open upstream issues disagree most, so the caveats are load-bearing.
@@ -320,13 +320,13 @@ produced the pending call**.
    does not mention streaming, `run_live`, `RunConfig` or `StreamingMode` at all. Any claim that
    Google has declared this unsupported is unfounded.
 
-   What *can* be said, from reading 2.5.0's source — see `verification.md` for the detail — is
+   What *can* be said, from reading 2.8.0's source — see `verification.md` for the detail — is
    that two mechanisms remain which make it an open risk rather than a safe assumption: the
    two-event pause window that ADK's own comment calls "a known limitation", and the
-   partial-vs-persisted function-call id split. **Neither has been observed failing at 2.5.0.**
+   partial-vs-persisted function-call id split. **Neither has been observed failing at 2.8.0.**
    Decide by test.
 
-## CrewAI — 1.15.7 [docs] — **not reachable through AK's adapter**
+## CrewAI — 1.15.18 [docs] — **not reachable through AK's adapter**
 
 CrewAI's own docs present two HITL approaches, and split them by licence:
 
