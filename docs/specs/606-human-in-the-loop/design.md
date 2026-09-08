@@ -328,8 +328,9 @@ graph LR
       deferring cron/timezone semantics to `ScheduleManager`, and it is required by the
       validation-in-`Runtime` rule below: a `ValidationError` raised inside the model would not
       carry the actionable message those failure modes owe the caller.
-    - **AG-UI's "address every open interrupt" constraint is a `Runtime` check, not a model
-      one** — `ResumeSpec` cannot see the pending record, so it cannot know what "every" is.
+    - **"Address every open interruption" is a `Runtime` check, not a model one** — `ResumeSpec`
+      cannot see the pending record, so it cannot know what "every" is. It is an **AK-wide** rule
+      (see the failure modes), not an AG-UI one; AG-UI happens to require the same thing.
   - **A request carrying both `prompt` and `resume` is rejected** with a `ValueError` → 400.
     *(Decision.)* The frameworks disagree on whether a resume can carry new content — Pydantic
     AI's `run(content, …, deferred_tool_results=…)` accepts it, OpenAI's
@@ -337,9 +338,16 @@ graph LR
     would work on one adapter and be silently dropped on two others. Ignoring it would
     discard something the user typed. Rejecting is the only option that behaves the same
     everywhere and tells the caller what happened.
-  - **`schedule` + `resume` on one request is rejected the same way.** `_maybe_schedule` runs
-    before everything else (`chat_service.py:488-494`), so without an explicit check a
-    resume block would be silently deferred and never applied.
+  - **`schedule` + `resume` on one request is rejected the same way** — but **not from
+    `_validate`, which runs too late.** `_maybe_schedule` is the first statement of all four
+    execution-core entry points (`chat_service.py:390`, `:407`, `:428`, `:455`) and returns the
+    202 acknowledgement immediately; `_validate` is only reached later, inside `_prepare_async`
+    (`chat_service.py:564`). A rejection placed in `_validate` would therefore never fire — the
+    request would already have been deferred, with the resume block silently discarded.
+  - **Both rejections belong in one guard, called first in each of those four entry points** —
+    the same shape `_maybe_schedule` itself uses, and for the same reason: it has to run before
+    anything else consumes the request. `spec.md` names the helper; the requirement here is the
+    ordering, because getting it wrong makes the `schedule` + `resume` rule unreachable code.
   - `prompt` must become optional-in-effect for a resume-only request. `BaseChatRequest.prompt`
     is a required field (`model.py:255`), but `ChatService._validate` already waives the
     prompt check when a prebuilt request list is supplied (`chat_service.py:684-686`) — so the
@@ -727,7 +735,10 @@ the two negative cases distinguishable to the model**:
   configured to block, and assert it is blocked. Without the `guardrail/` extraction change
   this test fails, which is the point of having it.
 - **Rejected combinations:** `prompt` + `resume` and `schedule` + `resume` each raise
-  `ValueError` → 400 before any agent runs.
+  `ValueError` → 400 before any agent runs. **The `schedule` + `resume` case must be asserted
+  specifically**, because it is the one that catches a guard placed too late: if the check sits
+  in `_validate`, `_maybe_schedule` has already returned 202 and the test sees a scheduled
+  acknowledgement instead of a 400.
 - **Partial resume is refused** on a plain REST request, not only through AG-UI — decisions
   addressing some but not all open interruptions raise, and the paused record survives.
 - **Agent mismatch:** a resume naming an agent other than `record.agent` raises, including
@@ -785,7 +796,7 @@ that no PR needs a later one to be correct.
 | # | Branch | Scope | Proves it works |
 |---|---|---|---|
 | 1 | `feature/606-hitl-1-core` | The contract, purely additive. `core/model.py` types, `core/event.py`'s `RunPaused` **plus the reworded union invariant** (docstring + `test_stream_events.py`), `PausedRunState` (the `ak.paused_run` nv_cache record and its get/set/clear), `Runner.supports_pause` plus the `resume()` / `resume_stream()` raising defaults, generalised picklability helper. CrewAI + smolagents need no change — they inherit the `False` default. | New types round-trip; the record survives a session-store round trip; `resume()` and `resume_stream()` raise by default; **no existing test changes** |
-| 2 | `feature/606-hitl-2-runtime` | The wiring, still with nothing that pauses. `Runtime.run`/`stream` dispatch, Rules 1–3, the `Runtime`-owned `ak.run_seq` counter that backs staleness, `RequestBuilder` (`known_fields` += `resume`), `ChatService` validation (including the `prompt`+`resume` and `schedule`+`resume` rejections), **the `guardrail/` text-extraction change so a resume's free text is actually guarded**, `ResponseBuilder`'s `status: PAUSED`, new-prompt-keeps-pause, the `in_memory` warning. | Driven end-to-end by a `DummyRunner` that pauses — the existing test-double pattern |
+| 2 | `feature/606-hitl-2-runtime` | The wiring, still with nothing that pauses. `Runtime.run`/`stream` dispatch, Rules 1–3, the `Runtime`-owned `ak.run_seq` counter that backs staleness, `RequestBuilder` (`known_fields` += `resume`), `ChatService` validation, the ambiguous-combination guard run **before** `_maybe_schedule` (`prompt`+`resume`, `schedule`+`resume`), **the `guardrail/` text-extraction change so a resume's free text is actually guarded**, `ResponseBuilder`'s `status: PAUSED`, new-prompt-keeps-pause, the `in_memory` warning. | Driven end-to-end by a `DummyRunner` that pauses — the existing test-double pattern |
 | 3 | `feature/606-hitl-3-openai-langgraph` | First two adapters, non-streaming and streaming. Chosen together because they exercise the **two different persistence models**: OpenAI writes an opaque `RunState` blob, LangGraph writes almost nothing because AK's checkpointer already holds the state. | Pause → record → resume on both, including resume after a session-store round trip |
 | 4 | `feature/606-hitl-4-pydanticai-adk` | Remaining two adapters. Carries the **ADK `App` + `ResumabilityConfig` change** and its documented routing/session-size effects, which is why it is last among the adapters and not bundled with a lighter one. | Same per-adapter matrix; plus an explicit test that ADK session state survives pickling |
 | 5 | `feature/606-hitl-5-agui-docs` | The AG-UI terminal-outcome surface (`AGUIRequestHandler._events`, `RunAgentInput.resume`), the runnable example, docs, and the skills/docs sync. | Example runs pause → decision → resume; `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` clean |
