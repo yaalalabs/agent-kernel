@@ -105,9 +105,9 @@ graph TD
     it has to double-parse; that is a pre-existing wart, not an A2UI need.
   - **PR 1 is the only one A2UI motivates.** Without a payload format to name, `media_type` has no
     user. It is the enabling abstraction, not a standalone fix.
-  - Consequence: **PRs 2 and 3 could each be filed as their own issue** and merge ahead of #706,
-    unblocked by any of its open questions. Whether to split them is a maintainer decision — see
-    Open questions.
+  - Consequence, acted on: **PR 3 is filed as its own issue** and merges ahead of #706, unblocked by
+    every decision here. PR 2 stays in this issue because its field name *is* Decision 1. *(Decision
+    9.)*
 - **#678 (streaming post-hooks) is merged** — `497973d0`, now the tip of `develop`. PR 5's
   dependency is satisfied and the API below is code, not a plan:
   - `PostHook.on_stream_chunk` is **gone**. `PostHook.on_stream_event(session, requests, agent,
@@ -153,12 +153,17 @@ graph TD
   reply is an `AgentReplyAny`, plus the media type when set.
   - **Additive only.** `"result": str(result)` stays exactly as it is; existing clients keep reading
     it. A client that knows nothing of this change sees no difference.
-  - The new field name is a permanent public REST contract — see Open questions.
+  - **The field is named `data`, and the label `media_type`.** *(Decision 1.)* One concept gets one
+    name across surfaces: `data` is what A2A's `DataPart` already calls it. `content` was rejected —
+    it matches the Python attribute but reads as "content of what?" beside `result`. This is a
+    permanent public REST contract; it does not get renamed later.
 - Rebase onto #696, which reopens the same function for the `PAUSED` outcome. By then it already
   branches on the reply rather than only stringifying, so this is one more branch.
-  - A paused reply is an `AgentReplyAny` subclass, so it will also match this branch. State
-    explicitly whether the structured field is emitted for it, or suppressed in favour of #696's
-    `interruptions` — see Open questions.
+  - **A paused reply gets `data` too.** *(Decision 2.)* `AgentReplyPaused` subclasses
+    `AgentReplyAny`, so it matches this branch already, and #696 makes a pause's `content` a faithful
+    view of its typed fields — so the dict is accurate rather than a second, drifting copy.
+    Suppressing it would mean an exception keyed on one subclass, which breaks the day a second
+    subclass appears. `interruptions` stays the typed, documented path; `data` is the generic one.
 - **No WebSocket-, async- or thread-specific change.** All three reach this function (Motivation),
   and the pipeline's dict is already a dict on the WebSocket frame.
 
@@ -241,7 +246,11 @@ dependencies for why that matters to how this is filed.
   - `enabled: bool = False` — inert when off: no tools, no prompt text, no imports.
   - `agents: Optional[list[str]] = None` — the standard per-capability filter, honoured through
     `SystemToolFactory._agent_allowed`.
-  - Catalog settings — shape depends on Open questions.
+  - **Catalog: pass-through only. AK bundles none.** *(Decision 3.)* The application supplies its
+    catalog (a path or an inline dict); AK validates that it loads and injects it, and never ships a
+    component vocabulary of its own. Bundling one would make AK responsible for a vocabulary it never
+    renders — the exact opinion this design exists to avoid — and A2UI's own SDK already ships
+    `BasicCatalog` for apps that want a starter, so nothing is lost by not vendoring it.
 - **Prompt injection needs one small core change.** `get_system_prompt_suffix` joins
   `SystemTool.description` strings (`core/tool.py:243`), so a prompt is only reachable by hanging it
   on a tool, and an A2UI catalog has no tool.
@@ -254,11 +263,24 @@ dependencies for why that matters to how this is filed.
 - `Runtime._get_system_post_hooks` (`core/runtime.py:126`) returns the literal
   `[OutputGuardrailFactory.get()]` (`:130`); add `A2UIPostHookFactory.get()`. The pre-hook line
   above (`:122`) already chains three factories, so this is the established shape.
-- New `a2ui` extra in `ak-py/pyproject.toml`, near `agui` (`:88`).
-- **Hook behaviour must be specified, not left to the implementation:**
-  - Valid payload → an `AgentReplyAny` with `content` set to the parsed payload and `media_type` set.
-  - Invalid payload → see Open questions. Whatever is chosen, the hook must never raise into the
-    runtime.
+- New `a2ui` extra in `ak-py/pyproject.toml`, near `agui` (`:88`), **pinned `>=0.5,<0.6`**.
+  *(Decision 6.)* The capability ships labelled **preview**. Note the two version lines are
+  different and easy to conflate: the *protocol* is at 0.9.x with 1.0 a release candidate, but the
+  Python package this extra depends on — `a2ui-agent-sdk` — is at **0.5.0**, released 2026-07-31. A
+  loose range on a 0.x is a breakage waiting to reach users; waiting for 1.0 would block the
+  capability on someone else's release.
+- **Hook behaviour — the three cases, decided.** *(Decision 4.)* The hook must never raise into the
+  runtime in any of them.
+  - **Valid A2UI** → an `AgentReplyAny` with `content` set to the parsed payload and `media_type`
+    set.
+  - **Not JSON at all** (plain prose) → passed through as the text reply it already is. **No warning,
+    no error.** This is the common case, not a failure: most turns in a conversation — greetings,
+    confirmations, clarifying questions — have no UI in them, and erroring on "thanks!" would be
+    absurd.
+  - **JSON, but fails A2UI validation** → log a warning and return an error reply. Never render or
+    forward the raw payload: a user seeing `{"type": "Card", "children": …` on screen is worse than
+    an error. A JSON object that is not A2UI lands here deliberately — with the capability enabled,
+    that means something is wrong.
   - Reply types other than the model's structured/text output pass through untouched.
 
 ### PR 5 — AG-UI
@@ -361,6 +383,12 @@ Three of the four are the same shape: the happy path with the one reply type tha
 
 ## Non-goals
 
+- **Actions and callbacks — v1 is render-only.** *(Decision 5.)* A2UI defines user actions calling
+  back into the agent, and this ships without them; the docs must say so plainly, because a UI with
+  dead buttons is worse than no UI. The reason it waits rather than being cheap-to-add: a callback is
+  "user action → a new agent run carrying that action", which is the same problem #696's resume path
+  solves. Building a parallel mechanism now would be thrown away; the follow-up reuses
+  `AgentRequestResume`.
 - **Running `PostHook.on_run` on streamed runs.** #678's own non-goal, with its own issue.
 - **Streaming *partial* A2UI.** The capability parses a whole payload at a boundary; A2UI's
   incremental parse-and-heal is not implemented, though #678's hold-and-release is the mechanism a
@@ -369,44 +397,30 @@ Three of the four are the same shape: the happy path with the one reply type tha
   authored by the model, so this capability's prompt-and-parse loop does not apply. A deterministic
   interruption-to-form renderer would mean AK deciding what an approval card looks like — the exact
   opinion this design avoids — and #696 already maps interruptions onto AG-UI's native `Interrupt`.
-  One narrow case survives (an agent that itself writes the form it is asking a human to fill in) and
-  is raised in Open questions rather than built here.
+  One narrow case survives — an agent that itself writes the form it is asking a human to fill in —
+  and is handled by Decision 8 rather than built here.
 - **A frontend, or an A2UI renderer of any kind.** The client owns its component catalog; that is the
   protocol's premise.
 - **Changing `StreamChunk.delta`, `AgentReply` union membership, or any framework adapter.**
 - **Guardrail inspection of A2UI payloads.** Output guardrails see the reply as they do today; no
   A2UI-aware guardrail behaviour is added.
 
-## Open questions
+## Decisions
 
-1. **REST field name (PR 2).** The key carrying the structured content is a permanent public
-   contract. `data`? `content`? `structured`? Decide deliberately, once.
-2. **Structured field on a paused reply (PR 2 × #696).** `AgentReplyPaused` subclasses
-   `AgentReplyAny`, so it matches the same branch. Emit the structured field for it, or suppress it
-   in favour of #696's `interruptions`? Emitting duplicates the same facts in two shapes; suppressing
-   means the branch is not purely type-driven.
-3. **Catalog ownership (PR 4).** Does AK bundle a starter catalog, require the application to supply
-   one, or only pass one through? This is the difference between a small capability and an ongoing
-   maintenance surface.
-4. **Invalid payload behaviour (PR 4).** When the model returns something that is not valid A2UI:
-   fail loud (an error reply), or degrade to the text reply the model produced? Degrading is friendly
-   and hides a broken agent; failing is honest and turns a model slip into a user-visible error.
-5. **Render-only, or interactive (PR 4)?** A2UI defines actions and callbacks from the rendered UI
-   back to the agent. Render-only is a defensible v1 but must be *stated* — a UI with dead buttons is
-   worse than no UI.
-6. **Version pin (PR 4).** A2UI was v0.9.1 with 1.0 a release candidate at the time of the #523
-   survey. Pin, or wait for 1.0? Re-check what is current.
-7. **A2A behaviour change (PR 3).** Confirm the maintainers accept that A2A output changes for all
-   structured replies, not only A2UI.
-8. **Coordination with #696 on `PausedInterruption.payload`.** That field is in #696's design with
-   **no stated meaning**. If it is defined as an agent- or author-supplied payload describing the
-   interruption (plus a label saying how to read it), the one surviving HITL case above is served
-   with no new field — a LangGraph node calling `interrupt({...})` with an A2UI dict needs none of
-   this capability. If it is instead defined as a framework hint blob, that use is closed off by
-   convention. **The ask is to settle its meaning while #696 is still design-only**, not to reserve
-   anything for this issue; the field itself could be added later cheaply either way.
-9. **Split PRs 2 and 3 into their own issues?** Both fix pre-existing structured-output gaps and
-   neither needs anything from #706 (see Ordering and dependencies). Filing them separately lets
-   them merge without waiting on questions 1–6, and keeps this issue honestly scoped to the A2UI
-   capability plus PR 1. Against: three issues to track instead of one, and the carriage work then
-   has no single place stating why it is shaped the way it is. Maintainer's call.
+All nine questions this design opened are resolved; each is marked at the requirement it constrains.
+Recorded here so a reviewer sees the reasoning without hunting for it.
+
+| # | Decision | Why |
+|---|---|---|
+| 1 | The REST field is **`data`**, its label **`media_type`** | One concept, one name across REST and A2A's `DataPart`. Permanent public contract — not renamed later. |
+| 2 | A paused reply **gets `data` too** | Keeps the branch a plain `isinstance`; #696 makes a pause's `content` a faithful view, so it is accurate rather than a drifting copy. |
+| 3 | Catalogs are **pass-through only**; AK bundles none | Bundling would make AK own a component vocabulary it never renders. A2UI's SDK already ships `BasicCatalog`. |
+| 4 | Three-case hook behaviour: valid → render; **not JSON → text reply, silently**; **JSON that fails validation → warn + error reply** | Prose is the common case, not a failure. A malformed payload must never reach a user as raw braces. |
+| 5 | **Render-only** in v1; callbacks are a Non-goal | A callback is "action → new agent run", the same problem #696's resume solves. Reuse `AgentRequestResume` later rather than build a parallel path. |
+| 6 | Pin **`a2ui-agent-sdk>=0.5,<0.6`**; capability labelled **preview** | The SDK is at 0.5.0 (2026-07-31) — a different version line from the protocol's 0.9.x. A loose range on a 0.x breaks users silently. |
+| 7 | **Accept** that A2A output changes for all structured replies | PR 3 is an A2A fix, so this ships as a correction with a migration note, not as a feature flag. Gating it would leave A2A wrong by default forever. |
+| 8 | **Ask #696 to state what `PausedInterruption.payload` means**, before it merges | It is in that design with no stated purpose. If it means "an agent- or author-supplied payload describing this interruption", A2UI over HITL needs no new field at all — a LangGraph node calling `interrupt({...})` with an A2UI dict just works. If it acquires a "framework hint blob" meaning by accident, that is closed off. Nothing is reserved for this issue either way. |
+| 9 | **Split PR 3 into its own issue**; PR 2 stays here | PR 3 is a self-contained A2A bug fix with four defects and its own test file, unblocked by every other decision. PR 2's field name is Decision 1, so it is genuinely entangled with the A2UI contract. |
+
+Decision 8 is the only one needing action outside this repo's code: a comment on #696 while it is
+still design-only. It is not a blocker for any PR here.
