@@ -39,6 +39,18 @@ variable "vpc_cidr" {
   description = "VPC CIDR block"
 }
 
+variable "alb_security_group_id" {
+  type        = string
+  description = "ALB security group ID. If not provided, a new one will be created"
+  default     = null
+}
+
+variable "ecs_service_security_group_id" {
+  type        = string
+  description = "ECS service security group ID. If not provided, a new one will be created"
+  default     = null
+}
+
 variable "subnet_ids" {
   type        = list(string)
   description = "Private subnet IDs for ECS tasks"

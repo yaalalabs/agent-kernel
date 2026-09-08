@@ -316,6 +316,41 @@ enable_api_gateway_logs = true
 
   Skipping this makes Terraform destroy and recreate these resources, discarding any retained logs.
 
+### Security Groups
+
+| Variable | Description | Type | Default | Required |
+|---|---|---|---|---|
+| `alb_security_group_id` | ALB security group ID. If not provided, a new one will be created | `string` | `null` | no |
+| `ecs_service_security_group_id` | ECS service security group ID. If not provided, a new one will be created | `string` | `null` | no |
+| `agent_runner_security_group_id` | Agent Runner security group ID (queue mode only). If not provided, a new one will be created | `string` | `null` | no |
+
+```hcl
+alb_security_group_id          = "sg-0123456789abcdef0"
+ecs_service_security_group_id  = "sg-0123456789abcdef1"
+agent_runner_security_group_id = "sg-0123456789abcdef2"
+```
+
+Each of the three is independent — you may provide any subset of them and let the module create the
+rest. Useful when the deploying pipeline can't create security groups (no `ec2:CreateSecurityGroup`),
+when org policy disallows the default `0.0.0.0/0` egress these modules create, or when a downstream
+resource (e.g. RDS, ElastiCache) already has ingress rules referencing a specific, pre-approved
+security group. `agent_runner_security_group_id` only has an effect when `queue_mode = true`.
+
+A provided security group must reproduce the rules the module would otherwise create for it, since
+traffic fails at runtime (not at plan/apply) if it doesn't:
+
+- `alb_security_group_id`: inbound TCP 80 from the VPC CIDR (the API Gateway VPC Link ENIs share this
+  SG, and in WebSocket modes the NLB reaches the ALB the same way), plus egress to the tasks on
+  `container_port`.
+- `ecs_service_security_group_id`: inbound `container_port` from the ALB security group (created or
+  provided).
+- `agent_runner_security_group_id`: egress to SQS, DynamoDB and the model endpoints.
+
+If you provide only `ecs_service_security_group_id`, the ALB security group is still module-created, so
+its ID isn't known until the first apply and can't be referenced up front in a security group you
+already created. Provide `alb_security_group_id` too (using the `alb_security_group_id` output from a
+prior apply, or a pre-created SG) if you need its ID ahead of time.
+
 ### Scheduling (EventBridge Scheduler)
 
 | Variable | Description | Type | Default | Required |
@@ -616,6 +651,10 @@ output "input_queue_url"            # Input queue URL (queue mode)
 output "output_queue_url"           # Output queue URL (queue mode)
 output "vpc_id"                     # VPC ID
 output "private_subnet_ids"         # Private subnet IDs
+
+output "alb_security_group_id"          # ALB security group ID (created or provided)
+output "ecs_service_security_group_id"  # ECS service security group ID (created or provided)
+output "agent_runner_security_group_id" # Agent Runner security group ID (queue mode only; created or provided)
 
 output "api_gateway_cloudwatch_log_group_arn"   # API Gateway log group ARN (null when logging disabled)
 output "api_gateway_cloudwatch_log_group_name"  # API Gateway log group name (null when logging disabled)

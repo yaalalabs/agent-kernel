@@ -511,6 +511,7 @@ module "serverless_api_auth" {
 | `public_subnet_cidrs` | CIDR blocks for the public subnets | `list(string)` | `["10.0.1.0/24", "10.0.2.0/24"]` | no |
 | `vpc_id` | VPC ID. If not provided, a new one will be created | `string` | `null` | no |
 | `private_subnet_ids` | When using an existing VPC to deploy, private subnet IDs need to be provided | `list(string)` | `null` | no |
+| `security_group_id` | Security group ID for Lambda functions. If not provided, a new one will be created. The same ID is attached to every Lambda this module creates (authorizer, request handler, WebSocket connection handler, agent runner, response handler), so a provided SG must permit the egress those functions need (ElastiCache/Redis, DynamoDB, SQS, model APIs) — the module-created SG is egress-all | `string` | `null` | no |
 | `private_subnet_cidrs` | CIDR blocks for the private subnets | `list(string)` | `["10.0.3.0/24", "10.0.4.0/24"]` | no |
 
 ### Authorizer Object Structure
@@ -682,6 +683,7 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 |------|-------------|
 | `agent_invoke_url` | Invoke URL for the agent chat endpoint |
 | `authorizer_status` | Status message indicating whether the authorizer Lambda will be created |
+| `security_group_id` | Security group ID used for Lambda functions (created or provided) |
 | `request_handler_lambda_function_arn` | ARN of the request-handler Lambda function |
 | `request_handler_lambda_function_name` | Name of the request-handler Lambda function |
 | `request_handler_lambda_function_invoke_arn` | Invoke ARN for API Gateway integration |

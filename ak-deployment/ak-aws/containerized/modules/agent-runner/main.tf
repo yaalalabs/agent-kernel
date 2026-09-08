@@ -1,6 +1,8 @@
 locals {
   agent_runner_image = var.agent_runner.image_uri != null ? var.agent_runner.image_uri : var.default_image_uri
 
+  security_group_id = var.security_group_id != null ? var.security_group_id : aws_security_group.agent_runner[0].id
+
   agent_runner_environment = merge(
     var.agent_runner.environment_variables,
     {
@@ -275,6 +277,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_schedule_store_attachmen
 # ECS Resources
 
 resource "aws_security_group" "agent_runner" {
+  count       = var.security_group_id == null ? 1 : 0
   name        = "${var.prefix}-agent-runner-sg"
   description = "Agent Runner ECS service SG - egress only (queue-polling)"
   vpc_id      = var.vpc_id
@@ -340,7 +343,7 @@ resource "aws_ecs_service" "agent_runner" {
 
   network_configuration {
     subnets          = var.subnet_ids
-    security_groups  = [aws_security_group.agent_runner.id]
+    security_groups  = [local.security_group_id]
     assign_public_ip = false
   }
 
