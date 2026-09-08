@@ -5,7 +5,7 @@ description = "Demo of Pydantic AI based agents running in Agent Kernel with a C
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[cli,pydanticai]>=0.8.1",
+    "agentkernel[cli,pydanticai]>=0.9.0",
     # agentkernel[pydanticai] installs the provider-agnostic pydantic-ai-slim core only — pick a
     # model provider explicitly. This demo uses OpenAI; swap for [anthropic], [google], etc.
     "pydantic-ai-slim[openai]>=2.13.0",
@@ -13,7 +13,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.8.1",
+    "agentkernel[test]>=0.9.0",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

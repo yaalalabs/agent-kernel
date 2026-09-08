@@ -172,7 +172,9 @@ async def check_sandbox_task(task_id: str) -> str:
 
     Returns:
         JSON with task_id, status ("pending", "succeeded", "failed", "timed_out", or
-        "unknown"), and sandbox_session_id when known; or {"error": ...} on failure.
+        "unknown"), sandbox_session_id when known, and, once the task has finished, its
+        bounded outcome under "result" (stdout/stderr tails, exit_code, error); or
+        {"error": ...} on failure.
     """
     manager = ExecutionManager.get()
     if manager is None:
@@ -181,7 +183,10 @@ async def check_sandbox_task(task_id: str) -> str:
         task = await manager.task_status(task_id)
         if task is None:
             return json.dumps({"task_id": task_id, "status": "unknown"})
-        return json.dumps({"task_id": task.task_id, "status": task.status, "sandbox_session_id": task.sandbox_session_id})
+        payload = {"task_id": task.task_id, "status": task.status, "sandbox_session_id": task.sandbox_session_id}
+        if task.result_summary:
+            payload["result"] = task.result_summary
+        return json.dumps(payload)
     except Exception as exc:  # noqa: BLE001 — tools never raise into the framework
         _log.warning("check_sandbox_task failed: %s", exc)
         return _error_json(exc, None)
@@ -322,7 +327,8 @@ def get_sandbox_tools() -> list[SystemTool]:
         "- run_command(command, sandbox_session_id, profile): execute a shell command.\n"
         "- write_sandbox_file(path, content, sandbox_session_id, profile): write a text file into the sandbox workspace.\n"
         "- read_sandbox_file(path, sandbox_session_id, profile): read a text file from the sandbox workspace.\n"
-        "- check_sandbox_task(task_id): poll a long-running execution that returned status 'pending'.\n"
+        "- check_sandbox_task(task_id): poll a long-running execution that returned status 'pending'; "
+        "once finished it also returns the execution's output under 'result'.\n"
         "- list_sandbox_sessions(): list existing sandbox sessions (id, name, profile).\n"
         "- new_sandbox_session(name, profile): create a fresh, empty sandbox session with a short "
         "descriptive name; returns its sandbox_session_id.\n"

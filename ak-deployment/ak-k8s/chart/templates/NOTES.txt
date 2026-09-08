@@ -1,15 +1,27 @@
 Agent Kernel {{ .Chart.AppVersion }} deployed as release {{ .Release.Name }}.
 
 Topology:
+{{- if .Values.ioHandler.enabled }}
   io-handler    {{ .Values.ioHandler.replicaCount }} replica(s), REST on port {{ .Values.ioHandler.port }}
+{{- end }}
 {{- if .Values.agentRunner.enabled }}
   agent-runner  {{ .Values.agentRunner.replicaCount }} replica(s), transport: {{ .Values.transport.type }}
-{{- else }}
+{{- else if .Values.ioHandler.enabled }}
   agent-runner  disabled (single-process profile: the io-handler runs the whole pipeline)
 {{- end }}
 {{- if .Values.wsGateway.enabled }}
   ws-gateway    {{ .Values.wsGateway.replicaCount }} replica(s), WebSocket path {{ .Values.gateway.websocket.path }}
 {{- end }}
+{{- if .Values.sandboxWorker.enabled }}
+  sandbox-worker {{ .Values.sandboxWorker.replicaCount }} replica(s), sandbox queues on {{ .Values.transport.type }}
+{{- end }}
+{{- if not (or .Values.ioHandler.enabled .Values.agentRunner.enabled .Values.wsGateway.enabled) }}
+
+Standalone sandbox-worker install: the rest of Agent Kernel (API, agent execution) runs
+outside this cluster (e.g. Lambda or ECS) and shares the sandbox queues and response store
+configured here. See the sandbox worker section of ak-deployment/ak-k8s/README.md.
+{{- end }}
+{{- if .Values.ioHandler.enabled }}
 
 Reach the API:
 {{- if .Values.gateway.enabled }}
@@ -24,5 +36,6 @@ Send a chat request:
   curl -s -X POST http://localhost:8000/api/v1/chat \
     -H 'Content-Type: application/json' \
     -d '{"prompt": "Hello", "session_id": "s1", "agent": "<agent>"}'
+{{- end }}
 
 Chart guide: ak-deployment/ak-k8s/README.md

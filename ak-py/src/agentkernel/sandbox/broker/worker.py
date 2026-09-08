@@ -103,10 +103,22 @@ class BrokerWorkerCore:
             return ExecutionCompletion(task_id=request.task_id, status="succeeded", result=result, sandbox_session=session)
         except SandboxTimeoutError as exc:
             logger.warning("Sandbox task %s timed out: %s", request.task_id, exc)
-            return ExecutionCompletion(task_id=request.task_id, status="timed_out", error=str(exc), sandbox_session=request.sandbox_session)
+            return ExecutionCompletion(
+                task_id=request.task_id,
+                status="timed_out",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                sandbox_session=request.sandbox_session,
+            )
         except Exception as exc:  # noqa: BLE001 — terminal guarantee: never end a task without a completion
             logger.warning("Sandbox task %s failed: %s", request.task_id, exc)
-            return ExecutionCompletion(task_id=request.task_id, status="failed", error=str(exc), sandbox_session=request.sandbox_session)
+            return ExecutionCompletion(
+                task_id=request.task_id,
+                status="failed",
+                error=str(exc),
+                error_type=type(exc).__name__,
+                sandbox_session=request.sandbox_session,
+            )
 
     # -- internals ---------------------------------------------------------- #
 

@@ -51,7 +51,7 @@ resource "aws_dynamodb_table" "schedule_store" {
 
 module "websocket_connections" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.8.1"
+  version = "0.9.0"
   count   = local.is_websocket_mode ? 1 : 0
 
   attributes = [

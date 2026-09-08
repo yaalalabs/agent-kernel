@@ -60,6 +60,7 @@ class ExecutionCompletion(BaseModel):
     result: Optional[SandboxResult] = None  # inline when small
     result_ref: Optional[dict[str, str]] = None  # {"bucket":..., "key":...} when offloaded
     error: Optional[str] = None
+    error_type: Optional[str] = None  # SandboxError subclass name, for a typed re-raise across the wire
     sandbox_session: SandboxSession  # updated handle (e.g. newly created sandbox_id)
 
 

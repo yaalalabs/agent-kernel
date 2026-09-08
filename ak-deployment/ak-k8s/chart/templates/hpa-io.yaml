@@ -1,4 +1,4 @@
-{{- if .Values.ioHandler.autoscaling.enabled }}
+{{- if and .Values.ioHandler.enabled .Values.ioHandler.autoscaling.enabled }}
 {{/*
 Plain HPA for the io tier: it is request-bound, so CPU is the right signal (the runner tier
 scales on queue depth via the KEDA ScaledObject instead).

@@ -40,3 +40,15 @@ class RedisResponseStore(ResponseStore):
     def delete_message(self, request_id: str) -> None:
         self._log.debug("Deleting Redis response message for request_id=%s", request_id)
         self._driver.delete(self._driver.key(request_id))
+
+    def supports_key_scan(self) -> bool:
+        return True
+
+    def scan_records(self, prefix: str) -> list[dict]:
+        """SCAN keys under the driver prefix + ``prefix`` and return their parsed records."""
+        records = []
+        for key in self._driver.client.scan_iter(match=f"{self._driver.key(prefix)}*"):
+            raw_message = self._driver.get(key)
+            if raw_message is not None:
+                records.append(json.loads(raw_message))
+        return records

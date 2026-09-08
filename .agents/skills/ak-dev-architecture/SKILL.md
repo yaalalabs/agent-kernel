@@ -3,7 +3,9 @@ name: ak-dev-architecture
 description: >
   Agent Kernel architectural principles, core abstractions, and design patterns.
   Use this skill when you need to understand the codebase structure, how components
-  interact, or before making changes to core functionality. Covers Session, Agent,
+  interact, or before making changes to core functionality. Covers the house patterns
+  every new feature follows (pluggable by default, reuse of existing configuration over
+  new knobs, classes over script-style functions), Session, Agent,
   Runner, Module, Runtime, AgentService, ChatService (execution core + presentation wrappers,
   and which layer each surface calls), AKConfig, tools, hooks, multimodal, conversation
   threads (the integration/thread package), the adapter pattern, the queue execution pipeline
@@ -30,6 +32,39 @@ metadata:
 5. **Plugin architecture**: Tools, hooks, guardrails, tracing providers, session stores, knowledge base backends, sandbox providers, and messaging integrations are all pluggable via well-defined interfaces. Backend-selection factories (guardrail, trace, session/thread/multimodal stores, sandbox provider) share one shape via `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError`): built-ins resolved by `if/elif` + real imports, with a dotted-path "bring your own" branch on every surface.
 6. **Minimal coupling**: Integrations (Slack, WhatsApp, etc.), deployment adapters (AWS Lambda, Azure Functions, Google Cloud Run), and API layers (REST, MCP, A2A) depend on the core but the core never depends on them. The queue pipeline (`pipeline/`) imports only `core` and `api`; `deployment/` imports `pipeline`; modules relocated into `pipeline/` leave re-export shims at their old paths that must preserve existing patch targets (see the Queue Execution Pipeline section).
 7. **Queue-pipeline execution** (#495): chat execution on server surfaces runs through one five-component pipeline: Request Handler → Input Queue → Agent Runner → Output Queue → Response Handler: with the queue transport (`execution.queues.type`: `in_memory` default, `sqs`, `kafka`, `nats`) and process topology selected by configuration.
+
+## House Patterns for New Features
+
+The design principles above describe what exists. These rules describe how every *new* feature is shaped so it fits alongside them. `ak-dev-write-spec` designs against them and `ak-dev-review-pr` reviews against them; a design or PR that departs from one must say so explicitly and justify it.
+
+### 1. Pluggable by default: adapter architecture is the first principle
+
+Every new capability that touches an external system, backend, or provider is designed as a **stable core interface plus thin adapters**, even when only one backend ships in the first PR.
+
+- Define the contract as an ABC in the owning package (`SessionStore`, `QueueTransport`, `SandboxProvider`, `BaseTrace`, `KnowledgeBase`, `AttachmentStore`, `ThreadStore`, `ScheduleProvider`, guardrail hooks are the existing ones). Concrete backends subclass it; the core consumes only the ABC.
+- Selection goes through a factory in the `core/util/factory.py` shape: a `type` field resolved by `if/elif` real-import branches for the built-ins, `require_extra` around optional SDK imports, and a dotted-path bring-your-own branch (`resolve_dotted`) on every surface. Never special-case a backend with `if/else` chains in core, and never make the first backend the only possible one.
+- Adapters wrap the native object or API as-is and translate at the boundary. No feature-forcing (raise `NotImplementedError` where the backend has no native mapping), no hidden defaults that differ from the native tool's own, and no invented intermediate abstraction "for consistency" across adapters. Consistent *shape* with the siblings in the same category (file location, factory branch, config block, contract test, example) is required; consistent *behavior* across backends is not.
+- Ship a reusable contract test suite next to the ABC when the interface has semantics worth conformance-testing (`QueueTransportContract`, `SandboxProviderContract`); every backend, including the first, subclasses it.
+- Lifecycle and cross-cutting behavior (retries, health checks, TTLs) belong in one shared place the adapters reuse (the shared DB drivers, `ConsumerLoop`, `BrokerWorkerCore`), not re-implemented per backend.
+
+### 2. Reuse existing configuration; do not add knobs the feature does not need
+
+`AKConfig` is the single configuration surface, and its shape is part of the product. A new feature first asks what existing config already describes it, and only then adds fields.
+
+- **Reuse whole config models where the shape already exists.** `_QueuesConfig` is the transport block for `execution.queues` *and* `sandbox.broker.queue`; `_ResponseStoreConfig` backs `execution.response_store` *and* `sandbox.broker.response_store`. A feature that needs a queue, a response store, a Redis/Valkey/DynamoDB/Cosmos/Firestore connection, or a store `type` selector reuses those models rather than defining a parallel one. The factories accept an explicit config block for exactly this purpose (`QueueTransportFactory.create(queues_config=...)`, `ResponseStoreFactory.create(response_store_config=...)`).
+- **Extend by subclassing when only defaults differ.** `_ThreadRedisConfig(_RedisConfig)`, `_MultimodalStorageRedisConfig(_RedisConfig)`, and `_ScheduleStoreDynamoDBConfig(_DynamoDBConfig)` override `ttl`/`prefix`/`table_name` defaults and nothing else. Do not copy the fields of an existing model into a new class.
+- **Existing configuration implicitly enables the feature where it applies.** When a feature is meaningful exactly when some already-configured component is present, the feature keys off that configuration instead of adding an `enabled` flag or a duplicate `type` field. The WebSocket connection store is provided by whichever session backend `session.type` already selects (`SessionStore.get_connection_store()`), so WebSocket modes need no second store `type`; a `thread` or `schedule` block's presence is its own enablement. Add an explicit `enabled` flag only when the feature has a real cost or behavior change that a user must opt into deliberately (`sandbox.enabled`, `trace.enabled`, `guardrail.enabled`, `multimodal.enabled`) and nothing already configured can stand in for that decision.
+- **Every new field must earn its place.** Before adding one, check: is it already expressed elsewhere in `AKConfig`; would the native backend's own default do; does the factory or store that owns the section already derive it. A field that exists "for flexibility" with no caller that reads it is a defect. Every field that survives gets a real `description` (they surface in generated docs) and a default that keeps existing YAML and `AK_*` env vars working unchanged.
+- Config reading stays in the stores and factories that own a section; drivers, transports, and adapters take explicit constructor parameters and never call `AKConfig.get()` in methods (the shared DB driver and transport rules).
+
+### 3. Classes, not scripts
+
+Behavior lives in classes with a single responsibility. Do not write feature logic as procedural, script-style module-level functions that pass state around as arguments.
+
+- A new component is a class: an ABC for the contract, concrete subclasses for the backends, a `*Factory` class for selection, a `*Manager`/`*Handler`/`*Runner` class for orchestration, a Pydantic `BaseModel` for data. Mutable state belongs to instances (or explicitly class-level state where the design calls for process-wide sharing, as in `InMemoryTransport`), never to module globals.
+- Module-level functions are the exception, reserved for small, stateless, genuinely shared utilities that belong to no single concept (`resolve_dotted`, `require_extra`, `pod_endpoint_url`) and for the agent-facing tool functions the framework tool builders bind. If a helper only makes sense next to one class, it is a method (static or class method when it needs no instance) of that class.
+- No `main()`-style orchestration inside the package: entry points (`RESTAPI.run()`, `IOHandler.run()`, `WebSocketGateway.run()`, `QueueBrokerWorker`) are classes with a `run` method, so deployments subclass or compose them rather than copying a script.
+- Prefer extending an existing class hierarchy over introducing a sibling that duplicates part of it; when two classes start sharing logic, lift it into a base class or a shared component (the `_RedisLikeDriver`, `BrokerWorkerCore`, and `ConsumerLoop` extractions are the pattern).
 
 ## Core Abstractions
 
@@ -95,7 +130,7 @@ Global orchestrator and agent registry:
 - **`stream(agent, session, requests, acting_user_id=None) -> AsyncGenerator[StreamChunk, None]`**: Streaming counterpart of `run()`, sharing the same pre-hook pipeline via `_prepare_requests()`:
   1. Runs pre-hooks; if halted, yields a `StreamChunk(error=..., done=True)` and returns
   2. Iterates `agent.runner.stream(agent, session, requests)`; a legacy `str` (TRANSITIONAL) is wrapped into a synthesised `TextDelta` before anything else runs, and its first occurrence allocates a `uuid4().hex` `message_id` shared by a synthesised `MessageStart`/`MessageEnd` pair bracketing the run
-  3. Only `TextDelta`/`ReasoningDelta` content passes through `PostHook.on_stream_chunk()` (a hook can drop the whole chunk, event included, by returning `None`; a hook's edit is written back into the event via `model_copy` so `delta` and `event` never disagree)
+  3. **Every** event passes through `PostHook.on_stream_event()` (return the event to pass it, a modified event of the same `type` to rewrite it, `None` to drop the whole chunk, or a `list[StreamEvent]` to emit several in its place — a list is emitted as-is and ends the chain for that event). A post-hook raising `StreamHalt` ends the run: `StreamBoundaryTracker` (`core/stream.py`, unexported) supplies the closes for any boundary still open, then one `StreamChunk(error=..., done=True)` is yielded and the session is **not** stored; any other exception propagates unchanged
   4. Yields a `StreamChunk(delta=..., event=...)` per event — `delta` is populated only for `TextDelta` (every other event type carries `event` alone) — then a final `StreamChunk(done=True)`
   5. Stores session and clears volatile cache in `finally`, same as `run()`
 - **System hooks**: Automatically includes `InputGuardrailFactory` as system pre-hook, `OutputGuardrailFactory` as system post-hook
@@ -237,7 +272,7 @@ Pydantic-based configuration:
 
 - **`PreHook`**: `on_run(session, agent, requests) -> list[AgentRequest] | AgentReply`: return modified requests to continue, or an `AgentReply` to halt execution
 - **`PostHook`**: `on_run(session, requests, agent, agent_reply) -> AgentReply`: return modified or unmodified reply
-- **`PostHook.on_stream_chunk(session, requests, agent, delta) -> str | None`**: Optional override called for each streaming `TextDelta`/`ReasoningDelta` content string before it reaches the client (other event types skip the hook chain entirely). Default implementation passes the text through unchanged; return `None` to drop the whole chunk, event included
+- **`PostHook.on_stream_event(session, requests, agent, event) -> StreamEvent | list[StreamEvent] | None`**: Optional override called for **every** event a streamed run produces, boundaries and tool calls included (#670 — it replaced the text-only `on_stream_chunk`, which is deleted). Default passes the event through unchanged. A single returned event must keep the incoming `type` or `Runtime` raises `TypeError` naming the hook; a returned list may emit any types and ends the chain for that event. Raising `StreamHalt` (also `core/hooks.py`) ends the run. Agent Kernel accumulates nothing: a hook that needs a whole unit holds fragments by returning `None` and buffering in `session.get_volatile_cache()`, then releases `[rewritten, closing_event]` at the boundary
 - Use cases: RAG injection, input/output guardrails, logging, disclaimers, prompt modification, multimodal preprocessing, streaming token filtering/redaction
 
 ## Multimodal (`ak-py/src/agentkernel/core/multimodal/`)
@@ -544,8 +579,25 @@ inert when disabled. To add a provider, use the `ak-dev-new-sandbox-provider` sk
 - **`SandboxProviderFactory` / `ExecutionBrokerFactory`** (`factory.py`): the #541 house pattern:
   built-in short names are `if/elif` real-import branches listed in `_BUILTIN_PROVIDER_NAMES`; a
   dotted-path `type` resolves via `resolve_dotted` (bring-your-own). Providers: `local_subprocess`
-  (no isolation), `docker` (container). Broker flavors: `thread` (default, dedicated loop thread),
-  `embedded` (inline/synchronous); `BrokerWorkerCore` is the shared engine.
+  (no isolation), `docker` (container), `kubernetes` (pod per sandbox; RBAC impersonation for
+  user identity), `e2b` (micro-VM), `daytona` (cloud container), `ec2_ssm` (attach-only). Broker
+  flavors: `thread` (default, dedicated loop thread), `embedded` (inline/synchronous), and
+  `queue` (#503, transport-backed, below); `BrokerWorkerCore` is the shared engine.
+- **The `queue` broker flavor** (#503: `broker/queue.py`, `broker/queue_worker.py`,
+  `broker/wire.py`): `QueueExecutionBroker` (client) sends `BrokerWireCodec`-encoded requests
+  over the `sandbox.broker.queue` block's INPUT queue (`group_id = sandbox_session_id` carries
+  the per-session serialization across a worker fleet) and bounded-polls the shared
+  `sandbox.broker.response_store` (`wait=None` is bounded by `wait_timeout` on this flavor;
+  destroys are fire-and-forget). `QueueBrokerWorker` (public export) hosts two `ConsumerLoop`s:
+  the request loop executes via `BrokerWorkerCore`, truncates oversized results at
+  `inline_payload_max_bytes`, and queues the ready-to-store record on the OUTPUT queue; the
+  output loop persists it verbatim and maintains the idle-sweep inventory (a third task sweeps
+  idle managed sandboxes via the response-store key-scan capability). Recovery is
+  wait-then-`check_sandbox_task`, which returns the bounded outcome captured on
+  `SandboxTask.result_summary`; there are no completion events and no agent re-invocation.
+  **Coupling amendment**: these three modules may import
+  `pipeline.envelope`/`transport`/`consumer`/`thread_runner`/`response_store` (all core-only
+  imports); the rest of `sandbox/` keeps the #494 core-only rule.
 - **Agent surface**: `tools.py` provides eight system tools (attached via `SystemToolFactory` when
   enabled, optionally scoped to `sandbox.agents`); `hooks.py`'s `SandboxPreHook` ingests
   task-completion events (the third system pre-hook). `principal.py` maps session/agent to a
@@ -572,13 +624,13 @@ the cross-cutting CI: the live-broker `QueueTransportContract` job in `test-reus
 | Module | Contents |
 |---|---|
 | `envelope.py` | `QueueMessage` (`body`, `attributes`, `group_id`, `dedup_id`, `receive_count`, `message_id`, `native` excluded from serialization) + attribute constants `ATTR_REQUEST_ID`/`ATTR_USER_ID`/`ATTR_ENDPOINT_URL`/`ATTR_STATUS_CODE`; `QueueName` (INPUT/OUTPUT) |
-| `transport/base.py` | `QueueTransport` (`send`, `create_consumer` hook, `check_consumer_capacity` startup warning hook), `TransportConsumer` (`fetch`/`ack`/`nack`/`dead_letter`/`close` plus `fetch_wait_slice_seconds`: **one instance per consumer thread**), `QueueTransportFactory` (#541 house pattern; `resolve_type()`: returns the declared `execution.queues.type` — mandatory inside a declared block, since per-component queue coordinates made URL sniffing resolve differently in each process — and `in_memory` when no block is declared; all four built-ins (`in_memory`/`sqs`/`kafka`/`nats`) wired; dotted-path BYO supported) |
+| `transport/base.py` | `QueueTransport` (`send`, `create_consumer` hook, `check_consumer_capacity` startup warning hook), `TransportConsumer` (`fetch`/`ack`/`nack`/`dead_letter`/`close` plus `fetch_wait_slice_seconds`: **one instance per consumer thread**), `QueueTransportFactory` (#541 house pattern; `resolve_type()`: returns the declared `execution.queues.type` — mandatory inside a declared block, since per-component queue coordinates made URL sniffing resolve differently in each process — and `in_memory` when no block is declared; all four built-ins (`in_memory`/`sqs`/`kafka`/`nats`) wired; dotted-path BYO supported). `resolve_type`/`create`/`create_consumer` accept an optional explicit `queues_config` block (#503 seam): the sandbox queue broker passes its own `sandbox.broker.queue` block, while `None` keeps the `execution.queues` path byte-for-byte |
 | `transport/in_memory.py` | `InMemoryTransport`: process-wide class-level queues; per-group FIFO with at most one in-flight message per group (groupless messages get synthetic groups); `ack_wait` redelivery with exact `receive_count`; `dedup_window`; blocking fetch; `reset()` for test isolation |
 | `consumer.py` | `ConsumerLoop`: the generic batch/retry/permanent-failure machinery extracted from `ECSSQSConsumer` (exact log-message parity; `logger` param keeps legacy `ak.ecs.*` logger names) |
 | `agent_runner.py` | `AgentRunner`/`StreamAgentRunner`: run via `ChatService.process_chat_request`/`process_stream_chat_sync`; forward replies with a `STATUS_CODE` attribute; `_resolve_request_metadata` reads `request_id` from the attributes, else from the body (the scheduled-trigger contract), injecting the resolved `request_id`/`user_id` back into the attributes; per-chunk dedup suffixes `{dedup}-{receive_count}-{i}`; `run()` rejects `in_memory` (single-process runs via `IOHandler`) |
 | `response_handler.py` | `ResponseHandler`: REST modes write records `{session_id, request_id, status_code, body}`; STREAM routing is by the WS-entered marker: no `USER_ID` attribute (REST-entered) -> chunks to `InMemoryResponseStore.add_chunk` for SSE, `USER_ID` present -> WebSocket push, as is all of ASYNC (`STREAM_CHUNK`/`CHAT_RESPONSE` via `PodPushWebSocketHandler`, targets resolved from the shared connection store); permanent failures deliver error frames/records so clients never hang |
 | `request_handler.py` | `RestHandler` (relocated; shim at `deployment/common/rest_handler.py` keeps the `AKConfig` patch target) with three default-preserving seams (`_effective_mode`, `_await_response_record`, `_build_sync_response`); the base polls full records (`get_record`) and honors the stored status for every queue-backed surface, ECS included: `>= 400` → `HTTPException`, `200 < status < 400` → `JSONResponse` (the 202 of a deferred chat), missing → 200; pipeline `RequestHandler`: always queue mode, unset mode → REST_SYNC, SSE bridging from `store.stream`, multipart route only on `in_memory` |
-| `response_store/` | Relocated family (`base`/`factory`/`redis`/`valkey`/`dynamodb`; shims left at `deployment/common/response_store.py` and `deployment/aws/core/response_store/`) plus `InMemoryResponseStore` (`get_record` exposes `status_code`; `add_chunk`/`stream` for local SSE) |
+| `response_store/` | Relocated family (`base`/`factory`/`redis`/`valkey`/`dynamodb`; shims left at `deployment/common/response_store.py` and `deployment/aws/core/response_store/`) plus `InMemoryResponseStore` (`get_record` exposes `status_code`; `add_chunk`/`stream` for local SSE). Optional key-scan capability (`supports_key_scan`/`scan_records`, #503 idle sweep) on all four built-ins, and `ResponseStoreFactory.create` accepts explicit `response_store_config`/`transport_type`/`ttl` (#503 seam; `None` keeps today's `execution.response_store` path) |
 | `io_handler.py` | `IOHandler.run(auth_validator=None, handlers=None)` (`handlers`: app-mounted REST handlers served alongside the pipeline's own `RequestHandler()`): single-process topology (`in_memory`: rest-api + response-handler + agent-runner threads via `ThreadRunner`, co-hosting the gateway handlers in ASYNC/STREAM when a validator is passed) vs multi-process (broker: plain-REST rest-api + response-handler; `AgentRunner.run()` and `WebSocketGateway.run()` are their own containers); startup fail-fasts (ASYNC-on-in_memory without a validator, broker WS modes without `websocket_api.push_auth_token` or a shared connection store, broker transport + in_memory/absent response store -> `AKConfigError`). Carries no scheduling knowledge: the capability validates itself where its routes are mounted. Serves via its own `uvicorn.Server` (`RESTAPI.build_app()` seam) and installs SIGTERM/SIGINT handlers on the main thread: set `shutdown_event`, `server.should_exit`, and `ThreadRunner.shutdown_exit_code = 0` (uvicorn only installs handlers on the main thread, and a container PID 1 with no handler never receives SIGTERM: the containerized e2e hang). `ConsumerLoop` slices fetch waits to <=1 s so drains are prompt |
 | `ws/` | The WebSocket Gateway tier (spec §9). `base.py`: relocated `WebSocketConnectionStoreABC`/`WebSocketHandlerABC` (shim at `deployment/common/websocket_service.py`). `registry.py`: `LocalConnectionRegistry`, the gateway pod's own sockets (no TTL; `deliver_to_connection` writes one socket from worker threads via `run_coroutine_threadsafe`). `handler.py`: `PipelineWebSocketHandler`, the native `/ws` route (token query-param auth with `userId` claim, dual registry+store registration, chat frames enqueued directly to the transport with `REQUEST_ID`+`USER_ID` only, `CHAT_QUEUED` acks, custom routes via `PipelineWebSocketHandler.register(route)`). `endpoint.py`: `PushEndpointHandler`, `POST /internal/push` (the `PostToConnection` analogue; `x-ak-push-token` shared secret, per-connection targeting, 404 = GoneException analogue). `gateway.py`: `WebSocketGateway.run(auth_validator=...)`, the standalone gateway container main (broker-only: rejects the in_memory transport, naming the co-hosted `IOHandler` topology for local testing, and rejects REST modes; requires push token + shared store). The shared connection store itself is `WSConnectionStore` (`core/session/base.py`), provided per backend by `SessionStore.get_connection_store()` and resolved via `default_connection_store()` in `push.py`. `push.py`: `PodPushWebSocketHandler` (store-lookup delivery: one POST per connection to the owning pod; stale mappings cleaned on 404, all-gone raises for retry) and `pod_endpoint_url()` (`AK_POD_IP` -> resolved host -> loopback; `local` on `in_memory`). Lazy `__init__` keeps fastapi out of Lambda imports |
 | `thread_runner.py` | Relocated `ThreadRunner` (shim at `deployment/common/thread_runner.py` keeps `import os` for the `os._exit` patch target) |
@@ -995,10 +1047,10 @@ User Input
         → Runtime.stream(agent, session, requests)
             → async with session:                    # acquire lock, set context
             → PreHooks (agent hooks, then system)    # halt → yield StreamChunk(error, done=True)
-            → agent.runner.stream(agent, session, requests)  # async generator of StreamEvents (or legacy str, TRANSITIONAL)
-                → legacy str normalised into TextDelta, bracketed by a synthesised MessageStart/MessageEnd
-                → for each TextDelta/ReasoningDelta: PostHook.on_stream_chunk() # can drop the chunk or edit the text
-                → yield StreamChunk(delta=..., event=...)  # delta set only for TextDelta
+            → agent.runner.stream(agent, session, requests)  # async generator of StreamEvents
+                → for every event: PostHook.on_stream_event()  # pass, rewrite, drop, or emit a list
+                → yield StreamChunk(delta=..., event=...)  # delta set only for TextDelta, taken from the emitted event
+                → on StreamHalt: closes for open boundaries, then StreamChunk(error=..., done=True), session NOT stored
             → session_store.store(session)           # persist state
             → yield StreamChunk(done=True)
             → clear volatile cache                   # cleanup

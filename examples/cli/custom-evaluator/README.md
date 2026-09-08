@@ -29,14 +29,14 @@ To run tests:
 [`custom_evaluator.py`](custom_evaluator.py) implements `TokenOverlapEvaluator(AKEvaluator)` from
 scratch — no DeepEval, no RAGAS:
 
-- **`score_based_evaluation`**: a deterministic, offline Jaccard token-overlap ratio between the
+- **`evaluate_by_score`**: a deterministic, offline Jaccard token-overlap ratio between the
   actual and expected text (stdlib `re` only). This is *graded* partial credit, unlike the
   built-in `deepeval` evaluator's binary whole-string `quasi_exact_match_score`.
-- **`llm_based_evaluation`**: a single raw `litellm.completion()` call carrying its own rubric
+- **`evaluate_by_llm`**: a single raw `litellm.completion()` call carrying its own rubric
   prompt, parsed for a bare `0.0`-`1.0` score — no `GEval`, no schema-constrained JSON, no
   DeepEval dependency at all.
 
-Both methods raise `AKMissingInput` if `expected` is missing, and `llm_based_evaluation` raises
+Both methods raise `AKMissingInput` if `expected` is missing, and `evaluate_by_llm` raises
 `AKEvaluationError` if the judge call fails or returns an unparseable response — the same error
 contract every evaluator (built-in or custom) must honor so a broken judge is never mistaken for
 a failing agent.
@@ -52,7 +52,7 @@ mode puts the test file's own directory on `sys.path`. No AK extra beyond `test`
 is required for a custom evaluator — the `deepeval` import lives entirely inside the built-in's
 own resolution branch.
 
-See [`agentkernel.test.core.akevaluators`](../../../ak-py/src/agentkernel/test/core/akevaluators)
+See [`agentkernel.test.core.evaluator`](../../../ak-py/src/agentkernel/test/core/evaluator)
 for the full `AKEvaluator` interface and payload models, and
 [`docs/docs/testing/cli-testing.md`](../../../docs/docs/testing/cli-testing.md#bring-your-own-evaluator)
 for the general "bring your own evaluator" documentation.

@@ -9,9 +9,9 @@ from typing import ClassVar
 from agentkernel.core.util.factory import AKConfigError, require_extra, resolve_dotted
 
 from .config import AKTestConfig
-from .core.akevaluators import AKEvaluationCase, AKEvaluationResult, AKEvaluator
+from .core.evaluator import AKEvaluationCase, AKEvaluationResult, AKEvaluator
 
-_BUILTIN_EVALUATORS = ["deepeval"]
+_BUILTIN_EVALUATORS = ["deepeval", "opik"]
 
 
 class Mode(StrEnum):
@@ -148,8 +148,12 @@ class Test:
     def _resolve_evaluator_class(cls, configured: str) -> type[AKEvaluator]:
         if configured == "deepeval":
             with require_extra("test", "evaluator: deepeval"):
-                from .core.akevaluators.deepeval import DeepevalAKEvaluator
+                from .core.evaluator.deepeval import DeepevalAKEvaluator
             return DeepevalAKEvaluator
+        if configured == "opik":
+            with require_extra("opik", "evaluator: opik"):
+                from .core.evaluator.opik import OpikAKEvaluator
+            return OpikAKEvaluator
         if "." not in configured:
             raise AKConfigError(
                 f"unknown evaluator '{configured}'; expected one of {_BUILTIN_EVALUATORS} or a dotted path to an AKEvaluator subclass"
@@ -173,8 +177,8 @@ class Test:
         Compare an actual string against a list of expected strings using the specified mode.
 
         Supports three comparison modes:
-        - 'SCORE': Deterministic scoring via the configured evaluator's score_based_evaluation
-        - 'LLM': LLM-as-judge scoring via the configured evaluator's llm_based_evaluation
+        - 'SCORE': Deterministic scoring via the configured evaluator's evaluate_by_score
+        - 'LLM': LLM-as-judge scoring via the configured evaluator's evaluate_by_llm
         - 'FALLBACK': Try score first, fall back to llm evaluation if score fails
 
         :param actual: The string to be compared.
@@ -203,16 +207,16 @@ class Test:
             case = AKEvaluationCase(user_input=user_input, actual=actual, expected=exp, threshold=threshold)
 
             if selected_mode == Mode.SCORE:
-                result, result_mode = evaluator.score_based_evaluation(case), Mode.SCORE
+                result, result_mode = evaluator.evaluate_by_score(case), Mode.SCORE
             elif selected_mode == Mode.LLM:
-                result, result_mode = evaluator.llm_based_evaluation(case), Mode.LLM
+                result, result_mode = evaluator.evaluate_by_llm(case), Mode.LLM
             else:  # FALLBACK
-                score_result = evaluator.score_based_evaluation(case)
+                score_result = evaluator.evaluate_by_score(case)
                 if score_result.passed:
                     result, result_mode = score_result, Mode.SCORE
                 else:
                     attempts.append(Test._stamp(score_result, Mode.SCORE, threshold, exp))
-                    result, result_mode = evaluator.llm_based_evaluation(case), Mode.LLM
+                    result, result_mode = evaluator.evaluate_by_llm(case), Mode.LLM
 
             stamped = Test._stamp(result, result_mode, threshold, exp)
             if stamped.passed:
@@ -234,7 +238,7 @@ class Test:
     @staticmethod
     def _stamp(result: AKEvaluationResult, mode: Mode, threshold: float, expected: str) -> AKEvaluationResult:
         """Stamps reporting metadata onto a result. result.passed is set by the evaluator itself
-        (score_based_evaluation/llm_based_evaluation) and is left untouched here."""
+        (evaluate_by_score/evaluate_by_llm) and is left untouched here."""
         result.mode = mode.value
         result.threshold = threshold
         result.expected = expected

@@ -3,7 +3,7 @@ name: ak-dev-new-sandbox-provider
 description: >
   Step-by-step guide for adding a new sandbox provider to Agent Kernel.
   Use this skill when you need to integrate a new code-execution backend for the sandbox
-  capability (beyond local_subprocess, docker, e2b, daytona, and ec2_ssm). Covers implementing
+  capability (beyond local_subprocess, docker, kubernetes, e2b, daytona, and ec2_ssm). Covers implementing
   the Sandbox / SandboxProvider ABCs, declaring capabilities honestly, factory registration,
   configuration, the contract test suite, and examples.
 license: Apache-2.0
@@ -27,15 +27,20 @@ This guide walks through adding a new sandbox provider to Agent Kernel. Use the 
 | E2B | `e2b` | `micro_vm` | `agentkernel[e2b]` |
 | Daytona | `daytona` | `container` | `agentkernel[daytona]` |
 | EC2 via SSM | `ec2_ssm` | `none` (attach-only to an existing instance) | `agentkernel[aws]` |
+| Kubernetes | `kubernetes` | `container` | `agentkernel[kubernetes]` |
 
-Planned in later iterations: `kubernetes`, `bedrock_agentcore`.
+Planned in later iterations: `bedrock_agentcore`.
 
 Reference implementations by pattern: `docker.py` (sync SDK via `to_thread`), `e2b.py`
 (native async SDK + native idle timeout passthrough), `daytona.py` (sync SDK + native
 auto-stop + configurable base image/snapshot/env_vars + resource mapping), `ec2_ssm.py`
 (attach-only provider with user-identity
-mapping: `sts:AssumeRole` + `run_as`). Providers with a native auto-stop take the profile's
-`idle_timeout` as a second constructor argument, passed by their factory branch.
+mapping: `sts:AssumeRole` + `run_as`), `kubernetes.py` (sync SDK via `to_thread` with plain
+dict manifests, exec over the WebSocket stream API (the caller's RBAC needs BOTH `create`
+and `get` on `pods/exec`), user identity via cached per-subject RBAC-impersonation clients,
+and the instance-level capability override, below). Providers with a native auto-stop take
+the profile's `idle_timeout` as a second constructor argument, passed by their factory
+branch; `kubernetes` takes it too, sizing the pod's `activeDeadlineSeconds` orphan ceiling.
 
 **Attach-only backends** (environments the framework connects to but never owns) subclass
 `AttachedEnvironmentProvider` instead of `SandboxProvider`: it fixes `create` (binds to the
@@ -72,6 +77,14 @@ The sandbox capability (`ak-py/src/agentkernel/sandbox/`) is config-driven and p
 If you declare `policy_network=True` but can't actually restrict egress, you've created a false
 security guarantee. Under-declaring is safe (the operation raises a clear capability error);
 over-declaring is a security bug.
+
+**Instance-level capability override** (#503): when a capability's enforcement depends on
+operator-asserted infrastructure the provider cannot detect, keep the class declaration honest
+(`False`) and flip it per instance in `__init__` via
+`self.capabilities = type(self).capabilities.model_copy(update=...)` behind an explicit config
+flag. The reference is the `kubernetes` provider's `network_policy: true`, which asserts the
+cluster CNI actually enforces NetworkPolicy; consumers read `provider.capabilities` on the
+instance, so attribute shadowing is sufficient.
 
 ## Step-by-Step
 
@@ -237,6 +250,12 @@ including a profile that demonstrates enforced policy and sentinel-based determi
   tier and the extra), and to the "Installation" extras in `ak-py/README.md`.
 - If the provider supports `principal_user`, document its identity mapping (how `agent`/`user`
   mode resolves to backend credentials).
+- Update the docs-site React pages that enumerate providers: `SANDBOX_PROVIDER_CARDS` in
+  `docs/src/pages/index.tsx` (card with icon or logo and a link to the provider's setup anchor),
+  and in `docs/src/pages/features.tsx` the provider-name highlight on the Sandboxed Code
+  Execution card and the provider count in the sandbox entry of `FEATURE_PAGE_MAP`. Grep both
+  pages, `docs/docs/intro.md`, and `docs/src/components/SandboxFlowDiagram` for the provider
+  roll call and the count.
 
 ## Checklist
 
@@ -249,3 +268,4 @@ including a profile that demonstrates enforced policy and sentinel-based determi
 - [ ] Factory resolution test in `tests/test_sandbox.py`
 - [ ] Example profile in `examples/sandbox/`
 - [ ] Documentation: provider table row in `docs/docs/advanced/sandbox.md` + extra in `ak-py/README.md`
+- [ ] Provider inventories on the docs-site pages (`docs/src/pages/index.tsx` `SANDBOX_PROVIDER_CARDS`, `docs/src/pages/features.tsx` sandbox card highlight and `FEATURE_PAGE_MAP` count)

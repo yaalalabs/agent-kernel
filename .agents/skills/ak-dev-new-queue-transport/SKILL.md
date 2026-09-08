@@ -107,6 +107,13 @@ import inside, and add the name to `_BUILTIN_TYPES`. Fail with `AKConfigError` w
 block is missing. Anything not in `_BUILTIN_TYPES` resolves as a dotted path (BYO), so a
 transport can also live out of tree; built-in status is for transports we test and document.
 
+The factory has a second consumer (#503): the **sandbox queue broker** passes its own
+`_QueuesConfig`-shaped `sandbox.broker.queue` block through the optional `queues_config`
+parameter on `resolve_type`/`create`/`create_consumer`, so a new transport gets sandbox-broker
+support for free. Read the block handed to you, never `AKConfig` (the no-argument path keeps
+reading `execution.queues` and must stay byte-for-byte unchanged;
+`tests/test_pipeline_factory_seams.py` enforces both properties).
+
 ## Step 4: Tests
 
 Three layers, all required:
@@ -154,7 +161,10 @@ containerized e2e tests.
   an operator.
 - Docs: the transport matrix and a "Running Queue Mode on <name>" section in
   `docs/docs/advanced/queue-mode-guide.md`; the transports list in
-  `docs/docs/deployment/onprem-kubernetes.md` if the transport is k8s-relevant.
+  `docs/docs/deployment/onprem-kubernetes.md` if the transport is k8s-relevant; the transport
+  roll call on the docs-site features page (`docs/src/pages/features.tsx`: the "Queue broker
+  over SQS, Kafka, or NATS" highlight on the Sandboxed Code Execution card, and any other
+  "SQS, Kafka, or NATS" mention found by grepping `docs/src/pages/*.tsx`).
 - Skills: the pipeline section of `.agents/skills/ak-dev-architecture/SKILL.md`, and the
   user-facing queue/deploy content in `ak-py/src/agentkernel/skills/` where transports are
   enumerated.

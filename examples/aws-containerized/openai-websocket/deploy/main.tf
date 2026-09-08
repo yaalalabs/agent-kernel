@@ -1,7 +1,7 @@
 # OpenAI Agents in ECS over a WebSocket API (async, no queue) — agent runs inline, reply pushed over the connection.
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.8.1"
+  version = "0.9.0"
 
   providers = { aws = aws, docker = docker }
 

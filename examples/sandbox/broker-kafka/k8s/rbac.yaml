@@ -1,0 +1,23 @@
+# The security boundary of this example: sandbox pods run as this ServiceAccount, and the
+# API server enforces what it may do. `view` is read-only, so `kubectl get ...` succeeds and
+# any write comes back Forbidden regardless of what the command string says. What sandbox
+# pods may do is application policy: this file belongs to the app, not to Agent Kernel.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ak-sandbox-pod
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ak-sandbox-pod-view
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: ak-sandbox-pod
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view

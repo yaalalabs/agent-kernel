@@ -1,7 +1,7 @@
 {
   "skill": "ak-test",
   "description": "Evaluations for the ak-test (testing and debugging) skill",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "evals": [
     {
       "id": "test-setup-cli",
@@ -65,8 +65,8 @@
       "expected_outputs": [
         "evaluator:",
         "AKEvaluator",
-        "score_based_evaluation",
-        "llm_based_evaluation"
+        "evaluate_by_score",
+        "evaluate_by_llm"
       ]
     },
     {

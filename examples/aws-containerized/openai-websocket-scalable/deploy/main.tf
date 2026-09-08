@@ -1,7 +1,7 @@
 # OpenAI Agents in ECS over a WebSocket API with queue-based (scalable) processing — see ../README.md.
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.8.1"
+  version = "0.9.0"
 
   providers = { aws = aws, docker = docker }
 

@@ -97,7 +97,7 @@ class <Provider>InputGuardrail(BaseGuardrailUtil, Base<Provider>Guardrail, Input
             message = self._build_intervention_message(result)
             logger.warning(f"Input guardrail triggered: {message}")
             return AgentReplyText(
-                text=message,
+                response=message,
                 prompt=text
             )
 
@@ -289,6 +289,8 @@ Create `examples/cli/guardrail/<provider>/` with:
 ### 10. Add Documentation
 
 Add guardrail provider docs to `docs/docs/advanced/guardrails.md` or create `docs/docs/advanced/guardrails-<provider>.md`.
+
+Then check the docs-site features page (`docs/src/pages/features.tsx`): the Problem section's `rows` name the built-in guardrail providers in a `with:` cell ("OpenAI and Bedrock guardrails built in"); add the new provider wherever the existing ones are listed (grep `docs/src/pages/*.tsx` for "Bedrock").
 
 ## Checklist
 

@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.1"
+  version = "0.9.0"
 
   providers            = { aws = aws, docker = docker }
   product_alias        = var.product_alias

@@ -59,19 +59,28 @@ spec:
   entityOperator:
     topicOperator: {}
 {{- $root := . }}
-{{- range $topic := list .Values.transport.kafka.inputTopic .Values.transport.kafka.outputTopic }}
+{{- $topics := list
+      (dict "name" .Values.transport.kafka.inputTopic "partitions" (int .Values.kafka.partitions))
+      (dict "name" .Values.transport.kafka.outputTopic "partitions" (int .Values.kafka.partitions)) }}
+{{- if .Values.sandboxWorker.enabled }}
+{{- /* The sandbox broker's queue pair (#503): provisioned here for the same reason as the chat topics. */}}
+{{- $topics = concat $topics (list
+      (dict "name" .Values.sandboxWorker.queue.kafka.inputTopic "partitions" (int .Values.sandboxWorker.queue.kafka.partitions))
+      (dict "name" .Values.sandboxWorker.queue.kafka.outputTopic "partitions" (int .Values.sandboxWorker.queue.kafka.partitions))) }}
+{{- end }}
+{{- range $topic := $topics }}
 {{- range $suffix := list "" $root.Values.transport.kafka.dlqSuffix }}
 ---
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
-  name: {{ printf "%s%s" $topic $suffix | lower | replace "." "-" }}
+  name: {{ printf "%s%s" $topic.name $suffix | lower | replace "." "-" }}
   labels:
     strimzi.io/cluster: {{ $clusterName }}
     {{- include "agent-kernel.labels" (dict "root" $root "component" "kafka") | nindent 4 }}
 spec:
-  topicName: {{ printf "%s%s" $topic $suffix }}
-  partitions: {{ $root.Values.kafka.partitions }}
+  topicName: {{ printf "%s%s" $topic.name $suffix }}
+  partitions: {{ $topic.partitions }}
   replicas: {{ $topicReplicas }}
 {{- end }}
 {{- end }}

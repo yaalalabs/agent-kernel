@@ -38,7 +38,8 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_base.py` | Session, Agent, Runner abstractions |
 | `test_runtime.py` | Runtime registration, execution, hooks |
 | `test_stream_events.py` | `core/event.py`'s `StreamEvent` discriminated union: every member round-trips through JSON (`type` discriminator), rejects an unknown `type`, and stays JSON/pickle-safe (no framework-native fields) |
-| `test_runtime_stream_events.py` | `Runtime.stream()`'s streaming contract (spec `docs/specs/523-ag-ui-support/`): legacy `str` yields normalised into a `MessageStart`/`TextDelta`/`MessageEnd` sequence, `PostHook.on_stream_chunk()` only sees `TextDelta`/`ReasoningDelta` content and a hook's edit is written back into the event, a hook returning `None` drops the whole chunk, `delta` is populated only for `TextDelta`, and the final chunk is a bare `StreamChunk(done=True)` |
+| `test_runtime_stream_events.py` | `Runtime.stream()`'s streaming contract (specs `docs/specs/523-ag-ui-support/` and `docs/specs/670-streaming-post-hooks/`): a bare `str` from an unmigrated runner fails loudly as a pydantic `ValidationError`, **every** event reaches `PostHook.on_stream_event()`, a returned list emits N chunks and ends the chain, a single return of a different `type` raises `TypeError`, a hook returning `None` drops the whole chunk, `delta` is populated only for `TextDelta` and taken from the emitted event, `StreamHalt` closes open boundaries then yields one error chunk and stores no session, any other exception propagates, and the final chunk is a bare `StreamChunk(done=True)` |
+| `test_stream_boundaries.py` | `StreamBoundaryTracker` (`core/stream.py`) directly: open/close pairing per kind, innermost-first drain order, `drain()` clearing, and the two malformed-sequence cases it tolerates (closing an id never opened, opening one twice) |
 | `test_module.py` | Module load/unload, wrapping |
 | `test_session.py` | Session state, caches, context vars |
 | `test_session_cache.py` | LRU SessionCache |
@@ -109,8 +110,11 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 | `test_pipeline_ws.py` | The gateway tier: `LocalConnectionRegistry`, `PodPushWebSocketHandler` store-lookup delivery + stale-connection cleanup, `/internal/push` auth, the native `/ws` route (1008 closes, chat enqueue attributes, custom routes), `WebSocketGateway` fail-fasts, single-process ASYNC/STREAM end-to-end over `in_memory`, and cross-"pod" delivery between two gateway apps sharing one connection store |
 | `test_session_connection_store.py` | The `WSConnectionStore` contract over the in-memory/redis-like/DynamoDB implementations, plus `SessionStore.get_connection_store()` per backend (store-less backends raise actionably) |
 | `test_sandbox.py` | Sandbox core: model/capabilities, error hierarchy, config, provider contract, manager + factory + embedded broker, agent surface (system tools + task-completion pre-hook), `agents` scoping |
-| `test_sandbox_broker.py` | Broker flavors (embedded/thread) end-to-end, thread loop-identity contract, wait-policy promotion + late-completion recovery, suspend/resume completion ingestion |
-| `test_sandbox_providers.py` | `local_subprocess` (real subprocess) + `docker` (mocked SDK) providers, run against the reusable `SandboxProviderContract` |
+| `test_sandbox_broker.py` | Broker flavors (embedded/thread) end-to-end, thread loop-identity contract, wait-policy promotion + late-completion recovery (including the bounded `result_summary` outcome on `check_sandbox_task`), completion ingestion |
+| `test_sandbox_providers.py` | `local_subprocess` (real subprocess), `docker` (mocked SDK), `e2b`/`daytona` (mocked cloud SDKs), `ec2_ssm` (mocked boto3), and `kubernetes` (fake SDK with a functional tar/base64 exec protocol; manifest shapes, NetworkPolicy gating, RBAC-impersonation headers per call shape) providers, run against the reusable `SandboxProviderContract` |
+| `test_sandbox_queue_broker.py` | #503 queue broker: `BrokerWireCodec` binary round trips, `error_type` stamping, removed config fields, `QueueExecutionBroker` client (bounded waits, promotion, typed re-raise, ceiling/size guards, FIFO destroy), `QueueBrokerWorker` two-loop model (output-queue delivery, truncation, split permanent-failure hooks, sweep inventory), and manager-level wait-then-`check_sandbox_task` recovery over `in_memory` |
+| `test_pipeline_factory_seams.py` | #503 explicit-config seams: `QueueTransportFactory`/`ResponseStoreFactory` with an explicit block never read `AKConfig` (asserted loudly), default paths unchanged, response-store `ttl` override |
+| `test_response_store_scan.py` | The optional `ResponseStore` key-scan capability (`supports_key_scan`/`scan_records`) across the four built-ins, ABC default opt-out |
 | `test_authoriser_shared.py` | Shared `Authoriser` in `agentkernel.auth`: `AuthValidatorAuthoriser` adaptation, export identity, and the guard that the thread package no longer re-exports it |
 | `test_schedule_model.py` | `ScheduleSpec` one-of/timezone/session_mode validation, chat-envelope parsing, `ScheduledTask` JSON round trip (JSON primitives only) |
 | `test_schedule_manager.py` | `ScheduleManager`: `get()` gating + singleton, provider/transport fail-fast, semantic validation matrix (including the named-agent precheck and the unnamed-agent exemption), create ordering + rollback, trigger-body freezing, ownership, amendment rules (occurrence rule replaced as a unit, untouched when the amendment names none of it), cancellation, occurrence recording (never raises) |
@@ -187,11 +191,15 @@ class StreamingDummyRunner(Runner):
         yield MessageEnd(message_id="m-1")
 ```
 
-Only `TextDelta` and `ReasoningDelta` reach `PostHook.on_stream_chunk()`, and only `TextDelta` is
-projected into `StreamChunk.delta` — so a test that accumulates the reply must filter on
-`chunk.delta is not None` rather than slice by position. (`delta` is a model field, so the attribute
-always exists; it is `None` on every non-text frame. Key *presence* is the wire-format rule, which
-applies to the serialised SSE frames, not to the objects a test sees.)
+Every event reaches `PostHook.on_stream_event()`, but only `TextDelta` is projected into
+`StreamChunk.delta` — so a test that accumulates the reply must filter on `chunk.delta is not None`
+rather than slice by position. (`delta` is a model field, so the attribute always exists; it is `None`
+on every non-text frame. Key *presence* is the wire-format rule, which applies to the serialised SSE
+frames, not to the objects a test sees.)
+
+A test double for a hook implements `on_stream_event`, and a double that returns a **list** ends the
+chain for that event — so a two-hook test asserting what the second hook saw is the way to pin that
+rule. See `RecordingHook` and `HaltingHook` in `tests/test_runtime_stream_events.py`.
 
 ### Async Test Patterns
 
@@ -324,21 +332,21 @@ Configured via `test-config.yaml` — a separate, un-nested file resolved from t
 
 ```yaml
 mode: score    # score | llm | fallback (default: fallback)
-evaluator: deepeval   # built-in short name, or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval   # built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini
   provider: openai
 ```
 
-- **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `score_based_evaluation` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call)
-- **llm**: LLM-as-judge scoring via `llm_based_evaluation` — the built-in `DeepevalAKEvaluator` uses DeepEval's `GEval` metric against the expected answer(s) (ground truth). Evaluation backends are pluggable (`agentkernel.test.core.akevaluators.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
+- **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `evaluate_by_score` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call); the built-in `OpikAKEvaluator` uses Opik's `LevenshteinRatio` instead (graded fuzzy-similarity, not exact-match)
+- **llm**: LLM-as-judge scoring via `evaluate_by_llm` — both built-ins use a `GEval` metric against the expected answer(s) (ground truth): `DeepevalAKEvaluator` via DeepEval's `GEval` and an `LLMTestCase`, `OpikAKEvaluator` via Opik's `GEval` and a single packed `output` string. Evaluation backends are pluggable (`agentkernel.test.core.evaluator.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
 - **fallback**: Tries score first, falls back to llm if score fails
 
 `evaluator` is resolved by `Test._resolve_evaluator` (`agentkernel/test/test.py`), the same
 bring-your-own-dotted-path pattern `resolve_dotted`/`require_extra` (`core/util/factory.py`) use
 for session stores, sandbox providers, and trace backends — a custom evaluator subclasses
-`AKEvaluator` (`agentkernel.test.core.akevaluators`) and implements `score_based_evaluation`/
-`llm_based_evaluation`, each returning an `AKEvaluationResult`. See
+`AKEvaluator` (`agentkernel.test.core.evaluator`) and implements `evaluate_by_score`/
+`evaluate_by_llm`, each returning an `AKEvaluationResult`. See
 `examples/cli/custom-evaluator/` for a full worked example, and
 `docs/specs/555-pluggable-test-evaluators/` for the design/spec behind this interface.
 
@@ -392,8 +400,11 @@ async def http_client():
 - **`integration-test.yaml`**: "Nightly" (tier `nightly`) integration tests against deployed environments; scheduled weekly on Sundays at 5:30 PM UTC (`cron: '30 17 * * 0'`), plus manual dispatch
 - **`integration-test-weekly.yaml`**: Weekly integration tests against deployed environments (cron currently commented out; manual dispatch, with option to keep cloud resources on failure), plus two additional manual-dispatch-only jobs gated on `inputs.provision_e2e_messaging`: `e2e-messaging-deploy` (builds and Terraform-applies the `e2e/app` messaging harness to AWS ECS, then waits for the service to stabilize) and `e2e-messaging-test` (probes the deployed webhook, registers the Telegram webhook, then runs the `e2e/tests` pytest suite against Slack/Telegram/WhatsApp/Messenger/Instagram/Gmail). See `e2e/README.md` for the full harness design.
 - **`code-quality.yml`**: Runs linting checks (see `code-quality` skill)
+- **`pr-title-check.yaml`**: Fails the PR unless its title follows Conventional Commits (`type: description` / `type(scope): description`, types in `CONTRIBUTING.md`). Runs on `pull_request` open/edit/synchronize/reopen/ready-for-review so a result exists for every head SHA (required checks are recorded per SHA)
+- **`copilot-review-request.yaml`**: Requests a Copilot code review on open/reopen/ready-for-review using the `COPILOT_REVIEW_PAT` secret (`pull_request_target`, API-only, no checkout): an org-scoped fine-grained PAT (resource owner `yaalalabs`, this repo, Pull requests: Read and write) created by a licensed maintainer. It is separate from `COPILOT_REQUEST_TOKEN` because the account-level Copilot Requests permission only exists on user-owned tokens, which cannot hold org repository permissions. Exists because the develop ruleset's `copilot_code_review` rule only fires for authors who hold a Copilot license. Skips PRs where Copilot is already requested and bot-authored PRs; `workflow_dispatch` takes a PR number for backfills
+- **`reviewed-label-reset.yaml`**: Removes the maintainer-applied `Reviewed` label whenever new commits are pushed (`pull_request_target: synchronize`, API-only, no checkout) so the PR reappears in the `-label:Reviewed` review queue
 
-Every workflow declares an explicit least-privilege `permissions` block (CodeQL `actions/missing-workflow-permissions`); jobs that write anything do so with the GitHub App token minted in-job, not with `GITHUB_TOKEN`. When adding a workflow, start from `permissions: {}` (or `contents: read` if it checks out) and widen only where a step provably needs it.
+Every workflow declares an explicit least-privilege `permissions` block (CodeQL `actions/missing-workflow-permissions`); jobs that write repo content (commits, branches, PRs) do so with the GitHub App token minted in-job, not with `GITHUB_TOKEN`. Metadata-only writes such as the label removal in `reviewed-label-reset.yaml` use a job-scoped `GITHUB_TOKEN` (`pull-requests: write`) instead of minting an App token. When adding a workflow, start from `permissions: {}` (or `contents: read` if it checks out) and widen only where a step provably needs it. Workflows on `pull_request_target` (`test-trusted-pr.yaml`, `copilot-review-request.yaml`, `reviewed-label-reset.yaml`) must never check out or execute PR code unless gated behind a maintainer-applied label, as `test-trusted-pr.yaml` is.
 
 `scripts/update_examples_version.py` keeps the `agentkernel` pin in sync across both `examples/**` and `e2e/app` (via `--examples-dir e2e/app`): `publish.yaml`'s "Update e2e messaging harness with new version" step bumps the pin with `--skip-lock` right after a production publish (the just-published version isn't resolvable on PyPI yet, so the lock refresh is deferred), and `test.yaml`'s "Update e2e messaging harness lock file" step later runs `--force-lock --examples-dir e2e/app` to regenerate `e2e/app/uv.lock` and commits it alongside `examples/**/uv.lock`. If you add a new pinned dependency consumer under `e2e/app`, make sure it's covered by this same version-bump/lock-refresh pair instead of drifting out of sync with the published package.
 
