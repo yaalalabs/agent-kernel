@@ -191,11 +191,9 @@ openai-auth,schedule-openai}/deploy` and `examples/memory/{redis,valkey,dynamodb
   #689). Their own ElastiCache/Redis or Valkey security groups
   (`ak-deployment/ak-aws/common/modules/redis`, `.../valkey`) are unaffected — #689 explicitly kept
   those out of scope, and this change doesn't touch them either.
-- Every example keeps working with **no value supplied** (e.g. a developer running `deploy.sh`
-  locally without the CI harness) exactly as it does today for `vpc_id`/`private_subnet_ids` when
-  those aren't supplied — wait, `vpc_id`/`private_subnet_ids` on these 9 examples have **no**
-  default and are **required** inputs today (`variables.tf:32-40` has no `default =` line), so a
-  standalone `deploy.sh` run for these already requires `-var vpc_id=... -var
+- `vpc_id`/`private_subnet_ids` on these 9 examples have **no** default and are **required** inputs
+  today (`variables.tf:32-40` has no `default =` line), so a standalone `deploy.sh` run (e.g. a
+  developer running it locally without the CI harness) already requires `-var vpc_id=... -var
   'private_subnet_ids=[...]'` or equivalent today, with or without this change. This new
   `security_group_id` variable is nullable specifically so it does **not** add a third mandatory
   input on top of the two that already exist.

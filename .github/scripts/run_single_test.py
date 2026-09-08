@@ -765,7 +765,7 @@ def main():
     parser.add_argument('--action', choices=['deploy', 'test', 'destroy'], default='test', help='Action to perform')
     parser.add_argument('--vpc-id', default=None, help='VPC ID from base deployment')
     parser.add_argument('--private-subnet-ids', default=None, help='Private subnet IDs (JSON array) from base deployment')
-    parser.add_argument('--security-group-id', default=None, help='Security group ID from base deployment (aws-serverless only in Phase 1)')
+    parser.add_argument('--security-group-id', default=None, help='Security group ID from base deployment; sets TF_VAR_security_group_id (used for aws-serverless jobs)')
 
     args = parser.parse_args()
     

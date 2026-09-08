@@ -284,16 +284,16 @@ Terraform input variables:
 
 ## Error handling
 
-- **Base's `security_group_id` output is empty or the base deployment's state doesn't have it yet**
-  (e.g. base was deployed before this change, so its state predates the new output): `terraform
-  output -raw security_group_id` returns an empty string rather than failing (Terraform's `-raw`
-  behavior for a defined-but-not-yet-refreshed output is to compute it fresh via the `terraform
-  init` already run in `get_base_outputs.py`, since outputs are derived from current state/config,
-  not cached — so this only fails if the output block itself doesn't exist in the *code* being
-  read, not if the base hasn't re-applied). No new error handling is added beyond what
-  `get_base_outputs.py` already does for `vpc_id` (a `subprocess.run(..., check=True)` raises
-  `CalledProcessError` and fails the job if the output doesn't exist at all) — matches existing
-  practice.
+- **Base's `security_group_id` output doesn't exist in the base deployment's state yet** (e.g. the
+  base was applied before this change, so its state predates the new `outputs.tf` block): this isn't
+  reachable in the pipeline, because the `get-base-outputs` job depends on `deploy-openai`, which
+  re-applies the base — with the new `outputs.tf` in place — before `get_base_outputs.py` ever runs
+  `terraform output`. This assumes the base apply succeeds (see the review discussion on
+  `serverless/state.tf:93` for a case where it wouldn't). If the output were ever missing at read
+  time regardless, `terraform output -raw security_group_id` exits non-zero (`Output
+  "security_group_id" not found`), and matching the existing `vpc_id` handling,
+  `get_base_outputs.py`'s `subprocess.run(..., check=True)` raises `CalledProcessError` and fails the
+  `get-base-outputs` job — no new error handling needed.
 - **Empty string passed as `--security-group-id`**: `run_single_test.py`'s `if security_group_id:`
   check treats an empty string as falsy (same as the existing `if vpc_id:` check), so
   `TF_VAR_security_group_id` is simply not set — matches existing `vpc_id` behavior byte-for-byte,

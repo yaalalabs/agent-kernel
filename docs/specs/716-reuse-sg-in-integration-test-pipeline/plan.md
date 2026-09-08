@@ -107,8 +107,15 @@ run together as a final pass once all five iterations are wired:
 - **`docs/docs/deployment/aws-serverless.md`**: checked — no `vpc_id`/`private_subnet_ids`/pipeline
   mention exists to extend in parallel (confirmed by the earlier `grep`, which found no hits in this
   file). No update needed.
-- No module README changes — `ak-deployment/ak-aws/serverless` itself is unchanged (#689 already
-  landed it); this plan only touches CI scripts/workflow and example `deploy/` dirs, none of which
-  have their own README documenting `vpc_id`-equivalent inputs.
+- **Example README changes** — `ak-deployment/ak-aws/serverless` itself is unchanged (#689 already
+  landed it), but three of the example READMEs already document the `vpc_id`-equivalent reuse flow
+  and need a matching `security_group_id` step:
+  `examples/aws-serverless/{crewai,langgraph,openai-auth}/README.md:27-37` walk the reader through
+  `terraform output vpc_id` / `private_subnet_ids` on the `openai` deployment and
+  `export TF_VAR_vpc_id=...`; add the equivalent `terraform output security_group_id` /
+  `export TF_VAR_security_group_id=<SG_FROM_OPENAI>` lines to each. `examples/memory/valkey/README.md:56-57`
+  tells the reader to set `vpc_id`/`private_subnet_ids` in `terraform.tfvars`; add
+  `security_group_id` to that same instruction. Per `ak-dev-sync-docs-from-branch`, example READMEs
+  are a required docs surface when an example's inputs change.
 - Before merge, run `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` against the
   branch's actual diff to catch anything this plan missed.

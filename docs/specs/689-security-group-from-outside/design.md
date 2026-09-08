@@ -67,9 +67,14 @@ Redis/Valkey SGs are explicitly out of scope (user decision).
     `var.security_group_id != "" ? [var.security_group_id] : []`). The four non-authorizer submodules
     were never designed to take more than one shared SG.
 - No `docs/specs/689-*` existed before this document; no code has landed on this branch yet.
-- No production deployments of these modules exist yet (confirmed with the requester), so this change
-  does not need to preserve existing Terraform state — adding `count` to the SG resources below is a
-  plain change, no state-migration handling required.
+- The CI base deployment (`examples/aws-serverless/openai`, kept alive by the weekly integration test
+  pipeline — see 716 `design.md:25`, never destroyed) already has Terraform state containing these SG
+  resources under their unindexed addresses (e.g. `aws_security_group.lambda`), and so does anyone
+  pinned to the published `yaalalabs/ak-serverless/aws` registry module. Adding `count` to the SG
+  resources below without a `moved` block means the next `apply` against that existing state attempts
+  to replace the resource rather than reindex it in place (see the review discussion on
+  `serverless/state.tf:93` for the concrete failure mode). This was raised in review; the resulting
+  one-time migration was accepted rather than adding `moved` blocks.
 
 ## Requirements
 

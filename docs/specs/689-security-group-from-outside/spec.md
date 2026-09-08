@@ -3,9 +3,11 @@
 Implements `design.md` in this directory: a nullable `security_group_id` variable per logical SG in
 `containerized/modules/rest-service`, `containerized/modules/agent-runner`, and `serverless/state.tf`,
 each following the existing `var.vpc_id` bring-your-own convention (`null` → create as today, non-null →
-use the provided ID and skip creation). No production deployments of these modules exist yet, so no
-Terraform state migration (`moved` blocks) is needed — adding `count` to these resources is a plain
-change.
+use the provided ID and skip creation). The CI base deployment and any registry consumer already have
+Terraform state for these SG resources under their unindexed addresses; adding `count` here without a
+`moved` block causes the next `apply` against that state to attempt a replace instead of a reindex (see
+design.md Motivation). This was raised in review and accepted as a one-time migration rather than
+adding `moved` blocks.
 
 ## Design
 
@@ -275,9 +277,10 @@ None. This change is entirely Terraform infrastructure variables — it does not
    sees no plan diff from this change (same SG rules, same resource count).
 2. **SG resources gain `count`.** `aws_security_group.ecs_alb`, `aws_security_group.ecs_service`,
    `aws_security_group.agent_runner` (all in `containerized`), and `aws_security_group.lambda`
-   (`serverless`) move from unconditional resources to `count`-based ones. No state-migration handling
-   (no `moved` blocks) — confirmed with the requester that no production deployment of these modules
-   exists yet.
+   (`serverless`) move from unconditional resources to `count`-based ones. No `moved` blocks are added:
+   the CI base deployment and any registry consumer already have these resources in state under their
+   unindexed addresses, so this was raised in review and accepted as a one-time migration on next apply
+   rather than adding `moved` blocks (see design.md Motivation).
 3. **New capability**: when a `*_security_group_id` variable is set, the module skips creating its own
    SG and wires the provided ID into every place that SG's ID was previously used (ingress rules, load
    balancer, ECS `network_configuration`, Lambda `vpc_security_group_ids`, module outputs).

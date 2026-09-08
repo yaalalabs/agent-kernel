@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Retrieve VPC and subnet outputs from the base deployment.
+Retrieve VPC, subnet, and security group outputs from the base deployment.
 
 This script initializes Terraform in the base deployment directory and
-retrieves the VPC ID and private subnet IDs. Results are written to
-$GITHUB_OUTPUT for use in subsequent workflow steps.
+retrieves the VPC ID, private subnet IDs, and security group ID. Results are
+written to $GITHUB_OUTPUT for use in subsequent workflow steps.
 """
 
 import argparse
@@ -17,7 +17,7 @@ from pathlib import Path
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Retrieve base deployment outputs (VPC ID, subnet IDs)"
+        description="Retrieve base deployment outputs (VPC ID, subnet IDs, security group ID)"
     )
     parser.add_argument(
         "--base-path",
