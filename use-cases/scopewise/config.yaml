@@ -1,0 +1,8 @@
+session:
+  type: in_memory
+telegram:
+  agent: scopewise_assistant
+trace:
+  enabled: false
+multimodal:
+  enabled: false

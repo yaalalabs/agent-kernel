@@ -1,0 +1,6 @@
+{$SCOPEWISE_DOMAIN} {
+    request_body {
+        max_size 9MB
+    }
+    reverse_proxy app:8080
+}

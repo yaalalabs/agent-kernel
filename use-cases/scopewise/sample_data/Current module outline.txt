@@ -1,0 +1,6 @@
+SYNTHETIC DEMONSTRATION MATERIAL
+Learning objectives:
+Explain primary keys and distinguish candidate keys.
+Apply third normal form to a small relational schema.
+Construct SQL joins to combine two related tables.
+BCNF proofs are explicitly excluded from this module.
