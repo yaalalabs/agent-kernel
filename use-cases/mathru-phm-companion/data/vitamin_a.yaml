@@ -1,0 +1,81 @@
+# Vitamin A supplementation schedule.
+#
+# THIS TABLE REQUIRES CLINICIAN REVIEW BEFORE ANY REAL-WORLD USE.
+#
+# Keyed by the child's age in calendar months:
+#   visit_date = add_months(child_dob, age_months)
+#
+# ---------------------------------------------------------------------------
+# PROVENANCE
+#
+# Sourcing rules, enforced by provenance_test.py:
+#   - Never cite Scribd or any re-upload. Get the .gov.lk original, or do not
+#     use the value.
+#   - Two sources per value. If they disagree, the newer official one wins and
+#     the discrepancy is noted here.
+#   - Check the date printed ON THE FACE of the document, not its file
+#     metadata.
+#
+# `status` must be exactly `sourced` before any value here is used.
+# ---------------------------------------------------------------------------
+provenance:
+  source: "National Strategy for Prevention and Control of Micronutrient Deficiencies in Sri Lanka 2017-2022"
+  publisher: "Nutrition Division, Ministry of Health, Sri Lanka"
+  document_date: TODO # cover date not yet confirmed; the title spans 2017-2022
+  url: "https://nutrition.health.gov.lk/wp-content/uploads/2020/11/National-Strategy-for-Prevention-and-Control-of-Micronutrient-Deficiencies-in-Sri-Lanka-2017-2022.pdf"
+  retrieved: TODO # YYYY-MM-DD
+  cross_checked_against: TODO # see the DISCREPANCY below; not yet resolved
+  clinician_review: "NOT PERFORMED. See Known Limitations in README.md."
+
+# ---------------------------------------------------------------------------
+# DISCREPANCY - UNRESOLVED. THIS IS WHY THE FILE IS STILL `placeholder`.
+#
+# The two available readings do not agree, and this is not a rounding difference:
+#
+#   A. The national strategy states Vitamin A every 6 months from 6 months through 5 years.
+#      Expanded, that is 6, 12, 18, 24, 30, 36, 42, 48, 54, 60 months. Ten doses.
+#   B. Reported service data shows administration at 6, 18 and 36 months. Three doses.
+#
+# Reading B is 12-month spacing where reading A is 6-month spacing. One of these is the
+# policy and the other may be what is actually delivered, or B may be an incomplete
+# extract - that cannot be determined from the sources to hand.
+#
+# The entries below encode reading A, because a stated national recommendation is the
+# stronger claim, and they are a mechanical expansion of its "every 6 months from 6 months
+# through 5 years", not a judgement about dosing. The three ages that also appear in reading
+# B are marked. DO NOT flip this file to `sourced` until the discrepancy is resolved against
+# the CHDR booklet or a current Nutrition Division guideline.
+# ---------------------------------------------------------------------------
+status: placeholder
+
+visits:
+  - id: vitamin_a_06m
+    age_months: 6
+    label: "Vitamin A" # also present in reading B
+  - id: vitamin_a_12m
+    age_months: 12
+    label: "Vitamin A" # reading A only
+  - id: vitamin_a_18m
+    age_months: 18
+    label: "Vitamin A" # also present in reading B
+  - id: vitamin_a_24m
+    age_months: 24
+    label: "Vitamin A" # reading A only
+  - id: vitamin_a_30m
+    age_months: 30
+    label: "Vitamin A" # reading A only
+  - id: vitamin_a_36m
+    age_months: 36
+    label: "Vitamin A" # also present in reading B
+  - id: vitamin_a_42m
+    age_months: 42
+    label: "Vitamin A" # reading A only
+  - id: vitamin_a_48m
+    age_months: 48
+    label: "Vitamin A" # reading A only
+  - id: vitamin_a_54m
+    age_months: 54
+    label: "Vitamin A" # reading A only
+  - id: vitamin_a_60m
+    age_months: 60
+    label: "Vitamin A" # reading A only

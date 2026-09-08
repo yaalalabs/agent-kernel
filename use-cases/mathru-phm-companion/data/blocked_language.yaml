@@ -1,0 +1,72 @@
+# Outbound language block list for the post-execution hook.
+#
+# Unlike the clinical tables, this file ships POPULATED rather than as placeholders. A
+# placeholder block list would either block everything or block nothing, and neither fails
+# safe. This is a list of things the system must never say, not clinical guidance.
+#
+# TODO: extend and review. This list is not exhaustive and is not a substitute for the
+# Agent Kernel guardrails on the input and output paths.
+#
+# Matching is case-insensitive and word-boundary based, applied only AFTER allowlisted
+# spans are subtracted from the reply: the danger-sign action strings, the standard
+# escalation response, and the standing not-a-clinician note. That way a reply carrying a
+# legitimate action string is still blocked if it also contains a diagnosis.
+#
+# The two categories produce different replacements. Naming a condition is a safety
+# failure that warrants the escalation response; asking about a supplement is a benign
+# question that deserves a plain refusal, not an alarming message.
+
+# Naming any of these as applying to the user violates the SPEC safety constraints.
+condition_terms:
+  - pre-eclampsia
+  - preeclampsia
+  - eclampsia
+  - gestational diabetes
+  - anaemia
+  - anemia
+  - hypertension
+  - high blood pressure
+  - placenta praevia
+  - placenta previa
+  - ectopic pregnancy
+  - miscarriage
+  - sepsis
+  - infection
+  - haemorrhage
+  - hemorrhage
+
+# Diagnostic framing, independent of whether a condition is named.
+diagnosis_phrases:
+  - "you are suffering from"
+  - "you have been diagnosed"
+  - "your diagnosis"
+  - "this is a case of"
+  - "diagnos" # stem: diagnosis, diagnose, diagnosed
+
+# Any medication, supplement, or remedy. SPEC forbids naming or dosing all of them.
+medication_terms:
+  - paracetamol
+  - panadol
+  - ibuprofen
+  - aspirin
+  - misoprostol
+  - oxytocin
+  - antibiotic
+  - antibiotics
+  - folic acid
+  - iron tablet
+  - iron tablets
+  - iron supplement
+  - vitamin
+  - vitamins
+  - painkiller
+  - painkillers
+  - tablet
+  - tablets
+  - capsule
+  - capsules
+  - syrup
+  - dose
+  - dosage
+  - mg
+  - ml

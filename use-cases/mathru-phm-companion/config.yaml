@@ -1,0 +1,42 @@
+# Agent Kernel local development configuration for the Mathru PHM companion.
+# Secrets are read from environment variables only, never from this file:
+#   AK_WHATSAPP__VERIFY_TOKEN, AK_WHATSAPP__ACCESS_TOKEN,
+#   AK_WHATSAPP__APP_SECRET, AK_WHATSAPP__PHONE_NUMBER_ID, OPENAI_API_KEY
+whatsapp:
+  agent: "mathru_triage"
+  agent_acknowledgement: "Got your message. One moment..."
+  api_version: "v24.0"
+
+# The WhatsApp integration uses the sender's phone number as the session id, which gives
+# per-mother conversation continuity without a parallel session mechanism. Mother records
+# are persisted separately by tool-owned sqlite3 storage in tool.py (see SPEC.md phase 2);
+# sqlite is not an Agent Kernel session backend, so sessions stay in_memory.
+session:
+  type: in_memory
+  cache:
+    size: 256
+
+# Moderation and jailbreak checks only. PII detection is deliberately OFF: a mother types
+# her PHM's phone number during registration, and the escalation path needs it to deliver.
+# Phone redaction happens in log output only, via the filter in redaction.py.
+# See guardrails/README.md for why the moderation categories are narrow.
+guardrail:
+  input:
+    # Not the built-in `openai` type. That one fails CLOSED: any error during validation,
+    # including a rate limit or an outage, halts the run and the agent never executes, which
+    # would silently disable danger-sign screening and escalation. See resilient_guardrail.py.
+    enabled: true
+    type: resilient_guardrail.ResilientInputGuardrail
+    model: gpt-5.4-mini
+    config_path: guardrails/input.json
+  output:
+    enabled: true
+    type: openai
+    model: gpt-5.4-mini
+    config_path: guardrails/output.json
+
+logging:
+  ak:
+    level: INFO
+  system:
+    level: INFO

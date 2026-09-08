@@ -1,0 +1,79 @@
+# Developmental screening schedule.
+#
+# THIS TABLE REQUIRES CLINICIAN REVIEW BEFORE ANY REAL-WORLD USE.
+#
+# Ten screening points from 2 to 60 months, keyed by the child's age in calendar months:
+#   visit_date = add_months(child_dob, age_months)
+#
+# Four of these points carry no immunisation: 24, 48 and 60 months, and they are the reason
+# this schedule is modelled separately. A mother told only about immunisation visits would
+# never hear about them, and the 60-month point is the school-entry assessment.
+#
+# ---------------------------------------------------------------------------
+# PROVENANCE
+#
+# Sourcing rules, enforced by provenance_test.py:
+#   - Never cite Scribd or any re-upload. Get the .gov.lk original, or do not
+#     use the value.
+#   - Two sources per value. If they disagree, the newer official one wins and
+#     the discrepancy is noted here.
+#   - Check the date printed ON THE FACE of the document, not its file
+#     metadata.
+#
+# `status` must be exactly `sourced` before any value here is used.
+# ---------------------------------------------------------------------------
+provenance:
+  source: TODO # exact document title; the screening tool incorporated into the CHDR
+  publisher: "Ministry of Health, Sri Lanka"
+  document_date: TODO # as printed on the document, not the file metadata
+  url: TODO # direct .gov.lk link
+  retrieved: TODO # YYYY-MM-DD
+  cross_checked_against: TODO # second source, or "CHDR, physical copy"
+  clinician_review: "NOT PERFORMED. See Known Limitations in README.md."
+
+# ---------------------------------------------------------------------------
+# WHY THIS IS `placeholder`
+#
+# The ten screening ages below were relayed from a Ministry of Health performance and progress
+# report, which states that the screening tool was incorporated into the CHDR and is used by
+# PHMs. That is a secondary description of the schedule, not the schedule document itself, and
+# the provenance block above is not yet filled in.
+#
+# Needs: the CHDR booklet or the screening tool guideline as a primary source, then a second
+# cross-check.
+# ---------------------------------------------------------------------------
+status: placeholder
+
+visits:
+  - id: screening_02m
+    age_months: 2
+    label: "Developmental screening"
+  - id: screening_04m
+    age_months: 4
+    label: "Developmental screening"
+  - id: screening_06m
+    age_months: 6
+    label: "Developmental screening"
+  - id: screening_09m
+    age_months: 9
+    label: "Developmental screening"
+  - id: screening_12m
+    age_months: 12
+    label: "Developmental screening"
+  - id: screening_18m
+    age_months: 18
+    label: "Developmental screening"
+
+  # From here on there is no immunisation on the same day.
+  - id: screening_24m
+    age_months: 24
+    label: "Developmental screening (no immunisation on this visit)"
+  - id: screening_36m
+    age_months: 36
+    label: "Developmental screening"
+  - id: screening_48m
+    age_months: 48
+    label: "Developmental screening (no immunisation on this visit)"
+  - id: screening_60m
+    age_months: 60
+    label: "Developmental screening / school-entry assessment"
