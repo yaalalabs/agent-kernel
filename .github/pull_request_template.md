@@ -1,3 +1,7 @@
+<!-- PR title must follow Conventional Commits: type: description  or  type(scope): description
+     e.g. "feat: add telegram messaging integration", "fix(ws): reconnect gateway after broker restart".
+     Accepted types: feat, fix, docs, style, refactor, test, chore, ci, build, perf. -->
+
 ## Description
 <!-- Provide a brief description of the changes in this PR -->
 

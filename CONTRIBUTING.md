@@ -56,6 +56,9 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed setup instructions.
    
    Optional longer description explaining the change
    ```
+
+   An optional scope narrows the type: `type(scope): brief description`, for example
+   `fix(ws): reconnect gateway after broker restart` or `chore(auto): sync skills/docs`.
    
    **Commit Types:**
    - `feat`: New feature
@@ -65,6 +68,9 @@ See the [Developer Guide](DEVELOPER_GUIDE.md) for detailed setup instructions.
    - `refactor`: Code refactoring
    - `test`: Adding or updating tests
    - `chore`: Maintenance tasks
+   - `ci`: CI configuration and workflow changes
+   - `build`: Build system, packaging, and dependency changes
+   - `perf`: Performance improvements
 
    **Examples:**
    ```
@@ -86,7 +92,10 @@ If you have followed the guidelines in [Developer Guide](DEVELOPER_GUIDE.md) to 
    ```
 
 2. **Create a Pull Request** on GitHub with:
-   - **Clear title**: Summarize the change in one line
+   - **Conventional title**: Use the same `type: description` or `type(scope): description`
+     format as commit messages, with one of the types listed above (for example
+     `feat: add telegram messaging integration`). The **PR Title Check** workflow fails the PR
+     otherwise. `develop` only accepts squash merges, so the title becomes the commit subject.
    - **Description**: Explain what, why, and how
    - **Related issues**: Reference using `Fixes #123` or `Related to #456`
    - **Screenshots**: If UI changes are involved
@@ -101,6 +110,14 @@ If you have followed the guidelines in [Developer Guide](DEVELOPER_GUIDE.md) to 
 - **Respond to feedback**: Address review comments promptly
 - **Keep history clean**: Squash or rebase if needed before merging
 - **Ensure CI passes**: All automated checks must pass
+
+### Review Workflow
+
+- **Copilot review**: A GitHub Copilot code review is requested automatically when a PR is
+  opened, reopened, or marked ready for review. You do not need to request it yourself.
+- **`Reviewed` label**: Maintainers add the `Reviewed` label once they have gone through a PR.
+  Pushing new commits removes the label automatically so the PR shows up again in the review
+  queue (`is:pr is:open -label:Reviewed`). Do not add or remove the label yourself.
 
 ## Reporting Bugs
 

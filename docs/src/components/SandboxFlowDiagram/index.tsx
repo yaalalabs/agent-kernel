@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Link from "@docusaurus/Link";
 import { MdTerminal, MdExtension } from "react-icons/md";
 import { FaDocker, FaAws } from "react-icons/fa";
+import { SiKubernetes } from "react-icons/si";
 import styles from "./styles.module.css";
 
 type ProviderNode = {
@@ -36,6 +37,15 @@ const PROVIDERS: ProviderNode[] = [
     sandboxName: "Docker Sandbox",
     tier: "container",
     link: "/docs/advanced/sandbox#docker-setup",
+  },
+  {
+    key: "kubernetes",
+    name: "Kubernetes Provider",
+    icon: <SiKubernetes />,
+    sub: "pod per sandbox · RBAC boundary",
+    sandboxName: "Kubernetes Pod",
+    tier: "container",
+    link: "/docs/advanced/sandbox#kubernetes-setup",
   },
   {
     key: "e2b",
@@ -107,7 +117,7 @@ const DETAIL_FOOTER = [
   {
     title: "Task promotion",
     description:
-      "Long executions return a task id the agent polls. thread and embedded brokers today, SQS planned.",
+      "A bounded wait, then a task id the agent polls with check_sandbox_task. Same contract on thread, embedded, and queue flavors.",
   },
 ] as const;
 
@@ -252,12 +262,72 @@ export default function SandboxFlowDiagram({
             </div>
             {detailed ? (
               <p className={styles.nodeSub}>
-                thread · embedded flavors (SQS planned)
+                thread · embedded · queue flavors
               </p>
             ) : null}
           </div>
 
           <div className={styles.stem} style={delayStyle(470)} aria-hidden="true" />
+
+          {/* Broker flavors: in-process lane beside the queue-decoupled lane */}
+          <div className={styles.lanesRow}>
+            <div className={styles.laneCol}>
+              <div
+                className={`${styles.node} ${styles.laneNode} ${styles.laneInProcess}`}
+                style={delayStyle(540)}
+              >
+                <p className={styles.laneEyebrow}>in-process</p>
+                <p className={styles.nodeTitle}>thread · embedded</p>
+                {detailed ? (
+                  <p className={styles.nodeSub}>
+                    runs inside the agent process · CLI and REST
+                  </p>
+                ) : null}
+              </div>
+              <div
+                className={styles.laneDrop}
+                style={delayStyle(600)}
+                aria-hidden="true"
+              />
+            </div>
+
+            <div className={styles.laneCol}>
+              <div
+                className={`${styles.node} ${styles.laneNode} ${styles.laneQueue}`}
+                style={delayStyle(610)}
+              >
+                <p className={styles.laneEyebrow}>queue-decoupled</p>
+                <div className={styles.chain}>
+                  <span className={styles.chainBox}>Request queue</span>
+                  <span className={styles.chainLink} aria-hidden="true" />
+                  <span className={`${styles.chainBox} ${styles.chainBoxWorker}`}>
+                    Sandbox Worker fleet
+                  </span>
+                </div>
+                <div className={`${styles.chain} ${styles.chainReturn}`}>
+                  <span className={styles.chainBox}>Response store</span>
+                  <span
+                    className={`${styles.chainLink} ${styles.chainLinkBack}`}
+                    aria-hidden="true"
+                  />
+                  <span className={styles.chainBox}>Output queue</span>
+                </div>
+                {detailed ? (
+                  <p className={styles.nodeSub}>
+                    sqs · kafka · nats · in_memory · bounded wait, then
+                    check_sandbox_task
+                  </p>
+                ) : null}
+              </div>
+              <div
+                className={styles.laneDrop}
+                style={delayStyle(670)}
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+
+          <div className={styles.stem} style={delayStyle(690)} aria-hidden="true" />
 
           {/* Provider fan-out */}
           <div
@@ -270,14 +340,14 @@ export default function SandboxFlowDiagram({
                   <Link
                     to={p.link}
                     className={`${styles.node} ${styles.providerNode} ${styles.providerNodeLink}`}
-                    style={delayStyle(540 + i * 70)}
+                    style={delayStyle(740 + i * 70)}
                   >
                     {providerBoxInner(p)}
                   </Link>
                 ) : (
                   <div
                     className={`${styles.node} ${styles.providerNode}`}
-                    style={delayStyle(540 + i * 70)}
+                    style={delayStyle(740 + i * 70)}
                   >
                     {providerBoxInner(p)}
                   </div>
@@ -285,13 +355,13 @@ export default function SandboxFlowDiagram({
 
                 <div
                   className={styles.colStem}
-                  style={delayStyle(620 + i * 70)}
+                  style={delayStyle(820 + i * 70)}
                   aria-hidden="true"
                 />
 
                 <div
                   className={`${styles.node} ${styles.stack} ${styles.sandboxStack}`}
-                  style={delayStyle(700 + i * 70)}
+                  style={delayStyle(900 + i * 70)}
                 >
                   <div className={`${styles.stackFront} ${styles.sandboxNode}`}>
                     <p className={styles.sandboxName}>{p.sandboxName}</p>
@@ -310,7 +380,7 @@ export default function SandboxFlowDiagram({
             <article
               key={item.title}
               className={styles.footerCard}
-              style={delayStyle(1120 + i * 70)}
+              style={delayStyle(1400 + i * 70)}
             >
               <h3 className={styles.footerTitle}>{item.title}</h3>
               <p className={styles.footerDesc}>{item.description}</p>
