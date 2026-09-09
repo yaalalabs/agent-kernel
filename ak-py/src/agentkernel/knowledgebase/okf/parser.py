@@ -1,43 +1,39 @@
 """Parsing OKF documents: bytes or text in, :class:`OKFConcept` out.
 
-This module is deliberately store-free and network-free. :class:`OKFParserUtil` takes a
-bundle-relative path and the document text, and returns objects. That is what lets one OKF
-reader serve a bundle from a local directory in development and from an S3 prefix in
-production without either the reader or the store changing — and it is asserted by a test
-that fails if importing this module pulls in ``urllib``, ``httpx``, or
-``agentkernel.knowledgebase.store``.
+Store-free and network-free by design, so one OKF reader serves a local directory in
+development and an S3 prefix in production unchanged. A test enforces this by failing if
+importing this module pulls in ``urllib``, ``httpx``, or ``agentkernel.knowledgebase.store``.
 
-Nothing here raises on a bad document. The OKF conformance rules are tolerance rules — a
-consumer MUST NOT reject a concept for a missing optional field or an unknown ``type``, and
-MUST NOT reject a bundle for a broken link or an unknown frontmatter key — so a malformed
-document yields ``None`` plus a diagnostic and the bundle around it still loads. The three
-conditions that skip a concept are enumerated on :meth:`OKFParserUtil.parse_concept`; every
-other surprise is carried.
+Nothing here raises on a bad document. OKF conformance says a consumer MUST NOT reject a
+concept for a missing optional field or an unknown ``type``, so a malformed document yields
+``None`` plus a diagnostic and the surrounding bundle still loads.
 
-Reference fields (``resource``, ``sources[].resource``, ``computation``) are carried as
-data and are never dereferenced, here or anywhere else in the knowledge-base tier.
+Reference fields (``resource``, ``sources[].resource``, ``computation``) are carried as data
+and never dereferenced.
 """
 
 import posixpath
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 from pydantic import ValidationError
 
 from .model import DiagnosticCode, OKFConcept, OKFDiagnostic, TrustTier
 
-# The manifest walk reads one bounded prefix per concept rather than whole objects, which is
-# what makes an eager frontmatter pass affordable over S3. 16 KiB covers any realistic
-# frontmatter block; the extra 8 KiB is the body window the token index is built from.
+# The manifest walk reads one bounded prefix per concept, not whole objects, which is what
+# makes an eager frontmatter pass affordable over S3.
 FRONTMATTER_MAX_BYTES = 16 * 1024
 BODY_INDEX_MAX_BYTES = 8 * 1024
 
-# The only version this reader targets. A v0.1 bundle still loads: the two v0.1 fallbacks
-# (a legacy `timestamp` key, a body `# Citations` list) are MAY in the specification, and
-# declining them is therefore conformant. `timestamp` lands in `extra` like any other
-# unrecognised key, and `# Citations` stays ordinary body text.
+# Bounds manifest memory, which is otherwise O(concepts x distinct body tokens): 10,000 prose
+# concepts measured 770 MB uncapped against 182 MB here. Only `body` is capped, being the
+# lowest-weighted field.
+BODY_INDEX_MAX_TOKENS = 128
+
+# The only version this reader targets. A v0.1 bundle still loads: the v0.1 fallbacks (a
+# legacy `timestamp` key, a body `# Citations` list) are MAY, so declining them is conformant.
 OKF_VERSION = "0.2"
 
 # Reserved at every directory level, not just the bundle root, and never parsed as concepts.
@@ -45,7 +41,7 @@ INDEX_FILENAME = "index.md"
 LOG_FILENAME = "log.md"
 RESERVED_FILENAMES = frozenset({INDEX_FILENAME, LOG_FILENAME})
 
-# The actor convention: "<producer>/<version>" for agents, "human:<id>" for people,
+# Actor convention: "<producer>/<version>" for agents, "human:<id>" for people,
 # "process:<id>" for automation. Human review is detected by this prefix and nothing else.
 _HUMAN_ACTOR_PREFIX = "human:"
 
@@ -59,8 +55,8 @@ _KNOWN_KEYS = frozenset(
 
 _LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 
-# Anchored, and requires the scheme to be followed by ":", so "https://x" and "mailto:a" are
-# recognised as absolute while "notes/q1.md" and "./sibling.md" are not.
+# Anchored and requires a ":" after the scheme, so "https://x" and "mailto:a" are absolute
+# while "notes/q1.md" and "./sibling.md" are not.
 _SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*:")
 
 _TOKEN_SEPARATOR = re.compile(r"[^a-z0-9]+")
@@ -71,10 +67,9 @@ class OKFParserUtil:
     """
     Turns OKF document text into concepts, links, trust tiers and staleness.
 
-    Every method is static because parsing an OKF document depends on nothing but the
-    document: there is no connection, no cache, and no configuration to hold. Grouping them
-    on one class keeps the reserved-file rules, the tolerance rules and the tokeniser under
-    a single owner, which is what the manifest walk in ``OKFManager`` reaches for.
+    Every method is static because parsing depends on nothing but the document — no
+    connection, no cache, no configuration. Grouping them keeps the reserved-file rules, the
+    tolerance rules and the tokeniser under one owner.
     """
 
     @staticmethod
@@ -82,14 +77,9 @@ class OKFParserUtil:
         """
         Decode document bytes to text without ever raising.
 
-        ``errors="replace"`` is load-bearing rather than defensive: the manifest walk reads
-        a bounded *prefix* of each file, which can cut a multi-byte character in half. A
-        strict decode would abort the walk over one non-ASCII concept.
-
-        The codec is ``utf-8-sig`` for the same reason ``is_reserved`` compares
-        case-insensitively: bundles travel as git repos and tarballs from Windows editors, and
-        under plain ``utf-8`` a leading byte-order marker becomes content — enough to make the
-        opening ``---`` unrecognisable and drop the whole concept.
+        ``errors="replace"`` is required, not defensive: the walk reads a bounded prefix,
+        which can cut a multi-byte character in half. ``utf-8-sig`` strips the byte-order
+        marker Windows editors leave, which would otherwise hide the opening ``---``.
 
         :param data: Raw document bytes, possibly a truncated prefix.
         :return: Decoded text, without any leading byte-order marker.
@@ -97,29 +87,40 @@ class OKFParserUtil:
         return data.decode("utf-8-sig", errors="replace")
 
     @staticmethod
-    def tokenise(text: str) -> set[str]:
+    def tokenise(text: str, max_tokens: Optional[int] = None) -> set[str]:
         """
         Reduce text to the token set the lexical ranker matches on.
 
-        Defined here, next to the body index it fills, so the query side and the index side
-        provably share one definition — that shared definition is what makes search ranking
-        reproducible across processes.
+        Defined next to the body index it fills so the query side and the index side share
+        one definition, which is what keeps ranking reproducible across processes. A bound
+        keeps the first ``max_tokens`` distinct tokens in document order — truncating a set
+        instead would depend on the interpreter's hash seed.
 
-        :param text: Any text; empty and ``None``-ish values are tolerated.
+        :param text: Any text; empty values are tolerated.
+        :param max_tokens: Keep at most this many distinct tokens; ``None`` keeps all.
         :return: Lowercase tokens of at least two characters.
         """
         if not text:
             return set()
-        return {token for token in _TOKEN_SEPARATOR.split(text.lower()) if len(token) >= _MIN_TOKEN_LENGTH}
+        tokens = (token for token in _TOKEN_SEPARATOR.split(text.lower()) if len(token) >= _MIN_TOKEN_LENGTH)
+        if max_tokens is None:
+            return set(tokens)
+
+        kept: set[str] = set()
+        for token in tokens:
+            kept.add(token)
+            if len(kept) >= max_tokens:
+                break
+        return kept
 
     @staticmethod
     def is_reserved(path: str) -> bool:
         """
         Report whether a path names a reserved OKF file.
 
-        The comparison is case-insensitive because bundles travel as git repos and tarballs
-        across case-insensitive filesystems, where treating ``Index.md`` as a concept would
-        mint a concept colliding with the directory's index.
+        Compared case-insensitively because bundles travel across case-insensitive
+        filesystems, where ``Index.md`` would otherwise become a concept colliding with the
+        directory's index.
 
         :param path: Bundle-relative path.
         :return: True for ``index.md`` or ``log.md`` at any level of the tree.
@@ -132,9 +133,9 @@ class OKFParserUtil:
         Split a document into its YAML frontmatter block and its body.
 
         The document must open with ``---`` on its own first line, and the block ends at the
-        next line that is exactly ``---``. A missing opening or closing delimiter is not an
-        error here — the caller decides what an absent block means, which differs between a
-        concept (skipped) and an ``index.md`` (permitted).
+        next line that is exactly ``---``. A missing delimiter is not an error here: the
+        caller decides what an absent block means, which differs between a concept (skipped)
+        and an ``index.md`` (permitted).
 
         :param data: Whole document text, or a bounded prefix of one.
         :return: The frontmatter text and the body; the frontmatter is ``None`` when there is
@@ -150,12 +151,27 @@ class OKFParserUtil:
         return None, data
 
     @staticmethod
+    def opens_frontmatter(data: str) -> bool:
+        """
+        Report whether a document opens a frontmatter block at all.
+
+        Separates the two reasons :meth:`split_frontmatter` finds no block: a document that
+        never opened one, and one whose block did not close inside the text it was handed. Only
+        the second is worth re-reading in full.
+
+        :param data: Whole document text, or a bounded prefix of one.
+        :return: True when the first line is the frontmatter delimiter.
+        """
+        first_line, _, _ = data.partition("\n")
+        return first_line.rstrip() == _DELIMITER
+
+    @staticmethod
     def derive_trust(verified: list[dict[str, Any]]) -> TrustTier:
         """
         Derive a concept's trust tier from its ``verified`` entries and nothing else.
 
-        Not from ``generated``, not from ``status``, not from staleness. The tier is an
-        advisory signal that rides on every record; it is never grounds for filtering one out.
+        Not from ``generated``, ``status``, or staleness. The tier is advisory and is never
+        grounds for filtering a concept out.
 
         :param verified: The concept's ``verified`` list, possibly empty.
         :return: The derived tier.
@@ -190,8 +206,7 @@ class OKFParserUtil:
         if not text:
             return False, []
 
-        # fromisoformat gained trailing-"Z" support in 3.11, but the substitution keeps the
-        # behaviour explicit and independent of that.
+        # Substituted explicitly rather than relying on fromisoformat's 3.11+ "Z" support.
         candidate = f"{text[:-1]}+00:00" if text.endswith("Z") else text
         try:
             deadline = datetime.fromisoformat(candidate)
@@ -209,17 +224,15 @@ class OKFParserUtil:
         """
         Extract the bundle-internal markdown links that form the OKF graph.
 
-        OKF has no typed edges: a relationship *is* a markdown link, in one of two forms —
-        bundle-absolute (``/tables/customers.md``) or relative (``./other.md``). Link
-        semantics live in the surrounding prose.
-
-        A broken link is kept: it is resolved to a bundle-relative path but never checked
-        against a store, which is both a conformance MUST and the reason this module needs no
-        store. Only a link escaping the bundle namespace is dropped.
+        OKF has no typed edges: a relationship *is* a markdown link, either bundle-absolute
+        (``/tables/customers.md``) or relative (``./other.md``), with the semantics in the
+        surrounding prose. A broken link is resolved but never checked against a store, which
+        is both a conformance MUST and why this module needs no store. Only a link escaping
+        the bundle namespace is dropped.
 
         Containment is re-derived here rather than borrowed from
-        ``DocumentStore.normalise_relative`` so that ``okf/`` keeps its zero-dependency on
-        ``store/``; the two definitions agree, and the store enforces its own on every read.
+        ``DocumentStore.normalise_relative`` to keep ``okf/`` independent of ``store/``; the
+        two definitions agree, and the store enforces its own on every read.
 
         :param concept_path: Bundle-relative path of the document the body came from, used to
             resolve relative targets.
@@ -234,14 +247,13 @@ class OKFParserUtil:
 
         for match in _LINK.finditer(body or ""):
             target = match.group(1)
-            # An absolute URL is a reference out of the bundle, not an edge within it, and is
-            # never dereferenced anywhere in this layer.
+            # An absolute URL is a reference out of the bundle, not an edge within it.
             if _SCHEME.match(target):
                 continue
 
-            # A fragment or query addresses a place *inside* a document, so `./x.md#columns`
-            # is the same edge as `./x.md`. Both are stripped before the suffix test, which
-            # would otherwise drop every section link from the graph without a diagnostic.
+            # A fragment or query addresses a place inside a document, so `./x.md#columns` is
+            # the same edge as `./x.md`. Stripped before the suffix test, which would
+            # otherwise drop every section link without a diagnostic.
             target = target.split("#", 1)[0].split("?", 1)[0]
             if not target.endswith(".md"):
                 continue
@@ -267,14 +279,14 @@ class OKFParserUtil:
         conditions: a ``,`` in its path, which could never round-trip through the comma-split
         id list the fetch tool takes; frontmatter that is absent, unparseable, or not a
         mapping; and a missing or empty ``type``, the one key OKF requires. Everything else is
-        carried: unknown keys reach ``extra`` untouched, an unknown ``type`` value is kept
-        verbatim, and a scalar where a collection was expected is normalised with a diagnostic.
+        carried: unknown keys reach ``extra`` untouched, an unknown ``type`` is kept verbatim,
+        and a scalar where a collection was expected is normalised with a diagnostic.
 
         :param path: Bundle-relative POSIX path, which is the concept's identity.
         :param data: Document text — the whole document, or the bounded prefix the walk read.
         :param body_complete: Whether ``data`` holds the whole document. When it does not,
-            ``body`` and ``links`` are left empty, because a truncated body would yield a
-            truncated link set; the body's token index is still built from what was read.
+            ``body`` and ``links`` are left empty, since a truncated body yields a truncated
+            link set; the body's token index is still built from what was read.
         :param now: The instant staleness is judged against; defaults to the current UTC time.
         :return: The concept (or ``None`` if skipped) and every diagnostic raised parsing it.
         """
@@ -308,8 +320,7 @@ class OKFParserUtil:
 
         stale_after = OKFParserUtil._as_optional_str(loaded.get("stale_after"))
         stale, stale_diagnostics = OKFParserUtil.is_stale(stale_after, now or datetime.now(timezone.utc))
-        # is_stale cannot know the path its signature does not carry, so it stamps "" and the
-        # caller, which does know, re-stamps.
+        # is_stale has no path in its signature, so it stamps "" and the caller re-stamps.
         diagnostics.extend(diagnostic.model_copy(update={"path": path}) for diagnostic in stale_diagnostics)
 
         links: list[str] = []
@@ -344,13 +355,14 @@ class OKFParserUtil:
                     "title": OKFParserUtil.tokenise(title),
                     "description": OKFParserUtil.tokenise(description),
                     "tags": OKFParserUtil.tokenise(" ".join(tags)),
-                    "body": OKFParserUtil.tokenise(body),
+                    # Bounded: a body's size is the author's choice, not the schema's.
+                    "body": OKFParserUtil.tokenise(body, max_tokens=BODY_INDEX_MAX_TOKENS),
                 },
             )
         except ValidationError as error:
-            # A backstop, not a normal path: the coercions above cover every shape seen in the
-            # wild, and a concept that still fails must be skipped rather than raised, or one
-            # odd document would abort a whole bundle walk.
+            # A backstop, not a normal path: the coercions above cover every shape seen in
+            # the wild, and a concept that still fails is skipped so one odd document cannot
+            # abort a whole bundle walk.
             message = f"frontmatter could not be modelled: {error}"
             return None, [OKFParserUtil._diagnostic(path, DiagnosticCode.UNPARSEABLE_FRONTMATTER, message)]
 
@@ -359,13 +371,13 @@ class OKFParserUtil:
     @staticmethod
     def parse_index(path: str, data: str, *, is_root: bool) -> tuple[str, str | None, list[OKFDiagnostic]]:
         """
-        Parse a reserved ``index.md``: its curated listing, and the bundle version if it declares one.
+        Parse a reserved ``index.md``: its curated listing, and the bundle version if declared.
 
         An index carries no frontmatter, except at the bundle root where ``okf_version`` is
         the single permitted key. Other keys there are unrecognised content, which tolerance
-        says to carry rather than reject, so they draw no diagnostic. An index elsewhere
-        carrying frontmatter draws one — and its body is still used, because rejecting a
-        curated listing over a stray block would lose more than it protects.
+        says to carry, so they draw no diagnostic. An index elsewhere carrying frontmatter
+        draws one, and its body is still used — rejecting a curated listing over a stray block
+        would lose more than it protects.
 
         :param path: Bundle-relative path of the index file.
         :param data: The index document text.
@@ -415,8 +427,8 @@ class OKFParserUtil:
         Coerce a scalar frontmatter value to text, keeping ``None`` as ``None``.
 
         YAML resolves an unquoted timestamp to a ``datetime`` and an unquoted number to an
-        ``int``/``float``, so a field the format describes as text does not always arrive as
-        text. Stringifying carries the value; rejecting it would not.
+        ``int``/``float``, so a text field does not always arrive as text. Stringifying
+        carries the value; rejecting it would not.
 
         :param value: The raw frontmatter value.
         :return: The value as text, or ``None``.
@@ -440,8 +452,8 @@ class OKFParserUtil:
         """
         Coerce a frontmatter value expected to be a list of mappings.
 
-        Entries that are not mappings are dropped: these lists carry ``{by, at}``-shaped
-        records, and a scalar cannot be read as one.
+        Non-mapping entries are dropped: these lists carry ``{by, at}``-shaped records, and a
+        scalar cannot be read as one.
 
         :param value: The raw frontmatter value.
         :return: The mapping entries, in order.
@@ -455,7 +467,7 @@ class OKFParserUtil:
         """
         Normalise ``verified``, which the format allows to be a bare mapping.
 
-        Treating a bare mapping as a one-element list is a conformance MUST.
+        Reading a bare mapping as a one-element list is a conformance MUST.
 
         :param path: Bundle-relative path, for the diagnostic.
         :param value: The raw frontmatter value.

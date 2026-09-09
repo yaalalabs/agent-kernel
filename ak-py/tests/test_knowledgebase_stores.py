@@ -181,6 +181,20 @@ class TestLocalDocumentStore:
         # a/z.md before ab/b.md by accident; here it must hold by sort, for every pair.
         assert store.list() == ["a/a.md", "a/z.md", "ab/b.md"]
 
+    def test_listing_a_namespace_walks_only_that_namespace(self, tmp_path, monkeypatch):
+        # The prefix used to be a post-filter over a walk of the whole tree, so listing one
+        # directory of a large bundle cost the whole bundle.
+        store = LocalDocumentStore(str(tmp_path))
+        for path in ("tables/orders.md", "tables_extra/x.md", "notes/deep/a.md"):
+            store.write_bytes(path, b"x")
+
+        walked: list[str] = []
+        real_walk = os.walk
+        monkeypatch.setattr(os, "walk", lambda top, **kwargs: walked.append(top) or real_walk(top, **kwargs))
+
+        assert store.list("tables") == ["tables/orders.md"]
+        assert walked == [str(tmp_path / "tables")]
+
     def test_write_bytes_creates_parent_directories(self, tmp_path):
         store = LocalDocumentStore(str(tmp_path))
         store.write_bytes("deep/nested/one.md", b"payload")
@@ -235,6 +249,22 @@ class TestLocalDocumentStoreSymlinks:
     def test_a_direct_read_through_the_symlink_is_refused(self, escaping_symlink):
         with pytest.raises(KnowledgePathError, match="resolves outside"):
             escaping_symlink.read_bytes("escape.md")
+
+    def test_listing_through_an_escaping_symlinked_directory_is_refused(self, tmp_path):
+        # An escaping prefix is now refused where every other entrypoint refuses it, rather
+        # than quietly listing nothing.
+        outside = tmp_path / "outside"
+        (outside / "deep").mkdir(parents=True)
+        (outside / "deep" / "secret.md").write_text("credentials")
+        root = tmp_path / "bundle"
+        root.mkdir()
+        (root / "link").symlink_to(outside / "deep")
+
+        store = LocalDocumentStore(str(root))
+        with pytest.raises(KnowledgePathError, match="resolves outside"):
+            store.list("link")
+        # A whole-store listing still never descends into it.
+        assert store.list() == []
 
     def test_a_symlink_staying_inside_the_root_is_served(self, tmp_path):
         root = tmp_path / "bundle"

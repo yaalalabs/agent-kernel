@@ -5,9 +5,12 @@ pinned here is the part of the refactor that is invisible until something calls 
 declarations, the read -> search/query renames, the new limit defaults, Neo4j's generic
 write metadata, and the StarburstManager.schema attribute/method collision, which made
 get_schemas raise TypeError for every Starburst deployment.
+
+The faked SDK clients and the manager fixtures over them live in ``conftest.py``, shared with
+``test_knowledgebase_contract``.
 """
 
-from typing import Any, Mapping
+from typing import Mapping
 
 import pytest
 
@@ -15,119 +18,6 @@ from agentkernel.knowledgebase.chroma import ChromaManager
 from agentkernel.knowledgebase.errors import KnowledgeCapabilityError, KnowledgeError
 from agentkernel.knowledgebase.neo4j import Neo4jManager
 from agentkernel.knowledgebase.starburst import StarburstManager
-
-
-class FakeChromaCollection:
-    def __init__(self) -> None:
-        self.queries: list[tuple[list[str], int]] = []
-        self.upserts: list[dict] = []
-
-    def query(self, query_texts, n_results):
-        self.queries.append((query_texts, n_results))
-        return {"documents": [["doc one"]], "metadatas": [[{"source": "kb"}]]}
-
-    def upsert(self, documents, metadatas, ids):
-        self.upserts.append({"documents": documents, "metadatas": metadatas, "ids": ids})
-
-
-class FakeChromaClient:
-    def __init__(self, path: str) -> None:
-        self.path = path
-        self.collection = FakeChromaCollection()
-
-    def get_or_create_collection(self, name, embedding_function):
-        return self.collection
-
-
-class FakeNeo4jRecord:
-    def __init__(self, payload: Mapping[str, Any]) -> None:
-        self.payload = payload
-
-    def data(self):
-        return dict(self.payload)
-
-
-class FakeNeo4jDriver:
-    def __init__(self) -> None:
-        self.executed: list[tuple[str, dict]] = []
-        self.closed = False
-
-    def verify_connectivity(self) -> None:
-        pass
-
-    def execute_query(self, query, parameters_=None, database_=None):
-        self.executed.append((query, dict(parameters_ or {})))
-        return [FakeNeo4jRecord({"n": 1})], None, None
-
-    def close(self) -> None:
-        self.closed = True
-
-
-class FakeTrinoCursor:
-    description = [("col",)]
-
-    def __init__(self) -> None:
-        self.executed: list[str] = []
-
-    def execute(self, sql: str) -> None:
-        self.executed.append(sql)
-
-    def fetchall(self):
-        return [("value",)]
-
-    def close(self) -> None:
-        pass
-
-
-class FakeTrinoConnection:
-    def __init__(self, **kwargs) -> None:
-        self.kwargs = kwargs
-        self.cursors: list[FakeTrinoCursor] = []
-
-    def cursor(self) -> FakeTrinoCursor:
-        created = FakeTrinoCursor()
-        self.cursors.append(created)
-        return created
-
-    def close(self) -> None:
-        pass
-
-
-@pytest.fixture
-def chroma(monkeypatch) -> ChromaManager:
-    monkeypatch.setattr("agentkernel.knowledgebase.chroma.chromadb.PersistentClient", FakeChromaClient)
-    # Passing an embedding function keeps DefaultEmbeddingFunction (and its model download) out.
-    return ChromaManager(persist_path="/tmp/unused-chroma", embedding_function=object())
-
-
-@pytest.fixture
-def neo4j_driver() -> FakeNeo4jDriver:
-    return FakeNeo4jDriver()
-
-
-@pytest.fixture
-def neo4j(monkeypatch, neo4j_driver) -> Neo4jManager:
-    class FakeGraphDatabase:
-        @staticmethod
-        def driver(uri, auth=None):
-            return neo4j_driver
-
-    monkeypatch.setattr("agentkernel.knowledgebase.neo4j.GraphDatabase", FakeGraphDatabase)
-    return Neo4jManager(uri="bolt://fake:7687", user="neo4j", password="secret")
-
-
-@pytest.fixture
-def starburst(monkeypatch) -> StarburstManager:
-    monkeypatch.setattr("trino.dbapi.connect", lambda **kwargs: FakeTrinoConnection(**kwargs))
-    monkeypatch.setattr("trino.auth.BasicAuthentication", lambda user, password: ("auth", user))
-    return StarburstManager(
-        host="fake.galaxy",
-        user="u",
-        password="p",
-        catalog="mongo",
-        schema="sales",
-        table_name="orders",
-    )
 
 
 class TestChromaManager:
