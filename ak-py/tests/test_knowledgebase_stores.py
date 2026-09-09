@@ -16,12 +16,12 @@ import sys
 
 import pytest
 from botocore.exceptions import ClientError
-from knowledgebase_contracts import CONTRACT_TREE, DocumentStoreContract
 
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.knowledgebase.errors import KnowledgeCapabilityError, KnowledgePathError
 from agentkernel.knowledgebase.store import DocumentStore, LocalDocumentStore
 from agentkernel.knowledgebase.store.s3 import S3DocumentStore
+from agentkernel.knowledgebase.testing import CONTRACT_TREE, DocumentStoreContract
 
 
 def _client_error(code: str, operation: str = "GetObject") -> ClientError:
