@@ -30,6 +30,7 @@ import {
   MdHub,
   MdMessage,
   MdCloudUpload,
+  MdFactCheck,
 } from "react-icons/md";
 import {
   FaSlack,
@@ -91,7 +92,7 @@ const FEATURE_PAGE_MAP: {
       anchor: "sandbox",
       number: "03",
       title: "Sandboxed Execution",
-      hint: "ExecutionBroker + five providers",
+      hint: "Execution Broker, queue workers, six providers",
     },
     {
       anchor: "frameworks",
@@ -103,7 +104,7 @@ const FEATURE_PAGE_MAP: {
       anchor: "testing",
       number: "05",
       title: "Testing",
-      hint: "CLI, pytest, comparison modes",
+      hint: "CLI, pytest, pluggable evaluators",
     },
     {
       anchor: "messaging",
@@ -511,7 +512,7 @@ function ProblemTable() {
       problem: "Code Execution",
       without:
         "Build and secure your own sandbox infrastructure before agents can safely run code",
-      with: "Isolated sandboxes built in: five providers, one config block",
+      with: "Isolated sandboxes built in: six providers, one config block",
     },
     {
       problem: "Messaging Integrations",
@@ -521,7 +522,7 @@ function ProblemTable() {
     {
       problem: "Testing",
       without: "No standard way to test AI agents",
-      with: "pytest-integrated test framework",
+      with: "pytest-integrated test framework with pluggable evaluators",
     },
     {
       problem: "Observability",
@@ -853,9 +854,10 @@ function CoreFeatures() {
       icon: <MdTerminal />,
       title: "Sandboxed Code Execution",
       description:
-        "Agents run code, shell commands, and file operations in isolated sandboxes. The ExecutionBroker routes every execution to a pluggable, policy-governed provider.",
+        "Agents run code, shell commands, and file operations in isolated sandboxes. The Execution Broker routes every execution to a pluggable, policy-governed provider, in-process or over a queue to a separate worker fleet.",
       highlights: [
-        "local_subprocess, docker, e2b, daytona, ec2_ssm",
+        "local_subprocess, docker, kubernetes, e2b, daytona, ec2_ssm",
+        "Queue broker over SQS, Kafka, or NATS for long-running executions",
         "Session-persistent workspaces",
         "Fail-closed network, filesystem, CPU, and memory policies",
         "Agent or end-user identity",
@@ -1126,7 +1128,9 @@ function SandboxSection() {
           <p className={styles.sectionSubtitle}>
             Agents write code; Agent Kernel gives it a safe place to run.
             Every execution flows through the Agent Kernel Execution Broker to
-            a pluggable, policy-governed provider, all chosen in configuration.
+            a pluggable, policy-governed provider: in-process for CLI and REST
+            deployments, or over a queue to a sandbox worker fleet that keeps
+            running after the agent turn ends. All chosen in configuration.
           </p>
         </div>
         <div className={styles.sandboxBlock}>
@@ -1134,6 +1138,12 @@ function SandboxSection() {
           <div className={styles.sandboxLinksRow}>
             <Link to="/docs/advanced/sandbox" className={styles.sandboxLink}>
               Sandbox Docs
+            </Link>
+            <Link
+              to="/docs/advanced/sandbox#the-queue-flavor"
+              className={styles.sandboxLink}
+            >
+              Queue Broker
             </Link>
             <Link
               to="/docs/architecture/sandbox-internals"
@@ -1492,31 +1502,45 @@ function TestingSection() {
       ],
       link: "/docs/testing/automated-testing",
     },
+    {
+      key: "evaluators",
+      icon: <MdFactCheck />,
+      title: "Pluggable Evaluators",
+      description:
+        "Every comparison runs through an AKEvaluator. DeepEval ships built in; swap in your own backend with one line of test-config.yaml.",
+      highlights: [
+        "DeepEval built in: quasi-exact match and GEval",
+        "Bring your own AKEvaluator subclass",
+        "Selected by short name or dotted path",
+        "Backend failures raise, never read as a failing agent",
+      ],
+      link: "/docs/testing/cli-testing#bring-your-own-evaluator",
+    },
   ];
 
   const modes = [
     {
-      key: "fuzzy",
+      key: "score",
       icon: <MdSpeed />,
-      name: "Fuzzy Mode",
+      name: "Score Mode",
       description:
-        "Fast string matching with configurable thresholds using RapidFuzz. Ideal for deterministic outputs.",
-      link: "/docs/testing/cli-testing#fuzzy-mode",
+        "Deterministic, offline scoring with no LLM call. Normalised exact match against any expected answer. Ideal for fixed outputs.",
+      link: "/docs/testing/cli-testing#score-mode",
     },
     {
-      key: "judge",
+      key: "llm",
       icon: <MdBugReport />,
-      name: "Judge Mode",
+      name: "LLM Mode",
       description:
-        "LLM-based semantic evaluation using Ragas. Handles paraphrasing and AI-generated variation.",
-      link: "/docs/testing/cli-testing#judge-mode",
+        "LLM-as-judge semantic evaluation. Gives credit when a short expected phrase sits inside a longer, correct response.",
+      link: "/docs/testing/cli-testing#llm-mode",
     },
     {
       key: "fallback",
       icon: <MdTimer />,
       name: "Fallback Mode",
       description:
-        "Tries fuzzy first, falls back to judge. The default — best of both worlds.",
+        "Tries score first, falls back to LLM. The default, and the best of both worlds.",
       link: "/docs/testing/cli-testing#fallback-mode-default",
     },
   ];
@@ -1612,11 +1636,11 @@ function TestingSection() {
       <div className="container">
         <div className={styles.sectionHeader}>
           <p className={styles.sectionLabel}>05: Testing</p>
-          <h2 className={styles.sectionTitle}>Testing Framework</h2>
+          <h2 className={styles.sectionTitle}>Testing &amp; Evaluation</h2>
           <p className={styles.sectionSubtitle}>
             Test your agents like any other code. CLI testing for development,
-            automated suites for CI/CD, and three comparison modes for every use
-            case.
+            automated suites for CI/CD, three comparison modes, and a pluggable
+            evaluator interface behind all of them.
           </p>
         </div>
         <div className={styles.testingBlock}>

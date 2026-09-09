@@ -85,7 +85,7 @@ docs/specs/<issue-number>-<short-title>/
 
 ### Prepare
 
-1. Load **`ak-dev-architecture`** — the design must fit the documented architecture (coupling direction, adapter pattern, config via `AKConfig`, pluggable interfaces), not re-derive it. When the change adds a component of a kind covered by an `ak-dev-new-*` skill (framework adapter, guardrail provider, knowledge base, messaging integration, multimodal storage, tracing provider), load that skill too — its checklist defines what "complete" means for the requirements.
+1. Load **`ak-dev-architecture`** — the design must fit the documented architecture (coupling direction, adapter pattern, config via `AKConfig`, pluggable interfaces), not re-derive it. Its **House Patterns for New Features** section is the rubric every design is held to: pluggable by default (ABC + factory + dotted-path BYO, even when one backend ships first), reuse of existing configuration over new knobs (existing config implicitly enables the feature where it applies), and classes over script-style functions. A design that departs from one of them says so in an explicit point with the reason; a silent departure is a review finding. When the change adds a component of a kind covered by an `ak-dev-new-*` skill (framework adapter, guardrail provider, knowledge base, messaging integration, multimodal storage, tracing provider, sandbox provider, queue transport), load that skill too — its checklist defines what "complete" means for the requirements.
 2. Do a **scoped evidence pass**: read the code the change touches well enough that every point you write is verified, and record `path:line` for the claims that motivate the change. The document stays point-form, but the points must still be true.
 3. If a `research/` folder exists (or you just did investigation worth keeping), draw the Motivation and decisions from it and **cite** the relevant files instead of restating their surveys inline. If the investigation is worth preserving but isn't captured yet, write it under `research/` first (see [Optional: `research/`](#optional-research--supporting-research)).
 
@@ -123,6 +123,9 @@ Point form throughout — bullets, not paragraphs. Break points into sections an
 - <Decisions the requester/reviewer must make — never silently decided>
 ```
 
+- **Pluggability is a requirement, not an afterthought**: when the change touches an external system, backend, or provider, the Requirements name the ABC, the factory (built-in short names, `require_extra` on optional SDKs, the dotted-path bring-your-own branch), and the contract test suite the backends subclass. One backend shipping first is fine; one backend being the only possible one is not.
+- **Configuration points are explicit about reuse**: a `### Configuration` area (or equivalent) states which existing `AKConfig` models and blocks the feature reuses or subclasses (`_QueuesConfig`, `_ResponseStoreConfig`, the `_RedisConfig`/`_DynamoDBConfig`/... connection models, presence-enabled blocks such as `thread`/`schedule`), whether already-configured components implicitly enable the feature, and every *new* field with a one-line reason it cannot be derived from existing config. "No new configuration" is a valid and preferred outcome; write it down so reviewers can confirm it. Do not add an `enabled` flag or a duplicate `type` selector when existing configuration can stand in for that decision.
+- **Components are classes**: name the classes the change introduces (ABC, backends, factory, orchestrating manager/handler/runner, Pydantic models) and their single responsibility. A design whose components are module-level functions is redesigned before review, not after.
 - **Component diagram**: add **one** simple diagram (Mermaid) only if it genuinely clarifies how components relate. Do not add more diagrams, sequence charts, or decoration — an over-diagrammed design is harder to review, not easier.
 - **Complete but concise**: every requirement is present; no prose padding, no implementation detail (that belongs in `spec.md`). If a point needs a paragraph to explain, it is probably an implementation detail — push it down to Stage 2 or split it.
 - Each requirement still concrete enough to test (see the high bar above) — point form is a format constraint, not a precision discount.
@@ -168,6 +171,9 @@ Design within the documented rules, and when the change unifies or refactors exi
 - **Coupling direction**: core never imports from `framework/`, `integration/`, `deployment/`, or `api/`. Shared code consumed by both core and deployment lives under `core/` (e.g. `core/util/`), and must not read deployment-specific config.
 - **Config-driven, explicitly**: new knobs go through `AKConfig`; shared low-level components take explicit constructor parameters and leave config reading to the stores/factories that own a config section.
 - **Adapter conventions**: wrap, don't abstract over; no feature-forcing; consistent shape with siblings in the same category.
+- **Pluggable by default**: any touchpoint with an external system, backend, or provider is an ABC plus thin adapters selected by a factory in the `core/util/factory.py` shape (`if/elif` real imports for built-ins, `require_extra`, `resolve_dotted` for BYO). Core consumes only the ABC; no `if/else` on backend names outside the factory. Shared lifecycle behavior (retries, health checks, TTLs) lives in one reused component, not per adapter.
+- **Config reuse before new fields**: for every configuration need, first find the existing `AKConfig` model that expresses it and reuse it whole (the way `sandbox.broker.queue` reuses `_QueuesConfig`) or subclass it to change defaults only. Let already-configured components enable the feature implicitly where that is unambiguous (the session backend providing the WebSocket connection store is the model). Add a field only when nothing existing can be derived from, and record the reason next to the field in the spec.
+- **Classes, not scripts**: components are classes with one responsibility each and instance-held state; module-level functions are justified individually as small, stateless, shared utilities. When two classes would share logic, the spec names the base class or shared component that holds it.
 - **When unifying divergent copies**: for each divergence found in Step 2, state which behavior wins and why — these are your Behavioural changes section. A unification that doesn't enumerate its behavior changes is describing a different change than the one that will ship.
 
 ### Step 4: Write the Spec
@@ -185,9 +191,12 @@ Reference design.md as the requirements source.>
 ### <One subsection per new/changed component>
 
 <Directory layout for new packages. Interface sketches as code blocks —
-signatures and one-line comments, not full implementations. The governing
-rules ("drivers never read AKConfig") stated as numbered rules with the
-reasoning.>
+signatures and one-line comments, not full implementations. For each
+pluggable component: the ABC, the factory branch and built-in names, the
+dotted-path BYO branch, and the contract test the backends subclass. The
+governing rules ("drivers never read AKConfig") stated as numbered rules
+with the reasoning. Every component named here is a class; module-level
+functions are listed separately with a one-line justification each.>
 
 ### Consumer changes
 
@@ -195,8 +204,12 @@ reasoning.>
 
 ### Config changes
 
-<Exact class/field changes; state what happens to YAML files and AK_* env
-vars written before the change.>
+<Exact class/field changes. Which existing models are reused whole or
+subclassed, and which already-configured components implicitly enable the
+feature. For every new field: the reason it cannot be derived from existing
+config, its default, and its description. State what happens to YAML files
+and AK_* env vars written before the change. "No config changes" is a valid
+section body when true.>
 
 ### Behavioural changes
 
@@ -228,6 +241,9 @@ Walk this checklist before calling the spec done — these are the gaps reviews 
 - **Riskiest consumer gets a test**: the Testing section must cover the consumer whose code changes shape the most — not only the shiny new component. If that consumer has no existing test file, the plan adds one.
 - **Absolute claims audited**: every "all", "only", "never", "each" claim gets checked against each instance it quantifies over. Where reality is "some", write "some" and name which.
 - **Config compatibility**: field names, types, and defaults before vs after; effect on existing YAML and env vars; what happens to field *descriptions* (they surface in generated docs).
+- **Config reuse audited**: every new `AKConfig` field was checked against the existing models (`grep "class _" ak-py/src/agentkernel/core/config.py`); anything that duplicates an existing shape is replaced by reuse or a defaults-only subclass; no `enabled`/`type` field was added where already-configured components can enable or select the feature; every surviving field has a named reader in the spec.
+- **Pluggability complete**: ABC, factory branch(es), `require_extra` on optional SDKs, dotted-path BYO, and the contract test are all named; the first backend is not hard-wired anywhere in core.
+- **Class structure**: each component is a class with a single responsibility; each module-level function is listed with its justification; shared logic between classes has a named home (base class or shared component).
 - **Data compatibility**: whether data written before the change is read back identically after it — state it either way.
 
 ### Step 6: Self-Review Against the Review Rubric
@@ -313,3 +329,6 @@ Do not start the next stage, and do not start implementing, unless asked.
 - Titling a spec-only PR `feat:` and leaving the PR template unfilled.
 - Drifting from writing the documents into implementing them.
 - Treating `research/` as mandatory (it is optional), backfilling it after `plan.md` to look thorough, or inlining its surveys into `design.md` instead of citing them.
+- Designing the first backend as the only backend: a hard-wired implementation with no ABC, no factory branch, and no bring-your-own path, "to be generalized later".
+- Adding a new config block, `enabled` flag, or `type` selector without first checking whether an existing `AKConfig` model already expresses it or an already-configured component can enable the feature implicitly. Every new field needs a stated reason and a named reader.
+- Specifying components as module-level functions or a `main()`-style wiring function instead of classes with one responsibility each.

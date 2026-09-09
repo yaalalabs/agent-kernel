@@ -24,7 +24,7 @@ Read the branch delta, infer what user-facing and contributor-facing documentati
 Required documentation surfaces covered by this skill:
 
 1. `ak-py/README.md`
-2. docs website content under `docs/` — update existing pages, add pages, remove obsolete pages, and adjust intro/getting-started/reference sections as needed
+2. docs website content under `docs/` — update existing pages, add pages, remove obsolete pages, and adjust intro/getting-started/reference sections as needed, **including the React landing and features pages** (`docs/src/pages/index.tsx`, `docs/src/pages/features.tsx`) whose hard-coded inventories drift silently when only markdown is updated
 3. README files under `ak-deployment/`
 4. example README files when an example was added or changed, plus docs-site references to those examples
 5. root `README.md`
@@ -132,6 +132,34 @@ You must evaluate all of these surfaces before deciding no documentation work is
 - pages under `docs/docs/`
 - related docs metadata such as sidebars or linked overview pages when needed
 - intro/getting-started/reference/example pages that are affected by the branch change
+- the What's New tip at the top of `docs/docs/intro.md` when the branch ships a headline capability
+- the React landing and features pages (next subsection): these are not generated from markdown, so a new framework, integration, provider, transport, or capability is invisible there until its entry is added by hand
+
+### Docs-Site Landing and Features Pages (React)
+
+`docs/src/pages/index.tsx` (the landing page) and `docs/src/pages/features.tsx` (the features page) enumerate the product surface in hard-coded data lists inside the components. Check them on every branch that changes an inventory, and read the current list before editing (names below are the identifiers at the time of writing; confirm with `grep -n "const " docs/src/pages/index.tsx docs/src/pages/features.tsx`):
+
+| Branch changes ... | `index.tsx` | `features.tsx` |
+|---|---|---|
+| A headline capability worth announcing | `WhatsNewBanner` text and link | `FEATURE_PAGE_MAP` hint, and a card in the `features` list under Core Capabilities when it is a durable capability |
+| A framework adapter | `frameworks` in `FrameworksStrip` | `integrations` list; the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card |
+| A messaging integration | `pills` on the `ak-add-integration` entry in `AGENT_SKILLS` | `MESSAGING_PLATFORMS` |
+| A sandbox provider or broker flavor | `SANDBOX_PROVIDER_CARDS`, `SandboxSection` copy | the sandbox entry hint in `FEATURE_PAGE_MAP` (provider count), the provider and broker highlights on the Sandboxed Code Execution card, the sandbox section copy |
+| A queue transport | (none) | the "Queue broker over ..." highlight on the Sandboxed Code Execution card, the "Queue-backed scaling" highlight on the Multi-Cloud Deployment card |
+| A deployment target or topology | `clouds` in `Deployment` | the Multi-Cloud Deployment card highlights |
+| A session, thread, or attachment store backend | (none) | the "Backends: ..." highlight on the Smart Memory Management card |
+| A bundled user skill (`ak-py/src/agentkernel/skills/`) | `AGENT_SKILLS` (name, description, `pills`) | (none) |
+| A knowledge base backend | (none) | the Knowledge Bases card description and highlights |
+| A guardrail or tracing provider | (none) | the Observability card highlights (tracing); the `with:` cells in the Problem section's `rows` that name the built-in guardrail and tracing providers |
+| A protocol surface (MCP, A2A, AG-UI) | `pills` on the `ak-add-capabilities` entry in `AGENT_SKILLS` | `protocols` |
+| Testing modes or evaluators | (none) | `approaches` / `modes` under Testing & Evaluation |
+
+Rules for these pages:
+
+- Keep counts and names in sync with the code and with `docs/docs/` (a "six providers" hint or "4 SDKs" highlight goes stale the moment a backend is added).
+- Follow the existing entry shape exactly (icon or logo asset under `docs/static/img/`, `link` to the matching `docs/docs/` page); do not restyle or restructure a section to add one entry.
+- Showcase sections are visual (flow diagrams under `docs/src/components/`, cards, strips); when a new capability needs a section, prefer a diagram component over a text-heavy card grid.
+- The other persona pages (`docs/src/pages/developer.tsx`, `ai-engineer.tsx`, `business-leader.tsx`, `use-cases.tsx`) carry their own feature groups; grep them for the old name or count whenever an inventory changes.
 
 ### Deployment Docs
 
@@ -187,6 +215,9 @@ Depending on branch impact, review and update files from this list:
 - `ak-py/README.md`
 - `docs/docs/**`
 - `docs/sidebars.js`
+- `docs/src/pages/index.tsx`
+- `docs/src/pages/features.tsx`
+- `docs/src/pages/developer.tsx`, `ai-engineer.tsx`, `business-leader.tsx`, `use-cases.tsx` (when an inventory or count they display changes)
 - `ak-deployment/**/README.md`
 - `examples/**/README.md`
 
@@ -201,8 +232,9 @@ Minimum validation:
 1. Confirm the diff-backed rationale for each documentation update.
 2. Verify changed docs still reflect the live code, examples, and module inputs.
 3. Check edited markdown/JSON/JS files for diagnostics.
-4. Search for stale names, old counts, removed examples, or outdated setup/version references introduced by the branch delta.
+4. Search for stale names, old counts, removed examples, or outdated setup/version references introduced by the branch delta, including inside `docs/src/pages/*.tsx`.
 5. Confirm example references in the docs site still point to examples that exist.
+6. If a `.tsx` page was edited, confirm the docs site still builds (`cd docs && NODE_ENV=production NODE_OPTIONS=--max-old-space-size=6144 npm run build`; TypeScript is not installed in `docs/`, so the production build is the compile check, and `NODE_ENV=production` keeps the debug plugin out of the client bundle) and that every new `link` resolves to an existing `docs/docs/` page.
 
 ## Output Expectations
 
@@ -226,6 +258,7 @@ When using this skill, the coding agent should produce:
 - Describing behavior from memory instead of checking live code or Terraform inputs.
 - Leaving outdated pages in place after capabilities or examples were removed.
 - Changing example inventory without updating overview/index pages.
+- Updating `docs/docs/` markdown for a new framework, integration, provider, transport, or capability but leaving the hard-coded lists in `docs/src/pages/index.tsx` and `docs/src/pages/features.tsx` (and the `intro.md` What's New tip) untouched, so the landing and features pages advertise a stale inventory.
 
 ## Quick Heuristic
 
