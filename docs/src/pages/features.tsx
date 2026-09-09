@@ -841,11 +841,12 @@ function CoreFeatures() {
       icon: <MdMenuBook />,
       title: "Knowledge Bases",
       description:
-        "Built-in retrieval for curated knowledge sources and storage for agent reinforcement learning. Neo4j, Starburst Galaxy, ChromaDB, and custom SQL data sources.",
+        "Built-in retrieval for curated knowledge sources and storage for agent reinforcement learning. Neo4j, Starburst Galaxy, ChromaDB, Open Knowledge Format bundles, and custom SQL data sources.",
       highlights: [
         "ChromaDB — vector/semantic search",
         "Neo4j — entity and relationship graphs",
         "Starburst Galaxy — SQL over MongoDB, Sheets, PostgreSQL",
+        "Open Knowledge Format — markdown bundles, no database to run",
         "semantic_map keeps agent prompts portable",
       ],
       link: "/docs/advanced/knowledge-bases",

@@ -5,6 +5,9 @@ This example uses **two Starburst/Trino read-only backends** in one router agent
 - MongoDB source via Starburst
 - Google Sheets source via Starburst
 
+Read-only here means the backend declares `writable=False`. `write_kb` reports it as read-only rather
+than the backend raising, so a mis-routed write is an explanatory message, not an exception.
+
 ## What This Demo Teaches
 
 1. How to define SQL-style schemas and query templates for Starburst backends.

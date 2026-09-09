@@ -40,7 +40,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 | ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
 | 🔁 **Queue-Pipeline Execution** | Every chat request runs through a queued pipeline: in-process by default (zero services, full retry/FIFO/dedup semantics locally), SQS, Kafka, and NATS JetStream transports for distributed deployments; a Helm chart ships the topology to any Kubernetes cluster. |
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
-| 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
+| 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst, Open Knowledge Format bundles). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
 | 🔍 **Production Observability** | LangFuse, OpenLLMetry, and Pydantic Logfire tracing wired in. Every agent, tool, and LLM call — visible. |
 | 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), and **AG-UI** (streamed event protocol for agent-facing frontends) support. |
@@ -145,7 +145,8 @@ Let a chat run later, or on a schedule — the platform owns the timers, the per
 | **Vector Knowledge** | ChromaDB |
 | **Graph Knowledge** | Neo4j |
 | **SQL Analytics** | Starburst Galaxy (Trino) |
-| **Custom** | Pluggable `KnowledgeBase` interface — bring any backend |
+| **Document Knowledge** | Open Knowledge Format bundles — markdown concepts served from a local directory or S3, no database required |
+| **Custom** | Pluggable `KnowledgeBase` interface — declare what your backend supports, bring any storage |
 
 ### 💬 Messaging Channels — Out of the Box
 

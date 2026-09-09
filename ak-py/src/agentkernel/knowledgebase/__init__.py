@@ -9,6 +9,10 @@ exported here, but ``boto3`` is only imported when the name is actually touched.
 Each imports its SDK at module import, so a lazy export would still make ``chromadb`` /
 ``neo4j`` / ``trino`` a hard requirement the moment an agent touched the name — and the
 applications that use them already import them from their concrete modules.
+
+The reusable contract suites live in ``agentkernel.knowledgebase.testing`` and are imported
+explicitly from test code (they depend on pytest), so they are deliberately not re-exported
+here either.
 """
 
 import importlib

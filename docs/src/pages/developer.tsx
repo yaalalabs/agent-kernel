@@ -456,7 +456,7 @@ export default function DeveloperPage() {
                   {
                     num: "04",
                     label: "Knowledge Bases",
-                    items: ["ChromaDB", "Neo4j", "Starburst", "SQLDB"],
+                    items: ["ChromaDB", "Neo4j", "Starburst", "SQLDB", "OKF"],
                   },
                   {
                     num: "05",

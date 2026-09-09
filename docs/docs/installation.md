@@ -131,7 +131,7 @@ pip install agentkernel[openllmetry] # OpenLLMetry tracing
 pip install agentkernel[auth]        # JWT auth helpers
 ```
 
-Messaging integrations each have their own extra: `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`. Knowledge base backends: `chromadb`, `neo4j`, `trino`.
+Messaging integrations each have their own extra: `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`. Knowledge base backends: `chromadb`, `neo4j`, `trino`. Open Knowledge Format bundles need no extra - `pyyaml` is a core dependency - unless the bundle is served from S3, which uses the `aws` extra.
 
 ### CLI Testing
 

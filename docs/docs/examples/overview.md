@@ -42,7 +42,7 @@ Command-line interface examples for local development and testing:
 - **`openai_structured/`** - OpenAI Agent SDK agent returning structured (Pydantic) output
 - **`pydanticai/`** - Pydantic AI framework integration examples
 - **`smolagents/`** - HuggingFace smolagents `CodeAgent` integration examples
-- **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, and `multi/`
+- **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, `okf/` (Open Knowledge Format markdown bundle), and `multi/`
 
 Per-run framework context/state demos — a grocery assistant that carries a cart across turns through the reserved `framework_context` session key, one per framework, using each framework's native context mechanism (see the [Session](../core-concepts/session.md) guide):
 

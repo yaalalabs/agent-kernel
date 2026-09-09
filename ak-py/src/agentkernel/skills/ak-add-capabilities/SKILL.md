@@ -35,7 +35,7 @@ Which capability would you like to add?
 1. **Guardrails** — Content safety filters for input and/or output
 2. **Tracing** — Observability and monitoring (Langfuse, OpenLLMetry, or Pydantic Logfire)
 3. **Session Persistence** — Durable conversation state (Redis, DynamoDB, Cosmos DB, Firestore)
-4. **Knowledge Base** — Durable cross-session knowledge tools (ChromaDB, Neo4j, Starburst, or custom backend)
+4. **Knowledge Base** — Durable cross-session knowledge tools (ChromaDB, Neo4j, Starburst, Open Knowledge Format markdown bundle, or custom backend)
 5. **MCP Server** — Expose agents as Model Context Protocol tools
 6. **A2A Server** — Agent-to-Agent communication protocol
 7. **Hooks** — Custom pre/post processing (RAG, logging, prompt modification)
@@ -338,6 +338,7 @@ Add durable knowledge tools that your agents can query and update across session
 - ChromaDB (semantic/vector)
 - Neo4j (graph/relationships)
 - Starburst (read-only SQL via Trino)
+- Open Knowledge Format bundle (a directory of markdown documents, on disk or in S3 — no database to run)
 - Custom adapter (developer extension)
 
 **1. Update `pyproject.toml` dependencies based on backend:**
@@ -347,6 +348,10 @@ dependencies = [
   "agentkernel[openai,api,chromadb]>=0.9.0",  # for Chroma
   # or "agentkernel[openai,api,neo4j]>=0.9.0"
   # or "agentkernel[openai,api,trino]>=0.9.0"
+  # OKF needs NO extra - pyyaml is a core dependency:
+  #    "agentkernel[openai,api]>=0.9.0"
+  # ...unless the bundle is served from S3, which uses the aws extra:
+  #    "agentkernel[openai,api,aws]>=0.9.0"
 ]
 ```
 
@@ -369,6 +374,8 @@ backend = ChromaManager(name="ChromaDB").add_schema(
 
 kb = KnowledgeBuilder([backend])
 kb_tools = kb.build()  # -> get_schemas, read_kb, write_kb, get_all_kb_descriptions
+                      #    (+ search_kb / fetch_kb / browse_kb when a registered
+                      #     backend declares those capabilities - see step 4)
 
 router = Agent(
   name="kb_router",
@@ -395,9 +402,44 @@ kb = KnowledgeBuilder(
 ```
 
 **4. Backend notes:**
-- `ChromaManager`: semantic search and fuzzy retrieval.
-- `Neo4jManager`: entity/relationship graphs and Cypher queries.
-- `StarburstManager`: **read-only**; use `read_kb`, do not route `write_kb`.
+- `ChromaManager`: semantic search and fuzzy retrieval. Declares `search` + `writable`.
+- `Neo4jManager`: entity/relationship graphs and Cypher queries. Declares `query` + `writable`.
+- `StarburstManager`: **read-only** - it declares `writable=False`, so `write_kb` reports it as
+  read-only instead of writing. Use `read_kb`; there is no way to mis-route a write into silent
+  data loss.
+- `OKFManager`: an Open Knowledge Format bundle. Declares `search` (lexical), `fetch`, `browse` and
+  `derives_schema`, and inherits the store's writability.
+
+**Which tools the agent gets is decided by those declarations.** Four are always built
+(`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`). `fetch_kb` and `browse_kb` are added
+when a registered backend declares `fetch` / `browse`; `search_kb` only when one backend declares both
+`search` and `query`, which none of the built-ins does. So a Chroma, Neo4j or Starburst app gets four
+tools and an OKF app gets six — the agent's prompt never names an operation nothing can serve.
+
+**4a. Open Knowledge Format bundle:**
+
+```python
+from agentkernel.knowledgebase import DocumentStore, KnowledgeBuilder, LocalDocumentStore, OKFManager
+
+# A directory of markdown documents with YAML frontmatter. Read-only because a bundle checked
+# into git is a knowledge source, not a scratchpad; store writability folds into the backend's
+# declaration, so this one keyword is what makes write_kb report it as read-only.
+backend = OKFManager(
+  LocalDocumentStore("./bundle", writable=False),
+  name="OKF",
+  description="Markdown knowledge bundle: one concept per topic, in browsable namespaces.",
+)
+
+# Same bundle from S3 - a store swap, not a backend change (needs the aws extra):
+# backend = OKFManager(DocumentStore.from_uri("s3://my-bucket/bundles/kb"), name="OKF")
+
+kb_tools = KnowledgeBuilder([backend]).build()
+```
+
+There is **no `add_schema()` call**: `OKFManager` declares `derives_schema=True` and answers
+`get_schemas()` from the bundle itself. Tell the agent to `browse_kb` a namespace, then `fetch_kb` the
+concept path it saw — only `fetch_kb` returns a full document body. See
+`examples/cli/knowledgebase/openai/okf/` for a runnable demo with a checked-in bundle.
 
 **5. Environment variables (examples):**
 
@@ -413,6 +455,11 @@ export STARBURST_USER="<user>"
 export STARBURST_PASSWORD="<password-or-token>"
 export STARBURST_PORT=443
 ```
+
+An OKF bundle needs no credentials when it is a local directory. Serving one from S3 uses the standard
+AWS chain (`AWS_REGION` plus whatever credentials the environment already provides), and the bundle
+location is a single string you can pass through `DocumentStore.from_uri()` — a bare path, `file://`,
+or `s3://bucket/prefix` — so one configuration value covers local-in-development and S3-in-production.
 
 **6. If the user asks for a new backend adapter:**
 - Add a custom backend by implementing `KnowledgeBase` under `ak-py/src/agentkernel/knowledgebase/`.
