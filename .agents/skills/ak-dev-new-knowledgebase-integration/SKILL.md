@@ -290,19 +290,25 @@ Also add the example to the demo and README lists in `docs/docs/advanced/knowled
 `docs/docs/examples/overview.md`, and to the backend enumerations in `README.md`, `ak-py/README.md`,
 `docs/docs/intro.md` and `docs/docs/installation.md` — those lists are the ones that silently go stale.
 
+The docs website carries three more hard-coded backend lists, all of which need the new name:
+- `docs/src/pages/features.tsx` — the Knowledge Bases card's `description` **and** its `highlights`
+- `docs/src/pages/developer.tsx` — the Knowledge Bases `items` array
+- `docs/src/pages/ai-engineer.tsx` — the Knowledge Bases `items` array
+
 ### 9. Add Tests
 
 **Unit tests under `ak-py/tests/` are the primary requirement**, and a contract run is mandatory. The
-tier has eleven `test_knowledgebase*` modules to model yours on; the demo test beside the example
+tier has ten `test_knowledgebase*` modules to model yours on, plus the `knowledgebase/testing.py`
+contract module they share; the demo test beside the example
 (`examples/cli/knowledgebase/openai/*/demo_test.py`) is additional, not a substitute.
 
-**1. Subclass the reusable contract.** `ak-py/tests/knowledgebase_contracts.py` holds
+**1. Subclass the reusable contract.** `agentkernel.knowledgebase.testing` holds
 `KnowledgeBaseContract`, `DocumentStoreContract` and the dependency-free `FakeKnowledgeBase` the
-knowledge-base contract is proven against. Register your backend in
-`ak-py/tests/test_knowledgebase_contract.py`:
+knowledge-base contract is proven against. It ships in the package, so an out-of-tree backend can
+subclass it too. Register your backend in `ak-py/tests/test_knowledgebase_contract.py`:
 
 ```python
-from knowledgebase_contracts import KnowledgeBaseContract
+from agentkernel.knowledgebase.testing import KnowledgeBaseContract
 
 class TestMyBackendContract(KnowledgeBaseContract):
     @pytest.fixture

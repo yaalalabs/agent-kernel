@@ -19,7 +19,7 @@ This builds on top of core session and memory concepts:
 - `ChromaManager`: ChromaDB vector store for semantic text recall.
 - `Neo4jManager`: Neo4j graph database for entities and relationships.
 - `StarburstManager`: Starburst Galaxy (read-only SQL via Trino) for querying structured data in MongoDB, Google Sheets, PostgreSQL, and other Trino-connected sources.
-- `OKFManager`: an [Open Knowledge Format](https://openknowledgeformat.org) bundle - a directory of markdown documents with YAML frontmatter - served from a local directory or an S3 prefix, with no database and no service to run. See [`DocumentStore` and the OKF backend](#documentstore-and-the-okf-backend).
+- `OKFManager`: an [Open Knowledge Format](https://www.openknowledgeformat.org) bundle - a directory of markdown documents with YAML frontmatter - served from a local directory or an S3 prefix, with no database and no service to run. See [`DocumentStore` and the OKF backend](#documentstore-and-the-okf-backend).
 
 For Starburst operational details, see Starburst Galaxy documentation:
 - https://docs.starburst.io/starburst-galaxy/

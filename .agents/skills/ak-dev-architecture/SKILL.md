@@ -560,8 +560,8 @@ backend, use the `ak-dev-new-knowledgebase-integration` skill.
   It needs no extra — `pyyaml` is core.
 - **Exports** (`__init__.py`): PEP 562 `_LAZY_EXPORTS` with a `TYPE_CHECKING` mirror, so importing the
   package pulls no optional SDK. The reusable `KnowledgeBaseContract` / `DocumentStoreContract` live in
-  `ak-py/tests/knowledgebase_contracts.py`, not in the package — they are a suite this repo holds its
-  own backends to, not a published helper.
+  `knowledgebase/testing.py` — next to the ABC they constrain, like `sandbox/testing.py` and
+  `pipeline/testing.py`, and kept out of the lazy export map because they import `pytest`.
 
 ## Sandbox (`ak-py/src/agentkernel/sandbox/`)
 
@@ -667,7 +667,10 @@ Rules that govern the package:
 
 The Session, Multimodal attachment, Response Store, and Thread backends share one set of
 connection drivers: `RedisDriver`, `ValkeyDriver` (both subclassing `_RedisLikeDriver`),
-`DynamoDBDriver`, `CosmosDBDriver`, and `FirestoreDriver`. Three rules govern the package:
+`DynamoDBDriver`, `CosmosDBDriver`, `FirestoreDriver`, and `S3Driver` (object storage, backing
+`S3DocumentStore`; unlike `DynamoDBDriver` it runs no probe on connect, because a bucket-level
+probe would demand permissions a read-only bundle prefix does not need). Three rules govern the
+package:
 
 1. **Drivers never read `AKConfig`**: all connection parameters are explicit constructor
    arguments; config reading and validation stay in the stores and factories

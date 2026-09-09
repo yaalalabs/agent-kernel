@@ -1,19 +1,21 @@
-"""Reusable contract suites for knowledge-base backends and document stores.
+"""Public testing helpers for knowledge-base backends and document stores.
 
-``DocumentStoreContract`` asserts the semantics every
-:class:`agentkernel.knowledgebase.store.base.DocumentStore` must honor, and
-``KnowledgeBaseContract`` does the same for every
-:class:`agentkernel.knowledgebase.base.KnowledgeBase`. Subclass one in a test module and
-override its fixture; both are deliberately NOT named ``Test*`` so pytest does not collect
-them on their own, and this module is not named ``test_*`` so pytest does not collect the
-module either.
+Three things live here, all importable by bring-your-own-backend authors:
 
-``FakeKnowledgeBase`` is the dependency-free reference backend the knowledge-base contract is
-proven against before it is pointed at anything real: when it passes for the fake and fails
-for a backend, the backend is what is wrong.
+* ``KnowledgeBaseContract`` — a reusable pytest suite asserting the ABC semantics every
+  :class:`agentkernel.knowledgebase.base.KnowledgeBase` must honor.
+* ``DocumentStoreContract`` — the same for every
+  :class:`agentkernel.knowledgebase.store.base.DocumentStore`.
+* ``FakeKnowledgeBase`` — a dependency-free, in-memory ``KnowledgeBase`` used as the reference
+  backend the contract is proven against before it is pointed at anything real: when it passes
+  for the fake and fails for a backend, the backend is what is wrong.
 
-It all lives under ``tests/`` rather than in the package, so it is a suite this repo holds its
-own backends to — not a published helper for out-of-tree backend authors.
+Subclass a contract in a test module and override its fixture; both are deliberately NOT named
+``Test*`` so pytest does not collect them on their own.
+
+This module imports ``pytest`` and is therefore only meant to be imported from test code — it
+is intentionally left out of ``agentkernel.knowledgebase``'s lazy exports so ``import
+agentkernel.knowledgebase`` stays free of a pytest dependency.
 """
 
 import re
@@ -22,10 +24,10 @@ from typing import Any, Iterable, List, Mapping, Optional
 
 import pytest
 
-from agentkernel.knowledgebase.base import KnowledgeBase, Record
-from agentkernel.knowledgebase.errors import KnowledgeCapabilityError, KnowledgePathError
-from agentkernel.knowledgebase.model import KnowledgeCapabilities
-from agentkernel.knowledgebase.store.base import DocumentStore
+from .base import KnowledgeBase, Record
+from .errors import KnowledgeCapabilityError, KnowledgePathError
+from .model import KnowledgeCapabilities
+from .store.base import DocumentStore
 
 # Paths every store must refuse: parent traversal in both separator styles, an absolute
 # path, and a normalising escape that only shows itself after the path is reduced.

@@ -89,8 +89,7 @@ local `pytest` without CI credentials (`AGENTS.md:103-108`).
 - **Goal:** bytes at paths, containment enforced in one place, local and S3 stores interchangeable
   through `from_uri`. Nothing consumes it yet.
 - **Files:** `knowledgebase/store/{__init__,base,local,s3}.py` (new),
-  `ak-py/tests/knowledgebase_contracts.py` (new — `DocumentStoreContract` only; *as built* under
-  `tests/` rather than the `knowledgebase/testing.py` this plan originally named),
+  `knowledgebase/testing.py` (new — `DocumentStoreContract` only),
   `ak-py/tests/test_knowledgebase_stores.py` (new).
 - **Steps:**
   1. `store/base.py` — the ABC, `normalise_relative` called by every entrypoint and by every path
@@ -102,9 +101,9 @@ local `pytest` without CI credentials (`AGENTS.md:103-108`).
      `sorted()` global lexicographic `list()`.
   3. `store/s3.py` — `require_extra("aws", …)`, injectable client, paginated `list`, `NoSuchKey`/404 →
      `FileNotFoundError`, ranged-GET `read_prefix_bytes`, declared `writable`.
-  4. `knowledgebase_contracts.py` — `DocumentStoreContract` in the `SandboxProviderContract`
+  4. `knowledgebase/testing.py` — `DocumentStoreContract` in the `SandboxProviderContract`
      (`sandbox/testing.py:130`) shape. The file imports `pytest`, so it is excluded from every lazy
-     export map; it lives under `ak-py/tests/` because it is not a published helper.
+     export map, but it ships in the package so out-of-tree store authors can subclass it.
 - **Verify:** `uv run pytest tests/test_knowledgebase_stores.py` — the contract over a real `tmp_path`
   and a fake boto3 client, plus the containment matrix and the `a/z.md` vs `ab/b.md` ordering case.
 
@@ -176,19 +175,20 @@ local `pytest` without CI credentials (`AGENTS.md:103-108`).
 
 - **Goal:** the contract every backend is held to is reusable and actually run, and the declared
   10,000-concept envelope is enforced by CI rather than asserted in prose.
-- **Files:** `ak-py/tests/knowledgebase_contracts.py` (extended), `ak-py/tests/test_knowledgebase_contract.py` (new),
+- **Files:** `knowledgebase/testing.py` (extended), `ak-py/tests/test_knowledgebase_contract.py` (new),
   `ak-py/tests/test_knowledgebase_okf_envelope.py` (new).
 - **Steps:**
-  1. `knowledgebase_contracts.py` — `KnowledgeBaseContract` and `FakeKnowledgeBase` alongside the
-     existing `DocumentStoreContract`; neither contract class is named `Test*`, and the module itself
-     is not named `test_*`.
+  1. `knowledgebase/testing.py` — `KnowledgeBaseContract` and `FakeKnowledgeBase` alongside the
+     existing `DocumentStoreContract`; neither contract class is named `Test*`, and the module lives
+     in the package rather than under `tests/`.
   2. `test_knowledgebase_contract.py` — the contract run against `FakeKnowledgeBase` in four capability
      shapes, `OKFManager` over a real local bundle, and the three existing backends with
      `chromadb.PersistentClient`, `neo4j.GraphDatabase.driver`, and `trino.dbapi.connect`
      monkeypatched. The `schema()`-is-callable assertion is the regression guard for the Starburst
      collision.
   3. `test_knowledgebase_okf_envelope.py` — a generated 10,000-concept bundle; all 10,000 kept, and
-     `tracemalloc` allocations attributable to `_walk()` under 50 MB (not RSS).
+     `tracemalloc` allocations attributable to `_walk()` under a 25 KB per-concept budget, measured
+     over a 2,000-concept slice and projected to 250 MB at 10,000 (allocations, not RSS).
 - **Verify:** `cd ak-py && uv run pytest -k knowledgebase` green, then `make lint-check-all`.
 
 ## Iteration 9: Sync docs and skills
@@ -227,7 +227,7 @@ Each surface below was checked against the branch; line numbers are where the st
   file references the knowledge-base tier (grep over `ak-py/tests/` and `e2e/`), so **no patch target
   moves anywhere in the suite**. `.agents/skills/ak-dev-testing-conventions` **does** need a change,
   contrary to this plan's original claim: its `## Test File Organization` table inventories individual
-  test modules and already names the other two reusable contracts, so the eleven new
-  `test_knowledgebase*` modules and `ak-py/tests/knowledgebase_contracts.py` belong in it.
+  test modules and already names the other two reusable contracts, so the ten new
+  `test_knowledgebase*` modules and `knowledgebase/testing.py` belong in it.
 - **Verify:** run the `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` flows before
   merge to catch any surface this list missed, then `make lint-check-all`.

@@ -69,10 +69,10 @@ Rules governing the package, each stated so a reviewer can check it mechanically
    `store/`.
 3. **Stores take explicit constructor parameters and never read `AKConfig`** — the shared-driver and
    transport rule. `from_uri` is a string parser, not a config reader.
-4. **The contract suites import `pytest`** and therefore live outside the package's lazy export map.
-   *As built* they live in `ak-py/tests/knowledgebase_contracts.py` rather than a
-   `knowledgebase/testing.py`, because unlike `sandbox/testing.py` they are not intended as a
-   published helper for out-of-tree backend authors.
+4. **The contract suites import `pytest`** and therefore live in `knowledgebase/testing.py`,
+   outside the package's lazy export map — importable by name from test code, exactly as
+   `sandbox/testing.py` and `pipeline/testing.py` are, so `import agentkernel.knowledgebase`
+   never pulls pytest.
 
 ### `knowledgebase/model.py` — capability declaration and record typing
 
@@ -1113,11 +1113,6 @@ still mocked; no test touches a live service.
 | `tests/test_knowledgebase_contract.py` | `KnowledgeBaseContract` run against `FakeKnowledgeBase` (four capability shapes), `OKFManager` over a real local bundle, and the three existing backends with mocked clients — `monkeypatch` on `chromadb.PersistentClient`, `neo4j.GraphDatabase.driver`, and `trino.dbapi.connect` (plus host/user/password constructor args for Starburst) |
 | `tests/test_knowledgebase_exports.py` | every `__all__` name resolves; `chromadb`/`neo4j`/`trino`/`boto3` stay out of `sys.modules` after importing the package and touching `KnowledgeBase`/`OKFManager`; no contract suite is exported; the `overview.md:353` import works verbatim |
 | `examples/cli/knowledgebase/openai/okf/demo_test.py` | the example-level convention (`Test("demo.py")`, ordered cases): the agent browses the bundle, fetches a concept by its real path, and answers from it |
-
-> **As built:** the contract suites shipped as `ak-py/tests/knowledgebase_contracts.py`, not as a
-> `knowledgebase/testing.py` inside the package. They are a suite this repo holds its own backends
-> to, not a published helper for out-of-tree authors, so there is no
-> `agentkernel.knowledgebase.testing` module to import.
 
 Two reusable suites ship in the `SandboxProviderContract` (`sandbox/testing.py:130`) /
 `QueueTransportContract` shape — subclass, override one fixture, and pytest collects the contract

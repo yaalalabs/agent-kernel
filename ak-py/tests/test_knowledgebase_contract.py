@@ -16,16 +16,16 @@ fix it when a client's shape changes.
 """
 
 import pytest
-from knowledgebase_contracts import (
+from test_knowledgebase_okf_manager import BUNDLE, write_bundle
+
+from agentkernel.knowledgebase import LocalDocumentStore, OKFManager
+from agentkernel.knowledgebase.testing import (
     KnowledgeBaseContract,
     fake_document_kb,
     fake_graph_kb,
     fake_sql_kb,
     fake_vector_kb,
 )
-from test_knowledgebase_okf_manager import BUNDLE, write_bundle
-
-from agentkernel.knowledgebase import LocalDocumentStore, OKFManager
 
 
 class TestFakeVectorContract(KnowledgeBaseContract):
