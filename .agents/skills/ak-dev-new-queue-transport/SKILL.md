@@ -161,7 +161,10 @@ containerized e2e tests.
   an operator.
 - Docs: the transport matrix and a "Running Queue Mode on <name>" section in
   `docs/docs/advanced/queue-mode-guide.md`; the transports list in
-  `docs/docs/deployment/onprem-kubernetes.md` if the transport is k8s-relevant.
+  `docs/docs/deployment/onprem-kubernetes.md` if the transport is k8s-relevant; the transport
+  roll call on the docs-site features page (`docs/src/pages/features.tsx`: the "Queue broker
+  over SQS, Kafka, or NATS" highlight on the Sandboxed Code Execution card, and any other
+  "SQS, Kafka, or NATS" mention found by grepping `docs/src/pages/*.tsx`).
 - Skills: the pipeline section of `.agents/skills/ak-dev-architecture/SKILL.md`, and the
   user-facing queue/deploy content in `ak-py/src/agentkernel/skills/` where transports are
   enumerated.

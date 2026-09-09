@@ -250,6 +250,12 @@ including a profile that demonstrates enforced policy and sentinel-based determi
   tier and the extra), and to the "Installation" extras in `ak-py/README.md`.
 - If the provider supports `principal_user`, document its identity mapping (how `agent`/`user`
   mode resolves to backend credentials).
+- Update the docs-site React pages that enumerate providers: `SANDBOX_PROVIDER_CARDS` in
+  `docs/src/pages/index.tsx` (card with icon or logo and a link to the provider's setup anchor),
+  and in `docs/src/pages/features.tsx` the provider-name highlight on the Sandboxed Code
+  Execution card and the provider count in the sandbox entry of `FEATURE_PAGE_MAP`. Grep both
+  pages, `docs/docs/intro.md`, and `docs/src/components/SandboxFlowDiagram` for the provider
+  roll call and the count.
 
 ## Checklist
 
@@ -262,3 +268,4 @@ including a profile that demonstrates enforced policy and sentinel-based determi
 - [ ] Factory resolution test in `tests/test_sandbox.py`
 - [ ] Example profile in `examples/sandbox/`
 - [ ] Documentation: provider table row in `docs/docs/advanced/sandbox.md` + extra in `ak-py/README.md`
+- [ ] Provider inventories on the docs-site pages (`docs/src/pages/index.tsx` `SANDBOX_PROVIDER_CARDS`, `docs/src/pages/features.tsx` sandbox card highlight and `FEATURE_PAGE_MAP` count)
