@@ -14,6 +14,7 @@ math_agent = Agent(
     backstory="You provide help with math problems. Explain your reasoning at each step and include examples. \
         If prompted for anything else you refuse to answer.",
     verbose=False,
+    model="openai/gpt-4.1-mini",
 )
 
 history_agent = Agent(
@@ -21,6 +22,7 @@ history_agent = Agent(
     goal="Specialist agent for historical questions",
     backstory="You provide assistance with historical queries. Explain important events and context clearly.",
     verbose=False,
+    model="openai/gpt-4.1-mini",
 )
 
 router = APIRouter()

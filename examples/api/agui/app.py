@@ -33,7 +33,7 @@ REASONING_MODEL = os.getenv("AK_DEMO_REASONING_MODEL")
 _reasoning_kwargs = (
     {"model": REASONING_MODEL, "model_settings": ModelSettings(reasoning=Reasoning(summary="auto"))}
     if REASONING_MODEL
-    else {}
+    else {"model": "openai/gpt-4.1-mini"}
 )
 
 planner_agent = Agent(

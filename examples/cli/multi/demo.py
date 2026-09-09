@@ -8,6 +8,7 @@ general_agent = OpenAIAgent(
     name="general",
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and clear answers",
+    model="openai/gpt-4.1-mini",
 )
 
 math_agent = OpenAIAgent(
@@ -15,6 +16,7 @@ math_agent = OpenAIAgent(
     handoff_description="Specialist agent for math questions",
     instructions="You provide help with math problems. Explain your reasoning at each step and include examples. \
         If prompted for anything else you refuse to answer.",
+    model="openai/gpt-4.1-mini",
 )
 
 history_agent = CrewAIAgent(
@@ -22,6 +24,7 @@ history_agent = CrewAIAgent(
     goal="Specialist agent for history questions",
     backstory="You provide assistance with history queries. Explain important details and context clearly.",
     verbose=False,
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([general_agent, math_agent])

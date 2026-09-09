@@ -24,6 +24,7 @@ async def main():
     qa_agent = Agent(
         name="qa_assistant",
         instructions="You are a helpful AI assistant. Keep responses concise.",
+        model="openai/gpt-4.1-mini",
     )
 
     # Register the agent
