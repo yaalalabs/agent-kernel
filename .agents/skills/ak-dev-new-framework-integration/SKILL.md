@@ -3,7 +3,7 @@ name: ak-dev-new-framework-integration
 description: >
   Step-by-step guide for adding a new agent framework adapter to Agent Kernel.
   Use this skill when you need to integrate a new agent framework (beyond OpenAI,
-  CrewAI, LangGraph, Google ADK). Covers creating the adapter module, implementing
+    CrewAI, LangGraph, Google ADK, Smolagents, Pydantic AI). Covers creating the adapter module, implementing
   Agent/Runner/Module subclasses, adding optional dependencies, exports, and tests.
 license: Apache-2.0
 metadata:
@@ -53,7 +53,7 @@ class <Name>Session:
         self._history.clear()
 ```
 
-The session data is stored in the Agent Kernel `Session` via `session.set("<name>", <Name>Session())` and retrieved via `session.get("<name>")`.
+The session data is stored in the Agent Kernel `Session` via `session.set("<name>", <Name>Session())` and retrieved via `session.get("<name>")`. This key **must** be the same string passed as your Runner's `name` (see Step 3) — hook authors reach it via `Session.get_framework_session()`, which resolves `Agent.current().runner.name` under the hood.
 
 ### 3. Implement the Runner
 
@@ -64,18 +64,20 @@ from agentkernel.core.base import Runner, Session
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest, AgentRequestText
 from agentkernel.core.tool import ToolContext
 
-class <Name>Runner(Runner):
-    FRAMEWORK = "<name>"
+FRAMEWORK = "<name>"
 
+class <Name>Runner(Runner):
     def __init__(self):
-        super().__init__("<Name>Runner")
+        # must match the session key below — Session.get_framework_session() resolves it
+        # via Agent.current().runner.name
+        super().__init__(FRAMEWORK)
 
     def _session(self, session: Session) -> <Name>Session:
         """Get or create framework-specific session data."""
-        data = session.get("<name>")
+        data = session.get(FRAMEWORK)
         if data is None:
             data = <Name>Session()
-            session.set("<name>", data)
+            session.set(FRAMEWORK, data)
         return data
 
     async def run(self, agent, session: Session, requests: list[AgentRequest]) -> AgentReply:
@@ -98,7 +100,7 @@ class <Name>Runner(Runner):
                 prompt = ""
                 for req in requests:
                     if isinstance(req, AgentRequestText):
-                        prompt = req.text
+                        prompt = req.prompt
 
                 # 4. Call the framework's execution API
                 result = await self._execute(agent, fw_session, prompt)  # framework-specific
@@ -107,7 +109,7 @@ class <Name>Runner(Runner):
                 fw_session.add_to_history({"input": prompt, "output": result})
 
                 # 6. Return as AgentReply
-                return AgentReplyText(text=str(result), prompt=prompt)
+                return AgentReplyText(response=str(result), prompt=prompt)
             finally:
                 tool_context.reset()
 ```
@@ -117,6 +119,139 @@ class <Name>Runner(Runner):
 - Always reset `ToolContext` in a `finally` block
 - Handle all `AgentRequest` subtypes (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`)
 - Return an `AgentReply` (`AgentReplyText` or `AgentReplyImage`)
+
+### 3b. Implement `stream()` with AK Stream Events
+
+`Runner` declares `stream()` as `@abstractmethod`, returning `AsyncGenerator[StreamEvent, None]` —
+**every** adapter must implement it, even if the framework doesn't support token streaming, and it
+must yield `StreamEvent` members (`core/event.py`: `MessageStart`/`TextDelta`/`MessageEnd`,
+`ReasoningStart`/`ReasoningDelta`/`ReasoningEnd`, `ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/
+`ToolCallResult`, `StepStart`/`StepEnd`) — never a bare `str`. A runner that yields a bare `str` is
+rejected by `StreamChunk.event` with a `pydantic.ValidationError`; there is no string-normalisation
+fallback in `Runtime.stream()`.
+
+**If the framework's SDK exposes a token-delta stream**, map its native events onto AK events —
+bracket assistant text with `MessageStart`/`MessageEnd` (deferred until text actually arrives, so a
+tool-only turn doesn't emit an empty message), and map tool-call/tool-result events onto
+`ToolCallStart`/`ToolCallArgs`/`ToolCallEnd`/`ToolCallResult` correlated by the framework's own call
+id where one exists (never generate an id when the framework supplies one — a generated id cannot
+correlate a result to the call that produced it):
+
+```python
+from collections.abc import AsyncGenerator
+
+from ...core.event import MessageEnd, MessageStart, StreamEvent, TextDelta
+
+async def stream(self, agent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+    tool_context = ToolContext(Runtime.current(), agent, session, requests)
+    try:
+        tool_context.set()
+        fw_session = self._session(session)
+        prompt = "".join(req.prompt for req in requests if isinstance(req, AgentRequestText))
+
+        # Anything remembered mid-stream is a local — see the rule below.
+        message_id: str | None = None
+
+        result = await self._execute_streamed(agent, fw_session, prompt)  # framework-specific
+        message_id: str | None = None  # local — the runner is shared across sessions
+        async for event in result:
+            delta = self._extract_text_delta(event)  # framework-specific
+            if delta:
+                if message_id is None:
+                    message_id = uuid4().hex
+                    yield MessageStart(message_id=message_id)
+                yield TextDelta(message_id=message_id, content=delta)
+        if message_id is not None:
+            yield MessageEnd(message_id=message_id)
+    finally:
+        tool_context.reset()
+```
+
+**If the framework has no native token streaming** (e.g. CrewAI, smolagents), override `supports_streaming` to `False` and implement `stream()` as a generator that always raises, so a caller can check the property before invoking `stream()` instead of provoking the raise, while `stream()` itself still satisfies the abstract method contract and fails fast with a clear message:
+
+```python
+async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+    """
+    :return: False — this adapter does not implement streaming, so stream() always raises.
+    """
+    return False
+
+async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+    """
+    <Name> streaming is not implemented in this adapter yet.
+    :raises NotImplementedError: Always raised — use rest_sync mode instead.
+    """
+    raise NotImplementedError(
+        "<Name> streaming is not implemented in the Agent Kernel adapter yet. Use rest_sync mode."
+    )
+    yield  # make this an async generator to satisfy the type contract
+
+@property
+def supports_streaming(self) -> bool:
+    """Declared False so a caller can reject a streamed request instead of provoking the raise."""
+    return False
+```
+
+`Runtime.stream()` runs every yielded event through `PostHook.on_stream_event()` (#670), wraps what
+survives in a `StreamChunk` (`delta` is populated only for `TextDelta`, so a plain-text consumer that
+only reads `StreamChunk.delta` keeps working unchanged), and forwards it to the caller (REST SSE
+endpoint or AWS Lambda WebSocket/SQS pipeline). No other core changes are needed to support a new
+framework's streaming — just implement `Runner.stream()`. See `docs/specs/523-ag-ui-support/spec.md`
+for the full event-mapping rules and per-adapter correlation-id/boundary-derivation decisions, and
+`docs/specs/670-streaming-post-hooks/` for the hook contract your events pass through.
+
+Two consequences for a new adapter, both from #670: a hook may now drop or rewrite **any** event you
+emit, including boundaries, so do not assume what you yield is what the client receives; and a hook
+raising `StreamHalt` abandons your generator mid-iteration, so anything your `stream()` does after the
+loop (writing back framework context, for instance) will not run on a halted run.
+
+### 3c. Wire up the per-run framework context
+
+The base `Runner` provides two helpers so a caller-supplied, framework-agnostic context/state dict
+(seeded by a hook via `session.set_framework_context(...)`) rides across turns. **Your `run()` and
+`stream()` must call them and map the one AK-level dict onto your framework's native
+context/state mechanism** (or decline it explicitly, as CrewAI does):
+
+- `incoming = self._load_framework_context(session)` — call **before** the native invocation.
+  Returns a **deep copy** of the stored dict, or `None` when the key is absent. When `None`, inject
+  nothing (framework default) — this keeps the no-context path unchanged for existing apps.
+- Inject `incoming` (when not `None`) via the framework's native mechanism (a run `context=`, an
+  input state channel, a session-state delta, `additional_args=`, …).
+- After a **successful** native call, extract the framework's post-run state as `produced` and call
+  `self._store_framework_context(session, incoming, produced)`. This shallow-merges `produced` over
+  `incoming` (framework-touched top-level keys win; untouched caller keys preserved) and fail-fast
+  checks picklability before writing back.
+
+```python
+# In run(), inside the existing try, around the native call:
+incoming = self._load_framework_context(session)
+result = await self._execute(agent, fw_session, prompt, context=incoming)  # inject natively
+produced = self._extract_state(result, incoming)  # framework-specific; may be a subset of keys
+self._store_framework_context(session, incoming, produced)  # only after a successful call
+```
+
+**Placement matters (atomicity):** put the write-back **inside the `try`, after the native call,
+before the `except`** — and for `stream()`, **after the `async for` loop but still inside the
+`try`**, never in `finally`. A framework error or a client disconnect (`GeneratorExit`) then unwinds
+before it, leaving the previously stored context intact rather than persisting partial state.
+
+**Seed AK-internal keys last.** If you inject the caller's dict by merging it into a native state
+dict that also carries AK-internal entries, assign the internal ones **after** the caller's keys so a
+caller key can never displace them (`ak_tool_context` in ADK, `messages` in LangGraph). The failures
+this prevents are silent and confusing — a broken tool-context lookup, or a replaced message list.
+
+**Watch for injection side effects.** A framework's "context" slot is not always private: smolagents'
+`additional_args` is merged into the agent state *and* appended to the task prompt, so the caller's
+dict reaches the model. If your framework does something similar, document it on the framework's page
+so callers know not to put secrets in `framework_context`.
+
+**Declare your round-trip fidelity honestly** in the framework's docs and the fidelity table in
+`docs/docs/core-concepts/runner.md` — how much of a caller dict actually survives depends on the
+framework (full round-trip, filtered to seeded keys, declared-channels-only, or unsupported). Name the
+**native handle a tool uses** to reach the context (`RunContextWrapper.context` on OpenAI,
+`RunContext.deps` on Pydantic AI, `tool_context.state` on ADK, …) — tools use that, never the `Session`
+accessors. If the framework has no safe caller-state slot, do **not** inject; instead log a single
+warning per runner instance and skip both load and write-back (see the CrewAI adapter for the pattern).
 
 ### 4. Implement the Agent Wrapper
 
@@ -243,12 +378,12 @@ In `ak-py/pyproject.toml`, add an optional dependency group:
 
 ### 11. Add Tracing Support
 
-When adding tracing, create `ak-py/src/agentkernel/trace/langfuse/<name>.py`:
+There are **two** tracing backends, each with per-framework traced runners. A new framework needs a traced runner under **both** `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py`:
 
 ```python
-from .<name>_runner import <Name>Runner as Base<Name>Runner
+from ...framework.<name>.<name> import <Name>Runner
 
-class LangFuse<Name>Runner(Base<Name>Runner):
+class LangFuse<Name>Runner(<Name>Runner):
     def __init__(self, langfuse_client):
         super().__init__()
         self._client = langfuse_client
@@ -258,18 +393,18 @@ class LangFuse<Name>Runner(Base<Name>Runner):
             return await super().run(agent, session, requests)
 ```
 
-Also update `ak-py/src/agentkernel/trace/base.py` and `ak-py/src/agentkernel/trace/trace.py` to add the new framework method.
+Also add a new abstract framework method in `ak-py/src/agentkernel/trace/base.py` and the corresponding `Trace.<name>()` method in `ak-py/src/agentkernel/trace/trace.py`.
 
 ### 12. Add Tests
 
 Create tests in `ak-py/tests/`:
 
 ```python
-# ak-py/tests/test_module_<name>.py
+# ak-py/tests/test_<name>_runner.py
 # ak-py/tests/test_tool_<name>.py
 ```
 
-Follow the existing test patterns — use `DummyRunner`, `DummyAgent` for unit tests, `monkeypatch` for config overrides, `@pytest.mark.asyncio` for async tests.
+Follow the existing test patterns (e.g. `test_openai_runner.py`, `test_smolagents_runner.py`, `test_pydanticai_runner.py`, `test_tool_adk.py`) — use `DummyRunner`, `DummyAgent` for unit tests, `monkeypatch` for config overrides, `@pytest.mark.asyncio` for async tests.
 
 ### 13. Add Examples
 
@@ -279,17 +414,22 @@ Create at minimum:
 
 ### 14. Add Documentation
 
-- Add a page under `docs/docs/frameworks/<name>.md`
+- Add a page under `docs/docs/frameworks/<name>.md` — note the page slug may differ from the adapter directory name (e.g. the `adk` adapter's page is `docs/docs/frameworks/google-adk.md`, referenced as `'frameworks/google-adk'` in `docs/sidebars.js`)
 - Update `docs/sidebars.js` to include the new framework
+- Update the docs-site React pages that enumerate frameworks: the `frameworks` list in `FrameworksStrip` in `docs/src/pages/index.tsx` (logo under `docs/static/img/integrations/`, link to the new page) and the `integrations` list in `docs/src/pages/features.tsx`, plus the "Framework adapters for N SDKs" highlight on the Six Core Abstractions card there. Grep `docs/src/pages/*.tsx` and `docs/docs/intro.md` for the framework roll call and add the new name wherever the others are listed
 
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/framework/<name>/` directory with `__init__.py` and `<name>.py`
 - [ ] `<Name>Session` (if needed), `<Name>Runner`, `<Name>Agent`, `<Name>Module`, `<Name>ToolBuilder`
+- [ ] `<Name>Runner.stream()` implemented — either real event streaming or a `NotImplementedError` stub
+- [ ] `<Name>Runner.supports_streaming` declared — `False` when `stream()` only raises, so callers reject instead of provoking it
+- [ ] `<Name>Runner`'s `name` (passed to `super().__init__()`) matches the session key used in `session.get/set(...)` — required for `Session.get_framework_session()` to resolve it
 - [ ] Public alias at `ak-py/src/agentkernel/<name>.py`
 - [ ] Optional dependency group in `ak-py/pyproject.toml`
-- [ ] Trace runner in `ak-py/src/agentkernel/trace/langfuse/<name>.py` (optional)
+- [ ] Trace runners in `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py` (optional)
 - [ ] Updates to `trace/base.py` and `trace/trace.py` (if adding tracing)
 - [ ] Unit tests in `ak-py/tests/`
 - [ ] CLI example in `examples/cli/<name>/`
 - [ ] Documentation in `docs/docs/frameworks/<name>.md`
+- [ ] Framework inventories on the docs-site pages (`docs/src/pages/index.tsx` `FrameworksStrip`, `docs/src/pages/features.tsx` `integrations` and SDK count) and in `docs/docs/intro.md`

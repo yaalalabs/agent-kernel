@@ -1,0 +1,49 @@
+# Lightweight local stack for the Kafka queue-mode example: one Kafka broker in KRaft mode (no
+# ZooKeeper, no operator) and one Valkey for the response store and sessions. Roughly 1 GiB of
+# RAM in total, and all state is ephemeral: `python kafka_tester.py down` leaves nothing behind.
+#
+# Not a production topology. A real deployment runs 3 brokers with replication factor 3 and
+# min.insync.replicas 2, provisioned by Strimzi or your platform team.
+
+services:
+  kafka:
+    image: apache/kafka:4.1.0
+    container_name: ak-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+      # Clients connect from the host, so the broker must advertise an address the host can reach.
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@localhost:9093"
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Single node: every internal topic has to fit in one replica.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # Rebalance immediately instead of waiting for more group members to show up.
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Off on purpose: the pipeline never creates topics, so a typo in a topic name should fail
+      # loudly here exactly as it would against a production cluster.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 10s
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: ak-valkey
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

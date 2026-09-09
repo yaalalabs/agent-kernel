@@ -1,24 +1,15 @@
-import base64
 import logging
-import traceback
 from abc import ABC, abstractmethod
-from http import HTTPStatus
 from typing import List, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, ConfigDict
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
+from pydantic import ConfigDict
 
-from agentkernel.core.model import (
-    AgentReplyImage,
-    AgentReplyText,
-    AgentRequestAny,
-    AgentRequestFile,
-    AgentRequestImage,
-    AgentRequestText,
-    BaseRunRequest,
-)
-
-from ..core import AgentService, Config
+from ..auth.authoriser import Authoriser
+from ..core import Config
+from ..core.chat_service import ChatService
+from ..core.model import BaseChatRequest, BaseRunRequest, ExecutionMode
 from ..core.runtime import Runtime
 
 
@@ -30,15 +21,54 @@ class RESTRequestHandler(ABC):
         E.g.:
         - GET /api/v1/agents: List available agents
 
-        router = APIRouter()
-
-        @router.get("/api/v1/agents")
-        def list_agents():
+        def list_agents(self):
             from ..core.runtime import Runtime
             return {"agents": list(Runtime.current().agents().keys())}
 
+        def get_router(self) -> APIRouter:
+            router = APIRouter()
+            router.add_api_route("/api/v1/agents", self.list_agents, methods=["GET"])
+            return router
+
         """
         pass
+
+
+class AuthorisedRESTRequestHandler(RESTRequestHandler):
+    """
+    Base for resource-management route handlers protected by an optional, pluggable
+    Authoriser (e.g. conversation threads, scheduled tasks). Owns the Bearer-token
+    parsing and 401 mapping; when no Authoriser is configured, _resolve_user returns
+    None and the handler's routes remain open.
+    """
+
+    def __init__(self, authoriser: Optional[Authoriser] = None):
+        """
+        Initializes an AuthorisedRESTRequestHandler instance.
+        :param authoriser: Optional user-supplied Authoriser protecting the handler's routes.
+        """
+        self._authoriser = authoriser
+
+    def _resolve_user(self, request: Request) -> Optional[str]:
+        """
+        Resolve the caller's user_id via the configured Authoriser.
+        :param request: The incoming FastAPI request.
+        :return: The resolved user_id, or None when no Authoriser is configured.
+        :raises HTTPException: 401 when a token is missing or rejected.
+        """
+        if self._authoriser is None:
+            return None
+        auth_header = request.headers.get("authorization")
+        if auth_header is None:
+            raise HTTPException(status_code=401, detail="Missing authorization header")
+        scheme, _, token = auth_header.partition(" ")
+        token = token.strip()
+        if scheme.lower() != "bearer" or not token:
+            raise HTTPException(status_code=401, detail="Invalid authorization header")
+        user_id = self._authoriser.authorise(token)
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return user_id
 
 
 class AgentRESTRequestHandler(RESTRequestHandler):
@@ -46,257 +76,78 @@ class AgentRESTRequestHandler(RESTRequestHandler):
     API routers that expose endpoints to interact with Agent Kernel.
     Endpoints:
     - GET /api/v1/agents: List available agents
-    - POST /api/v1/chat: Run an agent with a prompt
-      Payload JSON: { "prompt": str, "agent": str | null, "session_id": str | null }
+    - POST /api/v1/chat: Run an agent (streams SSE when execution.mode=stream, otherwise returns JSON)
+    - POST /api/v1/chat-multipart: Same as /api/v1/chat but accepts multipart form data with file/image uploads
     """
+
+    # Endpoint paths — shared with subclasses so route paths stay consistent.
+    AGENTS_PATH = "/api/v1/agents"
+    CHAT_PATH = "/api/v1/chat"
+    CHAT_MULTIPART_PATH = "/api/v1/chat-multipart"
+
+    class BaseMultimodalRunRequest(BaseChatRequest):
+        """Chat request with multipart file and image uploads (UploadFile format)."""
+
+        files: Optional[List[UploadFile]] = None
+        images: Optional[List[UploadFile]] = None
+        model_config = ConfigDict(extra="allow")
 
     def __init__(self):
         self._log = logging.getLogger("ak.api.agent")
         self._max_file_size = Config.get().api.max_file_size
+        self.chat_service = ChatService(rest_api_mode=True)
 
-    class FileData(BaseModel):
-        """Represents a file attachment"""
+    def list_agents(self):
+        return {"agents": list(Runtime.current().agents().keys())}
 
-        file_data: str  # base64 encoded string or URL
-        name: str
-        mime_type: Optional[str] = None
+    async def run(self, body: BaseRunRequest):
+        if Config.get().execution.mode == ExecutionMode.STREAM:
+            try:
+                gen = await self.chat_service.process_stream_chat_async(req=body, sse_format=True)
+                return StreamingResponse(gen, media_type="text/event-stream")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
+        return await self.chat_service.process_async_chat_request(req=body)
 
-    class ImageData(BaseModel):
-        """Represents an image attachment"""
-
-        image_data: str  # base64 encoded string
-        name: str
-        mime_type: Optional[str] = None
-
-    class RunRequest(BaseRunRequest):
-        model_config = ConfigDict(extra="allow")
-
-        files: Optional[List["AgentRESTRequestHandler.FileData"]] = None
-        images: Optional[List["AgentRESTRequestHandler.ImageData"]] = None
+    async def run_multipart(
+        self,
+        prompt: str = Form(...),
+        agent: Optional[str] = Form(None),
+        session_id: Optional[str] = Form(None),
+        user_id: Optional[str] = Form(None),
+        group_id: Optional[str] = Form(None),
+        thread_name: Optional[str] = Form(None),
+        files: Optional[List[UploadFile]] = File(None),
+        images: Optional[List[UploadFile]] = File(None),
+    ):
+        req = AgentRESTRequestHandler.BaseMultimodalRunRequest(
+            prompt=prompt,
+            agent=agent,
+            session_id=session_id,
+            user_id=user_id,
+            group_id=group_id,
+            thread_name=thread_name,
+            files=files,
+            images=images,
+        )
+        if Config.get().execution.mode == ExecutionMode.STREAM:
+            try:
+                gen = await self.chat_service.process_stream_chat_async(req=req, sse_format=True)
+                return StreamingResponse(gen, media_type="text/event-stream")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Streaming failed: {str(e)}")
+        return await self.chat_service.process_async_chat_request(req=req)
 
     def get_router(self) -> APIRouter:
         """
         Returns the APIRouter instance.
         """
-
         router = APIRouter()
-
-        @router.get("/api/v1/agents")
-        def list_agents():
-            return {"agents": list(Runtime.current().agents().keys())}
-
-        @router.post("/api/v1/chat")
-        async def run(body: AgentRESTRequestHandler.RunRequest):
-            return await self.run(body)
-
-        @router.post("/api/v1/chat-multipart")
-        async def run_multipart(
-            prompt: str = Form(...),
-            agent: Optional[str] = Form(None),
-            session_id: Optional[str] = Form(None),
-            files: Optional[List[UploadFile]] = File(None),
-            images: Optional[List[UploadFile]] = File(None),
-        ):
-            return await self.run_multipart(prompt, agent, session_id, files, images)
-
+        router.add_api_route(self.AGENTS_PATH, self.list_agents, methods=["GET"])
+        router.add_api_route(self.CHAT_PATH, self.run, methods=["POST"])
+        router.add_api_route(self.CHAT_MULTIPART_PATH, self.run_multipart, methods=["POST"])
         return router
-
-    async def run(self, req: RunRequest):
-        """
-        Async method to run the agent.
-        :param req: Request object containing the prompt, optional agent name, attachments, images, and additional properties.
-        """
-        requests = []
-        requests.append(AgentRequestText(text=req.prompt))
-        service = None
-        try:
-            # Process attachments (documents, PDFs, CSVs, etc.)
-            if req.files:
-                for file in req.files:
-                    self._log.debug(f"Adding file attachment: {file.name}")
-                    if not file.file_data.startswith(("http://", "https://", "data:", "s3://")) and not file.mime_type:
-                        raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
-                    requests.append(
-                        AgentRequestFile(
-                            file_data=file.file_data,
-                            name=file.name,
-                            mime_type=file.mime_type if file.mime_type else None,
-                        )
-                    )
-
-            # Process images (JPEG, PNG, etc.)
-            if req.images:
-                for image in req.images:
-                    self._log.debug(f"Adding image: {image.name}")
-                    if not image.image_data.startswith(("http://", "https://", "data:", "s3://")) and not image.mime_type:
-                        raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
-                    requests.append(
-                        AgentRequestImage(
-                            image_data=image.image_data,
-                            name=image.name,
-                            mime_type=image.mime_type if image.mime_type else None,
-                        )
-                    )
-
-            # Pack additional properties into AgentRequestAny
-            known_fields = {"prompt", "agent", "session_id", "files", "images"}
-            for key, value in req.model_dump().items():
-                if key not in known_fields:
-                    self._log.debug(f"Adding additional context: {key}={value}")
-                    requests.append(AgentRequestAny(name=key, content=value))
-            service = AgentService()
-
-            service.select(req.session_id, req.agent)
-            if not service.agent:
-                raise ValueError("No agent available")
-
-            result = await service.run_multi(requests=requests)
-            self._log.debug(f"Result: {result}")
-
-            return {
-                "result": (
-                    str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"
-                ),  # sending image is not supported at the moment
-                "session_id": service.get_response_session_id(req.session_id),
-            }
-
-        except HTTPException:
-            raise
-        except ValueError as e:
-            self._log.error(f"POST /api/v1/chat error: {e}\n{traceback.format_exc()}")
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail={
-                    "error": str(e),
-                    "session_id": (service.get_response_session_id(req.session_id) if service is not None else req.session_id),
-                },
-            )
-        except Exception as e:
-            self._log.error(f"POST /api/v1/chat error: {e}\n{traceback.format_exc()}")
-            raise HTTPException(
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-                detail={
-                    "error": str(e),
-                    "session_id": service.get_response_session_id(None) if service is not None else req.session_id,
-                },
-            )
-
-    async def run_multipart(
-        self,
-        prompt: str,
-        agent: Optional[str] = None,
-        session_id: Optional[str] = None,
-        files: Optional[List[UploadFile]] = None,
-        images: Optional[List[UploadFile]] = None,
-    ):
-        """
-        Async method to run the agent with multipart file uploads.
-        :param prompt: The text prompt for the agent.
-        :param agent: Optional agent name.
-        :param session_id: Optional session ID.
-        :param files: Optional list of uploaded files (documents, PDFs, CSVs, etc.).
-        :param images: Optional list of uploaded images (JPEG, PNG, etc.).
-        """
-        requests = []
-        requests.append(AgentRequestText(text=prompt))
-        service = None
-
-        try:
-            # Process file uploads
-            if files:
-                for file in files:
-                    self._log.debug(f"Processing uploaded file: {file.filename}")
-                    # Read file content
-                    content = await file.read()
-
-                    # Validate file size
-                    file_size = len(content)
-                    if file_size > self._max_file_size:
-                        raise ValueError(
-                            f"File {file.filename} exceeds maximum size of {self._max_file_size / (1024 * 1024):.2f} MB "
-                            f"(size: {file_size / (1024 * 1024):.2f} MB)"
-                        )
-
-                    # Encode to base64
-                    file_data_base64 = base64.b64encode(content).decode("utf-8")
-
-                    # Get mime type from the upload
-                    mime_type = file.content_type
-
-                    self._log.debug(f"Adding file attachment: {file.filename} (type: {mime_type})")
-                    requests.append(
-                        AgentRequestFile(
-                            file_data=file_data_base64,
-                            name=file.filename or "unknown",
-                            mime_type=mime_type,
-                        )
-                    )
-
-            # Process image uploads
-            if images:
-                for image in images:
-                    self._log.debug(f"Processing uploaded image: {image.filename}")
-                    # Read image content
-                    content = await image.read()
-
-                    # Validate image size
-                    image_size = len(content)
-                    if image_size > self._max_file_size:
-                        raise ValueError(
-                            f"Image {image.filename} exceeds maximum size of {self._max_file_size / (1024 * 1024):.2f} MB "
-                            f"(size: {image_size / (1024 * 1024):.2f} MB)"
-                        )
-
-                    # Encode to base64
-                    image_data_base64 = base64.b64encode(content).decode("utf-8")
-
-                    # Get mime type from the upload
-                    mime_type = image.content_type
-
-                    # Validate it's an image mime type
-                    if mime_type and not mime_type.startswith("image/"):
-                        raise ValueError(f"Invalid image type: {mime_type} for file {image.filename}")
-
-                    self._log.debug(f"Adding image: {image.filename} (type: {mime_type})")
-                    requests.append(
-                        AgentRequestImage(
-                            image_data=image_data_base64,
-                            name=image.filename or "unknown",
-                            mime_type=mime_type,
-                        )
-                    )
-
-            service = AgentService()
-            service.select(session_id, agent)
-
-            if not service.agent:
-                raise ValueError("No agent available")
-
-            result = await service.run_multi(requests=requests)
-            self._log.debug(f"Result: {result}")
-
-            return {
-                "result": (str(result) if isinstance(result, (AgentReplyText, AgentReplyImage)) else "Non textual result received"),
-                "session_id": service.get_response_session_id(session_id),
-            }
-
-        except HTTPException:
-            raise
-        except ValueError as e:
-            self._log.error(f"POST /api/v1/chat-multipart error: {e}\n{traceback.format_exc()}")
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail={
-                    "error": str(e),
-                    "session_id": service.get_response_session_id(session_id) if service is not None else session_id,
-                },
-            )
-        except Exception as e:
-            self._log.error(f"POST /api/v1/chat-multipart error: {e}\n{traceback.format_exc()}")
-            raise HTTPException(
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-                detail={
-                    "error": str(e),
-                    "session_id": service.get_response_session_id(None) if service is not None else session_id,
-                },
-            )

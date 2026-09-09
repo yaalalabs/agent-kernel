@@ -52,6 +52,7 @@ module "agent_runner" {
 | `subnet_ids` | Private subnet IDs for VPC attachment |
 | `security_group_id` | Optional security group ID to reuse |
 | `redis_url` | Redis URL injected into the function environment |
+| `valkey_url` | Valkey URL injected into the function environment |
 | `dynamodb_memory_table_arn` | Agent memory table ARN |
 | `dynamodb_multimodal_memory_table_arn` | Multimodal memory table ARN |
 | `lambda_kms_key_arn` | Lambda encryption key ARN |
@@ -62,6 +63,7 @@ module "agent_runner" {
 The module injects the following values when present:
 
 - `AK_SESSION__REDIS__URL`
+- `AK_SESSION__VALKEY__URL`
 - `AK_SESSION__DYNAMODB__TABLE_NAME`
 - `AK_MULTIMODAL__DYNAMODB__TABLE_NAME`
 - `AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT`

@@ -26,7 +26,7 @@ Before you begin development, ensure you have the following installed:
 
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/yaalalabs/agent-kernel.git
+   git clone https://github.com/<your-username>/agent-kernel.git
    cd agent-kernel
    ```
 
@@ -43,13 +43,18 @@ Before you begin development, ensure you have the following installed:
 
 ## Development
 
-1. **Navigate to the Python package**
+1. **Run the dev setup script** from the repo root to install prerequisites (pyenv, Python 3.12, uv) and sync the `ak-py` virtual environment:
    ```bash
-   cd ak-py
+   make dev-setup
+   ```
+   or directly:
+   ```bash
+   ./scripts/dev-setup.sh
    ```
 
-2. **Install development dependencies**
+   Alternatively, set things up manually:
    ```bash
+   cd ak-py
    ./build.sh
    ```
 
@@ -86,6 +91,44 @@ make lint-all
 
 to automatically fix formatting issues.
 
+### Lint and Commit Workflow (CI)
+
+For applying formatting on a remote branch without running the tools locally, use the
+**Lint and Commit** GitHub Actions workflow (`.github/workflows/lint-fix.yml`). Trigger it
+manually from the Actions tab (`workflow_dispatch`) with two inputs:
+
+- **`lint_target`**: which Makefile target to run — `lint`, `lint-examples`, or `lint-all`
+  (default).
+- **`branch`**: the branch to format and commit the changes to.
+
+The workflow runs the selected target and pushes a `chore:` commit with any formatting
+changes back to the chosen branch. Protected branches (currently `develop`) are rejected —
+the workflow fails before making any changes.
+
+### Pull Request Automation (CI)
+
+Three small workflows run on every pull request without any manual step:
+
+- **PR Title Check** (`.github/workflows/pr-title-check.yaml`): fails unless the PR title follows
+  Conventional Commits (`type: description` or `type(scope): description`, with the types listed
+  in [CONTRIBUTING.md](CONTRIBUTING.md)). `develop` accepts squash merges only, so the title
+  becomes the commit subject. Fix a failure by editing the title; the check re-runs on the edit.
+- **Request Copilot Review** (`.github/workflows/copilot-review-request.yaml`): requests a GitHub
+  Copilot code review when a PR is opened, reopened, or marked ready for review, using the
+  `COPILOT_REVIEW_PAT` secret. The develop ruleset's own Copilot rule only fires for authors who
+  hold a license, which is why this workflow exists. Bot-authored PRs are skipped. It can also be
+  run from the Actions tab (`workflow_dispatch`) with a PR number. `COPILOT_REVIEW_PAT` is a
+  fine-grained PAT created by a licensed maintainer with resource owner `yaalalabs`, access to
+  this repository, and "Pull requests: Read and write". It is separate from
+  `COPILOT_REQUEST_TOKEN` (used by the docs-sync workflow) because GitHub only allows the
+  account-level Copilot Requests permission on user-owned tokens, and a user-owned token cannot
+  hold repository permissions on an organization repo.
+- **Reset Reviewed Label** (`.github/workflows/reviewed-label-reset.yaml`): maintainers add the
+  `Reviewed` label after going through a PR; any new push removes it again so the PR reappears
+  in the review queue (`is:pr is:open -label:Reviewed`).
+
+The last two use `pull_request_target` so they also work for fork PRs. Neither checks out PR
+code; they only call the GitHub API. Keep it that way when editing them.
 
 ## Contributing
 
@@ -148,5 +191,8 @@ Follow conventional commit format:
 ## Additional Resources
 
 - [Main README](README.md) - Project overview and usage
+- [AGENTS.md](AGENTS.md) - Guidance for AI coding agents contributing to this repo (architecture pointers, agent-specific gotchas)
 - [Documentation Setup](docs/SETUP.md) - Setting up the documentation site
 - [Examples](examples/) - Sample implementations
+- [Use Cases](use-cases/) - End-to-end agents built from `SPEC.md` using Agent Kernel skills
+- [e2e](e2e/README.md) - Messaging integration e2e harness (deployable app + Terraform + pytest suite) driven against real Slack, Telegram, WhatsApp, Messenger, Instagram, and Gmail accounts

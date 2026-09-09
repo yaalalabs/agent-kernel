@@ -1,0 +1,82 @@
+{{- if .Values.sandboxWorker.enabled }}
+{{/*
+The sandbox broker worker tier (#503): sandbox-input-queue consumer threads driving sandbox
+providers via QueueBrokerWorker.run(), plus the output loop persisting completions to the
+response store. No service and no ports: it speaks only to the broker, the stores, and the
+Kubernetes API. The first tier with its own ServiceAccount (rbac-sandbox.yaml grants it the
+pod-lifecycle verbs). Graceful drain: on SIGTERM the consumers stop claiming work and finish
+in-flight executions, so terminationGracePeriodSeconds must exceed the longest policy.timeout.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-sandbox-worker
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "sandbox-worker") | nindent 4 }}
+spec:
+  replicas: {{ .Values.sandboxWorker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "sandbox-worker") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/env: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
+        {{- with .Values.sandboxWorker.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "sandbox-worker") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "agent-kernel.sandboxWorkerServiceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.sandboxWorker.terminationGracePeriodSeconds }}
+      containers:
+        - name: sandbox-worker
+          image: {{ include "agent-kernel.image" (dict "root" . "image" .Values.sandboxWorker.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.sandboxWorker.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.sandboxWorker.preStopSleepSeconds }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", {{ .Values.sandboxWorker.preStopSleepSeconds | quote }}]
+          {{- end }}
+          {{- if or .Values.extraEnv .Values.sandboxWorker.extraEnv }}
+          env:
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.sandboxWorker.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "agent-kernel.fullname" . }}-env
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.sandboxWorker.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.sandboxWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sandboxWorker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sandboxWorker.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

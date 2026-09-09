@@ -5,8 +5,10 @@ Attachment storage manager for multimodal memory.
 import logging
 import time
 import uuid
+from typing import Optional
 
 from ...config import AKConfig
+from ...util.factory import AKConfigError, require_extra, resolve_dotted
 from .base import (
     DEFAULT_MAX_ATTACHMENTS,
     AttachmentData,
@@ -14,6 +16,8 @@ from .base import (
 )
 
 _log = logging.getLogger("ak.multimodal.storage")
+
+_BUILTIN_ATTACHMENT_STORES = ["session_cache", "in_memory", "redis", "dynamodb"]
 
 
 class AttachmentStorageManager:
@@ -40,14 +44,21 @@ class AttachmentStorageManager:
         """
         config = AKConfig.get().multimodal
         storage_type = config.storage_type
+        key = storage_type.lower()
 
-        if storage_type == "session_cache":
+        if key == "session_cache":
             from .session_cache import SessionNonVolatileCacheAttachmentStore
 
             return SessionNonVolatileCacheAttachmentStore(session_id)
 
-        elif storage_type == "redis":
-            from .redis import RedisAttachmentStore
+        if key == "in_memory":
+            from .in_memory import InMemoryAttachmentStore
+
+            return InMemoryAttachmentStore(session_id)
+
+        if key == "redis":
+            with require_extra("redis", "multimodal.storage_type: redis"):
+                from .redis import RedisAttachmentStore
 
             redis_config = config.redis
             if redis_config is None:
@@ -62,8 +73,9 @@ class AttachmentStorageManager:
                 prefix=redis_config.prefix,
             )
 
-        elif storage_type == "dynamodb":
-            from .dynamodb import DynamoDBAttachmentStore
+        if key == "dynamodb":
+            with require_extra("aws", "multimodal.storage_type: dynamodb"):
+                from .dynamodb import DynamoDBAttachmentStore
 
             dynamodb_config = config.dynamodb
             if dynamodb_config is None:
@@ -77,11 +89,12 @@ class AttachmentStorageManager:
                 ttl=dynamodb_config.ttl,
             )
 
-        else:
-            # Default: in_memory
-            from .in_memory import InMemoryAttachmentStore
-
-            return InMemoryAttachmentStore(session_id)
+        # Bring-your-own: a dotted path to an AttachmentStore subclass (session-scoped).
+        if "." not in storage_type:
+            raise AKConfigError(
+                f"unknown multimodal storage_type '{storage_type}'; expected one of {_BUILTIN_ATTACHMENT_STORES} or a dotted path to an AttachmentStore subclass"
+            )
+        return resolve_dotted(storage_type, base=AttachmentStore)(session_id)
 
     def save_attachment(
         self,
@@ -91,16 +104,18 @@ class AttachmentStorageManager:
         mime_type: str,
         description: str = "",
         max_attachments: int = DEFAULT_MAX_ATTACHMENTS,
+        url: Optional[str] = None,
     ) -> str:
         """
         Save an attachment using the configured storage driver.
 
-        :param data: Base64 encoded attachment data.
+        :param data: Base64 encoded attachment data; empty when url is given.
         :param attachment_type: "image" or "file".
         :param name: Filename.
         :param mime_type: MIME type of the attachment.
         :param description: Optional description from LLM.
         :param max_attachments: Maximum number of attachments to keep.
+        :param url: Address of a remote attachment whose bytes are not held here.
         :return: The generated attachment ID.
         """
         attachment_id = str(uuid.uuid4())
@@ -114,6 +129,7 @@ class AttachmentStorageManager:
             "mime_type": mime_type,
             "description": description,
             "timestamp": timestamp,
+            "url": url,
         }
 
         self._driver.save(attachment, max_attachments)
@@ -146,6 +162,7 @@ class AttachmentStorageManager:
                         mime_type=attachment["mime_type"],
                         description=attachment.get("description", ""),
                         timestamp=attachment["timestamp"],
+                        url=attachment.get("url"),
                     )
                 )
                 _log.debug(f"Loaded attachment: {attachment_id}")

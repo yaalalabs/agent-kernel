@@ -107,7 +107,7 @@ It does not apply to:
 
 - Third-party dependencies (report to their respective maintainers)
 - Forked or modified versions not maintained by the core team
-- Applications built using Agent Kernel (unless the vulnerability is in AgentKernel itself)
+- Applications built using Agent Kernel (unless the vulnerability is in Agent Kernel itself)
 
 ## Security Resources
 

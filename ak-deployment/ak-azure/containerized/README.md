@@ -20,8 +20,28 @@ Perfect for microservices, web applications, APIs requiring persistent connectio
 | Name | Version |
 |------|---------|
 | Terraform | >= 1.9.5 |
-| Azure Provider | >= 4.57.0 |
-| Docker Provider | 3.6.2 |
+| Azure Provider | >= 4.57.0, < 5.0.0 |
+
+## 🔌 Providers
+
+This module is provider-agnostic: it declares `azurerm` in `required_providers` but does **not** configure it internally. Configure the provider in your root module and pass it explicitly via the `providers` argument. This is what lets you use `count`, `for_each`, or `depends_on` on the module block, and lets a minimal/standalone config destroy the resources it created.
+
+The container image is built and pushed to its own Azure Container Registry entirely internally (the nested ACR submodule configures its own `docker` provider against the registry it creates), so no `docker` provider needs to be configured or passed in by the caller.
+
+```hcl
+provider "azurerm" {
+  features {}
+  resource_provider_registrations = "none"
+}
+
+module "container_app" {
+  source    = "yaalalabs/ak-containerized/azurerm"
+  version   = "0.8.1"
+  providers = { azurerm = azurerm }
+
+  # ... other inputs, see below
+}
+```
 
 ## 🚀 Usage
 
@@ -29,7 +49,8 @@ Perfect for microservices, web applications, APIs requiring persistent connectio
 
 ```hcl
 module "container_app" {
-  source = "../containerized"
+  source    = "yaalalabs/ak-containerized/azurerm"
+  providers = { azurerm = azurerm }
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
@@ -92,7 +113,7 @@ output "container_app_fqdn" {
 
 ```hcl
 module "container_app_redis" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/azurerm"
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
@@ -133,7 +154,7 @@ module "container_app_redis" {
 
 ```hcl
 module "container_app_cosmosdb" {
-  source = "../containerized"
+  source = "yaalalabs/ak-containerized/azurerm"
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"

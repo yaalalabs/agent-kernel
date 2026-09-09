@@ -3,6 +3,11 @@ variable "product_alias" {
   description = "Product alias"
 }
 
+variable "region" {
+  type        = string
+  description = "Azure region for resources"
+}
+
 variable "env_alias" {
   type        = string
   description = "Environment alias"

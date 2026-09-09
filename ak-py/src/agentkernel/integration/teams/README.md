@@ -9,8 +9,10 @@ The `AgentTeamsRequestHandler` class handles conversations with agents via Micro
 1.  When a message is sent to the bot in Teams, Azure Bot Service sends a payload to your configured **Webhook URL**.
 2.  The handler verifies the request and authenticates it using your Azure App credentials.
 3.  The message is processed and passed to your chosen Agent.
-4.  The Agent's response is sent back to Teams using the Bot Framework APIs.
-5.  File attachments (PDF files only) are automatically downloaded (handling authentication) and processed.
+4.  The Agent's response is sent back to Teams using the Bot Framework APIs. The agent runs
+    *outside* the webhook turn (a proactive `continue_conversation` follow-up), so a slow agent
+    cannot exceed the Bot Framework delivery timeout and cause Azure to redeliver the activity.
+5.  File attachments are automatically downloaded (handling authentication) and passed to the agent. Audio and video are rejected, and anything over `api.max_file_size` is refused.
 
 ## Setup Guide
 
@@ -82,21 +84,60 @@ Configure these in your `.env` file or environment:
 ```bash
 export AK_TEAMS__APP_ID="<Your-Application-Client-ID>"
 export AK_TEAMS__APP_PASSWORD="<Your-Client-Secret-Value>"
-export AK_TEAMS__TENANT_ID="<Optional-Tenant-ID>" # Optional: Leave empty for Multi-Tenant
+export AK_TEAMS__TENANT_ID="<Optional-Tenant-ID>" # Optional: the bot app's own tenant; leave empty for Multi-Tenant
 ```
+
+## Tenant ID
+
+`AK_TEAMS__TENANT_ID` is the Entra ID tenant that owns the **bot's own app registration** — the Bot
+Framework SDK's `MicrosoftAppTenantId`. Leave it empty for a multi-tenant registration
+(`signInAudience: AzureADMultipleOrgs`), whose channel tokens come from the Bot Framework tenant.
+Set it for a single-tenant registration (`AzureADMyOrg`), whose own tenant is the only authority that
+can issue those tokens. The app registration and the Azure Bot resource's app type must agree.
+
+The tenant an app-only *attachment download* needs is a different one — it belongs to the customer
+whose Teams sent the message, and is taken from the activity.
 
 ## Security & Permissions
 
-*   **Files.Read.All**: To allow the bot to download files shared in chat, you may need to grant API permissions in your Azure App Registration:
-    *   Go to **API permissions** > **Add a permission** > **Microsoft Graph**.
-    *   Select **Application permissions**.
-    *   Search for `Files.Read.All` and add it.
+Most files Teams delivers carry a **pre-authenticated `downloadUrl`**, which the handler fetches with
+no extra credentials. That is the common path and it requires no Azure permissions at all.
+
+When a download URL is *not* pre-authenticated, the handler falls back to an app-only (client
+credentials) token minted for the host serving the file. That fallback needs:
+
+*   **A tenant to mint the token in.** The client credentials grant is not valid against the
+    `/common` authority, so a specific tenant is required. This is the *customer's* tenant, read off
+    the incoming activity, with `AK_TEAMS__TENANT_ID` as the fallback; if neither is available the
+    download is refused with a clear message rather than retried unauthenticated.
+*   **A SharePoint application permission** — `Sites.Read.All` under *Office 365 SharePoint Online*
+    (not Microsoft Graph), with admin consent — because the token requested is for the SharePoint
+    resource serving the file:
+    *   Go to **API permissions** > **Add a permission** > **APIs my organization uses** >
+        **Office 365 SharePoint Online** > **Application permissions** > `Sites.Read.All`.
     *   **Grant admin consent** for your organization.
+
+A bearer token is only ever sent to a host it was minted for. An unrecognised download host is
+fetched without an `Authorization` header rather than being handed a token.
 
 ## Troubleshooting
 
 *   **Bot doesn't respond**: Check your webhook URL in Azure Bot Configuration. Ensure it handles POST requests to `/teams/messages`.
+*   **The endpoint returns 200 but no reply arrives**: the reply is sent with a token minted from
+    `AK_TEAMS__APP_PASSWORD`, while the inbound activity is only validated against Bot Framework
+    public keys — so a broken outbound credential looks like silence. Look for
+    `Error sending reply to Teams: Failed to get access token` in the logs.
+    *   `AADSTS7000229` — the app registration has no service principal in that tenant, the state an
+        app created with `az ad app create` or the Graph API is left in. Fix with
+        `az ad sp create --id <app-id>`.
+    *   `AADSTS700016` — the token went to the wrong tenant; for a single-tenant registration this
+        means `AK_TEAMS__TENANT_ID` was left empty (see "Tenant ID" above).
 *   **401 Unauthorized downloading files**:
-    *   The integration automatically handles `tempauth` URLs provided by Teams.
-    *   If using the fallback Method, ensure the bot has `Files.Read.All` permission granted in Azure AD.
+    *   The integration automatically handles pre-authenticated (`tempauth`) URLs provided by Teams.
+    *   `Cannot authorize the download of ...` in the logs means the app-only fallback was needed and
+        could not be used — set `AK_TEAMS__TENANT_ID` and grant the SharePoint permission above.
+    *   `Direct download failed with status 401` means the URL itself was rejected — confirm the bot
+        still has access to the file and that the `downloadUrl` has not expired.
+*   **Duplicate replies**: the agent runs outside the webhook turn, so this normally means more than
+    one instance is registered on the same messaging endpoint.
 *   **"Operation returned an invalid status code 'Unauthorized'"**: Check that your `AK_TEAMS__APP_ID` and `AK_TEAMS__APP_PASSWORD` are correct and match the Azure Bot resource.

@@ -5,15 +5,32 @@ permissions:
   id-token: write  # Required for OIDC authentication with AWS
 
 on:
-  # Weekly build - runs every Sunday at 3 AM UTC
-  # schedule:
-    # - cron: '0 3 * * 0'  # Every Sunday at 3 AM UTC
+  # Weekly build - runs Sundays at 5:30 PM UTC
+  schedule:
+    - cron: '30 17 * * 0'  # Sunday 5:30 PM UTC
   
   # Allow manual triggering
   workflow_dispatch:
+    inputs:
+      keep_resources_on_failure:
+        description: 'Keep cloud resources if deploy/test fails (skip destroy) - for manual debugging. Leave off for normal/scheduled runs.'
+        required: false
+        type: boolean
+        default: false
+      provision_e2e_messaging:
+        description: 'Provision Or Refresh e2e Messaging Deployment'
+        required: false
+        type: boolean
+        default: false
+      e2e_messaging_only:
+        description: 'Run only the e2e messaging tests (skips the weekly cloud test matrix)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   setup:
+    if: ${{ !inputs.e2e_messaging_only }}
     runs-on: ubuntu-latest
     environment: ci-tests
     outputs:
@@ -21,33 +38,34 @@ jobs:
       deployment-base: ${{ steps.set-matrix.outputs.deployment-base }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-      
+        uses: actions/checkout@v5
+
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      
+
       - name: Install dependencies
         run: pip install pyyaml
-      
+
       - name: Validate integration test configuration
         run: python3 .github/scripts/validate_integration_config.py
-      
+
       - name: Generate test matrices
         id: set-matrix
         run: |
           python3 .github/scripts/generate_test_matrix.py --tier weekly --format github >> $GITHUB_OUTPUT
 
   build-ak-py:
+    if: ${{ !inputs.e2e_messaging_only }}
     runs-on: ubuntu-latest
     environment: ci-tests
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -59,23 +77,96 @@ jobs:
         run: ./build.sh
 
       - name: Cache ak-py build
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
 
-  get-base-outputs:
+  deploy-openai:
     needs: [setup, build-ak-py]
+    runs-on: ubuntu-latest
+    environment: ci-tests
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install uv pyyaml
+
+      - name: Restore ak-py build
+        uses: actions/cache/restore@v5
+        with:
+          path: ak-py/dist
+          key: ak-py-${{ github.sha }}
+          fail-on-cache-miss: true
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.3
+
+      - name: Inject dependencies
+        run: python3 scripts/deploy/inject_dependencies.py
+
+      - name: Deploy ${{ fromJson(needs.setup.outputs.deployment-base).path }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+        run: |
+          python .github/scripts/run_single_test.py \
+            --type ${{ fromJson(needs.setup.outputs.deployment-base).type }} \
+            --path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }} \
+            --action deploy
+
+      - name: Test ${{ fromJson(needs.setup.outputs.deployment-base).path }}
+        id: openai-test
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+        run: |
+          python .github/scripts/run_single_test.py \
+            --type ${{ fromJson(needs.setup.outputs.deployment-base).type }} \
+            --path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
+            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }} \
+            --action test
+
+      - name: Report openai test outcome
+        if: steps.openai-test.outcome == 'failure'
+        run: |
+          echo "::error::openai base test failed (see the 'Test' step above for details). Continuing the pipeline since the base deployment itself succeeded and other tests depend on it."
+
+  get-base-outputs:
+    needs: [setup, build-ak-py, deploy-openai]
     runs-on: ubuntu-latest
     outputs:
       vpc_id: ${{ steps.base-outputs.outputs.vpc_id }}
       private_subnet_ids: ${{ steps.base-outputs.outputs.private_subnet_ids }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -83,13 +174,13 @@ jobs:
         run: pip install pyyaml
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.3
 
@@ -113,10 +204,10 @@ jobs:
         shell: bash -e {0}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -124,14 +215,15 @@ jobs:
         run: pip install uv pyyaml
 
       - name: Restore ak-py build
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
+          fail-on-cache-miss: true
 
       - name: Configure AWS credentials
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless'
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -144,16 +236,67 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
 
+      - name: GCP login
+        id: auth          # <-- add this
+        if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          token_format: "id_token"
+          id_token_audience: "32555940559.apps.googleusercontent.com"
+          id_token_include_email: true
+
+      - name: Export identity token
+        if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        run: echo "IDENTITY_TOKEN=${{ steps.auth.outputs.id_token }}" >> $GITHUB_ENV
+
+      - name: Setup gcloud
+        if: matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        uses: google-github-actions/setup-gcloud@v3
+
       - name: Setup Terraform
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
-        uses: hashicorp/setup-terraform@v3
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.3
       - name: Inject dependencies
-        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
+        if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized' || matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized'
         run: python3 scripts/deploy/inject_dependencies.py
 
-      - name: Deploy, Test, and Destroy - ${{ matrix.path }}
+      - name: Stagger GCP deploy start
+        if: (matrix.type == 'gcp-serverless' || matrix.type == 'gcp-containerized') && matrix.deploy_stagger > 0
+        run: |
+          echo "Waiting ${{ matrix.deploy_stagger }}s before deploy to avoid simultaneous VPC connector provisioning..."
+          sleep ${{ matrix.deploy_stagger }}
+
+      - name: Deploy - ${{ matrix.path }}
+        id: deploy
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: "true"
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AK_PRE_DEPLOY_AUTH_CMD: |
+            OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r '.value')
+            az login --service-principal -u "$ARM_CLIENT_ID" -t "$ARM_TENANT_ID" --federated-token "$OIDC_TOKEN" --output none
+            az account set --subscription "$ARM_SUBSCRIPTION_ID"
+        run: |
+          ARGS=(--type ${{ matrix.type }} --path ${{ matrix.path }} --deploy-dir ${{ matrix.deploy_dir }} --action deploy)
+          # AWS deploys need the base VPC/subnets injected as terraform vars.
+          if [[ "${{ matrix.type }}" == aws-* ]]; then
+            ARGS+=(--vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}')
+          fi
+          python .github/scripts/run_single_test.py "${ARGS[@]}"
+
+      - name: Test - ${{ matrix.path }}
+        id: test
+        # Only run if deploy succeeded; skipped (not failed) otherwise.
+        if: steps.deploy.outcome == 'success'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
@@ -164,58 +307,35 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
         run: |
-          if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
-            # Deploy
-            python .github/scripts/run_single_test.py \
-              --type ${{ matrix.type }} \
-              --path ${{ matrix.path }} \
-              --deploy-dir ${{ matrix.deploy_dir }} \
-              --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
-              --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
-              --action deploy
-            
-            # Test
-            python .github/scripts/run_single_test.py \
-              --type ${{ matrix.type }} \
-              --path ${{ matrix.path }} \
-              --deploy-dir ${{ matrix.deploy_dir }} \
-              --action test
-            
-            # Destroy
-            python .github/scripts/run_single_test.py \
-              --type ${{ matrix.type }} \
-              --path ${{ matrix.path }} \
-              --deploy-dir ${{ matrix.deploy_dir }} \
-              --vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" \
-              --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}' \
-              --action destroy
+          python .github/scripts/run_single_test.py \
+            --type ${{ matrix.type }} \
+            --path ${{ matrix.path }} \
+            --deploy-dir ${{ matrix.deploy_dir }} \
+            --action test
 
-          elif [[ "${{ matrix.type }}" == "azure-serverless" || "${{ matrix.type }}" == "azure-containerized" ]]; then
-            # Deploy
-            python .github/scripts/run_single_test.py \
-              --type ${{ matrix.type }} \
-              --path ${{ matrix.path }} \
-              --deploy-dir ${{ matrix.deploy_dir }} \
-              --action deploy
-            
-            # Test
-            python .github/scripts/run_single_test.py \
-              --type ${{ matrix.type }} \
-              --path ${{ matrix.path }} \
-              --deploy-dir ${{ matrix.deploy_dir }} \
-              --action test
-            
-            # Destroy
-            python .github/scripts/run_single_test.py \
-              --type ${{ matrix.type }} \
-              --path ${{ matrix.path }} \
-              --deploy-dir ${{ matrix.deploy_dir }} \
-              --action destroy
+      - name: Destroy - ${{ matrix.path }}
+        id: destroy
+        if: >-
+          !cancelled() &&
+          !(inputs.keep_resources_on_failure && (steps.deploy.outcome == 'failure' || steps.test.outcome == 'failure'))
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: "true"
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          ARGS=(--type ${{ matrix.type }} --path ${{ matrix.path }} --deploy-dir ${{ matrix.deploy_dir }} --action destroy)
+          if [[ "${{ matrix.type }}" == aws-* ]]; then
+            ARGS+=(--vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}')
           fi
-
+          python .github/scripts/run_single_test.py "${ARGS[@]}"
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-results-${{ matrix.id }}
           path: |
@@ -223,8 +343,8 @@ jobs:
             ${{ matrix.path }}/**/pytest-report.xml
           retention-days: 30
 
-  redeploy-openai:
-    needs: [setup, run-tests]
+  e2e-messaging-deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.provision_e2e_messaging
     runs-on: ubuntu-latest
     environment: ci-tests
     defaults:
@@ -232,66 +352,161 @@ jobs:
         shell: bash -e {0}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
-        run: pip install uv pyyaml
-
-      - name: Restore ak-py build
-        uses: actions/cache/restore@v4
-        with:
-          path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+      - name: Install uv
+        run: pip install uv
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
-          aws-region: ${{ vars.AWS_REGION }}
+          aws-region: us-east-2
 
-      # - name: Azure login
-      #   uses: azure/login@v3
-      #   with:
-      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
-      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-      #     subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.3
+          terraform_wrapper: false
 
-      - name: Inject dependencies
-        run: python3 scripts/deploy/inject_dependencies.py
+      - name: Build ak-py from this checkout
+        working-directory: ak-py
+        run: ./build.sh
 
-      - name: Destroy, Deploy, and Test ${{ fromJson(needs.setup.outputs.deployment-base).path }}
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
+      - name: Build deployment package
+        working-directory: e2e/app
         run: |
-          # Destroy
-          python .github/scripts/run_single_test.py \
-            --type ${{ fromJson(needs.setup.outputs.deployment-base).type }} \
-            --path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
-            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }} \
-            --action destroy
-          
-          # Deploy
-          python .github/scripts/run_single_test.py \
-            --type ${{ fromJson(needs.setup.outputs.deployment-base).type }} \
-            --path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
-            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }} \
-            --action deploy
-          
-          # Test
-          python .github/scripts/run_single_test.py \
-            --type ${{ fromJson(needs.setup.outputs.deployment-base).type }} \
-            --path ${{ fromJson(needs.setup.outputs.deployment-base).path }} \
-            --deploy-dir ${{ fromJson(needs.setup.outputs.deployment-base).deploy_dir }} \
-            --action test
+          rm -rf dist
+          mkdir -p dist/data
+          uv venv
+          uv export --no-hashes --no-dev > requirements.txt
+          uv pip install -r requirements.txt --target=dist/data
+          cp app.py config.yaml dist/data
+          cp deploy/Dockerfile dist/
+
+      - name: Deploy e2e messaging app
+        working-directory: e2e/app/deploy
+        env:
+          TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_slack_bot_token: ${{ secrets.E2E_SLACK_BOT_TOKEN }}
+          TF_VAR_slack_signing_secret: ${{ secrets.E2E_SLACK_SIGNING_SECRET }}
+          TF_VAR_telegram_bot_token: ${{ secrets.E2E_TELEGRAM_BOT_TOKEN }}
+          TF_VAR_telegram_webhook_secret: ${{ secrets.E2E_TELEGRAM_WEBHOOK_SECRET }}
+          TF_VAR_gmail_client_id: ${{ secrets.E2E_GMAIL_CLIENT_ID }}
+          TF_VAR_gmail_client_secret: ${{ secrets.E2E_GMAIL_CLIENT_SECRET }}
+          TF_VAR_gmail_token_b64: ${{ secrets.E2E_GMAIL_BOT_TOKEN_B64 }}
+          TF_VAR_gmail_sender_filter: ${{ vars.E2E_GMAIL_TESTER_ADDRESS }}
+          TF_VAR_whatsapp_access_token: ${{ secrets.E2E_WHATSAPP_BOT_ACCESS_TOKEN }}
+          TF_VAR_whatsapp_phone_number_id: ${{ vars.E2E_WHATSAPP_BOT_PHONE_NUMBER_ID }}
+          TF_VAR_whatsapp_verify_token: ${{ secrets.E2E_WHATSAPP_VERIFY_TOKEN }}
+          TF_VAR_whatsapp_app_secret: ${{ secrets.E2E_WHATSAPP_APP_SECRET }}
+          TF_VAR_messenger_access_token: ${{ secrets.E2E_MESSENGER_ACCESS_TOKEN }}
+          TF_VAR_messenger_verify_token: ${{ secrets.E2E_MESSENGER_VERIFY_TOKEN }}
+          TF_VAR_messenger_app_secret: ${{ secrets.E2E_MESSENGER_APP_SECRET }}
+          TF_VAR_instagram_access_token: ${{ secrets.E2E_INSTAGRAM_ACCESS_TOKEN }}
+          TF_VAR_instagram_verify_token: ${{ secrets.E2E_INSTAGRAM_VERIFY_TOKEN }}
+          TF_VAR_instagram_app_secret: ${{ secrets.E2E_INSTAGRAM_APP_SECRET }}
+          TF_VAR_instagram_account_id: ${{ vars.E2E_INSTAGRAM_ACCOUNT_ID }}
+          TF_VAR_teams_app_id: ${{ secrets.E2E_TEAMS_APP_ID }}
+          TF_VAR_teams_app_password: ${{ secrets.E2E_TEAMS_APP_PASSWORD }}
+          TF_VAR_teams_tenant_id: ${{ vars.E2E_TEAMS_TENANT_ID }}
+        run: |
+          terraform init -input=false
+          terraform apply -input=false -auto-approve
+
+      - name: Wait for ECS service to stabilize
+        working-directory: e2e/app/deploy
+        run: |
+          # Derive cluster name and region from terraform.tfvars so this stays in sync
+          # if the aliases/region are edited there (mirrors deploy.sh's read_tfvar).
+          read_tfvar() { awk -F'=' -v k="$1" '$1 ~ "^[[:space:]]*"k"[[:space:]]*$" {gsub(/[" ]/, "", $2); print $2; exit}' terraform.tfvars; }
+          region=$(read_tfvar region)
+          cluster="$(read_tfvar product_alias)-$(read_tfvar env_alias)-$(read_tfvar module_name)"
+          echo "Waiting for ECS services in cluster '$cluster' (region $region)..."
+          services=$(aws ecs list-services --cluster "$cluster" --region "$region" --query 'serviceArns' --output text)
+          # Word-splitting on $services is intentional: one --services arg per ARN.
+          aws ecs wait services-stable --cluster "$cluster" --services $services --region "$region"
+  e2e-messaging-test:
+    needs: [e2e-messaging-deploy]
+    if: always() && (needs.e2e-messaging-deploy.result == 'success' || needs.e2e-messaging-deploy.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: ci-tests
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
+          aws-region: us-east-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.14.3
+          terraform_wrapper: false
+
+      - name: Read webhook URL and probe endpoint
+        id: webhook
+        working-directory: e2e/app/deploy
+        run: |
+          terraform init -input=false
+          url=$(terraform output -raw telegram_webhook_url)
+          echo "telegram_webhook_url=$url" >> "$GITHUB_OUTPUT"
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$url" -H "Content-Type: application/json" -d '{}')
+          echo "POST $url -> HTTP $code"
+          # 200 (no webhook secret) or 403 (secret enforced) both prove a healthy container;
+          # 503 means no healthy ECS task behind the ALB.
+          if [[ "$code" == "503" || "$code" == "500" ]]; then
+            echo "e2e messaging service is not healthy — dispatch this workflow with provision_e2e_messaging enabled to (re)deploy it" >&2
+            exit 1
+          fi
+
+      - name: Install e2e test dependencies
+        working-directory: e2e/tests
+        run: uv sync
+
+      - name: Register Telegram webhook
+        working-directory: e2e/tests
+        env:
+          E2E_TELEGRAM_BOT_TOKEN: ${{ secrets.E2E_TELEGRAM_BOT_TOKEN }}
+          E2E_TELEGRAM_WEBHOOK_SECRET: ${{ secrets.E2E_TELEGRAM_WEBHOOK_SECRET }}
+        run: |
+          uv run python scripts/set_telegram_webhook.py \
+            --url "${{ steps.webhook.outputs.telegram_webhook_url }}"
+
+      - name: Run e2e messaging tests
+        working-directory: e2e/tests
+        env:
+          E2E_SLACK_USER_TOKEN: ${{ secrets.E2E_SLACK_USER_TOKEN }}
+          E2E_SLACK_CHANNEL_ID: ${{ vars.E2E_SLACK_CHANNEL_ID }}
+          SLACK_BOT_TOKEN: ${{ secrets.E2E_SLACK_BOT_TOKEN }}
+          E2E_TELEGRAM_API_ID: ${{ secrets.E2E_TELEGRAM_API_ID }}
+          E2E_TELEGRAM_API_HASH: ${{ secrets.E2E_TELEGRAM_API_HASH }}
+          E2E_TELEGRAM_SESSION: ${{ secrets.E2E_TELEGRAM_SESSION }}
+          E2E_TELEGRAM_BOT_USERNAME: ${{ vars.E2E_TELEGRAM_BOT_USERNAME }}
+          E2E_GMAIL_TESTER_TOKEN_B64: ${{ secrets.E2E_GMAIL_TESTER_TOKEN_B64 }}
+          E2E_GMAIL_BOT_ADDRESS: ${{ vars.E2E_GMAIL_BOT_ADDRESS }}
+          E2E_WHATSAPP_SENDER_ACCESS_TOKEN: ${{ secrets.E2E_WHATSAPP_SENDER_ACCESS_TOKEN }}
+          E2E_WHATSAPP_SENDER_PHONE_NUMBER_ID: ${{ vars.E2E_WHATSAPP_SENDER_PHONE_NUMBER_ID }}
+          E2E_WHATSAPP_BOT_NUMBER: ${{ vars.E2E_WHATSAPP_BOT_NUMBER }}
+          E2E_WHATSAPP_SENDER_NUMBER: ${{ vars.E2E_WHATSAPP_SENDER_NUMBER }}
+          E2E_TEAMS_DIRECTLINE_SECRET: ${{ secrets.E2E_TEAMS_DIRECTLINE_SECRET }}
+        run: uv run pytest -v -rs

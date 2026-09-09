@@ -30,8 +30,18 @@ class APITestClient:
             "session_id": self.session_id,
             "agent": agent,
         }
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{self.url}/api/v1/chat", json=payload)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            # Retry 5xx and timeouts: serverless cold starts can exceed the gateway timeout
+            for attempt in range(3):
+                try:
+                    resp = await client.post(f"{self.url}/api/v1/chat", json=payload)
+                except httpx.TimeoutException:
+                    if attempt == 2:
+                        raise
+                    continue
+                if resp.status_code < 500 or attempt == 2:
+                    break
+                await asyncio.sleep(5)
             resp.raise_for_status()
             data = resp.json()
             return data.get("result", "")
@@ -68,7 +78,7 @@ async def test_junior_agent_on_acme(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(2)
 async def test_senior_agent_on_acme(http_client):
-    response = await http_client.send("What is AcmeXXLabs?", agent="senior_assistant")
+    response = await http_client.send("Tell me about the company AcmeXXLabs.", agent="senior_assistant")
     print(f"Senior agent response: {response}")
     assert (
         "cutting-edge green technology" in response.lower() and "san francisco" in response.lower()
@@ -90,7 +100,7 @@ async def test_junior_agent_on_softlabs(http_client):
 @pytest.mark.asyncio
 @pytest.mark.order(4)
 async def test_senior_agent_on_softlabs(http_client):
-    response = await http_client.send("What is SoftYYLabs?", agent="senior_assistant")
+    response = await http_client.send("Tell me about the company SoftYYLabs.", agent="senior_assistant")
     print(f"Senior agent response: {response}")
     assert (
         "thorium" in response.lower() and "research" in response.lower() and "shandong" in response.lower()

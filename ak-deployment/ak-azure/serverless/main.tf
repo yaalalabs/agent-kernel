@@ -3,11 +3,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 4.57.0"
-    }
-    docker = {
-      source  = "kreuzwerker/docker"
-      version = "3.6.2"
+      version = ">= 4.57.0, < 5.0.0"
     }
 
     null = {
@@ -16,9 +12,4 @@ terraform {
     }
 
   }
-}
-
-provider "azurerm" {
-  features {}
-  resource_provider_registrations = "none"
 }

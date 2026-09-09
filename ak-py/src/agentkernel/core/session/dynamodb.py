@@ -1,172 +1,14 @@
 import logging
-import time
 from typing import Optional
 
-import boto3
-from boto3.dynamodb.conditions import Key as DDBKey
 from boto3.dynamodb.types import Binary
 
 from ..base import Session
 from ..config import AKConfig
-from .base import SessionCache, SessionStore
+from ..util.driver.dynamodb import DynamoDBDriver
+from ..util.factory import AKConfigError
+from .base import SessionCache, SessionStore, WSConnectionStore
 from .serde import BinarySerde
-
-
-class DynamoDBDriver:
-    """
-    DynamoDBDriver provides connection management and helpers for a simple
-    three-attribute item layout: session_id, key and value (Binary).
-    """
-
-    _ddb_resource = None
-    _ddb_table = None
-
-    def __init__(self):
-        self._log = logging.getLogger("ak.core.session.dynamodb.driver")
-        cfg = AKConfig.get().session.dynamodb
-        if cfg is None or not cfg.table_name:
-            raise ValueError("AKConfig.session.dynamodb.table_name must be set to use DynamoDBSessionStore")
-        self._table_name = cfg.table_name
-        self._ttl = cfg.ttl
-
-    @property
-    def table(self):
-        """
-        Returns the boto3 DynamoDB Table resource, connecting lazily if needed.
-
-        :return: The DynamoDB Table resource for the configured table name.
-        """
-        if self._ddb_table is None:
-            self._connect()
-        return self._ddb_table
-
-    def _connect(self):
-        """
-        Establish a connection to DynamoDB and resolve the configured table.
-
-        Retries a few times with a small delay between attempts. Raises the last
-        encountered exception if all attempts fail.
-        """
-        retries = 3
-        delay = 2
-        last_err: Optional[Exception] = None
-        for attempt in range(retries):
-            try:
-                self._log.debug("Connecting to DynamoDB resource")
-                self._ddb_resource = boto3.resource("dynamodb")
-                self._ddb_table = self._ddb_resource.Table(self._table_name)
-                # lightweight call to ensure table exists/accessible
-                self._ddb_table.load()
-                self._log.debug("Connected to DynamoDB table %s", self._table_name)
-                return
-            except Exception as e:
-                last_err = e
-                self._log.warning("DynamoDB connection attempt %s failed: %s", attempt + 1, e)
-                if attempt < retries - 1:
-                    time.sleep(delay)
-        if last_err:
-            raise last_err
-
-    def put(self, session_id: str, key: str, value: bytes) -> None:
-        """
-        Put a single item for the given session and key.
-
-        When TTL is configured (> 0), attaches an `expiry_time` attribute with a
-        UNIX epoch (seconds) timestamp for DynamoDB TTL.
-
-        :param session_id: The session identifier (partition key).
-        :param key: The item key within the session (sort key).
-        :param value: The serialized value as bytes.
-        """
-        try:
-            item = {
-                "session_id": session_id,
-                "key": key,
-                "value": Binary(value),
-            }
-            if self._ttl and self._ttl > 0:
-                item["expiry_time"] = int(time.time()) + int(self._ttl)
-            self.table.put_item(Item=item)
-        except Exception as e:
-            self._log.error("Failed to put item session_id=%s key=%s: %s", session_id, key, e)
-            raise
-
-    def get(self, session_id: str, key: str) -> Optional[bytes]:
-        """
-        Get a single item's raw bytes for the given session and key.
-
-        :param session_id: The session identifier (partition key).
-        :param key: The item key within the session (sort key).
-        :return: The stored bytes value, or None if the item does not exist.
-        """
-        try:
-            resp = self.table.get_item(Key={"session_id": session_id, "key": key})
-            item = resp.get("Item")
-            if not item:
-                return None
-            val = item.get("value")
-            # boto3 Binary objects expose .value or are bytes-like
-            if hasattr(val, "value"):
-                return val.value
-            return val
-        except Exception as e:
-            self._log.error("Failed to get item session_id=%s key=%s: %s", session_id, key, e)
-            raise
-
-    def query_keys(self, session_id: str) -> list[str]:
-        """
-        Query for all sort keys associated with a given session partition key.
-
-        :param session_id: The session identifier (partition key).
-        :return: A list of keys (sort keys) stored under the session.
-        """
-        keys: list[str] = []
-        try:
-            kwargs = {"KeyConditionExpression": DDBKey("session_id").eq(session_id)}
-            resp = self.table.query(**kwargs)
-            items = resp.get("Items", [])
-            keys.extend([it.get("key") for it in items if "key" in it])
-            # pagination
-            while "LastEvaluatedKey" in resp:
-                resp = self.table.query(ExclusiveStartKey=resp["LastEvaluatedKey"], **kwargs)
-                items = resp.get("Items", [])
-                keys.extend([it.get("key") for it in items if "key" in it])
-        except Exception as e:
-            self._log.error("Failed to query keys for session_id=%s: %s", session_id, e)
-            raise
-        return keys
-
-    def scan_and_clear_all(self) -> None:
-        """
-        Scan the entire table and delete all items.
-
-        Intended for development/test parity with Redis clear by prefix. Use with
-        extreme caution in shared environments.
-        """
-        try:
-            with self.table.batch_writer() as batch:
-                resp = self.table.scan(
-                    ProjectionExpression="#pk,#sk",
-                    ExpressionAttributeNames={
-                        "#pk": "session_id",
-                        "#sk": "key",
-                    },
-                )
-                items = resp.get("Items", [])
-                for it in items:
-                    batch.delete_item(Key={"session_id": it["session_id"], "key": it["key"]})
-                while "LastEvaluatedKey" in resp:
-                    resp = self.table.scan(
-                        ProjectionExpression="#pk,#sk",
-                        ExpressionAttributeNames={"#pk": "session_id", "#sk": "key"},
-                        ExclusiveStartKey=resp["LastEvaluatedKey"],
-                    )
-                    items = resp.get("Items", [])
-                    for it in items:
-                        batch.delete_item(Key={"session_id": it["session_id"], "key": it["key"]})
-        except Exception as e:
-            self._log.error("Failed to clear DynamoDB table %s: %s", self._table_name, e)
-            raise
 
 
 class DynamoDBSessionStore(SessionStore):
@@ -189,7 +31,10 @@ class DynamoDBSessionStore(SessionStore):
         """
         self._log = logging.getLogger("ak.core.session.dynamodb")
         self._serde = BinarySerde()
-        self._driver = DynamoDBDriver()
+        cfg = AKConfig.get().session.dynamodb
+        if cfg is None or not cfg.table_name:
+            raise ValueError("AKConfig.session.dynamodb.table_name must be set to use DynamoDBSessionStore")
+        self._driver = DynamoDBDriver(table_name=cfg.table_name, partition_key="session_id", sort_key="key", ttl=cfg.ttl)
         self._cache = cache
 
     def load(self, session_id: str, strict: bool = False) -> Session:
@@ -209,7 +54,7 @@ class DynamoDBSessionStore(SessionStore):
             if session:
                 self._log.debug(f"Session {session_id} found in cache")
                 return session
-        keys = self._driver.query_keys(session_id)
+        keys = self._driver.query_sort_keys(session_id)
         if not keys:
             if strict:
                 raise KeyError(f"Session {session_id} not found")
@@ -218,13 +63,26 @@ class DynamoDBSessionStore(SessionStore):
 
         session = Session(session_id)
         for k in keys:
-            payload = self._driver.get(session_id, k)
+            item = self._driver.get(session_id, k)
+            payload = self._unwrap(item)
             if payload is None:
                 continue
             session.set(k, self._serde.loads(payload))
         if self._cache:
             self._cache.set(session)
         return session
+
+    @staticmethod
+    def _unwrap(item) -> bytes:
+        """Extract the raw bytes payload from an item's value attribute, unwrapping
+        boto3 Binary objects."""
+        if not item:
+            return None
+        val = item.get("value")
+        # boto3 Binary objects expose .value or are bytes-like
+        if hasattr(val, "value"):
+            return val.value
+        return val
 
     def new(self, session_id: str) -> Session:
         """
@@ -246,7 +104,7 @@ class DynamoDBSessionStore(SessionStore):
         """
         for key, value in session.get_all(volatile=False):
             payload = self._serde.dumps(value)
-            self._driver.put(session.id, key, payload)
+            self._driver.put({"session_id": session.id, "key": key, "value": Binary(payload)})
         if self._cache:
             self._cache.set(session)
 
@@ -256,6 +114,80 @@ class DynamoDBSessionStore(SessionStore):
 
         This is a destructive operation intended for development/testing only.
         """
-        self._driver.scan_and_clear_all()
+        self._driver.clear_all()
         if self._cache:
             self._cache.clear()
+
+    def get_connection_store(self) -> WSConnectionStore:
+        """
+        The WebSocket gateway's connection store on an EXISTING DynamoDB connections table
+        (spec #495 §9): the store never creates it.
+
+        The table is named by ``session.connection_store.table_name`` and uses the same schema
+        as the AWS deployment adapters' connections table (``websocket_api.connection_table``),
+        so one table can serve both: partition key ``user_id``, sort key ``connection_id``, a
+        ``connection_id-index`` GSI on ``connection_id``, and DynamoDB TTL enabled on the
+        ``expiry_time`` attribute.
+
+        :raises AKConfigError: When ``session.connection_store.table_name`` is not configured.
+        """
+        connection_cfg = AKConfig.get().session.connection_store
+        if not connection_cfg.table_name:
+            raise AKConfigError(
+                "dynamodb sessions need session.connection_store.table_name for WebSocket modes: an existing "
+                "table with partition key 'user_id', sort key 'connection_id', a 'connection_id-index' GSI, "
+                "and TTL on 'expiry_time'"
+            )
+        return DynamoDBWSConnectionStore(
+            DynamoDBDriver(
+                table_name=connection_cfg.table_name,
+                partition_key="user_id",
+                sort_key="connection_id",
+                ttl=int(connection_cfg.ttl),
+            )
+        )
+
+
+class DynamoDBWSConnectionStore(WSConnectionStore):
+    """:class:`WSConnectionStore` over an existing DynamoDB connections table.
+
+    Item shape: ``{user_id, connection_id, endpoint, expiry_time}``; the driver stamps
+    ``expiry_time`` on every put. Reverse lookups go through the ``connection_id-index`` GSI,
+    the way the AWS deployment adapters' connection store resolves users from connections.
+    """
+
+    CONNECTION_ID_INDEX = "connection_id-index"
+
+    _log = logging.getLogger("ak.core.session.dynamodb_ws_connection_store")
+
+    def __init__(self, driver: DynamoDBDriver):
+        """:param driver: a driver on the connections table (pk ``user_id``, sk ``connection_id``)."""
+        self._driver = driver
+
+    def add_connection(self, user_id: str, connection_id: str, endpoint: str) -> None:
+        self._driver.put({"user_id": user_id, "connection_id": connection_id, "endpoint": endpoint})
+
+    def get_connections(self, user_id: str) -> list[str]:
+        return list(self.get_endpoints(user_id))
+
+    def get_endpoints(self, user_id: str) -> dict[str, str]:
+        return {item["connection_id"]: item.get("endpoint", "") for item in self._driver.query_items(user_id)}
+
+    def get_endpoint(self, connection_id: str) -> Optional[str]:
+        item = self._reverse_item(connection_id)
+        return item.get("endpoint") if item else None
+
+    def get_user_id(self, connection_id: str) -> Optional[str]:
+        item = self._reverse_item(connection_id)
+        return item.get("user_id") if item else None
+
+    def delete_connection(self, user_id: str, connection_id: str) -> None:
+        self._driver.delete(user_id, connection_id)
+
+    def _reverse_item(self, connection_id: str) -> Optional[dict]:
+        items = self._driver.query_index(self.CONNECTION_ID_INDEX, "connection_id", connection_id)
+        if not items:
+            return None
+        if len(items) > 1:
+            self._log.warning(f"Multiple users found for connection_id={connection_id}. Selecting first result.")
+        return items[0]

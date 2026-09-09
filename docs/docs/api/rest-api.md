@@ -70,6 +70,23 @@ Health check endpoint.
 }
 ```
 
+### Conversation Thread Endpoints
+
+When [conversation threads](../advanced/threads.md) are enabled by mounting `AgentThreadRequestHandler` (which serves the standard chat routes with thread recording), it also serves two read-only routes:
+
+**`GET /api/v1/threads`** lists threads, filterable by `user_id`/`group_id`, cursor-paginated (`limit`, `cursor`):
+
+```json
+{
+  "threads": [{"session_id": "user-123", "name": "Trip planning", "user_id": "anne", "...": "..."}],
+  "next_cursor": null
+}
+```
+
+**`GET /api/v1/threads/{session_id}`** returns a single thread with its paginated message history (`limit`, `cursor`).
+
+On the thread handler's chat routes, `user_id` is **required**; the default handler's routes are unaffected. An optional `Authoriser` can protect the read routes by resolving the Bearer token to a `user_id`; requests for another user's thread then return 403. Without an `Authoriser`, the routes are open.
+
 ## Error Handling
 
 **400 Bad Request:**
@@ -105,7 +122,7 @@ In the following example,  **user_id (string)** and **additional_context (dict)*
 }
 ```
 
-Please study the [Hooks documentation](../integrations/hooks.md) for the use of hooks to implement various use cases.
+Please study the [Hooks documentation](/docs/integrations/hooks) for the use of hooks to implement various use cases.
 
 ## Passing images and files
 
@@ -118,7 +135,7 @@ Currently, passing images and files only work with OpenAI SDK & Google ADK. Othe
 
 **NOTE:** Directly passing image is not recommended. It is advised to save images in Agent accessible storage and pass the URI. This can be done directly from the client side or via hooks. i.e. PreExecution Hooks can intercept the requests, detect images/files and store and modify the request to contain the URIs.
 
-To prevent large files from being passed to LLMs, there is a `max_file_size` option in the REST API configuration which limits the attached file size.
+To prevent large files from being passed to LLMs, there is a `max_file_size` option in the REST API configuration (`api.max_file_size`, default 10 MB) which limits the attached file size.
 
 
 
@@ -316,13 +333,51 @@ class CustomRESTRequestHandler(AgentRESTRequestHandler):
         return router
 
 if __name__ == "__main__":
-    RESTAPI.run(handler=CustomRESTRequestHandler())
+    RESTAPI.run([CustomRESTRequestHandler()])
 ```
 
 
 ## Streaming
 
-Support for streaming responses will be available soon
+Set `execution.mode: stream` in `config.yaml` (or `AK_EXECUTION__MODE=stream`) to enable streaming. When this mode is active, `POST /api/v1/chat` and `POST /api/v1/chat-multipart` return a `text/event-stream` (SSE) response instead of JSON; no other code changes are required.
+
+**Request:** Same JSON/multipart payload as the non-streaming endpoints.
+
+**Response:** A stream of `data:` events, each a JSON-encoded `StreamChunk` (serialized with `exclude_none=True`, so absent fields are absent keys rather than `null`):
+
+```
+data: {"event": {"type": "message_start", "message_id": "a1b2", "role": "assistant"}, "done": false, "session_id": "user-123"}
+
+data: {"delta": "Hello", "event": {"type": "text_delta", "message_id": "a1b2", "content": "Hello"}, "done": false, "session_id": "user-123"}
+
+data: {"delta": " world!", "event": {"type": "text_delta", "message_id": "a1b2", "content": " world!"}, "done": false, "session_id": "user-123"}
+
+data: {"event": {"type": "message_end", "message_id": "a1b2"}, "done": false, "session_id": "user-123"}
+
+data: {"done": true, "session_id": "user-123"}
+
+```
+
+`event` carries the full typed stream event the runner emitted — a discriminated union of message boundaries (`message_start`/`message_end`), text (`text_delta`), tool calls (`tool_call_start`/`tool_call_args`/`tool_call_end`/`tool_call_result`), steps (`step_start`/`step_end`), and reasoning (`reasoning_start`/`reasoning_delta`/`reasoning_end`). `delta` is populated **only** when `event.type` is `text_delta`, and always equals `event.content`; every other frame omits `delta` entirely, so accumulate the full response by concatenating `delta` where present rather than by frame position. The final chunk has `"done": true` and carries neither `delta` nor `event`. If an unrecoverable error occurs mid-stream, the final chunk contains `"error"` instead.
+
+**Client example (Python):**
+
+```python
+import httpx
+
+with httpx.stream("POST", "http://localhost:8000/api/v1/chat", json={
+    "agent": "assistant",
+    "prompt": "What is 2 + 2?",
+    "session_id": "user-123",
+}) as response:
+    for line in response.iter_lines():
+        if line.startswith("data:"):
+            print(line.removeprefix("data:").strip())
+```
+
+**Framework support:** OpenAI Agents SDK, Google ADK, LangGraph, and Pydantic AI support token streaming. CrewAI and smolagents declare `supports_streaming = False` and raise `NotImplementedError` when `execution.mode: stream` is used; use `rest_sync` for those frameworks instead.
+
+For WebSocket-based streaming on AWS Lambda (serverless), see the [AWS Serverless deployment guide](/docs/deployment/aws-serverless#websocket-configuration) and the [streaming-openai example](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai).
 
 
 ## Authentication

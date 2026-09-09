@@ -28,6 +28,8 @@ Ask the user the following questions (adapt based on context):
    - **CrewAI** (multi-agent collaboration with roles and tasks)
    - **LangGraph** (complex workflow graphs with state management)
    - **Google ADK** (Google's Agent Development Kit)
+   - **Smolagents** (lightweight agent framework with managed-agent routing)
+   - **Pydantic AI** (provider-agnostic — native OpenAI/Anthropic/Google/Bedrock/… support with `FallbackModel` failover)
 
 2. **Agent purpose**: What should your agent(s) do? (e.g., "customer support bot", "code review assistant", "data analysis agent")
 
@@ -42,6 +44,8 @@ Ask the user the following questions (adapt based on context):
    - **AWS ECS/Fargate** (containerized on AWS)
    - **Azure Functions** (serverless on Azure)
    - **Azure Container Apps** (containerized on Azure)
+   - **GCP Cloud Run Serverless** (scale-to-zero on GCP)
+   - **GCP Cloud Run Containerized** (always-on on GCP)
    - **Docker** (generic container, runs anywhere)
 
 6. **Session persistence**: How should conversation state be stored?
@@ -49,6 +53,7 @@ Ask the user the following questions (adapt based on context):
    - **Redis** (recommended for production — works with all deployment targets)
    - **DynamoDB** (AWS-native, recommended for AWS serverless)
    - **Cosmos DB** (Azure-native, recommended for Azure serverless)
+   - **Firestore** (GCP-native, recommended for GCP Cloud Run)
 
 ### Step 2: Generate the Project
 
@@ -85,12 +90,12 @@ description = "<description>"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[<extras>]>=0.2.13",
+    "agentkernel[<extras>]>=0.9.0",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.13",
+    "agentkernel[test]>=0.9.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -111,9 +116,11 @@ target-version = ["py312"]
 **Extras selection**:
 - CLI mode: `agentkernel[cli,<framework>]`
 - API mode: `agentkernel[<framework>,api]`
+- Smolagents framework extra: `smolagents`
+- Pydantic AI framework extra: `pydanticai` (installs the provider-agnostic `pydantic-ai-slim` core only — also add a provider, e.g. `pydantic-ai-slim[openai]`)
 - With messaging: add `slack`, `whatsapp`, etc.
 - With session store: add `redis`, `aws` (for DynamoDB), `azure` (for Cosmos DB)
-- With tracing: add `langfuse` or `openllmetry`
+- With tracing: add `langfuse`, `openllmetry`, or `logfire`
 
 #### Agent definition file
 
@@ -211,21 +218,17 @@ if __name__ == "__main__":
 ```python
 from agentkernel.cli import CLI  # or RESTAPI, Lambda
 from agentkernel.crewai import CrewAIModule
-from crewai import Agent, Crew, Task
+from crewai import Agent
 
 <agent_name> = Agent(
-    role="<role>",
+    role="<role>",     # role= is the agent identifier in Agent Kernel
     goal="<goal>",
     backstory="<backstory>",
+    verbose=False,
 )
 
-# CrewAI requires a Crew wrapping agents
-crew = Crew(
-    agents=[<agent_name>],
-    tasks=[Task(description="<task>", agent=<agent_name>)],
-)
-
-CrewAIModule([crew])
+# Pass agents directly — Agent Kernel builds the Crew and Task internally per run
+CrewAIModule([<agent_name>])
 
 if __name__ == "__main__":
     CLI.main()
@@ -245,6 +248,51 @@ from google.adk.agents import Agent
 )
 
 GoogleADKModule([<agent_name>])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+**For Smolagents framework**:
+
+```python
+from agentkernel.cli import CLI  # or RESTAPI, Lambda
+from agentkernel.smolagents import SmolagentsModule, SmolagentsToolBuilder
+from smolagents import LiteLLMModel, ToolCallingAgent
+
+model = LiteLLMModel(model_id="openai/gpt-4o")
+
+<agent_name> = ToolCallingAgent(
+    tools=SmolagentsToolBuilder.bind([]),
+    model=model,
+    name="<name>",
+    description="<instructions>",
+)
+
+SmolagentsModule([<agent_name>])
+
+if __name__ == "__main__":
+    CLI.main()
+```
+
+**For Pydantic AI framework**:
+
+```python
+from agentkernel.cli import CLI  # or RESTAPI, Lambda
+from agentkernel.pydanticai import PydanticAIModule, PydanticAIToolBuilder
+from pydantic_ai import Agent
+
+# Provider-agnostic: swap the model string for "anthropic:...", "google-gla:...", etc.
+# (install the matching provider extra, e.g. pydantic-ai-slim[anthropic]).
+<agent_name> = Agent(
+    model="openai:gpt-4o-mini",
+    name="<name>",                # required — AK registers agents by name eagerly
+    description="<short description>",  # set it — AK reports this as the agent description / A2A summary
+    instructions="<instructions>",
+    tools=PydanticAIToolBuilder.bind([]),
+)
+
+PydanticAIModule([<agent_name>])
 
 if __name__ == "__main__":
     CLI.main()
@@ -283,11 +331,16 @@ session:
 # Tracing (optional)
 # trace:
 #   enabled: true
-#   type: langfuse     # langfuse | openllmetry
+#   type: langfuse     # langfuse | openllmetry | logfire
+```
 
-# Testing
-test:
-  mode: fuzzy          # fuzzy | judge | fallback
+#### test-config.yaml
+
+Test harness configuration is **not** part of `config.yaml` — it lives in its own file, loaded
+only when tests run (a `test:` section left in `config.yaml` is ignored):
+
+```yaml
+mode: score          # score | llm | fallback (default: fallback)
 ```
 
 #### build.sh

@@ -1,0 +1,91 @@
+# The NATS chart shape of the sandbox queue broker (#503): the whole system, agents and
+# sandbox worker included, runs in-cluster, deployed by the ak-k8s Helm chart.
+#
+# This file declares WHAT runs (mode, agents' sandbox capability, profiles) plus workable
+# in-cluster connection defaults; the chart injects WHERE it runs as AK_* env vars, which
+# override the matching fields here (sandbox-values.yaml pins the same queue names and the
+# sandbox-pods namespace). Baked in as config.yaml by deploy/package.sh.
+
+execution:
+  mode: rest_sync
+
+  queues:
+    type: nats
+    nats:
+      url: "nats://ak-nats:4222" # the chart overrides this with the in-cluster service
+      input_stream: AGENT_REQUESTS
+      input_subject_prefix: chat.req
+      output_stream: AGENT_REPLIES
+      output_subject_prefix: chat.out
+      partitions: 4 # 32 in production; 4 keeps micro-cluster provisioning quick
+      ack_wait: 300
+      duplicate_window: 300
+      auto_provision: true # dev posture; production manages the objects as NACK CRs
+    input:
+      max_receive_count: 3
+      no_of_consumers: 2
+    output:
+      no_of_consumers: 1
+
+  response_store:
+    type: valkey
+    valkey:
+      url: "valkey://ak-valkey:6379"
+      prefix: "ak:responses:"
+    retry_count: 60
+    delay: 1
+
+sandbox:
+  enabled: true
+  profiles:
+    default:
+      type: kubernetes
+      idle_timeout: 900 # sandbox pods carry activeDeadlineSeconds = 2 x this
+      policy:
+        fs_allow_write: ["/workspace"] # -> readOnlyRootFilesystem + an emptyDir workspace
+      kubernetes:
+        namespace: ak-sandboxes # the hardened namespace the chart overlay creates (PSA restricted)
+        # Stand-in for your hardened image: anything with a python and a shell that runs as
+        # non-root under PSA `restricted`. Substitute the image your security team builds.
+        image: python:3.12-slim
+        service_account: ak-sandbox-pod # created (unbound) by the chart; pinned in sandbox-values.yaml
+        security_context: # pod-level; the provider's container defaults cover the rest
+          runAsNonRoot: true
+          runAsUser: 65534
+          fsGroup: 65534 # makes the emptyDir workspace writable for the non-root user
+          seccompProfile:
+            type: RuntimeDefault
+  broker:
+    flavor: queue
+    wait_timeout: 8 # bounded synchronous wait; longer executions promote to a task
+    queue:
+      type: nats
+      nats:
+        url: "nats://ak-nats:4222"
+        input_stream: SANDBOX_REQUESTS # execution requests to the worker
+        input_subject_prefix: sandbox.req
+        output_stream: SANDBOX_COMPLETIONS # ready-to-store completion records back
+        output_subject_prefix: sandbox.done
+        partitions: 4
+        ack_wait: 300 # must exceed the largest profile policy.timeout
+        auto_provision: true # dev posture, like the chat streams above
+      input:
+        max_receive_count: 3
+        no_of_consumers: 2
+      output:
+        no_of_consumers: 1
+    response_store:
+      type: valkey
+      valkey:
+        url: "valkey://ak-valkey:6379"
+        prefix: "ak:sandbox:" # sandbox completions stay separate from chat replies
+
+session:
+  type: valkey
+  valkey:
+    url: "valkey://ak-valkey:6379"
+    prefix: "ak:sessions:"
+
+logging:
+  ak:
+    level: INFO

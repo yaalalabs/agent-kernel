@@ -1,17 +1,41 @@
+import asyncio
+import json
+
 import pytest
 
 from agentkernel import Agent, Runner, Session
 from agentkernel.core.builder import SessionStoreBuilder
-from agentkernel.core.model import AgentReplyText, AgentRequestText
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
+from agentkernel.core.hooks import PostHook, PreHook
+from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
-from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.session.redis import RedisSessionStore
+from agentkernel.core.session.valkey import ValkeySessionStore
+
+
+@pytest.fixture(autouse=True)
+def reset_system_hook_caches():
+    # Hooks are built lazily from the config active at first use; clear them so
+    # hooks built from one test's mocked config don't leak into other tests.
+    Runtime._system_pre_hooks = None
+    Runtime._system_post_hooks = None
+    yield
+    Runtime._system_pre_hooks = None
+    Runtime._system_post_hooks = None
 
 
 class DummyRunner(Runner):
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
     async def run(self, agent, session, requests):
-        prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
-        return AgentReplyText(text=f"ok:{prompt}")
+        prompt = requests[0].prompt if isinstance(requests[0], AgentRequestText) else ""
+        return AgentReplyText(response=f"ok:{prompt}")
+
+    async def stream(self, agent, session, requests):
+        raise NotImplementedError()
+        yield
 
 
 class DummyAgent(Agent):
@@ -60,21 +84,36 @@ def test_runtime_instance_redis_when_config(monkeypatch):
     assert type(runtime.sessions()) is RedisSessionStore
 
 
-def test_runtime_instance_invalid_fallback(monkeypatch):
+def test_runtime_instance_valkey_when_config(monkeypatch):
+    class FakeCfg:
+        class session:
+            type = "valkey"
+
+            class valkey:
+                url = "valkey://localhost:6379"
+                ttl = 60
+                prefix = "ak:test:"
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+
+    runtime = Runtime(SessionStoreBuilder.build())
+    # Should select VALKEY memory type and initialize a session store
+    assert runtime.sessions() is not None
+    assert type(runtime.sessions()) is ValkeySessionStore
+
+
+def test_runtime_instance_invalid_type_fails_loud(monkeypatch):
+    # An unknown session store type no longer silently falls back to in-memory; it fails loud.
+    from agentkernel.core.util.factory import AKConfigError
+
     class FakeCfg:
         class session:
             type = "not-a-real-type"
 
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
-    runtime = Runtime(SessionStoreBuilder.build())
-    assert runtime.sessions() is not None
-    assert type(runtime.sessions()) is InMemorySessionStore
-
-    # Should be able to register and list agents
-    agent = DummyAgent("a1")
-    runtime.register(agent)
-    assert "a1" in runtime.agents()
+    with pytest.raises(AKConfigError):
+        SessionStoreBuilder.build()
 
 
 @pytest.mark.asyncio
@@ -83,6 +122,15 @@ async def test_runtime_run_calls_runner(monkeypatch):
         class session:
             type = "in_memory"
 
+        # System hooks are built lazily on first run(), so the mocked config
+        # must carry the guardrail flags the hook factories read.
+        class guardrail:
+            class input:
+                enabled = False
+
+            class output:
+                enabled = False
+
     monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
 
     runtime = Runtime(SessionStoreBuilder.build())
@@ -90,8 +138,8 @@ async def test_runtime_run_calls_runner(monkeypatch):
     runtime.register(agent)
     session = runtime.sessions().new("s1")
 
-    out = await runtime.run(agent, session, [AgentRequestText(text="ping")])
-    assert out.text == "ok:ping"
+    out = await runtime.run(agent, session, [AgentRequestText(prompt="ping")])
+    assert out.response == "ok:ping"
 
 
 @pytest.mark.asyncio
@@ -539,3 +587,284 @@ async def test_load_empty_session_id_creates_session(monkeypatch):
     loaded_session = runtime.sessions().load("")
     assert loaded_session is not None
     assert loaded_session.id == ""
+
+
+class StructuredDummyRunner(Runner):
+    """Runner stub that returns a fixed AgentReplyAny, recording whether it ran."""
+
+    def __init__(self, reply: AgentReplyAny):
+        super().__init__("StructuredDummyRunner")
+        self.reply = reply
+        self.was_called = False
+
+    async def run(self, agent, session, requests):
+        self.was_called = True
+        return self.reply
+
+    async def stream(self, agent, session, requests):
+        raise NotImplementedError()
+        yield
+
+
+class StructuredDummyAgent(Agent):
+    """DummyAgent variant with an injectable runner."""
+
+    def __init__(self, name, runner):
+        super().__init__(name, runner)
+
+    def get_a2a_card(self):
+        pass
+
+    def get_description(self):
+        pass
+
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
+
+
+class SpyPostHook(PostHook):
+    """Post-hook that records the reply it receives and optionally mutates it."""
+
+    def __init__(self, mutate=False):
+        self.received = None
+        self.mutate = mutate
+
+    async def on_run(self, session, requests, agent, agent_reply):
+        self.received = agent_reply
+        if self.mutate and isinstance(agent_reply, AgentReplyAny):
+            agent_reply.content["moderated"] = True
+        return agent_reply
+
+    def name(self):
+        return "SpyPostHook"
+
+
+class HaltingPreHook(PreHook):
+    """Pre-hook that halts execution by returning an AgentReplyAny."""
+
+    def __init__(self, reply: AgentReplyAny):
+        self.reply = reply
+
+    async def on_run(self, session, agent, requests):
+        return self.reply
+
+    def name(self):
+        return "HaltingPreHook"
+
+
+def _in_memory_runtime(monkeypatch):
+    class FakeCfg:
+        class session:
+            type = "in_memory"
+
+        # System hooks are built lazily on first run(), so the mocked config
+        # must carry the guardrail flags the hook factories read.
+        class guardrail:
+            class input:
+                enabled = False
+
+            class output:
+                enabled = False
+
+    monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: FakeCfg))
+    return Runtime(SessionStoreBuilder.build())
+
+
+@pytest.mark.asyncio
+async def test_post_hook_receives_structured_reply_object(monkeypatch):
+    """Post-hooks must receive the AgentReplyAny instance itself, not a stringified reply."""
+    runtime = _in_memory_runtime(monkeypatch)
+    structured_reply = AgentReplyAny(content={"city": "Colombo"}, prompt="weather?")
+    agent = StructuredDummyAgent("structured", StructuredDummyRunner(structured_reply))
+    spy = SpyPostHook()
+    agent.post_hooks.append(spy)
+    runtime.register(agent)
+    session = runtime.sessions().new("s-structured-1")
+
+    out = await runtime.run(agent, session, [AgentRequestText(prompt="weather?")])
+
+    assert spy.received is structured_reply
+    assert spy.received.content == {"city": "Colombo"}
+    assert out is structured_reply
+
+
+@pytest.mark.asyncio
+async def test_post_hook_returning_structured_reply_passes_validation(monkeypatch):
+    """A post-hook returning (and mutating) an AgentReplyAny must not raise TypeError."""
+    runtime = _in_memory_runtime(monkeypatch)
+    structured_reply = AgentReplyAny(content={"city": "Colombo"}, prompt="weather?")
+    agent = StructuredDummyAgent("structured", StructuredDummyRunner(structured_reply))
+    agent.post_hooks.append(SpyPostHook(mutate=True))
+    runtime.register(agent)
+    session = runtime.sessions().new("s-structured-2")
+
+    out = await runtime.run(agent, session, [AgentRequestText(prompt="weather?")])
+
+    assert isinstance(out, AgentReplyAny)
+    assert out.content == {"city": "Colombo", "moderated": True}
+
+
+@pytest.mark.asyncio
+async def test_pre_hook_halt_with_structured_reply(monkeypatch):
+    """A pre-hook returning AgentReplyAny halts execution; the runner is never called."""
+    runtime = _in_memory_runtime(monkeypatch)
+    halt_reply = AgentReplyAny(content={"cached": True})
+    runner = StructuredDummyRunner(AgentReplyAny(content={"should": "not run"}))
+    agent = StructuredDummyAgent("halted", runner)
+    agent.pre_hooks.append(HaltingPreHook(halt_reply))
+    runtime.register(agent)
+    session = runtime.sessions().new("s-structured-3")
+
+    out = await runtime.run(agent, session, [AgentRequestText(prompt="anything")])
+
+    assert out is halt_reply
+    assert runner.was_called is False
+
+
+@pytest.mark.asyncio
+async def test_stream_pre_hook_halt_with_structured_reply(monkeypatch):
+    """A structured pre-hook halt during streaming yields the JSON string as an error chunk."""
+    runtime = _in_memory_runtime(monkeypatch)
+    halt_reply = AgentReplyAny(content={"blocked": "yes"})
+    runner = StructuredDummyRunner(AgentReplyAny(content={"should": "not run"}))
+    agent = StructuredDummyAgent("halted-stream", runner)
+    agent.pre_hooks.append(HaltingPreHook(halt_reply))
+    runtime.register(agent)
+    session = runtime.sessions().new("s-structured-4")
+
+    chunks = [chunk async for chunk in runtime.stream(agent, session, [AgentRequestText(prompt="anything")])]
+
+    assert len(chunks) == 1
+    assert chunks[0].done is True
+    assert chunks[0].error == json.dumps({"blocked": "yes"})
+    assert runner.was_called is False
+
+
+class CurrentAgentSpyRunner(Runner):
+    """Records what Agent.current() reports while run()/stream() are executing."""
+
+    def __init__(self, name):
+        super().__init__(name)
+        self.seen_during_run = "<not run>"
+
+    async def run(self, agent, session, requests):
+        self.seen_during_run = Agent.current()
+        return AgentReplyText(response="ok")
+
+    async def stream(self, agent, session, requests):
+        # A runner owns its own boundaries, so this double emits the message it means. What the test
+        # asserts is unchanged: a delta still reaches the consumer.
+        yield MessageStart(message_id="spy-1")
+        for token in ("a", "b", "c"):
+            self.seen_during_run = Agent.current()
+            yield TextDelta(message_id="spy-1", content=token)
+        yield MessageEnd(message_id="spy-1")
+
+
+class FailingRunner(Runner):
+    async def run(self, agent, session, requests):
+        raise RuntimeError("boom")
+
+    async def stream(self, agent, session, requests):
+        raise RuntimeError("boom")
+        yield
+
+
+def test_agent_current_default_none():
+    assert Agent.current() is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_run_sets_and_resets_current_agent(monkeypatch):
+    runtime = _in_memory_runtime(monkeypatch)
+    runner = CurrentAgentSpyRunner("spy")
+    agent = StructuredDummyAgent("agent", runner)
+    runtime.register(agent)
+    session = runtime.sessions().new("s-current-1")
+
+    assert Agent.current() is None
+    await runtime.run(agent, session, [AgentRequestText(prompt="ping")])
+    assert runner.seen_during_run is agent
+    assert Agent.current() is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_run_resets_current_agent_on_exception(monkeypatch):
+    runtime = _in_memory_runtime(monkeypatch)
+    agent = StructuredDummyAgent("failing", FailingRunner("failing-runner"))
+    runtime.register(agent)
+    session = runtime.sessions().new("s-current-2")
+
+    with pytest.raises(RuntimeError):
+        await runtime.run(agent, session, [AgentRequestText(prompt="ping")])
+    assert Agent.current() is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_stream_sets_and_resets_current_agent(monkeypatch):
+    runtime = _in_memory_runtime(monkeypatch)
+    runner = CurrentAgentSpyRunner("spy-stream")
+    agent = StructuredDummyAgent("agent-stream", runner)
+    runtime.register(agent)
+    session = runtime.sessions().new("s-current-3")
+
+    assert Agent.current() is None
+    chunks = [chunk async for chunk in runtime.stream(agent, session, [AgentRequestText(prompt="anything")])]
+    assert any(c.delta is not None for c in chunks)
+    assert runner.seen_during_run is agent
+    assert Agent.current() is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_stream_resets_current_agent_on_exception(monkeypatch):
+    runtime = _in_memory_runtime(monkeypatch)
+    agent = StructuredDummyAgent("failing-stream", FailingRunner("failing-stream-runner"))
+    runtime.register(agent)
+    session = runtime.sessions().new("s-current-4")
+
+    with pytest.raises(RuntimeError):
+        async for _ in runtime.stream(agent, session, [AgentRequestText(prompt="anything")]):
+            pass
+    assert Agent.current() is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_runs_do_not_leak_current_agent_across_tasks(monkeypatch):
+    """Two agents run() concurrently in separate asyncio tasks must not see each other's Agent.current()."""
+    runtime = _in_memory_runtime(monkeypatch)
+
+    class InterleavedRunner(Runner):
+        def __init__(self, name):
+            super().__init__(name)
+            self.observed = []
+
+        async def run(self, agent, session, requests):
+            self.observed.append(Agent.current())
+            await asyncio.sleep(0)  # yield control so the other task can run interleaved
+            self.observed.append(Agent.current())
+            return AgentReplyText(response="ok")
+
+        async def stream(self, agent, session, requests):
+            raise NotImplementedError()
+            yield
+
+    runner_a = InterleavedRunner("runner-a")
+    runner_b = InterleavedRunner("runner-b")
+    agent_a = StructuredDummyAgent("agent-a", runner_a)
+    agent_b = StructuredDummyAgent("agent-b", runner_b)
+    runtime.register(agent_a)
+    runtime.register(agent_b)
+    session_a = runtime.sessions().new("s-current-5a")
+    session_b = runtime.sessions().new("s-current-5b")
+
+    await asyncio.gather(
+        runtime.run(agent_a, session_a, [AgentRequestText(prompt="a")]),
+        runtime.run(agent_b, session_b, [AgentRequestText(prompt="b")]),
+    )
+
+    assert runner_a.observed == [agent_a, agent_a]
+    assert runner_b.observed == [agent_b, agent_b]
+    assert Agent.current() is None

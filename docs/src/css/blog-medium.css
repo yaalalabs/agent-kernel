@@ -1,0 +1,295 @@
+/* =============================================================================
+   Blog — Medium-style reading experience on the site's dark theme
+   Scoped to blog routes via the `blog-wrapper` / `blog-post-page` classes
+   Docusaurus adds to <html> on blog pages (list, posts, tags, archive).
+   Body font: Charter/Georgia serif (Medium's reading stack); UI/headings stay
+   on Archivo. Colors come from the Agent Kernel design tokens in custom.css.
+   ============================================================================= */
+
+/* Full-width main column; inner containers center themselves at ~728px */
+html.blog-wrapper .main-wrapper > .container > .row > main {
+  flex: 0 0 100% !important;
+  max-width: 100% !important;
+  margin-left: 0 !important;
+}
+
+/* =============================================================================
+   Post page — centered reading column
+   ============================================================================= */
+
+html.blog-wrapper .blog-post-medium-column {
+  position: relative;
+  max-width: 728px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+html.blog-post-page article {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-bottom: 2rem;
+}
+
+/* Title */
+html.blog-post-page article header h1 {
+  font-family: 'Archivo', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--ak-text);
+  margin-bottom: 1rem;
+}
+
+/* Author / date / read-time row */
+html.blog-post-page article header .avatar__name,
+html.blog-post-page article header .avatar__name a {
+  color: var(--ak-text);
+  font-family: 'Archivo', sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+html.blog-post-page article header .avatar__subtitle {
+  color: var(--ak-text-secondary);
+  font-size: 0.82rem;
+}
+
+html.blog-post-page article header time,
+html.blog-post-page article header [class*='readingTime'] {
+  color: var(--ak-text-secondary);
+  font-family: 'Archivo', sans-serif;
+  font-size: 0.88rem;
+}
+
+html.blog-post-page article header {
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 2rem;
+}
+
+/* =============================================================================
+   Article body — Medium reading typography
+   ============================================================================= */
+
+html.blog-post-page article .markdown {
+  font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, Georgia,
+    serif;
+  font-size: 1.25rem;
+  line-height: 1.75;
+  letter-spacing: -0.003em;
+  color: var(--ak-text);
+  --ifm-paragraph-margin-bottom: 1.9rem;
+}
+
+html.blog-post-page article .markdown h1,
+html.blog-post-page article .markdown h2,
+html.blog-post-page article .markdown h3,
+html.blog-post-page article .markdown h4 {
+  font-family: 'Archivo', sans-serif;
+  letter-spacing: -0.015em;
+}
+
+html.blog-post-page article .markdown h1 {
+  font-size: 2rem !important;
+}
+
+html.blog-post-page article .markdown h2 {
+  font-size: 1.6rem !important;
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-top: 2.75rem;
+}
+
+html.blog-post-page article .markdown h3 {
+  font-size: 1.3rem !important;
+  margin-top: 2.25rem;
+}
+
+/* Links: quiet, underlined, Medium-style */
+html.blog-wrapper .markdown a {
+  color: var(--ak-blue);
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 221, 255, 0.35);
+  text-underline-offset: 3px;
+  border-bottom: none;
+}
+
+html.blog-wrapper .markdown a:hover {
+  color: var(--ak-blue-light);
+  text-decoration-color: currentColor;
+  border-bottom: none;
+}
+
+/* Fenced code blocks: generous spacing to punctuate the reading flow */
+html.blog-wrapper .markdown .theme-code-block {
+  margin: 2rem 0;
+  border-radius: 8px;
+}
+
+/* Blockquote, Medium-style */
+html.blog-wrapper .markdown blockquote {
+  border-left: 3px solid var(--ak-text);
+  padding: 0 0 0 1.25rem;
+  margin: 2rem 0;
+  font-style: italic;
+  font-size: 1.3rem;
+  color: var(--ak-text-secondary);
+  background: transparent;
+}
+
+/* Images centered with breathing room */
+html.blog-wrapper .markdown img {
+  display: block;
+  margin: 2rem auto;
+  max-width: 100%;
+  border-radius: 4px;
+}
+
+/* Mermaid diagrams on a raised surface card */
+html.blog-wrapper .markdown .docusaurus-mermaid-container {
+  background: #020203;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 2rem 0;
+  display: flex;
+  justify-content: center;
+}
+
+/* Tables read better in the UI font */
+html.blog-wrapper .markdown table {
+  font-family: 'Archivo', sans-serif;
+  font-size: 0.95rem;
+}
+
+/* =============================================================================
+   Post footer — tags, prev/next
+   ============================================================================= */
+
+html.blog-wrapper .theme-blog-post-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0 !important;
+  margin: 2rem 0 1rem !important;
+}
+
+html.blog-wrapper .theme-blog-post-tags li {
+  margin: 0;
+  list-style: none;
+}
+
+html.blog-wrapper .theme-blog-post-tags a,
+html.blog-wrapper .theme-blog-post-tags b {
+  font-family: 'Archivo', sans-serif;
+  font-weight: 500;
+}
+
+html.blog-wrapper .theme-blog-post-tags a {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.07);
+  border: none;
+  color: var(--ak-text) !important;
+  border-radius: 100px;
+  padding: 0.3rem 0.9rem;
+  font-size: 0.82rem;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+html.blog-wrapper .theme-blog-post-tags a:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--ak-text) !important;
+  text-decoration: none;
+}
+
+html.blog-wrapper .pagination-nav__label {
+  min-width: 0 !important;
+}
+
+/* =============================================================================
+   Floating back-to-blog button
+   ============================================================================= */
+
+html.blog-wrapper .blog-back-btn-container {
+  position: absolute;
+  left: -70px;
+  top: 10px;
+  bottom: 0;
+  width: 42px;
+  pointer-events: none;
+  z-index: 100;
+}
+
+html.blog-wrapper .blog-back-btn {
+  position: sticky;
+  top: 100px;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(1, 0, 2, 0.8);
+  backdrop-filter: blur(8px);
+  color: var(--ak-text-secondary);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+html.blog-wrapper .blog-back-btn:hover {
+  border-color: var(--ak-blue);
+  color: var(--ak-blue);
+  transform: translateX(-4px);
+}
+
+@media (min-width: 997px) and (max-width: 1399px) {
+  html.blog-wrapper .blog-back-btn-container {
+    left: -56px;
+  }
+}
+
+@media (max-width: 996px) {
+  html.blog-wrapper .blog-back-btn-container {
+    position: relative;
+    left: 0;
+    top: 0;
+    bottom: auto;
+    width: auto;
+    margin: 0.5rem 0 1.5rem;
+    pointer-events: auto;
+    z-index: 10;
+  }
+
+  html.blog-wrapper .blog-back-btn {
+    position: relative;
+    top: 0;
+    width: 38px;
+    height: 38px;
+  }
+
+  html.blog-wrapper .blog-back-btn:hover {
+    transform: none;
+  }
+}
+
+/* =============================================================================
+   Mobile typography
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  html.blog-post-page article header h1 {
+    font-size: 1.85rem;
+  }
+
+  html.blog-post-page article .markdown {
+    font-size: 1.12rem;
+    line-height: 1.7;
+  }
+}

@@ -8,7 +8,7 @@ This module implements AWS S3 best practices out-of-the-box:
 
 - 🔒 **Security First**: Blocks public access, enforces SSL/TLS, and implements bucket policies
 - 🔐 **Encryption**: Configurable KMS encryption for production environments
-- 📦 **Versioning**: Automatic versioning for production deployments
+- 📦 **Versioning**: Enabled by default (so Lambda S3Zip redeploys are detected), always on in production
 - 🏷️ **Tagging**: Standardized tagging for cost allocation and compliance
 - 🔄 **Lambda Integration**: Pre-configured policies for Lambda service access
 - 📝 **Compliance Ready**: Meets common security and compliance requirements
@@ -112,6 +112,7 @@ module "app_data" {
 | `is_production` | Enable production features (versioning, encryption) | `bool` | n/a | yes |
 | `s3_bucket_tags` | Additional custom tags for the bucket | `map(string)` | `{}` | no |
 | `s3_kms_key_id` | KMS key ID for server-side encryption (prod only) | `string` | `null` | no |
+| `enable_versioning` | Enable bucket versioning. On by default so Lambda S3Zip package updates (same key, new content) are detected and redeployed. Production forces it on regardless. | `bool` | `true` | no |
 
 ## 📤 Outputs
 
@@ -134,7 +135,7 @@ module "app_data" {
 ### 📦 Bucket Configuration
 
 - **Naming Convention**: `{product_alias}-{env_alias}-sources-{account_id}`
-- **Versioning**: Automatically enabled for production (`is_production = true`)
+- **Versioning**: Enabled by default (`enable_versioning = true`) so Lambda S3Zip redeploys are detected; always on when `is_production = true`
 - **Force Destroy**: Enabled to allow Terraform to clean up buckets
 - **Tags**: Automatic tagging with environment, product, and backup config
 
@@ -267,11 +268,11 @@ Error: Access Denied
 
 **Issue**: Versioning is not working
 
-**Solution**: Set `is_production = true` to enable versioning:
+**Solution**: Versioning is enabled by default (`enable_versioning = true`). Only set it to `false` if you explicitly disabled it. Production (`is_production = true`) always keeps versioning on regardless of this value:
 ```hcl
 module "storage" {
   # ... other config
-  is_production = true
+  enable_versioning = true # default; keep on so Lambda S3Zip redeploys are detected
 }
 ```
 

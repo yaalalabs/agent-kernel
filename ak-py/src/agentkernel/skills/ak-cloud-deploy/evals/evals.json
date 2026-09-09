@@ -1,7 +1,7 @@
 {
   "skill": "ak-cloud-deploy",
-  "description": "Evaluations for the ak-cloud-deploy (AWS/Azure deployment) skill",
-  "version": "0.2.13",
+  "description": "Evaluations for the ak-cloud-deploy (AWS/Azure/GCP/Kubernetes deployment) skill with sync/async and scalable modes",
+  "version": "0.9.0",
   "evals": [
     {
       "id": "deploy-aws-serverless",
@@ -11,6 +11,7 @@
         "from agentkernel.aws import Lambda",
         "handler = Lambda.handler",
         "yaalalabs/ak-serverless/aws",
+        "execution_mode",
         "deploy/main.tf",
         "deploy/variables.tf",
         "deploy/deploy.sh",
@@ -24,6 +25,75 @@
       ]
     },
     {
+      "id": "deploy-aws-serverless-rest-async",
+      "name": "Deploy to AWS Lambda rest_async scalable mode",
+      "input": "Deploy to AWS Lambda in rest_async scalable mode with queue processing",
+      "expected_outputs": [
+        "yaalalabs/ak-serverless/aws",
+        "queue_mode = true",
+        "execution_mode = \"rest_async\"",
+        "request_handler",
+        "agent_runner",
+        "response_handler",
+        "queue_config"
+      ]
+    },
+    {
+      "id": "deploy-aws-serverless-rest-sync-scalable",
+      "name": "Deploy to AWS Lambda rest_sync scalable queue mode",
+      "input": "Deploy to AWS Lambda in rest_sync scalable mode",
+      "expected_outputs": [
+        "yaalalabs/ak-serverless/aws",
+        "queue_mode = true",
+        "execution_mode = \"rest_sync\"",
+        "request_handler",
+        "agent_runner",
+        "response_handler",
+        "queue_config"
+      ]
+    },
+    {
+      "id": "deploy-aws-serverless-websocket-async",
+      "name": "Deploy to AWS Lambda async websocket mode",
+      "input": "Deploy to AWS Lambda async websocket mode",
+      "expected_outputs": [
+        "execution_mode = \"async\"",
+        "ws_connection_handler",
+        "ws_routes",
+        "queue_mode = true",
+        "yaalalabs/ak-serverless/aws"
+      ]
+    },
+    {
+      "id": "deploy-aws-serverless-websocket-stream",
+      "name": "Deploy to AWS Lambda stream websocket mode",
+      "input": "Deploy to AWS Lambda with WebSocket token streaming",
+      "expected_outputs": [
+        "execution_mode = \"stream\"",
+        "ws_connection_handler",
+        "ws_routes",
+        "queue_mode = true",
+        "yaalalabs/ak-serverless/aws",
+        "STREAM_CHUNK"
+      ],
+      "must_not_contain": [
+        "create_redis_response_store = true",
+        "create_dynamodb_response_store = true"
+      ]
+    },
+    {
+      "id": "deploy-aws-serverless-authorizer",
+      "name": "Deploy to AWS Lambda with custom authorizer",
+      "input": "Deploy to AWS Lambda with API Gateway custom authorizer",
+      "expected_outputs": [
+        "authorizer = {",
+        "function_name",
+        "handler_path",
+        "package_path",
+        "result_ttl_in_seconds"
+      ]
+    },
+    {
       "id": "deploy-aws-containerized",
       "name": "Deploy to AWS ECS Fargate",
       "input": "Deploy my agent to AWS ECS Fargate",
@@ -31,8 +101,7 @@
         "yaalalabs/ak-containerized/aws",
         "RESTAPI.run()",
         "deploy/main.tf",
-        "deploy/Dockerfile",
-        "container_port",
+        "ecs_container_port",
         "8000"
       ],
       "must_not_contain": [
@@ -41,12 +110,69 @@
       ]
     },
     {
+      "id": "deploy-aws-containerized-scalable-queue-mode",
+      "name": "Deploy to AWS ECS Fargate in scalable queue mode",
+      "input": "Deploy my agent to AWS ECS Fargate in scalable queue mode with two containers",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/aws",
+        "from agentkernel.aws import ECSIOHandler",
+        "from agentkernel.aws import ECSAgentRunner",
+        "queue_mode = true",
+        "execution_mode",
+        "agent_runner",
+        "queue_config",
+        "create_dynamodb_memory_table"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm"
+      ]
+    },
+    {
+      "id": "deploy-aws-scheduling-eventbridge",
+      "name": "Deploy scheduled tasks on AWS ECS with EventBridge Scheduler",
+      "input": "Deploy my agent to AWS ECS Fargate in queue mode with scheduled tasks backed by EventBridge Scheduler and DynamoDB",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/aws",
+        "queue_mode                     = true",
+        "enable_scheduling              = true",
+        "create_dynamodb_schedule_table = true",
+        "schedule:",
+        "type: eventbridge",
+        "type: dynamodb"
+      ],
+      "must_not_contain": [
+        "azurerm"
+      ]
+    },
+    {
+      "id": "deploy-aws-containerized-websocket",
+      "name": "Deploy to AWS ECS Fargate over WebSocket",
+      "input": "Deploy my agent to AWS ECS Fargate with a WebSocket API for real-time chat",
+      "expected_outputs": [
+        "yaalalabs/ak-containerized/aws",
+        "from agentkernel.aws import AWSWebsocketAPI",
+        "execution_mode = \"async\"",
+        "ws_chat_route",
+        "ws_routes",
+        "AWSWebsocketAPI.register",
+        "AWSWebsocketAPI.set_auth_handler"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm",
+        "execution_mode = \"stream\""
+      ]
+    },
+    {
       "id": "deploy-azure-serverless",
       "name": "Deploy to Azure Functions",
       "input": "Deploy my agent to Azure Functions",
       "expected_outputs": [
-        "from agentkernel.azure import AzureFunction",
+        "from agentkernel.azure import AzureFunctions",
+        "handler = AzureFunctions.handler",
         "yaalalabs/ak-serverless/azurerm",
+        "resource_group_name",
         "deploy/main.tf"
       ],
       "must_not_contain": [
@@ -62,7 +188,8 @@
         "yaalalabs/ak-containerized/azurerm",
         "RESTAPI.run()",
         "deploy/main.tf",
-        "container_port"
+        "container_port",
+        "publisher_email"
       ],
       "must_not_contain": [
         "Lambda.handler",
@@ -77,7 +204,8 @@
         "session:",
         "type: dynamodb",
         "table_name:",
-        "agentkernel[", "aws"
+        "agentkernel[",
+        "aws"
       ]
     },
     {
@@ -89,6 +217,19 @@
         "type: redis",
         "create_redis_cluster",
         "true"
+      ]
+    },
+    {
+      "id": "deploy-session-valkey",
+      "name": "Containerized deployment with Valkey sessions",
+      "input": "Deploy to AWS ECS with Valkey session persistence",
+      "expected_outputs": [
+        "session:",
+        "type: valkey",
+        "create_valkey_cluster",
+        "true",
+        "agentkernel[",
+        "valkey"
       ]
     },
     {
@@ -128,6 +269,74 @@
         "ak-init"
       ],
       "description": "Should suggest using ak-init skill when no project is found"
+    },
+    {
+      "id": "deploy-gcp-serverless",
+      "name": "Deploy to GCP Cloud Run serverless",
+      "input": "Deploy my agent to GCP Cloud Run serverless",
+      "expected_outputs": [
+        "from agentkernel.gcp import CloudRun",
+        "CloudRun.run()",
+        "ak-deployment/ak-gcp/serverless",
+        "project_id",
+        "deploy/main.tf",
+        "terraform init",
+        "terraform apply"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm",
+        "ak-containerized"
+      ]
+    },
+    {
+      "id": "deploy-gcp-containerized",
+      "name": "Deploy to GCP Cloud Run containerized",
+      "input": "Deploy my agent to GCP Cloud Run containerized (always-on)",
+      "expected_outputs": [
+        "from agentkernel.gcp import CloudRun",
+        "CloudRun.run()",
+        "ak-deployment/ak-gcp/containerized",
+        "min_instance_count",
+        "container_port",
+        "deploy/main.tf"
+      ],
+      "must_not_contain": [
+        "Lambda.handler",
+        "azurerm"
+      ]
+    },
+    {
+      "id": "deploy-session-firestore",
+      "name": "GCP deployment with Firestore sessions",
+      "input": "Deploy to GCP Cloud Run with Firestore session persistence",
+      "expected_outputs": [
+        "session:",
+        "type: firestore",
+        "create_firestore_db",
+        "agentkernel[",
+        "gcp"
+      ]
+    },
+    {
+      "id": "deploy-kubernetes-helm",
+      "name": "Deploy to Kubernetes with the Helm chart",
+      "input": "Deploy my agent to our on-prem Kubernetes cluster",
+      "expected_outputs": [
+        "from agentkernel.pipeline import IOHandler",
+        "IOHandler.run()",
+        "from agentkernel.pipeline import AgentRunner",
+        "AgentRunner.run()",
+        "app_io_handler.py",
+        "app_agent_runner.py",
+        "helm install",
+        "ak-deployment/ak-k8s",
+        "values-dev.yaml"
+      ],
+      "must_not_contain": [
+        "terraform apply",
+        "yaalalabs/ak-serverless/aws"
+      ]
     }
   ]
 }

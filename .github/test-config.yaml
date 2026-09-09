@@ -11,29 +11,78 @@ e2e:
     - type: cli
       path: examples/cli/openai-dynamic
     - type: cli
+      path: examples/cli/openai_structured
+    - type: cli
+      path: examples/cli/openai_context
+    - type: cli
+      path: examples/cli/session-context
+    - type: cli
       path: examples/cli/adk
+    - type: cli
+      path: examples/cli/adk_context
     - type: cli
       path: examples/cli/crewai
     - type: cli
       path: examples/cli/langgraph
     - type: cli
+      path: examples/cli/langgraph_context
+    - type: cli
       path: examples/cli/multi
+    - type: cli
+      path: examples/cli/logfire
     - type: cli
       path: examples/cli/knowledgebase/openai/chromadb
     - type: cli
       path: examples/cli/guardrail/openai
     - type: cli
       path: examples/cli/guardrail/bedrock
+    - type: cli
+      path: examples/cli/pydanticai/
+    - type: cli
+      path: examples/cli/pydanticai_context
+    - type: cli
+      path: examples/cli/custom-evaluator
+    - type: cli
+      path: examples/cli/opik-evaluator
     # - type: cli
     #   path: examples/cli/guardrail/walledai
-    
+
+    # Sandbox examples
+    - type: cli
+      path: examples/sandbox/basic
+    - type: cli
+      path: examples/sandbox/profiles
+    - type: cli
+      path: examples/sandbox/policy
+    - type: cli
+      path: examples/sandbox/docker
+    # daytona/e2b need a DAYTONA_API_KEY / E2B_API_KEY secret wired into the reusable workflow; enable once set.
+    # - type: cli
+    #   path: examples/sandbox/daytona
+    # - type: cli
+    #   path: examples/sandbox/e2b
+    - type: api
+      path: examples/sandbox/identity
+    # Self-skips unless docker, kind, kubectl, and OPENAI_API_KEY are all available.
+    - type: containerized
+      path: examples/sandbox/broker-kafka
+    # Self-skips unless docker, kind, kubectl, helm, and OPENAI_API_KEY are all available.
+    - type: containerized
+      path: examples/sandbox/broker-nats
+
     # API examples
     - type: api
       path: examples/api/openai
     - type: api
+      path: examples/api/thread-openai
+    - type: api
+      path: examples/api/openai_structured
+    - type: api
       path: examples/api/adk
     - type: api
       path: examples/api/multimodal/openai
+    - type: api
+      path: examples/api/multimodal/thread-openai
     - type: api
       path: examples/api/multimodal/adk
     - type: api
@@ -48,6 +97,8 @@ e2e:
     - type: api
       path: examples/api/telegram
     - type: api
+      path: examples/api/teams
+    - type: api
       path: examples/api/messenger
     - type: api
       path: examples/api/whatsapp
@@ -59,6 +110,14 @@ e2e:
       path: examples/api/a2a/multi
     - type: api
       path: examples/api/mcp/multi
+    - type: api
+      path: examples/api/pydanticai
+    - type: api
+      path: examples/api/pydanticai-streaming
+    - type: api
+      path: examples/api/agui
+    - type: api
+      path: examples/api/schedule-openai
     
     # Memory examples
     - type: memory
@@ -67,3 +126,11 @@ e2e:
     # Containerized examples
     - type: containerized
       path: examples/containerized/openai
+
+    # Transport examples: each starts its broker with docker compose and skips itself when
+    # Docker is unavailable. They resolve the kafka/nats extras from the branch wheel that
+    # build-ak-py caches into ak-py/dist, which build.sh local installs with --no-cache.
+    - type: containerized
+      path: examples/transport/kafka
+    - type: containerized
+      path: examples/transport/nats

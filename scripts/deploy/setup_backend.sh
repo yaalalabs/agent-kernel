@@ -22,14 +22,14 @@ Usage:
   $(basename "$0") <cloud> [options]
 
 Clouds:
-  aws       Setup S3 + DynamoDB backend
+  aws       Setup S3 backend
   azure     Setup Azure Storage backend
+  gcp       Setup GCS backend
 
 Options:
 
   AWS options:
     --bucket <name>           S3 bucket name
-    --dynamodb <name>         DynamoDB table name
     --region <region>         AWS region
 
   Azure options:
@@ -55,7 +55,6 @@ Examples:
   # Override AWS values
   $(basename "$0") aws \
     --bucket my-tf-state \
-    --dynamodb my-lock-table \
     --region us-east-1
 
   # Azure with overrides
@@ -184,21 +183,62 @@ setup_azure() {
 }
 
 ########################################
+# GCP SETUP
+########################################
+setup_gcp() {
+	GCP_BUCKET=${GCP_BUCKET:-$(yq e '.gcp.state.bucket_name' "$CONFIG_FILE")}
+	GCP_PROJECT=${GCP_PROJECT:-$(yq e '.gcp.state.project_id' "$CONFIG_FILE")}
+	GCP_REGION=${GCP_REGION:-$(yq e '.gcp.state.region' "$CONFIG_FILE")}
+
+	echo "Setting up GCP backend..."
+	echo "Bucket: $GCP_BUCKET"
+	echo "Project: $GCP_PROJECT"
+	echo "Region: $GCP_REGION"
+
+	# Check bucket
+	if gcloud storage buckets describe "gs://$GCP_BUCKET" --project "$GCP_PROJECT" >/dev/null 2>&1; then
+		echo "GCS bucket exists"
+	else
+		echo "Creating GCS bucket..."
+
+		gcloud storage buckets create "gs://$GCP_BUCKET" \
+			--project="$GCP_PROJECT" \
+			--location="$GCP_REGION" \
+			--uniform-bucket-level-access
+
+		echo "Enabling versioning..."
+		gcloud storage buckets update "gs://$GCP_BUCKET" \
+			--versioning
+
+		echo "GCS bucket created"
+	fi
+
+	echo ""
+	echo "terraform {"
+	echo "  backend \"gcs\" {"
+	echo "    bucket = \"$GCP_BUCKET\""
+	echo "    prefix = \"$GCP_PROJECT\""
+	echo "  }"
+	echo "}"
+}
+
+########################################
 # MAIN
 ########################################
 # Default override variables (empty)
 BUCKET_NAME=""
-DYNAMODB_TABLE=""
 REGION=""
 
 STORAGE_ACCOUNT=""
 CONTAINER_NAME=""
 RESOURCE_GROUP=""
 
+
+
 # Parse args
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-	aws | azure)
+	aws | azure| gcp)
 		CLOUD="$1"
 		shift
 		;;
@@ -208,14 +248,12 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--bucket)
 		BUCKET_NAME="$2"
-		shift 2
-		;;
-	--dynamodb)
-		DYNAMODB_TABLE="$2"
+		GCP_BUCKET="$2"
 		shift 2
 		;;
 	--region)
 		REGION="$2"
+		GCP_REGION="$2"
 		shift 2
 		;;
 	--storage)
@@ -249,9 +287,12 @@ aws)
 azure)
 	setup_azure
 	;;
+gcp)
+	setup_gcp
+	;;
 *)
 	echo "Unsupported cloud: $CLOUD"
-	echo "Supported: aws | azure"
+	echo "Supported: aws | azure | gcp"
 	help
 	;;
 esac

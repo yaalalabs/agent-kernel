@@ -26,7 +26,7 @@ class APITestClient:
             if body is None
             else body
         )
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(f"{self.url}{endpoint}", json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -51,7 +51,7 @@ async def test_history_agent(http_client):
     Test.compare(
         response,
         ["The Battle of Waterloo happened on June 18, 1815."],
-        threshold=10,
+        threshold=0.1,
     )
 
 

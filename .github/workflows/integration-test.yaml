@@ -5,10 +5,10 @@ permissions:
   id-token: write  # Required for OIDC authentication with AWS
 
 on:
-  # Nightly build - runs daily at 2 AM UTC
+  # Nightly build - runs daily at 2AM UTC
   # schedule:
-    # - cron: '0 2 * * *'  # Daily at 2 AM UTC
-  
+  #   - cron: '00 02 * * *'  # Daily at 2AM UTC
+
   # Allow manual triggering
   workflow_dispatch:
 
@@ -21,10 +21,10 @@ jobs:
       deployment-base: ${{ steps.set-matrix.outputs.deployment-base }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       
@@ -44,10 +44,10 @@ jobs:
     environment: ci-tests
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -59,7 +59,7 @@ jobs:
         run: ./build.sh
 
       - name: Cache ak-py build
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
@@ -73,10 +73,10 @@ jobs:
         shell: bash -e {0}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -84,13 +84,14 @@ jobs:
         run: pip install uv pyyaml
 
       - name: Restore ak-py build
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
+          fail-on-cache-miss: true
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -102,7 +103,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.3
 
@@ -131,7 +132,7 @@ jobs:
             --action test
       - name: Upload test results for AWS OpenAI test
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-results-openai
           path: |
@@ -164,7 +165,7 @@ jobs:
       #       --action test
       # - name: Upload test results for Azure Container OpenAI test
       #   if: always()
-      #   uses: actions/upload-artifact@v4
+      #   uses: actions/upload-artifact@v6
       #   with:
       #     name: test-results-openai
       #     path: |
@@ -182,9 +183,9 @@ jobs:
       run:
         shell: bash -e {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -192,14 +193,15 @@ jobs:
         run: pip install uv pyyaml
 
       - name: Restore ak-py build
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ak-py/dist
           key: ak-py-${{ github.sha }}
+          fail-on-cache-miss: true
 
       - name: Configure AWS credentials
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.requires_aws == true
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID_DEV }}:role/${{ vars.AWS_ROLE_NAME }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -214,7 +216,7 @@ jobs:
 
       - name: Setup Terraform
         if: matrix.type == 'aws-containerized' || matrix.type == 'aws-serverless' || matrix.type == 'azure-serverless' || matrix.type == 'azure-containerized'
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.14.3
 
@@ -241,6 +243,10 @@ jobs:
           ARM_USE_OIDC: "true"
           ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AK_PRE_DEPLOY_AUTH_CMD: |
+            OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r '.value')
+            az login --service-principal -u "$ARM_CLIENT_ID" -t "$ARM_TENANT_ID" --federated-token "$OIDC_TOKEN" --output none
+            az account set --subscription "$ARM_SUBSCRIPTION_ID"
         run: |
           if [[ "${{ matrix.type }}" == "aws-containerized" || "${{ matrix.type }}" == "aws-serverless" ]]; then
             python .github/scripts/run_single_test.py \
@@ -303,7 +309,7 @@ jobs:
           fi
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: test-results-${{ matrix.id }}
           path: |

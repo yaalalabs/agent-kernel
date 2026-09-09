@@ -60,14 +60,21 @@ module "request_handler" {
 | `input_queue_url` | Input queue URL injected into the environment |
 | `security_group_id` | Shared Lambda security group ID used for VPC networking |
 | `redis_url` | Redis URL injected into the environment |
+| `valkey_url` | Valkey URL injected into the environment |
 | `response_store_redis` | Redis response store configuration |
+| `response_store_valkey` | Valkey response store configuration |
 | `response_store_dynamodb` | DynamoDB response store configuration |
 | `vpc_id` | VPC ID |
 | `subnet_ids` | Private subnet IDs |
 | `dynamodb_memory_table_arn` | Agent memory table ARN |
 | `dynamodb_multimodal_memory_table_arn` | Multimodal memory table ARN |
 | `lambda_signing_config_arn` | Optional code signing config ARN |
+| `lambda_signer_profile_name` | AWS Signer profile name for code signing |
 | `docker_image_uri` | Image URI when `package_type = "Image"` |
+| `lambda_kms_key_arn` | KMS key ARN for Lambda encryption |
+| `cloudwatch_kms_key_arn` | KMS key ARN for CloudWatch logs encryption |
+| `product_display_name` | Product display name |
+| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days |
 
 ## Injected Environment Variables
 
@@ -77,9 +84,11 @@ The module adds these environment variables when the corresponding inputs are pr
 - `API_VERSION`
 - `AGENT_ENDPOINT`
 - `AK_SESSION__REDIS__URL`
+- `AK_SESSION__VALKEY__URL`
 - `AK_SESSION__DYNAMODB__TABLE_NAME`
 - `AK_MULTIMODAL__DYNAMODB__TABLE_NAME`
 - `AK_EXECUTION__RESPONSE_STORE__REDIS__URL`
+- `AK_EXECUTION__RESPONSE_STORE__VALKEY__URL`
 - `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`
 - `AK_EXECUTION__QUEUES__INPUT__URL`
 

@@ -1,0 +1,9 @@
+# Agent Kernel local development configuration.
+session:
+  type: in_memory
+  cache:
+    size: 256
+
+logging:
+  ak:
+    level: INFO

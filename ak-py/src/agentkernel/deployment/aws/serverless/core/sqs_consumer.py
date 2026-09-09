@@ -1,17 +1,32 @@
 import logging
-from abc import ABC, abstractmethod
+import traceback
+from abc import abstractmethod
 from typing import Any, Dict, List
 
+from ...core.raw_queue_consumer import RawQueueConsumer
 
-class LambdaSQSConsumer(ABC):
+
+class LambdaSQSConsumer(RawQueueConsumer):
     """
     Base class for AWS Lambda consumers triggered by an SQS Event Source Mapping.
 
     Subclasses should override `process_message` to implement business logic.
+
+    Lambda is push-triggered: the Event Source Mapping polls SQS and deletes
+    successfully-processed messages on our behalf, so `poll` and `delete_message`
+    have no role to play here and are intentionally left unimplemented.
     """
 
-    max_receive_count: int = 3  # Fallback value, actual configurable values are defined in the subclasses
     _log = logging.getLogger("ak.aws.lambdasqsconsumer")
+
+    @classmethod
+    def _get_max_receive_count(cls) -> int:
+        """Retry limit before a message is treated as permanently failed.
+
+        Subclasses read the configured value on demand so importing them does
+        not load AKConfig.
+        """
+        return 3
 
     @classmethod
     def handle(cls, event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -32,7 +47,7 @@ class LambdaSQSConsumer(ABC):
 
             try:
                 # Check if the message has been retired a lot
-                if receive_count > cls.max_receive_count:
+                if receive_count > cls._get_max_receive_count():
                     # Treated as permanently failed, skip business logic, this message could be sent to a DLQ or logged
                     cls.on_permanent_failure(record)
                     continue
@@ -42,6 +57,7 @@ class LambdaSQSConsumer(ABC):
 
             except Exception as exc:
                 cls._log.info(f"Sending message as batchItemFailure '{message_id}': '{exc}'")
+                cls._log.debug(traceback.format_exc())
                 # On failure, tell Lambda to return this message to the queue
                 failures.append({"itemIdentifier": message_id})
 

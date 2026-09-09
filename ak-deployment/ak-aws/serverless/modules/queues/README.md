@@ -53,6 +53,7 @@ module "queues" {
 | `input_queue_delay_seconds` | Input queue delivery delay | `0` |
 | `input_queue_create_dlq` | Create an input DLQ | `false` |
 | `input_queue_dlq_message_retention_seconds` | Input DLQ retention | `1800` |
+| `input_queue_content_based_deduplication` | Force FIFO content-based deduplication on the Input Queue, on top of `content_based_deduplication`. Set by the root from `enable_scheduling`, not by users | `false` |
 | `output_queue_visibility_timeout` | Output queue visibility timeout | `60` |
 | `output_queue_max_receive_count` | Output queue DLQ redrive count | `5` |
 | `output_queue_message_retention_seconds` | Output queue retention | `1800` |

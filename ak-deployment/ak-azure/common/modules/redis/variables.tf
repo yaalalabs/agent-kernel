@@ -3,6 +3,11 @@ variable "resource_group_name" {
   description = "Resource group name"
 }
 
+variable "region" {
+  type        = string
+  description = "Azure region for resources"
+}
+
 variable "product_alias" {
   type        = string
   description = "Product alias"

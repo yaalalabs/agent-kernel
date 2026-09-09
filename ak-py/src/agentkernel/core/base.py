@@ -1,14 +1,20 @@
 import asyncio
+import contextlib
 import contextvars
+import copy
 import logging
+import pickle
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator, Iterator, Mapping
 from enum import Enum
 from typing import Any, ClassVar, Self, cast
 
+from .event import StreamEvent
 from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
+
+_log = logging.getLogger("ak.core.runner")
 
 
 class Session:
@@ -39,6 +45,7 @@ class Session:
 
         VOLATILE_CACHE = "v_cache"
         NON_VOLATILE_CACHE = "nv_cache"
+        FRAMEWORK_CONTEXT = "framework_context"
 
     current_session: ClassVar[contextvars.ContextVar[Self | None]] = contextvars.ContextVar("current_session", default=None)
 
@@ -87,6 +94,7 @@ class Session:
         """
         await self._lock.acquire()
         try:
+            # Same receipt pattern as Agent._activate, but stored on self since set/reset happen in two separate method calls, not one function.
             self._token = Session.current_session.set(self)
             return self
         except Exception:
@@ -107,7 +115,7 @@ class Session:
         :raises: Any exceptions that may occur during lock release or session resetting.
         """
         try:
-            if self._token:
+            if self._token:  # Use the stored receipt to undo exactly this session's set() call.
                 Session.current_session.reset(self._token)
         finally:
             self._token = None
@@ -156,6 +164,54 @@ class Session:
         :return: The non-volatile KeyValueCache instance.
         """
         return cast(KeyValueCache, self.get(Session.Keys.NON_VOLATILE_CACHE.value))
+
+    def get_framework_session(self) -> Any:
+        """
+        Returns this session's framework-native session data for the currently running agent,
+        keyed by that agent's runner name (e.g. "openai", "langgraph") — the same key each
+        framework adapter uses to store its own session data via set()/get().
+        :return: The stored framework session object, or None if nothing has been stored yet.
+        :raises RuntimeError: If called with no agent currently running (Agent.current() is
+        None) — this can only be resolved from within a running agent's execution (e.g. a
+        hook or tool), since the framework key comes from the current agent's runner.
+        """
+        agent = Agent.current()
+        if agent is None:
+            raise RuntimeError(
+                "Session.get_framework_session() requires a currently running agent "
+                "(Agent.current() is None); call it only from within an agent's execution, "
+                "e.g. a hook or tool."
+            )
+        return self.get(agent.runner.name)
+
+    def get_framework_context(self) -> dict | None:
+        """
+        Returns the live per-run framework context dict, so hooks can edit it in place.
+        Never auto-creates the key: absent means "nothing injected", {} means "injected but empty".
+        :return: The stored framework context dict, or None when the key is absent.
+        """
+        return self.get(Session.Keys.FRAMEWORK_CONTEXT.value)
+
+    def set_framework_context(self, context: dict) -> dict:
+        """
+        Seeds or replaces the per-run framework context carried across turns.
+        :param context: The context dict to store. Must be picklable, since sessions are persisted with pickle.
+        :return: The stored context dict.
+        :raises TypeError: If context is not a dict.
+        """
+        if not isinstance(context, dict):
+            raise TypeError(
+                f"Session '{self._id}' framework_context must be a dict, got "
+                f"{type(context).__name__}. The reserved framework_context key carries a "
+                f"per-run context/state dict; wrap the value in a dict before setting it."
+            )
+        return self.set(Session.Keys.FRAMEWORK_CONTEXT.value, context)
+
+    def clear_framework_context(self) -> None:
+        """
+        Deletes the per-run framework context, so nothing is injected on the next turn.
+        """
+        self.delete(Session.Keys.FRAMEWORK_CONTEXT.value)
 
     def set(self, key: str, value: Any) -> Any:
         """
@@ -220,6 +276,92 @@ class Runner(ABC):
         """
         return self._name
 
+    def _load_framework_context(self, session: Session | None) -> dict | None:
+        """
+        Loads the per-run framework context to inject into this run.
+        Returns a deep copy, so a failed run leaves the stored context intact.
+        :param session: The session to read the framework context from, or None.
+        :return: A deep copy of the stored dict, or None when nothing is stored.
+        :raises TypeError: If the stored value is not a dict.
+        """
+        if session is None:
+            return None
+        stored = session.get_framework_context()
+        if stored is None:
+            return None
+        if not isinstance(stored, dict):
+            raise TypeError(
+                f"Session '{session.id}' framework_context must be a dict, got "
+                f"{type(stored).__name__}. The reserved framework_context key carries a "
+                f"per-run context/state dict; wrap the value in a dict before setting it."
+            )
+        return copy.deepcopy(stored)
+
+    def _store_framework_context(self, session: Session | None, incoming: dict | None, produced: Mapping[str, Any] | None) -> None:
+        """
+        Merges the framework's post-run state over the context loaded this turn and stores the result.
+        Keys the framework touched win; untouched caller keys are preserved. No-op when nothing was loaded.
+        :param session: The session to write the merged context back to, or None.
+        :param incoming: The context loaded this turn, or None when nothing was stored.
+        :param produced: The framework's post-run state, or None.
+        """
+        if session is None or incoming is None:
+            return
+        merged = dict(incoming)
+        if produced:
+            merged.update(produced)
+        self._ensure_framework_context_picklable(session, merged)
+        session.set_framework_context(merged)
+
+    @staticmethod
+    def _not_picklable(value: Any) -> bool:
+        """
+        Checks whether the given value can be pickled.
+        :param value: The value to test.
+        :return: True if the value cannot be pickled.
+        """
+        try:
+            pickle.dumps(value)
+            return False
+        except Exception:
+            return True
+
+    @classmethod
+    def _ensure_framework_context_picklable(cls, session: Session, ctx: Mapping[str, Any]) -> None:
+        """
+        Fails fast if the context cannot be pickled, before it can break the session store.
+        :param session: The session whose id is named in the error.
+        :param ctx: The framework context to validate.
+        :raises TypeError: If any value in ctx is not pickle-serializable.
+        """
+        try:
+            pickle.dumps(ctx)
+        except Exception as exc:
+            offender = next(
+                (f"{k!r} ({type(v).__name__})" for k, v in ctx.items() if cls._not_picklable(v)),
+                "<unknown key>",
+            )
+            raise TypeError(
+                f"Session '{session.id}' framework_context is not picklable; "
+                f"offending entry: {offender}. framework_context values must be "
+                f"pickle-serializable so the session can be persisted."
+            ) from exc
+
+    @staticmethod
+    def _log_framework_context_stream_failure(session: Session | None, error: Exception) -> None:
+        """
+        Logs a framework context write-back failure at the end of a streamed run instead of raising it.
+        Raising here would surface as a transport error and skip the turn's session store.
+        :param session: The session whose write-back failed.
+        :param error: The exception raised while producing or storing the context.
+        """
+        session_id = session.id if session is not None else "<none>"
+        _log.error(
+            f"Session '{session_id}': framework_context write-back was skipped at the end of a "
+            f"streamed run; the previously stored context is left intact. Error: {error}",
+            exc_info=error,
+        )
+
     @abstractmethod
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
@@ -231,6 +373,31 @@ class Runner(ABC):
         """
         raise NotImplementedError()
 
+    @property
+    def supports_streaming(self) -> bool:
+        """
+        Whether this runner streams. Runners whose adapter does not implement streaming declare False
+        and leave stream() raising, so a caller can reject the request instead of provoking the raise.
+        :return: True unless the subclass overrides it.
+        """
+        return True
+
+    @abstractmethod
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Streams the agent response as a sequence of stream events.
+
+        Every adapter emits events; a runner that yields a bare `str` is rejected by
+        `StreamChunk.event` with a `ValidationError` rather than being normalised (§4 rule 6).
+
+        :param agent: The agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The list of requests to provide to the agent.
+        :return: An async generator yielding StreamEvent objects.
+        """
+        raise NotImplementedError()
+        yield  # makes this an async generator, so overrides match the shape rather than a coroutine
+
 
 class Agent(ABC):
     """
@@ -241,6 +408,17 @@ class Agent(ABC):
     inherit from the Agent class and encapsulate the agent implementation provided by that
     framework.
     """
+
+    current_agent: ClassVar[contextvars.ContextVar["Agent | None"]] = contextvars.ContextVar("current_agent", default=None)
+
+    @classmethod
+    def current(cls) -> "Agent | None":
+        """
+        Returns the agent currently executing in this context (set for the duration of a
+        Runtime.run()/Runtime.stream() call), or None if no agent is currently running.
+        :return: The current Agent instance, or None.
+        """
+        return cls.current_agent.get()
 
     def __init__(self, name: str, runner: Runner):
         """
@@ -288,6 +466,23 @@ class Agent(ABC):
         """
         return self._post_hooks
 
+    @contextlib.contextmanager
+    def _activate(self) -> Iterator[Self]:
+        """
+        Sets this agent as the current agent (Agent.current()) for the duration of the context.
+        Token-based set/reset, so nested activations within the same context (e.g. a future
+        agent-as-tool/handoff calling back into Runtime.run()/stream() for another agent) restore
+        the previous value on exit rather than clobbering it.
+        """
+        # behaviour of below is same as Session __aenter__ __aexit__ code behaviour
+        # token is a receipt for this exact set() call, used below to undo precisely this change (not just "set back to old value").
+        token = Agent.current_agent.set(self)
+        try:
+            yield self  # From this point until reset below, Agent.current() returns self (the instace that called this _activate function) anywhere in this call chain (any file/module).
+        finally:
+            # Restore the previous agent, even on error, so nested activations don't clobber it.
+            Agent.current_agent.reset(token)
+
     @abstractmethod
     def get_description(self) -> str:
         """
@@ -329,7 +524,7 @@ class Agent(ABC):
         """
         from agentkernel.core.tool import SystemToolFactory
 
-        suffix = SystemToolFactory.get_system_prompt_suffix()
+        suffix = SystemToolFactory.get_system_prompt_suffix(self.name)
         self.override_system_prompt(prompt=suffix)
 
     def _attach_system_tools(self) -> None:
@@ -338,5 +533,18 @@ class Agent(ABC):
         """
         from agentkernel.core.tool import SystemToolFactory
 
-        for tool in SystemToolFactory.get_all():
+        for tool in SystemToolFactory.get_all(self.name):
             self.attach_tool(tool.func)
+
+    @staticmethod
+    def _append_tools(agent: Any, wrapped: list[Any]) -> None:
+        """
+        Appends already-wrapped tools to a framework agent's list-based `tools` attribute, skipping duplicates.
+        :param agent: The framework-native agent holding the `tools` attribute.
+        :param wrapped: The wrapped tools to attach.
+        """
+        for w in wrapped:
+            if not hasattr(agent, "tools") or agent.tools is None:
+                agent.tools = []
+            if w not in agent.tools:
+                agent.tools.append(w)

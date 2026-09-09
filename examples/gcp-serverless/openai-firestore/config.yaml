@@ -1,0 +1,6 @@
+debug: true
+session:
+  type: firestore
+  firestore:
+    collection_name: "ak:openai-serverless-firestore:sessions"
+    ttl: 604800

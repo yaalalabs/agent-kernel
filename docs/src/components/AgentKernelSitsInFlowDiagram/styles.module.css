@@ -1,0 +1,271 @@
+/* AgentKernelSitsInFlowDiagram — kernel vs user logic boundaries */
+
+.figure {
+  margin: 0;
+  width: 100%;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.flowScene {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(12.5rem, auto) minmax(10.5rem, auto);
+  grid-template-rows: auto auto auto;
+  grid-template-areas:
+    '. memory .'
+    'api logic testAuto'
+    '. deployment .';
+  column-gap: 3.25rem;
+  row-gap: 1.25rem;
+  align-items: center;
+  justify-items: center;
+  min-height: 29rem;
+  padding: 2.5rem 2.25rem 2.25rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  background: transparent;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.flowSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 4;
+  overflow: visible;
+}
+
+.slotApi {
+  grid-area: api;
+  z-index: 2;
+  justify-self: end;
+}
+
+.slotLogic {
+  grid-area: logic;
+  z-index: 3;
+}
+
+.slotMemory {
+  grid-area: memory;
+  z-index: 2;
+  justify-self: center;
+  align-self: end;
+  padding-bottom: 0.5rem;
+}
+
+.slotTestAuto {
+  grid-area: testAuto;
+  z-index: 2;
+  justify-self: start;
+  align-self: center;
+}
+
+.deploymentZone {
+  grid-area: deployment;
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  min-width: 14.5rem;
+  max-width: 16.5rem;
+  margin-top: 0.15rem;
+  padding: 1.5rem 1.5rem 2rem;
+  border: 1.5px solid rgba(244, 114, 182, 0.45);
+  border-top: none;
+  border-radius: 0 0 1rem 1rem;
+  background: rgba(244, 114, 182, 0.08);
+}
+
+.deploymentZone::before,
+.deploymentZone::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 1.5px;
+  height: 1.35rem;
+  background: rgba(244, 114, 182, 0.45);
+}
+
+.deploymentZone::before {
+  left: -1.5px;
+}
+
+.deploymentZone::after {
+  right: -1.5px;
+}
+
+.deploymentLabel {
+  position: absolute;
+  left: 50%;
+  bottom: 0.1rem;
+  transform: translateX(-50%);
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  white-space: nowrap;
+}
+
+.slotFramework {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+}
+
+/* ── Flow nodes ─────────────────────────────────────────────────────────────── */
+
+.flowNode {
+  --node-surface: rgba(18, 24, 46, 0.75);
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  background: var(--node-surface);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.08),
+    0 4px 20px rgba(0, 0, 0, 0.25);
+  transition:
+    border-color 0.3s ease,
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.flowNode:hover {
+  border-color: color-mix(in srgb, var(--node-color, #00d5be) 45%, transparent);
+  transform: translateY(-3px) scale(1.02);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.15),
+    0 10px 30px color-mix(in srgb, var(--node-color, #00d5be) 20%, transparent);
+}
+
+.flowNodeLabel {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #dfe1f0;
+  padding: 0.85rem 1rem;
+}
+
+.node_logic {
+  --node-surface: rgba(26, 31, 48, 0.8);
+  min-width: 12.5rem;
+  border-width: 1.5px;
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.38);
+}
+
+.node_logic .flowNodeLabel {
+  font-size: 0.95rem;
+}
+
+.node_kernel {
+  --node-surface: rgba(18, 32, 46, 0.75);
+  min-width: 8.25rem;
+  border-style: dashed;
+  border-color: rgba(96, 165, 250, 0.55);
+}
+
+.node_memory {
+  --node-surface: rgba(42, 21, 32, 0.75);
+  min-width: 9rem;
+  border-width: 1.5px;
+  border-style: solid;
+  border-color: rgba(244, 114, 182, 0.5);
+}
+
+.node_framework {
+  --node-surface: rgba(43, 37, 16, 0.75);
+  width: 100%;
+  min-height: 3.3rem;
+  border-radius: 0.5rem;
+  border-style: dashed;
+  border-color: rgba(250, 204, 21, 0.45);
+}
+
+.node_framework .flowNodeLabel {
+  font-size: 0.825rem;
+  line-height: 1.35;
+  padding: 0.8rem 1rem 0.8rem 0.85rem;
+}
+
+.node_test {
+  --node-surface: rgba(22, 43, 34, 0.75);
+  min-width: 9.75rem;
+  border-radius: 0.5rem;
+  border-style: dashed;
+  border-color: rgba(74, 222, 128, 0.45);
+}
+
+.node_test .flowNodeLabel {
+  font-size: 0.825rem;
+  line-height: 1.35;
+}
+
+/* ── Agent Kernel icon inside nodes ─────────────────────────────────────────── */
+
+.flowNodeWithIcon {
+  flex-direction: row;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.akNodeIconWrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.1rem;
+  height: 2.1rem;
+  padding-left: 0.25rem;
+}
+
+.akNodeIcon {
+  width: 2.2rem;
+  height: 2.2rem;
+  object-fit: contain;
+  display: block;
+}
+
+/* ── Animation Classes for SVG Connections ───────────────────────────────────── */
+
+.pulseFlow {
+  stroke-dasharray: 8 36;
+  animation: pulseMove 1.8s linear infinite;
+}
+
+@keyframes pulseMove {
+  from {
+    stroke-dashoffset: 44;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ── Tablet/Mobile Horizontal Scroll ──────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .flowScene {
+    width: 100%;
+    padding: 1.5rem 1rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .flowSvg {
+    display: block;
+  }
+}

@@ -1,0 +1,35 @@
+# Lightweight local stack for the NATS queue-mode example: one nats-server with JetStream enabled
+# and one Valkey for the response store and sessions. The NATS server is a single static Go binary
+# that idles at tens of megabytes, so this stack is far lighter than the Kafka equivalent.
+#
+# Not a production topology. A real deployment runs a 3-node cluster with streams and consumers at
+# replicas: 3, installed from the official nats Helm chart and managed with NACK CRs.
+
+services:
+  nats:
+    image: nats:2.14-alpine
+    container_name: ak-nats
+    # -js enables JetStream; -m 8222 exposes the monitoring endpoints (/healthz, /jsz) that the
+    # tester and any Prometheus exporter read.
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "4222:4222"   # client connections
+      - "8222:8222"   # monitoring
+    healthcheck:
+      # Informational only: `nats_tester.py up` waits on a real JetStream connection instead, which
+      # is the readiness that actually matters to the pipeline.
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: ak-valkey
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

@@ -1,0 +1,99 @@
+{{- if .Values.wsGateway.enabled }}
+{{/*
+The WebSocket gateway tier: owns client sockets and nothing else, WebSocketGateway.run().
+Chat frames are enqueued directly to the transport; replies arrive as authenticated POSTs to
+/internal/push from the Response Handler, addressed via the shared connection store. AK_POD_IP
+(downward API) is the address each pod records there for its connections.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-ws-gateway
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "ws-gateway") | nindent 4 }}
+spec:
+  replicas: {{ .Values.wsGateway.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "ws-gateway") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/env: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
+        {{- with .Values.wsGateway.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "ws-gateway") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: ws-gateway
+          image: {{ include "agent-kernel.image" (dict "root" . "image" .Values.wsGateway.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.wsGateway.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.wsGateway.port }}
+              protocol: TCP
+          env:
+            - name: AK_API__PORT
+              value: {{ .Values.wsGateway.port | quote }}
+            - name: AK_WEBSOCKET_API__PUSH_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agent-kernel.pushTokenSecretName" . }}
+                  key: push-auth-token
+            # The address this pod records in the shared connection store, so Response
+            # Handlers push each reply to whichever pod holds the user's sockets.
+            - name: AK_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.wsGateway.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "agent-kernel.fullname" . }}-env
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          {{- with .Values.wsGateway.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.wsGateway.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.wsGateway.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.wsGateway.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

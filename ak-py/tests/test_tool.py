@@ -14,8 +14,16 @@ class MockRunner(Runner):
     def __init__(self, name: str = "mock-runner"):
         super().__init__(name)
 
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         return AgentReply(content="mock-reply")
+
+    async def stream(self, agent, session, requests):
+        raise NotImplementedError()
+        yield
 
 
 class MockAgent(Agent):
@@ -52,7 +60,7 @@ def mock_session():
 
 @pytest.fixture
 def mock_requests():
-    return [AgentRequestText(text="hello")]
+    return [AgentRequestText(prompt="hello")]
 
 
 @pytest.fixture
@@ -84,7 +92,7 @@ class TestToolContextProperties:
     def test_requests_property(self, tool_context, mock_requests):
         assert tool_context.requests is mock_requests
         assert len(tool_context.requests) == 1
-        assert tool_context.requests[0].text == "hello"
+        assert tool_context.requests[0].prompt == "hello"
 
 
 # ToolContext.get / .set / .reset (contextvars)

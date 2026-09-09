@@ -23,6 +23,9 @@ variable "authorizer_info" {
     package_type          = string
     module_name           = string
     result_ttl_in_seconds = optional(number, 150)
+    timeout               = optional(number, 30)
+    memory_size           = optional(number, 128)
+    layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
   })
 }
@@ -31,24 +34,6 @@ variable "module_type" {
   type        = string
   description = "Module type"
   default     = "python"
-}
-
-variable "timeout" {
-  description = "Lambda timeout"
-  type        = number
-  default     = 30
-}
-
-variable "memory_size" {
-  description = "Lambda memory size"
-  type        = number
-  default     = 128
-}
-
-variable "layers" {
-  description = "Lambda layers"
-  type        = list(string)
-  default     = []
 }
 
 variable "tags" {

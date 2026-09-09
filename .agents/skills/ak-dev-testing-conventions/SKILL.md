@@ -37,22 +37,101 @@ Tests live in `ak-py/tests/` and follow the naming convention `test_<module>.py`
 |-----------|-------|
 | `test_base.py` | Session, Agent, Runner abstractions |
 | `test_runtime.py` | Runtime registration, execution, hooks |
+| `test_stream_events.py` | `core/event.py`'s `StreamEvent` discriminated union: every member round-trips through JSON (`type` discriminator), rejects an unknown `type`, and stays JSON/pickle-safe (no framework-native fields) |
+| `test_runtime_stream_events.py` | `Runtime.stream()`'s streaming contract (specs `docs/specs/523-ag-ui-support/` and `docs/specs/670-streaming-post-hooks/`): a bare `str` from an unmigrated runner fails loudly as a pydantic `ValidationError`, **every** event reaches `PostHook.on_stream_event()`, a returned list emits N chunks and ends the chain, a single return of a different `type` raises `TypeError`, a hook returning `None` drops the whole chunk, `delta` is populated only for `TextDelta` and taken from the emitted event, `StreamHalt` closes open boundaries then yields one error chunk and stores no session, any other exception propagates, and the final chunk is a bare `StreamChunk(done=True)` |
+| `test_stream_boundaries.py` | `StreamBoundaryTracker` (`core/stream.py`) directly: open/close pairing per kind, innermost-first drain order, `drain()` clearing, and the two malformed-sequence cases it tolerates (closing an id never opened, opening one twice) |
 | `test_module.py` | Module load/unload, wrapping |
 | `test_session.py` | Session state, caches, context vars |
 | `test_session_cache.py` | LRU SessionCache |
 | `test_sessions_in_memory.py` | InMemorySessionStore |
+| `test_sessions_redis.py` | RedisSessionStore missing-config error, shared RedisDriver retry exhaustion |
+| `test_sessions_valkey.py` | ValkeySessionStore round trips (fake client), shared ValkeyDriver retry exhaustion |
+| `test_sessions_dynamodb.py` | DynamoDBSessionStore Binary wrap/unwrap, missing-item skip (mocked driver) |
+| `test_shared_drivers.py` | Shared DB drivers (`core/util/driver/`): retry scope, ping/reconnect, command surface, DynamoDB item-dict semantics |
+| `test_multimodal_redis_store.py` | RedisAttachmentStore index TTL refresh, JSON round trip, pruning (mocked driver) |
+| `test_multimodal_source_forms.py` | `MultimodalPreHook` attachment source-form classification (spec #523 §8): bare base64 and base64 `data:` URIs are described/stored/stripped; `http(s)://`/`s3://` and non-base64 `data:` URIs are retained undescribed; empty `data:` payloads are dropped |
+| `test_thread_source_forms.py` | The same source forms through `ConversationThreadManager.store_attachments` (issue #669): base64 stored as bytes and replaced by an `AgentRequestAttachmentRef`; a remote reference recorded by `url` with empty `data` and its request passed through unreplaced; mixed/multiple attachments keeping order; plus an end-to-end guard that a URL image survives `MultimodalPreHook` to the agent |
+| `test_multimodal_tools.py` | `analyze_attachments` content routing per stored-record shape: a remote record's `url` is sent as-is (an image as `image_url`, anything else named in text) and never wrapped as base64; a stored record's base64 becomes a `data:` URI, a PDF a `file` part, any other type a `[Document: ...]` line; plus the two early returns that never reach the store or the LLM |
 | `test_config.py` | AKConfig loading, env vars |
+| `test_test_config.py` | AKTestConfig (Test framework config) loading, defaults |
 | `test_tool.py` | ToolContext, cache |
 | `test_tool_openai.py` | OpenAI ToolBuilder |
 | `test_tool_crewai.py` | CrewAI ToolBuilder |
 | `test_tool_langgraph.py` | LangGraph ToolBuilder |
 | `test_tool_adk.py` | Google ADK ToolBuilder |
+| `test_tool_smolagents.py` | Smolagents ToolBuilder |
+| `test_tool_pydanticai.py` | Pydantic AI ToolBuilder |
+| `test_openai_runner.py` | OpenAIRunner execution, error handling |
+| `test_crewai_runner.py` | CrewAIRunner execution (mocked Crew kickoff) |
+| `test_smolagents_runner.py` | SmolagentsRunner execution, multimodal requests, error handling |
+| `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring |
+| `test_langgraph_reasoning_live.py` | LangGraph reasoning against a REAL reasoning model, env-gated (`AK_TEST_REASONING_MODEL`; skipped in normal runs). Guards the premise the chunk-feeding unit tests cannot: that the model streams a summary at all (it must be asked — `reasoning={"summary": "auto"}`) and that LangChain surfaces it under `content_blocks`. Builds a bare `StateGraph` rather than `create_react_agent`, since the test needs only one model call and a ReAct loop would add nothing |
 | `test_guardrail.py` | Guardrail factories, hooks |
 | `test_api_http.py` | REST API handler |
+| `test_api_mcp.py` | `MCP.get_http_app()`: `mcp.stateless_http` is passed to `http_app()` (fastmcp 3 removed the `FastMCP(stateless_http=...)` constructor kwarg, so the constructor must stay name-only), and a second call reuses the built server while still applying the configured mode |
+| `test_chat_service_core.py` | ChatService execution core (`execute`/`execute_stream`): typed replies, prebuilt request lists, validation, error propagation, wrapper wire shapes |
+| `test_chat_service_streaming.py` | ChatService SSE/stream chunk formatting |
+| `test_slack_integration.py` | Slack handler on the ChatService core: request/identity mapping, attachment-only, error paths, chunking (pattern for integration handler tests) |
+| `test_whatsapp_integration.py` | WhatsApp handler on the ChatService core: text/media paths, rejections before execute |
+| `test_gmail_integration.py` | Gmail handler on the ChatService core: prompt assembly, session fallback, attachments, error paths |
+| `test_thread_integration.py` | Thread integration: `ThreadRecorder` ordering/enforcement, `AgentThreadRequestHandler` recording + no-phantom-thread prechecks, stream accumulation, end-to-end read-back |
+| `test_thread_router.py` | Thread read routes (`ThreadRESTRequestHandler`): pagination, `Authoriser` 401/403 semantics |
+| `test_authoriser_shared.py` | Shared `Authoriser` in `agentkernel.auth`: package-export identity, guard that the thread package no longer exposes it, `AuthValidatorAuthoriser` adapter, `AuthorisedRESTRequestHandler` inheritance |
+| `test_akagentrunner_stream.py` | Serverless `ServerlessStreamAgentRunner` (SQS streaming) |
+| `test_serverless_agent_runner_schedule.py` | Serverless runners' trigger consumption: `request_id`/`user_id` body fallback, attribute precedence, missing-in-both error path |
+| `test_akresponsehandler.py` | Serverless response handler (`CHAT_RESPONSE` / `STREAM_CHUNK` broadcast) |
+| `test_ws_lambda_stream.py` | WebSocket Lambda router in `stream` mode |
 | `test_cli_tester.py` | CLI test framework |
 | `test_auth_handler.py` | Auth handler |
 | `test_akauthorizer.py` | AWS Lambda authorizer |
 | `test_lambda_router.py` | Lambda routing |
+| `test_sqs_handler.py` | AWS SQSHandler config, client, message sending |
+| `test_serverless_request_handle.py` | BaseRequest/BaseRunRequest parsing from serverless payloads |
+| `test_firestore_database_id.py` | Shared `FirestoreDriver` (`core/util/driver/firestore.py`, explicit constructor params) named `database_id` configuration |
+| `test_ak_logger.py` | AKLogger level resolution, configuration |
+| `test_error_util.py` | `user_facing_error_message` error mapping |
+| `test_thread_runner.py` | ThreadRunner task validation, failure/shutdown semantics |
+| `test_ecs_sqs_consumer_parallel.py` | ECSSQSConsumer message processing + delete/retry semantics |
+| `test_ecs_agent_runner_schedule.py` | ECS runner trigger consumption: `request_id`/`user_id` body fallback with attribute precedence, and `ChatService`'s status forwarded to the output queue instead of discarded |
+| `test_ecs_output_consumer_status.py` | ECS output consumer persisting `status_code` on stored records (default 200, permanent failure 500) |
+| `test_deployment_queue_contracts.py` | #495 public-interface cleanup: `pipeline.transport` (`QueueTransport`/`QueueMessage`) is the only public queue API; `RawQueueConsumer` + `SQSHandler`'s send models are internal; removed public names (`QueueHandler`, `QueueConsumer`, `deployment.common.queue_*`) raise `ImportError` |
+| `test_pipeline_agent_runner.py` | `AgentRunner`/`StreamAgentRunner`: chat execution via `ChatService`, reply forwarding with `STATUS_CODE` attribute, per-chunk dedup suffixes, `run()` rejecting `in_memory` transport |
+| `test_pipeline_agent_runner_schedule.py` | Pipeline runners' trigger consumption: `request_id`/`user_id` resolved from the message body, attribute precedence, and body-resolved metadata injected back into the attributes for output forwarding |
+| `test_pipeline_bookkeeping.py` | Delivery bookkeeping for transports lacking native receive counts/dedup (spec #495 §6): `InMemoryBookkeepingStore`/`RedisLikeBookkeepingStore` attempt counters, retry-safe dedup claims, `BookkeepingStoreFactory` backend selection |
+| `test_pipeline_sqs_transport.py` | `SQSTransport`: send/fetch/ack/nack/dead_letter, graceful shutdown handling, fetch-wait slicing, shared wire-format primitives |
+| `test_pipeline_kafka_transport.py` | `KafkaTransport` against a fake in-memory Kafka cluster: send/fetch/ack/nack, dead-letter routing scoped by topic, delivery errors, consumer capacity check |
+| `test_pipeline_nats_transport.py` | `NatsTransport` against a fake JetStream behind a real `_NatsLoop` bridge: subject/header construction, stable client-side (`crc32`) partition hashing, `num_delivered` mapping, nak redelivery, `term()` on permanent failure, one-in-flight-per-partition, stream-scoped dedup, `auto_provision` create-vs-verify, consumer capacity warning, and the full `QueueTransportContract` with no skips |
+| `test_response_store_in_memory.py` | `InMemoryResponseStore`: `get_record` (`status_code` exposed), `add_chunk`/`stream` chunk-streaming for local SSE |
+| `test_transport_contract.py` | The reusable `QueueTransportContract` (`pipeline/testing.py`) run against the `in_memory` transport |
+| `test_transport_contract_live.py` | The same contract against REAL brokers, env-gated (`AK_TEST_NATS_URL` / `AK_TEST_KAFKA_BOOTSTRAP`; skipped in normal runs) with per-test unique streams/topics; run in CI by `test-reusable.yaml`'s `transport-integration-tests` job over the transport examples' compose stacks. Documents two live-only timing traps: the per-partition pull window must stay below `ack_wait`, and partition counts are chosen from the real partitioner mappings (crc32 / murmur2) |
+| `test_pipeline_request_handler.py` | Pipeline `RequestHandler` over FastAPI `TestClient`: `rest_sync` parity (stored `status_code` honored), `rest_async` accept/poll, SSE streaming end-to-end, multipart-on-`in_memory` only, and SSE error frames carrying handler-owned text only — a store/driver `TimeoutError`/`Exception` message never reaches the client (CodeQL `py/stack-trace-exposure`) |
+| `test_pipeline_response_handler.py` | Pipeline `ResponseHandler` delivery paths: REST records, the `USER_ID`-presence WS routing marker, `STREAM_CHUNK`/`CHAT_RESPONSE` pushes, missing-attribute retries, permanent-failure frames/records |
+| `test_pipeline_io_handler.py` | `IOHandler.run()` topology validation and fail-fasts (ASYNC-on-`in_memory` without a validator, broker WS modes without a push token, broker + non-shared response store), signal handlers, graceful-drain exit code |
+| `test_pipeline_ws.py` | The gateway tier: `LocalConnectionRegistry`, `PodPushWebSocketHandler` store-lookup delivery + stale-connection cleanup, `/internal/push` auth, the native `/ws` route (1008 closes, chat enqueue attributes, custom routes), `WebSocketGateway` fail-fasts, single-process ASYNC/STREAM end-to-end over `in_memory`, and cross-"pod" delivery between two gateway apps sharing one connection store |
+| `test_session_connection_store.py` | The `WSConnectionStore` contract over the in-memory/redis-like/DynamoDB implementations, plus `SessionStore.get_connection_store()` per backend (store-less backends raise actionably) |
+| `test_sandbox.py` | Sandbox core: model/capabilities, error hierarchy, config, provider contract, manager + factory + embedded broker, agent surface (system tools + task-completion pre-hook), `agents` scoping |
+| `test_sandbox_broker.py` | Broker flavors (embedded/thread) end-to-end, thread loop-identity contract, wait-policy promotion + late-completion recovery (including the bounded `result_summary` outcome on `check_sandbox_task`), completion ingestion |
+| `test_sandbox_providers.py` | `local_subprocess` (real subprocess), `docker` (mocked SDK), `e2b`/`daytona` (mocked cloud SDKs), `ec2_ssm` (mocked boto3), and `kubernetes` (fake SDK with a functional tar/base64 exec protocol; manifest shapes, NetworkPolicy gating, RBAC-impersonation headers per call shape) providers, run against the reusable `SandboxProviderContract` |
+| `test_sandbox_queue_broker.py` | #503 queue broker: `BrokerWireCodec` binary round trips, `error_type` stamping, removed config fields, `QueueExecutionBroker` client (bounded waits, promotion, typed re-raise, ceiling/size guards, FIFO destroy), `QueueBrokerWorker` two-loop model (output-queue delivery, truncation, split permanent-failure hooks, sweep inventory), and manager-level wait-then-`check_sandbox_task` recovery over `in_memory` |
+| `test_pipeline_factory_seams.py` | #503 explicit-config seams: `QueueTransportFactory`/`ResponseStoreFactory` with an explicit block never read `AKConfig` (asserted loudly), default paths unchanged, response-store `ttl` override |
+| `test_response_store_scan.py` | The optional `ResponseStore` key-scan capability (`supports_key_scan`/`scan_records`) across the four built-ins, ABC default opt-out |
+| `test_authoriser_shared.py` | Shared `Authoriser` in `agentkernel.auth`: `AuthValidatorAuthoriser` adaptation, export identity, and the guard that the thread package no longer re-exports it |
+| `test_schedule_model.py` | `ScheduleSpec` one-of/timezone/session_mode validation, chat-envelope parsing, `ScheduledTask` JSON round trip (JSON primitives only) |
+| `test_schedule_manager.py` | `ScheduleManager`: `get()` gating + singleton, provider/transport fail-fast, semantic validation matrix (including the named-agent precheck and the unnamed-agent exemption), create ordering + rollback, trigger-body freezing, ownership, amendment rules (occurrence rule replaced as a unit, untouched when the amendment names none of it), cancellation, occurrence recording (never raises) |
+| `test_schedule_store.py` | Every `ScheduleStore` backend against the one contract the in_memory class pins — in_memory, redis/valkey through a fake redis-like client injected as `store._driver._client`, dynamodb through a fake driver whose `table.scan` replays `LastEvaluatedKey` pages — plus index cleanup on delete, TTL behaviour (none by default), and `ScheduleStoreBuilder` built-in/BYO/unknown-type/missing-extra resolution |
+| `test_schedule_provider_local.py` | `LocalScheduleProvider`: next-fire computation, one-time vs re-armed occurrences, token substitution, body-only delivery into `InMemoryTransport`, pause/delete disarm, `ScheduleProviderFactory` resolution |
+| `test_schedule_provider_eventbridge.py` | `EventBridgeScheduleProvider` against a mocked `boto3.client`: cron/at expression translation, exact registration/amendment/removal kwargs sent to the Scheduler API, error mapping to `ScheduleError`, `ScheduleProviderFactory` wiring |
+| `test_schedule_router.py` | `ScheduleRESTRequestHandler`: 404 when unconfigured, the three 401 variants from the shared `AuthorisedRESTRequestHandler`, listings forced to the authorised user, 403-before-404 ordering, PUT amendment happy path + validation 400s, DELETE returning the cancelled task, mount-time validation of the configured backends (`get_router()` building the manager, an unusable provider failing the mount, mounting while unconfigured still allowed), and the guard that importing the package does not pull in FastAPI |
+| `test_schedule_tools.py` | Schedule system tools: `SystemToolFactory` registration + `schedule.agents` scoping, prompt-suffix content, disabled short-circuit, acting-user read from the session volatile cache, and each tool's JSON contract including the no-identity and unknown-agent errors |
+| `test_chat_service_schedule.py` | ChatService interception on all four entry points: 202 wire shapes, streaming terminal chunk, unconfigured 400, occurrence recording, no scheduling field leaking as `AgentRequestAny` |
+| `test_serverless_status_propagation.py` | The status a chat run produced (e.g. 202 deferred-to-schedule, 4xx rejected) survives the serverless queue round trip: `ServerlessAgentRunner` forwards it as the `ATTR_STATUS_CODE` output-message attribute, `ResponseHandler` stores it on the response record, and the REST surface (`DefaultEndpointsHandler`, response-store polling) replays it to the caller |
+| `test_pipeline_agent_runner_schedule.py` | Pipeline runners' trigger contract: `request_id`/`user_id` body fallback, attribute precedence, attribute injection for output forwarding |
+| `test_ecs_agent_runner_schedule.py` | ECS runners' body fallback (`_get_record_attributes` with/without a parsed body) and `status_code` custom attribute |
+| `test_ecs_output_consumer_status.py` | `ECSOutputConsumer` stores `status_code` (present / absent → 200 / permanent failure → 500) |
+| `test_serverless_agent_runner_schedule.py` | Serverless runners' body fallback in both `_get_record_attributes` implementations |
+| `test_factory.py` | Shared pluggable-backend helpers (`resolve_dotted`, `require_extra`, `AKConfigError`) in `core/util/factory.py` |
+| `test_store_builders.py` | Session/thread/multimodal store builders: fail-loud on unknown type, BYO dotted-path subclass resolution |
+| `test_trace.py` | Trace factory built-in resolution, BYO dotted path, unknown-type error |
 
 ## Test Patterns
 
@@ -67,8 +146,17 @@ from agentkernel.core.model import AgentReplyText, AgentRequest, AgentRequestTex
 
 class DummyRunner(Runner):
     async def run(self, agent, session, requests):
-        prompt = requests[0].text if isinstance(requests[0], AgentRequestText) else ""
-        return AgentReplyText(text=f"ok:{prompt}")
+        prompt = requests[0].prompt if isinstance(requests[0], AgentRequestText) else ""
+        return AgentReplyText(response=f"ok:{prompt}")
+
+    async def stream(self, agent, session, requests):
+        # Runner.stream() is abstract — implement even in test doubles, and yield `StreamEvent`
+        # members (never a bare `str` — `StreamChunk.event` rejects it with a `ValidationError`).
+        # Raise NotImplementedError() (with a trailing `yield`) if the test doesn't exercise streaming,
+        # or yield MessageStart/TextDelta/MessageEnd (own the message's boundaries yourself) to test
+        # Runtime.stream() / AgentService.stream_multi().
+        raise NotImplementedError()
+        yield
 
 
 class DummyAgent(Agent):
@@ -82,6 +170,36 @@ class DummyAgent(Agent):
     def get_a2a_card(self):
         return None
 ```
+
+**A double that *does* exercise streaming yields events, not strings.** `Runner.stream()` is typed
+`AsyncGenerator[StreamEvent, None]`, and `StreamChunk.event` is a discriminated union — so a bare
+`str` raises a `ValidationError` the moment `Runtime.stream()` wraps it. A double owns its own
+boundaries:
+
+```python
+from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
+
+
+class StreamingDummyRunner(Runner):
+    async def run(self, agent, session, requests):
+        return AgentReplyText(response="ok")
+
+    async def stream(self, agent, session, requests):
+        yield MessageStart(message_id="m-1")
+        for token in ("Hel", "lo"):
+            yield TextDelta(message_id="m-1", content=token)
+        yield MessageEnd(message_id="m-1")
+```
+
+Every event reaches `PostHook.on_stream_event()`, but only `TextDelta` is projected into
+`StreamChunk.delta` — so a test that accumulates the reply must filter on `chunk.delta is not None`
+rather than slice by position. (`delta` is a model field, so the attribute always exists; it is `None`
+on every non-text frame. Key *presence* is the wire-format rule, which applies to the serialised SSE
+frames, not to the objects a test sees.)
+
+A test double for a hook implements `on_stream_event`, and a double that returns a **list** ends the
+chain for that event — so a two-hook test asserting what the second hook saw is the way to pin that
+rule. See `RecordingHook` and `HaltingHook` in `tests/test_runtime_stream_events.py`.
 
 ### Async Test Patterns
 
@@ -97,8 +215,8 @@ async def test_runtime_run():
     runtime.register(agent)
     session = runtime.sessions().new("test-session")
 
-    result = await runtime.run(agent, session, [AgentRequestText(text="hello")])
-    assert result.text == "ok:hello"
+    result = await runtime.run(agent, session, [AgentRequestText(prompt="hello")])
+    assert result.response == "ok:hello"
 ```
 
 ### Monkeypatching Config
@@ -163,7 +281,7 @@ async def test_pre_hook_modifies_request():
         async def on_run(self, session, agent, requests):
             for req in requests:
                 if isinstance(req, AgentRequestText):
-                    req.text = req.text.upper()
+                    req.prompt = req.prompt.upper()
             return requests
         def name(self): return "test_hook"
 
@@ -176,7 +294,7 @@ async def test_pre_hook_modifies_request():
 async def test_pre_hook_halts_execution():
     class BlockingHook(PreHook):
         async def on_run(self, session, agent, requests):
-            return AgentReplyText(text="blocked", prompt="")
+            return AgentReplyText(response="blocked", prompt="")
         def name(self): return "blocking_hook"
 
     # When a PreHook returns AgentReply, Runtime.run() returns it immediately
@@ -208,18 +326,33 @@ async def test_agent_response(test_client):
 
 ### Test Modes
 
-Configured via `config.yaml`:
+Configured via `test-config.yaml` — a separate, un-nested file resolved from the cwd (or
+`AK_TEST_CONFIG_PATH_OVERRIDE`), loaded only when the test harness runs. It is not part of
+`config.yaml`; a leftover `test:` section there is ignored:
 
 ```yaml
-test:
-  mode: fuzzy    # fuzzy | judge | fallback
-  judge:
-    model: gpt-4o-mini
+mode: score    # score | llm | fallback (default: fallback)
+evaluator: deepeval   # built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
+llm:
+  model: gpt-4o-mini
+  provider: openai
 ```
 
-- **fuzzy**: Uses `rapidfuzz` string similarity matching (default threshold)
-- **judge**: Uses an LLM to evaluate if the response is semantically correct
-- **fallback**: Tries fuzzy first, falls back to judge if fuzzy fails
+- **score**: Deterministic, offline scoring via the configured `AKEvaluator`'s `evaluate_by_score` — the built-in `DeepevalAKEvaluator` uses `Scorer.quasi_exact_match_score` (normalised whole-string equality, no LLM call); the built-in `OpikAKEvaluator` uses Opik's `LevenshteinRatio` instead (graded fuzzy-similarity, not exact-match)
+- **llm**: LLM-as-judge scoring via `evaluate_by_llm` — both built-ins use a `GEval` metric against the expected answer(s) (ground truth): `DeepevalAKEvaluator` via DeepEval's `GEval` and an `LLMTestCase`, `OpikAKEvaluator` via Opik's `GEval` and a single packed `output` string. Evaluation backends are pluggable (`agentkernel.test.core.evaluator.AKEvaluator`); see `ak-py/src/agentkernel/test/test.py`
+- **fallback**: Tries score first, falls back to llm if score fails
+
+`evaluator` is resolved by `Test._resolve_evaluator` (`agentkernel/test/test.py`), the same
+bring-your-own-dotted-path pattern `resolve_dotted`/`require_extra` (`core/util/factory.py`) use
+for session stores, sandbox providers, and trace backends — a custom evaluator subclasses
+`AKEvaluator` (`agentkernel.test.core.evaluator`) and implements `evaluate_by_score`/
+`evaluate_by_llm`, each returning an `AKEvaluationResult`. See
+`examples/cli/custom-evaluator/` for a full worked example, and
+`docs/specs/555-pluggable-test-evaluators/` for the design/spec behind this interface.
+
+`Test.compare`/`Test.expect` also take `return_metrics: bool = False` — when `True`, they return
+the `AKEvaluationResult` instead of raising `AssertionError` on a failing comparison (other errors,
+e.g. `AKEvaluationError`/`AKMetricNotSupported`, still propagate).
 
 ### Test.compare() for API Tests
 
@@ -259,9 +392,32 @@ async def http_client():
 
 ## CI/CD Workflows
 
-- **`test.yaml`**: Runs `uv run pytest` on every PR
-- **`integration-test.yaml`**: Runs integration tests against deployed environments
+- **`test.yaml`**: Triggers on pull requests, pushes to `develop`, and manual dispatch; has an `update-lock-files` job (dispatch-only) and a `run-tests` job that delegates to `test-reusable.yaml`
+- **`test-reusable.yaml`**: Reusable workflow (`workflow_call`) containing the actual test jobs, including the `uv run pytest` invocation and the `transport-integration-tests` job, which starts real NATS and Kafka containers from the transport examples' compose files (broker services only, `up -d --wait nats|kafka`) and runs `tests/test_transport_contract_live.py` against them on every PR. `build-ak-py` hands `ak-py/dist` to `unit-tests` and `e2e-tests` as a **run-scoped artifact** (`actions/upload-artifact`/`download-artifact`), deliberately not `actions/cache`: the workflow is called with an arbitrary `checkout_ref` from privileged contexts (`workflow_dispatch` on `develop`, `pull_request_target` for labelled fork PRs), where a cache write is a poisoning vector the default branch would later restore (CodeQL `actions/cache-poisoning`). Don't "optimise" it back into a cache
+- **`chart-test.yaml`**: The #495 Helm chart gates, path-filtered on the chart, the k8s example, and `agentkernel/pipeline/`: a lint job (`ct lint` via `ak-deployment/ak-k8s/ci/ct.yaml`, plus explicit `helm template` renders of every flavor values file and optional tier) and a kind-smoke matrix over the dev/baremetal/eks flavors, each installing the chart with the example images and driving one real chat request through NATS (baremetal/eks install the Gateway API CRDs and a live NACK controller so `autoProvision: false` verifies operator-reconciled objects; the CI overlays in `ak-deployment/ak-k8s/ci/` swap only storage class and sizing). Skipped for fork PRs (needs `OPENAI_API_KEY`)
+- **`test-trusted-pr.yaml`**: Runs `test-reusable.yaml` with secrets for fork PRs that have been reviewed and labeled `safe-to-test` (`pull_request_target`)
+- **`test-github-app.yaml`**: Manual dispatch only; verifies the GitHub App secrets (`APP_ID`/`APP_PRIVATE_KEY`) are configured correctly
+- **`integration-test.yaml`**: "Nightly" (tier `nightly`) integration tests against deployed environments; scheduled weekly on Sundays at 5:30 PM UTC (`cron: '30 17 * * 0'`), plus manual dispatch
+- **`integration-test-weekly.yaml`**: Weekly integration tests against deployed environments (cron currently commented out; manual dispatch, with option to keep cloud resources on failure), plus two additional manual-dispatch-only jobs gated on `inputs.provision_e2e_messaging`: `e2e-messaging-deploy` (builds and Terraform-applies the `e2e/app` messaging harness to AWS ECS, then waits for the service to stabilize) and `e2e-messaging-test` (probes the deployed webhook, registers the Telegram webhook, then runs the `e2e/tests` pytest suite against Slack/Telegram/WhatsApp/Messenger/Instagram/Gmail). See `e2e/README.md` for the full harness design.
 - **`code-quality.yml`**: Runs linting checks (see `code-quality` skill)
+- **`pr-title-check.yaml`**: Fails the PR unless its title follows Conventional Commits (`type: description` / `type(scope): description`, types in `CONTRIBUTING.md`). Runs on `pull_request` open/edit/synchronize/reopen/ready-for-review so a result exists for every head SHA (required checks are recorded per SHA)
+- **`copilot-review-request.yaml`**: Requests a Copilot code review on open/reopen/ready-for-review using the `COPILOT_REVIEW_PAT` secret (`pull_request_target`, API-only, no checkout): an org-scoped fine-grained PAT (resource owner `yaalalabs`, this repo, Pull requests: Read and write) created by a licensed maintainer. It is separate from `COPILOT_REQUEST_TOKEN` because the account-level Copilot Requests permission only exists on user-owned tokens, which cannot hold org repository permissions. Exists because the develop ruleset's `copilot_code_review` rule only fires for authors who hold a Copilot license. Skips PRs where Copilot is already requested and bot-authored PRs; `workflow_dispatch` takes a PR number for backfills
+- **`reviewed-label-reset.yaml`**: Removes the maintainer-applied `Reviewed` label whenever new commits are pushed (`pull_request_target: synchronize`, API-only, no checkout) so the PR reappears in the `-label:Reviewed` review queue
+
+Every workflow declares an explicit least-privilege `permissions` block (CodeQL `actions/missing-workflow-permissions`); jobs that write repo content (commits, branches, PRs) do so with the GitHub App token minted in-job, not with `GITHUB_TOKEN`. Metadata-only writes such as the label removal in `reviewed-label-reset.yaml` use a job-scoped `GITHUB_TOKEN` (`pull-requests: write`) instead of minting an App token. When adding a workflow, start from `permissions: {}` (or `contents: read` if it checks out) and widen only where a step provably needs it. Workflows on `pull_request_target` (`test-trusted-pr.yaml`, `copilot-review-request.yaml`, `reviewed-label-reset.yaml`) must never check out or execute PR code unless gated behind a maintainer-applied label, as `test-trusted-pr.yaml` is.
+
+`scripts/update_examples_version.py` keeps the `agentkernel` pin in sync across both `examples/**` and `e2e/app` (via `--examples-dir e2e/app`): `publish.yaml`'s "Update e2e messaging harness with new version" step bumps the pin with `--skip-lock` right after a production publish (the just-published version isn't resolvable on PyPI yet, so the lock refresh is deferred), and `test.yaml`'s "Update e2e messaging harness lock file" step later runs `--force-lock --examples-dir e2e/app` to regenerate `e2e/app/uv.lock` and commits it alongside `examples/**/uv.lock`. If you add a new pinned dependency consumer under `e2e/app`, make sure it's covered by this same version-bump/lock-refresh pair instead of drifting out of sync with the published package.
+
+Both integration workflows restore the branch-built `agentkernel` wheel from the `ak-py-${{ github.sha }}` cache with `fail-on-cache-miss: true` — the job fails loudly instead of silently falling back to the published PyPI wheel if the build/cache step didn't run first. `.github/scripts/run_single_test.py`'s `test_aws_deployment()` then runs `./build.sh local` in the example directory (force-reinstalling the local wheel with `--no-cache-dir` before packaging/deploying) and invokes the test client with `uv run --no-sync pytest ...` so `uv` doesn't re-sync the venv from `uv.lock` and revert the local wheel back to the PyPI version. When adding a new example to `integration-test-config.yaml`, make sure its `build.sh`/`deploy.sh` `local` branch force-reinstalls `agentkernel` from `../../../ak-py/dist` with `--no-cache-dir`, matching this pattern — otherwise the test can silently exercise a stale published version instead of the branch's code.
+
+`integration-test-weekly.yaml`'s deploy/test/destroy are separate workflow steps (not one bash block) so each shows up as its own status: the `Test` step only runs `if: steps.deploy.outcome == 'success'`, and `Destroy` runs `if: !cancelled() && !(keep_resources_on_failure && (deploy or test failed))`. `.github/scripts/generate_test_matrix.py` assigns each `gcp-*` matrix entry a `deploy_stagger` (90s apart) so parallel GCP jobs don't provision VPC connectors on the same network simultaneously; the workflow sleeps that many seconds before deploying. Known infra-flakiness mitigations to preserve when touching this area, since they were added specifically to fix recurring weekly e2e failures:
+
+- **AWS containerized examples' `deploy.sh`** call `wait_for_ecs_stable` after `terraform apply` (reads `region`/`product_alias`/`env_alias`/`module_name` from `terraform.tfvars`, then `aws ecs wait services-stable`) so the test doesn't hit the app before the ECS service has finished rolling out.
+- **`run_single_test.py`'s `destroy_aws_resources`** pre-deletes Lambda functions on the example's security groups and runs a background thread that periodically deletes their now-detached ENIs, so `terraform destroy` isn't blocked waiting ~20 min for AWS to release Hyperplane ENIs.
+- **`run_single_test.py`'s `deploy_gcp_resources`/`destroy_gcp_resources`** retry the deploy up to 3 times and sweep `ERROR`-state VPC Access Connectors between attempts (`sweep_gcp_error_connectors`, matched by network name from `terraform.tfvars`).
+- **Azure serverless/containerized deploys** accept an `AK_PRE_DEPLOY_AUTH_CMD` env var (set in the workflows to refresh the OIDC-based `az login`) and re-run it before each long-running `az` step in `linux_function.tf`'s `deploy_function_code`, since the OIDC token can expire mid-deploy.
+
+If a weekly/nightly integration run fails with a symptom matching one of these (ECS "still rolling out", GCP `VPC_ACCESS_CONNECTOR_ERROR`, AWS destroy timing out on ENIs, or Azure CLI auth expiring), look here before re-adding ad-hoc sleeps or retries.
 
 ## Best Practices
 

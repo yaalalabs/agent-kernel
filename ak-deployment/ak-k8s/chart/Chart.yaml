@@ -1,0 +1,29 @@
+apiVersion: v2
+name: agent-kernel
+description: >-
+  Agent Kernel queue-execution pipeline on Kubernetes: an io-handler Deployment (Request +
+  Response Handler), an agent-runner Deployment, and an optional WebSocket gateway tier, with
+  condition-gated Valkey and NATS backing services. Flavors (baremetal, EKS, dev) are values
+  files over one set of templates.
+type: application
+version: 0.1.0
+# The Agent Kernel release the templates were written against; the publish workflow overrides
+# both versions with the release tag.
+appVersion: "0.8.1"
+kubeVersion: ">=1.29.0-0"
+home: https://github.com/yaalalabs/agent-kernel
+sources:
+  - https://github.com/yaalalabs/agent-kernel
+keywords:
+  - agent-kernel
+  - agents
+  - llm
+dependencies:
+  - name: valkey
+    version: 0.11.0
+    repository: https://valkey-io.github.io/valkey-helm/
+    condition: valkey.enabled
+  - name: nats
+    version: 2.14.5
+    repository: https://nats-io.github.io/k8s/helm/charts/
+    condition: nats.enabled

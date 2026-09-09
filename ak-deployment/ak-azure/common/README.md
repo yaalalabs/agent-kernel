@@ -16,7 +16,7 @@ This package provides the following Terraform modules:
 ### Prerequisites
 
 - Terraform >= 1.9.5
-- Azure Provider >= 4.57.0
+- Azure Provider >= 4.57.0, < 5.0.0
 - Docker (for ACR module)
 
 ### Basic Usage

@@ -1,7 +1,7 @@
 {
   "skill": "ak-add-capabilities",
-  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, MCP, A2A, hooks, multimodal) skill",
-  "version": "0.2.13",
+  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, scheduled tasks, sandbox) skill",
+  "version": "0.9.0",
   "evals": [
     {
       "id": "cap-guardrail-openai",
@@ -51,7 +51,8 @@
         "enabled: true",
         "LANGFUSE_PUBLIC_KEY",
         "LANGFUSE_SECRET_KEY",
-        "agentkernel[", "langfuse"
+        "agentkernel[",
+        "langfuse"
       ],
       "must_not_contain": [
         "type: openllmetry"
@@ -65,7 +66,25 @@
         "trace:",
         "type: openllmetry",
         "enabled: true",
-        "agentkernel[", "openllmetry"
+        "agentkernel[",
+        "openllmetry"
+      ]
+    },
+    {
+      "id": "cap-tracing-logfire",
+      "name": "Add Pydantic Logfire tracing",
+      "input": "Add Pydantic Logfire tracing to my project",
+      "expected_outputs": [
+        "trace:",
+        "type: logfire",
+        "enabled: true",
+        "LOGFIRE_TOKEN",
+        "agentkernel[",
+        "logfire"
+      ],
+      "must_not_contain": [
+        "type: langfuse",
+        "type: openllmetry"
       ]
     },
     {
@@ -78,7 +97,8 @@
         "redis:",
         "prefix:",
         "url:",
-        "agentkernel[", "redis"
+        "agentkernel[",
+        "redis"
       ]
     },
     {
@@ -90,7 +110,8 @@
         "type: dynamodb",
         "table_name:",
         "region:",
-        "agentkernel[", "aws"
+        "agentkernel[",
+        "aws"
       ]
     },
     {
@@ -102,7 +123,37 @@
         "type: cosmosdb",
         "endpoint:",
         "AZURE_COSMOS_KEY",
-        "agentkernel[", "azure"
+        "agentkernel[",
+        "azure"
+      ]
+    },
+    {
+      "id": "cap-knowledgebase-chroma",
+      "name": "Add Chroma knowledge base",
+      "input": "Add a Chroma knowledge base capability to my project",
+      "expected_outputs": [
+        "KnowledgeBuilder",
+        "ChromaManager",
+        "get_schemas",
+        "read_kb",
+        "write_kb",
+        "agentkernel[",
+        "chromadb"
+      ]
+    },
+    {
+      "id": "cap-knowledgebase-starburst",
+      "name": "Add Starburst knowledge base",
+      "input": "Use Starburst as a knowledge base backend",
+      "expected_outputs": [
+        "StarburstManager",
+        "semantic_map",
+        "read-only",
+        "agentkernel[",
+        "trino"
+      ],
+      "must_not_contain": [
+        "write_kb(\"Starburst"
       ]
     },
     {
@@ -113,7 +164,8 @@
         "mcp:",
         "enabled: true",
         "expose_agents:",
-        "agentkernel[", "mcp"
+        "agentkernel[",
+        "mcp"
       ]
     },
     {
@@ -124,8 +176,24 @@
         "a2a:",
         "enabled: true",
         "agents:",
-        "agentkernel[", "a2a",
+        "agentkernel[",
+        "a2a",
         ".well-known/agent.json"
+      ]
+    },
+    {
+      "id": "cap-agui",
+      "name": "Enable AG-UI server",
+      "input": "Expose my agent over the AG-UI protocol so a frontend can stream it",
+      "expected_outputs": [
+        "agui:",
+        "AGUIRequestHandler",
+        "agentkernel[",
+        "agui",
+        "Authoriser"
+      ],
+      "must_not_contain": [
+        "type: bedrock"
       ]
     },
     {
@@ -133,7 +201,8 @@
       "name": "Add pre-hook",
       "input": "Add a RAG pre-hook to my agent",
       "expected_outputs": [
-        "class ", "PreHook",
+        "class ",
+        "PreHook",
         "async def on_run(",
         "session: Session",
         "requests: list[AgentRequest]",
@@ -145,10 +214,36 @@
       "name": "Add post-hook",
       "input": "Add a disclaimer post-hook to my agent",
       "expected_outputs": [
-        "class ", "PostHook",
+        "class ",
+        "PostHook",
         "async def on_run(",
         "agent_reply: AgentReply",
         "module.post_hook("
+      ]
+    },
+    {
+      "id": "cap-hooks-framework-context",
+      "name": "Seed and read per-run framework context via hooks",
+      "input": "I want to carry some per-run state through to my agent's native framework call using a hook",
+      "expected_outputs": [
+        "framework_context",
+        "get_framework_context(",
+        "set_framework_context(",
+        "PreHook",
+        "PostHook"
+      ],
+      "must_not_contain": [
+        "ToolContext.get().session.set_framework_context"
+      ]
+    },
+    {
+      "id": "cap-hooks-framework-session",
+      "name": "Trim framework-native session history via a post-hook",
+      "input": "I want a post-hook that caps the OpenAI Agents SDK's own conversation history once it grows too large",
+      "expected_outputs": [
+        "get_framework_session(",
+        "PostHook",
+        "async def on_run("
       ]
     },
     {
@@ -198,6 +293,150 @@
       ],
       "must_not_contain": [
         "storage_type: redis"
+      ]
+    },
+    {
+      "id": "cap-thread-memory",
+      "name": "Enable conversation thread support",
+      "input": "Add conversation thread support to my project",
+      "expected_outputs": [
+        "AgentThreadRequestHandler",
+        "thread:",
+        "type: in_memory",
+        "user_id",
+        "session_id",
+        "GET /api/v1/threads"
+      ]
+    },
+    {
+      "id": "cap-thread-redis",
+      "name": "Enable conversation threads with Redis storage",
+      "input": "Add conversation thread support with Redis storage backend",
+      "expected_outputs": [
+        "thread:",
+        "type: redis",
+        "redis:",
+        "url:",
+        "ttl:",
+        "agentkernel[",
+        "redis",
+        "thread"
+      ],
+      "must_not_contain": [
+        "type: dynamodb"
+      ]
+    },
+    {
+      "id": "cap-thread-valkey",
+      "name": "Enable conversation threads with Valkey storage",
+      "input": "Add conversation thread support with Valkey storage backend",
+      "expected_outputs": [
+        "thread:",
+        "type: valkey",
+        "valkey:",
+        "url:",
+        "ttl:",
+        "agentkernel[",
+        "valkey",
+        "thread"
+      ],
+      "must_not_contain": [
+        "type: redis",
+        "type: dynamodb"
+      ]
+    },
+    {
+      "id": "cap-thread-dynamodb",
+      "name": "Enable conversation threads with DynamoDB storage",
+      "input": "Add conversation thread support with DynamoDB storage for my serverless deployment",
+      "expected_outputs": [
+        "thread:",
+        "type: dynamodb",
+        "dynamodb:",
+        "table_name:",
+        "agentkernel[",
+        "aws"
+      ],
+      "must_not_contain": [
+        "type: redis"
+      ]
+    },
+    {
+      "id": "cap-sandbox-local",
+      "name": "Add local_subprocess sandbox",
+      "input": "Add a sandbox to my project so the agent can run Python code locally",
+      "expected_outputs": [
+        "sandbox:",
+        "enabled: true",
+        "type: local_subprocess",
+        "flavor:"
+      ],
+      "must_not_contain": [
+        "sandbox-docker"
+      ]
+    },
+    {
+      "id": "cap-sandbox-docker",
+      "name": "Add docker sandbox",
+      "input": "Add a container-isolated sandbox using docker to my project",
+      "expected_outputs": [
+        "sandbox:",
+        "enabled: true",
+        "type: docker",
+        "agentkernel[sandbox-docker]",
+        "image:"
+      ]
+    },
+    {
+      "id": "cap-schedule-basic",
+      "name": "Add scheduling capability",
+      "input": "Add scheduling support so my agent can defer chats and schedule follow-up work",
+      "expected_outputs": [
+        "schedule:",
+        "provider:",
+        "type: local",
+        "store:",
+        "type: in_memory",
+        "create_schedule"
+      ]
+    },
+    {
+      "id": "cap-schedule-management-api",
+      "name": "Enable schedule management REST API",
+      "input": "Add the scheduling management REST API to my project so I can list, amend, and cancel scheduled tasks",
+      "expected_outputs": [
+        "ScheduleRESTRequestHandler",
+        "schedule:",
+        "IOHandler",
+        "handlers="
+      ]
+    },
+    {
+      "id": "cap-schedule-cron",
+      "name": "Add a recurring schedule with cron",
+      "input": "I want the agent to be able to schedule recurring reminders with a cron expression",
+      "expected_outputs": [
+        "schedule:",
+        "cron",
+        "agentkernel[cron]"
+      ]
+    },
+    {
+      "id": "cap-schedule-eventbridge",
+      "name": "Add scheduled tasks with the EventBridge provider",
+      "input": "Add scheduled tasks to my AWS project using EventBridge Scheduler and DynamoDB",
+      "expected_outputs": [
+        "schedule:",
+        "provider:",
+        "type: eventbridge",
+        "store:",
+        "type: dynamodb",
+        "agentkernel[",
+        "aws",
+        "cron"
+      ],
+      "must_not_contain": [
+        "type: local"
       ]
     }
   ]

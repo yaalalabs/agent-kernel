@@ -41,7 +41,7 @@ const sidebars = {
         'architecture/overview',
         'architecture/execution-flow',
         'architecture/memory-management',
-        'architecture/knowledge-bases'
+        'architecture/sandbox-internals',
       ],
     },
     {
@@ -54,6 +54,7 @@ const sidebars = {
         'frameworks/langgraph',
         'frameworks/google-adk',
         'frameworks/smolagents',
+        'frameworks/pydantic-ai',
         'frameworks/multi-framework',
       ],
     },
@@ -69,6 +70,7 @@ const sidebars = {
           items: [
             'deployment/aws-serverless',
             'deployment/aws-containerized',
+            'deployment/aws-queue-mode-scalability',
           ],
         },
         {
@@ -77,6 +79,21 @@ const sidebars = {
           items: [
             'deployment/azure-serverless',
             'deployment/azure-containerized',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'GCP',
+          items: [
+            'deployment/gcp-serverless',
+            'deployment/gcp-containerized',
+          ],
+        },
+        {
+          type: 'category',
+          label: 'On-Prem / Kubernetes',
+          items: [
+            'deployment/onprem-kubernetes',
           ],
         },
       ],
@@ -95,6 +112,7 @@ const sidebars = {
         'integrations/teams',
         'integrations/livekit',
         'integrations/hooks',
+        'integrations/agui',
       ],
     },
     {
@@ -104,6 +122,7 @@ const sidebars = {
         'api/rest-api',
         'api/mcp-server',
         'api/a2a-server',
+        'api/agui-server',
       ],
     },
     {
@@ -122,6 +141,11 @@ const sidebars = {
         'advanced/traceability',
         'advanced/multi-agent',
         'advanced/multimodal',
+        'advanced/threads',
+        'advanced/scheduling',
+        'advanced/sandbox',
+        'advanced/knowledge-bases',
+        'advanced/queue-mode-guide',
         {
           type: 'category',
           label: 'Guardrails',

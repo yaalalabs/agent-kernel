@@ -1,0 +1,52 @@
+# Agent Kernel queue mode over Kafka (two-process pipeline).
+#
+# Start the broker and Valkey with `python kafka_tester.py up`, which also provisions the topics:
+# Agent Kernel never creates them, matching a production cluster where topics are managed by
+# Strimzi or your platform team.
+
+execution:
+  mode: rest_sync              # rest_sync (wait for the reply) | rest_async (accept, then poll)
+
+  queues:
+    type: kafka
+
+    kafka:
+      bootstrap_servers: "localhost:9092"
+      input_topic: agent-input
+      output_topic: agent-output
+      group_id: ak-openai-demo   # the consumers append "-input" / "-output"
+      dlq_suffix: ".dlq"         # permanently failed records go to <topic>.dlq
+      retry_backoff: 1.0         # seconds between in-process retries (2.0 in production)
+      # client_config:           # merged into both clients, e.g. for a secured cluster
+      #   security.protocol: SASL_SSL
+      #   sasl.mechanism: SCRAM-SHA-512
+      #   sasl.username: agent-kernel
+      #   sasl.password: ${KAFKA_PASSWORD}
+
+    input:
+      max_receive_count: 2       # deliveries before a record is permanently failed (3 in production)
+      no_of_consumers: 2         # agent-runner threads; keep <= the topic's partition count
+    output:
+      no_of_consumers: 1
+
+  # Required on every broker transport: the two processes exchange responses through this store.
+  response_store:
+    type: valkey
+    valkey:
+      url: "valkey://localhost:6379"
+      prefix: "ak:responses:"
+    retry_count: 60              # with delay: how long a rest_sync caller waits (60 x 1s)
+    delay: 1
+
+# Sessions on Valkey also give Kafka's retry bookkeeping (delivery counts and deduplication) a
+# home that survives a restart. With an in_memory session store it still works, but Agent Kernel
+# warns that the counts are process-local.
+session:
+  type: valkey
+  valkey:
+    url: "valkey://localhost:6379"
+    prefix: "ak:sessions:"
+
+logging:
+  ak:
+    level: INFO

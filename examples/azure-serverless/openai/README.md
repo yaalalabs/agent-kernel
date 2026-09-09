@@ -49,7 +49,7 @@ publisher_email = "your-email@domain.com"
 ### Optional Variables (have defaults)
 ```hcl
 # Azure region for deployment
-region = "centralus"
+region = "eastus"
 
 # Naming configuration
 product_alias = "demo"          # Used in resource names

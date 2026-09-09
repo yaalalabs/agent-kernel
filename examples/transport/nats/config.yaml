@@ -1,0 +1,52 @@
+# Agent Kernel queue mode over NATS JetStream (two-process pipeline).
+#
+# Start the server and Valkey with `python nats_tester.py up`. Unlike the Kafka example, the
+# streams and consumers do not have to exist beforehand: auto_provision below lets Agent Kernel
+# create them at startup, which is the local and dev posture. Production leaves it false and
+# manages the objects declaratively (NACK CRs), so a missing stream fails loudly instead of being
+# created with defaults.
+
+execution:
+  mode: rest_sync              # rest_sync (wait for the reply) | rest_async (accept, then poll)
+
+  queues:
+    type: nats
+
+    nats:
+      url: "nats://localhost:4222"
+      input_stream: AGENT_REQUESTS
+      input_subject_prefix: chat.req
+      output_stream: AGENT_REPLIES
+      output_subject_prefix: chat.out
+      partitions: 4              # 32 in production; 4 keeps this demo's provisioning quick
+      ack_wait: 300              # visibility timeout: must exceed your longest agent turn
+      retry_backoff: 1.0         # nak delay before a redelivery (2.0 in production)
+      duplicate_window: 300      # repeated dedup ids are dropped by the stream within this window
+      auto_provision: true       # create the streams and partition consumers if missing
+
+    input:
+      max_receive_count: 2       # deliveries before a message is permanently failed (3 in production)
+      no_of_consumers: 2         # agent-runner threads; keep <= partitions
+    output:
+      no_of_consumers: 1
+
+  # Required on every broker transport: the two processes exchange responses through this store.
+  response_store:
+    type: valkey
+    valkey:
+      url: "valkey://localhost:6379"
+      prefix: "ak:responses:"
+    retry_count: 60              # with delay: how long a rest_sync caller waits (60 x 1s)
+    delay: 1
+
+# JetStream tracks delivery counts and deduplication itself, so unlike Kafka this transport needs
+# no shared key store for retry bookkeeping. Valkey is here only for sessions and responses.
+session:
+  type: valkey
+  valkey:
+    url: "valkey://localhost:6379"
+    prefix: "ak:sessions:"
+
+logging:
+  ak:
+    level: INFO

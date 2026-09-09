@@ -1,1 +1,1 @@
-from .handler import ResponseDBHandler
+from .factory import ResponseStoreFactory

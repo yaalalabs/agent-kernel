@@ -27,7 +27,7 @@ Create a `.env` file or export the following variables:
 export AK_TEAMS__APP_ID="your-azure-client-id"
 export AK_TEAMS__APP_PASSWORD="your-azure-client-secret"
 
-# Optional: Tenant ID (if single tenant, otherwise defaults to "common")
+# Optional: the bot app's own tenant; leave empty for a multi-tenant bot
 # export AK_TEAMS__TENANT_ID="your-tenant-id"
 
 # OpenAI API Key for the agent

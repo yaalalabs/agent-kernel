@@ -16,7 +16,7 @@ Hooks have full access to the session object and auxiliary memory (volatile and 
 Hooks enable you to:
 
 - **Inject Context**: Add RAG (Retrieval-Augmented Generation) context to prompts
-- **Validate Input**: Implement guard rails to filter inappropriate content
+- **Validate Input**: Implement guardrails to filter inappropriate content
 - **Modify Responses**: Transform or enrich agent replies
 - **Logging & Analytics**: Track execution patterns and user interactions
 - **Content Moderation**: Apply safety filters to inputs and outputs
@@ -64,10 +64,11 @@ Pre-execution hooks run **before** an agent processes a prompt. They can:
 
 **Use Cases:**
 - RAG context injection
-- Input guard rails and content filtering
+- Input guardrails and content filtering
 - Prompt validation
 - User authentication/authorization
 - Request logging and analytics
+- Seeding or editing the per-run [framework context](#per-run-framework-context) carried across turns
 
 :::info Passing additional context to PreHooks
 The built in REST and Lambda servers automatically packs any properties in the request body, other than ["session_id", "prompt", "agent"] as AgentRequestAny objects (with the key name). 
@@ -85,11 +86,242 @@ Post-execution hooks run **after** an agent generates a response. They can:
 - Log responses for analytics
 
 **Use Cases:**
-- Output guard rails and safety filters
+- Output guardrails and safety filters
 - Adding disclaimers or compliance messages
 - Response formatting
 - Sentiment analysis
 - Response logging and analytics
+- Reading (or editing) the per-run [framework context](#per-run-framework-context) after the run wrote it back
+- Trimming or inspecting the [framework-native session](#framework-native-session) (e.g. capping raw conversation history) via `session.get_framework_session()`
+
+### Per-run framework context {#per-run-framework-context}
+
+Hooks are the supported surface for the reserved
+[`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key — a
+framework-agnostic, picklable context/state dict the runner injects into the native framework call and
+writes back after a successful run. Reach it through three `Session` methods:
+`get_framework_context()`, `set_framework_context(dict)`, `clear_framework_context()`.
+
+The ordering around a run is what makes each hook type useful:
+
+- A **pre-hook** runs before the runner loads the context, so its seed or edit is part of the dict
+  injected **this turn**.
+- A **post-hook** runs after write-back but before the session is stored, so it observes the completed
+  run's mutations **and** its own edits are persisted.
+
+```python
+from agentkernel import PostHook, PreHook
+from agentkernel.core.model import AgentReplyText
+
+class SeedCart(PreHook):
+    async def on_run(self, session, agent, requests):
+        # Never auto-created, so seed it explicitly on the first turn.
+        if session.get_framework_context() is None:
+            session.set_framework_context({"cart": []})
+        return requests
+
+    def name(self):
+        return "SeedCart"
+
+class AppendCart(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        # The runner has already written back, so this is the completed run's context.
+        cart = (session.get_framework_context() or {}).get("cart", [])
+        if isinstance(agent_reply, AgentReplyText):
+            agent_reply.response += f"\n\nCurrent cart: {', '.join(cart) or '(empty)'}"
+        return agent_reply
+
+    def name(self):
+        return "AppendCart"
+```
+
+:::warning Tools use the framework's native handle, not these accessors
+These accessors are for hooks only. A tool that writes through `ToolContext.get().session` writes to a
+different object than the run is carrying, so its write is discarded — tools must use their framework's
+native handle instead. See
+[Session → Framework context / per-run state](../core-concepts/session.md#framework-context--per-run-state)
+for the handle to use per framework and why.
+:::
+
+### Accessing the framework-native session {#framework-native-session}
+
+Unlike `framework_context` above (an app-defined dict you seed yourself), `get_framework_session()`
+reaches the framework adapter's **own** session object directly — the same one each runner stores
+under its runner-name key (e.g. `"openai"`) — without you needing to know that key:
+
+```python
+from agentkernel import PostHook
+
+class HistoryTrimHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        openai_session = session.get_framework_session()
+        if openai_session is not None:
+            items = await openai_session.get_items()
+            if len(items) > 20:
+                await openai_session.clear_session()
+                await openai_session.add_items(items[-20:])  # keep only the most recent 20
+        return agent_reply
+
+    def name(self):
+        return "HistoryTrimHook"
+```
+
+It resolves the key via [`Agent.current()`](../core-concepts/agent.md#currently-executing-agent), so
+it only works from inside a hook or a tool — where an agent is actually executing — and returns the
+**live** stored object, so mutating it through its own methods (as above) is visible immediately with
+no `session.set(...)` call needed. See
+[Session → Accessing the current framework session](../core-concepts/session.md#framework-session-access)
+for the full contract, and
+[`examples/cli/session-context`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/session-context)
+for the complete `HistoryTrimHook` example, which caps the OpenAI Agents SDK's raw conversation history
+after every turn.
+
+### Structured Replies in Hooks
+
+When an agent is configured for structured output (e.g., `output_type` in the OpenAI
+Agents SDK or `output_schema` in Google ADK), post-execution hooks receive the
+`AgentReplyAny` object itself, **not a stringified version**. The structured result
+is available on `reply.content` as a dict, and hooks can inspect or modify it in
+place, exactly as they do with the other reply types:
+
+```python
+from agentkernel import PostHook
+from agentkernel.core.model import AgentReplyAny
+
+class StructuredModerationHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        if isinstance(agent_reply, AgentReplyAny):
+            # Inspect and modify the structured dict content directly
+            agent_reply.content["moderated"] = True
+        return agent_reply
+
+    def name(self):
+        return "StructuredModerationHook"
+```
+
+Pre-execution hooks may likewise halt execution by returning an `AgentReplyAny`
+(for example, serving a cached structured answer without running the agent).
+`str()` on an `AgentReplyAny` returns the JSON-serialized content, so hooks that
+log or render replies as text keep working unchanged. See the per-framework
+configuration in the [framework docs](../frameworks/overview).
+
+See [examples/api/openai_structured](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/openai_structured) for a complete example with a post-execution hook that modifies a structured reply.
+
+### Streaming Hooks (`on_stream_event`)
+
+When the application runs in streaming mode (`execution.mode: stream`), or over the AG-UI surface, the agent reply arrives as a sequence of typed **events** rather than one final reply. Post-execution hooks see every one of them — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them — by overriding `on_stream_event`.
+
+The cheapest useful case needs no bookkeeping at all. A tool's return value arrives whole, in one event, on every adapter:
+
+```python
+from agentkernel import PostHook
+
+class ToolResultRedactionHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        return agent_reply  # non-streaming path
+
+    async def on_stream_event(self, session, requests, agent, event):
+        if event.type == "tool_call_result":
+            return event.model_copy(update={"content": scrub(event.content)})
+        return event
+
+    def name(self):
+        return "ToolResultRedactionHook"
+```
+
+Four return shapes:
+
+- **The event** — pass it on, or return a modified event of the **same** `type` to rewrite it in place. A different `type` raises `TypeError`; use a list to emit another type.
+- **`None`** — drop it. Nothing is sent to the client for that event. Dropping a whole pair is ordinary (hiding a reasoning block means dropping `reasoning_start`, `reasoning_delta` and `reasoning_end` alike); dropping only a closing event leaves the client with something that never finishes, which is your responsibility.
+- **A list** — emitted in order, in place of the event. This is how a hook emits *more* than it was given.
+- **Raise `StreamHalt`** — end the run. See below.
+
+:::warning A returned list ends the chain
+`return event` and `return [event]` are **not** equivalent. A list is emitted as-is and the hooks after yours never see those events. Return a bare event unless you specifically mean to emit a different number of them.
+:::
+
+`StreamChunk.delta` is populated only for `TextDelta`, and it is taken from whatever event is finally emitted — so a rewrite reaches both `delta` and `event`, and plain-text consumers and recorded threads carry the redacted version. Reasoning text still reaches your hook but is never projected into `delta`, so it does not leak into surfaces that concatenate it as the answer.
+
+#### Holding text back to rewrite it
+
+Prose arrives one fragment at a time, so a pattern can straddle two events. To rewrite text rather than merely observe it, hold the fragments and release the assembled whole at the boundary:
+
+```python
+class MessageRedactionHook(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        return agent_reply
+
+    async def on_stream_event(self, session, requests, agent, event):
+        # The buffer belongs on the session, never on `self`: one hook instance serves every
+        # concurrent request in the process, while the volatile cache is per session and is
+        # cleared when the run ends.
+        buf = session.get_volatile_cache()
+
+        if event.type == "text_delta":
+            key = f"redact.{event.message_id}"
+            buf.set(key, (buf.get(key) or "") + event.content)
+            return None                                   # held: nothing sent yet
+
+        if event.type == "message_end":
+            key = f"redact.{event.message_id}"
+            held = buf.get(key)
+            if held is None:
+                return event                              # message carried no text
+            buf.delete(key)
+            return [TextDelta(message_id=event.message_id, content=scrub(held)), event]
+
+        return event
+
+    def name(self):
+        return "MessageRedactionHook"
+```
+
+The client then sees the message start, nothing, then the whole redacted message and its close. **Incremental delivery is gone for whatever you hold** — the answer appears at once instead of typing out.
+
+To keep most of the streaming feel, hold back only a bounded tail: emit everything except the last N-1 characters (N being your longest pattern), scrubbed, and flush the remainder at `message_end`. Text then lags by a fixed, small amount rather than by the whole message. Size the window to your longest pattern — anything longer can straddle the boundary and slip through.
+
+#### Refusing instead of redacting
+
+Some content is not worth rewriting. Raising `StreamHalt` ends the run:
+
+```python
+from agentkernel import PostHook, StreamHalt
+
+class CredentialBrake(PostHook):
+    async def on_run(self, session, requests, agent, agent_reply):
+        return agent_reply
+
+    async def on_stream_event(self, session, requests, agent, event):
+        if event.type == "tool_call_result" and looks_like_a_key(event.content):
+            raise StreamHalt("Response withheld: credential material detected")
+        return event
+
+    def name(self):
+        return "CredentialBrake"
+```
+
+Agent Kernel then emits the closing event for any boundary the stream left open — so a client is not left with an unfinished message or tool call — followed by a single chunk carrying your reason as its `error` with `done: true`. The session is **not** stored, and a recorded thread keeps no assistant message, so a halted turn leaves no trace in conversation state. Because it acts on a fragment rather than a finished unit, halting costs no latency.
+
+Treat a halted response as invalid rather than truncated: discard the partial rather than rendering it as a short answer. Any exception that is **not** `StreamHalt` propagates unchanged — a bug in a hook is a defect, not an orderly end of stream.
+
+:::note Tool events are observations, not gates
+Adapters emit `ToolCall*` events after the framework has already made the call. Halting on one prevents the result being **disclosed**; it does not prevent the tool from having **run**.
+:::
+
+#### Migrating from `on_stream_chunk`
+
+`on_stream_chunk` has been removed. It took a `str` and returned a `str`, so it only ever saw text and could not inspect a tool call. Replace it with `on_stream_event`:
+
+| Before | After |
+| --- | --- |
+| `async def on_stream_chunk(self, session, requests, agent, delta: str)` | `async def on_stream_event(self, session, requests, agent, event)` |
+| `return delta` | `return event` |
+| `return modified_text` | `return event.model_copy(update={"content": modified_text})` |
+| `return None` | `return None` (unchanged) |
+
+A hook that still defines `on_stream_chunk` will not raise — the method is simply never called, and its filtering silently stops applying. Check for it when upgrading.
+
+**Use Cases:** redacting tool arguments and results, PII masking over assembled text, profanity filtering, hiding reasoning traces from clients, refusing a response outright, streaming analytics.
 
 ## Implementing Hooks
 
@@ -212,7 +444,7 @@ class GuardRailHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request (assuming single text request)
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests  # No text to validate
         
@@ -223,8 +455,8 @@ class GuardRailHook(PreHook):
             if keyword in prompt_lower:
                 # Halt execution and return rejection message
                 return AgentReplyText(
-                    text=f"I cannot assist with requests related to '{keyword}'. "
-                         "Please ask a different question."
+                    response=f"I cannot assist with requests related to '{keyword}'. "
+                             "Please ask a different question."
                 )
         
         # Prompt is safe - continue with execution
@@ -249,7 +481,7 @@ class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request (assuming single text request)
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests  # No text to enrich
         
@@ -264,7 +496,7 @@ class RAGHook(PreHook):
 Question: {prompt}
 
 Please answer the question using the provided context."""
-            return [AgentRequestText(text=enriched_prompt)]
+            return [AgentRequestText(prompt=enriched_prompt)]
         
         # No relevant context found - return original
         return requests
@@ -285,15 +517,15 @@ class ModerationHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         # Extract text from reply
         if isinstance(agent_reply, AgentReplyText):
-            reply_text = agent_reply.text
+            reply_text = agent_reply.response
         else:
             return agent_reply  # Can't moderate non-text replies
         
         # Check reply for inappropriate content
         if self._contains_sensitive_info(reply_text):
             return AgentReplyText(
-                text="I apologize, but I cannot provide that information. "
-                     "Please rephrase your question."
+                response="I apologize, but I cannot provide that information. "
+                         "Please rephrase your question."
             )
         
         return agent_reply
@@ -324,7 +556,7 @@ class DisclaimerHook(PostHook):
         
         # Add disclaimer to text replies
         if isinstance(agent_reply, AgentReplyText):
-            return AgentReplyText(text=agent_reply.text + disclaimer)
+            return AgentReplyText(response=agent_reply.response + disclaimer)
         
         return agent_reply
     
@@ -349,7 +581,7 @@ class AnalyticsHook(PreHook):
         # Extract text for logging (if available)
         prompt_text = None
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt_text = requests[0].text
+            prompt_text = requests[0].prompt
         
         # Log the interaction
         self.logger.log({
@@ -416,7 +648,7 @@ class RobustRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
@@ -424,7 +656,7 @@ class RobustRAGHook(PreHook):
             context = self.knowledge_base.search(prompt)
             if context:
                 enriched = self._enrich_prompt(prompt, context)
-                return [AgentRequestText(text=enriched)]
+                return [AgentRequestText(prompt=enriched)]
         except Exception as e:
             # Log error but don't crash
             self.logger.error(f"RAG lookup failed: {e}")
@@ -453,20 +685,20 @@ class OptimizedRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
         # Check cache first
         cache_key = hash(prompt)
         if cache_key in self.cache:
-            return [AgentRequestText(text=self.cache[cache_key])]
+            return [AgentRequestText(prompt=self.cache[cache_key])]
         
         # Perform lookup
         enriched = self._do_rag(prompt)
         self.cache[cache_key] = enriched
         
-        return [AgentRequestText(text=enriched)]
+        return [AgentRequestText(prompt=enriched)]
     
     def name(self):
         return "OptimizedRAGHook"
@@ -488,17 +720,17 @@ class ConfigurableGuardRailHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
         # Validate based on configuration
         if len(prompt) > self.max_length:
-            return AgentReplyText(text=f"Input too long (max {self.max_length} chars)")
+            return AgentReplyText(response=f"Input too long (max {self.max_length} chars)")
         
         for keyword in self.blocked_keywords:
             if keyword in prompt.lower():
-                return AgentReplyText(text=f"Cannot process requests about '{keyword}'")
+                return AgentReplyText(response=f"Cannot process requests about '{keyword}'")
         
         return requests
     
@@ -522,7 +754,7 @@ class AsyncRAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
@@ -533,7 +765,7 @@ class AsyncRAGHook(PreHook):
         if results:
             context = "\n".join([r.text for r in results])
             enriched = f"Context:\n{context}\n\nQuestion: {prompt}"
-            return [AgentRequestText(text=enriched)]
+            return [AgentRequestText(prompt=enriched)]
         
         return requests
     
@@ -565,7 +797,7 @@ class RAGHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
@@ -573,7 +805,7 @@ class RAGHook(PreHook):
         context = self._search_knowledge_base(prompt)
         if context:
             enriched = f"Context: {context}\n\nQuestion: {prompt}"
-            return [AgentRequestText(text=enriched)]
+            return [AgentRequestText(prompt=enriched)]
         return requests
     
     def _search_knowledge_base(self, query):
@@ -589,13 +821,13 @@ class GuardRailHook(PreHook):
     async def on_run(self, session, agent, requests):
         # Extract text from first request
         if requests and isinstance(requests[0], AgentRequestText):
-            prompt = requests[0].text
+            prompt = requests[0].prompt
         else:
             return requests
         
         for keyword in self.BLOCKED:
             if keyword in prompt.lower():
-                return AgentReplyText(text=f"Cannot assist with '{keyword}'")
+                return AgentReplyText(response=f"Cannot assist with '{keyword}'")
         return requests
     
     def name(self):
@@ -604,7 +836,7 @@ class GuardRailHook(PreHook):
 class DisclaimerHook(PostHook):   
     async def on_run(self, session, requests, agent, agent_reply):
         if isinstance(agent_reply, AgentReplyText):
-            return AgentReplyText(text=agent_reply.text + "\n\n*Disclaimer: AI-generated content.*")
+            return AgentReplyText(response=agent_reply.response + "\n\n*Disclaimer: AI-generated content.*")
         return agent_reply
     
     def name(self):
@@ -637,18 +869,35 @@ See the complete hooks demonstration in the repository:
 📁 **[examples/api/hooks/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/api/hooks)**
 
 This example includes:
-- `hooks.py` - Guard rail and RAG hook implementations
+- `hooks.py` - GuardRailHook, RAGHook, and DisclaimerHook implementations
 - `app.py` - Agent setup with hook registration
-- `app_test.py` - Comprehensive test suite with 7 tests
-- `example_usage.py` - Direct execution example
+- `app_test.py` - Automated end-to-end test suite (drives the real OpenAI Agents SDK over HTTP)
+- `demonstration.py` - Direct execution example
 - `README.md` - Detailed documentation
 
 **Key Features Demonstrated:**
-- ✅ Guard rail blocking inappropriate requests
+- ✅ Guardrail blocking inappropriate requests
 - ✅ RAG context injection from knowledge base
-- ✅ Hook chaining (RAG → GuardRail)
+- ✅ Hook chaining (RAG → GuardRail pre-hooks)
 - ✅ Input validation (length limits, keyword filtering)
 - ✅ Automated testing of hook behavior
+
+### Session Context Example
+
+See the complete `Session.get_framework_session()` demonstration in the repository:
+
+📁 **[examples/cli/session-context/](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/session-context)**
+
+This example includes:
+- `hooks.py` - `HistoryTrimHook` implementation
+- `demo.py` - Agent setup with hook registration
+- `hooks_test.py` - Network-free unit test for `HistoryTrimHook` / `get_framework_session()`
+- `README.md` - Detailed documentation
+
+**Key Features Demonstrated:**
+- ✅ Capping framework-native session history via `session.get_framework_session()`
+- ✅ Mutating the framework-native session's live reference in place (no `session.set(...)` needed)
+- ✅ Automated testing of the hook through `Runtime.run()`, with no network access required
 
 ### Running the Example
 
@@ -670,12 +919,27 @@ pytest app_test.py -v
 python example_usage.py
 ```
 
+### Running the Session Context Example
+
+```bash
+cd examples/cli/session-context
+
+# Build environment
+./build.sh
+
+# Run the demo
+python demo.py
+
+# Run tests (in another terminal)
+uv run pytest -s
+```
+
 ### Testing Hooks
 
 The example includes comprehensive tests:
 
 ```python
-# Test guard rail blocks inappropriate content
+# Test guardrail blocks inappropriate content
 async def test_guard_rail_blocks():
     response = await client.send("How can I hack into a system?")
     assert "cannot assist" in response.lower()
@@ -710,7 +974,7 @@ class PreHook(ABC):
         
         Some use cases:
           - RAG context injection
-          - Prompt validation like input guard rails
+          - Prompt validation like input guardrails
           - Logging or analytics
 
         :param session: The session instance
@@ -814,7 +1078,7 @@ OpenAIModule([agent]).pre_hook(agent, [...]).post_hook(agent, [...])
 
 ```python
 # ❌ Wrong: Halts execution
-return AgentReplyText(text="Execution halted")
+return AgentReplyText(response="Execution halted")
 
 # ✅ Correct: Continues execution
 return requests  # or modified requests list
@@ -830,16 +1094,16 @@ return requests  # or modified requests list
 # ❌ Wrong: Returns original
 async def on_run(self, session, agent, requests):
     if requests and isinstance(requests[0], AgentRequestText):
-        prompt = requests[0].text
+        prompt = requests[0].prompt
         enriched = f"Context: {context}\n{prompt}"
     return requests  # Returns original!
 
 # ✅ Correct: Returns modified
 async def on_run(self, session, agent, requests):
     if requests and isinstance(requests[0], AgentRequestText):
-        prompt = requests[0].text
+        prompt = requests[0].prompt
         enriched = f"Context: {context}\n{prompt}"
-        return [AgentRequestText(text=enriched)]  # Returns modified
+        return [AgentRequestText(prompt=enriched)]  # Returns modified
 ```
 
 ### Hooks Executing in Wrong Order
@@ -900,7 +1164,7 @@ class AsyncRAGHook(PreHook):
 ## Summary
 
 Execution hooks provide powerful extension points for:
-- ✅ Input validation and guard rails
+- ✅ Input validation and guardrails
 - ✅ Context injection (RAG)
 - ✅ Response moderation and transformation
 - ✅ Logging and analytics

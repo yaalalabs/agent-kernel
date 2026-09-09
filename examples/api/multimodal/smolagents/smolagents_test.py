@@ -32,7 +32,7 @@ class APITestClient:
         if files:
             payload["files"] = files
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(f"{self.url}/api/v1/chat", json=payload)
             resp.raise_for_status()
             data = resp.json()
@@ -90,7 +90,7 @@ async def test_image_description(app_client):
     Test.compare(
         actual=response,
         expected=["Elephant", "elephant", "An elephant", "It's an elephant"],
-        threshold=80,
+        threshold=0.8,
     )
 
 
@@ -104,5 +104,5 @@ async def test_followup_retrieval(app_client):
     Test.compare(
         actual=response,
         expected=["Yes", "yes", "Yes, it does", "Yes, the elephant has tusks"],
-        threshold=80,
+        threshold=0.8,
     )

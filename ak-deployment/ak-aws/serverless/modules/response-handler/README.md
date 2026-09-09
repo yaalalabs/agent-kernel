@@ -57,12 +57,16 @@ module "response_handler" {
 | `lambda_signing_config_arn` | Optional Lambda code signing config ARN |
 | `response_handler` | Nested Lambda configuration object |
 | `response_store_redis` | Redis response store configuration |
+| `response_store_valkey` | Valkey response store configuration |
 | `response_store_dynamodb` | DynamoDB response store configuration |
 | `queue_config` | Output queue ARN and batch settings |
 | `subnet_ids` | VPC subnet IDs |
 | `security_group_id` | Optional security group ID to reuse |
 | `lambda_kms_key_arn` | Lambda encryption key ARN |
 | `cloudwatch_kms_key_arn` | CloudWatch log encryption key ARN |
+| `websocket_connections_dynamodb` | DynamoDB configuration for websocket connections table |
+| `websocket_api_execution_arn` | Execution ARN of the WebSocket API Gateway |
+| `websocket_mode` | Whether WebSocket API is enabled (known at plan time) |
 
 ## Response Handler Object Structure
 
@@ -70,11 +74,11 @@ module "response_handler" {
 |-------|-------------|------|---------|----------|
 | `function_name` | Response handler Lambda function name | `string` | `"response-handler"` | no |
 | `function_description` | Response handler Lambda description | `string` | `"Response handler Lambda for processing SQS messages and storing responses"` | no |
-| `timeout` | Response handler Lambda timeout in seconds | `number` | `30` | no |
+| `timeout` | Response handler Lambda timeout in seconds | `number` | `45` | no |
 | `memory_size` | Response handler Lambda memory size in MB | `number` | `256` | no |
 | `handler_path` | Response handler Lambda handler path | `string` | `"response_handler.handler"` | no |
 | `module_name` | Response-handler artifact module name | `string` | `"response-handler"` | no |
-| `package_path` | Response handler deployment package path | `string` | n/a | yes |
+| `package_path` | Response handler deployment package path | `string` | `null` | no |
 | `package_type` | Response handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `environment_variables` | Environment variables for the response handler | `map(string)` | `{}` | no |
@@ -82,6 +86,7 @@ module "response_handler" {
 ## Injected Environment Variables
 
 - `AK_EXECUTION__RESPONSE_STORE__REDIS__URL`
+- `AK_EXECUTION__RESPONSE_STORE__VALKEY__URL`
 - `AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME`
 - `AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT`
 

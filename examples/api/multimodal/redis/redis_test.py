@@ -62,7 +62,7 @@ async def test_image_description(http_client):
     Test.compare(
         actual=response,
         expected=["Elephant", "elephant", "An elephant", "It's an elephant"],
-        threshold=80,
+        threshold=0.8,
     )
 
 
@@ -76,5 +76,5 @@ async def test_followup_retrieval_from_redis(http_client):
     Test.compare(
         actual=response,
         expected=["Yes", "yes", "Yes, it does", "Yes, the elephant has tusks"],
-        threshold=80,
+        threshold=0.8,
     )

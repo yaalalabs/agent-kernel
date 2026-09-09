@@ -4,34 +4,50 @@ data "aws_vpc" "provided" {
 }
 
 locals {
-  vpc_id                    = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
-  vpc_cidr                  = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
-  subnet_ids                = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
-  redis_url                 = var.create_redis_cluster == true ? module.redis[0].url : null
-  dynamodb_memory_table_arn = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
-  dynamodb_memory_table_name = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
-  prefix                    = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-  service_name              = "${local.prefix}-service"
-  container_name            = "${local.prefix}-app"
+  vpc_id                       = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
+  vpc_cidr                     = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
+  subnet_ids                   = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
+  redis_url                    = var.create_redis_cluster == true ? module.redis[0].url : null
+  valkey_url                   = var.create_valkey_cluster == true ? module.valkey[0].url : null
+  dynamodb_memory_table_arn    = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
+  dynamodb_memory_table_name   = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_name : null
+  dynamodb_thread_table_arn    = var.create_dynamodb_thread_table == true ? module.dynamodb_thread[0].table_arn : null
+  dynamodb_thread_table_name   = var.create_dynamodb_thread_table == true ? module.dynamodb_thread[0].table_name : null
+  dynamodb_schedule_table_arn  = var.create_dynamodb_schedule_table == true ? aws_dynamodb_table.schedule_store[0].arn : null
+  dynamodb_schedule_table_name = var.create_dynamodb_schedule_table == true ? aws_dynamodb_table.schedule_store[0].name : null
+  schedule_group_name          = var.enable_scheduling ? aws_scheduler_schedule_group.schedules[0].name : null
+  schedule_group_arn           = var.enable_scheduling ? aws_scheduler_schedule_group.schedules[0].arn : null
+  scheduler_execution_role_arn = var.enable_scheduling ? aws_iam_role.scheduler_execution[0].arn : null
+  prefix                       = "${var.product_alias}-${var.env_alias}-${var.module_name}"
+  service_name                 = "${local.prefix}-service"
+  container_name               = "${local.prefix}-app"
 
-  api_base_segment = try(trim(var.api_base_path, "/"), "")
+  # True for both WebSocket modes: "async" (full-response) and "stream" (chunk-per-message).
+  is_websocket_mode = contains(["async", "stream"], var.execution_mode)
+
+  api_base_segment              = try(trim(var.api_base_path, "/"), "")
   api_base_segment_with_version = "/${join("/", compact([local.api_base_segment, var.api_version]))}"
-  default_endpoint_path = "${join("/", compact([local.api_base_segment_with_version, var.agent_endpoint]))}"
+  default_endpoint_path         = join("/", compact([local.api_base_segment_with_version, var.agent_endpoint]))
   default_gateway_endpoint = {
     path           = local.default_endpoint_path
     method         = "POST"
     overwrite_path = "/api/v1/chat"
   }
-  multipart_endpoint_path = "${join("/", compact([local.api_base_segment_with_version, "${var.agent_endpoint}-multipart"]))}"
+  multipart_endpoint_path = join("/", compact([local.api_base_segment_with_version, "${var.agent_endpoint}-multipart"]))
   multipart_gateway_endpoint = {
     path           = local.multipart_endpoint_path
     method         = "POST"
     overwrite_path = "/api/v1/chat-multipart"
   }
-  default_gateway_map = {
-    "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}" = local.default_gateway_endpoint
-    "${upper(local.multipart_gateway_endpoint.method)} ${local.multipart_gateway_endpoint.path}" = local.multipart_gateway_endpoint
-  }
+  default_gateway_map = merge(
+    {
+      "${upper(local.default_gateway_endpoint.method)} ${local.default_gateway_endpoint.path}" = local.default_gateway_endpoint
+    },
+    # Multipart chat is only served in DIRECT (non-queue) REST mode; skip in queue/WebSocket modes (would 404).
+    (!var.queue_mode && !local.is_websocket_mode) ? {
+      "${upper(local.multipart_gateway_endpoint.method)} ${local.multipart_gateway_endpoint.path}" = local.multipart_gateway_endpoint
+    } : {}
+  )
   user_gateway_map = {
     for ep in var.gateway_endpoints :
     (
@@ -40,7 +56,7 @@ locals {
       : "${upper(try(ep["method"], "ANY"))} ${join("/", compact([local.api_base_segment_with_version, trim(try(ep["path"], ""), "/")]))}"
     ) => ep
   }
-  mcp_endpoint_path = "${join("/", compact([local.api_base_segment_with_version, "mcp"]))}"
+  mcp_endpoint_path = join("/", compact([local.api_base_segment_with_version, "mcp"]))
   mcp_gateway_map = var.enable_mcp_server ? {
     "ANY ${local.mcp_endpoint_path}" = {
       path           = "mcp"
@@ -53,7 +69,7 @@ locals {
 
 module "vpc" {
   source               = "yaalalabs/ak-common/aws//modules/vpc"
-  version              = "0.4.0"
+  version              = "0.9.0"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
@@ -65,8 +81,20 @@ module "vpc" {
 
 module "redis" {
   source        = "yaalalabs/ak-common/aws//modules/redis"
-  version       = "0.4.0"
+  version       = "0.9.0"
   count         = var.create_redis_cluster == true ? 1 : 0
+  env_alias     = var.env_alias
+  module_name   = var.module_name
+  product_alias = var.product_alias
+  vpc_cidr      = local.vpc_cidr
+  vpc_id        = local.vpc_id
+  subnet_ids    = local.subnet_ids
+}
+
+module "valkey" {
+  source        = "yaalalabs/ak-common/aws//modules/valkey"
+  version       = "0.9.0"
+  count         = var.create_valkey_cluster == true ? 1 : 0
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
@@ -78,16 +106,27 @@ module "redis" {
 module "docker_image" {
   count         = 1
   source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.4.0"
+  version       = "0.9.0"
   env_alias     = var.env_alias
   module_name   = var.module_name
   product_alias = var.product_alias
-  source_path   = var.package_path
+  source_path   = var.rest_service.package_path
 }
 
-module dynamodb_memory {
+# Agent Runner Docker Image (optional - only if package_path is provided)
+module "agent_runner_docker_image" {
+  count         = var.queue_mode && var.agent_runner.package_path != null ? 1 : 0
+  source        = "yaalalabs/ak-common/aws//modules/ecr"
+  version       = "0.9.0"
+  env_alias     = var.env_alias
+  module_name   = "${var.module_name}-runner"
+  product_alias = var.product_alias
+  source_path   = var.agent_runner.package_path
+}
+
+module "dynamodb_memory" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.4.0"
+  version = "0.9.0"
   count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
@@ -100,5 +139,23 @@ module dynamodb_memory {
   module_name        = var.module_name
   product_alias      = var.product_alias
   table_name         = "session_store"
+  ttl_attribute_name = "expiry_time"
+}
+
+module "dynamodb_thread" {
+  source  = "yaalalabs/ak-common/aws//modules/dynamodb"
+  version = "0.9.0"
+  count   = var.create_dynamodb_thread_table == true ? 1 : 0
+  attributes = [
+    { name = "session_id", type = "S" },
+    { name = "sk", type = "S" },
+  ]
+  hash_key           = "session_id"
+  range_key          = "sk"
+  ttl_enabled        = true
+  env_alias          = var.env_alias
+  module_name        = var.module_name
+  product_alias      = var.product_alias
+  table_name         = "thread_store"
   ttl_attribute_name = "expiry_time"
 }

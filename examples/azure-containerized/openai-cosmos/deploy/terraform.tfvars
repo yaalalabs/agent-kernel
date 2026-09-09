@@ -1,4 +1,4 @@
-region = "centralus"
+region = "eastus"
 # The Azure Resource Group you want to deploy the ACR into
 resource_group_name = "openai_cont_daily"
 

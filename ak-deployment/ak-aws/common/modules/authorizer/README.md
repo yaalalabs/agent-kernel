@@ -16,7 +16,7 @@ This Terraform module creates a Lambda-based API Gateway authorizer for custom a
 ```hcl
 module "authorizer" {
   source = "yaalalabs/ak-common/aws//modules/authorizer"
-  version = "0.2.11"
+  version = "0.8.1"
   
   region        = "us-west-2"
   product_alias = "myapp"
@@ -90,6 +90,9 @@ module "authorizer" {
 | `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
 | `module_name` | Authorizer module name | `string` | n/a | yes |
 | `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
+| `timeout` | Authorizer Lambda timeout in seconds | `number` | `30` | no |
+| `memory_size` | Authorizer Lambda memory size in MB | `number` | `128` | no |
+| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
 
 ## Outputs

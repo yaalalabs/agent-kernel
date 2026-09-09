@@ -1,0 +1,269 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   StepTimeline — styles.module.css
+   Clean, premium glowing progress bar matching the mockups.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Bar ─────────────────────────────────────────────────────────────── */
+
+.bar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  height: 90px;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: none;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  padding: 0 48px;
+
+  /* Premium Dark Surface - transparent by default */
+  background-color: rgba(6, 6, 9, 0);
+  border-bottom: 1px solid rgba(255, 255, 255, 0);
+
+  /* Frosted glass - transparent by default */
+  backdrop-filter: saturate(180%) blur(0px);
+  -webkit-backdrop-filter: saturate(180%) blur(0px);
+
+  /* Transition for smooth background fade and positioning */
+  transition:
+    top 0.3s ease,
+    background-color 0.35s ease,
+    border-bottom-color 0.35s ease,
+    backdrop-filter 0.35s ease,
+    -webkit-backdrop-filter 0.35s ease;
+}
+
+.bar--navbar-visible {
+  top: var(--ifm-navbar-height, 60px);
+}
+
+.bar--visible {
+  pointer-events: auto;
+  background-color: rgba(6, 6, 9, 0.65);
+  border-bottom-color: rgba(255, 255, 255, 0.05);
+  backdrop-filter: saturate(180%) blur(16px);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+}
+
+/* ── Inner layout ────────────────────────────────────────────────────── */
+
+.inner {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 21px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  height: 100%;
+  transform: translateY(-8px);
+
+  /* Hide by default */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+
+  transition:
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.35s ease,
+    visibility 0.35s;
+}
+
+.bar--visible .inner {
+  transform: translateY(0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* ── Connector line ──────────────────────────────────────────────────── */
+
+.connector {
+  flex: 1;
+  min-width: 12px;
+  height: 2px;
+  margin-top: 11px;
+  background-color: #20232c;
+  position: relative;
+  margin-left: -4px;
+  margin-right: -4px;
+  z-index: 1;
+}
+
+.connectorFill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  height: 100%;
+  width: 100%;
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left;
+  background: var(--timeline-color);
+  box-shadow: 0 0 8px 1px var(--timeline-color-glow);
+  transition: transform 120ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* ── Step button ─────────────────────────────────────────────────────── */
+
+.step {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  outline: none;
+  padding: 0;
+  z-index: 2;
+  transition: transform 0.2s ease;
+}
+
+.step:focus-visible {
+  outline: none;
+}
+
+.step--upcoming {
+  opacity: 0.7;
+}
+
+.step--done,
+.step--active {
+  opacity: 1;
+}
+
+/* ── Step number (Hidden in this visual style) ───────────────────────── */
+
+.num {
+  display: none;
+}
+
+/* ── Pip (state indicator dot) ───────────────────────────────────────── */
+
+.pip {
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pip--upcoming {
+  width: 8px;
+  height: 8px;
+  background-color: #2c2f36;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.pip--active {
+  width: 12px;
+  height: 12px;
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, var(--timeline-color) 35%, var(--timeline-color-dark) 75%, #000000 100%);
+  box-shadow: 0 0 14px 4px var(--timeline-color-glow-strong), inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.pip--done {
+  width: 8px;
+  height: 8px;
+  background-color: #3f4450;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* ── Interactive Hovers ──────────────────────────────────────────────── */
+
+.step:hover .pip--upcoming,
+.step:hover .pip--done {
+  background-color: #5a6172;
+  transform: scale(1.2);
+}
+
+.step:hover .label--upcoming,
+.step:hover .label--done {
+  color: #a0a8ba;
+}
+
+/* ── Label ───────────────────────────────────────────────────────────── */
+
+.label {
+  position: absolute;
+  top: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-align: center;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.label--upcoming {
+  color: #4a4e5a;
+}
+
+.label--done {
+  color: #6a7182;
+}
+
+.label--active {
+  font-weight: 600;
+  color: var(--timeline-color);
+  text-shadow: 0 0 8px var(--timeline-color-glow);
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 1024px) {
+  .bar {
+    display: none;
+  }
+}
+
+/* ── Back button ─────────────────────────────────────────────────────── */
+
+.backBtn {
+  position: absolute;
+  left: 80px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: auto;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--timeline-color-border);
+  /* cyan tint always visible */
+  background: var(--timeline-color-bg);
+  /* subtle cyan fill */
+  color: var(--timeline-color-text-dim);
+  /* icon clearly cyan */
+  cursor: pointer;
+  padding: 0;
+  outline: none;
+
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.backBtn:hover {
+  background: var(--timeline-color-bg-hover);
+  border-color: var(--timeline-color);
+  color: var(--timeline-color);
+  box-shadow: 0 0 10px 2px var(--timeline-color-glow);
+  transform: translateY(-50%) translateX(-2px);
+}
+
+.backBtn:focus-visible {
+  outline: 2px solid var(--timeline-color);
+  outline-offset: 2px;
+}

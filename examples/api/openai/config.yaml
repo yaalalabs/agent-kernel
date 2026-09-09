@@ -1,3 +1,32 @@
+# Chat execution runs on Agent Kernel's queue-mode pipeline (#495): REST API -> input queue ->
+# agent runner -> output queue -> response handler, all five components in this one process.
+# This block is optional, these are the defaults, but is spelled out here to show the knobs.
+execution:
+  # rest_sync: POST /api/v1/chat waits for the reply (also the behavior when mode is unset).
+  # rest_async: POST returns a request_id immediately; poll GET /api/v1/chat?request_id=...
+  # stream: POST /api/v1/chat streams the reply token-by-token over SSE.
+  mode: rest_sync
+  queues:
+    # in_memory is the default transport. Swapping this to a broker transport (sqs today;
+    # kafka/nats upcoming) moves the agent runner into its own process/container with no
+    # application code changes.
+    type: in_memory
+    input:
+      max_receive_count: 3 # deliveries before a message is treated as permanently failed
+      no_of_consumers: 2 # agent-runner worker threads (sessions run in parallel)
+    output:
+      no_of_consumers: 1
+    in_memory:
+      # Redelivery rescues stuck worker threads; keep this above your longest expected agent
+      # run, or a slow run will be executed a second time.
+      ack_wait: 300 # seconds before an unacknowledged message is redelivered
+      dedup_window: 300 # seconds within which duplicate request ids are dropped
+  response_store:
+    # With the in_memory transport this resolves to the in-process response store; these two
+    # values budget how long a rest_sync caller waits for its reply (60 x 1s = 60s).
+    retry_count: 60
+    delay: 1
+
 multimodal:
   enabled: true
   storage_type: in_memory

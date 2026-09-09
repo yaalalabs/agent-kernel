@@ -1,14 +1,26 @@
-import pytest
+import subprocess
+import sys
 
-from agentkernel.core.config import AKConfig
+import pytest
+from pydantic import ValidationError
+
+from agentkernel.core.config import AKConfig, _ScheduleConfig, _ThreadStoreConfig, _ThreadValkeyConfig
+
+
+@pytest.fixture(autouse=True)
+def reset_config_singleton():
+    AKConfig._reset()
+    yield
+    AKConfig._reset()
 
 
 def test_config_defaults_no_file(monkeypatch):
     # Ensure no env interference
     monkeypatch.delenv("AK_SESSION_TYPE", raising=False)
+    # Point at a nonexistent file so a config.yaml in the CWD can't interfere
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
 
     cfg = AKConfig.get()
-    cfg.__init__()  # Reload
     assert cfg.session.type == "in_memory"
 
     # Defaults for nested redis should be None
@@ -22,6 +34,11 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
     cfg_path = tmp_path / "config.yaml"
     cfg_path.write_text(yaml_text)
 
+    # Instance created before the yaml file and env overrides are in place gets defaults
+    cfg_1 = AKConfig.get()
+    assert cfg_1.session.type == "in_memory"
+    assert cfg_1.session.redis is None
+
     # Environment should override nested value, and env_prefix AK_ with nested delimiter _
 
     monkeypatch.setenv("AK_SESSION__TYPE", "in_memory")
@@ -29,12 +46,7 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
 
     # Lets point to the file we created and reload
     monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
-    cfg_1 = AKConfig.get()  # instance object which has no yaml file loaded or env settings
     cfg_2 = AKConfig()  # object which loads yaml file and env settings
-
-    # defaults from cfg_1
-    assert cfg_1.session.type == "in_memory"
-    assert cfg_1.session.redis is None
 
     # file values overridden by env
     assert cfg_2.session.type == "in_memory"
@@ -45,17 +57,18 @@ def test_config_yaml_and_env_override(tmp_path, monkeypatch):
     assert cfg_2.session.redis.url == "redis://example:6379"
     assert cfg_2.session.redis.prefix == "ak:test:"
 
-    # Reload and check default object again
-    cfg_1.__init__()
+    # Reset the singleton and check the reloaded instance picks up yaml + env
+    AKConfig._reset()
+    cfg_3 = AKConfig.get()
 
     # File values overridden by env
-    assert cfg_1.session.type == "in_memory"
-    assert cfg_1.session.redis is not None
-    assert cfg_1.session.redis.ttl == 999
+    assert cfg_3.session.type == "in_memory"
+    assert cfg_3.session.redis is not None
+    assert cfg_3.session.redis.ttl == 999
 
     # File-provided values preserved where env not set
-    assert cfg_1.session.redis.url == "redis://example:6379"
-    assert cfg_1.session.redis.prefix == "ak:test:"
+    assert cfg_3.session.redis.url == "redis://example:6379"
+    assert cfg_3.session.redis.prefix == "ak:test:"
 
 
 def test_nested_env_cases(monkeypatch):
@@ -99,6 +112,44 @@ def test_nested_env_cases(monkeypatch):
     assert cfg.api.enabled_routes.agents is False
 
 
+def test_valkey_config_default_none():
+    cfg = AKConfig()
+    assert cfg.session.valkey is None
+
+
+def test_valkey_config_yaml_and_env_override(tmp_path, monkeypatch):
+    yaml_text = "session:\n" "  type: valkey\n" "  valkey:\n" "    url: valkey://example:6379\n" "    ttl: 120\n" "    prefix: 'ak:test:'\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+
+    monkeypatch.setenv("AK_SESSION__TYPE", "valkey")
+    monkeypatch.setenv("AK_SESSION__VALKEY__TTL", "999")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    cfg = AKConfig()
+    assert cfg.session.type == "valkey"
+    assert cfg.session.valkey is not None
+    # env overrides file
+    assert cfg.session.valkey.ttl == 999
+    # file value preserved where env not set
+    assert cfg.session.valkey.url == "valkey://example:6379"
+    assert cfg.session.valkey.prefix == "ak:test:"
+
+
+def test_response_store_valkey_config(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  mode: rest_async\n" "  response_store:\n" "    type: valkey\n" "    valkey:\n" "      url: valkey://example:6379\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    cfg = AKConfig()
+    assert cfg.execution.response_store.type == "valkey"
+    assert cfg.execution.response_store.valkey is not None
+    assert cfg.execution.response_store.valkey.url == "valkey://example:6379"
+    # prefix default is overridden to the response-store default
+    assert cfg.execution.response_store.valkey.prefix == "ak:responses:"
+
+
 def test_session_cache_default():
     cfg = AKConfig()
     assert cfg.session is not None
@@ -113,6 +164,22 @@ def test_session_cache_env(monkeypatch):
     assert cfg.session.cache.size == 500
 
 
+def test_batch_size_default():
+    cfg = AKConfig()
+    assert cfg.execution.queues.batch_size is None
+
+
+def test_batch_size_env_override(tmp_path, monkeypatch):
+    """A deployment tunes the declared block through env vars; the type stays the config's."""
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("execution:\n" "  queues:\n" "    type: sqs\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__BATCH_SIZE", "5")
+    cfg = AKConfig()
+    assert cfg.execution.queues.type == "sqs"
+    assert cfg.execution.queues.batch_size == 5
+
+
 def test_guardrail_pii_default():
     cfg = AKConfig()
     assert cfg.guardrail.input.pii is True
@@ -125,3 +192,191 @@ def test_guardrail_pii_env_override(monkeypatch):
     cfg = AKConfig()
     assert cfg.guardrail.input.pii is False
     assert cfg.guardrail.output.pii is False
+
+
+def test_config_has_no_test_section(tmp_path, monkeypatch):
+    # The test harness configuration moved to AKTestConfig / test-config.yaml
+    assert "test" not in AKConfig.model_fields
+
+    # A legacy config.yaml still carrying a test: section loads without error
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text("test:\n  mode: fuzzy\nsession:\n  type: in_memory\n")
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    cfg = AKConfig()
+    assert cfg.session.type == "in_memory"
+    assert not hasattr(cfg, "test")
+
+
+def test_lazy_singleton_identity():
+    cfg_1 = AKConfig.get()
+    cfg_2 = AKConfig.get()
+    assert cfg_1 is cfg_2
+
+    AKConfig._reset()
+    cfg_3 = AKConfig.get()
+    assert cfg_3 is not cfg_1
+
+
+def test_thread_valkey_defaults():
+    # _ThreadValkeyConfig narrows _ValkeyConfig for thread use: a 30-day TTL and a
+    # thread-scoped key prefix, rather than session's 7-day TTL / "ak:sessions:".
+    cfg = _ThreadValkeyConfig()
+    assert cfg.url == "valkey://localhost:6379"
+    assert cfg.ttl == 2592000
+    assert cfg.prefix == "ak:thread:"
+
+
+def test_thread_valkey_absent_by_default():
+    # Every thread backend sub-block is opt-in; the store guards on it being None.
+    assert _ThreadStoreConfig().valkey is None
+
+
+def test_thread_type_valkey_from_yaml(tmp_path, monkeypatch):
+    yaml_text = "thread:\n" "  type: valkey\n" "  valkey:\n" "    url: valkey://example:6379\n" "    ttl: 120\n" "    prefix: 'ak:t:'\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    AKConfig._reset()
+
+    cfg = AKConfig.get()
+    assert cfg.thread.type == "valkey"
+    assert cfg.thread.valkey.url == "valkey://example:6379"
+    assert cfg.thread.valkey.ttl == 120
+    assert cfg.thread.valkey.prefix == "ak:t:"
+    # Sibling backends stay unset
+    assert cfg.thread.redis is None
+
+
+def test_schedule_block_absent_by_default(monkeypatch):
+    # Absence of the block is the capability-disabled signal, so it must never default to a value.
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+
+    assert AKConfig.get().schedule is None
+
+
+def test_schedule_defaults_make_a_bare_block_usable():
+    # A bare 'schedule:' block must work for local development without naming any backend.
+    cfg = _ScheduleConfig()
+    assert cfg.provider.type == "local"
+    assert cfg.store.type == "in_memory"
+    assert cfg.agents is None
+    # Backend sub-blocks stay opt-in, and schedules never expire by default.
+    assert cfg.provider.eventbridge is None
+    assert cfg.store.dynamodb is None
+
+
+def test_schedule_from_yaml(tmp_path, monkeypatch):
+    yaml_text = (
+        "schedule:\n"
+        "  provider:\n"
+        "    type: eventbridge\n"
+        "    eventbridge:\n"
+        "      group_name: ak-schedules\n"
+        "      role_arn: arn:aws:iam::123456789012:role/ak-scheduler\n"
+        "      queue_arn: arn:aws:sqs:us-east-1:123456789012:ak-input.fifo\n"
+        "  store:\n"
+        "    type: dynamodb\n"
+        "    dynamodb:\n"
+        "      table_name: ak-schedules\n"
+        "  agents:\n"
+        "    - planner\n"
+    )
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+    AKConfig._reset()
+
+    schedule = AKConfig.get().schedule
+    assert schedule is not None
+    assert schedule.provider.type == "eventbridge"
+    assert schedule.provider.eventbridge.group_name == "ak-schedules"
+    assert schedule.provider.eventbridge.queue_arn == "arn:aws:sqs:us-east-1:123456789012:ak-input.fifo"
+    assert schedule.store.type == "dynamodb"
+    assert schedule.store.dynamodb.table_name == "ak-schedules"
+    assert schedule.store.dynamodb.ttl == 0
+    assert schedule.agents == ["planner"]
+
+
+def test_schedule_env_var_materializes_the_block(monkeypatch):
+    # Same behavior threads have: any AK_SCHEDULE__* variable enables the capability with
+    # defaults for everything it does not name.
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    monkeypatch.setenv("AK_SCHEDULE__STORE__TYPE", "redis")
+
+    schedule = AKConfig.get().schedule
+    assert schedule is not None
+    assert schedule.store.type == "redis"
+    assert schedule.provider.type == "local"
+
+
+def test_import_does_not_load_config(tmp_path):
+    # Fresh interpreter so imports are clean; cwd without a config.yaml so the
+    # missing-file warning would show up if AKConfig were loaded at import.
+    code = (
+        "import agentkernel\n"
+        "from agentkernel.core.config import AKConfig\n"
+        "assert AKConfig._instance is None, 'AKConfig loaded by import agentkernel'\n"
+        "from agentkernel.test import Test, AKTestConfig\n"
+        "assert AKConfig._instance is None, 'AKConfig loaded by agentkernel.test import'\n"
+        "assert AKTestConfig._instance is None, 'AKTestConfig loaded at import'\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "Could not open yaml settings file" not in result.stdout
+
+
+def test_queues_transport_defaults(monkeypatch):
+    """No queues block at all still runs: the single-process transport is the default topology."""
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+    cfg = AKConfig.get()
+    assert cfg.execution.queues.type == "in_memory"
+    assert cfg.execution.queues.in_memory is None
+
+
+def test_declared_queues_block_requires_a_transport_type(tmp_path, monkeypatch):
+    """The transport is declared, never inferred: a block without a type is a config error."""
+    yaml_text = "execution:\n" "  queues:\n" "    input:\n" "      url: https://sqs.test/input\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    AKConfig._reset()
+    with pytest.raises(ValidationError, match="execution.queues.type"):
+        AKConfig.get()
+
+
+def test_queues_transport_yaml_and_env(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  queues:\n" "    type: in_memory\n" "    in_memory:\n" "      ack_wait: 1.5\n" "      dedup_window: 60\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    AKConfig._reset()
+    cfg = AKConfig.get()
+    assert cfg.execution.queues.type == "in_memory"
+    assert cfg.execution.queues.in_memory.ack_wait == 1.5
+    assert cfg.execution.queues.in_memory.dedup_window == 60
+
+    # Env var override uses the AK_ double-underscore nesting for the new field
+    monkeypatch.setenv("AK_EXECUTION__QUEUES__TYPE", "kafka")
+    AKConfig._reset()
+    assert AKConfig.get().execution.queues.type == "kafka"
+
+
+def test_response_store_accepts_in_memory_type(tmp_path, monkeypatch):
+    yaml_text = "execution:\n" "  response_store:\n" "    type: in_memory\n"
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml_text)
+    monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", str(cfg_path))
+
+    AKConfig._reset()
+    cfg = AKConfig.get()
+    assert cfg.execution.response_store.type == "in_memory"
+
+
+def test_response_store_accepts_dotted_path_type():
+    """The type field takes built-in short names or a BYO dotted path (#541 factory pattern);
+    unknown short names fail loudly at store-build time (see test_response_store_in_memory)."""
+    from agentkernel.core.config import _ResponseStoreConfig
+
+    assert _ResponseStoreConfig(type="my_pkg.stores.MyResponseStore").type == "my_pkg.stores.MyResponseStore"

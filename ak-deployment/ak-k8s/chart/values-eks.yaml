@@ -1,0 +1,63 @@
+# AWS EKS flavor. Same templates as baremetal; only the environment differs. Prerequisites:
+#
+#   - Gateway API CRDs (Standard channel) and AWS Load Balancer Controller v3 or later
+#     (Gateway API support is GA since v3.0.0): L7 routes become an ALB
+#   - A GatewayClass for the controller (the name below is the class YOU create, e.g.
+#     controllerName gateway.k8s.aws/alb)
+#   - The EBS CSI driver with a gp3 StorageClass (in-cluster NATS/Valkey persistence)
+#   - EKS Pod Identity associations for the app service account when transport.type is sqs
+#     (never static keys)
+#   - KEDA, if autoscaling the runner tier
+#
+# All three broker transports are valid on EKS: sqs (no broker to operate; pair it with a
+# dynamodb or valkey response store), or in-cluster kafka/nats exactly as on baremetal.
+#
+#   helm install ak ./chart -f ./chart/values-eks.yaml \
+#     --set image.repository=<account>.dkr.ecr.<region>.amazonaws.com/agent-kernel-app \
+#     --set image.tag=<tag> --set gateway.hostname=chat.example.com
+
+transport:
+  type: nats
+  nats:
+    autoProvision: false
+  # SQS alternative (no in-cluster broker):
+  # type: sqs
+  # sqs:
+  #   inputUrl: https://sqs.<region>.amazonaws.com/<account>/agent-input.fifo
+  #   outputUrl: https://sqs.<region>.amazonaws.com/<account>/agent-output.fifo
+
+natsResources:
+  enabled: true
+
+gateway:
+  enabled: true
+  # The GatewayClass you created for the AWS Load Balancer Controller.
+  className: aws-alb
+  annotations:
+    # ACM certificate for the HTTPS listener; ALB terminates TLS, so gateway.tls stays off
+    # and the certificate is attached through the controller's annotation.
+    # alb.gateway.k8s.aws/certificate-arn: arn:aws:acm:<region>:<account>:certificate/<id>
+    {}
+  hostname: ""
+  tls:
+    enabled: false
+
+nats:
+  enabled: true
+  config:
+    jetstream:
+      enabled: true
+      fileStore:
+        pvc:
+          size: 10Gi
+          storageClassName: gp3
+    cluster:
+      enabled: true
+      replicas: 3
+
+valkey:
+  enabled: true
+
+# keda:
+#   enabled: true
+#   awsRegion: <region>   # required by the aws-sqs-queue scaler when transport.type is sqs

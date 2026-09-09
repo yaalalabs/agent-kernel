@@ -18,6 +18,7 @@ It is intended to be consumed by both serverless and containerized stacks to cre
 ## Inputs
 Key inputs (see `variables.tf` for full list):
 - `product_alias`, `env_alias`, `module_name`, `tags`
+- `region` (required) — Azure region for resources (account, private endpoint, and NSG all deploy here, independent of the resource group's own location)
 - `table_name` (required) — table name within the Cosmos DB account
 - `resource_group_name` (required) — Azure resource group name
 - `billing_mode` (default: PAY_PER_REQUEST), `provisioned_throughput`, `autoscale_max_throughput`

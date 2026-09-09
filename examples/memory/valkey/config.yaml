@@ -1,0 +1,12 @@
+logging:
+  ak:
+    level: DEBUG
+session:
+  type: valkey
+  cache:
+    size: 256
+  valkey:
+    prefix: "ak:oai:valkey:"
+    # Local default; on AWS the deployment injects AK_SESSION__VALKEY__URL and overrides this.
+    # Use valkeys:// for SSL/TLS endpoints.
+    url: "valkey://localhost:6379"

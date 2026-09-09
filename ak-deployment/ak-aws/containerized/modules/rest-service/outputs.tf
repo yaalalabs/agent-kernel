@@ -1,0 +1,64 @@
+output "service_arn" {
+  description = "ECS service ARN"
+  value       = module.ecs_service.id
+}
+
+output "service_name" {
+  description = "ECS service name"
+  value       = module.ecs_service.name
+}
+
+output "task_role_name" {
+  description = "ECS task role name"
+  value       = module.ecs_service.tasks_iam_role_name
+}
+
+output "task_role_arn" {
+  description = "ECS task role ARN"
+  value       = module.ecs_service.tasks_iam_role_arn
+}
+
+output "alb_arn" {
+  description = "Application Load Balancer ARN"
+  value       = aws_lb.app.arn
+}
+
+output "alb_dns_name" {
+  description = "Application Load Balancer DNS name"
+  value       = aws_lb.app.dns_name
+}
+
+output "alb_listener_arn" {
+  description = "ALB HTTP listener ARN"
+  value       = aws_lb_listener.http.arn
+}
+
+output "target_group_arn" {
+  description = "ALB target group ARN"
+  value       = aws_lb_target_group.app.arn
+}
+
+output "security_group_id" {
+  description = "ECS service security group ID"
+  value       = aws_security_group.ecs_service.id
+}
+
+output "alb_security_group_id" {
+  description = "ALB security group ID"
+  value       = aws_security_group.ecs_alb.id
+}
+
+output "nlb_arn" {
+  description = "Network Load Balancer ARN (WebSocket VPC Link V1 target); null unless websocket_mode"
+  value       = var.websocket_mode ? aws_lb.nlb[0].arn : null
+}
+
+output "nlb_listener_arn" {
+  description = "NLB TCP listener ARN (WebSocket integration URI); null unless websocket_mode"
+  value       = var.websocket_mode ? aws_lb_listener.nlb[0].arn : null
+}
+
+output "nlb_dns_name" {
+  description = "NLB DNS name (WebSocket integration URI host); null unless websocket_mode"
+  value       = var.websocket_mode ? aws_lb.nlb[0].dns_name : null
+}

@@ -6,7 +6,7 @@ from langgraph_supervisor import create_supervisor
 from custom_agent import CustomAgent
 from langgraph.prebuilt import create_react_agent
 
-model = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+model = ChatOpenAI(model="gpt-4.1-mini", temperature=0.0)
 
 # Math agent: Handles mathematical problems and calculations
 # Uses LangGraph's ReAct framework to provide step-by-step mathematical solutions

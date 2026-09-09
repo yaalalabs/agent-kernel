@@ -144,57 +144,12 @@ resource "aws_api_gateway_deployment" "deployment" {
   ]
 }
 
-# CloudWatch Log Group for API Gateway
+# CloudWatch Log Group for API Gateway (only when access logging is enabled)
 resource "aws_cloudwatch_log_group" "api_gateway" {
+  count             = var.enable_api_gateway_logs ? 1 : 0
   name              = "/aws/api-gateway/${var.product_alias}-${var.env_alias}-rest-api"
   retention_in_days = 90
   kms_key_id        = var.cloudwatch_kms_key_arn
-}
-
-# IAM Role for CloudWatch integration
-resource "aws_iam_role" "cloudwatch" {
-  name = "${var.product_alias}-${var.env_alias}-api-gateway-cloudwatch-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "apigateway.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy" "cloudwatch" {
-  name = "${var.product_alias}-${var.env_alias}-api-gateway-cloudwatch-policy"
-  role = aws_iam_role.cloudwatch.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:DescribeLogGroups",
-          "logs:DescribeLogStreams",
-          "logs:PutLogEvents",
-          "logs:GetLogEvents",
-          "logs:FilterLogEvents"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-resource "aws_api_gateway_account" "api_gateway" {
-  cloudwatch_role_arn = aws_iam_role.cloudwatch.arn
 }
 
 # API Gateway Stage
@@ -209,23 +164,24 @@ resource "aws_api_gateway_stage" "stage" {
     agent_endpoint = var.agent_endpoint
   }
 
-  access_log_settings {
-    destination_arn = aws_cloudwatch_log_group.api_gateway.arn
-    format = jsonencode({
-      requestId               = "$context.requestId"
-      sourceIp                = "$context.identity.sourceIp"
-      requestTime             = "$context.requestTime"
-      protocol                = "$context.protocol"
-      httpMethod              = "$context.httpMethod"
-      resourcePath            = "$context.resourcePath"
-      routeKey                = "$context.routeKey"
-      status                  = "$context.status"
-      responseLength          = "$context.responseLength"
-      integrationErrorMessage = "$context.integrationErrorMessage"
-    })
+  dynamic "access_log_settings" {
+    for_each = var.enable_api_gateway_logs ? [1] : []
+    content {
+      destination_arn = aws_cloudwatch_log_group.api_gateway[0].arn
+      format = jsonencode({
+        requestId               = "$context.requestId"
+        sourceIp                = "$context.identity.sourceIp"
+        requestTime             = "$context.requestTime"
+        protocol                = "$context.protocol"
+        httpMethod              = "$context.httpMethod"
+        resourcePath            = "$context.resourcePath"
+        routeKey                = "$context.routeKey"
+        status                  = "$context.status"
+        responseLength          = "$context.responseLength"
+        integrationErrorMessage = "$context.integrationErrorMessage"
+      })
+    }
   }
-
-  depends_on = [aws_api_gateway_account.api_gateway]
 }
 
 # Gateway Response for Unauthorized

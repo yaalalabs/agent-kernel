@@ -8,6 +8,11 @@ on:
         required: true
         type: string
 
+# Least-privilege GITHUB_TOKEN (CodeQL actions/missing-workflow-permissions). Reads cover the
+# checkout of this repo; every write goes to the target module repos through the GitHub App token.
+permissions:
+  contents: read
+
 jobs:
   sync-modules:
     runs-on: ubuntu-latest
@@ -38,11 +43,23 @@ jobs:
             repo: 'yaalalabs/terraform-azurerm-ak-containerized'
             branch: 'develop'
             link: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm/latest'
+          - module: 'ak-deployment/ak-gcp/common'
+            repo: 'yaalalabs/terraform-google-ak-common'
+            branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-common/google/latest'
+          - module: 'ak-deployment/ak-gcp/serverless'
+            repo: 'yaalalabs/terraform-google-ak-serverless'
+            branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-serverless/google/latest'
+          - module: 'ak-deployment/ak-gcp/containerized'
+            repo: 'yaalalabs/terraform-google-ak-containerized'
+            branch: 'develop'
+            link: 'https://registry.terraform.io/modules/yaalalabs/ak-containerized/google/latest'
 
     steps:
       - name: Generate GitHub App Token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
@@ -55,13 +72,16 @@ jobs:
             terraform-azurerm-ak-common
             terraform-azurerm-ak-serverless
             terraform-azurerm-ak-containerized
+            terraform-google-ak-common
+            terraform-google-ak-serverless
+            terraform-google-ak-containerized
       
       - name: Get tag name
         id: tag
         run: echo "TAG_NAME=${{ inputs.tag_name }}" >> $GITHUB_OUTPUT
       
       - name: Checkout yaalalabs/agent-kernel
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ steps.tag.outputs.TAG_NAME }}
           fetch-depth: 0 # Fetch all history for all branches and tags
@@ -125,9 +145,11 @@ jobs:
           # Extract module name from path (e.g., 'common', 'serverless', 'containerized')
           MODULE_NAME=$(basename $MODULE)
           
-          # Determine provider based on module path (aws or azure)
+          # Determine provider based on module path (aws, azure or gcp)
           if [[ "$MODULE" == *"ak-azure"* ]]; then
             PROVIDER="azurerm"
+          elif [[ "$MODULE" == *"ak-gcp"* ]]; then
+            PROVIDER="google"
           else
             PROVIDER="aws"
           fi

@@ -1,0 +1,51 @@
+# Baremetal / on-prem flavor. Prerequisites installed once per cluster, never by this chart:
+#
+#   - Gateway API CRDs (Standard channel) and Envoy Gateway (or set gateway.className to your
+#     implementation)
+#   - MetalLB with an address pool: the Gateway's LoadBalancer Service gets its IP from it
+#     (L2 mode needs nothing from the network team; BGP is the high-throughput option)
+#   - cert-manager with a ClusterIssuer backed by your internal CA (for gateway TLS)
+#   - The NACK controller (declarative JetStream objects, natsResources below)
+#   - KEDA, if autoscaling the runner tier (keda.enabled)
+#
+#   helm install ak ./chart -f ./chart/values-baremetal.yaml \
+#     --set image.repository=registry.example.internal/agent-kernel-app --set image.tag=<tag> \
+#     --set gateway.hostname=chat.example.internal
+
+transport:
+  type: nats
+  nats:
+    # Production posture: JetStream objects are managed declaratively (natsResources below);
+    # a missing stream or consumer fails loudly at startup instead of being created silently.
+    autoProvision: false
+
+# NACK Stream/Consumer CRs matching what the transport verifies at startup.
+natsResources:
+  enabled: true
+
+gateway:
+  enabled: true
+  className: envoy-gateway
+  # cert-manager watches the Gateway and fills gateway.tls.secretName.
+  annotations:
+    cert-manager.io/cluster-issuer: internal-ca
+  hostname: ""
+  tls:
+    enabled: true
+    secretName: agent-kernel-gateway-tls
+
+nats:
+  enabled: true
+  config:
+    jetstream:
+      enabled: true
+      fileStore:
+        pvc:
+          size: 10Gi
+          storageClassName: openebs-hostpath
+
+valkey:
+  enabled: true
+
+# Local storage pins pods to nodes; that is fine for a single-node Valkey and a NATS file
+# store on a small cluster. Replicate at the application layer where it matters.

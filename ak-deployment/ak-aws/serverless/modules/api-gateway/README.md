@@ -52,6 +52,7 @@ module "api_gateway" {
 | `endpoints` | Additional REST endpoints |
 | `authorizer` | Optional authorizer configuration |
 | `create_authorizer` | Whether to create the authorizer |
+| `enable_api_gateway_logs` | Create the CloudWatch log group and enable stage access logging (default `false`) |
 | `cloudwatch_kms_key_arn` | Optional CloudWatch log encryption key |
 | `tags` | Resource tags |
 
@@ -73,3 +74,6 @@ module "api_gateway" {
 
 - Endpoint paths are normalized into a maximum of three nested resource levels.
 - When an authorizer is enabled, the API uses `CUSTOM` authorization for all methods.
+- Access logging is opt-in via `enable_api_gateway_logs` (default `false`). When `false`, no CloudWatch log group is created and the stage has no `access_log_settings`.
+- Enabling access logging requires the account-level API Gateway CloudWatch role (`aws_api_gateway_account`), which the parent module provisions via `shared-api-gateway-resources` only when `enable_api_gateway_logs` is `true`.
+- `aws_api_gateway_account` is a **singleton per AWS account + region**. If more than one deployment in the same account/region enables logging, they will contend over this resource. Disabling the toggle after it was enabled **destroys** the account role, which can affect other REST APIs in the account that depend on it.

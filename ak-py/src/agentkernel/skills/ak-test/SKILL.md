@@ -3,7 +3,7 @@ name: ak-test
 description: >
   Set up testing and debug common issues in Agent Kernel projects. This skill guides
   you through configuring the built-in test framework, writing agent tests, choosing
-  test modes (fuzzy, judge, fallback), and troubleshooting common errors.
+  test modes (score, llm, fallback), and troubleshooting common errors.
 license: Apache-2.0
 metadata:
   author: yaalalabs
@@ -24,7 +24,7 @@ Update `pyproject.toml`:
 ```toml
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.2.13",
+    "agentkernel[test]>=0.9.0",
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
@@ -35,26 +35,117 @@ Run `uv sync` to install test dependencies.
 
 #### 2. Choose a Test Mode
 
-Update `config.yaml`:
+Create `test-config.yaml` in the directory you run tests from — it is a separate, un-nested file
+(no top-level `test:` key), loaded only when the test harness runs. A `test:` section left over in
+`config.yaml` is ignored:
 
 ```yaml
-test:
-  mode: fuzzy       # Options: fuzzy | judge | fallback
+mode: score       # Options: score | llm | fallback (default: fallback)
 ```
 
 | Mode | How it Works | Best For |
 |------|-------------|----------|
-| **fuzzy** | String similarity matching (rapidfuzz) | Deterministic responses, exact answers |
-| **judge** | LLM evaluates if response is semantically correct | Open-ended responses, creative agents |
-| **fallback** | Tries fuzzy first, falls back to judge if fuzzy fails | General-purpose testing |
+| **score** | Deterministic string-match scoring (built-in `deepeval`: `Scorer.quasi_exact_match_score`; built-in `opik`: graded `LevenshteinRatio`) | Deterministic responses, exact answers |
+| **llm** | LLM evaluates if response is semantically correct (`GEval`, from either built-in evaluator) | Open-ended responses, creative agents |
+| **fallback** | Tries score first, falls back to llm if score fails | General-purpose testing |
 
-For judge mode, configure the judge model:
+For llm mode, configure the llm model:
 ```yaml
-test:
-  mode: judge
-  judge:
-    model: gpt-4o-mini
+mode: llm
+llm:
+  model: gpt-4o-mini
+  provider: openai
 ```
+
+**Evaluator backend:** `evaluator` selects the scoring backend used by both `score` and `llm`
+modes — `deepeval` (the default, `pip install "agentkernel[test]"`) and `opik` (`pip install
+"agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet, runs entirely locally) are
+the two built-ins. Set it to a dotted path (e.g. `my_evaluator.MyEvaluator`) to bring your own
+`AKEvaluator` subclass instead:
+
+```yaml
+evaluator: opik   # switch to the other built-in
+```
+
+```yaml
+mode: fallback
+evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to your test file
+```
+
+#### 2a. Bring Your Own Evaluator (optional)
+
+Use this when neither built-in evaluator's scoring fits your agent — e.g. `deepeval`'s binary
+exact-match score mode is too strict and `opik`'s graded `LevenshteinRatio` still doesn't capture
+what you need, or you want a judge call that doesn't depend on DeepEval/Opik at all, or a
+domain-specific rubric. No AK core change is required: any dotted path to an `AKEvaluator` subclass
+works as the `evaluator:` value, resolved the same way sandbox providers and session stores resolve
+their own bring-your-own backends.
+
+1. Create a module next to your test file (e.g. `my_evaluator.py`) and subclass `AKEvaluator`,
+   importing the interface from `agentkernel.test.core.evaluator`:
+
+   ```python
+   from agentkernel.test.core.evaluator import (
+       AKEvaluationCase,
+       AKEvaluationError,
+       AKEvaluationResult,
+       AKEvaluator,
+       AKMissingInput,
+   )
+
+   class MyEvaluator(AKEvaluator):
+       def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:
+           if not case.expected:
+               raise AKMissingInput("evaluate_by_score requires AKEvaluationCase.expected")
+           score = ...  # your deterministic, offline scoring logic
+           return AKEvaluationResult(
+               metric="my_metric",
+               evaluator="my_evaluator",
+               score=score,
+               passed=score >= case.threshold,
+           )
+
+       def evaluate_by_llm(self, case: AKEvaluationCase) -> AKEvaluationResult:
+           if not case.expected:
+               raise AKMissingInput("evaluate_by_llm requires AKEvaluationCase.expected")
+           try:
+               score = ...  # your judge call (any LLM client — litellm, an SDK, a hosted judge)
+           except Exception as exc:
+               raise AKEvaluationError(f"judge call failed: {exc}") from exc
+           return AKEvaluationResult(
+               metric="my_llm_metric",
+               evaluator="my_evaluator",
+               score=score,
+               passed=score >= case.threshold,
+           )
+   ```
+
+2. Both methods are synchronous and must set `result.passed` themselves — `Test.compare` decides
+   whether a failing `passed` is fatal (raises `AssertionError`) or, with `return_metrics=True`,
+   returned to the caller; it never overrides `passed`.
+3. Follow the same error contract every evaluator (built-in or custom) must honor: raise
+   `AKMissingInput` if a required `AKEvaluationCase` field (usually `expected`) is missing; raise
+   `AKEvaluationError` if your backend fails (bad credentials, transport error, unparseable judge
+   output) — never return a `0.0` to stand in for a failure, since `0.0` must only ever mean
+   "scored zero". If your evaluator only supports one of the two modes (e.g. judge-only, no offline
+   scoring), raise `AKMetricNotSupported` from the other — `fallback` mode uses this to skip
+   straight to the supported one.
+4. Point `test-config.yaml` at it by dotted path — `module_name.ClassName`, resolved against the
+   module's location (next to your test file, since that's what's on `sys.path` under pytest's
+   default import mode):
+
+   ```yaml
+   evaluator: my_evaluator.MyEvaluator
+   ```
+
+5. No AK extra beyond `agentkernel[test]` is needed unless your evaluator's own dependencies
+   (an LLM client, a scoring library) require one — each built-in's import (`deepeval`, `opik`)
+   lives entirely inside its own resolution branch, so a custom evaluator never pulls either in.
+
+See `examples/cli/custom-evaluator/` for a complete worked example — a stdlib-only Jaccard
+token-overlap scorer plus a raw `litellm` judge call, no DeepEval dependency at all — and
+[`docs/docs/testing/cli-testing.md`](../../../../../docs/docs/testing/cli-testing.md#bring-your-own-evaluator)
+for the reference documentation.
 
 #### 3. Write CLI Agent Tests
 
@@ -102,6 +193,9 @@ async def test_follow_up(test_client):
 - Use `scope="session"` fixtures so the agent stays running across tests
 - `expect()` takes a list of acceptable answer patterns
 - The test framework uses the configured mode to compare responses
+- Pass `return_metrics=True` to `expect()` (or `Test.compare()`) to get back an
+  `AKEvaluationResult` (score, evaluator, metric, reason) instead of raising `AssertionError` on a
+  mismatch — useful for asserting on the score itself rather than just pass/fail
 
 #### 4. Write API Agent Tests
 
@@ -250,11 +344,13 @@ pip install "agentkernel[openai]"     # For OpenAI Agents SDK
 pip install "agentkernel[crewai]"     # For CrewAI
 pip install "agentkernel[langgraph]"  # For LangGraph
 pip install "agentkernel[adk]"        # For Google ADK
+pip install "agentkernel[smolagents]" # For Smolagents
+pip install "agentkernel[pydanticai]" # For Pydantic AI (add a provider, e.g. pydantic-ai-slim[openai])
 ```
 
 Or in `pyproject.toml`:
 ```toml
-dependencies = ["agentkernel[openai,api]>=0.2.13"]
+dependencies = ["agentkernel[openai,api]>=0.9.0"]
 ```
 
 #### Issue: Redis connection errors

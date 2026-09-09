@@ -40,12 +40,12 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.checkout_ref }}
       
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       
@@ -61,12 +61,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.checkout_ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -77,11 +77,17 @@ jobs:
         working-directory: ak-py
         run: ./build.sh
 
-      - name: Cache ak-py build
-        uses: actions/cache/save@v4
+      # Run-scoped artifact, not actions/cache (CodeQL actions/cache-poisoning): this workflow is
+      # called with an arbitrary checkout_ref from privileged contexts (workflow_dispatch on the
+      # default branch, pull_request_target for labelled fork PRs), so a cache write here could
+      # poison an entry the default branch later restores. Artifacts are scoped to this run.
+      - name: Upload ak-py build
+        uses: actions/upload-artifact@v6
         with:
+          name: ak-py-dist
           path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+          retention-days: 1
+          if-no-files-found: error
 
   script-tests:
     runs-on: ubuntu-latest
@@ -90,12 +96,12 @@ jobs:
         shell: bash -e {0}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.checkout_ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -107,6 +113,10 @@ jobs:
         working-directory: scripts
         run: python test_update_terraform_versions.py
 
+      - name: Test update_skills_version script
+        working-directory: scripts
+        run: python test_update_skills_version.py
+
   unit-tests:
     needs: [build-ak-py]
     runs-on: ubuntu-latest
@@ -115,29 +125,73 @@ jobs:
         shell: bash -e {0}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.checkout_ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
         run: pip install uv
 
-      - name: Restore ak-py build
-        uses: actions/cache/restore@v4
+      - name: Download ak-py build
+        uses: actions/download-artifact@v6
         with:
+          name: ak-py-dist
           path: ak-py/dist
-          key: ak-py-${{ github.sha }}
 
       - name: Test ak-py
         working-directory: ak-py
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: ./build.sh && uv run pytest -s
+
+  transport-integration-tests:
+    # The QueueTransportContract against REAL brokers (spec #495 Testing): the unit suite runs
+    # the same contract against in-memory fakes; this job points it at live NATS and Kafka
+    # containers (the transport examples' compose stacks), which catches what fakes cannot:
+    # consumer-group membership, server-side ack_wait timing, metadata propagation, real
+    # partitioners.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -e {0}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Start brokers
+        run: |
+          docker compose -f examples/transport/nats/docker-compose.yaml up -d --wait nats
+          docker compose -f examples/transport/kafka/docker-compose.yaml up -d --wait kafka
+
+      - name: Run transport contract against live brokers
+        working-directory: ak-py
+        env:
+          AK_TEST_NATS_URL: nats://localhost:4222
+          AK_TEST_KAFKA_BOOTSTRAP: localhost:9092
+        run: |
+          ./build.sh
+          uv run pytest tests/test_transport_contract_live.py --no-cov -v
+
+      - name: Stop brokers
+        if: always()
+        run: |
+          docker compose -f examples/transport/nats/docker-compose.yaml down -v
+          docker compose -f examples/transport/kafka/docker-compose.yaml down -v
 
   e2e-tests:
     needs: [setup, build-ak-py]
@@ -151,23 +205,32 @@ jobs:
         shell: bash -e {0}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ inputs.checkout_ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install uv
         run: pip install uv
 
-      - name: Restore ak-py build
-        uses: actions/cache/restore@v4
+      - name: Download ak-py build
+        uses: actions/download-artifact@v6
         with:
+          name: ak-py-dist
           path: ak-py/dist
-          key: ak-py-${{ github.sha }}
+
+      - name: Set up kind (sandbox broker examples)
+        # The sandbox queue-broker examples run their sandbox pods in a kind cluster their
+        # harnesses create and tear down themselves; without the binary they self-skip.
+        # install_only: the harness owns the cluster lifecycle.
+        if: ${{ contains(matrix.path, 'examples/sandbox/broker-') }}
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
 
       - name: Run test - ${{ matrix.path }}
         env:

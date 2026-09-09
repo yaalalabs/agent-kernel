@@ -27,9 +27,10 @@ This guide walks through adding a new guardrail provider to Agent Kernel. Use th
 
 Agent Kernel's guardrail system uses the hook mechanism:
 
-- **Input guardrails** are `PreHook` implementations — they inspect incoming requests and can halt execution by returning an `AgentReply` instead of passing through
-- **Output guardrails** are `PostHook` implementations — they inspect agent replies and can modify or replace the response
-- **Factories** in `guardrail.py` select the appropriate provider based on `AKConfig.guardrail` configuration
+- **Input guardrails** subclass the no-op `InputGuardrail` class in `guardrail/guardrail.py` (itself a `PreHook`) — they inspect incoming requests and can halt execution by returning an `AgentReply` instead of passing through
+- **Output guardrails** subclass the no-op `OutputGuardrail` class (itself a `PostHook`) — they inspect agent replies and can modify or replace the response
+- **`BaseGuardrailUtil`** (also in `guardrail/guardrail.py`) provides shared text-extraction helpers and is mixed into concrete guardrail classes
+- **Factories** in `guardrail.py` select the appropriate provider based on `AKConfig.guardrail` configuration; unknown types raise an exception, and the no-op classes are returned only when guardrails are disabled
 - Guardrails are registered as **system hooks** in `Runtime`, meaning they apply to all agents automatically
 
 ## Step-by-Step
@@ -40,9 +41,12 @@ Create `ak-py/src/agentkernel/guardrail/<provider>.py`.
 
 ### 2. Implement the Base Provider Class
 
+The base class is a plain provider-specific class that holds shared client/config setup. The concrete input/output classes (steps 3 and 4) combine it with the no-op `InputGuardrail`/`OutputGuardrail` hooks and the `BaseGuardrailUtil` mixin. Real examples: `class OpenAIInputGuardrail(BaseGuardrailUtil, BaseOpenAIGuardrail, InputGuardrail)` in `openai.py`, `class BedrockInputGuardrail(BaseGuardrailUtil, BaseBedrockGuardrail, InputGuardrail)` in `bedrock.py`, and `class WalledAIInputGuardrail(InputGuardrail, WalledAIGuardrailBase)` in `walledai.py`.
+
 ```python
 # ak-py/src/agentkernel/guardrail/<provider>.py
 import logging
+import os
 from abc import ABC
 from agentkernel.core.config import AKConfig
 
@@ -54,8 +58,9 @@ class Base<Provider>Guardrail(ABC):
 
     def __init__(self):
         config = AKConfig.get().guardrail
-        # Initialize the guardrail client/SDK
-        # e.g., self._client = ProviderClient(api_key=config.api_key)
+        # Initialize the guardrail client/SDK. Secrets come from environment
+        # variables, not config (e.g., Walled AI reads WALLED_API_KEY).
+        # e.g., self._client = ProviderClient(api_key=os.getenv("<PROVIDER>_API_KEY"))
         logger.info("<Provider> guardrail initialized")
 ```
 
@@ -65,12 +70,11 @@ If you are modifying an input request with the guardrail, then you should make s
 
 ```python
 from agentkernel.core.base import Agent, Session
-from agentkernel.core.hooks import PreHook
 from agentkernel.core.model import AgentReply, AgentReplyText, AgentRequest
-from agentkernel.guardrail.guardrail import BaseGuardrailUtil
+from agentkernel.guardrail.guardrail import BaseGuardrailUtil, InputGuardrail, OutputGuardrail
 
 
-class <Provider>InputGuardrail(Base<Provider>Guardrail, PreHook):
+class <Provider>InputGuardrail(BaseGuardrailUtil, Base<Provider>Guardrail, InputGuardrail):
     """Validates input requests using <Provider> guardrail service."""
 
     async def on_run(
@@ -93,7 +97,7 @@ class <Provider>InputGuardrail(Base<Provider>Guardrail, PreHook):
             message = self._build_intervention_message(result)
             logger.warning(f"Input guardrail triggered: {message}")
             return AgentReplyText(
-                text=message,
+                response=message,
                 prompt=text
             )
 
@@ -118,7 +122,7 @@ class <Provider>InputGuardrail(Base<Provider>Guardrail, PreHook):
 ### 4. Implement the Output Guardrail
 
 ```python
-class <Provider>OutputGuardrail(Base<Provider>Guardrail, PostHook):
+class <Provider>OutputGuardrail(BaseGuardrailUtil, Base<Provider>Guardrail, OutputGuardrail):
     """Validates agent output using <Provider> guardrail service."""
 
     async def on_run(
@@ -140,7 +144,7 @@ class <Provider>OutputGuardrail(Base<Provider>Guardrail, PostHook):
         if result.is_flagged:
             message = self._build_intervention_message(result)
             logger.warning(f"Output guardrail triggered: {message}")
-            agent_reply.text = message
+            agent_reply.response = message
             return agent_reply
 
         # 4. Content is safe, return unchanged
@@ -159,37 +163,62 @@ class <Provider>OutputGuardrail(Base<Provider>Guardrail, PostHook):
 
 ### 5. Register with the Factory
 
-Update `ak-py/src/agentkernel/guardrail/guardrail.py` to add the new provider to both factories:
+Both factories in `ak-py/src/agentkernel/guardrail/guardrail.py` share the house pluggable-backend
+shape from `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError` — the same
+pattern used by the trace, session/thread/multimodal store, and sandbox provider factories): a
+short-circuit for disabled, `if`-per-built-in with the SDK import wrapped in `require_extra` (so a
+missing optional dependency raises an actionable `ImportError` naming the pip extra), then a
+dotted-path "bring your own" fallback for anything else:
 
 ```python
-# In InputGuardrailFactory.get():
+_BUILTIN_GUARDRAILS = ["openai", "bedrock", "walledai"]
+
 class InputGuardrailFactory:
     @staticmethod
     def get() -> PreHook:
-        config = AKConfig.get().guardrail
-        if config and config.input and config.input.enabled:
-            if config.input.type == "openai":
+        config = AKConfig.get().guardrail.input
+        if not config.enabled:
+            return InputGuardrail()  # OFF: pass-through hook
+        gtype = config.type
+        if gtype == "openai":
+            with require_extra("openai", "guardrail.input.type: openai"):
                 from .openai import OpenAIInputGuardrail
-                return OpenAIInputGuardrail()
-            elif config.input.type == "bedrock":
+            return OpenAIInputGuardrail()
+        if gtype == "bedrock":
+            with require_extra("aws", "guardrail.input.type: bedrock"):
                 from .bedrock import BedrockInputGuardrail
-                return BedrockInputGuardrail()
-            elif config.input.type == "walledai":
+            return BedrockInputGuardrail()
+        if gtype == "walledai":
+            with require_extra("walledai", "guardrail.input.type: walledai"):
                 from .walledai import WalledAIInputGuardrail
-                return WalledAIInputGuardrail()
-            elif config.input.type == "<provider>":          # ADD THIS
+            return WalledAIInputGuardrail()
+        if gtype == "<provider>":                                         # ADD THIS
+            with require_extra("<provider>", "guardrail.input.type: <provider>"):
                 from .<provider> import <Provider>InputGuardrail
-                return <Provider>InputGuardrail()
-        return InputGuardrail()  # no-op default
+            return <Provider>InputGuardrail()
+        if "." not in gtype:
+            raise AKConfigError(
+                f"unknown guardrail type '{gtype}'; expected one of {_BUILTIN_GUARDRAILS} or a dotted path to an InputGuardrail subclass"
+            )
+        return resolve_dotted(gtype, base=InputGuardrail)()  # bring-your-own
 
 # Same pattern for OutputGuardrailFactory.get()
 ```
+
+A dotted `type` (e.g. `myorg.guardrails.CustomInputGuardrail`) resolves via `resolve_dotted`
+without any factory edit at all — only add an `if` branch here for a first-party, in-repo
+provider you want addressable by a short name.
 
 ### 6. Add Configuration
 
 Update the guardrail config in `ak-py/src/agentkernel/core/config.py`:
 
-The existing `_GuardrailParamConfig` already supports a `type` field with pattern `^(openai|bedrock|walledai)$`. To add your provider, update the pattern regex and add any provider-specific config fields if needed:
+The existing `_GuardrailParamConfig.type` is a free-form string (no regex pattern) described as
+"a built-in short name (openai, bedrock, walledai) or a dotted path to an InputGuardrail/OutputGuardrail
+subclass" — do not add a `pattern=` constraint back, since that would break the bring-your-own path.
+Its only fields are `enabled`, `type`, `pii`, `config_path`, `model`, `id`, and `version` — there is
+no `api_key` field. Secrets come from environment variables (e.g., Walled AI reads `WALLED_API_KEY`).
+If your provider needs new config fields, add them to `_GuardrailParamConfig` in `core/config.py`:
 
 ```yaml
 # config.yaml
@@ -197,8 +226,7 @@ guardrail:
   input:
     enabled: true
     type: <provider>
-    # provider-specific fields
-    api_key: "..."
+    # provider-specific fields (must exist on _GuardrailParamConfig)
     config_path: guardrails_input.json
   output:
     enabled: true
@@ -221,7 +249,7 @@ If the provider requires additional packages, add them to `ak-py/pyproject.toml`
 
 ### 8. Add Tests
 
-Create `ak-py/tests/test_guardrail_<provider>.py`:
+Add tests to the existing consolidated `ak-py/tests/test_guardrail.py`, which covers the no-op hooks, the factories (including `test_get_raises_exception_for_unknown_type`), and the OpenAI provider:
 
 ```python
 import pytest
@@ -237,7 +265,7 @@ async def test_input_guardrail_passes_safe_content():
     guardrail = <Provider>InputGuardrail()
     # Mock the validation to return safe
     guardrail._validate = AsyncMock(return_value=MockResult(is_flagged=False))
-    requests = [AgentRequestText(text="What is 2+2?")]
+    requests = [AgentRequestText(prompt="What is 2+2?")]
     result = await guardrail.on_run(session, agent, requests)
     assert isinstance(result, list)  # passed through
 
@@ -245,7 +273,7 @@ async def test_input_guardrail_passes_safe_content():
 async def test_input_guardrail_blocks_unsafe_content():
     guardrail = <Provider>InputGuardrail()
     guardrail._validate = AsyncMock(return_value=MockResult(is_flagged=True))
-    requests = [AgentRequestText(text="unsafe content")]
+    requests = [AgentRequestText(prompt="unsafe content")]
     result = await guardrail.on_run(session, agent, requests)
     assert isinstance(result, AgentReplyText)  # halted
 ```
@@ -262,12 +290,14 @@ Create `examples/cli/guardrail/<provider>/` with:
 
 Add guardrail provider docs to `docs/docs/advanced/guardrails.md` or create `docs/docs/advanced/guardrails-<provider>.md`.
 
+Then check the docs-site features page (`docs/src/pages/features.tsx`): the Problem section's `rows` name the built-in guardrail providers in a `with:` cell ("OpenAI and Bedrock guardrails built in"); add the new provider wherever the existing ones are listed (grep `docs/src/pages/*.tsx` for "Bedrock").
+
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/guardrail/<provider>.py` with base, input, and output classes
 - [ ] Factory registration in `guardrail.py` for both input and output
 - [ ] Configuration support via `type: "<provider>"` in `config.yaml`
 - [ ] Optional dependencies in `pyproject.toml` (if needed)
-- [ ] Unit tests in `ak-py/tests/test_guardrail_<provider>.py`
+- [ ] Unit tests added to `ak-py/tests/test_guardrail.py`
 - [ ] Example in `examples/cli/guardrail/<provider>/`
 - [ ] Documentation

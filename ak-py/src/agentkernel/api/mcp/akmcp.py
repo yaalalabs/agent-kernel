@@ -52,7 +52,7 @@ class MCP:
     @classmethod
     def get_http_app(cls) -> StarletteWithLifespan:
         cls._build()
-        return cls._fastmcp.http_app(path="/")
+        return cls._fastmcp.http_app(path="/", stateless_http=AKConfig.get().mcp.stateless_http)
 
     @classmethod
     def _build(cls):

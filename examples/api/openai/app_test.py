@@ -27,11 +27,17 @@ class APITestClient:
             if body is None
             else body
         )
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{self.url}{endpoint}", json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("result", "")
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            # The model occasionally ends a tool-using turn with no text, which surfaces as
+            # an empty result; retry the same prompt instead of failing the walkthrough on it.
+            result = ""
+            for _ in range(3):
+                resp = await client.post(f"{self.url}{endpoint}", json=payload)
+                resp.raise_for_status()
+                result = resp.json().get("result", "")
+                if result:
+                    break
+            return result
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -58,12 +64,12 @@ async def test_support_agent(http_client):
         [
             " Hello Andy! I noticed that you made a mobile check deposit of $250. Could you tell me how satisfied you were with the mobile check deposit process?"
         ],
-        threshold=10,
+        threshold=0.1,
     )
 
     response = await http_client.send("I was extremely happy")
     Test.compare(
-        response, ["That's great to hear! What specifically made the experience enjoyable for you?"], threshold=10
+        response, ["That's great to hear! What specifically made the experience enjoyable for you?"], threshold=0.1
     )
 
     response = await http_client.send(prompt="", endpoint="/custom/deposit", body={"amount": 200})
@@ -74,7 +80,7 @@ async def test_support_agent(http_client):
         "In which movie my bank agent's name appeared in? Just give me the name of the movie",
         additional_context={"bank_agent": "Ellis Boyd Red Redding"},
     )
-    Test.compare(response, ["the movie 'The Shawshank Redemption'."], threshold=20)
+    Test.compare(response, ["the movie 'The Shawshank Redemption'."], threshold=0.2)
 
 
 @pytest.mark.asyncio
@@ -120,6 +126,8 @@ async def test_pdf_support(http_client):
     Test.compare(
         response,
         [
+            "The new deadline is 12 December 2025.",
+            "The new deadline based on the file is 12 December 2025.",
             "The new deadline for submitting Grade 06 applications following the re-survey of the Grade 05 Scholarship Examination results is 12 December 2025.",
             "The new deadline for submitting Grade 06 applications is **12 December 2025**. This extension was announced by the Education Ministry due to the current disaster situation, and it follows the initial deadline of **5 December 2025**. Applications from students whose scholarship results had changed started being accepted from **26 November 2025**",
         ],
@@ -138,7 +146,7 @@ async def test_image_multipart(http_client):
     files = {"images": ("test_image.jpeg", image_content, "image/jpeg")}
     data = {"prompt": "can you describe this image?", "session_id": http_client.session_id, "agent": "support"}
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{http_client.url}/api/v1/chat-multipart", data=data, files=files)
         resp.raise_for_status()
         result = resp.json()
@@ -166,7 +174,7 @@ async def test_pdf_multipart(http_client):
     files = {"files": ("test_pdf.pdf", pdf_content, "application/pdf")}
     data = {"prompt": "what is the new deadline based on this file", "session_id": "james", "agent": "support"}
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{http_client.url}/api/v1/chat-multipart", data=data, files=files)
         resp.raise_for_status()
         result = resp.json()

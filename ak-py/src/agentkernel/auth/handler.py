@@ -7,7 +7,7 @@ from pydantic import BaseModel
 class ValidationContext(BaseModel):
     path: Optional[str] = None
     http_method: Optional[str] = None
-    headers: Dict[str, str]
+    headers: Optional[Dict[str, Any]] = None
 
 
 class ValidationResult(BaseModel):

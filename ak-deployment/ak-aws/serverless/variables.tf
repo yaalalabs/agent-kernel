@@ -27,7 +27,7 @@ variable "module_type" {
 
 variable "module_name" {
   type        = string
-  description = "Module name"
+  description = "Module name (used for resource naming). NOTE: must be non-empty when enable_api_gateway is true."
   default     = ""
   validation {
     condition     = !var.enable_api_gateway || var.module_name != ""
@@ -41,11 +41,6 @@ variable "is_production" {
   default     = false
 }
 
-variable "cloudwatch_logs_retention_in_days" {
-  type        = number
-  description = "CloudWatch log retention period in days for the request handler Lambda"
-  default     = 90
-}
 variable "queue_mode" {
   type        = bool
   description = "When true, response_handler lambda will be created along with the response "
@@ -62,122 +57,30 @@ variable "enable_api_gateway" {
   }
 }
 
+variable "enable_api_gateway_logs" {
+  type        = bool
+  description = "When true, creates the API Gateway CloudWatch account role/log groups and enables access logging for the REST and WebSocket API Gateways. Off by default."
+  default     = false
+}
+
 variable "execution_mode" {
   type        = string
-  description = "Execution mode for the deployment. Required when queue_mode is true, must be null when queue_mode is false."
-  default     = null
+  description = "Execution mode for the deployment. Allowed values: rest_sync, async, stream (always allowed), rest_async (only when queue_mode is true). Use 'stream' for WebSocket streaming where each chunk is sent individually via SQS."
+  default     = "rest_sync"
   validation {
-    condition = var.execution_mode == null ? true : contains(["rest_sync", "rest_async"], var.execution_mode)
-    error_message = "execution_mode must be one of: rest_sync, rest_async or null."
+    condition = contains(["rest_sync", "rest_async", "async", "stream"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async, async, stream."
   }
   validation {
-    condition = !var.queue_mode || var.execution_mode != null
-    error_message = "execution_mode cannot be null when queue_mode is true."
+    condition = var.queue_mode || contains(["rest_sync", "async", "stream"], var.execution_mode)
+    error_message = "execution_mode must be rest_sync, async, or stream when queue_mode is false."
   }
-  validation {
-    condition = var.queue_mode || var.execution_mode == null
-    error_message = "execution_mode must be null when queue_mode is false."
-  }
-}
-
-variable "event_source_mapping" {
-  description = "Event source mapping"
-  type        = any
-  default = []
-}
-
-variable "environment_variables" {
-  description = "Environment variables"
-  type        = any
-  default = {}
-}
-
-variable "timeout" {
-  description = "Lambda timeout"
-  type        = number
-  default     = 45
-}
-
-variable "memory_size" {
-  description = "Lambda memory size"
-  type        = number
-  default     = 128
-}
-
-variable "function_name" {
-  description = "Lambda function name"
-  type        = string
-  default     = ""
-  validation {
-    condition     = !var.enable_api_gateway || var.function_name != ""
-    error_message = "function_name must be set to a non-empty value when enable_api_gateway is true."
-  }
-}
-
-variable "function_description" {
-  description = "Lambda function description"
-  type        = string
-  default     = ""
-  validation {
-    condition     = !var.enable_api_gateway || var.function_description != ""
-    error_message = "function_description must be set to a non-empty value when enable_api_gateway is true."
-  }
-}
-
-variable "handler_path" {
-  description = "Lambda handler path"
-  type        = string
-  default     = ""
-  validation {
-    condition     = !var.enable_api_gateway || var.handler_path != ""
-    error_message = "handler_path must be set to a non-empty value when enable_api_gateway is true."
-  }
-}
-
-variable "package_path" {
-  type        = string
-  description = "Zip package path or Docker image source path"
-  default     = ""
-  validation {
-    condition     = !var.enable_api_gateway || var.package_path != ""
-    error_message = "package_path must be set to a non-empty value when enable_api_gateway is true."
-  }
-}
-
-variable "package_type" {
-  description = "Lambda deployment type Image/LocalZip/S3Zip"
-  type        = string
-  default     = "LocalZip"
-}
-
-variable "layers" {
-  description = "Lambda layers"
-  type = list(string)
-  default = []
-}
-
-variable "api_version" {
-  type        = string
-  description = "API version"
-  default     = "v1"
-}
-
-variable "agent_endpoint" {
-  type        = string
-  description = "Agent invocation endpoint"
-  default     = "chat"
-}
-
-variable "api_base_path" {
-  type        = string
-  description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
-  default     = "api"
 }
 
 variable "tags" {
-  type = map(string)
+  type        = map(string)
   description = "Resource tags"
-  default = {}
+  default     = {}
 }
 
 variable "vpc_cidr" {
@@ -187,9 +90,9 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidrs" {
-  type = list(string)
+  type        = list(string)
   description = "CIDR blocks for the public subnets"
-  default = ["10.0.1.0/24", "10.0.2.0/24"]
+  default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
 variable "vpc_id" {
@@ -199,7 +102,7 @@ variable "vpc_id" {
 }
 
 variable "private_subnet_ids" {
-  type = list(string)
+  type        = list(string)
   description = "When using an existing VPC to deploy, private subnet IDs need to be provided"
   default     = null
 }
@@ -207,6 +110,12 @@ variable "private_subnet_ids" {
 variable "create_redis_cluster" {
   type        = bool
   description = "Create a redis cluster to store Agent memory"
+  default     = false
+}
+
+variable "create_valkey_cluster" {
+  type        = bool
+  description = "Create a Valkey (ElastiCache) cluster to store Agent memory"
   default     = false
 }
 
@@ -218,19 +127,46 @@ variable "create_dynamodb_memory_table" {
 
 variable "create_redis_response_store" {
   type        = bool
-  description = "Create or reuse Redis for response storage"
+  description = "Create or reuse Redis for response storage. Must be false in WebSocket modes (async/stream) — responses are pushed over the WebSocket connection and a response store is not used."
   default     = false
   nullable    = false
+  validation {
+    condition     = !(var.create_redis_response_store && contains(["async", "stream"], var.execution_mode))
+    error_message = "create_redis_response_store must be false when execution_mode is 'async' or 'stream'. WebSocket modes push responses directly over the connection and do not use a response store."
+  }
 }
 
 variable "create_dynamodb_response_store" {
   type        = bool
-  description = "Create a DynamoDB table for response storage"
+  description = "Create a DynamoDB table for response storage. Must be false in WebSocket modes (async/stream) — responses are pushed over the WebSocket connection and a response store is not used."
   default     = false
   nullable    = false
   validation {
     condition     = !(var.create_redis_response_store && var.create_dynamodb_response_store)
     error_message = "create_redis_response_store and create_dynamodb_response_store cannot both be true."
+  }
+  validation {
+    condition     = !(var.create_dynamodb_response_store && contains(["async", "stream"], var.execution_mode))
+    error_message = "create_dynamodb_response_store must be false when execution_mode is 'async' or 'stream'. WebSocket modes push responses directly over the connection and do not use a response store."
+  }
+}
+
+variable "create_valkey_response_store" {
+  type        = bool
+  description = "Create or reuse Valkey for response storage. Must be false in WebSocket modes (async/stream) — responses are pushed over the WebSocket connection and a response store is not used."
+  default     = false
+  nullable    = false
+  validation {
+    condition     = !(var.create_valkey_response_store && contains(["async", "stream"], var.execution_mode))
+    error_message = "create_valkey_response_store must be false when execution_mode is 'async' or 'stream'. WebSocket modes push responses directly over the connection and do not use a response store."
+  }
+  validation {
+    condition     = !(var.create_valkey_response_store && var.create_redis_response_store)
+    error_message = "create_valkey_response_store and create_redis_response_store cannot both be true."
+  }
+  validation {
+    condition     = !(var.create_valkey_response_store && var.create_dynamodb_response_store)
+    error_message = "create_valkey_response_store and create_dynamodb_response_store cannot both be true."
   }
 }
 
@@ -240,37 +176,131 @@ variable "create_dynamodb_multimodal_memory_table" {
   default     = false
 }
 
+variable "create_dynamodb_thread_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the conversation threads"
+  default     = false
+}
+
+variable "create_dynamodb_schedule_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the scheduled tasks"
+  default     = false
+}
+
+variable "enable_scheduling" {
+  type        = bool
+  description = "Provision EventBridge Scheduler resources (schedule group + execution role) and inject their coordinates, so the application's `schedule.provider.type: eventbridge` has a group to register schedules in. Requires queue_mode: the schedules deliver their triggers to the Input Queue"
+  default     = false
+}
+
 variable "private_subnet_cidrs" {
-  type = list(string)
+  type        = list(string)
   description = "CIDR blocks for the private subnets"
-  default = ["10.0.3.0/24", "10.0.4.0/24"]
+  default     = ["10.0.3.0/24", "10.0.4.0/24"]
+}
+
+variable "api_version" {
+  type        = string
+  description = "API version"
+  default     = "v1"
+  validation {
+    condition     = contains(["async", "stream"], var.execution_mode) || (var.api_version != null && length(trimspace(var.api_version)) > 0)
+    error_message = "api_version must not be null, empty, or whitespace-only when execution_mode is not a websocket mode ('async' or 'stream')."
+  }
+}
+
+variable "agent_endpoint" {
+  type        = string
+  description = "Agent invocation endpoint"
+  default     = "chat"
+  validation {
+    condition     = contains(["async", "stream"], var.execution_mode) || (var.agent_endpoint != null && length(trimspace(var.agent_endpoint)) > 0)
+    error_message = "agent_endpoint must not be null, empty, or whitespace-only when execution_mode is not a websocket mode ('async' or 'stream')."
+  }
+}
+
+variable "api_base_path" {
+  type        = string
+  description = "Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit."
+  default     = "api"
+  validation {
+    condition     = contains(["async", "stream"], var.execution_mode) || (var.api_base_path != null && length(trimspace(var.api_base_path)) > 0)
+    error_message = "api_base_path must not be whitespace-only when provided and execution_mode is not a websocket mode ('async' or 'stream'). Use null or empty string to omit."
+  }
+}
+
+variable "ws_chat_route" {
+  type        = string
+  description = "WebSocket chat route"
+  default     = "chat"
+
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || (var.ws_chat_route != null && length(trimspace(var.ws_chat_route)) > 0)
+    error_message = "ws_chat_route must not be null, empty, or whitespace-only."
+  }
+
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || (var.ws_chat_route != null && can(regex("^[a-zA-Z0-9_-]+$", var.ws_chat_route)))
+    error_message = "ws_chat_route must not be null and must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
+  }
+}
+
+variable "ws_routes" {
+  type = list(object({
+    route = string
+  }))
+  description = "List of custom WebSocket routes to add. Each object should have a 'route' key with the custom route name."
+  default     = []
+
+  validation {
+    condition     = contains(["async", "stream"], var.execution_mode) || length(var.ws_routes) == 0
+    error_message = "'ws_routes' can only be defined in 'async' or 'stream' (websocket) execution modes."
+  }
+
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || alltrue([for r in var.ws_routes : r.route != null && length(trimspace(r.route)) > 0])
+    error_message = "Routes in 'ws_routes' must not be null, empty, or whitespace-only."
+  }
+
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || alltrue([for r in var.ws_routes : r.route != null && can(regex("^[a-zA-Z0-9_-]+$", r.route))])
+    error_message = "Routes in 'ws_routes' must not be null and must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
+  }
 }
 
 variable "gateway_endpoints" {
   description = "List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created."
+
   type = list(object({
-    path   = string   # e.g. "/app/check", "/health", "/app/status/test"
-    method = string   # GET, POST, PUT, DELETE, ANY
+    path   = string # e.g. "/app/check", "/health", "/app/status/test"
+    method = string # GET, POST, PUT, DELETE, ANY
   }))
+
   default = []
+
   validation {
     condition = alltrue([
       for ep in var.gateway_endpoints : (
-        length(trimspace(ep.path)) > 0 &&
-        contains(
+        ep.path != null && length(trimspace(ep.path)) > 0 &&
+        ep.method != null && contains(
           ["GET", "POST", "PUT", "DELETE", "PATCH", "ANY", "$default"],
           upper(ep.method)
         )
       )
     ])
-    error_message = "Each gateway_endpoints entry must: have a non-empty 'path', use a valid HTTP method: GET, POST, PUT, DELETE, PATCH, ANY, $default"
+
+    error_message = "Each gateway_endpoints entry must: have a non-null, non-empty 'path', and a non-null valid HTTP method: GET, POST, PUT, DELETE, PATCH, ANY, $default"
+  }
+
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || length(var.gateway_endpoints) == 0
+    error_message = "'gateway_endpoints' cannot be defined in 'async' or 'stream' (websocket) execution modes."
   }
 }
 
-
-
 variable "authorizer" {
-  description = "Authorizer configuration object"
+  description = "Authorizer configuration object. Optional when execution_mode is 'rest_sync' or 'rest_async', must be null when execution_mode is 'async'."
   type = object({
     description           = optional(string, "API Gateway Lambda Authorizer")
     function_name         = string
@@ -279,53 +309,145 @@ variable "authorizer" {
     package_type          = string
     module_name           = string
     result_ttl_in_seconds = optional(number, 150)
+    timeout               = optional(number, 30)
+    memory_size           = optional(number, 128)
+    layers                = optional(list(string), [])
     environment_variables = optional(map(string), {})
   })
   default = null
+  validation {
+    condition     = !(contains(["async", "stream"], var.execution_mode) && var.authorizer != null)
+    error_message = "'authorizer' cannot be defined in 'async' or 'stream' (websocket) execution modes."
+  }
 }
 
-
-variable "response_handler" {
-  description = "Response handler configuration object"
+variable "ws_connection_handler" {
+  description = "WebSocket connection handler configuration object. Required when execution_mode is 'async', must be empty ({}) or null when execution_mode is 'rest_sync' or 'rest_async'. Only supports LocalZip package type."
   type = object({
-    function_name         = optional(string, "response-handler")
-    function_description   = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
-    timeout               = optional(number, 45)
-    memory_size           = optional(number, 256)
-    handler_path          = optional(string, "response_handler.handler")
-    module_name           = optional(string, "response-handler")
-    package_path          = optional(string, null)
-    package_type          = optional(string, "LocalZip")
-    layers                = optional(list(string), [])
+    function_name                     = optional(string, "ws-connection-handler")
+    function_description              = optional(string, "WebSocket connection handler Lambda for $connect and $disconnect routes")
+    timeout                           = optional(number, 30)
+    memory_size                       = optional(number, 256)
+    handler_path                      = optional(string, "ws_connection_handler.handler")
+    module_name                       = optional(string, "ws-connection-handler")
+    package_path                      = optional(string, null)
+    layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
-    environment_variables = optional(map(string), {})
+    environment_variables             = optional(map(string), {})
   })
   default = {}
   validation {
-    condition     = !var.queue_mode || try(var.response_handler.package_path, null) != null
-    error_message = "response_handler.package_path must be set when queue_mode is true."
+    condition     = !contains(["async", "stream"], var.execution_mode) || try(var.ws_connection_handler.package_path, null) != null
+    error_message = "ws_connection_handler.package_path is required when execution_mode is 'async' or 'stream'."
+  }
+}
+
+variable "request_handler" {
+  description = "Request handler configuration object"
+  type = object({
+    function_name                     = optional(string, "request-handler")
+    function_description              = optional(string, "Request handler Lambda for processing API Gateway requests")
+    timeout                           = optional(number, 45)
+    memory_size                       = optional(number, 128)
+    handler_path                      = optional(string, "request_handler.handler")
+    module_name                       = optional(string, "request-handler")
+    package_path                      = optional(string, null)
+    package_type                      = optional(string, "LocalZip")
+    layers                            = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
+    environment_variables             = optional(map(string), {})
+    event_source_mapping              = optional(any, [])
+    lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
+    ecr_image_uri                     = optional(string, null)
+  })
+  default = {}
+  validation {
+    condition     = (!var.enable_api_gateway || var.request_handler.package_type != "S3Zip" || try(var.request_handler.package_path, null) != null || try(var.request_handler.lambda_package_s3, null) != null)
+    error_message = "request_handler: when enable_api_gateway is true and package_type is S3Zip, at least one of package_path or lambda_package_s3 must be set."
+  }
+  validation {
+    condition     = (!var.enable_api_gateway || var.request_handler.package_type != "Image" || try(var.request_handler.package_path, null) != null || try(var.request_handler.ecr_image_uri, null) != null)
+    error_message = "request_handler: when enable_api_gateway is true and package_type is Image, at least one of package_path or ecr_image_uri must be set."
+  }
+  validation {
+    condition     = !(try(var.request_handler.package_path, null) != null && try(var.request_handler.lambda_package_s3, null) != null)
+    error_message = "request_handler: package_path and lambda_package_s3 cannot both be set."
+  }
+  validation {
+    condition     = !(try(var.request_handler.package_path, null) != null && try(var.request_handler.ecr_image_uri, null) != null)
+    error_message = "request_handler: package_path and ecr_image_uri cannot both be set."
   }
 }
 
 variable "agent_runner" {
   description = "Agent runner configuration object"
   type = object({
-    function_name         = optional(string, "agent-runner")
-    function_description   = optional(string, "Agent runner Lambda for processing input queue messages")
-    timeout               = optional(number, 45)
-    memory_size           = optional(number, 512)
-    handler_path          = optional(string, "agent_runner.handler")
-    module_name           = optional(string, "agent-runner")
-    package_path          = optional(string, null)
-    package_type          = optional(string, "LocalZip")
-    layers                = optional(list(string), [])
+    function_name                     = optional(string, "agent-runner")
+    function_description              = optional(string, "Agent runner Lambda for processing input queue messages")
+    timeout                           = optional(number, 45)
+    memory_size                       = optional(number, 512)
+    handler_path                      = optional(string, "agent_runner.handler")
+    module_name                       = optional(string, "agent-runner")
+    package_path                      = optional(string, null)
+    package_type                      = optional(string, "LocalZip")
+    layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
-    environment_variables = optional(map(string), {})
+    environment_variables             = optional(map(string), {})
+    lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
+    ecr_image_uri                     = optional(string, null)
   })
   default = {}
   validation {
-    condition     = !var.queue_mode || try(var.agent_runner.package_path, null) != null
-    error_message = "agent_runner.package_path must be set when queue_mode is true."
+    condition     = (!var.queue_mode || var.agent_runner.package_type != "S3Zip" || try(var.agent_runner.package_path, null) != null || try(var.agent_runner.lambda_package_s3, null) != null)
+    error_message = "agent_runner: when queue_mode is true and package_type is S3Zip, at least one of package_path or lambda_package_s3 must be set."
+  }
+  validation {
+    condition     = (!var.queue_mode || var.agent_runner.package_type != "Image" || try(var.agent_runner.package_path, null) != null || try(var.agent_runner.ecr_image_uri, null) != null)
+    error_message = "agent_runner: when queue_mode is true and package_type is Image, at least one of package_path or ecr_image_uri must be set."
+  }
+  validation {
+    condition     = !(try(var.agent_runner.package_path, null) != null && try(var.agent_runner.lambda_package_s3, null) != null)
+    error_message = "agent_runner: package_path and lambda_package_s3 cannot both be set."
+  }
+  validation {
+    condition     = !(try(var.agent_runner.package_path, null) != null && try(var.agent_runner.ecr_image_uri, null) != null)
+    error_message = "agent_runner: package_path and ecr_image_uri cannot both be set."
+  }
+}
+
+variable "response_handler" {
+  description = "Response handler configuration object"
+  type = object({
+    function_name                     = optional(string, "response-handler")
+    function_description              = optional(string, "Response handler Lambda for processing SQS messages and storing responses")
+    timeout                           = optional(number, 45)
+    memory_size                       = optional(number, 256)
+    handler_path                      = optional(string, "response_handler.handler")
+    module_name                       = optional(string, "response-handler")
+    package_path                      = optional(string, null)
+    package_type                      = optional(string, "LocalZip")
+    layers                            = optional(list(string), [])
+    cloudwatch_logs_retention_in_days = optional(number, 90)
+    environment_variables             = optional(map(string), {})
+    lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
+    ecr_image_uri                     = optional(string, null)
+  })
+  default = {}
+  validation {
+    condition     = (!var.queue_mode || var.response_handler.package_type != "S3Zip" || try(var.response_handler.package_path, null) != null || try(var.response_handler.lambda_package_s3, null) != null)
+    error_message = "response_handler: when queue_mode is true and package_type is S3Zip, at least one of package_path or lambda_package_s3 must be set."
+  }
+  validation {
+    condition     = (!var.queue_mode || var.response_handler.package_type != "Image" || try(var.response_handler.package_path, null) != null || try(var.response_handler.ecr_image_uri, null) != null)
+    error_message = "response_handler: when queue_mode is true and package_type is Image, at least one of package_path or ecr_image_uri must be set."
+  }
+  validation {
+    condition     = !(try(var.response_handler.package_path, null) != null && try(var.response_handler.lambda_package_s3, null) != null)
+    error_message = "response_handler: package_path and lambda_package_s3 cannot both be set."
+  }
+  validation {
+    condition     = !(try(var.response_handler.package_path, null) != null && try(var.response_handler.ecr_image_uri, null) != null)
+    error_message = "response_handler: package_path and ecr_image_uri cannot both be set."
   }
 }
 
@@ -383,3 +505,4 @@ variable "queue_config" {
     error_message = "queue_config must NOT be null when queue_mode is true. You may leave it without defining (it will use the default) or define the object's parameters, but it cannot be null."
   }
 }
+

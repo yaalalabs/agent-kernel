@@ -1,0 +1,36 @@
+[project]
+name = "ak-e2e-messaging-tests"
+version = "0.1.0"
+description = "End-to-end tests that drive the deployed Agent Kernel messaging integrations through real platform accounts"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pytest>=8.0.0",
+    "slack-sdk>=3.27.0",
+    "telethon>=1.36.0",
+    "httpx>=0.27.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth>=2.23.0",
+    "google-auth-oauthlib>=1.1.0",
+    "boto3>=1.34.0",
+]
+
+[dependency-groups]
+dev = [
+    "black==26.5.1",
+    "isort>=5.0.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

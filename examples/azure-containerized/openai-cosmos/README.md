@@ -55,7 +55,7 @@ publisher_email = "your-email@domain.com"
 ### Optional Variables (have defaults)
 ```hcl
 # Azure region for deployment
-region = "centralus"
+region = "eastus"
 
 # Naming configuration
 product_alias = "ak-oai"        # Used in resource names
@@ -103,7 +103,7 @@ tags = {
 2. **Update terraform.tfvars:**
    Edit `deploy/terraform.tfvars` and set the required variables:
    - `resource_group_name` - Your existing Azure Resource Group
-   - `region` - The Azure region to deploy to (e.g., `centralus`)
+   - `region` - The Azure region to deploy to (e.g., `eastus`)
    - `publisher_email` - Your email for API Management
 
 3. **Navigate to the deployment directory and run the deployment script:**

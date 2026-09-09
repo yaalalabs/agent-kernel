@@ -66,14 +66,16 @@ EXECUTION PROTOCOL:
    Wait for the result before responding.
 
 5. RESPOND:
-   Answer strictly from the returned data. If empty, say no records were found.
+   Answer from the returned data when it is available.
+   If the knowledge base returns nothing, mention that no records were found,
+   then answer from your own general knowledge.
 """
 
     # Step 3: build() produces framework-agnostic callables like get_schemas/read_kb/write_kb.
     # bind(...) converts those callables into OpenAI Agent tools.
     return Agent(
         name="KB_Router_Agent",
-        model="gpt-4o-mini",
+        model="gpt-4.1-mini",
         instructions=instructions,
         tools=OpenAIToolBuilder.bind(knowledge_builder.build()),
     )

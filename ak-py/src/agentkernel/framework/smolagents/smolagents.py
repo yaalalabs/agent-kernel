@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import inspect
+from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
@@ -10,8 +11,10 @@ from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
+from ...core.event import StreamEvent
 from ...core.model import (
     AgentReply,
+    AgentReplyAny,
     AgentReplyText,
     AgentRequest,
     AgentRequestAny,
@@ -138,31 +141,63 @@ class SmolagentsRunner(Runner):
                 if isinstance(req, AgentRequestAny):
                     continue
                 if isinstance(req, AgentRequestText):
-                    prompt = prompt + "\n" + req.text if prompt else req.text
+                    prompt = prompt + "\n" + req.prompt if prompt else req.prompt
                 else:
                     return AgentReplyText(
-                        text="Sorry. Smolagents runner is unable to handle content other than text at the moment",
+                        response="Sorry. Smolagents runner is unable to handle content other than text at the moment",
                         prompt=prompt,
                     )
 
             if not prompt.strip():
-                return AgentReplyText(text="Sorry. No valid text prompt found in the requests")
+                return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
 
             # Rehydrate framework memory from the AgentKernel session before execution.
             self._hydrate_memory(agent, session)
 
+            # Injected as smolagents additional_args, only when a context is present.
+            incoming = self._load_framework_context(session)
+            run_kwargs: dict[str, Any] = {"reset": False}
+            if incoming is not None:
+                run_kwargs["additional_args"] = incoming
+
             # Preserve conversational continuity across requests without blocking the async event loop.
-            reply = await asyncio.to_thread(agent.agent.run, prompt, reset=False)
+            reply = await asyncio.to_thread(agent.agent.run, prompt, **run_kwargs)
 
             # Persist updated framework memory back to the AgentKernel session.
             self._sync_memory(agent, session)
 
-            return AgentReplyText(text=str(reply), prompt=prompt)
+            # Only the keys the caller seeded: agent.state also holds framework-internal entries with no prefix
+            # to filter on, so a brand-new key a tool adds is not round-tripped.
+            produced: dict[str, Any] | None = None
+            if incoming is not None and hasattr(agent.agent, "state") and isinstance(agent.agent.state, dict):
+                produced = {k: agent.agent.state[k] for k in incoming if k in agent.agent.state}
+            self._store_framework_context(session, incoming, produced)
+
+            structured = AgentReplyAny.from_output(reply, prompt)
+            if structured is not None:
+                return structured
+
+            return AgentReplyText(response=str(reply), prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()
+
+    @property
+    def supports_streaming(self) -> bool:
+        """
+        :return: False — this adapter does not implement streaming, so stream() always raises.
+        """
+        return False
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+        """
+        smolagents does not support SSE streaming.
+        :raises NotImplementedError: Always raised — use rest_sync mode instead.
+        """
+        raise NotImplementedError("smolagents does not support SSE streaming. Use rest_sync mode.")
+        yield  # make this an async generator to satisfy the type contract
 
 
 class SmolagentsAgent(BaseAgent):

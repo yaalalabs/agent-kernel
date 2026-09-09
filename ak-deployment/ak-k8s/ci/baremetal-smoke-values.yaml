@@ -1,0 +1,40 @@
+# CI overlay layered ON TOP of values-baremetal.yaml for the kind smoke: shrinks the flavor to
+# a CI node and swaps the storage class, changing nothing else about its posture. The flavor's
+# production distinctions stay live: Gateway + HTTPRoute objects (Gateway API CRDs installed by
+# the job; no controller reconciles them, so entry is a port-forward), autoProvision off with
+# the JetStream objects reconciled from this chart's NACK CRs by a real NACK controller.
+#
+# Lives here rather than in chart/ci/ deliberately: chart-testing installs the chart once per
+# chart/ci/*-values.yaml file, and this overlay is incomplete without values-baremetal.yaml
+# under it.
+
+image:
+  tag: dev
+  pullPolicy: Never
+
+ioHandler:
+  replicaCount: 1
+  image:
+    repository: ak-example-io-handler
+
+agentRunner:
+  replicaCount: 1
+  image:
+    repository: ak-example-agent-runner
+
+transport:
+  input:
+    noOfConsumers: 2
+  output:
+    noOfConsumers: 1
+  nats:
+    # Keeps the NACK reconcile fast: 4 partitions render 8 Consumer CRs instead of 64.
+    partitions: 4
+
+nats:
+  config:
+    jetstream:
+      fileStore:
+        pvc:
+          size: 1Gi
+          storageClassName: standard   # kind's default; openebs-hostpath in the real flavor

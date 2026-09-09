@@ -5,10 +5,10 @@ slug: /
 
 # Introduction to Agent Kernel
 
-**From Agent Logic to Production in Minutes.**
+**An Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
-🧠 **Knowledge Base Support** - Agent Kernel now includes a backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph), and Starburst Galaxy (SQL/analytics). Give your agents durable, cross-session knowledge with semantic search and graph query capabilities. [Learn more →](/docs/next/architecture/knowledge-bases)
+🧠 **Knowledge Base Support** - Agent Kernel now includes a backend-agnostic knowledge base interface with support for ChromaDB (vector), Neo4j (graph), and Starburst Galaxy (SQL/analytics). Give your agents durable, cross-session knowledge with semantic search and graph query capabilities. [Learn more →](./architecture/knowledge-bases.md)
 :::
 
 ## What is Agent Kernel?
@@ -97,7 +97,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools
   - `semantic_map` keeps agent prompts portable across deployments
   - You can also build your own backend by implementing a `KnowledgeBase` adapter and registering it with `KnowledgeBuilder`
-  [Learn more about knowledge bases →](/docs/next/architecture/knowledge-bases)
+  [Learn more about knowledge bases →](./architecture/knowledge-bases.md)
 - **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching
   - In-memory (development)
@@ -109,7 +109,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   
   [Learn more about session management →](/docs/core-concepts/session) | [Advanced memory features →](/docs/architecture/memory-management)
 - **Execution Hooks**: Powerful pre and post-execution hooks for ultimate control
-  - **Pre-execution hooks**: Guard rails, RAG context injection, input validation, authentication
+  - **Pre-execution hooks**: Guardrails, RAG context injection, input validation, authentication
   - **Post-execution hooks**: Response moderation, disclaimers, output filtering, analytics
   - **Hook chaining**: Compose multiple hooks in sequence for complex behaviors
   - **Early termination**: Pre-hooks can halt execution and return custom responses
@@ -123,7 +123,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - OpenLLMetry
 - **Multi-Agent Collaboration**: Leverage multi-agent hierarchies of supported agentic frameworks
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
-- **Governance**: Guard rails and human in the middle capabilities are coming soon
+- **Governance**: Guardrails and human in the middle capabilities are coming soon
 
 ## Key Features
 
@@ -145,7 +145,7 @@ All framework adapters expose the same core abstractions:
 Powerful **pre-execution** and **post-execution** hooks give you surgical control over agent behavior:
 
 - **Pre-hooks**: Intercept prompts before agents see them
-  - 🛡️ Guard rails and content filtering
+  - 🛡️ Guardrails and content filtering
   - 🧠 RAG context injection from knowledge bases
   - 🔍 Input validation and authentication
   - 📊 Request logging and analytics
@@ -275,7 +275,7 @@ Ready to get started? Here's what to do next:
 1. [**Install Agent Kernel**](/docs/installation) - Get up and running in minutes
 2. [**Quick Start Guide**](/docs/quick-start) - Build your first agent
 3. [**Core Concepts**](/docs/core-concepts/overview) - Understand the architecture
-4. [**Execution Hooks**](/docs/integrations/hooks) - Add guard rails, RAG, and response control
+4. [**Execution Hooks**](/docs/integrations/hooks) - Add guardrails, RAG, and response control
 5. [**Session Management**](/docs/core-concepts/session) - Session configuration and storage
 6. [**Memory Management**](/docs/architecture/memory-management) - Advanced caching and persistence
 7. [**Framework Integration**](/docs/frameworks/overview) - Choose your framework

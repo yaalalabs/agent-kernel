@@ -31,13 +31,13 @@ output "api_gateway_deployment_id" {
 }
 
 output "api_gateway_cloudwatch_log_group_arn" {
-  description = "ARN of the CloudWatch log group for API Gateway"
-  value       = aws_cloudwatch_log_group.api_gateway.arn
+  description = "ARN of the CloudWatch log group for API Gateway (null when access logging is disabled)"
+  value       = var.enable_api_gateway_logs ? aws_cloudwatch_log_group.api_gateway[0].arn : null
 }
 
 output "api_gateway_cloudwatch_log_group_name" {
-  description = "Name of the CloudWatch log group for API Gateway"
-  value       = aws_cloudwatch_log_group.api_gateway.name
+  description = "Name of the CloudWatch log group for API Gateway (null when access logging is disabled)"
+  value       = var.enable_api_gateway_logs ? aws_cloudwatch_log_group.api_gateway[0].name : null
 }
 
 output "api_gateway_authorizer_id" {

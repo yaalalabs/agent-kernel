@@ -6,7 +6,7 @@ Agent Kernel provides various built in integrations to connect your AI agents wi
 
 Agent Kernel provides powerful execution hooks that let you customize agent behavior at runtime.
 
-- **[Execution Hooks](./hooks)** - Pre-execution and post-execution hooks for guard rails, RAG context injection, response moderation, and more. See the [detailed hooks documentation](./hooks) for complete guide with examples.
+- **[Execution Hooks](./hooks)** - Pre-execution and post-execution hooks for guardrails, RAG context injection, response moderation, and more. See the [detailed hooks documentation](./hooks) for complete guide with examples.
 
 ## Observability & Monitoring
 

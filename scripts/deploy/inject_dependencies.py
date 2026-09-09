@@ -12,12 +12,14 @@ from typing import List, Optional, Tuple, Dict, Set
 DEPLOYMENT_ROOTS = [
     'ak-deployment/ak-aws',
     'ak-deployment/ak-azure',
+    'ak-deployment/ak-gcp',
     'examples'
 ]
 
 BACKEND_TEMPLATES = {
     'aws': 'backend.tf.aws.template',
     'azure': 'backend.tf.azure.template',
+    'gcp': 'backend.tf.gcp.template'
 }
 
 REGISTRY_TO_LOCAL_ROOTS = {
@@ -25,6 +27,8 @@ REGISTRY_TO_LOCAL_ROOTS = {
     'yaalalabs/ak-containerized/aws': ('ak-deployment/ak-aws/containerized', 'aws'),
     'yaalalabs/ak-serverless/azurerm': ('ak-deployment/ak-azure/serverless', 'azurerm'),
     'yaalalabs/ak-containerized/azurerm': ('ak-deployment/ak-azure/containerized', 'azurerm'),
+    'yaalalabs/ak-serverless/google': ('ak-deployment/ak-gcp/serverless', 'google'),
+    'yaalalabs/ak-containerized/google': ('ak-deployment/ak-gcp/containerized', 'google'),
 }
 
 REGISTRY_PREFIX_RE = r'^(?:app\.terraform\.io/|registry\.terraform\.io/)?'
@@ -58,11 +62,18 @@ def _localize_registry_source(source_value: str, file_path: Path, workspace_root
         rel = os.path.relpath(target, file_path.parent)
         return rel, provider
 
-    match = re.match(r'^yaalalabs/ak-common/(aws|azurerm|azure)//modules/([^"\s]+)$', stripped)
+    match = re.match(r'^yaalalabs/ak-common/(aws|azurerm|azure|google|gcp)//modules/([^"\s]+)$', stripped)
     if match:
         provider_raw = match.group(1)
-        provider = 'azurerm' if provider_raw in {'azurerm', 'azure'} else 'aws'
-        cloud_dir = 'ak-azure' if provider == 'azurerm' else 'ak-aws'
+        if provider_raw in {'azurerm', 'azure'}:
+            provider = 'azurerm'
+            cloud_dir = 'ak-azure'
+        elif provider_raw in {'google', 'gcp'}:
+            provider = 'google'
+            cloud_dir = 'ak-gcp'
+        else:
+            provider = 'aws'
+            cloud_dir = 'ak-aws'
         target = workspace_root / f'ak-deployment/{cloud_dir}/common/modules/{match.group(2)}'
         rel = os.path.relpath(target, file_path.parent)
         return rel, provider
@@ -74,6 +85,8 @@ def get_cloud(project_type: str) -> str:
         return 'aws'
     elif project_type.startswith('azure'):
         return 'azure'
+    elif project_type.startswith('gcp'):
+        return 'gcp'
     else:
         raise ValueError(f"Unknown project type: {project_type}")
 
@@ -88,7 +101,7 @@ def get_projects(config: Dict) -> Set[Tuple[str, str, str]]:
     if 'deployment_base' in config:
         for project in config['deployment_base']:
             t = project.get('type', '')
-            if t in ['aws-serverless', 'aws-containerized', 'azure-serverless', 'azure-containerized']:
+            if t in ['aws-serverless', 'aws-containerized', 'azure-serverless', 'azure-containerized','gcp-serverless', 'gcp-containerized']:
                 path = project.get('path', '')
                 deploy_dir = project.get('deploy_dir', 'deploy')
                 if path:
@@ -98,7 +111,7 @@ def get_projects(config: Dict) -> Set[Tuple[str, str, str]]:
         if schedule in config and 'tests' in config[schedule]:
             for test in config[schedule]['tests']:
                 t = test.get('type', '')
-                if t in ['aws-serverless', 'aws-containerized', 'azure-serverless', 'azure-containerized']:
+                if t in ['aws-serverless', 'aws-containerized', 'azure-serverless', 'azure-containerized','gcp-serverless', 'gcp-containerized']:
                     path = test.get('path', '')
                     deploy_dir = test.get('deploy_dir', 'deploy')
                     if path:
@@ -225,6 +238,11 @@ def _restore_registry_source(source_value: str, line: str, file_path: Path) -> O
 
     if 'ak-deployment/ak-azure/containerized' in resolved_normalized:
         return 'yaalalabs/ak-containerized/azurerm'
+    if 'ak-deployment/ak-gcp/serverless' in resolved_normalized:
+        return 'yaalalabs/ak-serverless/google'
+    
+    if 'ak-deployment/ak-gcp/containerized' in resolved_normalized:
+        return 'yaalalabs/ak-containerized/google'
 
     match = re.search(r'common/modules/([^/"]+)', resolved_normalized)
     if match:

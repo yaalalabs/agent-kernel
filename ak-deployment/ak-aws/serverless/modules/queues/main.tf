@@ -1,7 +1,7 @@
 # Input Queue
 module "input_queue" {
   source               = "yaalalabs/ak-common/aws//modules/sqs"
-  version              = "0.4.0"
+  version              = "0.9.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias
@@ -23,7 +23,7 @@ module "input_queue" {
   dlq_message_retention_seconds = var.queue_config.input_queue_dlq_message_retention_seconds
 
   # FIFO-specific configuration
-  content_based_deduplication = var.queue_config.content_based_deduplication
+  content_based_deduplication = var.queue_config.content_based_deduplication || var.queue_config.input_queue_content_based_deduplication
   fifo_throughput_limit       = var.queue_config.fifo_throughput_limit
   deduplication_scope         = var.queue_config.deduplication_scope
 
@@ -46,7 +46,7 @@ module "input_queue" {
 # Output Queue
 module "output_queue" {
   source               = "yaalalabs/ak-common/aws//modules/sqs"
-  version              = "0.4.0"
+  version              = "0.9.0"
 
   product_alias        = var.product_alias
   env_alias            = var.env_alias

@@ -14,13 +14,13 @@ The `Test` class provides programmatic interaction with CLI agents:
 from agentkernel.test import Test, Mode
 
 # Initialize test with CLI script path
-test = Test("demo.py", match_threshold=50, mode=Mode.FALLBACK)
+test = Test("demo.py", match_threshold=0.5, mode=Mode.FALLBACK)
 ```
 
 ### Parameters
 - `path`: Path to the Python CLI script (relative to current working directory)
-- `match_threshold`: Fuzzy matching threshold percentage (default: 50)
-- `mode`: Test comparison mode - `Mode.FUZZY`, `Mode.JUDGE`, or `Mode.FALLBACK`. If None, uses config value (default: None)
+- `match_threshold`: Matching threshold in the `[0.0, 1.0]` range (default: 0.5)
+- `mode`: Test comparison mode - `Mode.SCORE`, `Mode.LLM`, or `Mode.FALLBACK`. If None, uses config value (default: None)
 
 ## Basic Usage
 
@@ -48,23 +48,28 @@ asyncio.run(run_test())
 # Send a message to the CLI
 response = await test.send("Who won the 1996 cricket world cup?")
 
-# Verify the response using fuzzy matching
+# Verify the response using deterministic score matching
 await test.expect(["Sri Lanka won the 1996 cricket world cup."])
 ```
 
 ## Test Comparison Modes
 
-Agent Kernel supports three comparison modes for validating responses:
+Agent Kernel supports three comparison modes for validating responses. Each mode maps to a
+method on the configured `AKEvaluator` — see "Bring your own evaluator" below for the pluggable
+interface.
 
-### Fuzzy Mode
+### Score Mode
 
-Uses fuzzy string matching with configurable thresholds:
+Deterministic, offline string-match scoring — no LLM call. Behavior depends on the configured
+evaluator: DeepEval (the default) uses `Scorer.quasi_exact_match_score`, a normalised whole-string
+equality check, while Opik uses its `LevenshteinRatio` metric, a graded fuzzy-similarity score. See
+"Built-in evaluators" below for how to switch:
 
 ```python
 from agentkernel.test import Test, Mode
 
-# Initialize with fuzzy mode
-test = Test("demo.py", match_threshold=80, mode=Mode.FUZZY)
+# Initialize with score mode
+test = Test("demo.py", match_threshold=0.8, mode=Mode.SCORE)
 
 # Or use static comparison with multiple expected answers
 await test.send("Who won the 1996 cricket world cup?")
@@ -75,22 +80,32 @@ Test.compare(
         "Sri Lanka won the 1996 world cup",
         "The 1996 cricket world cup was won by Sri Lanka"
     ],
-    threshold=80,
-    mode=Mode.FUZZY
+    threshold=0.8,
+    mode=Mode.SCORE
 )
 ```
 
-**Note:** The `expected` parameter is a list. The test passes if the actual response fuzzy-matches **any** of the expected values above the threshold.
+**Note:** The `expected` parameter is a list. With the default DeepEval evaluator, the test passes
+if the actual response's normalised text exactly equals **any** of the expected values (score
+`1.0`); otherwise it scores `0.0` — there is no partial credit, so a verbose-but-correct response
+that merely contains the expected phrase does not match under score mode alone. With the Opik
+evaluator, `LevenshteinRatio` gives a graded score based on string similarity, so a close-but-not-
+exact match can still pass above `match_threshold` without partial credit being all-or-nothing.
 
-### Judge Mode
+### Llm Mode
 
-Uses LLM-based evaluation (Ragas) for semantic similarity:
+Uses LLM-as-judge evaluation for semantic similarity. Both built-in evaluators use a `GEval` metric
+here — DeepEval's `GEval` via an `LLMTestCase`, Opik's `GEval` via a single packed `output` string —
+judging whether the actual response conveys the same information as the expected answer. The rubric
+is written to give credit when `expected` is a short phrase or keyword embedded in a longer,
+otherwise-correct response — llm mode (and the llm fallback in `fallback` mode) is the intended way
+to match the verbose-but-correct case that score mode's exact match rejects:
 
 ```python
-# Initialize with judge mode
-test = Test("demo.py", mode=Mode.JUDGE)
+# Initialize with llm mode
+test = Test("demo.py", mode=Mode.LLM)
 
-# Use judge evaluation with multiple expected answers
+# Use llm evaluation with multiple expected answers
 await test.send("Who won the 1996 cricket world cup?")
 Test.compare(
     actual=test.last_agent_response,
@@ -100,20 +115,21 @@ Test.compare(
         "The 1996 cricket world cup was won by Sri Lanka"
     ],
     user_input="Who won the 1996 cricket world cup?",
-    threshold=50,  # Converted to 0.5 on 0.0-1.0 scale
-    mode=Mode.JUDGE
+    threshold=0.5,
+    mode=Mode.LLM
 )
 ```
 
-**Judge Mode Behavior:**
-- With expected answers: Uses `answer_similarity` metric to compare against each expected answer (ground truth). Test passes if **any** similarity score exceeds threshold.
-- Without expected answers: Uses `answer_relevancy` metric to check if answer is relevant to the question
+**Llm Mode Behavior:** Compares the actual response against each expected answer (ground truth)
+using an LLM rubric. Test passes if **any** comparison scores above the threshold. Unlike the
+old judge mode, `expected` is required — there is no reference-free relevancy fallback.
 
-**Note:** When multiple expected answers are provided, the test evaluates semantic similarity against each one and passes if **any** meets the threshold.
+**Note:** When multiple expected answers are provided, the test evaluates each one and passes if
+**any** meets the threshold.
 
 ### Fallback Mode (Default)
 
-Tries fuzzy matching first, falls back to judge evaluation if fuzzy fails:
+Tries score matching first, falls back to llm evaluation if score fails:
 
 ```python
 # Default fallback mode with multiple expected answers
@@ -128,24 +144,26 @@ Test.compare(
         "The winner was Sri Lanka"
     ],
     user_input="Who won the 1996 cricket world cup?",
-    threshold=50
+    threshold=0.5
 )
 ```
 
-**Note:** The `expected` parameter is a list of acceptable responses. Fuzzy matching is tried against each expected value first. If all fail, judge evaluation is attempted against each expected answer.
+**Note:** The `expected` parameter is a list of acceptable responses. Score matching is tried
+against each expected value first. If all fail, llm evaluation is attempted against each expected
+answer.
 
 ### Configuration-Based Mode
 
-Set default mode via configuration instead of constructor:
+Set default mode via a `test-config.yaml` file (in the directory the tests run from, or the path in `AK_TEST_CONFIG_PATH_OVERRIDE`) instead of the constructor. Test configuration is separate from the application's `config.yaml` and is only loaded when the test harness runs:
 
 ```yaml
-# config.yaml
-test:
-  mode: judge  # Options: fuzzy, judge, fallback
-  judge:
-    model: gpt-4o-mini
-    provider: openai
-    embedding_model: text-embedding-3-small
+# test-config.yaml
+mode: llm  # Options: score, llm, fallback
+evaluator: deepeval  # Built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
+llm:
+  model: gpt-4o-mini
+  provider: openai
+  embedding_model: text-embedding-3-small
 ```
 
 ```python
@@ -155,21 +173,45 @@ await test.send("Hello")
 await test.expect(["Hello! How can I help?"])  # Uses configured mode
 ```
 
+**Built-in evaluators:** `deepeval` (default, requires `pip install "agentkernel[test]"`) and `opik`
+(requires `pip install "agentkernel[opik]"`, [Opik](https://www.comet.com/docs/opik/) by Comet).
+Opik's `score` mode uses its `LevenshteinRatio` metric, an offline string-similarity check that
+never calls an LLM; `llm` mode uses its `GEval` judge, which runs locally against the LLM configured
+under `llm:`. Neither mode requires an Opik Cloud account, API key, or self-hosted server. See
+[`examples/cli/opik-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/opik-evaluator)
+for a complete working example.
+
+### Bring your own evaluator
+
+Any dotted path to an `AKEvaluator` subclass works as `evaluator` in `test-config.yaml`:
+
+```yaml
+evaluator: my_evaluator.MyEvaluator   # resolves against my_evaluator.py next to your test file
+```
+
+Implement `evaluate_by_score(case)` and `evaluate_by_llm(case)`, both synchronous,
+returning `AKEvaluationResult`. Raise `AKMetricNotSupported` from a method your backend can't
+provide, and `AKEvaluationError` on a backend failure (missing credentials, transport error) —
+never return a `0.0` for either. See `agentkernel.test.core.evaluator` for the interface and
+payload models, and [`examples/cli/custom-evaluator`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/custom-evaluator)
+for a complete working example (a stdlib-only token-overlap scorer plus a raw `litellm` judge, no
+DeepEval dependency at all).
+
 ## Advanced Features
 
 ### Custom Matching Configuration
 
 ```python
 # Set threshold and mode during initialization
-test = Test("demo.py", match_threshold=80, mode=Mode.FUZZY)
+test = Test("demo.py", match_threshold=0.8, mode=Mode.SCORE)
 
 # Or use static comparison with custom parameters
 Test.compare(
     actual=response,
     expected=["Expected response"],
     user_input="User question",
-    threshold=70,
-    mode=Mode.JUDGE
+    threshold=0.7,
+    mode=Mode.LLM
 )
 ```
 
@@ -235,13 +277,13 @@ finally:
 - Verify agent switching functionality
 
 ### Test Mode Selection
-- Use `Mode.FUZZY` for deterministic, exact outputs
-- Use `Mode.JUDGE` for AI-generated content with paraphrasing
+- Use `Mode.SCORE` for deterministic, exact outputs
+- Use `Mode.LLM` for AI-generated content with paraphrasing
 - Use `Mode.FALLBACK` (default) for robust validation
 
 ### Response Validation
-- Use appropriate fuzzy matching thresholds (50-80% typical)
-- Provide `user_input` when using judge mode for better evaluation
+- Use appropriate score thresholds (0.5-0.8 typical, on the `[0.0, 1.0]` scale)
+- Provide `user_input` when using llm mode for better evaluation
 - Test with variations in expected responses
 - Account for slight differences in AI model outputs
 
@@ -250,10 +292,10 @@ finally:
 - Always call `stop()` to clean up processes
 - Use try-finally blocks for proper cleanup
 
-### Judge Mode Configuration
-- Configure judge model/provider via `config.yaml` or environment variables
+### Llm Mode Configuration
+- Configure the llm model/provider via `test-config.yaml` or environment variables
 - Ensure LLM API keys are set (e.g., OPENAI_API_KEY)
-- Note: Judge mode requires LLM calls which may slow down tests
+- Note: Llm mode requires LLM calls which may slow down tests
 
 ## Example Test Session
 
@@ -262,7 +304,7 @@ import asyncio
 from agentkernel.test import Test
 
 async def test_cricket_knowledge():
-    test = Test("demo.py", match_threshold=60)
+    test = Test("demo.py", match_threshold=0.6)
     
     try:
         await test.start()
@@ -327,13 +369,13 @@ Test complex interactions:
 
 Available CLI commands:
 
-- `!h`, `!help` — Show help message
-- `!ld`, `!load <module_name>` — Load agent module
-- `!ls`, `!list` — List available agents
-- `!n`, `!new` — Start a new session
-- `!c`, `!clear` — Clear the current session memory
-- `!s`, `!select <agent_name>` — Select an agent to run the prompt
-- `!q`, `!quit` — Exit the program
+- `!h`, `!help`: Show help message
+- `!ld`, `!load <module_name>`: Load agent module
+- `!ls`, `!list`: List available agents
+- `!n`, `!new`: Start a new session
+- `!c`, `!clear`: Clear the current session memory
+- `!s`, `!select <agent_name>`: Select an agent to run the prompt
+- `!q`, `!quit`: Exit the program
 
 ## Tips
 

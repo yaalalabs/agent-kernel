@@ -6,7 +6,11 @@ else
   uv venv --allow-existing
 fi
 
-uv sync --all-extras
+
+# `crewai` and `test` extras are declared as mutually exclusive (see pyproject.toml
+# [tool.uv.conflicts]) because they pull incompatible posthog versions transitively.
+# `test` must always be installed, so it's `crewai` that's excluded from --all-extras.
+uv sync --all-extras --no-extra crewai
 
 uv pip install --group dev
 rm -rf dist

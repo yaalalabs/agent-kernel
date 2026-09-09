@@ -2,8 +2,8 @@
 name: ak-dev-new-tracing-provider
 description: >
   Step-by-step guide for adding a new observability/tracing provider to Agent Kernel.
-  Use this skill when you need to integrate a new tracing backend (beyond Langfuse
-  and OpenLLMetry/Traceloop). Covers implementing the BaseTrace interface, creating
+  Use this skill when you need to integrate a new tracing backend (beyond Langfuse,
+  OpenLLMetry/Traceloop, and Pydantic Logfire). Covers implementing the BaseTrace interface, creating
   framework-specific traced runners, configuration, and testing.
 license: Apache-2.0
 metadata:
@@ -35,7 +35,9 @@ ak-py/src/agentkernel/trace/<provider>/
 ├── openai.py            # Traced OpenAI runner
 ├── langgraph.py         # Traced LangGraph runner
 ├── crewai.py            # Traced CrewAI runner
-└── adk.py               # Traced Google ADK runner
+├── adk.py               # Traced Google ADK runner
+├── smolagents.py        # Traced Smolagents runner
+└── pydanticai.py        # Traced Pydantic AI runner
 ```
 
 ### 2. Implement the Main Trace Class
@@ -94,6 +96,11 @@ class <Provider>(BaseTrace):
             return <Provider>ADKRunner(self._client)
         except ImportError:
             return None
+
+    def smolagents(self) -> Runner:
+        from .smolagents import <Provider>SmolagentsRunner
+
+        return <Provider>SmolagentsRunner(self._client)
 ```
 
 ### 3. Implement Framework-Specific Traced Runners
@@ -126,7 +133,7 @@ class <Provider>OpenAIRunner(OpenAIRunner):
         ) as span:
             try:
                 result = await super().run(agent, session, requests)
-                span.set_attribute("output_length", len(result.text) if hasattr(result, 'text') else 0)
+                span.set_attribute("output_length", len(result.response) if hasattr(result, 'response') else 0)
                 span.set_status("OK")
                 return result
             except Exception as e:
@@ -155,7 +162,7 @@ class <Provider>LangGraphRunner(LangGraphRunner):
             return await super().run(agent, session, requests)
 ```
 
-Follow the same pattern for CrewAI and Google ADK runners.
+Follow the same pattern for CrewAI, Google ADK, Smolagents, and Pydantic AI runners (see `trace/langfuse/smolagents.py` and `trace/openllmetry/smolagents.py` for reference).
 
 ### 4. Update the `__init__.py`
 
@@ -166,37 +173,67 @@ from .<provider> import <Provider>
 
 ### 5. Update the BaseTrace Interface
 
-Add the new provider as a recognized option. The `BaseTrace` class (`trace/base.py`) already defines the interface — your implementation just needs to conform to it. No changes to `base.py` are needed unless you're adding a new framework.
+Add the new provider as a recognized option. The `BaseTrace` class (`trace/base.py`) already defines the interface — your implementation just needs to conform to it. No changes to `base.py` are needed unless you're adding a new framework. Note that `init()` and all six framework methods (`openai`, `langgraph`, `crewai`, `adk`, `smolagents`, `pydanticai`) are declared `@abstractmethod` on `BaseTrace`, so every new provider must implement all seven — otherwise the class cannot be instantiated.
 
 ### 6. Register with the Trace Factory
 
-Update `ak-py/src/agentkernel/trace/trace.py`:
+Update `ak-py/src/agentkernel/trace/trace.py`. The factory shares the house pluggable-backend
+shape from `core/util/factory.py` (`resolve_dotted`, `require_extra`, `AKConfigError` — the same
+pattern used by the guardrail, session/thread/multimodal store, and sandbox provider factories):
+`Trace.get()` builds an instance via `Trace._build()` only when tracing is enabled, each built-in's
+lazy import is wrapped in `require_extra` (so a missing optional dependency raises an actionable
+`ImportError` naming the pip extra), and anything that isn't a recognized short name is treated as
+a dotted path to a `BaseTrace` subclass (bring-your-own). When tracing is disabled, `instance` stays
+`None` and the factory returns `Trace(None)`, whose `init()` and framework methods no-op / return
+`None`:
 
 ```python
+_BUILTIN_TRACERS = ["langfuse", "openllmetry", "logfire"]
+
 class Trace(BaseTrace):
     @classmethod
     def get(cls) -> "Trace":
-        config = AKConfig.get().trace
-        if config and config.enabled:
-            if config.type == "langfuse":
-                from .langfuse import LangFuse
-                instance = LangFuse()
-            elif config.type == "openllmetry":
-                from .openllmetry import OpenLLMetry
-                instance = OpenLLMetry()
-            elif config.type == "<provider>":          # ADD THIS
-                from .<provider> import <Provider>
-                instance = <Provider>()
-            else:
-                return cls._noop()
-            instance.init()
-            return instance
-        return cls._noop()
+        config = AKConfig.get()
+        instance = cls._build(config.trace.type) if config.trace.enabled else None
+        trace = cls(instance)
+        trace.init()
+        return trace
+
+    @staticmethod
+    def _build(trace_type: str) -> BaseTrace:
+        if trace_type == "langfuse":
+            with require_extra("langfuse", "trace.type: langfuse"):
+                from .langfuse.langfuse import LangFuse
+            return LangFuse()
+        if trace_type == "openllmetry":
+            with require_extra("openllmetry", "trace.type: openllmetry"):
+                from .openllmetry.openllmetry import OpenLLMetry
+            return OpenLLMetry()
+        if trace_type == "logfire":
+            with require_extra("logfire", "trace.type: logfire"):
+                from .logfire.logfire import Logfire
+            return Logfire()
+        if trace_type == "<provider>":                                    # ADD THIS
+            with require_extra("<provider>", "trace.type: <provider>"):
+                from .<provider>.<provider> import <Provider>
+            return <Provider>()
+        if "." not in trace_type:
+            raise AKConfigError(
+                f"unknown trace type '{trace_type}'; expected one of {_BUILTIN_TRACERS} or a dotted path to a BaseTrace subclass"
+            )
+        return resolve_dotted(trace_type, base=BaseTrace)()  # bring-your-own
 ```
+
+A dotted `type` (e.g. `myorg.tracing.CustomTrace`) resolves via `resolve_dotted` without any
+factory edit at all — only add an `if` branch here for a first-party, in-repo provider you want
+addressable by a short name.
 
 ### 7. Add Configuration
 
-The existing `_TraceConfig` in `config.py` supports `type` field. Your provider needs to respond to `type: "<provider>"`:
+The existing `_TraceConfig.type` in `config.py` is a free-form string (no regex pattern) described
+as "a built-in short name (langfuse, openllmetry, logfire) or a dotted path to a BaseTrace subclass" — do
+not add a `pattern=` constraint, since that would break the bring-your-own path. Your provider
+needs to respond to `type: "<provider>"`:
 
 ```yaml
 # config.yaml
@@ -221,7 +258,7 @@ In `ak-py/pyproject.toml`:
 
 ### 9. Add Tests
 
-Create `ak-py/tests/test_trace_<provider>.py`:
+Create `ak-py/tests/test_trace_<provider>.py`. Note that no trace tests currently exist in `ak-py/tests/`, so there is no existing file to model after — your new test file establishes the convention:
 
 - Test that the factory creates the correct instance for `type: "<provider>"`
 - Test that traced runners properly wrap execution with spans
@@ -235,6 +272,8 @@ Add `docs/docs/advanced/tracing-<provider>.md` covering:
 - Configuration
 - What gets traced (spans, attributes)
 - Dashboard screenshots (optional)
+
+Then add the provider to the docs-site features page (`docs/src/pages/features.tsx`): the Observability card's `highlights` list one entry per provider, and the Problem section's `rows` name the built-in tracing providers in a `with:` cell. Grep `docs/src/pages/*.tsx` for "Langfuse" to find every roll call.
 
 ## How Framework Modules Consume Tracing
 
@@ -254,7 +293,7 @@ This means tracing is **transparent** — users don't change their agent code, t
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/trace/<provider>/` directory with `__init__.py` and main class
-- [ ] Traced runners for each framework (OpenAI, LangGraph, CrewAI, ADK)
+- [ ] Traced runners for each framework (OpenAI, LangGraph, CrewAI, ADK, Smolagents, Pydantic AI)
 - [ ] Registration in `trace/trace.py` factory
 - [ ] Configuration via `type: "<provider>"` in `config.yaml`
 - [ ] Optional dependencies in `pyproject.toml`

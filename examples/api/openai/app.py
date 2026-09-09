@@ -61,7 +61,7 @@ class RAGPreHook(PreHook):
         prompt = ""
         for req in requests:
             if isinstance(req, AgentRequestText):
-                prompt = req.text
+                prompt = req.prompt
 
             if isinstance(req, AgentRequestAny) and req.name == "additional_context":
                 additional_context = req.content
@@ -77,7 +77,7 @@ class RAGPreHook(PreHook):
         # Otherwise, add the bank agent to the prompt
         modified_prompt = prompt + ". My bank agent was " + bank_agent + "."
 
-        return [AgentRequestText(text=modified_prompt)]
+        return [AgentRequestText(prompt=modified_prompt)]
 
     def name(self) -> str:
         return "bank_agent_prehook"
@@ -86,5 +86,9 @@ class RAGPreHook(PreHook):
 # Initialize OpenAI module and attach RAG pre-hook to customer support agent
 OpenAIModule([triage_agent, general_agent, customer_support_agent]).pre_hook(customer_support_agent, [RAGPreHook()])
 
+# config.yaml selects the in_memory queue transport, so this single call boots the full
+# queue-mode pipeline in one process: REST API -> input queue -> agent runner -> output
+# queue -> response handler. The same app moves to a broker transport (SQS today; Kafka
+# and NATS upcoming) purely by configuration - no code changes.
 if __name__ == "__main__":
     RESTAPI.run()

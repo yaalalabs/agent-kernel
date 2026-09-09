@@ -1,0 +1,21 @@
+{{- if .Values.serviceMonitor.enabled }}
+{{/*
+Prometheus Operator scrape target for the io Service. Agent Kernel does not expose an app
+metrics endpoint out of the box; enable this when your image adds one (see the Observability
+section of the chart README for the recommended stack and the broker exporters).
+*/}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-io
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "io-handler") | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "io-handler") | nindent 6 }}
+  endpoints:
+    - port: http
+      path: {{ .Values.serviceMonitor.path }}
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

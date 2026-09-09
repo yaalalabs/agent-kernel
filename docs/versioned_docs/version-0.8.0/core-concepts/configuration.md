@@ -1,0 +1,1028 @@
+---
+sidebar_position: 7
+---
+
+# Configuration
+
+Configure Agent Kernel via environment variables or configuration files. This sub module class 'AKConfig' is exported as 'Config'. Its unlikely that you will directly use this class in your code (i.e. need for Advanced usage).
+
+:::tip
+For detailed information about session and memory management configuration, see:
+- [Session Management](/docs/core-concepts/session) - Session configuration and storage backends
+- [Memory Management](/docs/architecture/memory-management) - Advanced memory features and caching
+:::
+
+## Configuration File
+
+Agent Kernel supports YAML and JSON configuration files. By default, it looks for `config.yaml` in the current working directory.
+
+:::note
+Test harness configuration (comparison mode, judge models) is **not** part of `config.yaml`. It lives in a separate `test-config.yaml` file that is only loaded when running tests; see the [Test Configuration](#test-configuration) section below and [Testing](/docs/testing/overview). A legacy `test:` section in `config.yaml` is ignored.
+:::
+
+### Basic Configuration File
+
+Create `config.yaml`:
+
+```yaml
+# Core settings
+library_version: "0.1.0"
+
+# Session management
+session:
+  type: redis  # 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
+  redis:
+    url: redis://localhost:6379
+    ttl: 604800  # 7 days in seconds
+    prefix: "ak:sessions:"
+  valkey:  # Used when type is 'valkey' (requires the agentkernel[valkey] extra)
+    url: valkey://localhost:6379  # use valkeys:// for SSL
+    ttl: 604800  # 7 days in seconds
+    prefix: "ak:sessions:"
+  dynamodb:
+    table_name: agent-kernel-sessions
+    ttl: 604800  # 7 days in seconds
+
+# API server
+api:
+  host: 0.0.0.0
+  port: 8000
+  custom_router_prefix: /custom
+  max_file_size: 10485760  # Maximum file size in bytes (default: 10 MB) that can be sent as attachments
+  enabled_routes:
+    agents: true
+
+# Agent-to-Agent communication
+a2a:
+  enabled: true
+  url: http://localhost:8000/a2a
+  agents:
+    - "*"  # Enable for all agents
+  task_store_type: redis
+
+# Model Context Protocol
+# The MCP server is always mounted at /mcp on the main API server.
+# Full endpoint: http://{api.host}:{api.port}/mcp - use api.port to change the port.
+mcp:
+  enabled: true
+  expose_agents: true
+  agents:
+    - "*"  # Expose all agents as MCP tools
+  stateless_http: false  # Run in stateless HTTP mode (default: false)
+
+# WebSocket API configuration (for AWS serverless deployments)
+websocket_api:
+  connection_table:
+    table_name: "websocket-connections"
+    ttl: 3600  # Connection TTL in seconds for automatic cleanup
+  chat_route: "chat"  # Default route for chat messages
+
+# Execution configuration (for AWS serverless and containerized deployments)
+execution:
+  mode: rest_sync  # Execution mode: rest_sync, rest_async, stream, or async (WebSocket)
+  queues:
+    input:
+      url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
+      max_receive_count: 3  # Maximum number of times a message can be received from input queue before being treated as permanently failed
+      no_of_consumers: 5  # Containerized deployments only - consumer threads polling the input queue (ignored by serverless)
+    output:
+      url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
+      max_receive_count: 3  # Maximum number of times a message can be received from output queue before being treated as permanently failed
+      no_of_consumers: 2  # Containerized deployments only - consumer threads polling the output queue (default: 2, ignored by serverless)
+  response_store:
+    type: redis  # Response store type: redis, valkey, or dynamodb (required for rest_sync and rest_async modes)
+    retry_count: 5  # Number of retry attempts for response store reads
+    delay: 5  # Delay in seconds between response store reads retry attempts
+    redis:
+      url: "redis://localhost:6379"  # Redis connection URL for response storage
+      prefix: "ak:responses:"  # Key prefix for Redis response storage
+      ttl: 604800  # Redis saved value TTL in seconds
+    valkey:  # Used when type is 'valkey' (requires the agentkernel[valkey] extra)
+      url: "valkey://localhost:6379"  # Valkey connection URL for response storage
+      prefix: "ak:responses:"  # Key prefix for Valkey response storage
+      ttl: 604800  # Valkey saved value TTL in seconds
+    dynamodb:
+      table_name: "agent-responses"  # DynamoDB table name for response storage
+      ttl: 604800  # DynamoDB item TTL in seconds (0 disables)
+
+# Multimodal attachment support (optional, see /docs/advanced/multimodal)
+multimodal:
+  enabled: true
+  storage_type: in_memory  # in_memory | redis | dynamodb | session_cache
+  max_attachments: 20
+  description_max_length: 200
+  description_model: gpt-4o  # Vision LLM for brief attachment descriptions
+  analysis_model: gpt-4o  # Vision LLM for the analyze_attachments tool
+  redis:
+    url: "redis://localhost:6379"
+    ttl: 604800
+    prefix: "ak:attachments:"
+  dynamodb:
+    table_name: "ak-attachments"
+    ttl: 604800
+
+# Conversation threads (optional - feature is enabled by the presence of this block;
+# requires user_id on every chat request. See /docs/advanced/threads)
+thread:
+  type: memory  # memory | redis | dynamodb | firestore | cosmosdb
+  naming:
+    model: gpt-4o-mini  # LLM used to auto-name threads (requires the thread extra)
+    max_length: 80
+  redis:
+    url: "redis://localhost:6379"
+    ttl: 2592000
+    prefix: "ak:thread:"
+  dynamodb:
+    table_name: "ak-agent-threads"
+    ttl: 0
+
+# Messaging platform integrations
+slack:
+  agent: ""  # Default agent for Slack
+  agent_acknowledgement: ""  # Acknowledgement message
+
+whatsapp:
+  agent: ""  # Default agent for WhatsApp
+  agent_acknowledgement: ""  # Acknowledgement message
+  verify_token: ""  # Webhook verify token
+  access_token: ""  # Business API access token
+  app_secret: ""  # App secret for signature verification
+  phone_number_id: ""  # Business phone number ID
+  api_version: "v24.0"  # API version
+
+messenger:
+  agent: ""  # Default agent for Facebook Messenger
+  verify_token: ""  # Webhook verify token
+  access_token: ""  # Page access token
+  app_secret: ""  # App secret for signature verification
+  api_version: "v24.0"  # Graph API version
+
+instagram:
+  agent: ""  # Default agent for Instagram
+  verify_token: ""  # Webhook verify token
+  access_token: ""  # Business access token
+  app_secret: ""  # App secret for signature verification
+  instagram_account_id: ""  # Business Account ID (IGSID)
+  api_version: "v21.0"  # Graph API version
+
+telegram:
+  agent: ""  # Default agent for Telegram
+  bot_token: ""  # Bot token from BotFather
+  webhook_secret: ""  # Optional webhook security token
+  api_version: "bot"  # Bot API version prefix
+
+# Guardrails configuration
+guardrail:
+  input:
+    enabled: false  # Enable input guardrails
+    type: openai  # Guardrail provider: openai, bedrock, or walledai
+    pii: true  # Enable PII redaction/unmasking (WalledAI only)
+    # OpenAI-specific fields:
+    model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
+    config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
+    # Bedrock-specific fields:
+    id: ""  # AWS Bedrock guardrail ID (Bedrock only)
+    version: "DRAFT"  # AWS Bedrock guardrail version (Bedrock only)
+  output:
+    enabled: false  # Enable output guardrails
+    type: openai  # Guardrail provider: openai, bedrock, or walledai
+    pii: true  # Enable PII redaction/unmasking (WalledAI only)
+    # OpenAI-specific fields:
+    model: gpt-4o-mini  # LLM model for guardrail validation (OpenAI only)
+    config_path: ""  # Path to guardrail configuration JSON file (OpenAI only)
+    # Bedrock-specific fields:
+    id: ""  # AWS Bedrock guardrail ID (Bedrock only)
+    version: "DRAFT"  # AWS Bedrock guardrail version (Bedrock only)
+
+# Logging configuration (optional)
+# If omitted, default loggers will not be overridden
+logging:
+  ak:
+    level: WARNING  # Agent Kernel log level: INFO, DEBUG, ERROR, WARNING, CRITICAL
+  system:
+    level: WARNING  # System/root logger level: INFO, DEBUG, ERROR, WARNING, CRITICAL
+```
+> Logging is auto-configured when the configuration is first loaded, i.e., at the first `Config.get()` call, which every application entry point performs during startup. Merely importing the library does not read `config.yaml` or change logging. Once configuration loads, Agent Kernel may configure the Agent Kernel logger and the system/root logger and may add or change handlers/formatters.
+> Use `logging.ak.level` to control Agent Kernel's own logger verbosity, and `logging.system.level` only if you want Agent Kernel to affect the process-wide/root logger. If you do **not** want Agent Kernel to modify application-wide logging, avoid enabling root/system logger.
+
+### JSON Configuration
+
+Alternatively, use `config.json`:
+
+```json
+{
+  "logging": {
+    "ak": {
+      "level": "WARNING"
+    },
+    "system": {
+      "level": "WARNING"
+    }
+  },
+  "session": {
+    "type": "redis",
+    "redis": {
+      "url": "redis://localhost:6379",
+      "ttl": 604800,
+      "prefix": "ak:sessions:"
+    },
+    "valkey": {
+      "url": "valkey://localhost:6379",
+      "ttl": 604800,
+      "prefix": "ak:sessions:"
+    },
+    "dynamodb": {
+      "table_name": "agent-kernel-sessions",
+      "ttl": 604800
+    }
+  },
+  "api": {
+    "host": "0.0.0.0",
+    "port": 8000,
+    "custom_router_prefix": "/custom",
+    "max_file_size": 10485760,
+    "enabled_routes": {
+      "agents": true
+    }
+  },
+  "a2a": {
+    "enabled": true,
+    "url": "http://localhost:8000/a2a",
+    "agents": ["*"],
+    "task_store_type": "redis"
+  },
+  "mcp": {
+    "enabled": true,
+    "expose_agents": true,
+    "agents": ["*"],
+    "stateless_http": false
+  },
+  "websocket_api": {
+    "connection_table": {
+      "table_name": "websocket-connections",
+      "ttl": 3600
+    },
+    "chat_route": "chat"
+  },
+  "execution": {
+    "mode": "rest_sync",
+    "queues": {
+      "input": {
+        "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input",
+        "max_receive_count": 3,
+        "no_of_consumers": 5
+      },
+      "output": {
+        "url": "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output",
+        "max_receive_count": 3,
+        "no_of_consumers": 2
+      }
+    },
+    "response_store": {
+      "type": "redis",
+      "retry_count": 5,
+      "delay": 5,
+      "redis": {
+        "url": "redis://localhost:6379",
+        "prefix": "ak:responses:",
+        "ttl": 604800
+      },
+      "valkey": {
+        "url": "valkey://localhost:6379",
+        "prefix": "ak:responses:",
+        "ttl": 604800
+      },
+      "dynamodb": {
+        "table_name": "agent-responses",
+        "ttl": 604800
+      }
+    }
+  },
+  "slack": {
+    "agent": "",
+    "agent_acknowledgement": ""
+  },
+  "whatsapp": {
+    "agent": "",
+    "agent_acknowledgement": "",
+    "verify_token": "",
+    "access_token": "",
+    "app_secret": "",
+    "phone_number_id": "",
+    "api_version": "v24.0"
+  },
+  "messenger": {
+    "agent": "",
+    "verify_token": "",
+    "access_token": "",
+    "app_secret": "",
+    "api_version": "v24.0"
+  },
+  "instagram": {
+    "agent": "",
+    "verify_token": "",
+    "access_token": "",
+    "app_secret": "",
+    "instagram_account_id": "",
+    "api_version": "v21.0"
+  },
+  "telegram": {
+    "agent": "",
+    "bot_token": "",
+    "webhook_secret": "",
+    "api_version": "bot"
+  },
+  "guardrail": {
+    "input": {
+      "enabled": false,
+      "type": "openai",
+      "model": "gpt-4o-mini",
+      "config_path": ""
+    },
+    "output": {
+      "enabled": false,
+      "type": "openai",
+      "model": "gpt-4o-mini",
+      "config_path": ""
+    }
+  },
+  "logging": {  // Optional - if omitted, default loggers will not be overridden
+    "ak": {
+      "level": "WARNING"
+    },
+    "system": {
+      "level": "WARNING"
+    }
+  }
+}
+```
+
+### Custom Configuration File Path
+
+Override the default configuration file path:
+
+```bash
+export AK_CONFIG_PATH_OVERRIDE=custom-config.yaml
+# or
+export AK_CONFIG_PATH_OVERRIDE=conf/agent-kernel.json
+```
+
+## Environment Variables
+
+All configuration parameters can be set using environment variables with the `AK_` prefix. Use double underscores ('__') to separate nested configuration levels.
+A name can have single underscores ('_') in its body.
+
+### Core Configuration
+
+```bash
+# Library version (auto-detected from package metadata)
+export AK_LIBRARY_VERSION=0.1.0
+```
+
+### Session Storage
+
+```bash
+# Session storage type
+export AK_SESSION__TYPE=redis  # Options: 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', 'firestore' (default: 'in_memory')
+
+# Redis configuration
+export AK_SESSION__REDIS__URL=redis://localhost:6379  # default: redis://localhost:6379
+export AK_SESSION__REDIS__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
+export AK_SESSION__REDIS__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
+export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
+
+# Valkey configuration (requires the agentkernel[valkey] extra)
+export AK_SESSION__VALKEY__URL=valkey://localhost:6379  # default: valkey://localhost:6379 (use valkeys:// for SSL)
+export AK_SESSION__VALKEY__TTL=604800  # TTL in seconds (default: 604800 = 7 days)
+export AK_SESSION__VALKEY__PREFIX=ak:sessions:  # Key prefix (default: ak:sessions:)
+
+# DynamoDB configuration
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions  # DynamoDB table name (required)
+export AK_SESSION__DYNAMODB__TTL=604800  # TTL in seconds (default: 604800 = 7 days, 0 to disable)
+export AK_SESSION__CACHE__SIZE=256  # Enable in-memory session caching with a cache size of 256 sessions
+```
+
+:::note Valkey and the Redis-only surfaces
+The session store (`session.type`) and the async response store
+(`execution.response_store.type`) both support `valkey` as a first-class backend. The multimodal
+attachment store (`multimodal.storage_type`) and the A2A task store (`a2a.task_store_type`) remain
+Redis-only for now. Because Valkey is wire-compatible with the Redis protocol, you can still use a
+Valkey server for those surfaces by pointing their existing `redis` config blocks at it with the
+`redis://` scheme. First-class `valkey` support for those surfaces is tracked as a follow-up.
+:::
+
+### API Server
+
+```bash
+# API server configuration
+export AK_API__HOST=0.0.0.0  # default: 0.0.0.0
+export AK_API__PORT=8000  # default: 8000
+export AK_API__MAX_FILE_SIZE=10485760  # Maximum file size in bytes (default: 10485760 = 10 MB)
+
+# API route configuration
+export AK_API__ENABLED_ROUTES__AGENTS=true  # Enable agent routes (default: true)
+```
+
+### Agent-to-Agent (A2A) Server
+
+```bash
+# Enable A2A functionality
+export AK_A2A__ENABLED=true  # default: false
+export AK_A2A__URL=http://localhost:8000/a2a  # default: http://localhost:8000/a2a
+export AK_A2A__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
+export AK_A2A__TASK_STORE_TYPE=redis  # Options: 'in_memory', 'redis' (default: 'in_memory')
+```
+
+### Model Context Protocol (MCP) Server
+
+```bash
+# Enable MCP functionality
+export AK_MCP__ENABLED=true  # default: false
+export AK_MCP__EXPOSE_AGENTS=true  # Expose agents as MCP tools (default: false)
+export AK_MCP__AGENTS="agent1,agent2"  # Comma-separated list (default: ["*"])
+export AK_MCP__STATELESS_HTTP=false  # Run in stateless HTTP mode, no Mcp-Session-Id (default: false)
+# Note: MCP is always served at /mcp on the main API server. Use AK_API__PORT to change the port.
+```
+
+### Test Configuration {#test-configuration-env-vars}
+
+These variables configure the test harness (`AKTestConfig`), which is separate from the application configuration; see the [Test Configuration](#test-configuration) section below for the `test-config.yaml` file and full details. The variable names are unchanged from previous releases:
+
+```bash
+# Test comparison mode
+export AK_TEST__MODE=fallback  # Options: 'fuzzy', 'judge', 'fallback' (default: 'fallback')
+
+# Judge configuration (for LLM-based evaluation)
+export AK_TEST__JUDGE__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__JUDGE__PROVIDER=openai  # LLM provider (default: openai)
+export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
+```
+
+### Messaging Platform Integrations
+
+#### Slack
+
+```bash
+export AK_SLACK__AGENT=my-agent  # Default agent for Slack interactions
+export AK_SLACK__AGENT_ACKNOWLEDGEMENT="Processing your request..."  # Acknowledgement message
+```
+
+#### WhatsApp
+
+```bash
+export AK_WHATSAPP__AGENT=my-agent  # Default agent for WhatsApp interactions
+export AK_WHATSAPP__AGENT_ACKNOWLEDGEMENT="Processing..."  # Acknowledgement message
+export AK_WHATSAPP__VERIFY_TOKEN=your-verify-token  # Webhook verify token
+export AK_WHATSAPP__ACCESS_TOKEN=your-access-token  # Business API access token
+export AK_WHATSAPP__APP_SECRET=your-app-secret  # App secret for signature verification
+export AK_WHATSAPP__PHONE_NUMBER_ID=your-phone-id  # Business phone number ID
+export AK_WHATSAPP__API_VERSION=v24.0  # API version (default: v24.0)
+```
+
+#### Facebook Messenger
+
+```bash
+export AK_MESSENGER__AGENT=my-agent  # Default agent for Messenger interactions
+export AK_MESSENGER__VERIFY_TOKEN=your-verify-token  # Webhook verify token
+export AK_MESSENGER__ACCESS_TOKEN=your-access-token  # Page access token
+export AK_MESSENGER__APP_SECRET=your-app-secret  # App secret for signature verification
+export AK_MESSENGER__API_VERSION=v24.0  # Graph API version (default: v24.0)
+```
+
+#### Instagram
+
+```bash
+export AK_INSTAGRAM__AGENT=my-agent  # Default agent for Instagram interactions
+export AK_INSTAGRAM__VERIFY_TOKEN=your-verify-token  # Webhook verify token
+export AK_INSTAGRAM__ACCESS_TOKEN=your-access-token  # Business access token
+export AK_INSTAGRAM__APP_SECRET=your-app-secret  # App secret for signature verification
+export AK_INSTAGRAM__INSTAGRAM_ACCOUNT_ID=your-ig-account-id  # Business Account ID (IGSID)
+export AK_INSTAGRAM__API_VERSION=v21.0  # Graph API version (default: v21.0)
+```
+
+#### Telegram
+
+```bash
+export AK_TELEGRAM__AGENT=my-agent  # Default agent for Telegram interactions
+export AK_TELEGRAM__BOT_TOKEN=your-bot-token  # Bot token from BotFather
+export AK_TELEGRAM__WEBHOOK_SECRET=your-webhook-secret  # Optional webhook security token
+export AK_TELEGRAM__API_VERSION=bot  # Bot API version prefix (default: bot)
+```
+
+### Trace / Observability
+
+```bash
+# Enable tracing functionality
+export AK_TRACE__ENABLED=true  # default: false
+export AK_TRACE__TYPE=langfuse  # Options: 'langfuse', 'openllmetry', 'logfire' (default: 'langfuse')
+
+# Langfuse-specific configuration (required when using Langfuse)
+export LANGFUSE_PUBLIC_KEY=pk-lf-...  # Your Langfuse public key
+export LANGFUSE_SECRET_KEY=sk-lf-...  # Your Langfuse secret key
+export LANGFUSE_HOST=https://cloud.langfuse.com  # Langfuse host (or self-hosted instance)
+
+# OpenLLMetry (Traceloop) configuration (required when using OpenLLMetry)
+export TRACELOOP_API_KEY=your-api-key  # Your Traceloop API key
+export TRACELOOP_BASE_URL=https://api.traceloop.com  # Optional: Traceloop base URL (for self-hosted)
+```
+
+### Guardrails Configuration
+
+```bash
+# Enable input guardrails
+export AK_GUARDRAIL__INPUT__ENABLED=true  # default: false
+export AK_GUARDRAIL__INPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walledai' (default: openai)
+export AK_GUARDRAIL__INPUT__PII=true  # WalledAI only (default: true)
+
+# OpenAI-specific input guardrail configuration
+export AK_GUARDRAIL__INPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__INPUT__CONFIG_PATH=/path/to/guardrails_input.json  # Path to guardrail config file
+
+# Bedrock-specific input guardrail configuration
+export AK_GUARDRAIL__INPUT__ID=your-guardrail-id  # AWS Bedrock guardrail ID
+export AK_GUARDRAIL__INPUT__VERSION=1  # AWS Bedrock guardrail version (default: DRAFT)
+
+# Walled AI-specific input guardrail configuration
+export WALLED_API_KEY=your-walledai-api-key
+
+# Enable output guardrails
+export AK_GUARDRAIL__OUTPUT__ENABLED=true  # default: false
+export AK_GUARDRAIL__OUTPUT__TYPE=openai  # Options: 'openai', 'bedrock', 'walledai' (default: openai)
+export AK_GUARDRAIL__OUTPUT__PII=true  # WalledAI only (default: true)
+
+# OpenAI-specific output guardrail configuration
+export AK_GUARDRAIL__OUTPUT__MODEL=gpt-4o-mini  # LLM model for validation (default: gpt-4o-mini)
+export AK_GUARDRAIL__OUTPUT__CONFIG_PATH=/path/to/guardrails_output.json  # Path to guardrail config file
+
+# Bedrock-specific output guardrail configuration
+export AK_GUARDRAIL__OUTPUT__ID=your-guardrail-id  # AWS Bedrock guardrail ID
+export AK_GUARDRAIL__OUTPUT__VERSION=1  # AWS Bedrock guardrail version
+```
+
+### Execution Configuration (AWS Serverless)
+
+```bash
+# Execution mode
+export AK_EXECUTION__MODE=rest_sync  # Options: 'rest_sync', 'rest_async', 'stream', 'async'
+
+# Queue configuration
+export AK_EXECUTION__QUEUES__INPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-input
+export AK_EXECUTION__QUEUES__INPUT__MAX_RECEIVE_COUNT=3
+export AK_EXECUTION__QUEUES__OUTPUT__URL=https://sqs.us-east-1.amazonaws.com/123456789012/agent-output
+export AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT=3
+
+# Containerized deployments only - ignored by serverless
+export AK_EXECUTION__QUEUES__INPUT__NO_OF_CONSUMERS=5   # Consumer threads polling the input queue (default: 5)
+export AK_EXECUTION__QUEUES__OUTPUT__NO_OF_CONSUMERS=2  # Consumer threads polling the output queue (default: 2)
+export AK_EXECUTION__QUEUES__BATCH_SIZE=10  # Max messages per SQS receive call; set by Terraform, never in config.yaml
+
+# Response store configuration
+export AK_EXECUTION__RESPONSE_STORE__TYPE=redis  # Options: 'redis', 'valkey', 'dynamodb'
+export AK_EXECUTION__RESPONSE_STORE__RETRY_COUNT=5
+export AK_EXECUTION__RESPONSE_STORE__DELAY=5
+
+# Redis response store
+export AK_EXECUTION__RESPONSE_STORE__REDIS__URL=redis://localhost:6379
+export AK_EXECUTION__RESPONSE_STORE__REDIS__PREFIX=ak:responses:
+export AK_EXECUTION__RESPONSE_STORE__REDIS__TTL=604800
+
+# Valkey response store (requires the agentkernel[valkey] extra)
+export AK_EXECUTION__RESPONSE_STORE__VALKEY__URL=valkey://localhost:6379
+export AK_EXECUTION__RESPONSE_STORE__VALKEY__PREFIX=ak:responses:
+export AK_EXECUTION__RESPONSE_STORE__VALKEY__TTL=604800
+
+# DynamoDB response store
+export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME=agent-responses
+export AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TTL=604800
+```
+
+**Execution Modes**:
+- `rest_sync` - Synchronous REST: sends request to queue and immediately waits for response from response store (requires queues and response_store)
+- `rest_async` - Asynchronous REST: submits request to queue and returns immediately with request_id, then poll for response from response store (requires queues and response_store)
+- `stream` - Token-level streaming: SSE on the built-in REST server (local, containerized, Cloud Run, Container Apps), or WebSocket `STREAM_CHUNK` push on AWS serverless (queues optional, response_store not used). Requires a streaming-capable framework (OpenAI Agents SDK, LangGraph, Google ADK)
+- `async` - WebSocket mode for real-time bidirectional communication on AWS serverless (queues optional, response_store not used)
+
+**Notes**:
+- Queues and response_store are required for `rest_sync` and `rest_async` modes
+- For `async` (WebSocket) mode, queues are optional but response_store is not used since responses are broadcast directly through the WebSocket connection
+- When queues are not configured, the request handler processes requests directly without queuing
+
+### Logging Configuration (Optional)
+
+```bash
+# Agent Kernel logging level
+export AK_LOGGING__AK__LEVEL=INFO  # Options: 'INFO', 'DEBUG', 'ERROR', 'WARNING', 'CRITICAL'
+
+# System/root logger level
+export AK_LOGGING__SYSTEM__LEVEL=WARNING  # Options: 'INFO', 'DEBUG', 'ERROR', 'WARNING', 'CRITICAL'
+```
+
+If the `logging` section is omitted from the configuration, default loggers will not be overridden.
+
+## Test Configuration
+
+Test harness configuration (comparison mode and judge models) is separate from the application configuration described above. It is defined by the `AKTestConfig` class (exported from `agentkernel.test`) and loaded from its own file, `test-config.yaml`, resolved from the current working directory. It is only loaded when the testing utilities are used; importing `agentkernel` or running your application never reads it, and the application's `config.yaml` never carries test settings.
+
+### Test Configuration File
+
+Create `test-config.yaml` in the directory you run your tests from:
+
+```yaml
+mode: fallback  # Test comparison mode: fuzzy, judge, or fallback (default: fallback)
+judge:
+  model: gpt-4o-mini  # LLM model for judge evaluation (default: gpt-4o-mini)
+  provider: openai  # LLM provider for judge evaluation (default: openai)
+  embedding_model: text-embedding-3-small  # Embedding model for similarity evaluation (default: text-embedding-3-small)
+```
+
+Note that the file is un-nested: since it contains only test configuration, there is no top-level `test:` key.
+
+If `test-config.yaml` is missing, defaults apply silently (no warning is printed). Fuzzy and fallback tests need no configuration file at all.
+
+**Test Modes:**
+- `fuzzy` - Uses fuzzy string matching (RapidFuzz)
+- `judge` - Uses LLM-based evaluation (Ragas) for semantic similarity
+- `fallback` - Tries fuzzy first, falls back to judge if fuzzy fails
+
+### Custom Test Configuration File Path
+
+Override the default `test-config.yaml` path:
+
+```bash
+export AK_TEST_CONFIG_PATH_OVERRIDE=/path/to/test-config.yaml
+```
+
+### Test Environment Variables
+
+All test configuration parameters can be set using environment variables with the `AK_TEST__` prefix. These take precedence over `test-config.yaml` values:
+
+```bash
+# Test comparison mode
+export AK_TEST__MODE=fallback  # Options: 'fuzzy', 'judge', 'fallback' (default: 'fallback')
+
+# Judge configuration (for LLM-based evaluation)
+export AK_TEST__JUDGE__MODEL=gpt-4o-mini  # LLM model (default: gpt-4o-mini)
+export AK_TEST__JUDGE__PROVIDER=openai  # LLM provider (default: openai)
+export AK_TEST__JUDGE__EMBEDDING_MODEL=text-embedding-3-small  # Embedding model (default: text-embedding-3-small)
+```
+
+:::warning Migration note
+Earlier versions read test configuration from a `test:` section in the application's `config.yaml`. That section is now ignored; move its contents (un-nested, without the `test:` key) to a sibling `test-config.yaml`. The `AK_TEST__*` environment variables are unchanged, so CI pipelines that use them need no updates.
+:::
+
+For how the test harness uses these settings, see [Testing](../testing/overview.md).
+
+## Configuration Schema
+
+### Complete Configuration Reference
+
+```yaml
+# Core configuration
+library_version: "0.1.0"       # Library version (auto-detected)
+
+# Session storage configuration
+session:
+  type: "in_memory"             # Storage type: 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
+  redis:                        # Redis-specific settings
+    url: "redis://localhost:6379"  # Redis connection URL (supports rediss:// for SSL)
+    ttl: 604800                 # Session TTL in seconds (7 days)
+    prefix: "ak:sessions:"      # Redis key prefix
+  valkey:                       # Valkey-specific settings (requires the agentkernel[valkey] extra)
+    url: "valkey://localhost:6379"  # Valkey connection URL (supports valkeys:// for SSL)
+    ttl: 604800                 # Session TTL in seconds (7 days)
+    prefix: "ak:sessions:"      # Valkey key prefix
+  dynamodb:                     # DynamoDB-specific settings
+    table_name: "agent-kernel-sessions"  # DynamoDB table name (required)
+    ttl: 604800                 # Item TTL in seconds (7 days, 0 to disable)
+
+# API server configuration
+api:
+  host: "0.0.0.0"              # API server host
+  port: 8000                    # API server port
+  custom_router_prefix: "/custom" # API path prefix for custom routes
+  max_file_size: 10485760       # Maximum file size in bytes (default: 10 MB)
+  enabled_routes:               # Route configuration
+    agents: true                # Enable agent interaction routes
+
+# Agent-to-Agent communication
+a2a:
+  enabled: false                # Enable A2A functionality
+  url: "http://localhost:8000/a2a"  # A2A endpoint URL
+  agents:                       # List of agents to enable for A2A
+    - "*"                       # "*" enables all agents
+  task_store_type: "in_memory"  # Task storage: 'in_memory' or 'redis'
+
+# Model Context Protocol
+# The MCP server is always mounted at /mcp on the main API server (not configurable).
+# Full endpoint: http://{api.host}:{api.port}/mcp - adjust api.port to move the port.
+mcp:
+  enabled: false                # Enable MCP functionality
+  expose_agents: false          # Expose agents as MCP tools
+  agents:                       # List of agents to expose as MCP tools
+    - "*"                       # "*" exposes all agents
+  stateless_http: false         # Stateless HTTP mode: each request is independent, no Mcp-Session-Id (default: false)
+
+# Messaging platform integrations
+slack:
+  agent: ""                     # Default agent for Slack interactions
+  agent_acknowledgement: ""     # Acknowledgement message when message received
+
+whatsapp:
+  agent: ""                     # Default agent for WhatsApp interactions
+  agent_acknowledgement: ""     # Acknowledgement message when message received
+  verify_token: ""              # WhatsApp webhook verify token
+  access_token: ""              # WhatsApp Business API access token
+  app_secret: ""                # WhatsApp app secret for signature verification
+  phone_number_id: ""           # WhatsApp Business phone number ID
+  api_version: "v24.0"          # WhatsApp API version
+
+messenger:
+  agent: ""                     # Default agent for Facebook Messenger interactions
+  verify_token: ""              # Facebook Messenger webhook verify token
+  access_token: ""              # Facebook Page access token
+  app_secret: ""                # Facebook app secret for signature verification
+  api_version: "v24.0"          # Facebook Graph API version
+
+instagram:
+  agent: ""                     # Default agent for Instagram interactions
+  verify_token: ""              # Instagram webhook verify token
+  access_token: ""              # Instagram Business access token
+  app_secret: ""                # Instagram app secret for signature verification
+  instagram_account_id: ""      # Instagram Business Account ID (IGSID)
+  api_version: "v21.0"          # Instagram Graph API version
+
+telegram:
+  agent: ""                     # Default agent for Telegram interactions
+  bot_token: ""                 # Telegram bot token from BotFather
+  webhook_secret: ""            # Optional secret token for webhook security
+  api_version: "bot"            # Telegram Bot API version prefix
+
+# Trace / Observability
+trace:
+  enabled: false                # Enable tracing
+  type: "langfuse"              # Trace provider: 'langfuse', 'openllmetry', or 'logfire'
+
+# Guardrails configuration
+guardrail:
+  input:                        # Input guardrail configuration
+    enabled: false              # Enable input guardrails
+    type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
+    pii: true           # Enable PII redaction/unmasking (WalledAI only)
+    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    config_path: ""             # Path to guardrail configuration JSON file
+  output:                       # Output guardrail configuration
+    enabled: false              # Enable output guardrails
+    type: "openai"              # Guardrail provider: 'openai', 'bedrock', or 'walledai'
+    pii: true           # Enable PII redaction/unmasking (WalledAI only)
+    model: "gpt-4o-mini"        # LLM model for guardrail validation
+    config_path: ""             # Path to guardrail configuration JSON file
+
+# Execution configuration (for AWS serverless and containerized deployments)
+execution:
+  mode: "rest_sync"             # Execution mode: 'rest_sync', 'rest_async', 'stream', or 'async'
+  queues:                       # Queue URLs for queue-based execution
+    input:
+      url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-input"  # Input SQS queue URL
+      max_receive_count: 3      # Max receive count before message is treated as failed
+      no_of_consumers: 5        # Containerized only - consumer threads polling the input queue (ignored by serverless)
+    output:
+      url: "https://sqs.us-east-1.amazonaws.com/123456789012/agent-output"  # Output SQS queue URL
+      max_receive_count: 3      # Max receive count before message is treated as failed
+      no_of_consumers: 2        # Containerized only - consumer threads polling the output queue (default: 2, ignored by serverless)
+    # batch_size is ECS-only and Terraform-controlled via AK_EXECUTION__QUEUES__BATCH_SIZE - do not set here
+  response_store:               # Response storage configuration (required for rest_sync and rest_async modes)
+    type: "redis"               # Response store type: 'redis', 'valkey', or 'dynamodb'
+    retry_count: 5              # Number of retry attempts for response store reads
+    delay: 5                    # Delay in seconds between response store reads retry attempts
+    redis:
+      url: "redis://localhost:6379"  # Redis connection URL
+      prefix: "ak:responses:"        # Key prefix for Redis response storage
+      ttl: 604800                     # Redis TTL in seconds
+    dynamodb:
+      table_name: "agent-responses"  # DynamoDB table name for response storage
+      ttl: 604800                     # DynamoDB TTL in seconds (0 to disable)
+
+# Logging configuration (optional)
+# If omitted, default loggers will not be overridden
+logging:
+  ak:                           # Agent Kernel logger configuration
+    level: "WARNING"            # Log level: 'INFO', 'DEBUG', 'ERROR', 'WARNING', or 'CRITICAL'
+  system:                       # System/root logger configuration
+    level: "WARNING"            # Log level: 'INFO', 'DEBUG', 'ERROR', 'WARNING', or 'CRITICAL'
+```
+
+## Configuration Precedence
+
+Configuration values are resolved in the following order (highest to lowest priority):
+
+1. **Environment variables** (with `AK_` prefix)
+2. **Configuration file** (YAML/JSON)
+3. **Default values** (defined in the schema)
+
+## Loading Configuration
+
+```python
+from agentkernel.core import Config
+
+# Get the current configuration instance
+config = Config.get() # or config = Config()
+
+# Access configuration values
+print(f"API port: {config.api.port}")
+print(f"Session storage: {config.session.type}")
+print(f"Redis URL: {config.session.redis.url}")
+```
+### Dynamically reloading config
+You can reload the configs from scratch by calling __init__(). However, this might not change the behaviour of the core modules, if its not refering to the AKConfig instance again.
+
+```python
+from agentkernel import Config
+import os
+
+os.environ["AK_LOGGING__AK__LEVEL"] = "DEBUG"  # Set Agent Kernel logging level to DEBUG
+config.__init__()
+print(f"AK logging level: {config.logging.ak.level}") # will show DEBUG
+```
+
+## Your Application configs
+You can include your application configs to the same config.yaml file. Derive a class from AKConfig and setup your modules.
+Please note that these should be instantiated by you.
+
+```python
+from agentkernel import Config
+from pydantic import Field
+
+class ApplicationConfig(Config):
+  monogdb_url: str = Field(default="mongo://localhost:27017", description="MongoDB URL")
+
+# Get the current configuration instance
+config = ApplicationConfig()
+
+# Access configuration values
+print(config.model_dump())
+```
+
+
+## Environment Configuration Examples
+
+### Development Setup
+
+```bash
+# Set logging to DEBUG level with in-memory storage
+export AK_LOGGING__AK__LEVEL=DEBUG
+export AK_SESSION__TYPE=in_memory
+export AK_API__PORT=8000
+```
+
+### Production Setup
+
+```bash
+# Production configuration with Redis
+export AK_LOGGING__AK__LEVEL=WARNING
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://prod-redis:6379
+export AK_SESSION__REDIS__TTL=86400  # 1 day
+export AK_API__HOST=0.0.0.0
+export AK_API__PORT=8000
+```
+
+### Production Setup with DynamoDB (AWS Serverless)
+
+```bash
+# Production configuration with DynamoDB
+export AK_LOGGING__AK__LEVEL=WARNING
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions-prod
+export AK_SESSION__DYNAMODB__TTL=86400  # 1 day
+export AK_API__HOST=0.0.0.0
+export AK_API__PORT=8000
+```
+
+### A2A Enabled Setup
+
+```bash
+# Enable Agent-to-Agent communication with Redis
+export AK_A2A__ENABLED=true
+export AK_A2A__TASK_STORE_TYPE=redis
+export AK_SESSION__TYPE=redis
+export AK_SESSION__REDIS__URL=redis://localhost:6379
+```
+
+### A2A Enabled Setup with DynamoDB (AWS)
+
+```bash
+# Enable Agent-to-Agent communication with DynamoDB
+export AK_A2A__ENABLED=true
+export AK_A2A__TASK_STORE_TYPE=redis  # A2A tasks still use Redis or in-memory
+export AK_SESSION__TYPE=dynamodb
+export AK_SESSION__DYNAMODB__TABLE_NAME=agent-kernel-sessions
+```
+
+### MCP Enabled Setup
+
+```bash
+# Enable Model Context Protocol
+export AK_MCP__ENABLED=true
+export AK_MCP__EXPOSE_AGENTS=true
+export AK_MCP__AGENTS="my-agent,another-agent"  # Specific agents
+```
+
+### Observability / Tracing Setup
+
+**Langfuse:**
+
+```bash
+# Enable Langfuse tracing
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=langfuse
+
+# Langfuse credentials
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+export LANGFUSE_HOST=https://cloud.langfuse.com
+```
+
+Install the langfuse extra:
+
+```bash
+pip install agentkernel[langfuse]
+```
+
+**OpenLLMetry (Traceloop):**
+
+```bash
+# Enable OpenLLMetry tracing
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=openllmetry
+
+# Traceloop credentials
+export TRACELOOP_API_KEY=your-api-key
+# Optional: for self-hosted
+export TRACELOOP_BASE_URL=https://api.traceloop.com
+```
+
+Install the openllmetry extra:
+
+```bash
+pip install agentkernel[openllmetry]
+```
+
+**Pydantic Logfire:**
+
+```bash
+# Enable Logfire tracing
+export AK_TRACE__ENABLED=true
+export AK_TRACE__TYPE=logfire
+
+# Logfire credentials (optional — without a token, Logfire runs locally and does not ship traces)
+export LOGFIRE_TOKEN=your-write-token
+```
+
+Install the logfire extra:
+
+```bash
+pip install agentkernel[logfire]
+```
+
+## Validation and Error Handling
+
+Agent Kernel validates all configuration values at startup:
+
+- **Invalid session storage types** will raise validation errors
+- **Invalid port numbers** will be rejected
+- **Malformed Redis URLs** will cause connection failures
+- **Invalid boolean values** will be rejected
+
+Example validation errors:
+
+```bash
+# These will cause validation errors:
+export AK_SESSION__TYPE=invalid_storage  # Must be 'in_memory', 'redis', 'valkey', 'dynamodb', 'cosmosdb', or 'firestore'
+export AK_A2A__TASK_STORE_TYPE=invalid   # Must be 'in_memory' or 'redis'
+export AK_TRACE__TYPE=invalid_tracer     # Must be 'langfuse', 'openllmetry', or 'logfire'
+export AK_EXECUTION__MODE=invalid        # Must be 'rest_sync', 'rest_async', 'stream', or 'async'
+```
+
+## Best Practices
+
+1. **Use environment variables for secrets** (Redis passwords, API keys, AWS credentials)
+2. **Use configuration files for static settings** (ports, URLs, feature flags)
+3. **Set appropriate TTL values** for your use case
+4. **Use Redis or DynamoDB for production** session storage
+   - Use **DynamoDB** for non-performance-critical deployments
+   - Use **Redis** for performance-critical deployments
+5. **Set appropriate logging levels for your environment**
+6. **Use specific agent lists** instead of "*" in production for security
+7. **Ensure DynamoDB table has correct schema** (partition key: 'session_id', sort key: 'key')
+
+## Summary
+
+- Configure via environment variables (with `AK_` prefix) or YAML/JSON files
+- Environment variables take precedence over file configuration
+- Support for nested configuration using underscore delimiter
+- Built-in validation ensures configuration integrity
+- Flexible session storage options (in-memory, Redis, Valkey, DynamoDB, Cosmos DB, Firestore)
+- Execution modes (`rest_sync`, `rest_async`, `stream`, `async`) and queue settings live under `execution`
+- Optional multimodal and conversation-thread features via their own config blocks
+- Optional A2A and MCP functionality with granular control
+- DynamoDB recommended for non-performance-critical deployments

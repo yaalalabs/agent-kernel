@@ -1,0 +1,79 @@
+{{- if .Values.agentRunner.enabled }}
+{{/*
+The runner tier: input-queue consumer threads executing agents via ChatService,
+AgentRunner.run(). No service and no ports: it only speaks to the broker and the stores.
+Graceful drain: on SIGTERM the consumers stop claiming work and finish in-flight runs, so
+terminationGracePeriodSeconds must exceed the longest agent turn.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "agent-kernel.fullname" . }}-agent-runner
+  labels:
+    {{- include "agent-kernel.labels" (dict "root" . "component" "agent-runner") | nindent 4 }}
+spec:
+  replicas: {{ .Values.agentRunner.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "agent-runner") | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/env: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
+        {{- with .Values.agentRunner.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "agent-kernel.selectorLabels" (dict "root" . "component" "agent-runner") | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.agentRunner.terminationGracePeriodSeconds }}
+      containers:
+        - name: agent-runner
+          image: {{ include "agent-kernel.image" (dict "root" . "image" .Values.agentRunner.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.agentRunner.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.agentRunner.preStopSleepSeconds }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", {{ .Values.agentRunner.preStopSleepSeconds | quote }}]
+          {{- end }}
+          {{- if or .Values.extraEnv .Values.agentRunner.extraEnv }}
+          env:
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.agentRunner.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "agent-kernel.fullname" . }}-env
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.agentRunner.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.agentRunner.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agentRunner.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agentRunner.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

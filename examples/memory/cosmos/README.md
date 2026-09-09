@@ -55,7 +55,7 @@ publisher_email = "your-email@domain.com"
 ```hcl
 # Azure region for deployment
 # Try to use the same region as your resource group to avoid cross-region issues and costs
-region = "centralus"
+region = "eastus"
 
 # Naming configuration
 product_alias = "demo"          # Used in resource names

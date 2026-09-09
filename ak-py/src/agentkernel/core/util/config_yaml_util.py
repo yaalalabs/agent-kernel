@@ -25,7 +25,7 @@
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, Tuple, Type
+from typing import Any, ClassVar, Dict, Tuple, Type
 
 import yaml
 from pydantic.fields import FieldInfo
@@ -54,26 +54,37 @@ def replace_secrets(secrets_dir: Path, data: str) -> str:
     return data
 
 
-def yaml_config_settings_source(settings: "YamlBaseSettingsModified") -> Dict[str, Any]:
-    """Loads settings from a YAML file at `Config.yaml_file`
+def yaml_config_settings_source(settings_cls: Type["YamlBaseSettingsModified"]) -> Dict[str, Any]:
+    """Loads settings from a YAML file resolved from the settings class attributes.
+
+    The settings class declares its YAML source via `yaml_file_env_var`,
+    `yaml_file_default` and `warn_if_missing` class attributes.
 
     "<file:xxxx>" patterns are replaced with the contents of file xxxx. The root path
     where to find the files is configured with `secrets_dir`.
     """
     secrets_dir = os.environ.get("AK_SECRETS_PATH", None)
-    yaml_file = os.environ.get("AK_CONFIG_PATH_OVERRIDE", "config.yaml")
+    warn_if_missing = settings_cls.warn_if_missing
+    yaml_file = os.environ.get(settings_cls.yaml_file_env_var, settings_cls.yaml_file_default)
 
     path = Path(yaml_file)
 
     if not path.exists():
-        print(f"WARNING: Could not open yaml settings file at: {path}")
+        if warn_if_missing:
+            print(f"WARNING: Could not open yaml settings file at: {path}")
         return {}
 
     if secrets_dir is not None:
         secrets_path = Path(secrets_dir)
-        return yaml.safe_load(replace_secrets(secrets_path, path.read_text("utf-8")))
+        data = yaml.safe_load(replace_secrets(secrets_path, path.read_text("utf-8")))
+    else:
+        data = yaml.safe_load(path.read_text("utf-8"))
 
-    return yaml.safe_load(path.read_text("utf-8"))
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise TypeError(f"YAML settings file must contain a mapping at the top level: {path}")
+    return data
 
 
 class YamlConfigSettingsSource(PydanticBaseSettingsSource):
@@ -109,6 +120,12 @@ class YamlConfigSettingsSource(PydanticBaseSettingsSource):
 class YamlBaseSettingsModified(BaseSettings):
     """Allows to specify a 'yaml_file' path in the Config section.
 
+    Subclasses can override the YAML source via class attributes:
+
+    - yaml_file_env_var: environment variable holding the YAML file path override
+    - yaml_file_default: default YAML file path (relative to CWD)
+    - warn_if_missing: whether to print a warning when the YAML file is absent
+
     The secrets injection is done differently than in BaseSettings, allowing also
     partial secret replacement (such as "postgres://user:<file:path-to-password>@...").
 
@@ -131,6 +148,10 @@ class YamlBaseSettingsModified(BaseSettings):
 
       https://pydantic-docs.helpmanual.io/usage/settings/
     """
+
+    yaml_file_env_var: ClassVar[str] = "AK_CONFIG_PATH_OVERRIDE"
+    yaml_file_default: ClassVar[str] = "config.yaml"
+    warn_if_missing: ClassVar[bool] = True
 
     @classmethod
     def settings_customise_sources(

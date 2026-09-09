@@ -19,8 +19,16 @@ class MockRunner(Runner):
     def __init__(self):
         super().__init__("mock")
 
+    @property
+    def supports_streaming(self) -> bool:
+        return True
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         return AgentReply(content="mock")
+
+    async def stream(self, agent, session, requests):
+        raise NotImplementedError()
+        yield
 
 
 class MockAgent(Agent):
@@ -76,6 +84,21 @@ def no_params() -> str:
 def multi_type_params(text: str, count: int, flag: bool = False) -> str:
     """A tool with multiple parameter types."""
     return f"{text}-{count}-{flag}"
+
+
+def read_state(tool_context: ADKToolContext) -> str:
+    """An ADK-aware tool that only needs the ADK tool context."""
+    return f"state={tool_context.state.get('cart')}"
+
+
+def append_state(item: str, tool_context: ADKToolContext) -> str:
+    """An ADK-aware tool that takes its own args plus the ADK tool context."""
+    return f"{item}:{tool_context.state.get('cart')}"
+
+
+async def async_read_state(tool_context: ADKToolContext) -> str:
+    """An async ADK-aware tool that only needs the ADK tool context."""
+    return f"async-state={tool_context.state.get('cart')}"
 
 
 # bind – basic behaviour
@@ -209,6 +232,67 @@ class TestWrapSignature:
         assert "tool_context" in param_names
 
 
+# _wrap – tools that declare tool_context themselves
+class TestWrapAdkAwareTools:
+
+    def test_signature_keeps_single_tool_context_param(self):
+        wrapped = GoogleADKToolBuilder._wrap(read_state)
+        sig = inspect.signature(wrapped)
+        assert list(sig.parameters) == ["tool_context"]
+
+    def test_signature_preserves_declared_tool_context_kind(self):
+        wrapped = GoogleADKToolBuilder._wrap(read_state)
+        param = inspect.signature(wrapped).parameters["tool_context"]
+        assert param.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD
+        assert param.default is inspect.Parameter.empty
+
+    def test_sync_wrapper_forwards_tool_context(self):
+        adk_ctx = _make_adk_tool_context({"cart": ["milk"]})
+        wrapped = GoogleADKToolBuilder._wrap(read_state)
+        assert wrapped(tool_context=adk_ctx) == "state=['milk']"
+
+    def test_sync_wrapper_forwards_tool_context_alongside_args(self):
+        adk_ctx = _make_adk_tool_context({"cart": ["milk"]})
+        wrapped = GoogleADKToolBuilder._wrap(append_state)
+        assert wrapped("bread", tool_context=adk_ctx) == "bread:['milk']"
+
+    def test_sync_wrapper_accepts_positional_tool_context(self):
+        adk_ctx = _make_adk_tool_context({"cart": ["milk"]})
+        wrapped = GoogleADKToolBuilder._wrap(read_state)
+        assert wrapped(adk_ctx) == "state=['milk']"
+
+    @pytest.mark.asyncio
+    async def test_async_wrapper_forwards_tool_context(self):
+        adk_ctx = _make_adk_tool_context({"cart": ["eggs"]})
+        wrapped = GoogleADKToolBuilder._wrap(async_read_state)
+        assert await wrapped(tool_context=adk_ctx) == "async-state=['eggs']"
+
+    @pytest.mark.asyncio
+    async def test_function_tool_invokes_adk_aware_tool(self):
+        """The full ADK path: FunctionTool injects tool_context and it reaches the tool."""
+        [tool] = GoogleADKToolBuilder.bind([append_state])
+        adk_ctx = _make_adk_tool_context({"cart": ["milk"]})
+        result = await tool.run_async(args={"item": "bread"}, tool_context=adk_ctx)
+        assert result == "bread:['milk']"
+
+    def test_ak_context_still_activated_for_adk_aware_tool(self):
+        """Forwarding the ADK context must not skip AK tool context activation."""
+        runtime = MagicMock(spec=Runtime)
+        ak_ctx = AKToolContext(runtime, MockAgent(), Session("adk-aware-session"), [AgentRequestText(prompt="hi")])
+        with ak_ctx:
+            captured_ids = []
+
+            def both_contexts(tool_context: ADKToolContext) -> str:
+                """Read both the ADK and AK contexts."""
+                captured_ids.append(AKToolContext.get().id)
+                return str(tool_context.state.get("cart"))
+
+            adk_ctx = _make_adk_tool_context({"ak_tool_context": ak_ctx.id, "cart": ["milk"]})
+            wrapped = GoogleADKToolBuilder._wrap(both_contexts)
+            assert wrapped(tool_context=adk_ctx) == "['milk']"
+            assert captured_ids == [ak_ctx.id]
+
+
 # _wrap – invocation with AKToolContext integration
 class TestWrapInvocationWithContext:
 
@@ -217,7 +301,7 @@ class TestWrapInvocationWithContext:
         runtime = MagicMock(spec=Runtime)
         agent = MockAgent()
         session = Session("test-session")
-        requests = [AgentRequestText(text="hi")]
+        requests = [AgentRequestText(prompt="hi")]
         return AKToolContext(runtime, agent, session, requests)
 
     def test_sync_wrapper_invokes_function_with_correct_args(self):
@@ -355,7 +439,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("runner-test-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
@@ -374,7 +458,7 @@ class TestGoogleADKRunnerToolContext:
             patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="reply text"),
             patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
         ):
-            result = await runner.run(mock_agent, session, requests)
+            await runner.run(mock_agent, session, requests)
 
         assert "ak_tool_context" in updated_state
         # The id should be a non-empty hex string (uuid4)
@@ -385,21 +469,27 @@ class TestGoogleADKRunnerToolContext:
     async def test_run_tool_context_is_fetchable_during_execution(self):
         """
         During runner.run(), the AKToolContext should be entered (cached)
-        so that tools can fetch it via AKToolContext.fetch(id).
+        so that tools can fetch it via AKToolContext.fetch(id) while the
+        agent is actually executing (i.e. during get_response()).
         """
         runner = GoogleADKRunner()
         session = Session("fetch-test-session")
-        requests = [AgentRequestText(text="test")]
+        requests = [AgentRequestText(prompt="test")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
+        context_id = None
         fetched_ctx = None
 
         async def mock_update_session_state(invocation_id, author, state):
+            nonlocal context_id
+            context_id = state.get("ak_tool_context")
+
+        async def mock_get_response(*args, **kwargs):
             nonlocal fetched_ctx
-            if "ak_tool_context" in state:
-                # This should succeed if the context is in the cache
-                fetched_ctx = AKToolContext.fetch(state["ak_tool_context"])
+            # This should succeed if the context is in the cache
+            fetched_ctx = AKToolContext.fetch(context_id)
+            return "done"
 
         mock_adk_session = MagicMock()
         mock_adk_session.create_session = AsyncMock(return_value=MagicMock())
@@ -408,7 +498,7 @@ class TestGoogleADKRunnerToolContext:
 
         with (
             patch.object(GoogleADKRunner, "_session", return_value=mock_adk_session),
-            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, return_value="done"),
+            patch.object(GoogleADKRunner, "get_response", new_callable=AsyncMock, side_effect=mock_get_response),
             patch.object(Runtime, "current", return_value=MagicMock(spec=Runtime)),
         ):
             await runner.run(mock_agent, session, requests)
@@ -424,7 +514,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("cleanup-test-session")
-        requests = [AgentRequestText(text="cleanup")]
+        requests = [AgentRequestText(prompt="cleanup")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
@@ -460,7 +550,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("no-state-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
@@ -489,7 +579,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("order-test-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
         mock_agent.name = "test-agent"
@@ -525,7 +615,7 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("args-test-session")
-        requests = [AgentRequestText(text="hello")]
+        requests = [AgentRequestText(prompt="hello")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
         mock_agent.name = "my-agent"
@@ -558,14 +648,14 @@ class TestGoogleADKRunnerToolContext:
         """
         runner = GoogleADKRunner()
         session = Session("error-test-session")
-        requests = [AgentRequestText(text="fail")]
+        requests = [AgentRequestText(prompt="fail")]
         mock_agent = MagicMock()
         mock_agent.agent = MagicMock()
 
         with patch.object(Runtime, "current", side_effect=RuntimeError("runtime error")):
             result = await runner.run(mock_agent, session, requests)
 
-        assert result.text == "Error: runtime error"
+        assert result.response == "Error: runtime error"
 
     @pytest.mark.asyncio
     async def test_run_returns_no_content_for_empty_requests(self):
@@ -581,7 +671,82 @@ class TestGoogleADKRunnerToolContext:
         mock_agent = MagicMock()
 
         result = await runner.run(mock_agent, session, requests)
-        assert "No valid content" in result.text
+        assert "No valid content" in result.response
+
+    @pytest.mark.asyncio
+    async def test_stream_yields_partial_event_text(self):
+        """The partials carry the text; the non-partial event only closes the message.
+
+        Its own text is the concatenation of the deltas already sent, so re-emitting it would
+        duplicate the reply.
+        """
+        runner = GoogleADKRunner()
+        session = Session("stream-partial-session")
+        requests = [AgentRequestText(prompt="hello")]
+        mock_agent = MagicMock()
+
+        partial_event = MagicMock()
+        part = MagicMock()
+        part.text = "hello "
+        part.thought = False
+        partial_event.content = MagicMock(parts=[part])
+        partial_event.partial = True
+
+        final_event = MagicMock()
+        part2 = MagicMock()
+        part2.text = "hello world"
+        part2.thought = False
+        final_event.content = MagicMock(parts=[part2])
+        final_event.partial = False
+
+        async def mock_run_async(**kwargs):
+            yield partial_event
+            yield final_event
+
+        mock_runner = MagicMock()
+        mock_runner.run_async = mock_run_async
+
+        with patch.object(
+            GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock(), MagicMock())
+        ):
+            events = [event async for event in runner.stream(mock_agent, session, requests)]
+
+        assert [event.type for event in events] == ["message_start", "text_delta", "message_end"]
+        assert events[1].content == "hello "
+
+    @pytest.mark.asyncio
+    async def test_stream_emits_non_partial_only_text_as_a_whole_message(self):
+        """A turn that never streamed still has to reach the client.
+
+        A non-partial event's text is normally suppressed as a duplicate of the deltas, but when no
+        partial ever arrived there are no deltas to duplicate — and dropping it would make the turn's
+        only text vanish. Guarded on nothing having been sent, so it cannot double up.
+        """
+        runner = GoogleADKRunner()
+        session = Session("stream-non-partial-session")
+        requests = [AgentRequestText(prompt="hello")]
+        mock_agent = MagicMock()
+
+        event = MagicMock()
+        part = MagicMock()
+        part.text = "full response"
+        part.thought = False
+        event.content = MagicMock(parts=[part])
+        event.partial = False
+
+        async def mock_run_async(**kwargs):
+            yield event
+
+        mock_runner = MagicMock()
+        mock_runner.run_async = mock_run_async
+
+        with patch.object(
+            GoogleADKRunner, "_setup_session_context", new_callable=AsyncMock, return_value=("user-1", mock_runner, MagicMock(), MagicMock())
+        ):
+            events = [event async for event in runner.stream(mock_agent, session, requests)]
+
+        assert [event.type for event in events] == ["message_start", "text_delta", "message_end"]
+        assert events[1].content == "full response"
 
 
 # Edge cases

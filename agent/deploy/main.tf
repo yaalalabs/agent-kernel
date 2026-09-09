@@ -11,23 +11,26 @@ module "containered_agents" {
   product_alias        = var.product_alias
   env_alias            = var.env_alias
   module_name          = var.module_name
-  package_path         = "../dist"
   container_type       = "ecs"
   region               = var.region
   product_display_name = "AK Assistant"
-  ecs_container_port   = 8000
   enable_cors          = true
   cors_allow_origins   = ["http://localhost:3000", "https://kernel.yaala.ai"]
   cors_allow_methods   = ["POST", "OPTIONS"]
   cors_allow_headers   = ["content-type"]
 
-  throttling_rate_limit  = "50"
-  throttling_burst_limit = "50"
-  # Environment variables passed to container
-  environment_variables = {
-    OPENAI_API_KEY      = var.openai_api_key,
-    LANGFUSE_SECRET_KEY = var.langfuse_secret_key,
-    LANGFUSE_PUBLIC_KEY = var.langfuse_public_key,
-    LANGFUSE_BASE_URL   = var.langfuse_base_url
+  throttling_rate_limit  = 50
+  throttling_burst_limit = 50
+
+  rest_service = {
+    package_path   = "../dist"
+    container_port = 8000
+    # Environment variables passed to container
+    environment_variables = {
+      OPENAI_API_KEY      = var.openai_api_key,
+      LANGFUSE_SECRET_KEY = var.langfuse_secret_key,
+      LANGFUSE_PUBLIC_KEY = var.langfuse_public_key,
+      LANGFUSE_BASE_URL   = var.langfuse_base_url
+    }
   }
 }

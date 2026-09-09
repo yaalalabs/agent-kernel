@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import copy
+import logging
+from collections.abc import AsyncGenerator
 from typing import Any, Callable, List
 
 from agents import Agent, Runner, function_tool
+from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
+from openai.types.responses.response_output_item_done_event import ResponseOutputItemDoneEvent
+from openai.types.responses.response_reasoning_summary_text_delta_event import ResponseReasoningSummaryTextDeltaEvent
+from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook
@@ -10,8 +17,22 @@ from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
+from ...core.event import (
+    MessageEnd,
+    MessageStart,
+    ReasoningDelta,
+    ReasoningEnd,
+    ReasoningStart,
+    StreamEvent,
+    TextDelta,
+    ToolCallArgs,
+    ToolCallEnd,
+    ToolCallResult,
+    ToolCallStart,
+)
 from ...core.model import (
     AgentReply,
+    AgentReplyAny,
     AgentReplyText,
     AgentRequest,
     AgentRequestAny,
@@ -23,6 +44,8 @@ from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "openai"
+
+_log = logging.getLogger("ak.openai.runner")
 
 
 class OpenAISession:
@@ -91,6 +114,78 @@ class OpenAIRunner(BaseRunner):
             return None
         return session.get(FRAMEWORK) or session.set(FRAMEWORK, OpenAISession())
 
+    @staticmethod
+    def _process_requests(requests: list[AgentRequest]) -> tuple[str, list[dict]]:
+        """
+        Process requests and extract prompt text and message content.
+        :param requests: The requests to process.
+        :return: Tuple of (prompt, message_content).
+        """
+        prompt = ""
+        message_content = []
+
+        for req in requests:
+            if isinstance(req, AgentRequestAny):
+                continue
+
+            if isinstance(req, AgentRequestText):
+                text = req.prompt
+                prompt = prompt + "\n" + text if prompt else text
+                message_content.append({"role": "user", "content": text})
+
+            elif isinstance(req, AgentRequestImage):
+                if not req.image_data:
+                    raise ValueError("no image input provided")
+
+                image_url = req.image_data
+                if not image_url.startswith(("http://", "https://", "s3://", "data:")):
+                    if not req.mime_type:
+                        raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
+                    mime_type = req.mime_type
+                    image_url = f"data:{mime_type};base64,{image_url}"
+
+                message_content.append({"role": "user", "content": [{"type": "input_image", "detail": "auto", "image_url": image_url}]})
+
+            elif isinstance(req, AgentRequestFile):
+                if not req.file_data:
+                    raise ValueError("no file input provided")
+
+                file_url = req.file_data
+                if file_url.startswith(("http://", "https://", "s3://")):
+                    message_content.append({"role": "user", "content": [{"type": "input_file", "file_url": file_url}]})
+                else:
+                    mime_type = req.mime_type
+                    if not file_url.startswith(("data:")):
+                        if not req.mime_type:
+                            raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
+                        file_url = f"data:{mime_type};base64,{file_url}"
+
+                    message_content.append(
+                        {
+                            "role": "user",
+                            "content": [{"type": "input_file", "filename": req.name, "file_data": file_url}],
+                        }
+                    )
+
+        return prompt, message_content
+
+    @staticmethod
+    def _get_run_input(prompt: str, message_content: list[dict]) -> Any:
+        """
+        Determine the input format for OpenAI agent (text-only vs multimodal).
+
+        A single text request is passed as the bare prompt string; anything else is passed as the
+        message list the SDK needs for structured content. The choice is about shape only — the
+        session goes with either, so a turn carrying an attachment is remembered like any other.
+
+        :param prompt: The prompt text.
+        :param message_content: The message content list.
+        :return: The input to hand to the SDK runner.
+        """
+        if len(message_content) == 1 and isinstance(message_content[0].get("content"), str):
+            return prompt
+        return message_content
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the OpenAI agent with provided multi modal inputs.
@@ -100,76 +195,167 @@ class OpenAIRunner(BaseRunner):
         :return: The result of the agent's execution.
         """
         prompt = ""
-        message_content = []
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
-            for req in requests:
-                if isinstance(req, AgentRequestAny):  # AgentRequestAny is handled only by pre-hooks, not by the agent itself
-                    continue
-
-                if isinstance(req, AgentRequestText):
-                    text = req.text
-                    prompt = prompt + "\n" + text if prompt else text
-                    message_content.append({"role": "user", "content": text})
-
-                elif isinstance(req, AgentRequestImage):
-                    # Handle image requests - OpenAI expects base64 or URL format
-                    if not req.image_data:
-                        raise ValueError("no image input provided")
-
-                    image_url = req.image_data
-                    # If it's base64 and doesn't have the data URI prefix, add it
-                    if not image_url.startswith(("http://", "https://", "s3://", "data:")):
-                        if not req.mime_type:
-                            raise ValueError("mime_type is missing for image input, either in the base64 or explicitly")
-                        mime_type = req.mime_type
-                        image_url = f"data:{mime_type};base64,{image_url}"
-
-                    message_content.append({"role": "user", "content": [{"type": "input_image", "detail": "auto", "image_url": image_url}]})
-
-                elif isinstance(req, AgentRequestFile):
-                    # Handle file attachments - OpenAI expects base64 or URL format
-                    if not req.file_data:
-                        raise ValueError("no file input provided")
-
-                    file_url = req.file_data
-                    # If it's a remote URL, use it directly
-                    if file_url.startswith(("http://", "https://", "s3://")):
-                        message_content.append({"role": "user", "content": [{"type": "input_file", "file_url": file_url}]})
-                    else:
-                        mime_type = req.mime_type
-                        # If it's base64 and doesn't have the data URI prefix, add it
-                        if not file_url.startswith(("data:")):
-                            if not req.mime_type:
-                                raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
-                            file_url = f"data:{mime_type};base64,{file_url}"
-
-                        message_content.append(
-                            {
-                                "role": "user",
-                                "content": [{"type": "input_file", "filename": req.name, "file_data": file_url}],
-                            }
-                        )
+            prompt, message_content = self._process_requests(requests)
 
             if not message_content:
-                return AgentReplyText(text="Sorry. No valid content found in the requests")
+                return AgentReplyText(response="Sorry. No valid content found in the requests")
 
-            # Use the structured message format if we have images or files, otherwise use simple prompt
-            if len(message_content) == 1 and isinstance(message_content[0].get("content"), str):
-                # Simple text-only case
-                reply = (await Runner.run(agent.agent, prompt, session=self._session(session))).final_output
-            else:
-                # Multimodal case with images/files. When using multimodal inputs, OpenAI cannot handle session. So these inputs are not saved in the context
-                reply = (await Runner.run(agent.agent, message_content, session=None)).final_output
+            input_data = self._get_run_input(prompt, message_content)
+            # Injected as the run context, so tools read and write it via RunContextWrapper.context.
+            # A deep copy is passed in so tools mutating it in place don't also mutate `incoming`.
+            incoming = self._load_framework_context(session)
+            produced = copy.deepcopy(incoming)
+            reply = (await Runner.run(agent.agent, input_data, session=self._session(session), context=produced)).final_output
+
+            self._store_framework_context(session, incoming, produced)
+
+            structured = AgentReplyAny.from_output(reply, prompt)
+            if structured is not None:
+                return structured
 
             reply_text = "" if reply is None else str(reply)
-            return AgentReplyText(text=reply_text, prompt=prompt)
+            return AgentReplyText(response=reply_text, prompt=prompt)
         except Exception as e:
-            return AgentReplyText(text=user_facing_error_message(e), prompt=prompt)
+            return AgentReplyText(response=user_facing_error_message(e), prompt=prompt)
         finally:
             if context is not None:
                 context.reset()
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+        """
+        Streams the OpenAI agent response as Agent Kernel stream events.
+
+        Two SDK stream-event kinds are read — neither alone is enough:
+
+        - **Raw response events** carry message/reasoning boundaries and text deltas. They are the
+          only source for a *start* (`message_output_created` fires too late).
+        - **Run item events** carry tool calls (and handoffs). Arguments arrive whole on
+          `tool_called`, so the call is opened, filled, and closed in one go.
+
+        Correlation ids come from the SDK (`item.id`, `call_id`); nothing is generated or stored
+        on the shared `Runner` between events.
+
+        :param agent: The OpenAI agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The requests to the agent.
+        :return: An async generator yielding StreamEvent objects.
+        """
+        context: ToolContext | None = None
+        try:
+            context = ToolContext(Runtime.current(), agent, session, requests).set()
+            prompt, message_content = self._process_requests(requests)
+
+            if not message_content:
+                return
+
+            input_data = self._get_run_input(prompt, message_content)
+            incoming = self._load_framework_context(session)
+            produced = copy.deepcopy(incoming)
+            result = Runner.run_streamed(agent.agent, input_data, session=self._session(session), context=produced)
+
+            async for event in result.stream_events():
+                if event.type == "raw_response_event":
+                    for stream_event in self._map_raw_response(event.data):
+                        yield stream_event
+                elif event.type == "run_item_stream_event":
+                    for stream_event in self._map_run_item(event.name, event.item):
+                        yield stream_event
+
+            # Only after the stream drains normally, so a disconnect or framework error leaves the stored
+            # context intact. Deliberately not in a finally.
+            try:
+                self._store_framework_context(session, incoming, produced)
+            except Exception as e:
+                self._log_framework_context_stream_failure(session, e)
+        finally:
+            if context is not None:
+                context.reset()
+
+    @staticmethod
+    def _map_raw_response(data: Any) -> list[StreamEvent]:
+        """
+        Translate one raw OpenAI response event into AK events.
+
+        `response.output_item.added` / `.done` bracket both prose and reasoning (item `type`
+        decides which). Empty deltas are dropped.
+
+        :param data: The `event.data` payload of a `raw_response_event`.
+        :return: The AK events this raw event produces, or an empty list when unmapped.
+        """
+        if isinstance(data, ResponseOutputItemAddedEvent):
+            item = data.item
+            if item.type == "message":
+                return [MessageStart(message_id=item.id, role=item.role)]
+            if item.type == "reasoning":
+                return [ReasoningStart(message_id=item.id)]
+            return []
+        if isinstance(data, ResponseOutputItemDoneEvent):
+            item = data.item
+            if item.type == "message":
+                return [MessageEnd(message_id=item.id)]
+            if item.type == "reasoning":
+                return [ReasoningEnd(message_id=item.id)]
+            return []
+        if isinstance(data, ResponseTextDeltaEvent):
+            return [TextDelta(message_id=data.item_id, content=data.delta)] if data.delta else []
+        if isinstance(data, ResponseReasoningSummaryTextDeltaEvent):
+            return [ReasoningDelta(message_id=data.item_id, content=data.delta)] if data.delta else []
+        return []
+
+    @staticmethod
+    def _map_run_item(name: str, item: Any) -> list[StreamEvent]:
+        """
+        Translate one `RunItemStreamEvent` into AK events.
+
+        Maps `tool_called` / `tool_output` and the handoff pair (`handoff_requested` /
+        `handoff_occured` — SDK spelling). Handoffs share tool-call shapes (`call_id`, `name`,
+        `arguments` / output), so they reuse the same branches. Hosted-tool and MCP names, plus
+        `message_output_created` / `reasoning_item_created` (already covered by raw events), stay
+        unmapped. Items without a `call_id` emit nothing.
+
+        :param name: The `RunItemStreamEvent.name` discriminator.
+        :param item: The `RunItem` the event wraps.
+        :return: The AK events this item produces, or an empty list when unmapped.
+        """
+        if name not in ("tool_called", "tool_output", "handoff_requested", "handoff_occured"):
+            return []
+
+        raw = getattr(item, "raw_item", None)
+        call_id = OpenAIRunner._raw_field(raw, "call_id")
+        if not call_id:
+            _log.debug(f"OpenAI '{name}' item carries no call_id; not emitted")
+            return []
+
+        if name in ("tool_called", "handoff_requested"):
+            tool_name = OpenAIRunner._raw_field(raw, "name") or ""
+            arguments = OpenAIRunner._raw_field(raw, "arguments")
+            events: list[StreamEvent] = [ToolCallStart(tool_call_id=call_id, name=tool_name)]
+            if arguments:
+                events.append(ToolCallArgs(tool_call_id=call_id, delta=arguments))
+            events.append(ToolCallEnd(tool_call_id=call_id))
+            return events
+
+        # Prefer raw_item.output (what the model saw) over item.output (native tool return).
+        content = OpenAIRunner._raw_field(raw, "output")
+        if content is None:
+            content = getattr(item, "output", None)
+        return [ToolCallResult(tool_call_id=call_id, content="" if content is None else str(content))]
+
+    @staticmethod
+    def _raw_field(raw: Any, field: str) -> Any:
+        """
+        Read one field off a `RunItem.raw_item` (Pydantic model on some paths, dict on others).
+
+        :param raw: The item's `raw_item` value.
+        :param field: Field name to read.
+        :return: The field value, or `None` if missing.
+        """
+        if isinstance(raw, dict):
+            return raw.get(field)
+        return getattr(raw, field, None)
 
 
 class OpenAIAgent(BaseAgent):
@@ -218,12 +404,7 @@ class OpenAIAgent(BaseAgent):
         :param tool: Raw Python callable or already-wrapped OpenAI function_tool.
         """
         # Delegate to the tool builder to handle binding
-        wrapped = OpenAIToolBuilder.bind([tool])
-        for w in wrapped:
-            if not hasattr(self._agent, "tools") or self._agent.tools is None:
-                self._agent.tools = []
-            if w not in self._agent.tools:
-                self._agent.tools.append(w)
+        self._append_tools(self._agent, OpenAIToolBuilder.bind([tool]))
 
     def get_a2a_card(self):
         """

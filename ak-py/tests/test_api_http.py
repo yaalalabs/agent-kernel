@@ -139,7 +139,12 @@ class TestRESTAPI:
         """Test run method with default handlers."""
         mock_config_class.get.return_value = mock_config
 
-        with patch("uvicorn.run") as mock_uvicorn:
+        # #495: with an in_memory transport a bare RESTAPI.run() boots the pipeline instead
+        # (see TestPipelineDelegation); pin a broker transport to exercise the inline default path.
+        with (
+            patch("agentkernel.pipeline.transport.base.QueueTransportFactory.resolve_type", return_value="sqs"),
+            patch("uvicorn.run") as mock_uvicorn,
+        ):
             RESTAPI.run()
 
             # Verify uvicorn.run was called
@@ -302,7 +307,7 @@ class TestRESTAPIIntegration:
 
         # Test that app was created successfully
         assert isinstance(app, FastAPI)
-        route_paths = [route.path for route in app.routes]
+        route_paths = [route.path for route in app.routes if hasattr(route, "path")]
         assert "/health" in route_paths
         assert len(RESTAPI._auth_token_validators) == 1
         assert RESTAPI._auth_token_validators[0].dependency is not None
@@ -327,10 +332,14 @@ class TestRESTAPIIntegration:
 
         # Add custom router
         RESTAPI._custom_routers.clear()
+        RESTAPI._auth_token_validators.clear()
         RESTAPI.add(custom_router)
 
-        # Run the RESTAPI (this won't start server due to mock)
-        RESTAPI.run()
+        # Run the RESTAPI (this won't start server due to mock).
+        # #495: pin a broker transport so the bare run() exercises the inline default path
+        # rather than delegating to the pipeline IOHandler (see TestPipelineDelegation).
+        with patch("agentkernel.pipeline.transport.base.QueueTransportFactory.resolve_type", return_value="sqs"):
+            RESTAPI.run()
 
         # Verify uvicorn.run was called
         mock_uvicorn.assert_called_once()
@@ -338,11 +347,26 @@ class TestRESTAPIIntegration:
         # Get the app that was passed to uvicorn.run
         app = mock_uvicorn.call_args[1]["app"]
 
-        # Test the routes
-        route_paths = [route.path for route in app.routes]
+        # Test the routes — Starlette 1.3+ uses _IncludedRouter objects for
+        # routers added after app construction, so collect paths from both
+        # direct routes and included routers.
+        def collect_paths(routes, prefix=""):
+            paths = []
+            for route in routes:
+                if hasattr(route, "path"):
+                    paths.append(prefix + route.path)
+                elif hasattr(route, "include_context") and hasattr(route, "original_router"):
+                    ctx_prefix = getattr(route.include_context, "prefix", "")
+                    paths.extend(collect_paths(route.original_router.routes, prefix + ctx_prefix))
+            return paths
+
+        route_paths = collect_paths(app.routes)
         assert "/health" in route_paths
-        assert "/custom/test" in route_paths
-        assert "/test" not in route_paths
+        client = TestClient(app)
+        response = client.get("/custom/test")
+        assert response.status_code == 200
+        assert response.json() == {"message": "custom test"}
+        assert client.get("/test").status_code == 404
 
     def test_logging_configuration(self):
         """Test that logging is properly configured."""
@@ -368,3 +392,92 @@ class TestRESTAPIIntegration:
         with patch("uvicorn.run") as mock_uvicorn:
             RESTAPI.run([None])
             mock_uvicorn.assert_called_once()
+
+
+class TestResponseBuilderStructuredResult:
+    """Tests for ResponseBuilder handling of structured (AgentReplyAny) results."""
+
+    def test_structured_result_serialized_as_json_string(self):
+        import json
+
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyAny
+
+        content = {"city": "Colombo", "temp_c": 31}
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyAny(content=content))
+
+        assert response["result"] == json.dumps(content)
+        assert response["session_id"] == "session-1"
+
+    def test_text_result_unchanged(self):
+        from agentkernel.core.chat_service import ResponseBuilder
+        from agentkernel.core.model import AgentReplyText
+
+        response = ResponseBuilder.build_response(200, "session-1", rest_api_mode=True, result=AgentReplyText(response="hello"))
+
+        assert response["result"] == "hello"
+
+
+class TestPipelineDelegation:
+    """RESTAPI.run() boots the single-process pipeline only for plain RESTAPI + no handlers + in_memory."""
+
+    def test_run_delegates_to_io_handler_when_unconfigured(self, monkeypatch):
+        from agentkernel.pipeline.io_handler import IOHandler
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        called = {}
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: called.setdefault("delegated", True)))
+
+        with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            RESTAPI.run()
+
+        assert called.get("delegated") is True
+        mock_uvicorn.assert_not_called()
+
+    def test_run_with_explicit_handlers_does_not_delegate(self, monkeypatch):
+        from agentkernel.pipeline.io_handler import IOHandler
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: pytest.fail("must not delegate")))
+
+        handler = Mock()
+        handler.get_router.return_value = APIRouter()
+        with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            RESTAPI.run(handlers=[handler])
+        mock_uvicorn.assert_called_once()
+
+    def test_subclass_run_does_not_delegate(self, monkeypatch):
+        from agentkernel.pipeline.io_handler import IOHandler
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: pytest.fail("must not delegate")))
+
+        handler = Mock()
+        handler.get_router.return_value = APIRouter()
+
+        class _SubAPI(RESTAPI):
+            @classmethod
+            def get_default_handlers(cls):
+                return [handler]
+
+        with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            _SubAPI.run()
+        mock_uvicorn.assert_called_once()
+
+    def test_run_does_not_delegate_when_transport_is_not_in_memory(self, monkeypatch):
+        from agentkernel.pipeline.io_handler import IOHandler
+        from agentkernel.pipeline.transport.base import QueueTransportFactory
+
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+        monkeypatch.setattr(IOHandler, "run", classmethod(lambda cls, auth_validator=None: pytest.fail("must not delegate")))
+
+        handler = Mock()
+        handler.get_router.return_value = APIRouter()
+        monkeypatch.setattr(RESTAPI, "get_default_handlers", classmethod(lambda cls: [handler]))
+
+        with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            RESTAPI.run()
+        mock_uvicorn.assert_called_once()

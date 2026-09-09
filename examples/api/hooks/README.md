@@ -6,10 +6,13 @@ This example demonstrates the use of **pre-execution hooks** and **post-executio
 2. **RAG Hook** (Pre-hook) - Retrieval-Augmented Generation (context injection)
 3. **Disclaimer Hook** (Post-hook) - Adding disclaimers to agent responses
 
+For an example that reaches the framework-native session object via `Session.get_framework_session()`,
+see [`examples/cli/session-context`](../../cli/session-context/README.md).
+
 ## Features
 
 ### Guard Rail Hook (Pre-hook)
-The guard rail hook validates user input before execution:
+The guardrail hook validates user input before execution:
 - Blocks inappropriate content (harmful keywords)
 - Prevents excessively long inputs
 - Returns polite rejection messages when triggered
@@ -128,15 +131,15 @@ pytest app_test.py -v
 ```
 
 The test suite validates:
-- ✓ Guard rail blocks inappropriate requests
-- ✓ Guard rail allows safe requests
+- ✓ Guardrail blocks inappropriate requests
+- ✓ Guardrail allows safe requests
 - ✓ RAG hook injects relevant context
 - ✓ RAG hook works with hooks topic
 - ✓ Hooks chain correctly (RAG → GuardRail)
-- ✓ Guard rail blocks excessively long inputs
+- ✓ Guardrail blocks excessively long inputs
 - ✓ Works without RAG context when topic not in knowledge base
 - ✓ Disclaimer hook adds disclaimer to all responses
-- ✓ Disclaimer hook not applied when guard rail blocks request
+- ✓ Disclaimer hook not applied when guardrail blocks request
 - ✓ Full hook chain works correctly (RAG → GuardRail → Agent → Disclaimer)
 - ✓ Disclaimer hook preserves agent response content
 
@@ -159,7 +162,7 @@ hooks/
 Hooks that run **before** the agent executes:
 - Modify the prompt
 - Inject additional context (RAG)
-- Validate input (guard rails)
+- Validate input (guardrails)
 - Can halt execution and return early
 
 ### Post-Execution Hooks

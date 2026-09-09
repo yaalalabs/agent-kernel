@@ -6,7 +6,7 @@
 
 .wrapper {
   padding: 4rem 0;
-  background: linear-gradient(180deg, transparent, rgba(139, 92, 246, 0.025) 50%, transparent);
+  background: linear-gradient(180deg, transparent, rgba(242, 0, 255, 0.025) 50%, transparent);
 }
 
 .header {
@@ -22,8 +22,8 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ak-purple);
-  background: rgba(139, 92, 246, 0.1);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  background: rgba(242, 0, 255, 0.1);
+  border: 1px solid rgba(242, 0, 255, 0.2);
   border-radius: 999px;
   padding: 0.3rem 0.9rem;
   margin-bottom: 1rem;

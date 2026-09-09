@@ -15,6 +15,8 @@ locals {
   response_handler_layers               = var.response_handler.layers
   response_handler_env_vars             = var.response_handler.environment_variables
   
+  # S3 source key — passed in from parent via var.source_key (lambda-package module output)
+
   # Queue configuration
   output_queue_arn                            = var.queue_config.output_queue_arn
   batch_size                                  = var.queue_config.batch_size
@@ -23,13 +25,11 @@ locals {
   
   # Response store configuration
   redis_response_store    = var.response_store_redis
+  valkey_response_store   = var.response_store_valkey
   dynamodb_response_store = var.response_store_dynamodb
-}
-
-data "aws_s3_object" "source_code" {
-  count  = local.response_handler_package_type == "S3Zip" ? 1 : 0
-  bucket = var.source_bucket
-  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${local.response_handler_module_name}/lambda/source_code.zip"
+  
+  # WebSocket API configuration
+  websocket_api_execution_arn = try(var.websocket_api_execution_arn, null)
 }
 
 resource "aws_signer_signing_job" "response_handler_lambda_signing_job" {
@@ -38,15 +38,15 @@ resource "aws_signer_signing_job" "response_handler_lambda_signing_job" {
   profile_name = var.lambda_signer_profile_name
   source {
     s3 {
-      bucket  = data.aws_s3_object.source_code[0].bucket
-      key     = data.aws_s3_object.source_code[0].key
-      version = data.aws_s3_object.source_code[0].version_id
+      bucket  = var.source_bucket
+      key     = var.source_key
+      version = var.source_version_id
     }
   }
   destination {
     s3 {
-      bucket = data.aws_s3_object.source_code[0].bucket
-      prefix = "${data.aws_s3_object.source_code[0].key}/signed/${data.aws_s3_object.source_code[0].version_id}"
+      bucket = var.source_bucket
+      prefix = "${var.source_key}/signed"
     }
   }
   ignore_signing_job_failure = false
@@ -148,6 +148,65 @@ resource "aws_iam_role_policy_attachment" "response_handler_dynamodb_attachment"
   policy_arn = aws_iam_policy.response_handler_dynamodb_policy[0].arn
 }
 
+# Websocket connections DynamoDB permissions
+resource "aws_iam_policy" "response_handler_websocket_connections_dynamodb_policy" {
+  count = var.websocket_connections_dynamodb != null ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}-websocket-connections-ddb"
+  
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          var.websocket_connections_dynamodb.table_arn,
+          "${var.websocket_connections_dynamodb.table_arn}/index/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "response_handler_websocket_connections_dynamodb_attachment" {
+  count      = var.websocket_connections_dynamodb != null ? 1 : 0
+  role       = aws_iam_role.response_handler_lambda_role.name
+  policy_arn = aws_iam_policy.response_handler_websocket_connections_dynamodb_policy[0].arn
+}
+
+# WebSocket API Gateway permissions for PostToConnection
+resource "aws_iam_policy" "response_handler_websocket_api_policy" {
+  count = var.websocket_mode ? 1 : 0
+  name  = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-websocket-api"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "execute-api:ManageConnections"
+        ]
+        Resource = "${local.websocket_api_execution_arn}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "response_handler_websocket_api_attachment" {
+  count      = var.websocket_mode ? 1 : 0
+  role       = aws_iam_role.response_handler_lambda_role.name
+  policy_arn = aws_iam_policy.response_handler_websocket_api_policy[0].arn
+}
+
 # Response Handler Lambda Function
 module "response_handler_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
@@ -166,16 +225,16 @@ module "response_handler_lambda" {
   create_layer           = false
   layers                 = local.response_handler_layers
 
-  s3_existing_package = local.response_handler_package_type == "S3Zip" ? {
-    bucket     = var.is_production ? data.aws_s3_object.signed_component_code[0].bucket : data.aws_s3_object.source_code[0].bucket
-    key        = var.is_production ? data.aws_s3_object.signed_component_code[0].key : data.aws_s3_object.source_code[0].key
-    version_id = var.is_production ? null : data.aws_s3_object.source_code[0].version_id
-  } : {}
+  s3_existing_package = var.is_production && local.response_handler_package_type == "S3Zip" ? {
+    bucket     = data.aws_s3_object.signed_component_code[0].bucket
+    key        = data.aws_s3_object.signed_component_code[0].key
+    version_id = try(data.aws_s3_object.signed_component_code[0].version_id, null)
+  } : var.s3_existing_package
 
   code_signing_config_arn = (local.response_handler_package_type == "S3Zip" && var.is_production) ? var.lambda_signing_config_arn : null
 
   use_existing_cloudwatch_log_group = false
-  cloudwatch_logs_retention_in_days = var.cloudwatch_logs_retention_in_days
+  cloudwatch_logs_retention_in_days = var.response_handler.cloudwatch_logs_retention_in_days
   attach_cloudwatch_logs_policy     = true
 
   vpc_subnet_ids         = local.subnet_ids
@@ -186,10 +245,16 @@ module "response_handler_lambda" {
     local.redis_response_store != null ? {
       AK_EXECUTION__RESPONSE_STORE__REDIS__URL = local.redis_response_store.url
     } : {},
+    local.valkey_response_store != null ? {
+      AK_EXECUTION__RESPONSE_STORE__VALKEY__URL = local.valkey_response_store.url
+    } : {},
     local.dynamodb_response_store != null ? {
       AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME = local.dynamodb_response_store.table_name
-    } : {}
-    , {
+    } : {},
+    var.websocket_connections_dynamodb != null ? {
+      AK_WEBSOCKET_API__CONNECTION_TABLE__TABLE_NAME = var.websocket_connections_dynamodb.table_name
+    } : {},
+    {
       AK_EXECUTION__QUEUES__OUTPUT__MAX_RECEIVE_COUNT = tostring(local.output_queue_consumer_max_receive_count)
     }
   )

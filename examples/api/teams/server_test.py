@@ -1,54 +1,73 @@
 """
-Test script for Teams integration
-This script tests the Teams bot locally without requiring a full Teams setup.
+Tests for the Microsoft Teams example server.
+
+These run without any Azure resources: the bot credentials below are placeholders, so the
+Bot Framework adapter rejects every unsigned activity. That is enough to prove the server
+boots with a `teams:` configuration block and that the webhook route is mounted and
+authenticated.
 """
 
 import asyncio
+import os
+import subprocess
+import sys
 
-from agentkernel.core import Config
-from agentkernel.openai import OpenAIModule
-from agentkernel.teams import AgentTeamsRequestHandler
-from agents import Agent as OpenAIAgent
-from botbuilder.schema import (
-    Activity,
-    ActivityTypes,
-    ChannelAccount,
-    ConversationAccount,
-)
+import httpx
+import pytest
+import pytest_asyncio
 
-# Create agent
-general_agent = OpenAIAgent(
-    name="general",
-    handoff_description="Agent for general questions",
-    instructions="You provide assistance with general queries. Give short and clear answers",
-)
-
-OpenAIModule([general_agent])
+pytestmark = pytest.mark.asyncio(loop_scope="session")  # uses a single session for all tests
 
 
-async def test_teams_handler():
-    """Test the Teams handler with a mock message."""
-    # Initialize handler
-    handler = AgentTeamsRequestHandler()
+class APITestClient:
+    def __init__(self, url):
+        self.url = url
 
-    # Create a mock activity (Teams message)
-    mock_activity = Activity(
-        type=ActivityTypes.message,
-        id="test-activity-id",
-        text="Hello, what is the capital of France?",
-        from_property=ChannelAccount(id="user-123", name="Test User"),
-        conversation=ConversationAccount(id="test-conversation-123"),
-        channel_id="msteams",
+    async def send(self, endpoint: str, method: str = "post", body=None):
+        payload = {} if body is None else body
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            return await client.request(method, f"{self.url}{endpoint}", json=payload)
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def http_client():
+    my_env = os.environ.copy()
+    my_env["AK_TEAMS__APP_ID"] = "00000000-0000-0000-0000-000000000000"
+    my_env["AK_TEAMS__APP_PASSWORD"] = "test-app-password"
+    proc = subprocess.Popen(
+        ["python3", "server.py"],
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        env=my_env,
     )
-
-    # Create a mock TurnContext
-    # Note: This is a simplified test. For full testing, you'd need to mock the adapter and credentials
-    print("Testing Teams handler...")
-    print(f"Mock message: {mock_activity.text}")
-    print(f"From: {mock_activity.from_property.name}")
-    print("\nNote: Full integration test requires Azure Bot credentials and Teams environment.")
-    print("Use 'uv run server.py' with proper credentials for real testing.")
+    await asyncio.sleep(5)
+    try:
+        yield APITestClient("http://localhost:8000")
+    finally:
+        proc.terminate()
+        proc.wait()
 
 
-if __name__ == "__main__":
-    asyncio.run(test_teams_handler())
+async def test_teams_health(http_client):
+    """The server starts up with a teams configuration block."""
+    print("test_teams_health")
+    response = await http_client.send("/health", method="get")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+async def test_teams_messages_rejects_an_unsigned_activity(http_client):
+    """An activity without a valid Bot Framework JWT must be 401, never 500 (Azure retries 5xx)."""
+    print("test_teams_messages_rejects_an_unsigned_activity")
+    activity = {
+        "type": "message",
+        "id": "test-activity-id",
+        "text": "Hello, what is the capital of France?",
+        "from": {"id": "user-123", "name": "Test User"},
+        "conversation": {"id": "test-conversation-123"},
+        "recipient": {"id": "28:00000000-0000-0000-0000-000000000000", "name": "Agent Bot"},
+        "channelId": "msteams",
+        "serviceUrl": "https://smba.trafficmanager.net/emea/",
+    }
+    response = await http_client.send("/teams/messages", method="post", body=activity)
+    assert response.status_code == 401

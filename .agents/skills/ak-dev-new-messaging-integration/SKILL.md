@@ -3,7 +3,7 @@ name: ak-dev-new-messaging-integration
 description: >
   Step-by-step guide for adding a new messaging platform integration to Agent Kernel.
   Use this skill when you need to add support for a new chat platform (beyond Slack,
-  WhatsApp, Messenger, Instagram, Telegram, Gmail). Covers creating the integration
+    WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail). Covers creating the integration
   handler, webhook routes, message parsing, configuration, and examples.
 license: Apache-2.0
 metadata:
@@ -21,10 +21,20 @@ Messaging integrations follow a consistent pattern:
 
 1. A **request handler** class that extends `RESTRequestHandler`
 2. The handler exposes FastAPI **routes** for webhooks
-3. Incoming messages are parsed into `AgentRequest` models
-4. `AgentService` is used to select an agent, run the request, and get a reply
-5. The reply is formatted and sent back via the platform's API
-6. Configuration is added to `AKConfig` for platform-specific settings
+3. Incoming messages are parsed into `AgentRequest` models (platform attachments downloaded and base64-encoded by the handler)
+4. The **ChatService execution core** runs the agent: build a `BaseChatRequest` and call
+   `execute(req, requests=<prebuilt list>)`, which returns the typed reply. Integrations own their
+   transport and reply formatting, so they call the core, never the HTTP-shaped `process_*`
+   wrappers and never `AgentService` directly (see the chat execution layering rubric in
+   `ak-dev-architecture`)
+5. The reply is formatted and sent back via the platform's API; a `ValueError` from `execute` maps to
+   the platform's "no agent available" message
+6. Configuration is added to `AKConfig` (accessed via the `Config.get()` alias) for platform-specific settings
+
+> **Exception**: Gmail does not follow the webhook pattern. `AgentGmailRequestHandler`
+> (`integration/gmail/gmail_chat.py`) has no base class and polls email via OAuth instead
+> of exposing webhook routes; its config (`_GmailConfig` in `core/config.py`) has
+> `token_file`, `poll_interval`, and `label_filter` rather than a webhook secret.
 
 ## Step-by-Step
 
@@ -42,9 +52,8 @@ ak-py/src/agentkernel/integration/<platform>/
 # ak-py/src/agentkernel/integration/<platform>/<platform>_chat.py
 import logging
 from agentkernel.api.handler import RESTRequestHandler
-from agentkernel.core import AgentService
-from agentkernel.core.config import AKConfig
-from agentkernel.core.model import AgentRequestText, AgentRequestImage, AgentRequestFile
+from agentkernel.core import ChatService, Config
+from agentkernel.core.model import AgentRequestText, AgentRequestImage, AgentRequestFile, BaseChatRequest
 from fastapi import APIRouter, Request
 
 logger = logging.getLogger("ak.integration.<platform>")
@@ -54,8 +63,9 @@ class Agent<Platform>RequestHandler(RESTRequestHandler):
     """Handles incoming messages from <Platform> and routes them to Agent Kernel agents."""
 
     def __init__(self):
-        config = AKConfig.get().<platform>
+        config = Config.get().<platform>
         self._agent_name = config.agent if config else None
+        self._chat_service = ChatService()
         # Initialize platform-specific client/SDK here
         # e.g., self._client = PlatformClient(token=config.bot_token)
 
@@ -84,7 +94,7 @@ class Agent<Platform>RequestHandler(RESTRequestHandler):
         # 2. Build request list
         requests = []
         if text:
-            requests.append(AgentRequestText(text=text))
+            requests.append(AgentRequestText(prompt=text))
 
         for attachment in attachments:
             # Handle images
@@ -107,14 +117,19 @@ class Agent<Platform>RequestHandler(RESTRequestHandler):
         if not requests:
             return
 
-        # 3. Create service, select agent, run
-        service = AgentService()
-        service.select(session_id=user_id, name=self._agent_name)
-
-        reply = await service.run_multi(requests)
+        # 3. Run through the ChatService execution core with the prebuilt request list
+        #    (prompt may be empty for attachment-only messages; user_id/group_id are
+        #    best-effort platform identity)
+        req = BaseChatRequest(prompt=text, agent=self._agent_name, session_id=user_id, user_id=user_id)
+        try:
+            reply, _ = await self._chat_service.execute(req, requests=requests)
+        except ValueError as ve:
+            logger.warning(f"Agent execution rejected: {ve}")
+            await self._send_reply(user_id, "Sorry, no agent is available to handle your request.")
+            return
 
         # 4. Send reply back via platform API
-        await self._send_reply(user_id, reply.text)
+        await self._send_reply(user_id, str(reply))
 
     async def _download_file(self, url: str) -> str:
         """Download a file and return base64-encoded content."""
@@ -135,6 +150,10 @@ class Agent<Platform>RequestHandler(RESTRequestHandler):
         return {}
 ```
 
+> Handlers conventionally access configuration through the re-exported alias
+> `Config.get().<platform>` (`from agentkernel.core import Config`) rather than
+> importing `AKConfig` directly — see `integration/slack/slack_chat.py`.
+
 ### 3. Create the `__init__.py`
 
 ```python
@@ -144,23 +163,23 @@ from .<platform>_chat import Agent<Platform>RequestHandler
 
 ### 4. Create the Public API Alias
 
-Create `ak-py/src/agentkernel/<platform>.py`:
+Create `ak-py/src/agentkernel/<platform>.py`. Real alias files use a wildcard import (see `ak-py/src/agentkernel/slack.py`):
 
 ```python
-from .integration.<platform> import Agent<Platform>RequestHandler
+from .integration.<platform> import *
 ```
 
 This allows `from agentkernel.<platform> import Agent<Platform>RequestHandler`.
 
 ### 5. Add Configuration
 
-Add a configuration section to `ak-py/src/agentkernel/core/config.py`:
+Add a configuration section to `ak-py/src/agentkernel/core/config.py`. Follow the existing platform config idiom (e.g. `_TelegramConfig`), which uses `Field` with empty-string defaults.
 
 ```python
 class _<Platform>Config(BaseModel):
-    agent: str | None = None
-    bot_token: str | None = None       # platform-specific fields
-    webhook_secret: str | None = None  # for webhook verification
+    agent: str = Field(default="", description="Agent name to handle <Platform> messages")
+    bot_token: str = Field(default="", description="<Platform> bot token")            # platform-specific fields
+    webhook_secret: str = Field(default="", description="Webhook verification secret")
     # Add other platform-specific config fields
 
 class AKConfig(YamlBaseSettingsModified):
@@ -263,7 +282,9 @@ Create `examples/api/<platform>/` with:
 
 ### 11. Add Tests
 
-Create `ak-py/tests/test_<platform>.py` with:
+Create `ak-py/tests/test_<platform>_integration.py` following the pattern of `test_slack_integration.py` /
+`test_whatsapp_integration.py`: build the handler via `object.__new__` with injected attributes (no config,
+no platform SDK), replace `handler._chat_service` with a fake recording `execute()` calls, and cover:
 - Unit tests for message parsing
 - Unit tests for reply formatting/chunking
 - Mock tests for webhook handling
@@ -275,6 +296,8 @@ Add `docs/docs/integrations/<platform>.md` covering:
 - Configuration options
 - Example code
 - Webhook URL setup
+
+Then update the docs-site React pages that enumerate platforms: the `MESSAGING_PLATFORMS` list in `docs/src/pages/features.tsx` (logo under `docs/static/img/integrations/`, link to the new page) and the `pills` on the `ak-add-integration` entry in `AGENT_SKILLS` in `docs/src/pages/index.tsx`. Grep `docs/src/pages/*.tsx`, `README.md`, and `docs/docs/intro.md` for the platform roll call ("Slack, WhatsApp, ...") and add the new name wherever the others are listed.
 
 ## Checklist
 
@@ -288,3 +311,4 @@ Add `docs/docs/integrations/<platform>.md` covering:
 - [ ] Example in `examples/api/<platform>/`
 - [ ] Tests in `ak-py/tests/`
 - [ ] Documentation in `docs/docs/integrations/<platform>.md`
+- [ ] Platform inventories on the docs-site pages (`docs/src/pages/features.tsx` `MESSAGING_PLATFORMS`, `docs/src/pages/index.tsx` `AGENT_SKILLS` pills) and in the README/intro roll calls

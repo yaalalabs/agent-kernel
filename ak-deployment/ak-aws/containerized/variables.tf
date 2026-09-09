@@ -24,15 +24,10 @@ variable "module_name" {
   description = "Module name"
 }
 
-variable "package_path" {
-  type        = string
-  description = "Docker image source path (app root)"
-}
-
 variable "environment_variables" {
   description = "Environment variables"
   type        = any
-  default = {}
+  default     = {}
 }
 
 variable "api_version" {
@@ -56,8 +51,8 @@ variable "api_base_path" {
 variable "gateway_endpoints" {
   description = "List of HTTP API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} endpoint is created."
   type = list(object({
-    path = string        # The URL path segment that clients will access (e.g., "chat", "users", "webhook"). This becomes part of the full URL: https://your-domain.com/{api_base_path}/{api_version}/{path}
-    method = string        # HTTP method for this endpoint (e.g., "GET", "POST", "PUT", "DELETE", "ANY"). "ANY" accepts all HTTP methods. "$default" is a special catch-all route.
+    path           = string # The URL path segment that clients will access (e.g., "chat", "users", "webhook"). This becomes part of the full URL: https://your-domain.com/{api_base_path}/{api_version}/{path}
+    method         = string # HTTP method for this endpoint (e.g., "GET", "POST", "PUT", "DELETE", "ANY"). "ANY" accepts all HTTP methods. "$default" is a special catch-all route.
     overwrite_path = string # The backend path that the ALB forwards requests to (e.g., "/api/v1/chat", "/internal/webhook"). This allows mapping external paths to different internal service endpoints.
   }))
   default = []
@@ -72,12 +67,16 @@ variable "gateway_endpoints" {
     ])
     error_message = "Each gateway_endpoints object must have non-empty 'path', 'method', and 'overwrite_path' fields, and 'method' must be one of: GET, POST, PUT, DELETE, PATCH, ANY, $default."
   }
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || length(var.gateway_endpoints) == 0
+    error_message = "'gateway_endpoints' cannot be defined in 'async' or 'stream' (websocket) execution modes."
+  }
 }
 
 variable "tags" {
-  type = map(string)
+  type        = map(string)
   description = "Resource tags"
-  default = {}
+  default     = {}
 }
 
 variable "vpc_cidr" {
@@ -87,15 +86,15 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidrs" {
-  type = list(string)
+  type        = list(string)
   description = "CIDR blocks for the public subnets"
-  default = ["10.0.1.0/24", "10.0.2.0/24"]
+  default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
 variable "private_subnet_cidrs" {
-  type = list(string)
+  type        = list(string)
   description = "CIDR blocks for the private subnets"
-  default = ["10.0.3.0/24", "10.0.4.0/24"]
+  default     = ["10.0.3.0/24", "10.0.4.0/24"]
 }
 
 variable "vpc_id" {
@@ -105,7 +104,7 @@ variable "vpc_id" {
 }
 
 variable "private_subnet_ids" {
-  type = list(string)
+  type        = list(string)
   description = "When using an existing VPC to deploy, private subnet IDs need to be provided"
   default     = null
 }
@@ -116,41 +115,54 @@ variable "create_redis_cluster" {
   default     = false
 }
 
+variable "create_valkey_cluster" {
+  type        = bool
+  description = "Create a Valkey (ElastiCache) cluster for Agent session storage"
+  default     = false
+}
+
 variable "create_dynamodb_memory_table" {
   type        = bool
   description = "Create a dynamodb table to store the Agent memory"
   default     = false
 }
 
-
-variable "ecs_cpu" {
-  type        = number
-  description = "Fargate CPU units"
-  default     = 256
+variable "create_dynamodb_thread_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the conversation threads"
+  default     = false
 }
 
-variable "ecs_memory" {
-  type        = number
-  description = "Fargate memory in MiB"
-  default     = 512
+variable "create_dynamodb_schedule_table" {
+  type        = bool
+  description = "Create a dynamodb table to store the scheduled tasks"
+  default     = false
 }
 
-variable "ecs_desired_count" {
-  type        = number
-  description = "Desired count for ECS service"
-  default     = 1
+variable "enable_scheduling" {
+  type        = bool
+  description = "Provision EventBridge Scheduler resources (schedule group + execution role) and inject their coordinates, so the application's `schedule.provider.type: eventbridge` has a group to register schedules in. Requires queue_mode: the schedules deliver their triggers to the Input Queue"
+  default     = false
 }
 
-variable "ecs_container_port" {
-  type        = number
-  description = "Container port exposed by the ECS service"
-  default     = 8000
-}
+# -
+# REST Service Configuration
+# -
 
-variable "ecs_health_check_endpoint" {
-  type        = string
-  description = "Health check path for ALB target group"
-  default     = "/health"
+variable "rest_service" {
+  description = "REST service configuration object"
+  type = object({
+    cpu                               = optional(number, 256)
+    memory                            = optional(number, 512)
+    desired_count                     = optional(number, 1)
+    container_port                    = optional(number, 8000)
+    health_check_endpoint             = optional(string, "/health")
+    health_check_grace_period_seconds = optional(number, 120)
+    package_path                      = string                 # Docker image source path (required)
+    image_uri                         = optional(string, null) # Or provide pre-built image URI
+    command                           = optional(list(string), null)
+    environment_variables             = optional(map(string), {})
+  })
 }
 
 variable "container_type" {
@@ -158,7 +170,7 @@ variable "container_type" {
   description = "Container type (ECS or EKS)"
   default     = "ecs"
   validation {
-    condition = contains(["ecs", "eks"], lower(var.container_type))
+    condition     = contains(["ecs", "eks"], lower(var.container_type))
     error_message = "Container type must be either 'ecs' or 'eks'."
   }
 }
@@ -220,11 +232,184 @@ variable "throttling_burst_limit" {
   default     = null
 }
 
+variable "enable_api_gateway_logs" {
+  type        = bool
+  description = "When true, creates the API Gateway CloudWatch log group and enables access logging on the HTTP API stage (or the WebSocket API stage, in WebSocket modes). Off by default."
+  default     = false
+}
+
 variable "enable_mcp_server" {
   type        = bool
   description = "Enable MCP server and expose MCP API endpoint"
   default     = false
 }
 
-data "aws_ecr_authorization_token" "token" {}
 data "aws_caller_identity" "current" {}
+
+# -
+# Queue Mode Configuration
+# -
+
+variable "queue_mode" {
+  type        = bool
+  description = "Enable SQS queue mode. Creates Input/Output queues, DynamoDB response store, and Agent Runner ECS service."
+  default     = false
+}
+
+variable "execution_mode" {
+  type        = string
+  description = "Execution mode: 'rest_sync' (client waits on same HTTP connection), 'rest_async' (client polls a separate GET endpoint), 'async' (WebSocket, full response in one message), or 'stream' (WebSocket, token-by-token). All four modes support queue_mode = true; 'rest_sync', 'async', and 'stream' also support queue_mode = false, running the agent inline in the ingress service. 'rest_async' requires queue_mode = true (it needs the response store) and is rejected when queue_mode = false."
+  default     = "rest_sync"
+  validation {
+    condition     = contains(["rest_sync", "rest_async", "async", "stream"], var.execution_mode)
+    error_message = "execution_mode must be one of: rest_sync, rest_async, async, stream."
+  }
+  validation {
+    condition     = var.queue_mode || contains(["rest_sync", "async", "stream"], var.execution_mode)
+    error_message = "execution_mode must be rest_sync, async, or stream when queue_mode is false. (rest_async requires queue_mode = true.)"
+  }
+}
+
+# WebSocket configuration (async / stream execution modes)
+
+variable "ws_chat_route" {
+  type        = string
+  description = "WebSocket default chat route name. Only used in 'async'/'stream' modes."
+  default     = "chat"
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || (var.ws_chat_route != null && length(trimspace(var.ws_chat_route)) > 0)
+    error_message = "ws_chat_route must not be null, empty, or whitespace-only."
+  }
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || (var.ws_chat_route != null && can(regex("^[a-zA-Z0-9_-]+$", var.ws_chat_route)))
+    error_message = "ws_chat_route must contain only alphanumeric characters, hyphens (-), and underscores (_). Note: '$' prefix is reserved for predefined routes."
+  }
+}
+
+variable "ws_routes" {
+  type = list(object({
+    route = string
+  }))
+  description = "List of custom WebSocket routes beyond the default chat route. Only allowed in 'async'/'stream' modes."
+  default     = []
+  validation {
+    condition     = contains(["async", "stream"], var.execution_mode) || length(var.ws_routes) == 0
+    error_message = "'ws_routes' can only be defined in 'async' or 'stream' (websocket) execution modes."
+  }
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || alltrue([for r in var.ws_routes : r.route != null && length(trimspace(r.route)) > 0])
+    error_message = "Routes in 'ws_routes' must not be null, empty, or whitespace-only."
+  }
+  validation {
+    condition     = !contains(["async", "stream"], var.execution_mode) || alltrue([for r in var.ws_routes : r.route != null && can(regex("^[a-zA-Z0-9_-]+$", r.route))])
+    error_message = "Routes in 'ws_routes' must contain only alphanumeric characters, hyphens (-), and underscores (_)."
+  }
+}
+
+# Queue Configuration Object
+
+variable "queue_config" {
+  description = "Queue configuration object"
+  type = object({
+    # Queue names
+    input_queue_name  = optional(string, "input-queue")  # Queue name suffix
+    output_queue_name = optional(string, "output-queue") # Queue name suffix
+
+    # Shared settings
+    sqs_managed_sse_enabled   = optional(bool, true)
+    max_message_size          = optional(number, 262144) # 256 KB
+    receive_wait_time_seconds = optional(number, 0)
+    batch_size                = optional(number, 10) # Max messages fetched per SQS receive call (ECS consumers only, 1-10)
+
+    # Input queue settings
+    input_queue_visibility_timeout            = optional(number, 60)
+    input_queue_message_retention_seconds     = optional(number, 1800) # 30 minutes
+    input_queue_max_receive_count             = optional(number, 5)
+    input_queue_create_dlq                    = optional(bool, false)
+    input_queue_dlq_message_retention_seconds = optional(number, 1800)
+
+    # Output queue settings
+    output_queue_visibility_timeout            = optional(number, 60)
+    output_queue_message_retention_seconds     = optional(number, 1800)
+    output_queue_max_receive_count             = optional(number, 5)
+    output_queue_create_dlq                    = optional(bool, false)
+    output_queue_dlq_message_retention_seconds = optional(number, 1800)
+  })
+  default = {
+    input_queue_name                           = "input-queue"
+    output_queue_name                          = "output-queue"
+    sqs_managed_sse_enabled                    = true
+    max_message_size                           = 262144
+    receive_wait_time_seconds                  = 0
+    batch_size                                 = 10
+    input_queue_visibility_timeout             = 60
+    input_queue_message_retention_seconds      = 1800
+    input_queue_max_receive_count              = 5
+    input_queue_create_dlq                     = false
+    input_queue_dlq_message_retention_seconds  = 1800
+    output_queue_visibility_timeout            = 60
+    output_queue_message_retention_seconds     = 1800
+    output_queue_max_receive_count             = 5
+    output_queue_create_dlq                    = false
+    output_queue_dlq_message_retention_seconds = 1800
+  }
+
+  validation {
+    condition     = var.queue_config.batch_size >= 1 && var.queue_config.batch_size <= 10
+    error_message = "queue_config.batch_size must be between 1 and 10 (SQS ReceiveMessage limit)."
+  }
+}
+
+# Agent Runner Configuration Object
+
+variable "agent_runner" {
+  description = "Agent runner configuration object"
+  type = object({
+    cpu                   = optional(number, 512)
+    memory                = optional(number, 1024)
+    desired_count         = optional(number, 1)
+    package_path          = optional(string, null) # Path to agent runner Docker source (builds separate image)
+    image_uri             = optional(string, null) # Or provide pre-built image URI
+    command               = optional(list(string), null)
+    environment_variables = optional(map(string), {})
+  })
+  default = {
+    cpu                   = 512
+    memory                = 1024
+    desired_count         = 1
+    package_path          = null
+    image_uri             = null
+    command               = null
+    environment_variables = {}
+  }
+}
+
+# Scaling Configuration Object
+
+variable "scaling_config" {
+  description = "Auto scaling configuration object for agent runner"
+  type = object({
+    enabled            = optional(bool, false)
+    min_count          = optional(number, 0)
+    max_count          = optional(number, 10)
+    backlog_target     = optional(number, 10)
+    scale_in_cooldown  = optional(number, 120)
+    scale_out_cooldown = optional(number, 30)
+  })
+  default = {
+    enabled            = false
+    min_count          = 0
+    max_count          = 10
+    backlog_target     = 10
+    scale_in_cooldown  = 120
+    scale_out_cooldown = 30
+  }
+
+  validation {
+    condition = (
+      !var.scaling_config.enabled ||
+      var.queue_mode
+    )
+    error_message = "scaling_config.enabled requires queue_mode = true."
+  }
+}

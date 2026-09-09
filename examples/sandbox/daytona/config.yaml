@@ -1,0 +1,38 @@
+# Daytona provider demo: container sandboxes on the Daytona cloud.
+#
+# Each sandbox is a container created on the Daytona platform; executions, files, and
+# `pip install` all run inside it. Requires the `daytona` extra and a DAYTONA_API_KEY
+# (get one at https://app.daytona.io). No local daemon — the sandboxes run in the cloud.
+#
+# Three profiles show what Daytona enforces (unlike local_subprocess, which enforces none
+# of these, and unlike docker, which cannot enforce resource limits as cleanly):
+#   - default : a per-session cloud workspace; files persist across turns, and Daytona's
+#               native auto-stop reclaims the sandbox after idle_timeout.
+#   - offline : `network_egress: deny` — Daytona ENFORCES this (network_block_all), so
+#               outbound requests genuinely fail.
+#   - small   : cpu/memory limits — Daytona ENFORCES these via container Resources.
+sandbox:
+  enabled: true
+  profiles:
+    default:
+      type: daytona
+      idle_timeout: 21600 # 6 hours -> Daytona auto_stop_interval (native, rounded up to minutes)
+      daytona:
+        image: python:3.12-slim # container image (or `snapshot: <name>` — mutually exclusive; omit both for Daytona's default)
+        env_vars:
+          APP_ENV: demo # environment variables set inside the sandbox
+        # target: us         # optional Daytona region; omitted = SDK default
+        # api_key_env: DAYTONA_API_KEY
+    offline:
+      type: daytona
+      policy:
+        network_egress: deny # -> network_block_all (actually enforced)
+      daytona: {}
+    small:
+      type: daytona
+      policy:
+        cpu: 1 # -> container cpu limit (enforced)
+        memory_mb: 1024 # -> container memory limit (enforced)
+      daytona: {}
+  broker:
+    flavor: thread

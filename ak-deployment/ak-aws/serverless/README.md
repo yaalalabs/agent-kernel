@@ -1,6 +1,6 @@
 # Agent Kernel - AWS Serverless Module
 
-A comprehensive Terraform module for deploying serverless applications on AWS, combining Lambda functions with API Gateway to create production-ready RESTful APIs.
+A comprehensive Terraform module for deploying serverless applications on AWS, combining Lambda functions with API Gateway to create production-ready RESTful APIs and WebSocket APIs.
 
 ## 📋 Overview
 
@@ -8,14 +8,15 @@ This module provides a complete serverless deployment solution:
 
 - ⚡ **AWS Lambda**: Configurable functions with multiple deployment options
 - 🌐 **API Gateway**: REST API with Three-Level Resource Creation and Routing
-- 🔄 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
+- 🔌 **WebSocket API**: Real-time bidirectional communication with connection lifecycle management
+- 📦 **Flexible Deployment**: Support for ZIP packages, S3 storage, and container images
 - 🔒 **Security**: Code signing, IAM roles, and CloudWatch logging
 - 🔒 **Custom Authorization**: Lambda-based API Gateway authorizer support
 - 📦 **Queue Mode**: SQS-driven async processing with agent runner and response handler functions
 - 🏷️ **Best Practices**: Automatic runtime selection and resource tagging
 - 📊 **Monitoring**: CloudWatch logs with configurable retention
 
-Perfect for microservices, API backends, event-driven architectures, and serverless web applications requiring REST endpoints.
+Perfect for microservices, API backends, event-driven architectures, and serverless web applications requiring REST or WebSocket endpoints.
 
 ## 📋 Requirements
 
@@ -23,6 +24,37 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 |------|---------|
 | Terraform | >= 1.9.5 |
 | AWS Provider | >= 6.11.0 |
+| Docker Provider | 3.6.2 |
+
+## 🔌 Providers
+
+This module is provider-agnostic: it declares `aws` and `docker` in `required_providers` but does **not** configure them internally. Configure both providers in your root module and pass them explicitly via the `providers` argument. This is what lets you use `count`, `for_each`, or `depends_on` on the module block, and lets a minimal/standalone config destroy the resources it created.
+
+```hcl
+provider "aws" {
+  region = var.region
+}
+
+# Docker authenticates against ECR to push the images this module builds
+data "aws_caller_identity" "current" {}
+data "aws_ecr_authorization_token" "token" {}
+
+provider "docker" {
+  registry_auth {
+    address  = format("%v.dkr.ecr.%v.amazonaws.com", data.aws_caller_identity.current.account_id, var.region)
+    username = data.aws_ecr_authorization_token.token.user_name
+    password = data.aws_ecr_authorization_token.token.password
+  }
+}
+
+module "python_api" {
+  source    = "yaalalabs/ak-serverless/aws"
+  version   = "0.8.1"
+  providers = { aws = aws, docker = docker }
+
+  # ... other inputs, see below
+}
+```
 
 ## 🚀 Usage
 
@@ -30,31 +62,32 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 
 ```hcl
 module "python_api" {
-  source = "yaalalabs/ak-serverless/aws"
+  source    = "yaalalabs/ak-serverless/aws"
+  providers = { aws = aws, docker = docker }
 
   region              = "us-west-2"
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "My Application API"
-  
-  module_name          = "api"
-  function_name        = "handler"
-  function_description = "Main API handler"
-  handler_path         = "app.lambda_handler"
+
   module_type          = "python"
-  
-  package_type         = "LocalZip"
-  package_path         = "${path.module}/dist/function.zip"
-  
-  timeout              = 30
-  memory_size          = 512
-  
-  environment_variables = {
-    ENVIRONMENT = "production"
-    LOG_LEVEL   = "info"
+
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Main API handler"
+    handler_path         = "app.lambda_handler"
+    module_name           = "api"
+    package_type         = "LocalZip"
+    package_path         = "${path.module}/dist/function.zip"
+    timeout              = 30
+    memory_size          = 512
+    environment_variables = {
+      ENVIRONMENT = "production"
+      LOG_LEVEL   = "info"
+    }
   }
-  
-    # API Gateway
+
+  # API Gateway
   api_version    = "v1"
   api_base_path  = "api"
   agent_endpoint = "chat"
@@ -67,7 +100,7 @@ module "python_api" {
          path           = "data",
          method         = "POST",
       }
-  ] 
+  ]
 
   tags = {
     Environment = "production"
@@ -98,27 +131,90 @@ module "nodejs_api" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "Node.js API"
+
+  module_type          = "nodejs"
+
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Chat API endpoint"
+    handler_path         = "index.handler"
+    module_name           = "chat"
+    package_type         = "LocalZip"
+    package_path         = "${path.module}/dist/function.zip"
+    layers               = [aws_lambda_layer_version.dependencies.arn]
+    timeout              = 60
+    memory_size          = 1024
+    environment_variables = {
+      NODE_ENV = "production"
+    }
+  }
+
+  api_version    = "v2"
+  agent_endpoint = "chat"
+}
+```
+
+### WebSocket API with Custom Routes
+
+```hcl
+module "websocket_api" {
+  source = "yaalalabs/ak-serverless/aws"
+
+  region              = "us-west-2"
+  product_alias       = "myapp"
+  env_alias           = "prod"
+  product_display_name = "WebSocket API with Custom Routes"
   
   module_name          = "chat"
   function_name        = "handler"
-  function_description = "Chat API endpoint"
-  handler_path         = "index.handler"
-  module_type          = "nodejs"
+  function_description = "WebSocket API handler"
+  handler_path         = "app.lambda_handler"
+  module_type          = "python"
   
   package_type = "LocalZip"
   package_path = "${path.module}/dist/function.zip"
   
-  layers = [aws_lambda_layer_version.dependencies.arn]
+  # WebSocket configuration
+  execution_mode = "async"
+  queue_mode     = true
   
-  timeout     = 60
-  memory_size = 1024
+  # Customize WebSocket routes
+  ws_chat_route = "conversation"  # Rename default chat route
+  ws_routes = [
+    { route = "notifications" },
+    { route = "file_upload" },
+    { route = "status_updates" }
+  ]
   
-  environment_variables = {
-    NODE_ENV = "production"
+  # WebSocket connection handler
+  ws_connection_handler = {
+    package_path = "${path.module}/dist/ws-connection-handler.zip"
+    timeout      = 30
+    memory_size  = 256
   }
   
-  api_version    = "v2"
-  agent_endpoint = "chat"
+  # Required for queue mode
+  response_handler = {
+    package_path = "${path.module}/dist/response-handler.zip"
+  }
+  
+  agent_runner = {
+    package_path = "${path.module}/dist/agent-runner.zip"
+  }
+  
+  # The WebSocket connection DynamoDB table is created automatically.
+  # Note: in WebSocket modes (async/stream), a response store is not used and
+  # `create_dynamodb_response_store` / `create_redis_response_store` must be `false` (Terraform validation enforces this).
+
+  environment_variables = {
+    ENVIRONMENT = "production"
+  }
+}
+
+# WebSocket endpoint will be available at:
+# wss://{api-id}.execute-api.us-west-2.amazonaws.com/agents
+output "websocket_url" {
+  value = module.websocket_api.websocket_api_endpoint_url
 }
 ```
 
@@ -144,27 +240,99 @@ module "container_api" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "Container API"
-  
-  module_name          = "api"
-  function_name        = "processor"
-  function_description = "Containerized API handler"
-  handler_path         = "app.handler"  # Used for metadata only
+
   module_type          = "python"
-  
-  package_type = "Image"
-  image_uri    = module.container_image.docker_image_uri
-  
-  timeout     = 120
-  memory_size = 2048
-  
-  environment_variables = {
-    WORKERS = "4"
+
+  request_handler = {
+    function_name        = "processor"
+    function_description = "Containerized API handler"
+    handler_path         = "app.handler"  # Used for metadata only
+    module_name           = "api"
+    package_type         = "Image"
+    package_path         = "${path.module}/src"
+    timeout              = 120
+    memory_size          = 2048
+    environment_variables = {
+      WORKERS = "4"
+    }
   }
-  
+
   api_version    = "v1"
   agent_endpoint = "process"
 }
 ```
+
+### Scalable Queue Mode with External S3 and ECR Artifacts
+
+Use pre-built artifacts (S3 ZIPs for handlers, ECR image for agent runner) in queue mode:
+
+```hcl
+module "scalable_agents" {
+  source = "yaalalabs/ak-serverless/aws"
+
+  region               = "us-west-2"
+  product_alias        = "myapp"
+  env_alias            = "prod"
+  product_display_name = "Scalable Agent API"
+
+  module_name    = "scalable"
+  queue_mode     = true
+  execution_mode = "rest_sync"
+
+  create_dynamodb_memory_table   = true
+  create_dynamodb_response_store = true
+
+  api_version    = "v1"
+  api_base_path  = "api"
+  agent_endpoint = "chat"
+
+  request_handler = {
+    module_name          = "rqst-hdlr"
+    function_name        = "rqh-func"
+    handler_path         = "lambda_request_handler.handler"
+    package_type         = "S3Zip"
+    lambda_package_s3 = {
+      bucket     = "my-lambda-packages-bucket"
+      key        = "dist_request_handler.zip"
+      version_id = "<object-version-id>" 
+    }
+    memory_size = 256
+    timeout     = 45
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  agent_runner = {
+    module_name          = "agent-runner"
+    function_name        = "ar-func"
+    handler_path         = "lambda_agent_runner.handler"
+    package_type         = "Image"
+    ecr_image_uri        = "123456789012.dkr.ecr.us-west-2.amazonaws.com/agent-runner:latest"
+    memory_size          = 512
+    timeout              = 45
+    environment_variables = {
+      OPENAI_API_KEY = var.openai_api_key
+    }
+  }
+
+  response_handler = {
+    module_name          = "rspns-hdlr"
+    function_name        = "rsh-func"
+    handler_path         = "lambda_response_handler.handler"
+    lambda_package_s3 = {
+      bucket     = "my-lambda-packages-bucket"
+      key        = "dist_response_handler.zip"
+      version_id = "<object-version-id>" # from your versioned bucket → redeploys update the Lambda (#548)
+    }
+    package_type = "S3Zip"
+    memory_size  = 256
+    timeout      = 45
+  }
+}
+```
+
+This pattern is recommended for production: build and upload artifacts in CI/CD, then run `terraform apply` without any local build step.
 
 ### S3-Based Deployment with Code Signing
 
@@ -189,20 +357,21 @@ module "secure_api" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "Secure API"
-  
-  module_name          = "api"
-  function_name        = "handler"
-  function_description = "Production API with code signing"
-  handler_path         = "app.handler"
+
   module_type          = "python"
-  
-  package_type  = "S3Zip"
-  package_path  = "s3://${module.lambda_package.s3_bucket}/${module.lambda_package.s3_key}"
-  is_production = true  # Enables code signing
-  
-  timeout     = 30
-  memory_size = 256
-  
+  is_production        = true  # Enables code signing
+
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Production API with code signing"
+    handler_path         = "app.handler"
+    module_name           = "api"
+    package_type         = "S3Zip"
+    package_path         = "s3://${module.lambda_package.s3_bucket}/${module.lambda_package.s3_key}"
+    timeout              = 30
+    memory_size          = 256
+  }
+
   api_version    = "v1"
   agent_endpoint = "api"
 }
@@ -218,27 +387,27 @@ module "serverless_api_dynamodb" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "Serverless API with DynamoDB"
-  
-  module_name          = "chat"
-  function_name        = "handler"
-  function_description = "Chat API with DynamoDB session storage"
-  handler_path         = "app.lambda_handler"
+
   module_type          = "python"
-  
-  package_type = "LocalZip"
-  package_path = "${path.module}/dist/function.zip"
-  
+
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Chat API with DynamoDB session storage"
+    handler_path         = "app.lambda_handler"
+    module_name           = "chat"
+    package_type         = "LocalZip"
+    package_path         = "${path.module}/dist/function.zip"
+    timeout              = 30
+    memory_size          = 512
+    environment_variables = {
+      ENVIRONMENT = "production"
+      # DynamoDB table name automatically injected as AK_SESSION__DYNAMODB__TABLE_NAME
+    }
+  }
+
   # Enable DynamoDB for session storage
   create_dynamodb_memory_table = true
-  
-  timeout     = 30
-  memory_size = 512
-  
-  environment_variables = {
-    ENVIRONMENT = "production"
-    # DynamoDB table name automatically injected as AK_SESSION__DYNAMODB__TABLE_NAME
-  }
-  
+
   api_version    = "v1"
   agent_endpoint = "chat"
 }
@@ -254,16 +423,24 @@ module "serverless_api_auth" {
   product_alias       = "myapp"
   env_alias           = "prod"
   product_display_name = "Serverless API with Authorizer"
-  
-  module_name          = "api"
-  function_name        = "handler"
-  function_description = "Main API handler"
-  handler_path         = "app.lambda_handler"
+
   module_type          = "python"
-  
-  package_type = "LocalZip"
-  package_path = "${path.module}/dist/function.zip"
-  
+
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Main API handler"
+    handler_path         = "app.lambda_handler"
+    module_name           = "api"
+    package_type         = "LocalZip"
+    package_path         = "${path.module}/dist/function.zip"
+    timeout              = 30
+    memory_size          = 512
+    environment_variables = {
+      ENVIRONMENT = "production"
+      LOG_LEVEL   = "info"
+    }
+  }
+
   # Authorizer configuration
   authorizer = {
     description           = "API Gateway Lambda Authorizer"
@@ -278,17 +455,9 @@ module "serverless_api_auth" {
       API_URL    = "https://api.example.com"
     }
   }
-  
-  timeout     = 30
-  memory_size = 512
-  
+
   api_version    = "v1"
   agent_endpoint = "chat"
-  
-  environment_variables = {
-    ENVIRONMENT = "production"
-    LOG_LEVEL   = "info"
-  }
 }
 ```
 
@@ -301,13 +470,11 @@ module "serverless_api_auth" {
 | `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name for tagging | `string` | `"An Agent Kernel deployment"` | no |
 | `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
-| `module_name` | Module name for resource identification (required when enable_api_gateway is true) | `string` | `""` | conditional |
+| `module_name` | Module name for resource naming (used for other resources, not request handler). Note: when `enable_api_gateway` is `true`, this top-level `module_name` must be set to a non-empty value to support resource naming and API routing. | `string` | `""` | no |
 | `is_production` | Enable production features (code signing) | `bool` | `false` | no |
 | `enable_api_gateway` | Enable API Gateway and request handler Lambda (can only be false when queue_mode is true) | `bool` | `true` | no |
-| `package_path` | Path to Lambda deployment package or S3 URI (required when enable_api_gateway is true) | `string` | `""` | conditional |
-| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days for the request handler Lambda | `number` | `90` | no |
 | `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
-| `execution_mode` | Execution mode for the deployment: `rest_sync` or `rest_async`. Required when queue_mode is true, must be null when queue_mode is false | `string` | `null` | no |
+| `execution_mode` | Execution mode: `rest_sync` (default), `rest_async` (queue mode only), `async` (WebSocket, full-response), or `stream` (WebSocket, token-by-token). `async` and `stream` create a WebSocket API and require `ws_connection_handler.package_path`. Cannot be `rest_async` when `queue_mode = false`. | `string` | `"rest_sync"` | no |
 | `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
 | `environment_variables` | Environment variables for Lambda function | `map(string)` | `{}` | no |
 | `timeout` | Lambda function timeout in seconds (max 900) | `number` | `45` | no |
@@ -317,16 +484,25 @@ module "serverless_api_auth" {
 | `handler_path` | Handler path (e.g., `index.handler` or `app.main`) (required when enable_api_gateway is true) | `string` | `""` | conditional |
 | `package_type` | Deployment type: `LocalZip`, `S3Zip`, or `Image` | `string` | `"LocalZip"` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
-| `api_version` | API version for endpoint path (e.g., `v1`, `v2`) | `string` | `"v1"` | no |
-| `agent_endpoint` | API endpoint name (e.g., `chat`, `process`) | `string` | `"chat"` | no |
-| `api_base_path` | Optional base path segment for the API (e.g., 'api'). Set to null or empty to omit | `string` | `"api"` | no |
-| `gateway_endpoints` | List of REST API endpoints to expose. If empty, a default POST /api/{api_version}/{agent_endpoint} is created. Path values are validated and limited to three resource levels (for example, `app/test/func` or `app/check`) | `list(object)` | `[]` | no |
+| `api_version` | API version for endpoint path (e.g., `v1`, `v2`). Not used in WebSocket modes. | `string` | `"v1"` | no |
+| `agent_endpoint` | API endpoint name (e.g., `chat`, `process`). Not used in WebSocket modes. | `string` | `"chat"` | no |
+| `api_base_path` | Optional base path segment for the API (e.g., `api`). Not used in WebSocket modes. | `string` | `"api"` | no |
+| `ws_chat_route` | WebSocket default chat route name. Only used in `async`/`stream` modes. | `string` | `"chat"` | no |
+| `ws_routes` | List of custom WebSocket routes beyond the default chat route. Only allowed in `async`/`stream` modes. | `list(object)` | `[]` | no |
+| `gateway_endpoints` | List of REST API endpoints to expose. Not allowed in WebSocket modes. If empty, a default POST /api/{api_version}/{agent_endpoint} is created. | `list(object)` | `[]` | no |
 | `create_redis_cluster` | Create a Redis cluster for Agent session memory | `bool` | `false` | no |
+| `create_valkey_cluster` | Create a Valkey (ElastiCache) cluster for Agent session memory | `bool` | `false` | no |
 | `create_dynamodb_memory_table` | Enable DynamoDB table for session storage | `bool` | `false` | no |
-| `create_redis_response_store` | Create or reuse Redis for response storage | `bool` | `false` | no |
-| `create_dynamodb_response_store` | Create a DynamoDB table for response storage | `bool` | `false` | no |
+| `create_dynamodb_thread_table` | Create a DynamoDB table for conversation thread storage and inject its generated name as `AK_THREAD__DYNAMODB__TABLE_NAME` into both Lambdas. Thread support is enabled by the application declaring `thread.type: dynamodb` in `config.yaml` — setting this flag alone leaves threads on the in-memory backend. Note that enabling threads makes `user_id` required on every chat request. | `bool` | `false` | no |
+| `enable_scheduling` | Create the EventBridge Scheduler schedule group and the execution role Scheduler assumes to deliver triggers to the Input Queue, grant both Lambda roles `scheduler:*Schedule` + `iam:PassRole` on them, and inject `AK_SCHEDULE__PROVIDER__EVENTBRIDGE__GROUP_NAME` / `__ROLE_ARN` / `__QUEUE_ARN`. **Requires `queue_mode = true`**, and flips the Input Queue to content-based deduplication (Scheduler cannot set a `MessageDeduplicationId`). The capability is enabled by the application declaring `schedule.provider.type: eventbridge` in `config.yaml` — setting this flag alone leaves scheduling on the in-process `local` provider. | `bool` | `false` | no |
+| `create_dynamodb_schedule_table` | Create a DynamoDB table for scheduled-task storage (partition `task_id`, no sort key, no GSI, TTL on `expiry_time`) and inject its generated name as `AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME` into both Lambdas. Requires the application to declare `schedule.store.type: dynamodb` in `config.yaml`. | `bool` | `false` | no |
+| `create_redis_response_store` | Create or reuse Redis for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
+| `create_valkey_response_store` | Create or reuse Valkey for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
+| `create_dynamodb_response_store` | Create a DynamoDB table for response storage. Ignored in WebSocket modes (`async`/`stream`). | `bool` | `false` | no |
 | `create_dynamodb_multimodal_memory_table` | Create a DynamoDB table for multimodal memory | `bool` | `false` | no |
-| `authorizer` | Authorizer configuration object containing function settings (see table below) | `object` | `null` | no |
+| `authorizer` | Authorizer configuration object (see table below). **Cannot be set** in WebSocket modes (`async`/`stream`) — authentication is handled by the connection handler Lambda. | `object` | `null` | no |
+| `request_handler` | Request handler configuration object (see table below) | `object` | `{}` | no |
+| `ws_connection_handler` | WebSocket connection handler configuration object (see table below). `package_path` is required when `execution_mode` is `async` or `stream`. | `object` | `{}` | no |
 | `response_handler` | Response handler configuration object (see table below) | `object` | `{}` | no |
 | `agent_runner` | Agent runner configuration object (see table below) | `object` | `{}` | no |
 | `queue_config` | SQS queues configuration object (see table below) | `object` | `{}` | no |
@@ -348,7 +524,81 @@ module "serverless_api_auth" {
 | `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
 | `module_name` | Authorizer module name | `string` | n/a | yes |
 | `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
+| `timeout` | Authorizer Lambda timeout in seconds | `number` | `30` | no |
+| `memory_size` | Authorizer Lambda memory size in MB | `number` | `128` | no |
+| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `environment_variables` | Environment variables for authorizer | `map(string)` | `{}` | no |
+
+### Request Handler Object Structure
+
+| Field | Description | Type | Default | Required |
+|-------|-------------|------|---------|----------|
+| `function_name` | Request handler Lambda function name | `string` | `"request-handler"` | no |
+| `function_description` | Request handler Lambda description | `string` | `"Request handler Lambda for processing API Gateway requests"` | no |
+| `timeout` | Request handler Lambda timeout in seconds | `number` | `45` | no |
+| `memory_size` | Request handler Lambda memory size in MB | `number` | `128` | no |
+| `handler_path` | Request handler Lambda handler path | `string` | `"request_handler.handler"` | no |
+| `module_name` | Request handler module name | `string` | `"request-handler"` | no |
+| `package_path` | Request handler deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
+| `package_type` | Request handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
+| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function | `object({ bucket = string, key = string, version_id = optional(string) })` | `null` | no |
+| `ecr_image_uri` | Pre-built ECR image URI. Used when `package_type = "Image"`. Mutually exclusive with `package_path` | `string` | `null` | no |
+| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
+| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
+| `environment_variables` | Environment variables for the request handler | `map(string)` | `{}` | no |
+| `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
+
+### WebSocket Connection Handler Object Structure
+
+| Field | Description | Type | Default | Required |
+|-------|-------------|------|---------|----------|
+| `function_name` | WebSocket connection handler Lambda function name | `string` | `"ws-connection-handler"` | no |
+| `function_description` | WebSocket connection handler Lambda description | `string` | `"WebSocket connection handler Lambda for $connect and $disconnect routes"` | no |
+| `timeout` | WebSocket connection handler Lambda timeout in seconds | `number` | `30` | no |
+| `memory_size` | WebSocket connection handler Lambda memory size in MB | `number` | `256` | no |
+| `handler_path` | WebSocket connection handler Lambda handler path | `string` | `"ws_connection_handler.handler"` | no |
+| `module_name` | WebSocket connection handler module name | `string` | `"ws-connection-handler"` | no |
+| `package_path` | WebSocket connection handler deployment package path (only LocalZip supported) | `string` | n/a | **yes** (when `execution_mode` is `async` or `stream`) |
+| `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
+| `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
+| `environment_variables` | Environment variables for the WebSocket connection handler | `map(string)` | `{}` | no |
+
+### WebSocket Routes Configuration
+
+When using `execution_mode = "async"` or `"stream"`, you can customize WebSocket routes:
+
+| Variable | Description | Type | Default | Validation |
+|----------|-------------|------|---------|------------|
+| `ws_chat_route` | Name of the default chat route | `string` | `"chat"` | Must contain only alphanumeric characters, hyphens (`-`), and underscores (`_`). Cannot contain `/` or be empty. |
+| `ws_routes` | List of additional custom routes | `list(object({ route = string }))` | `[]` | Only allowed in `async`/`stream` modes. Each route must follow the same naming rules as `ws_chat_route`. |
+
+**Example WebSocket Routes Configuration**:
+```hcl
+module "websocket_api" {
+  source = "yaalalabs/ak-serverless/aws"
+
+  execution_mode = "async"
+
+  # Customize the default chat route name
+  ws_chat_route = "conversation"
+
+  # Add custom routes
+  ws_routes = [
+    { route = "notifications" },
+    { route = "status_updates" },
+    { route = "file_upload" }
+  ]
+
+  # ... other configuration
+}
+```
+
+This configuration creates WebSocket routes accessible via:
+- `conversation` (custom chat route)
+- `notifications` (custom route)
+- `status_updates` (custom route)
+- `file_upload` (custom route)
+- `$connect`, `$disconnect`, `$default` (predefined routes)
 
 ### Response Handler Object Structure
 
@@ -360,8 +610,10 @@ module "serverless_api_auth" {
 | `memory_size` | Response handler Lambda memory size in MB | `number` | `256` | no |
 | `handler_path` | Response handler Lambda handler path | `string` | `"response_handler.handler"` | no |
 | `module_name` | Response handler module name | `string` | `"response-handler"` | no |
-| `package_path` | Response handler deployment package path | `string` | `null` | no |
+| `package_path` | Response handler deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Response handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
+| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function |
+| `ecr_image_uri` | Pre-built ECR image URI. Used when `package_type = "Image"`. Mutually exclusive with `package_path` | `string` | `null` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the response handler | `map(string)` | `{}` | no |
@@ -376,8 +628,10 @@ module "serverless_api_auth" {
 | `memory_size` | Agent runner Lambda memory size in MB | `number` | `512` | no |
 | `handler_path` | Agent runner Lambda handler path | `string` | `"agent_runner.handler"` | no |
 | `module_name` | Agent runner module name | `string` | `"agent-runner"` | no |
-| `package_path` | Agent runner deployment package path | `string` | `null` | no |
+| `package_path` | Agent runner deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Agent runner deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
+| `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function  |
+| `ecr_image_uri` | Pre-built ECR image URI. Used when `package_type = "Image"`. Mutually exclusive with `package_path` | `string` | `null` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the agent runner | `map(string)` | `{}` | no |
@@ -428,11 +682,11 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 |------|-------------|
 | `agent_invoke_url` | Invoke URL for the agent chat endpoint |
 | `authorizer_status` | Status message indicating whether the authorizer Lambda will be created |
-| `lambda_function_arn` | ARN of the request-handler Lambda function |
-| `lambda_function_name` | Name of the request-handler Lambda function |
-| `lambda_function_invoke_arn` | Invoke ARN for API Gateway integration |
-| `lambda_role_arn` | ARN of the request-handler Lambda execution role |
-| `lambda_role_name` | Name of the request-handler Lambda execution role |
+| `request_handler_lambda_function_arn` | ARN of the request-handler Lambda function |
+| `request_handler_lambda_function_name` | Name of the request-handler Lambda function |
+| `request_handler_lambda_function_invoke_arn` | Invoke ARN for API Gateway integration |
+| `request_handler_lambda_role_arn` | ARN of the request-handler Lambda execution role |
+| `request_handler_lambda_role_name` | Name of the request-handler Lambda execution role |
 | `api_gateway_id` | API Gateway REST API ID |
 | `api_gateway_stage_name` | API Gateway stage name |
 | `api_gateway_execution_arn` | Execution ARN of the API Gateway REST API |
@@ -446,6 +700,11 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 | `agent_runner_lambda_function_arn` | ARN of the agent runner Lambda function (returns null when `queue_mode = false`) |
 | `agent_runner_lambda_function_name` | Name of the agent runner Lambda function (returns null when `queue_mode = false`) |
 | `agent_runner_lambda_function_invoke_arn` | Invoke ARN of the agent runner Lambda function (returns null when `queue_mode = false`) |
+| `schedule_group_name` | EventBridge Scheduler schedule-group name (null unless `enable_scheduling`) |
+| `schedule_group_arn` | EventBridge Scheduler schedule-group ARN (null unless `enable_scheduling`) |
+| `scheduler_execution_role_arn` | ARN of the role Scheduler assumes to deliver triggers to the Input Queue (null unless `enable_scheduling`) |
+| `schedule_table_name` | DynamoDB schedule store table name (null unless `create_dynamodb_schedule_table`) |
+| `schedule_table_arn` | DynamoDB schedule store table ARN (null unless `create_dynamodb_schedule_table`) |
 | `agent_runner_lambda_role_arn` | ARN of the agent runner Lambda execution role (returns null when `queue_mode = false`) |
 | `agent_runner_lambda_role_name` | Name of the agent runner Lambda execution role (returns null when `queue_mode = false`) |
 | `input_queue_arn` | ARN of the input SQS queue (returns null when `queue_mode = false`) |
@@ -458,6 +717,20 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 | `output_queue_name` | Name of the output SQS queue (returns null when `queue_mode = false`) |
 | `output_dlq_arn` | ARN of the output SQS dead-letter queue (returns null when `queue_mode = false`) |
 | `output_dlq_url` | URL of the output SQS dead-letter queue (returns null when `queue_mode = false`) |
+| `websocket_api_endpoint_url` | WebSocket API endpoint URL (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `websocket_api_id` | WebSocket API ID (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `websocket_api_execution_arn` | WebSocket API execution ARN (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `websocket_api_stage_name` | WebSocket API stage name (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `websocket_api_stage_arn` | WebSocket API stage ARN (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `websocket_connection_table_name` | DynamoDB table name for WebSocket connection mapping (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `websocket_connection_table_arn` | DynamoDB table ARN for WebSocket connection mapping (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `websocket_cloudwatch_log_group_arn` | ARN of the CloudWatch log group for WebSocket API (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `websocket_cloudwatch_log_group_name` | Name of the CloudWatch log group for WebSocket API (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `ws_connection_handler_lambda_function_arn` | ARN of the WebSocket connection handler Lambda function (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `ws_connection_handler_lambda_function_name` | Name of the WebSocket connection handler Lambda function (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `ws_connection_handler_lambda_function_invoke_arn` | Invoke ARN of the WebSocket connection handler Lambda function (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `ws_connection_handler_lambda_role_arn` | ARN of the WebSocket connection handler Lambda execution role (returns null when not in a WebSocket mode (`async`/`stream`)) |
+| `ws_connection_handler_lambda_role_name` | Name of the WebSocket connection handler Lambda execution role (returns null when not in a WebSocket mode (`async`/`stream`)) |
 
 ## ✨ Features
 
@@ -465,7 +738,7 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 
 **Multiple Deployment Methods**:
 - **LocalZip**: Deploy from local ZIP file (< 50 MB)
-- **S3Zip**: Deploy from S3 bucket with optional code signing
+- **S3Zip**: Deploy from S3 bucket with optional code signing (use a versioned bucket + `version_id` so code updates redeploy)
 - **Image**: Deploy from ECR container image (up to 10 GB)
 
 **Automatic Runtime Selection**:
@@ -506,12 +779,58 @@ When `queue_mode = true`, the module adds an asynchronous queue-driven path alon
 
 **Execution modes**:
 - `rest_sync`: synchronous REST requests
-- `rest_async`: chat path will have a POST and GET method, POST method would be to send the request, GET method is to get the response for that request (by `request_id`) via polling 
+- `rest_async`: chat path will have a POST and GET method, POST method would be to send the request, GET method is to get the response for that request (by `request_id`) via polling
+- `async`: WebSocket API — full response delivered in one message after the agent finishes
+- `stream`: WebSocket API — response streamed token-by-token as `STREAM_CHUNK` messages in real time
 
 **Operational rules**:
 - Input queue visibility timeout must be greater than or equal to the agent runner timeout
 - Output queue visibility timeout must be greater than or equal to the response handler timeout
 - FIFO queues are enabled by default, with explicit deduplication controls available when needed
+
+### 🔌 WebSocket API Architecture
+
+When `execution_mode = "async"` or `"stream"`, the module creates a WebSocket API Gateway for real-time bidirectional communication.
+
+**What gets created**:
+- WebSocket API Gateway with route selection based on `request.body.route`
+- Predefined routes: `$connect`, `$disconnect`, `$default`, and configurable chat route (default: `chat`)
+- Support for custom routes via `ws_routes` variable
+- Connection handler Lambda for `$connect` and `$disconnect` routes
+- Routes handler Lambda for `$default` and custom routes (e.g., `chat`)
+- DynamoDB table for storing user-to-connection-id mappings
+- Global Secondary Index (GSI) for `connection_id` lookups
+- Optional TTL for automatic cleanup of stale connections
+- CloudWatch log groups and stage logging
+
+**WebSocket API features**:
+- Real-time bidirectional communication (`async`: full response; `stream`: one chunk per stream event)
+- Connection lifecycle management
+- DynamoDB-backed connection mapping
+- Route-based message routing
+- Configurable logging and metrics
+- Support for custom routes beyond the default
+
+**Important notes**:
+- When `execution_mode = "async"` or `"stream"`, the `authorizer` must be null — API Gateway authorizer is not used; authentication is handled by the connection handler Lambda
+- The bearer token must include a `userId` claim for WebSocket connections
+- `ws_connection_handler.package_path` is required when `execution_mode` is `async` or `stream`
+- Only LocalZip package type is supported for the WebSocket connection handler
+- The WebSocket API uses `$request.body.route` for route selection
+- The default chat route name can be customized via `ws_chat_route` variable
+- Additional custom routes can be defined via `ws_routes` variable (allowed in both `async` and `stream` modes)
+- Route names must contain only alphanumeric characters, hyphens (`-`), and underscores (`_`)
+- Route names cannot contain `/` and cannot be empty or whitespace-only
+- `create_dynamodb_response_store` and `create_redis_response_store` are silently ignored in WebSocket modes
+
+**WebSocket Connection Table Schema**:
+
+The DynamoDB table (`websocket_connections`) stores user-to-connection mappings:
+
+- **Partition Key**: `user_id` (String) - User identifier
+- **Sort Key**: `connection_id` (String) - WebSocket connection ID
+- **GSI**: `connection_id-index` - Allows lookups by connection_id
+- **TTL Attribute**: `expiry_time` - Optional timestamp for automatic cleanup
 
 ### 💾 Multi-Storage Support
 
@@ -521,6 +840,8 @@ The module supports the current Agent Kernel storage wiring for both session sta
 - Redis session memory via `create_redis_cluster`
 - Redis response storage via `create_redis_response_store`
 - Redis multimodal memory via `create_redis_cluster` and environmental variables *(more details in Agent Kernel Docs in Multimodal section)*
+- Valkey session memory via `create_valkey_cluster` (also requires `session.type: valkey` in `config.yaml`)
+- Valkey response storage via `create_valkey_response_store` (also requires `execution.response_store.type: valkey` in `config.yaml`)
 - DynamoDB session memory via `create_dynamodb_memory_table`
 - DynamoDB multimodal memory via `create_dynamodb_multimodal_memory_table`
 - DynamoDB response storage via `create_dynamodb_response_store`
@@ -720,18 +1041,22 @@ module "async_api" {
   env_alias            = "prod"
   product_display_name  = "Async API"
 
-  module_name          = "chat"
-  function_name        = "handler"
-  function_description = "Main API handler"
-  handler_path         = "app.lambda_handler"
   module_type          = "python"
 
-  package_type = "LocalZip"
-  package_path = "${path.module}/dist/function.zip"
+  request_handler = {
+    function_name        = "handler"
+    function_description = "Main API handler"
+    handler_path         = "app.lambda_handler"
+    module_name           = "chat"
+    package_type         = "LocalZip"
+    package_path         = "${path.module}/dist/function.zip"
+    environment_variables = {
+      ENVIRONMENT = "production"
+    }
+  }
 
   queue_mode = true
   execution_mode = "rest_async"
-  ...
 
   response_handler = {
     package_path = "${path.module}/dist/response-handler.zip"
@@ -754,15 +1079,10 @@ module "async_api" {
 
   api_version    = "v1"
   agent_endpoint = "chat"
-
-  environment_variables = {
-    ENVIRONMENT = "production"
-  }
-  ...
 }
 ```
 
-Swap `create_redis_response_store = true` for `create_dynamodb_response_store = true` if you want DynamoDB-backed response storage instead of Redis.
+Swap `create_redis_response_store = true` for `create_dynamodb_response_store = true` (DynamoDB) or `create_valkey_response_store = true` (Valkey) if you want a different response store backend. At most one of the three may be `true`. For Valkey, also set `execution.response_store.type: valkey` in `config.yaml`.
 
 ## 🔐 Custom Authorizer Configuration
 
@@ -795,10 +1115,13 @@ authorizer = {
 - `package_path` - Path to authorizer deployment package
 - `module_name` - Authorizer module name
 
-**Optional Fields**:
-- `description` - Description of the authorizer function (defaults to "API Gateway Lambda Authorizer")
-- `result_ttl_in_seconds` - Cache TTL for authorization results (default: 150)
-- `environment_variables` - Environment variables for authorizer
+**Optional Authorizer Fields:**
+- `description` - Description for authorizer Lambda function (default: "API Gateway Lambda Authorizer")
+- `result_ttl_in_seconds` - Cache TTL for authorizer results (default: 150)
+- `timeout` - Authorizer Lambda timeout in seconds (default: 30)
+- `memory_size` - Authorizer Lambda memory size in MB (default: 128)
+- `layers` - List of Lambda layer ARNs to attach (default: [])
+- `environment_variables` - Environment variables for authorizer Lambda
 
 **Note**: The authorizer infrastructure will only be created if the `authorizer` object is provided and all required fields are present. If any required field is missing, no authorizer will be created and your endpoints will be publicly accessible.
 
