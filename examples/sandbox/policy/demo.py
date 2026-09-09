@@ -18,6 +18,7 @@ coder_agent = Agent(
         "pretending the work succeeded; if the user asked for a specific reply on failure, answer "
         "with exactly that."
     ),
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([coder_agent])

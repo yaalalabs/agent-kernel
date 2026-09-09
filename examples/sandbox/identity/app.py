@@ -13,6 +13,7 @@ coder_agent = Agent(
         "You are a coding assistant with access to an execution sandbox. Prefer running real code, "
         "and report the sandbox's actual output verbatim."
     ),
+    model="openai/gpt-4.1-mini",
 )
 
 # IdentitySeedPreHook runs before the agent (custom pre-hooks precede system pre-hooks), so the

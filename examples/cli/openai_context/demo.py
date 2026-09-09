@@ -79,6 +79,7 @@ shopping_agent = Agent(
     "or what the cart currently contains.",
     # Both styles in one list: the decorated tool as is, the plain one through the builder.
     tools=[add_to_cart] + OpenAIToolBuilder.bind([view_cart]),
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([shopping_agent]).pre_hook(shopping_agent, [SeedCartContextPreHook()]).post_hook(

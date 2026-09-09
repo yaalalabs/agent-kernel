@@ -3,7 +3,7 @@ from agentkernel.smolagents import SmolagentsModule
 
 from smolagents import LiteLLMModel, ToolCallingAgent
 
-model = LiteLLMModel(model_id="openai/gpt-4o")
+model = LiteLLMModel(model_id="openai/gpt-4.1-mini")
 
 general_agent = ToolCallingAgent(
     tools=[],

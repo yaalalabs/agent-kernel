@@ -7,6 +7,7 @@ math_agent = Agent(
     handoff_description="Specialist agent for math questions",
     instructions="You provide help with math problems. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details.",
+    model="openai/gpt-4.1-mini",
 )
 
 general_agent = Agent(
@@ -14,6 +15,7 @@ general_agent = Agent(
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details",
+    model="openai/gpt-4.1-mini",
 )
 
 triage_agent = Agent(
@@ -21,6 +23,7 @@ triage_agent = Agent(
     instructions="You determine which agent to use based on the user's question. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details",
     handoffs=[general_agent, math_agent],
+    model="openai/gpt-4.1-mini",
 )
 
 module = OpenAIModule([triage_agent, math_agent, general_agent])
@@ -31,6 +34,7 @@ geography_agent = Agent(
     handoff_description="Agent for geography questions",
     instructions="You provide assistance with geography questions. Give short and direct answers exactly to the question."
     "Don't answer with sentences ",
+    model="openai/gpt-4.1-mini",
 )
 
 physics_agent = Agent(
@@ -38,6 +42,7 @@ physics_agent = Agent(
     handoff_description="Agent for physics questions",
     instructions="You provide assistance with physics questions. Give short and direct answers exactly to the question."
     "Don't answer with sentences ",
+    model="openai/gpt-4.1-mini",
 )
 
 module.load([geography_agent, physics_agent])
