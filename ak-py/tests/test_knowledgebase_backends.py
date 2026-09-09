@@ -280,9 +280,13 @@ class TestStarburstManager:
             # to carry its count to count.
             "SELECT * FROM t WHERE note = 'limit'",
             "SELECT limit FROM policies",
+            # A subquery LIMIT bounds the subquery, not the result: without the fallback this
+            # returns every row of the outer table.
+            "SELECT * FROM huge WHERE id IN (SELECT id FROM t LIMIT 10)",
+            "SELECT * FROM (SELECT * FROM orders LIMIT 10) t",
         ],
     )
-    def test_an_identifier_containing_limit_does_not_disable_the_fallback(self, starburst, sql: str):
+    def test_a_limit_that_does_not_bound_the_result_does_not_disable_the_fallback(self, starburst, sql: str):
         starburst.query(sql)
         assert starburst.connection.cursors[0].executed == [f"{sql} LIMIT 3"]
 
@@ -291,16 +295,22 @@ class TestStarburstManager:
         [
             "SELECT * FROM orders LIMIT 10",
             "select * from orders limit 10",
-            # A subquery LIMIT already bounds the result, and appending a second clause
-            # to a statement that has one would be invalid SQL.
-            "SELECT * FROM (SELECT * FROM orders LIMIT 10) t",
             "SELECT * FROM t LIMIT ALL",
             "SELECT * FROM orders OFFSET 5 LIMIT 10",
+            # Trino's other spelling of the same clause; appending a LIMIT after one is invalid SQL.
+            "SELECT * FROM orders FETCH FIRST 10 ROWS ONLY",
+            "SELECT * FROM orders FETCH NEXT 1 ROW ONLY",
         ],
     )
     def test_a_statement_that_already_bounds_itself_is_left_alone(self, starburst, sql: str):
         starburst.query(sql)
         assert starburst.connection.cursors[0].executed == [sql]
+
+    def test_a_trailing_semicolon_does_not_defeat_the_anchored_clause(self, starburst):
+        # The statement is stripped of its terminator before the guard runs, so the clause is
+        # still the last thing in it.
+        starburst.query("SELECT * FROM orders LIMIT 10 ;")
+        assert starburst.connection.cursors[0].executed == ["SELECT * FROM orders LIMIT 10 "]
 
     def test_non_read_sql_is_still_rejected(self, starburst):
         assert starburst.query("DELETE FROM orders") == []
