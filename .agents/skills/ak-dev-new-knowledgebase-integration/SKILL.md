@@ -45,11 +45,22 @@ Implement a concrete class that extends `KnowledgeBase`:
 from typing import Any, Iterable, List, Mapping
 
 from .base import KnowledgeBase, Record
+from .model import KnowledgeCapabilities
 
 
 class MyBackendManager(KnowledgeBase):
     def __init__(self, name: str = "", description: str | None = None, **kwargs):
-        super().__init__()
+        # Declare only what this backend actually supports: an undeclared operation
+        # raises KnowledgeCapabilityError rather than returning an empty result.
+        super().__init__(
+            capabilities=KnowledgeCapabilities(
+                kinds=["vector"],
+                search=True,
+                search_mode="semantic",
+                writable=True,
+            ),
+            name=name,
+        )
         self.name = name
         self.description = description or "my backend"
         self._client = None
@@ -72,13 +83,40 @@ class MyBackendManager(KnowledgeBase):
             # Persist text + metadata using backend-native API.
             self._client.store(text=text, metadata=metadata)
 
-    def read(self, query: str, limit: int = 3, **kwargs) -> List[Mapping[str, Any]]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> List[Mapping[str, Any]]:
         rows = self._client.search(query=query, limit=limit)
         return [{"text": row["text"], "metadata": row.get("metadata", {})} for row in rows]
 
     def get_description(self) -> str:
         return f"{self.backend_name}: {self.description}"
 ```
+
+`super().__init__(capabilities=...)` is required — the base takes no zero-argument form. Pass `name`
+too so a rejected declaration names your backend rather than the class.
+
+### 2a. Declare the Right Capability Set
+
+`backend_name`, `connect` and `get_description` are the only abstract members. Each retrieval and
+write operation is optional, and the declaration decides which ones you must implement:
+
+| Declare | Implement | Serves |
+|---|---|---|
+| `search` | `search(query, limit)` | `read_kb`, and `search_kb` when `query` is declared too |
+| `query` + `query_language` | `query(statement, limit)` | `read_kb` |
+| `fetch` | `fetch(ids)` | `fetch_kb` |
+| `browse` | `browse(path, limit)` | `browse_kb` |
+| `writable` | `write(records)` | `write_kb` |
+
+Rules `KnowledgeBase.__init__` enforces:
+
+- At least one of `search` / `query` / `fetch` / `browse` / `writable` must be `True`.
+- `query=True` requires a `query_language` (`"cypher"`, `"sql"`, …), and a `query_language` requires
+  `query=True`.
+
+Never implement `read()`. It is concrete and routes on the declaration — to `query()` when `query` is
+declared, to `search()` otherwise — which is what lets one `read_kb` tool serve every backend.
+Declaring `fetch` also makes `format_results()` prefix each line with the record's `metadata["id"]`,
+so give every record an `id` containing no `,` (`fetch_kb` splits id lists on it).
 
 ### 3. Respect the Record Contract
 
@@ -87,18 +125,23 @@ All reads must return normalized rows compatible with `KnowledgeBuilder`:
 
 All writes accept the same shape through `write(records=[...])`.
 
-If the provider result is not in this shape, normalize inside `read()`.
+If the provider result is not in this shape, normalize inside `search()` / `query()` / `fetch()` / `browse()`.
 
 ### 4. Define Backend Constraints Explicitly
 
-If the backend is read-only, enforce it in code:
+If the backend is read-only, say so in the declaration and implement nothing:
 
 ```python
-def write(self, records, **kwargs) -> None:
-    raise NotImplementedError("This backend is read-only.")
+super().__init__(
+    capabilities=KnowledgeCapabilities(kinds=["structured"], query=True, query_language="sql", writable=False),
+    name=name,
+)
 ```
 
-Do not silently ignore writes.
+`KnowledgeBase.write()` then raises `KnowledgeCapabilityError(backend_name, "write")` on its own, and
+`KnowledgeBuilder` gates `write_kb` before it ever reaches you. Do not override `write()` to raise —
+that only duplicates the base — and never silently ignore writes. The same holds for every other
+operation: leave undeclared ones unimplemented rather than raising by hand.
 
 ### 5. Add Robust Connection Handling
 

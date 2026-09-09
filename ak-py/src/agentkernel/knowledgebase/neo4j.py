@@ -7,6 +7,8 @@ from typing import Any, Iterable, List, Mapping
 from neo4j import GraphDatabase
 
 from .base import KnowledgeBase
+from .errors import KnowledgeError
+from .model import KnowledgeCapabilities
 
 log = logging.getLogger("ak.Neo4jManager")
 
@@ -38,7 +40,10 @@ class Neo4jManager(KnowledgeBase):
         :return: None.
         """
 
-        super().__init__()
+        super().__init__(
+            capabilities=KnowledgeCapabilities(kinds=["graph", "structured"], query=True, query_language="cypher", writable=True),
+            name=name,
+        )
 
         self.uri = uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
         self.user = user or os.getenv("NEO4J_USERNAME", "neo4j")
@@ -109,24 +114,46 @@ class Neo4jManager(KnowledgeBase):
 
     def write(self, records: Iterable[Mapping[str, Any]], **kwargs) -> None:
         """
-        Persist records to Neo4j using either raw Cypher metadata or note upserts.
+        Persist records to Neo4j by executing the Cypher carried in each record's metadata.
+
+        Reads ``metadata["query"]`` and ``metadata["params"]``, falling back to the
+        legacy ``cypher_query`` / ``cypher_params`` names. A record carrying neither
+        cannot be stored by this backend: it is skipped so the rest of the batch still
+        runs, and the skips are reported once the batch is through. Reporting them is
+        what stops the tool layer from calling a write that stored nothing a success.
 
         :param records: Iterable of records with text and metadata fields.
         :param kwargs: Additional keyword arguments reserved for interface compatibility.
         :return: None.
+        :raises KnowledgeError: If any record carried no Cypher; raised after the rest ran.
         """
+        stored, skipped = 0, 0
         for record in records:
             meta = dict(record.get("metadata", {}))
-            cypher_query = meta.get("cypher_query")
-            cypher_params = meta.get("cypher_params") or {}
+            # cypher_* are the pre-#553 key names, still read so a caller that has not
+            # migrated keeps working.
+            statement = meta.get("query") or meta.get("cypher_query")
+            params = meta.get("params") or meta.get("cypher_params") or {}
 
-            self._run(cypher_query, cypher_params)
+            if not statement:
+                log.warning("[neo4j.write] record carries no query; skipping. metadata keys=%s", sorted(meta))
+                skipped += 1
+                continue
 
-    def read(self, query: str, limit: int = 10, **kwargs) -> List[Mapping[str, Any]]:
+            self._run(statement, params)
+            stored += 1
+
+        if skipped:
+            raise KnowledgeError(
+                f"[KB][{self.backend_name}] {skipped} of {stored + skipped} record(s) carried no Cypher and were not stored "
+                f"({stored} stored). A Neo4j write needs the statement in metadata['query']."
+            )
+
+    def query(self, statement: str, limit: int = 3, **kwargs) -> List[Mapping[str, Any]]:
         """
         Execute a Cypher read query and return normalized records.
 
-        :param query: Cypher query to execute.
+        :param statement: Cypher query to execute.
         :param limit: Maximum number of records requested by the caller.
         :param kwargs: Additional keyword arguments reserved for interface compatibility.
         :return: List of normalized records for the knowledge interface.
@@ -135,7 +162,7 @@ class Neo4jManager(KnowledgeBase):
         if limit <= 0:
             return []
 
-        normalized_query = query.strip().rstrip(";")
+        normalized_query = statement.strip().rstrip(";")
         if not normalized_query:
             return []
 
