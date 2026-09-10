@@ -11,4 +11,6 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .livekit_handler import AgentLiveKitRequestHandler, LiveKitLLM
+from .livekit_handler import AgentKernelLLM, AgentKernelLLMStream, AgentLiveKitRequestHandler
+
+__all__ = ["AgentLiveKitRequestHandler", "AgentKernelLLM", "AgentKernelLLMStream"]

@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import io
+import json
 import logging
 from typing import Awaitable, Callable, Optional
 
@@ -15,39 +16,15 @@ from PIL import Image
 
 from ...api import RESTRequestHandler
 from ...core import AgentService, Config
-from ...core.model import AgentRequestImage, AgentRequestText
+from ...core.model import AgentRequestImage, AgentRequestText, StreamEvent
 
 logger = logging.getLogger("ak.integration.livekit")
 
 
-class LiveKitLLMStream(llm.LLMStream):
+class AgentKernelLLMStream(llm.LLMStream):
     """
-    A simple LLMStream implementation that yields a single response string.
-    LiveKit's TTS engine consumes this stream and synthesizes it into speech.
-    """
-
-    def __init__(self, parent_llm: llm.LLM, text: str, chat_ctx: llm.ChatContext):
-        super().__init__(parent_llm, chat_ctx=chat_ctx, tools=[], conn_options=DEFAULT_API_CONNECT_OPTIONS)
-        self._text = text
-
-    async def _run(self) -> None:
-        pass
-
-    async def __anext__(self):
-        if self._text is None:
-            raise StopAsyncIteration
-
-        text = self._text
-        self._text = None
-
-        return llm.ChatChunk(id="livekit_chunk", delta=llm.ChoiceDelta(content=text, role="assistant"))
-
-
-class LiveKitLLMStreamWrapper(llm.LLMStream):
-    """
-    An asynchronous generator wrapper that bridges LiveKit's streaming interface
-    with Agent Kernel's request-response architecture. It awaits the Agent Kernel
-    response and yields it to the LiveKit voice pipeline.
+    Streams Agent Kernel tokens to LiveKit TTS in real-time.
+    Bridges Agent Kernel's StreamChunk async generator to LiveKit's ChatChunk async iterable.
     """
 
     def __init__(
@@ -57,6 +34,7 @@ class LiveKitLLMStreamWrapper(llm.LLMStream):
         agent_name: str,
         session_id: str,
         user_message: str,
+        service: AgentService,
         frame_data: Optional[str] = None,
     ):
         super().__init__(parent_llm, chat_ctx=chat_ctx, tools=[], conn_options=DEFAULT_API_CONNECT_OPTIONS)
@@ -64,47 +42,61 @@ class LiveKitLLMStreamWrapper(llm.LLMStream):
         self.session_id = session_id
         self.user_message = user_message
         self._frame_data = frame_data
-        self._service = AgentService()
-        self._fetched = False
+        self._service = service
+        self._stream_iter: Optional[asyncio.AsyncGenerator] = None
 
     async def _run(self) -> None:
         pass
 
     async def __anext__(self):
-        if self._fetched:
-            raise StopAsyncIteration
+        if self._stream_iter is None:
+            self._service.select(name=self.agent_name, session_id=self.session_id)
 
-        self._fetched = True
+            if not self._service.agent:
+                raise StopAsyncIteration
 
-        self._service.select(name=self.agent_name, session_id=self.session_id)
-
-        if not self._service.agent:
-            return llm.ChatChunk(
-                id="livekit_chunk", delta=llm.ChoiceDelta(content="Error: No agent available to handle this request.", role="assistant")
-            )
-
-        try:
             if self._frame_data:
                 requests = [
                     AgentRequestText(text=self.user_message),
                     AgentRequestImage(image_data=self._frame_data, mime_type="image/jpeg", name="webcam_frame"),
                 ]
-                reply = await self._service.run_multi(requests)
-                response_text = reply.text if hasattr(reply, "text") else str(reply)
             else:
-                reply = await self._service.run(self.user_message)
-                response_text = str(reply)
-        except Exception as e:
-            logger.error(f"Agent Kernel error: {e}", exc_info=True)
-            response_text = "I'm sorry, I encountered an internal error while processing your request."
+                requests = [AgentRequestText(text=self.user_message)]
 
-        return llm.ChatChunk(id="livekit_chunk", delta=llm.ChoiceDelta(content=response_text, role="assistant"))
+            self._stream_iter = self._service.run_stream_async(requests)
+
+        try:
+            chunk = await self._stream_iter.__anext__()
+        except StopAsyncIteration:
+            raise StopAsyncIteration
+
+        if chunk.error:
+            logger.error(f"Agent Kernel stream error: {chunk.error}")
+            raise RuntimeError(chunk.error)
+
+        if chunk.done:
+            raise StopAsyncIteration
+
+        tool_calls = []
+        if chunk.event and chunk.event.type == "tool_call":
+            tool_calls = [
+                llm.FunctionToolCall(
+                    name=chunk.event.tool_name,
+                    arguments=json.dumps(chunk.event.arguments),
+                    call_id=chunk.event.call_id,
+                )
+            ]
+
+        return llm.ChatChunk(
+            id=f"ak_{id(chunk)}",
+            delta=llm.ChoiceDelta(content=chunk.delta or "", tool_calls=tool_calls, role="assistant"),
+        )
 
 
-class LiveKitLLM(llm.LLM):
+class AgentKernelLLM(llm.LLM):
     """
-    A custom LiveKit LLM implementation that intercepts user speech (transcribed to text)
-    and routes it to the Agent Kernel runtime.
+    A custom LiveKit LLM implementation that streams user speech (transcribed to text)
+    to the Agent Kernel runtime and yields tokens incrementally to the TTS engine.
     """
 
     def __init__(self, agent_name: str, session_id: str, frame_holder: Optional[dict] = None):
@@ -122,7 +114,7 @@ class LiveKitLLM(llm.LLM):
         parallel_tool_calls: NotGivenOr[bool] = NOT_GIVEN,
         tool_choice: NotGivenOr[llm.ToolChoice] = NOT_GIVEN,
         extra_kwargs: NotGivenOr[dict] = NOT_GIVEN,
-    ) -> "LiveKitLLMStreamWrapper | LiveKitLLMStream":
+    ) -> AgentKernelLLMStream:
         """
         Called by LiveKit's AgentSession when the user has finished speaking and
         the STT has finalized the transcript.
@@ -135,7 +127,15 @@ class LiveKitLLM(llm.LLM):
                 break
 
         if not user_message:
-            return LiveKitLLMStream(self, "I did not hear anything.", chat_ctx)
+            # Return empty stream that immediately ends
+            return AgentKernelLLMStream(
+                parent_llm=self,
+                chat_ctx=chat_ctx,
+                agent_name=self.agent_name,
+                session_id=self.session_id,
+                user_message="",
+                service=AgentService(),
+            )
 
         logger.debug(f"Received transcribed user speech: {user_message}")
 
@@ -144,27 +144,23 @@ class LiveKitLLM(llm.LLM):
         if self._frame_holder and self._frame_holder.get("frame"):
             try:
                 frame = self._frame_holder.pop("frame")
-                # Convert to RGBA buffer
                 rgba_frame = frame.convert(rtc.VideoBufferType.RGBA)
-                # Create PIL image from raw bytes
                 image = Image.frombytes("RGBA", (rgba_frame.width, rgba_frame.height), rgba_frame.data)
-                # Convert to RGB to save as JPEG
                 rgb_image = image.convert("RGB")
-                # Save to buffer
                 buffer = io.BytesIO()
                 rgb_image.save(buffer, format="JPEG")
-                # Store as base64
                 frame_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
                 logger.debug("Attaching webcam frame to this voice turn")
             except Exception as e:
                 logger.error(f"Failed to encode video frame for LLM: {e}")
 
-        return LiveKitLLMStreamWrapper(
+        return AgentKernelLLMStream(
             parent_llm=self,
             chat_ctx=chat_ctx,
             agent_name=self.agent_name,
             session_id=self.session_id,
             user_message=user_message,
+            service=AgentService(),
             frame_data=frame_data,
         )
 
@@ -213,7 +209,7 @@ async def _default_entrypoint(ctx: JobContext):
     agent = VoicePipelineAgent(
         vad=vad,
         stt=stt_plugin,
-        llm=LiveKitLLM(agent_name=agent_name, session_id=ctx.room.name, frame_holder=frame_holder),
+        llm=AgentKernelLLM(agent_name=agent_name, session_id=ctx.room.name, frame_holder=frame_holder),
         tts=tts_plugin,
         instructions="You are a helpful voice assistant.",
     )

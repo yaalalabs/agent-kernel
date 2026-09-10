@@ -1,5 +1,5 @@
 from agentkernel.api import RESTAPI
-from agentkernel.livekit import AgentLiveKitRequestHandler
+from agentkernel.integration.livekit import AgentLiveKitRequestHandler
 from agentkernel.openai import OpenAIModule
 from agents import Agent
 
@@ -12,5 +12,7 @@ OpenAIModule([general_agent])
 
 
 if __name__ == "__main__":
+    # Run REST API with LiveKit token endpoint only
+    # Run the LiveKit worker separately: python worker.py
     handler = AgentLiveKitRequestHandler()
     RESTAPI.run([handler])
