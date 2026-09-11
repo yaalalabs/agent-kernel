@@ -1,0 +1,450 @@
+{
+  "meta": {
+    "note": "Typical Sri Lankan household appliance power draws. 'duty_cycle' is the fraction of active hours the appliance actually draws rated power (thermostatic loads such as fridges, air conditioners and storage heaters cycle on and off; resistive loads such as kettles and irons run at full power while switched on). 'always_plugged' devices draw 'standby_watts' during the hours they are not in active use. Values are typical for the common size sold in Sri Lanka; a specific model may differ.",
+    "watts": "rated active power in watts",
+    "currency_independent": true
+  },
+  "appliances": [
+    {
+      "key": "refrigerator",
+      "name": "Refrigerator",
+      "watts": 150,
+      "duty_cycle": 0.35,
+      "always_plugged": true,
+      "standby_watts": 0,
+      "category": "cooling"
+    },
+    {
+      "key": "chest_freezer",
+      "name": "Chest freezer",
+      "watts": 200,
+      "duty_cycle": 0.4,
+      "always_plugged": true,
+      "standby_watts": 0,
+      "category": "cooling"
+    },
+    {
+      "key": "air_conditioner",
+      "name": "Air conditioner (12k BTU)",
+      "watts": 1100,
+      "duty_cycle": 0.6,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "cooling"
+    },
+    {
+      "key": "inverter_ac",
+      "name": "Inverter air conditioner (12k BTU)",
+      "watts": 900,
+      "duty_cycle": 0.45,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "cooling"
+    },
+    {
+      "key": "air_conditioner_18k",
+      "name": "Air conditioner (18k BTU)",
+      "watts": 1700,
+      "duty_cycle": 0.6,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "cooling"
+    },
+    {
+      "key": "ceiling_fan",
+      "name": "Ceiling fan",
+      "watts": 70,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "cooling"
+    },
+    {
+      "key": "table_fan",
+      "name": "Table or stand fan",
+      "watts": 55,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "cooling"
+    },
+    {
+      "key": "exhaust_fan",
+      "name": "Exhaust fan",
+      "watts": 30,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "cooling"
+    },
+    {
+      "key": "air_cooler",
+      "name": "Air cooler",
+      "watts": 150,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "cooling"
+    },
+    {
+      "key": "led_bulb",
+      "name": "LED bulb",
+      "watts": 9,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "lighting"
+    },
+    {
+      "key": "cfl_bulb",
+      "name": "CFL bulb",
+      "watts": 15,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "lighting"
+    },
+    {
+      "key": "incandescent_bulb",
+      "name": "Filament bulb",
+      "watts": 60,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "lighting"
+    },
+    {
+      "key": "tube_light",
+      "name": "Fluorescent tube light",
+      "watts": 36,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "lighting"
+    },
+    {
+      "key": "led_tube",
+      "name": "LED tube light",
+      "watts": 18,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "lighting"
+    },
+    {
+      "key": "security_light",
+      "name": "Outdoor security light",
+      "watts": 30,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "lighting"
+    },
+    {
+      "key": "rice_cooker",
+      "name": "Rice cooker",
+      "watts": 650,
+      "duty_cycle": 0.45,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "kitchen"
+    },
+    {
+      "key": "microwave",
+      "name": "Microwave oven",
+      "watts": 1200,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 2,
+      "category": "kitchen"
+    },
+    {
+      "key": "electric_kettle",
+      "name": "Electric kettle",
+      "watts": 1500,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "kitchen"
+    },
+    {
+      "key": "induction_cooker",
+      "name": "Induction cooker",
+      "watts": 1800,
+      "duty_cycle": 0.7,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "kitchen"
+    },
+    {
+      "key": "electric_oven",
+      "name": "Electric oven",
+      "watts": 1500,
+      "duty_cycle": 0.7,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "kitchen"
+    },
+    {
+      "key": "toaster",
+      "name": "Toaster or sandwich maker",
+      "watts": 800,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "kitchen"
+    },
+    {
+      "key": "blender",
+      "name": "Blender or grinder",
+      "watts": 400,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "kitchen"
+    },
+    {
+      "key": "dishwasher",
+      "name": "Dishwasher",
+      "watts": 1200,
+      "duty_cycle": 0.5,
+      "always_plugged": true,
+      "standby_watts": 1,
+      "category": "kitchen"
+    },
+    {
+      "key": "water_filter",
+      "name": "Water purifier (RO)",
+      "watts": 25,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 5,
+      "category": "kitchen"
+    },
+    {
+      "key": "water_dispenser",
+      "name": "Water dispenser (hot and cold)",
+      "watts": 100,
+      "duty_cycle": 0.35,
+      "always_plugged": true,
+      "standby_watts": 10,
+      "category": "kitchen"
+    },
+    {
+      "key": "washing_machine",
+      "name": "Washing machine",
+      "watts": 500,
+      "duty_cycle": 0.55,
+      "always_plugged": true,
+      "standby_watts": 1,
+      "category": "laundry"
+    },
+    {
+      "key": "clothes_dryer",
+      "name": "Clothes dryer",
+      "watts": 2500,
+      "duty_cycle": 0.9,
+      "always_plugged": true,
+      "standby_watts": 1,
+      "category": "laundry"
+    },
+    {
+      "key": "iron",
+      "name": "Clothes iron",
+      "watts": 1000,
+      "duty_cycle": 0.6,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "heating"
+    },
+    {
+      "key": "vacuum_cleaner",
+      "name": "Vacuum cleaner",
+      "watts": 1200,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "utility"
+    },
+    {
+      "key": "tv_led",
+      "name": "LED television",
+      "watts": 80,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 1,
+      "category": "electronics"
+    },
+    {
+      "key": "tv_crt",
+      "name": "Older CRT television",
+      "watts": 100,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 3,
+      "category": "electronics"
+    },
+    {
+      "key": "set_top_box",
+      "name": "TV set-top box",
+      "watts": 15,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 8,
+      "category": "electronics"
+    },
+    {
+      "key": "sound_system",
+      "name": "Sound system or home theatre",
+      "watts": 100,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 2,
+      "category": "electronics"
+    },
+    {
+      "key": "desktop_computer",
+      "name": "Desktop computer",
+      "watts": 200,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "electronics"
+    },
+    {
+      "key": "laptop",
+      "name": "Laptop",
+      "watts": 60,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "electronics"
+    },
+    {
+      "key": "gaming_console",
+      "name": "Gaming console",
+      "watts": 150,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 2,
+      "category": "electronics"
+    },
+    {
+      "key": "printer",
+      "name": "Printer",
+      "watts": 30,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 3,
+      "category": "electronics"
+    },
+    {
+      "key": "wifi_router",
+      "name": "Wi-Fi router",
+      "watts": 10,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 10,
+      "category": "electronics"
+    },
+    {
+      "key": "cctv_system",
+      "name": "CCTV system (4 cameras)",
+      "watts": 40,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 40,
+      "category": "electronics"
+    },
+    {
+      "key": "phone_charger",
+      "name": "Phone charger",
+      "watts": 5,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "electronics"
+    },
+    {
+      "key": "power_inverter",
+      "name": "Home backup inverter (charging)",
+      "watts": 50,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 25,
+      "category": "electronics"
+    },
+    {
+      "key": "water_heater",
+      "name": "Instant water heater",
+      "watts": 3500,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "heating"
+    },
+    {
+      "key": "storage_water_heater",
+      "name": "Storage water heater (geyser)",
+      "watts": 2000,
+      "duty_cycle": 0.3,
+      "always_plugged": true,
+      "standby_watts": 0,
+      "category": "heating"
+    },
+    {
+      "key": "hair_dryer",
+      "name": "Hair dryer",
+      "watts": 1200,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "heating"
+    },
+    {
+      "key": "water_pump",
+      "name": "Water pump (0.5 hp)",
+      "watts": 750,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "utility"
+    },
+    {
+      "key": "water_pump_1hp",
+      "name": "Water pump (1 hp)",
+      "watts": 1100,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "utility"
+    },
+    {
+      "key": "sewing_machine",
+      "name": "Sewing machine",
+      "watts": 100,
+      "duty_cycle": 1.0,
+      "always_plugged": false,
+      "standby_watts": 0,
+      "category": "utility"
+    },
+    {
+      "key": "mosquito_repellent",
+      "name": "Plug-in mosquito repellent",
+      "watts": 5,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 5,
+      "category": "utility"
+    },
+    {
+      "key": "aquarium_pump",
+      "name": "Aquarium pump and filter",
+      "watts": 15,
+      "duty_cycle": 1.0,
+      "always_plugged": true,
+      "standby_watts": 15,
+      "category": "utility"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+# Empty cloudflared config for Sarasavi Power tunnels.
+#
+# Why this file exists: the global config at %USERPROFILE%\.cloudflared\config.yml
+# belongs to another project and pins `ingress: - service: http://localhost:3000`.
+# That ingress rule OVERRIDES `--url`, so a plain `cloudflared tunnel --url ...`
+# silently forwards Sarasavi's webhook traffic to that other app instead.
+# Passing --config with this (rule-free) file makes --url apply as written.

@@ -1,3 +1,22 @@
+# ⚡ IDEALIZE 2026 submission: Sarasavi Power
+
+> ### 📂 The project is here → **[`use-cases/sarasavi-power`](use-cases/sarasavi-power)**
+>
+> ### 💬 Try it live on WhatsApp → **[+94 77 407 5523](https://wa.me/94774075523)**
+>
+> An AI energy adviser for Sri Lankan households. Message it, send a photo of your
+> bill, send a voice note, or **press the call button and talk to it in Sinhala**.
+> Every rupee is computed by a deterministic engine, never by the model, and the
+> tariff is verified against a real CEB bill to the cent.
+>
+> **SDG 7 — Affordable and Clean Energy** · [Read the full project README →](use-cases/sarasavi-power/README.md)
+
+<br>
+
+*Everything below is the upstream [Agent Kernel](https://github.com/yaalalabs/agent-kernel) README, the framework this submission is built on.*
+
+---
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/static/img/branding/agent-kernel-lockup-dark.svg">
