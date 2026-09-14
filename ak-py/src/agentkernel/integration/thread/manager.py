@@ -163,7 +163,8 @@ class ConversationThreadManager:
         :param requests: The incoming agent requests to scan for attachments.
         :return: A tuple of (rebuilt requests, ThreadAttachment references).
         :raises ValueError: If the requests carry attachments while multimodal is disabled, or
-                            multimodal.storage_type is session_cache (thread mode needs a shared store).
+                            while multimodal.storage_type is session_cache (storing one needs a
+                            shared store). A turn with no attachments is never rejected.
         """
         rebuilt, stored = offload_attachments(
             session_id,

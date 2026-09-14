@@ -42,7 +42,8 @@ def offload_attachments(
 ) -> Tuple[List[AgentRequest], List[StoredAttachment]]:
     """Save each image/file request's bytes and replace it, in place, with a reference.
 
-    Requests that carry no attachment bytes pass through unchanged and keep their order.
+    Requests that carry no attachment bytes pass through unchanged and keep their order, and a
+    list with no attachments at all is returned as-is.
 
     ``AttachmentSource`` decides what each attachment's record holds and whether its request
     survives: base64 data is stored as bytes and its request replaced by a reference, while a
@@ -58,19 +59,22 @@ def offload_attachments(
     - ``storage_type: session_cache``: it writes into a session copy that the process which
       later reads the attachment never sees, so the bytes are silently lost.
 
+    Both are raised only when the list actually carries attachment bytes: a storage setting must
+    not reject a plain text message that never touches the store.
+
     :param session_id: Session identifier the attachments are isolated under.
     :param requests: The request list to scan.
     :param attachments_disabled_error: Message raised when attachments are present while
         ``multimodal.enabled`` is false.
-    :param session_cache_error: Message raised when ``multimodal.storage_type`` is
-        ``session_cache``.
+    :param session_cache_error: Message raised when attachments are present while
+        ``multimodal.storage_type`` is ``session_cache``.
     :return: (rebuilt request list, references to the saved attachments).
     :raises ValueError: If attachments are present but cannot be stored (see above).
     """
-    if not AKConfig.get().multimodal.enabled:
-        if has_attachments(requests):
-            raise ValueError(attachments_disabled_error)
+    if not has_attachments(requests):
         return requests, []
+    if not AKConfig.get().multimodal.enabled:
+        raise ValueError(attachments_disabled_error)
     if AKConfig.get().multimodal.storage_type == "session_cache":
         raise ValueError(session_cache_error)
 

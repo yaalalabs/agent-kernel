@@ -575,11 +575,13 @@ def offload_attachments(
     """Replace every image/file request with an AgentRequestAttachmentRef, in place."""
 ```
 
-The two guards are carried over unchanged in behaviour (`manager.py:165-181`): attachment-bearing
-requests require `multimodal.enabled: true`, and `multimodal.storage_type: session_cache` is
-rejected because it writes into a session copy the runner process never sees. The messages are
-caller-supplied so `ConversationThreadManager` keeps its current wording verbatim while the
-adapter package supplies integration-specific wording:
+Both guards are scoped to attachment-bearing requests (`manager.py:165-181`): they require
+`multimodal.enabled: true`, and they reject `multimodal.storage_type: session_cache` because it
+writes into a session copy the runner process never sees. `session_cache` was rejected
+unconditionally on the thread path; gating it on attachments is the one behavioural change here,
+and it only widens what is accepted — a storage setting must not reject a text-only message that
+never reaches the store. The messages are caller-supplied so `ConversationThreadManager` keeps its
+current wording verbatim while the adapter package supplies integration-specific wording:
 
 - disabled: `"Attachments from messaging integrations require multimodal support — set
   multimodal.enabled: true in config.yaml to accept images and files"`
@@ -822,7 +824,7 @@ Run with `cd ak-py && uv run pytest tests/<file>`.
 | `tests/test_integration_poller_runner.py` | `run()` rejects `in_memory`; the loop enqueues, calls `mark_handled`, and exits on `ThreadRunner.shutdown_event` within one interval; a raising `poll` does not kill the loop |
 | `tests/test_integration_roundtrip.py` | End-to-end over `InMemoryTransport` in the single-process topology: a fake platform event through `WebhookRESTRequestHandler` → `AgentRunner` (dummy agent, the `test_pipeline_request_handler.py` pattern) → `ResponseHandler` → a recording outbound adapter, asserting the reply text and reply context; plus the ≥ 400 path reaching `deliver_error` |
 | `tests/test_messenger_integration.py`, `tests/test_instagram_integration.py`, `tests/test_telegram_integration.py` | New files — these three platforms have **no** test file today. Parse (text, postback, attachment, echo/ignore) and deliver (chunking at 2000/1000/4096, typing indicators, mark-seen) |
-| `tests/test_attachment_offload.py` | `offload_attachments` rewrites image/file requests to refs in place, keeps other requests in order, raises the caller's message when multimodal is disabled, and rejects `session_cache` |
+| `tests/test_attachment_offload.py` | `offload_attachments` rewrites image/file requests to refs in place, keeps other requests in order, raises the caller's message when multimodal is disabled, rejects `session_cache` for an attachment, and lets a text-only list through under `session_cache` |
 
 ### Rewritten test files
 

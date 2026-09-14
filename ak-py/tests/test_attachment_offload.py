@@ -80,14 +80,28 @@ def test_attachments_without_multimodal_raise_the_callers_message():
         _offload([AgentRequestImage(image_data="ZmFrZQ==", name="shot.png", mime_type="image/png")])
 
 
-def test_session_cache_is_refused(monkeypatch):
-    # It writes into a session copy the reading process never sees, so the bytes vanish silently.
+def _session_cache(monkeypatch):
     monkeypatch.setenv("AK_MULTIMODAL__ENABLED", "true")
     monkeypatch.setenv("AK_MULTIMODAL__STORAGE_TYPE", "session_cache")
     AKConfig._reset()
 
+
+def test_session_cache_is_refused_for_an_attachment(monkeypatch):
+    # It writes into a session copy the reading process never sees, so the bytes vanish silently.
+    _session_cache(monkeypatch)
+
     with pytest.raises(ValueError, match="session_cache"):
-        _offload([AgentRequestText(prompt="hello")])
+        _offload([AgentRequestImage(image_data="ZmFrZQ==", name="shot.png", mime_type="image/png")])
+
+
+def test_session_cache_lets_a_text_only_message_through(monkeypatch):
+    """A storage setting must not reject a message that never reaches the store."""
+    _session_cache(monkeypatch)
+
+    requests = [AgentRequestText(prompt="hello")]
+    rebuilt, stored = _offload(requests)
+
+    assert rebuilt is requests and stored == []
 
 
 def test_has_attachments_ignores_empty_payloads():
