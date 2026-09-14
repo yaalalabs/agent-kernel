@@ -157,7 +157,7 @@ execution:
 
 Because runs are delivered *into the input queue*, scheduling needs the queue execution pipeline. On a laptop the `in_memory` transport satisfies that inside a single process, so there's nothing to stand up; on AWS it means `queue_mode = true`.
 
-**Mismatched pairings fail at startup, not at the first request.** A `local` provider behind an SQS transport would put the management routes in one process and the live timers in another — so a cancellation would report cheerful success while the timer kept right on firing. That's the class of bug you find out about from a customer. Agent Kernel refuses to boot instead.
+**Mismatched pairings fail when the scheduling manager is initialized, not necessarily at process startup.** A `local` provider behind an SQS transport would put the management routes in one process and the live timers in another — so a cancellation would report cheerful success while the timer kept right on firing. That's the class of bug you find out about from a customer. Agent Kernel rejects that pairing once the scheduling manager is built.
 
 ## Managing What You Scheduled
 
