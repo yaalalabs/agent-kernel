@@ -355,6 +355,7 @@ for a CI node, expecting the example image preloaded via `kind load docker-image
 The chart is pushed as an OCI artifact to `oci://ghcr.io/yaalalabs/charts` by the
 `publish-chart` workflow, which the release pipeline (`publish.yaml`) dispatches for every
 release tag once the GitHub release exists (it can also be dispatched by hand to republish a
-tag). The tag minus its `v` is the chart version; the same release run pins the example
-install commands under `examples/` to it with `scripts/update_chart_versions.py`, and the
-workflow attaches the `images.txt` manifest to the GitHub release.
+tag). The tag minus its `v` is the chart version; the same release run pins the install
+commands in the examples, the docs site, and the bundled `ak-cloud-deploy` skill to it with
+`scripts/update_chart_versions.py`, and the workflow attaches the `images.txt` manifest to the
+GitHub release.

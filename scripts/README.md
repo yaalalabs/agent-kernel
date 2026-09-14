@@ -84,8 +84,8 @@ python scripts/update_terraform_versions.py --version 0.2.0-b5 --exclude .terraf
 
 ## update_chart_versions.py
 
-Pins the published Helm chart version in the example install commands: every
-`oci://ghcr.io/yaalalabs/charts/agent-kernel --version X.Y.Z` reference in `.md`, `.yaml`, and `.yml` files. The publish workflow runs it for each release, next to `update_terraform_versions.py`, so the examples always install the chart version that release publishes.
+Pins the published Helm chart version in install commands: every
+`oci://ghcr.io/yaalalabs/charts/agent-kernel --version X.Y.Z` reference in `.md`, `.yaml`, and `.yml` files under the examples, the chart README, the docs site source, and the bundled `ak-cloud-deploy` skill. The publish workflow runs it for each release (before the wheel is built, so the skill inside it carries the new pin), so every surface installs the chart version that release publishes.
 
 **Usage:**
 ```bash
@@ -99,12 +99,12 @@ python scripts/update_chart_versions.py --version 1.0.0-a1
 python scripts/update_chart_versions.py --version 0.9.1 --dry-run
 
 # Specify custom directories to search
-python scripts/update_chart_versions.py --version 0.9.1 --directories examples docs/docs
+python scripts/update_chart_versions.py --version 0.9.1 --directories examples
 ```
 
 **Options:**
 - `--version`: New chart version to set (required; must be SemVer 2)
-- `--directories`: Directories to search (default: examples ak-deployment)
+- `--directories`: Directories to search (default: examples ak-deployment docs/docs ak-py/src/agentkernel/skills)
 - `--exclude`: Path segments to exclude from search (default: .venv node_modules .terraform __pycache__ versioned_docs)
 - `--dry-run`: Show what would be changed without making modifications
 

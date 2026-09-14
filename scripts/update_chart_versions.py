@@ -2,11 +2,11 @@
 """
 Update the published Helm chart version in example install commands.
 
-The examples install the Agent Kernel chart from its OCI artifact
-(oci://ghcr.io/yaalalabs/charts/agent-kernel --version X.Y.Z) in their READMEs and values file
-comments. The publish workflow runs this script for each release so those pins track the
-chart version it is about to publish, the way update_terraform_versions.py tracks the
-Terraform module versions.
+The examples, the docs site, and the bundled ak-cloud-deploy skill install the Agent Kernel
+chart from its OCI artifact (oci://ghcr.io/yaalalabs/charts/agent-kernel --version X.Y.Z) in
+READMEs, docs pages, and values file comments. The publish workflow runs this script for each
+release so those pins track the chart version it is about to publish, the way
+update_terraform_versions.py tracks the Terraform module versions.
 """
 
 import argparse
@@ -28,7 +28,9 @@ SEMVER_PATTERN = re.compile(rf"^{SEMVER}$")
 CHART_VERSION_PATTERN = re.compile(rf"({re.escape(CHART_REF)}\s+--version\s+)({SEMVER})\b")
 
 FILE_GLOBS = ("*.md", "*.yaml", "*.yml")
-DEFAULT_DIRECTORIES = ["examples", "ak-deployment"]
+# docs/docs is the live docs source (versioned_docs snapshots are frozen); the skills tree is
+# packaged into the wheel, so the publish workflow runs this before building it.
+DEFAULT_DIRECTORIES = ["examples", "ak-deployment", "docs/docs", "ak-py/src/agentkernel/skills"]
 DEFAULT_EXCLUDES = [".venv", "node_modules", ".terraform", "__pycache__", "versioned_docs"]
 
 
