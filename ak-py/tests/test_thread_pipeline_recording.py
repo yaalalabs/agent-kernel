@@ -19,7 +19,8 @@ from agentkernel.core.config import AKConfig, _ThreadStoreConfig
 from agentkernel.core.event import MessageEnd, MessageStart, TextDelta
 from agentkernel.core.model import AgentReplyText, AgentRequestText, ScheduleSpec
 from agentkernel.core.runtime import Runtime
-from agentkernel.integration.thread import ConversationThreadManager, ThreadNamingStrategy, ThreadRequestHandler
+from agentkernel.core.util.factory import AKConfigError
+from agentkernel.integration.thread import AgentThreadRequestHandler, ConversationThreadManager, ThreadNamingStrategy, ThreadRequestHandler
 from agentkernel.integration.thread.store.in_memory import InMemoryThreadStore
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
 from agentkernel.pipeline.consumer import ConsumerLoop
@@ -375,6 +376,20 @@ class TestMounting:
 
         [handler] = captured["handlers"]
         assert isinstance(handler, ThreadRequestHandler)
+
+    def test_a_direct_execution_handler_is_refused(self, monkeypatch):
+        """The mirror of the RESTAPI refusal: a direct handler here would idle the runner."""
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+        _enable_threads()
+        # Stubbed so a regression fails the raises check instead of booting a server and hanging.
+        monkeypatch.setattr("agentkernel.api.http.RESTAPI.build_app", classmethod(lambda cls, handlers=None: MagicMock()))
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.uvicorn.Server", MagicMock())
+        monkeypatch.setattr(IOHandler, "_install_signal_handlers", classmethod(lambda cls, server: None))
+        monkeypatch.setattr(ThreadRunner, "run", staticmethod(lambda tasks, max_workers=None, exit_on_shutdown=True: None))
+
+        with pytest.raises(AKConfigError, match="not a pipeline RequestHandler"):
+            IOHandler.run(request_handler=AgentThreadRequestHandler())
 
     def test_it_is_pipeline_only(self):
         # A bare RESTAPI app would enqueue into a queue no runner drains.

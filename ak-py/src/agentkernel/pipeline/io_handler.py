@@ -63,8 +63,10 @@ class IOHandler:
             whichever registered first, silently. This is the seam a capability that has to act on
             a chat request *before* it is enqueued mounts on: ``ThreadRequestHandler`` records the
             user message here. Must be a ``RequestHandler`` (the queue producer is not optional).
-        :raises AKConfigError: If the topology is unusable.
+        :raises AKConfigError: If the topology is unusable, or ``request_handler`` is not a
+            ``RequestHandler``.
         """
+        cls._validate_request_handler(request_handler)
         config = AKConfig.get()
         mode = config.execution.mode
         transport_type = QueueTransportFactory.resolve_type()
@@ -163,6 +165,28 @@ class IOHandler:
             server.should_exit = True
 
         ThreadRunner.install_shutdown_signal_handlers(cls._log, on_shutdown_signal=_stop_uvicorn)
+
+    @classmethod
+    def _validate_request_handler(cls, request_handler: Optional[RequestHandler]) -> None:
+        """Refuse a chat-route handler that does not enqueue.
+
+        The route this substitutes for is the pipeline's queue producer. A direct-execution
+        handler (``AgentRESTRequestHandler`` and its thread subclass) serves the same path but
+        runs the agent in-process, so it would answer every request here while the agent-runner
+        thread idles beside it — the silent bypass ``RESTAPI._reject_pipeline_only_handlers``
+        refuses from the other direction, and nothing about the response would reveal it.
+
+        :param request_handler: The substitute handler, or None to keep the pipeline's own.
+        :raises AKConfigError: If it is not a ``RequestHandler``.
+        """
+        if request_handler is None or isinstance(request_handler, RequestHandler):
+            return
+        raise AKConfigError(
+            f"{type(request_handler).__name__} is not a pipeline RequestHandler: it executes in-process "
+            "instead of enqueueing, so the chat route would bypass the runner entirely. Pass a "
+            "RequestHandler subclass as request_handler, or mount this one with handlers=[...] if it "
+            "serves a different route"
+        )
 
     @classmethod
     def _validate_topology(cls, mode: Optional[ExecutionMode], transport_type: str, config, auth_validator: Optional[AuthValidator] = None) -> None:
