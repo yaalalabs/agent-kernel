@@ -293,7 +293,8 @@ the completion from the shared store.
 ## Air-gapped installs
 
 Set `global.imageRegistry` to your private registry: it prefixes the application image and
-the subcharts' images. Every release publishes an `images.txt` manifest (see
+the Valkey subchart's images. The NATS subchart reads `global.image.registry` instead, so set
+both when the in-cluster NATS is enabled. Every release publishes an `images.txt` manifest (see
 [the publish workflow](../../.github/workflows/publish-chart.yaml)) listing every image the
 chart references, for mirroring. The chart itself is published as an OCI artifact, so it can
 be copied into the same registry and installed by digest:

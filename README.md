@@ -89,7 +89,7 @@ if __name__ == "__main__":
     CLI.main()
 ```
 
-That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps with a single Terraform module, or to any Kubernetes cluster with the [Helm chart](#deploy-anywhere). 👉 [Get Started](https://kernel.yaala.ai/docs)
+That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps with a single Terraform module, or to any Kubernetes cluster with the [Helm chart](#kubernetes--on-prem-with-helm). 👉 [Get Started](https://kernel.yaala.ai/docs)
 
 ---
 
@@ -176,7 +176,7 @@ Same agent code. Pick your runtime. Full Terraform modules and a Helm chart incl
 | **AWS** | [Lambda](https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws) | [ECS / Fargate](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) |
 | **Azure** | [Functions](https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm) | [Container Apps](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) |
 | **GCP** | [Cloud Run Serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/serverless) | [Cloud Run Containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/containerized) |
-| **On-Prem / Kubernetes** | ✅ Docker image | [Helm chart](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s) (baremetal + EKS, Kafka/NATS queue mode, KEDA autoscaling) |
+| **On-Prem / Kubernetes** | N/A | [Helm chart](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s) (baremetal + EKS, Kafka/NATS queue mode, KEDA autoscaling) |
 
 ### Kubernetes / On-Prem with Helm
 

@@ -983,7 +983,8 @@ function Deployment() {
         "Official Helm chart for any Kubernetes cluster",
       modes: [
         "Bare Metal / Self-Hosted Cluster",
-        "AWS EKS (KEDA autoscaling)",
+        "AWS EKS (Pod Identity, SQS / NATS / Kafka)",
+        "KEDA autoscaling on queue depth",
         "Air-gapped installs (mirrored images)",
       ],
       modules: [
