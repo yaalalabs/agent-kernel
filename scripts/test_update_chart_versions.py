@@ -122,11 +122,53 @@ helm install ak oci://registry.example.internal/charts/agent-kernel --version <v
         temp_path.unlink()
 
 
+def test_update_deploy_script_pin():
+    """A deploy script's CHART_VERSION variable is repinned when the script names the chart."""
+    content = f"""#!/bin/bash
+CHART_REF="{CHART}"
+# The published chart version; scripts/update_chart_versions.py pins it to each release.
+CHART_VERSION="0.9.0"
+LOCAL_CHART="$SCRIPT_DIR/../../../../ak-deployment/ak-k8s/chart"
+"""
+    temp_path = _write_temp(content, ".sh")
+    try:
+        was_modified, num_updates = update_chart_versions(temp_path, "1.0.0-b2")
+
+        assert was_modified, "File should be modified"
+        assert num_updates == 1, f"Expected 1 update, got {num_updates}"
+        result = temp_path.read_text()
+        assert 'CHART_VERSION="1.0.0-b2"\n' in result
+        assert f'CHART_REF="{CHART}"' in result, "the reference line must be untouched"
+        assert "ak-deployment/ak-k8s/chart" in result
+        print("✅ test_update_deploy_script_pin passed")
+    finally:
+        temp_path.unlink()
+
+
+def test_shell_pin_needs_the_chart_reference():
+    """A CHART_VERSION variable in a script that never names the chart is not ours to touch."""
+    content = 'CHART_VERSION="0.9.0"\nhelm install other ./some-other-chart\n'
+    temp_path = _write_temp(content, ".sh")
+    try:
+        was_modified, num_updates = update_chart_versions(temp_path, "0.9.1")
+
+        assert not was_modified and num_updates == 0
+        assert temp_path.read_text() == content
+        print("✅ test_shell_pin_needs_the_chart_reference passed")
+    finally:
+        temp_path.unlink()
+
+
 def test_find_files_globs_and_excludes():
-    """Only .md/.yaml/.yml files are scanned, and excluded path segments are skipped."""
+    """Only .md/.yaml/.yml/.sh files are scanned, and excluded path segments are skipped."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        wanted = [root / "k8s" / "README.md", root / "k8s" / "values.yaml", root / "x" / "c.yml"]
+        wanted = [
+            root / "k8s" / "README.md",
+            root / "k8s" / "values.yaml",
+            root / "x" / "c.yml",
+            root / "k8s" / "deploy" / "deploy.sh",
+        ]
         unwanted = [root / ".venv" / "lib" / "README.md", root / "k8s" / "app.py", root / "k8s" / "uv.lock"]
         for path in wanted + unwanted:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -155,6 +197,8 @@ if __name__ == "__main__":
     test_update_multiple_references()
     test_no_changes_when_already_pinned()
     test_skips_local_paths_other_charts_and_placeholders()
+    test_update_deploy_script_pin()
+    test_shell_pin_needs_the_chart_reference()
     test_find_files_globs_and_excludes()
     test_semver_validation()
 

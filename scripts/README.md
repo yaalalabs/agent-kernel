@@ -84,8 +84,8 @@ python scripts/update_terraform_versions.py --version 0.2.0-b5 --exclude .terraf
 
 ## update_chart_versions.py
 
-Pins the published Helm chart version in install commands: every
-`oci://ghcr.io/yaalalabs/charts/agent-kernel --version X.Y.Z` reference in `.md`, `.yaml`, and `.yml` files under the examples, the chart README, the docs site source, and the bundled `ak-cloud-deploy` skill. The publish workflow runs it for each release (before the wheel is built, so the skill inside it carries the new pin), so every surface installs the chart version that release publishes.
+Pins the published Helm chart version wherever it is installed from: every
+`oci://ghcr.io/yaalalabs/charts/agent-kernel --version X.Y.Z` reference in `.md`, `.yaml`, and `.yml` files under the examples, the chart README, the docs site source, and the bundled `ak-cloud-deploy` skill, plus the `CHART_VERSION="X.Y.Z"` variable in the k8s examples' `deploy/deploy.sh` scripts (only `.sh` files that name the chart qualify). The publish workflow runs it for each release (before the wheel is built, so the skill inside it carries the new pin), so every surface installs the chart version that release publishes.
 
 **Usage:**
 ```bash
@@ -109,8 +109,8 @@ python scripts/update_chart_versions.py --version 0.9.1 --directories examples
 - `--dry-run`: Show what would be changed without making modifications
 
 **What it does:**
-- Scans `.md`, `.yaml`, and `.yml` files in the specified directories
-- Rewrites only the version token after `oci://ghcr.io/yaalalabs/charts/agent-kernel --version`, leaving prose, shell continuations, and comment markers as they are
+- Scans `.md`, `.yaml`, `.yml`, and `.sh` files in the specified directories
+- Rewrites only the version token after `oci://ghcr.io/yaalalabs/charts/agent-kernel --version` (and inside `CHART_VERSION="..."` in deploy scripts that reference the chart), leaving prose, shell continuations, and comment markers as they are
 - Leaves references already at the target version, and installs from a local chart path, untouched
 
 ## Provisioning

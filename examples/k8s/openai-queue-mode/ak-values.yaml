@@ -1,0 +1,22 @@
+# Chart overlay for this example: layered on top of the chart's dev flavor (values-dev.yaml)
+# by deploy/deploy.sh, it wires the two example images and the OpenAI key. The WebSocket and
+# Kafka walkthroughs add their overrides as --set flags on the same script.
+
+image:
+  tag: dev
+  pullPolicy: Never # the images are imported into the cluster, never pulled
+
+ioHandler:
+  image:
+    repository: ak-example-io-handler
+
+agentRunner:
+  image:
+    repository: ak-example-agent-runner
+
+extraEnv:
+  - name: OPENAI_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: openai
+        key: api-key
