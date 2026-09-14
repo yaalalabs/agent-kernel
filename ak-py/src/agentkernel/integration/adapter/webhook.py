@@ -23,6 +23,7 @@ class WebhookRESTRequestHandler(RESTRequestHandler):
 
         IOHandler.run(handlers=[WebhookRESTRequestHandler(SlackInboundAdapter())])
     """
+
     requires_pipeline = True
 
     _log = logging.getLogger("ak.integration.webhook")

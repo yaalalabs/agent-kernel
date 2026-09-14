@@ -15,6 +15,7 @@ class IntegrationProducer:
     that are specific to integration traffic: the ``integration`` routing attribute, and the
     ``reply_``-prefixed reply context that tells the Response Handler where the answer goes.
     """
+
     REPLY_CONTEXT_BUDGET_BYTES = 8192
 
     _log = logging.getLogger("ak.integration.producer")

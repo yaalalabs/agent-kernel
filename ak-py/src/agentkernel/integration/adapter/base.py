@@ -81,6 +81,7 @@ class InboundAdapter(ABC):
     An implementation must not import or call ChatService, AgentService or Runtime. Its only
     side effects are platform API calls (attachment downloads) and attachment storage.
     """
+
     name: str = ""
     source: Source = Source.WEBHOOK
     webhook_path: str = ""
