@@ -85,13 +85,13 @@ function WhatsNewBanner() {
           </svg>
         </span>
         <span ref={textRef} className={styles.whatsNewText}>
-          <strong>Agent Kernel Execution Broker</strong> - sandboxed code
-          execution for any agent: Docker, Kubernetes, E2B, Daytona, your own
-          EC2, or bring your own provider. Now queue-decoupled for executions
-          that outlast the agent turn.
+          <strong>Agent Kernel on Kubernetes</strong> - an official Helm chart
+          deploys the full pipeline to any cluster: bare metal, EKS, or your
+          laptop. NATS, Kafka, or SQS as the broker, KEDA autoscaling, air-gapped
+          installs, and a sandbox broker tier for code execution in your pods.
         </span>
         <Link
-          to="/blog/agent-kernel-execution-broker"
+          to="/blog/kubernetes-on-prem-helm-chart"
           className={styles.whatsNewLink}
           ref={linkRef}
         >
