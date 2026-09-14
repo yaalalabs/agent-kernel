@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse
 
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
-from ...core.multimodal.storage.offload import offload_attachments
+from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 
 NAME = "teams"
@@ -236,7 +236,7 @@ class TeamsInboundAdapter(InboundAdapter):
             return None
 
         conversation_id = activity.conversation.id if activity.conversation else None
-        requests, _ = offload_attachments(
+        requests, _ = AttachmentStorageManager.offload(
             conversation_id,
             requests,
             attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,

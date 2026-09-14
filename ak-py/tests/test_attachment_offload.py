@@ -1,10 +1,10 @@
-"""offload_attachments: moving attachment bytes into the store before a request travels."""
+"""AttachmentStorageManager.offload: moving attachment bytes into the store before a request travels."""
 
 import pytest
 
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentRequestAny, AgentRequestAttachmentRef, AgentRequestFile, AgentRequestImage, AgentRequestText
-from agentkernel.core.multimodal.storage.offload import has_attachments, offload_attachments
+from agentkernel.core.multimodal.storage import AttachmentStorageManager
 
 DISABLED = "attachments need multimodal"
 SESSION_CACHE = "session_cache cannot be read from another process"
@@ -26,7 +26,7 @@ def multimodal(monkeypatch):
 
 
 def _offload(requests):
-    return offload_attachments("s1", requests, attachments_disabled_error=DISABLED, session_cache_error=SESSION_CACHE)
+    return AttachmentStorageManager.offload("s1", requests, attachments_disabled_error=DISABLED, session_cache_error=SESSION_CACHE)
 
 
 def test_an_image_is_replaced_by_a_reference(multimodal):
@@ -105,9 +105,9 @@ def test_session_cache_lets_a_text_only_message_through(monkeypatch):
 
 
 def test_has_attachments_ignores_empty_payloads():
-    assert has_attachments([AgentRequestImage(image_data="ZmFrZQ==", name="s", mime_type="image/png")])
-    assert not has_attachments([AgentRequestText(prompt="hello")])
-    assert not has_attachments([AgentRequestAttachmentRef(attachment_id="a1")])
+    assert AttachmentStorageManager.has_attachments([AgentRequestImage(image_data="ZmFrZQ==", name="s", mime_type="image/png")])
+    assert not AttachmentStorageManager.has_attachments([AgentRequestText(prompt="hello")])
+    assert not AttachmentStorageManager.has_attachments([AgentRequestAttachmentRef(attachment_id="a1")])
 
 
 def test_the_thread_manager_still_returns_thread_attachments(multimodal, monkeypatch):

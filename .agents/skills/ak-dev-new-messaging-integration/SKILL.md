@@ -56,7 +56,7 @@ from fastapi import HTTPException, Request
 
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestImage, AgentRequestText
-from ...core.multimodal.storage.offload import offload_attachments
+from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import (
     ATTACHMENTS_DISABLED_ERROR,
     SESSION_CACHE_ERROR,
@@ -105,7 +105,7 @@ class <Platform>InboundAdapter(InboundAdapter):
         requests: List[AgentRequest] = [AgentRequestText(prompt=text)]
         # ... download attachments into `requests` here (see step 5) ...
 
-        requests, _ = offload_attachments(
+        requests, _ = AttachmentStorageManager.offload(
             sender,
             requests,
             attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,
@@ -177,7 +177,7 @@ Budget: **8 KB serialized**, enforced in `IntegrationProducer` with a `ValueErro
 
 ### 5. Attachments
 
-Attachment bytes must **not** ride the queue: brokers cap a message far below `api.max_file_size`. Download at the edge (that is where the platform token is), then call `offload_attachments`, which stores the bytes in the `AttachmentStore` and replaces each image/file request with an `AgentRequestAttachmentRef`.
+Attachment bytes must **not** ride the queue: brokers cap a message far below `api.max_file_size`. Download at the edge (that is where the platform token is), then call `AttachmentStorageManager.offload`, which stores the bytes in the `AttachmentStore` and replaces each image/file request with an `AgentRequestAttachmentRef`.
 
 This makes `multimodal.enabled: true` a requirement for attachment-bearing messages, and rejects `multimodal.storage_type: session_cache` (it writes into a session copy the runner process never sees). Both messages are shared constants; pass them through as shown in step 2.
 
@@ -302,7 +302,7 @@ Then update the docs-site React pages that enumerate platforms: the `MESSAGING_P
 - [ ] `ak-py/src/agentkernel/integration/<platform>/adapter.py` with the inbound/outbound pair
 - [ ] `verify` (or a documented reason it stays the base no-op) and `challenge` if the platform has a handshake
 - [ ] `request_id` set from the platform's own message id
-- [ ] Attachments offloaded with `offload_attachments`, never inlined
+- [ ] Attachments offloaded with `AttachmentStorageManager.offload`, never inlined
 - [ ] `reply_context` flat, string-valued, inside the 8 KB budget
 - [ ] `MESSAGE_LIMIT` (and `MAX_CHUNKS`) set to the platform's limits
 - [ ] Package `__init__.py` and public alias at `ak-py/src/agentkernel/<platform>.py`

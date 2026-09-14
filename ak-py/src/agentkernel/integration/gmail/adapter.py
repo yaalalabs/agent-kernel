@@ -21,7 +21,7 @@ from googleapiclient.discovery import build
 
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
-from ...core.multimodal.storage.offload import offload_attachments
+from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundParseResult, InboundRequest, OutboundAdapter, PollingInboundAdapter
 
 NAME = "gmail"
@@ -215,7 +215,7 @@ class GmailInboundAdapter(PollingInboundAdapter):
         )
 
         requests: List[AgentRequest] = [AgentRequestText(prompt=prompt), *attachments]
-        requests, _ = offload_attachments(
+        requests, _ = AttachmentStorageManager.offload(
             session_id,
             requests,
             attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,

@@ -519,10 +519,11 @@ Platform --poll-----> PollerRunner ---------------> (same adapter surface) -----
   serialized budget, `ValueError` naming the adapter) and delegates to `pipeline.RequestProducer`.
   It deliberately does **not** stamp `USER_ID`: that attribute is the WebSocket-entered marker.
 - **Attachments never ride the queue.** Each adapter downloads at the edge (where the platform token
-  is) and calls `core/multimodal/storage/offload.py::offload_attachments`, which stores the bytes and
-  substitutes `AgentRequestAttachmentRef`. Consequence: an attachment-bearing message requires
-  `multimodal.enabled: true` and rejects `storage_type: session_cache`. Shared with the thread path,
-  which supplies its own two error messages.
+  is) and calls `AttachmentStorageManager.offload` (`core/multimodal/storage/storage_manager.py`),
+  which stores the bytes and substitutes `AgentRequestAttachmentRef`. Consequence: an
+  attachment-bearing message requires `multimodal.enabled: true` and rejects
+  `storage_type: session_cache`; a message with no attachments is never rejected. Shared with the
+  thread path, which supplies its own two error messages.
 - **Hosting**: `WebhookRESTRequestHandler(adapter)` mounts the adapter's routes and sets
   `requires_pipeline = True`; `PollerRunner(adapter)` hosts a `PollingInboundAdapter` in its own
   process at one replica (its `mark_handled` state is per process), waiting on

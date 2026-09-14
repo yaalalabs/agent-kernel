@@ -12,7 +12,7 @@ from typing import List, Optional
 
 from ...core.config import AKConfig
 from ...core.model import AgentRequest
-from ...core.multimodal.storage.offload import offload_attachments
+from ...core.multimodal.storage import AttachmentStorageManager
 from ...core.util.pagination import clamp_limit, decode_cursor, encode_cursor
 from .model import MessagePage, Thread, ThreadAttachment, ThreadMessage, ThreadPage
 from .naming import ThreadNamingStrategy
@@ -166,7 +166,7 @@ class ConversationThreadManager:
                             while multimodal.storage_type is session_cache (storing one needs a
                             shared store). A turn with no attachments is never rejected.
         """
-        rebuilt, stored = offload_attachments(
+        rebuilt, stored = AttachmentStorageManager.offload(
             session_id,
             requests,
             attachments_disabled_error=(

@@ -21,7 +21,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestAny, AgentRequestFile, AgentRequestImage, AgentRequestText
-from ...core.multimodal.storage.offload import offload_attachments
+from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import (
     ATTACHMENTS_DISABLED_ERROR,
     SESSION_CACHE_ERROR,
@@ -129,7 +129,7 @@ class SlackInboundAdapter(InboundAdapter):
             await self._say(channel, thread_ts, "Please provide a message or attachment.")
             return None
 
-        requests, _ = offload_attachments(
+        requests, _ = AttachmentStorageManager.offload(
             thread_ts,
             requests,
             attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,

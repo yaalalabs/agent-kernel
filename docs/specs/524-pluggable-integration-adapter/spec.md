@@ -548,14 +548,19 @@ runtime import of `integration` is introduced. Behaviour:
 No `IOHandler` change is needed for webhook adapters: `run(handlers=[...])` already mounts app
 handlers alongside the pipeline's own `RequestHandler()` (`io_handler.py:73`).
 
-### 8. Attachment offload — `core/multimodal/storage/offload.py`
+### 8. Attachment offload — `AttachmentStorageManager.offload`
 
 Attachments are stored in the `AttachmentStore` at the inbound edge and travel as
 `AgentRequestAttachmentRef` (`core/model.py:73-89`), never as inline base64.
 `ConversationThreadManager.store_attachments` (`integration/thread/manager.py:144-205`) already
 performs exactly this rewrite, so its core is extracted rather than reimplemented. It cannot be
 called directly — it returns `ThreadAttachment` references and lives in `integration/thread/`,
-which the adapter package must not depend on — so the shared piece moves to `core/`:
+which the adapter package must not depend on — so the shared piece moves to `core/`.
+
+It lands on `AttachmentStorageManager` (`core/multimodal/storage/storage_manager.py`) rather than
+as a module-level function: the manager already owns the `multimodal` config section
+(`_build_driver`), and the house rule reserves module-level functions for stateless utilities that
+belong to no class. The classmethod runs the guards, then builds the per-session manager it needs:
 
 ```python
 @dataclass
@@ -565,14 +570,20 @@ class StoredAttachment:
     mime_type: str
 
 
-def offload_attachments(
-    session_id: str,
-    requests: List[AgentRequest],
-    *,
-    attachments_disabled_error: str,
-    session_cache_error: str,
-) -> tuple[List[AgentRequest], List[StoredAttachment]]:
-    """Replace every image/file request with an AgentRequestAttachmentRef, in place."""
+class AttachmentStorageManager:
+    @staticmethod
+    def has_attachments(requests: List[AgentRequest]) -> bool: ...
+
+    @classmethod
+    def offload(
+        cls,
+        session_id: str,
+        requests: List[AgentRequest],
+        *,
+        attachments_disabled_error: str,
+        session_cache_error: str,
+    ) -> tuple[List[AgentRequest], List[StoredAttachment]]:
+        """Replace every image/file request with an AgentRequestAttachmentRef, in place."""
 ```
 
 Both guards are scoped to attachment-bearing requests (`manager.py:165-181`): they require
@@ -768,7 +779,7 @@ All intentional; each is user-visible or operator-visible.
 | Body is not valid JSON | Edge | `HTTPException(400)` (Teams' current behaviour, `teams_chat.py:114-116`), generalized |
 | Delivery legitimately ignored | Edge | Success response, no enqueue, debug log |
 | Attachment download fails | Edge | The platform's existing user-facing message; no enqueue for that message |
-| Attachments present with `multimodal.enabled: false` or `storage_type: session_cache` | Edge | `ValueError` from `offload_attachments` → 500 and the actionable message in the log |
+| Attachments present with `multimodal.enabled: false` or `storage_type: session_cache` | Edge | `ValueError` from `AttachmentStorageManager.offload` → 500 and the actionable message in the log |
 | `reply_context` over 8 KB serialized | Edge (`IntegrationProducer`) | `ValueError` naming the adapter, before the transport client |
 | Enqueue fails | Edge | 5xx to the platform so it retries; nothing acknowledged to the user beyond the ack already sent |
 | Unknown adapter name / unimportable dotted path | `IntegrationAdapterFactory` | `AKConfigError` at construction |
@@ -824,7 +835,7 @@ Run with `cd ak-py && uv run pytest tests/<file>`.
 | `tests/test_integration_poller_runner.py` | `run()` rejects `in_memory`; the loop enqueues, calls `mark_handled`, and exits on `ThreadRunner.shutdown_event` within one interval; a raising `poll` does not kill the loop |
 | `tests/test_integration_roundtrip.py` | End-to-end over `InMemoryTransport` in the single-process topology: a fake platform event through `WebhookRESTRequestHandler` → `AgentRunner` (dummy agent, the `test_pipeline_request_handler.py` pattern) → `ResponseHandler` → a recording outbound adapter, asserting the reply text and reply context; plus the ≥ 400 path reaching `deliver_error` |
 | `tests/test_messenger_integration.py`, `tests/test_instagram_integration.py`, `tests/test_telegram_integration.py` | New files — these three platforms have **no** test file today. Parse (text, postback, attachment, echo/ignore) and deliver (chunking at 2000/1000/4096, typing indicators, mark-seen) |
-| `tests/test_attachment_offload.py` | `offload_attachments` rewrites image/file requests to refs in place, keeps other requests in order, raises the caller's message when multimodal is disabled, rejects `session_cache` for an attachment, and lets a text-only list through under `session_cache` |
+| `tests/test_attachment_offload.py` | `AttachmentStorageManager.offload` rewrites image/file requests to refs in place, keeps other requests in order, raises the caller's message when multimodal is disabled, rejects `session_cache` for an attachment, and lets a text-only list through under `session_cache` |
 
 ### Rewritten test files
 

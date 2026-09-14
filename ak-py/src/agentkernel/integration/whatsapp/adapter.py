@@ -9,7 +9,7 @@ from fastapi import Request
 
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
-from ...core.multimodal.storage.offload import offload_attachments
+from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 from ..adapter.meta import answer_challenge, verify_signature
 
@@ -172,7 +172,7 @@ class WhatsAppInboundAdapter(InboundAdapter):
             return None
 
         requests.insert(0, AgentRequestText(prompt=text))
-        requests, _ = offload_attachments(
+        requests, _ = AttachmentStorageManager.offload(
             from_number,
             requests,
             attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,

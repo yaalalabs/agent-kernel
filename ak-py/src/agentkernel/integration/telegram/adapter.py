@@ -14,7 +14,7 @@ from fastapi import HTTPException, Request
 
 from ...core.config import AKConfig
 from ...core.model import AgentReply, AgentRequest, AgentRequestFile, AgentRequestImage, AgentRequestText
-from ...core.multimodal.storage.offload import offload_attachments
+from ...core.multimodal.storage import AttachmentStorageManager
 from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, InboundAdapter, InboundParseResult, InboundRequest, OutboundAdapter
 
 NAME = "telegram"
@@ -192,7 +192,7 @@ class TelegramInboundAdapter(InboundAdapter):
             await self._client.send_message(session_id, ["Sorry, your message appears to be empty."])
             return None
 
-        requests, _ = offload_attachments(
+        requests, _ = AttachmentStorageManager.offload(
             session_id,
             requests,
             attachments_disabled_error=ATTACHMENTS_DISABLED_ERROR,

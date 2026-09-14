@@ -10,7 +10,7 @@ iterations rewrites its own platform's tests so the suite never goes red between
   the runner hop, and the shared enqueue / async-bridge / attachment-offload helpers exist. No
   adapters yet.
 - **Files:** `core/model.py`, `core/chat_service.py`, `core/util/async_bridge.py` (new),
-  `core/multimodal/storage/offload.py` (new), `integration/thread/manager.py`,
+  `core/multimodal/storage/storage_manager.py`, `integration/thread/manager.py`,
   `pipeline/envelope.py`, `pipeline/producer.py` (new), `pipeline/request_handler.py`,
   `pipeline/agent_runner.py`, `pipeline/__init__.py`
 - **Steps:**
@@ -20,7 +20,7 @@ iterations rewrites its own platform's tests so the suite never goes red between
      forwarded to `execute_sync` / `execute_stream_sync` (spec §4).
   3. `run_async_sync` in `core/util/async_bridge.py`; `AgentHandler._run_async_sync` delegates to
      it (spec §6).
-  4. `offload_attachments` + `StoredAttachment` extracted from
+  4. `AttachmentStorageManager.offload` + `StoredAttachment` extracted from
      `ConversationThreadManager.store_attachments`, which keeps its signature, return type and
      error wording (spec §8).
   5. `ATTR_INTEGRATION` and `REPLY_CONTEXT_PREFIX` in `pipeline/envelope.py` (spec §2).
