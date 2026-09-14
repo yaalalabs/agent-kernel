@@ -1,7 +1,7 @@
 ---
 slug: /scheduled-tasks
 title: "Scheduled Tasks in Agent Kernel: Work That Runs Without Anyone Asking"
-authors: [Induwara Senadhera]
+authors: [induwara]
 tags: [agent-kernel, scheduling, cron, eventbridge, automation, queue-mode, enterprise-ai]
 image: /img/card.png
 description: Your agent can now work on a clock. Tell it "every weekday at 8am" and Agent Kernel remembers, wakes up on time, and runs the request exactly as if you had just typed it.
