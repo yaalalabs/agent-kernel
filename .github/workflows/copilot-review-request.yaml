@@ -77,10 +77,33 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const pull_number = Number(process.env.PR_NUMBER);
-            // Reviewer identifier documented by GitHub for REST review requests. It shows up as
-            // login "Copilot" on the PR once requested.
+            // Reviewer identifier documented by GitHub for REST review requests. Once requested,
+            // Copilot is a Bot reviewer (login copilot-pull-request-reviewer, shown as "Copilot").
+            // REST pull request payloads list only User reviewers in requested_reviewers, so a
+            // pending Copilot request is invisible there. GraphQL's reviewRequests types Bot
+            // reviewers explicitly, so that is where the request is checked, before and after.
             const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
             const isCopilot = (login) => /copilot/i.test(login || '');
+            const copilotStatus = async () => {
+              const result = await github.graphql(
+                `query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      reviewRequests(first: 100) {
+                        nodes { requestedReviewer { __typename ... on Bot { login } ... on User { login } } }
+                      }
+                      reviews(last: 100) { nodes { author { login } } }
+                    }
+                  }
+                }`,
+                { owner, repo, number: pull_number },
+              );
+              const node = result.repository.pullRequest;
+              return {
+                requested: node.reviewRequests.nodes.some((n) => n.requestedReviewer && isCopilot(n.requestedReviewer.login)),
+                reviewed: node.reviews.nodes.some((n) => n.author && isCopilot(n.author.login)),
+              };
+            };
 
             if (!Number.isInteger(pull_number) || pull_number <= 0) {
               core.setFailed(`Invalid pull request number: '${process.env.PR_NUMBER}'`);
@@ -114,24 +137,26 @@ jobs:
             }
 
             // The develop ruleset already requests Copilot for licensed authors; don't double up.
-            if ((pr.requested_reviewers || []).some((r) => isCopilot(r.login))) {
+            if ((await copilotStatus()).requested) {
               core.info(`Copilot is already a requested reviewer on #${pull_number}; nothing to do.`);
               return;
             }
 
             try {
-              const { data } = await github.rest.pulls.requestReviewers({
+              const { status } = await github.rest.pulls.requestReviewers({
                 owner,
                 repo,
                 pull_number,
                 reviewers: [COPILOT_REVIEWER],
               });
-              const logins = (data.requested_reviewers || []).map((r) => r.login);
-              if (!logins.some(isCopilot)) {
-                core.setFailed(`Request succeeded but Copilot is not among the requested reviewers of #${pull_number}: [${logins.join(', ')}]`);
+              // The REST response omits Bot reviewers, so verify through GraphQL. A review that
+              // is already submitted counts too, in case Copilot finished before this check ran.
+              const after = await copilotStatus();
+              if (!after.requested && !after.reviewed) {
+                core.setFailed(`Request returned HTTP ${status} but Copilot is not a requested reviewer of #${pull_number}. Check that Copilot code review is enabled for this repository.`);
                 return;
               }
-              core.info(`Requested Copilot review on #${pull_number}. Requested reviewers: ${logins.join(', ')}`);
+              core.info(`Requested Copilot review on #${pull_number}.`);
             } catch (error) {
               core.setFailed(
                 `Could not request a Copilot review on #${pull_number} (HTTP ${error.status}): ${error.message}. ` +
