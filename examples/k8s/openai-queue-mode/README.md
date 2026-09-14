@@ -73,11 +73,16 @@ extraEnv:
         key: api-key
 EOF
 
-helm dependency build ../../../ak-deployment/ak-k8s/chart
-helm install ak ../../../ak-deployment/ak-k8s/chart \
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 \
   -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f ak-values.yaml
 kubectl rollout status deployment/ak-agent-kernel-io deployment/ak-agent-kernel-agent-runner
 ```
+
+The chart is the published OCI artifact; the release pipeline keeps the `--version` above in
+step with each Agent Kernel release. To exercise unreleased chart changes from this checkout,
+point `helm install` at `../../../ak-deployment/ak-k8s/chart` instead, after a
+`helm dependency build` on it (which needs the valkey and nats chart repos added first; see
+[the chart README](../../../ak-deployment/ak-k8s/README.md)).
 
 The dev flavor has no gateway: port-forward to the io Service and talk to the agents. The
 first request also provisions the JetStream streams (`auto_provision: true` in the dev
@@ -133,7 +138,7 @@ Install as under k3d, with the registry prefix and (optionally) a MetalLB-backed
 LoadBalancer instead of the port-forward:
 
 ```bash
-microk8s helm install ak ../../../ak-deployment/ak-k8s/chart \
+microk8s helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 \
   -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f ak-values.yaml \
   --set global.imageRegistry=localhost:32000 \
   --set image.pullPolicy=IfNotPresent \
@@ -170,7 +175,7 @@ kubectl set env deployment/strimzi-cluster-operator -n kafka STRIMZI_NAMESPACE=d
 cd deploy && ./package.sh kafka && cd ..   # bake config.kafka.yaml in as config.yaml
 k3d image import -c ak ak-example-io-handler:dev ak-example-agent-runner:dev
 
-helm upgrade --install ak ../../../ak-deployment/ak-k8s/chart \
+helm upgrade --install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 \
   -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f ak-values.yaml \
   --set transport.type=kafka --set kafka.enabled=true --set kafka.replicas=1 \
   --set kafka.partitions=4 --set kafka.topicReplicas=1 --set nats.enabled=false
@@ -194,7 +199,7 @@ mode override is one env var away):
 ```bash
 k3d image import -c ak ak-example-ws-gateway:dev    # kind: kind load docker-image ...
 
-helm upgrade ak ../../../ak-deployment/ak-k8s/chart \
+helm upgrade ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 \
   -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f ak-values.yaml \
   --set execution.mode=stream \
   --set wsGateway.enabled=true --set wsGateway.replicaCount=1 \

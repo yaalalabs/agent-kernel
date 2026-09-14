@@ -40,14 +40,16 @@ k3d image import -c ak ak-sbx-io-handler:dev ak-sbx-agent-runner:dev ak-sbx-sand
 
 kubectl create secret generic openai --from-literal=api-key="$OPENAI_API_KEY"
 
-helm repo add valkey https://valkey-io.github.io/valkey-helm/
-helm repo add nats https://nats-io.github.io/k8s/helm/charts/
-helm dependency build ../../../ak-deployment/ak-k8s/chart
-helm install ak ../../../ak-deployment/ak-k8s/chart \
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 \
   -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f sandbox-values.yaml
 kubectl rollout status deployment/ak-agent-kernel-io deployment/ak-agent-kernel-agent-runner \
   deployment/ak-agent-kernel-sandbox-worker
 ```
+
+The chart is the published OCI artifact, pinned to the current release the same way as in
+[the openai-queue-mode example](../../k8s/openai-queue-mode/README.md), whose README also
+covers installing from the chart in this checkout instead. `app_test.py` always installs
+from the checkout, so CI exercises unreleased chart changes.
 
 The overlay creates the `ak-sandboxes` namespace with the PSA `restricted` label, a
 default-deny egress NetworkPolicy over every sandbox pod, the worker's ServiceAccount + Role
