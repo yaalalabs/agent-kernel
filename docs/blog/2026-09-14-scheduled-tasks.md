@@ -120,7 +120,7 @@ curl -X POST http://localhost:8000/api/v1/chat \
 
 The agent reads the intent, picks the cron rhythm, and books it. Users get a calendar without learning a syntax.
 
-The obvious worry with a self-scheduling agent is blast radius, so the boundary is structural rather than advisory: every tool acts strictly as the **acting user** — the `user_id` of the run that invoked it. An agent physically cannot see or touch another user's schedules, and a run carrying no user identity gets an error rather than an anonymous create. If you'd rather only some agents have a calendar at all, scope it with `schedule.agents: [planner]`.
+The tools scope strictly to the run's `user_id`; this is an isolation boundary only when your ingress authenticates the caller and binds that identity to the request. The built-in chat routes accept `user_id` from the request, so enforce that binding before exposing them, and use `schedule.agents: [planner]` if only some agents should have scheduling.
 
 ## Pick Backends for Where You Run
 
