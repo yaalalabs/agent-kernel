@@ -1,5 +1,6 @@
 """Teams adapter: Bot Framework activity -> InboundRequest, and agent reply -> proactive delivery."""
 
+import asyncio
 import json
 import logging
 from unittest.mock import AsyncMock, MagicMock
@@ -13,6 +14,7 @@ from botbuilder.schema import Activity, ActivityTypes  # noqa: E402
 
 from agentkernel.core.config import AKConfig  # noqa: E402
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestFile, AgentRequestImage, AgentRequestText  # noqa: E402
+from agentkernel.core.util.async_bridge import run_async_sync  # noqa: E402
 from agentkernel.integration.adapter.producer import IntegrationProducer  # noqa: E402
 from agentkernel.integration.adapter.webhook import WebhookRESTRequestHandler  # noqa: E402
 from agentkernel.integration.teams.adapter import (  # noqa: E402
@@ -51,11 +53,18 @@ def _credentials(tenant_id=""):
     credentials._app_id = "app-id"
     credentials._app_password = "app-password"
     credentials._tenant_id = tenant_id
-    credentials._adapter = MagicMock()
-    credentials._adapter.continue_conversation = AsyncMock()
+    credentials._settings = MagicMock()
     credentials._msal_apps = {}
     credentials._bot_credentials = None
+    built = MagicMock()
+    built.continue_conversation = AsyncMock()
+    credentials.new_adapter = MagicMock(return_value=built)
     return credentials
+
+
+def _bf(outbound):
+    """The BotFrameworkAdapter the outbound adapter builds for each delivery."""
+    return outbound._credentials.new_adapter.return_value
 
 
 def _inbound(agent="helper", tenant_id="", max_file_size=10 * 1024 * 1024):
@@ -64,6 +73,7 @@ def _inbound(agent="helper", tenant_id="", max_file_size=10 * 1024 * 1024):
     adapter._agent = agent
     adapter._max_file_size = max_file_size
     adapter._credentials = _credentials(tenant_id)
+    adapter._adapter = MagicMock()
     return adapter
 
 
@@ -215,7 +225,7 @@ async def test_the_reply_is_delivered_proactively():
 
     await adapter.deliver(AgentReplyText(response="agent says hi"), _context())
 
-    reference, callback, bot_id = adapter._credentials.adapter.continue_conversation.await_args.args
+    reference, callback, bot_id = _bf(adapter).continue_conversation.await_args.args
     assert reference.conversation.id == "conv-1"
     assert bot_id == "app-id"
     turn_context = FakeTurnContext()
@@ -229,7 +239,7 @@ async def test_a_structured_reply_is_delivered_as_json():
 
     await adapter.deliver(AgentReplyAny(content={"a": 1}), _context())
 
-    _, callback, _ = adapter._credentials.adapter.continue_conversation.await_args.args
+    _, callback, _ = _bf(adapter).continue_conversation.await_args.args
     turn_context = FakeTurnContext()
     await callback(turn_context)
     assert turn_context.texts == ['{"a": 1}']
@@ -241,7 +251,7 @@ async def test_an_empty_reply_says_so_rather_than_sending_nothing():
 
     await adapter.deliver(AgentReplyText(response="   "), _context())
 
-    _, callback, _ = adapter._credentials.adapter.continue_conversation.await_args.args
+    _, callback, _ = _bf(adapter).continue_conversation.await_args.args
     turn_context = FakeTurnContext()
     await callback(turn_context)
     assert turn_context.texts == ["The agent returned an empty response."]
@@ -253,13 +263,13 @@ async def test_a_long_reply_is_chunked_instead_of_dropped():
 
     await adapter.deliver(AgentReplyText(response="x" * (MAX_MESSAGE_LENGTH * 2 + 5)), _context())
 
-    assert adapter._credentials.adapter.continue_conversation.await_count == 3
+    assert _bf(adapter).continue_conversation.await_count == 3
 
 
 @pytest.mark.asyncio
 async def test_a_delivery_failure_propagates_for_retry():
     adapter = _outbound()
-    adapter._credentials.adapter.continue_conversation = AsyncMock(side_effect=RuntimeError("azure down"))
+    _bf(adapter).continue_conversation = AsyncMock(side_effect=RuntimeError("azure down"))
 
     with pytest.raises(RuntimeError):
         await adapter.deliver(AgentReplyText(response="hi"), _context())
@@ -271,7 +281,7 @@ async def test_the_acknowledgement_is_addressed_to_the_sender():
 
     assert await adapter.acknowledge(_context()) == {}
 
-    _, callback, _ = adapter._credentials.adapter.continue_conversation.await_args.args
+    _, callback, _ = _bf(adapter).continue_conversation.await_args.args
     turn_context = FakeTurnContext()
     await callback(turn_context)
     assert turn_context.texts == ["Hi Alice, I'm looking into that for you..."]
@@ -281,7 +291,7 @@ async def test_the_acknowledgement_is_addressed_to_the_sender():
 async def test_no_acknowledgement_is_sent_when_none_is_configured():
     adapter = _outbound()
     await adapter.acknowledge(_context())
-    adapter._credentials.adapter.continue_conversation.assert_not_awaited()
+    _bf(adapter).continue_conversation.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -290,7 +300,7 @@ async def test_an_error_reaches_the_user_by_name():
 
     await adapter.deliver_error(TeamsOutboundAdapter.ERROR_MESSAGE, _context())
 
-    _, callback, _ = adapter._credentials.adapter.continue_conversation.await_args.args
+    _, callback, _ = _bf(adapter).continue_conversation.await_args.args
     turn_context = FakeTurnContext()
     await callback(turn_context)
     assert turn_context.texts == ["Sorry Alice, sorry, there was an error processing your request."]
@@ -300,9 +310,43 @@ async def test_an_error_reaches_the_user_by_name():
 async def test_an_error_delivery_failure_does_not_escape():
     """A best-effort status message must not take down the consumer thread."""
     adapter = _outbound()
-    adapter._credentials.adapter.continue_conversation = AsyncMock(side_effect=RuntimeError("azure down"))
+    _bf(adapter).continue_conversation = AsyncMock(side_effect=RuntimeError("azure down"))
 
     await adapter.deliver_error("boom", _context())
+
+
+@pytest.mark.asyncio
+async def test_every_delivery_builds_its_own_bot_framework_adapter():
+    """BotFrameworkAdapter caches loop-bound connector clients, so it must never be reused."""
+    adapter = _outbound()
+
+    await adapter.deliver(AgentReplyText(response="one"), _context())
+    await adapter.deliver(AgentReplyText(response="two"), _context())
+
+    assert adapter._credentials.new_adapter.call_count == 2
+
+
+def test_deliveries_on_separate_event_loops_each_get_a_live_client():
+    """ResponseHandler drives deliver through run_async_sync: a fresh asyncio.run loop per call."""
+
+    class LoopBoundAdapter:
+        """Stands in for BotFrameworkAdapter: its client belongs to the loop that built it."""
+
+        def __init__(self):
+            self.loop = asyncio.get_event_loop()
+
+        async def continue_conversation(self, reference, callback, bot_id):
+            if asyncio.get_running_loop() is not self.loop:
+                raise RuntimeError("Event loop is closed")
+            await callback(FakeTurnContext())
+
+    adapter = _outbound()
+    adapter._credentials.new_adapter = MagicMock(side_effect=LoopBoundAdapter)
+
+    run_async_sync(adapter.deliver(AgentReplyText(response="one"), _context()))
+    run_async_sync(adapter.deliver(AgentReplyText(response="two"), _context()))
+
+    assert adapter._credentials.new_adapter.call_count == 2
 
 
 def test_split_reply_chunks_on_the_teams_limit():
@@ -644,14 +688,14 @@ def _client(adapter):
 def test_failed_bot_framework_auth_returns_401_not_500():
     """Azure retries 5xx, so a rejected JWT must not be reported as a server error."""
     adapter = _inbound()
-    adapter._credentials.adapter.process_activity = AsyncMock(side_effect=PermissionError("Unauthorized Access."))
+    adapter._adapter.process_activity = AsyncMock(side_effect=PermissionError("Unauthorized Access."))
 
     assert _client(adapter).post("/teams/messages", json={"type": "message"}).status_code == 401
 
 
 def test_unexpected_failure_still_returns_500():
     adapter = _inbound()
-    adapter._credentials.adapter.process_activity = AsyncMock(side_effect=RuntimeError("boom"))
+    adapter._adapter.process_activity = AsyncMock(side_effect=RuntimeError("boom"))
 
     assert _client(adapter).post("/teams/messages", json={"type": "message"}).status_code == 500
 
@@ -660,7 +704,7 @@ def test_invoke_activities_get_their_invoke_response_body():
     from botbuilder.schema import InvokeResponse
 
     adapter = _inbound()
-    adapter._credentials.adapter.process_activity = AsyncMock(return_value=InvokeResponse(status=200, body={"composeExtension": {"type": "result"}}))
+    adapter._adapter.process_activity = AsyncMock(return_value=InvokeResponse(status=200, body={"composeExtension": {"type": "result"}}))
 
     response = _client(adapter).post("/teams/messages", json={"type": "invoke", "name": "composeExtension/query"})
 
@@ -670,7 +714,7 @@ def test_invoke_activities_get_their_invoke_response_body():
 
 def test_message_activities_get_the_hosts_success_body():
     adapter = _inbound()
-    adapter._credentials.adapter.process_activity = AsyncMock(return_value=None)
+    adapter._adapter.process_activity = AsyncMock(return_value=None)
 
     response = _client(adapter).post("/teams/messages", json={"type": "message"})
 
@@ -680,7 +724,7 @@ def test_message_activities_get_the_hosts_success_body():
 
 def test_malformed_body_is_a_400():
     adapter = _inbound()
-    adapter._credentials.adapter.process_activity = AsyncMock(side_effect=AssertionError("must not reach the adapter"))
+    adapter._adapter.process_activity = AsyncMock(side_effect=AssertionError("must not reach the adapter"))
 
     response = _client(adapter).post("/teams/messages", content=b"not json", headers={"Content-Type": "application/json"})
 

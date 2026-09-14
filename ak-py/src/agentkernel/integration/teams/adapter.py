@@ -50,7 +50,7 @@ class _AttachmentTooLarge(Exception):
 
 
 class _TeamsCredentials:
-    """Everything both halves need to talk to Azure: settings, adapter, and token acquisition."""
+    """Everything both halves need to talk to Azure: settings, adapter construction, and token acquisition."""
 
     _log = logging.getLogger("ak.integration.teams")
 
@@ -63,14 +63,19 @@ class _TeamsCredentials:
             self._log.error("Teams configuration is incomplete. Please set app_id and app_password.")
             raise ValueError("Incomplete Teams configuration.")
 
-        settings = BotFrameworkAdapterSettings(self._app_id, self._app_password, channel_auth_tenant=self._tenant_id or None)
-        self._adapter = BotFrameworkAdapter(settings)
+        self._settings = BotFrameworkAdapterSettings(self._app_id, self._app_password, channel_auth_tenant=self._tenant_id or None)
         self._msal_apps: Dict[str, msal.ConfidentialClientApplication] = {}
         self._bot_credentials: Optional[MicrosoftAppCredentials] = None
 
-    @property
-    def adapter(self) -> BotFrameworkAdapter:
-        return self._adapter
+    def new_adapter(self) -> BotFrameworkAdapter:
+        """Build a fresh ``BotFrameworkAdapter``; it must never outlive the loop it is used on.
+
+        ``BotFrameworkAdapter`` caches its ``ConnectorClient``s per instance, and each one holds an
+        ``aiohttp`` session bound to the loop that built it. The outbound half runs every delivery
+        under its own ``asyncio.run`` loop, so a shared adapter would reuse a session whose loop is
+        already closed. The MSAL and Bot Framework credential caches above are loop-free and stay.
+        """
+        return BotFrameworkAdapter(self._settings)
 
     @property
     def app_id(self) -> str:
@@ -127,7 +132,8 @@ class TeamsInboundAdapter(InboundAdapter):
         self._agent = config.teams.agent or None
         self._max_file_size = config.api.max_file_size
         self._credentials = _TeamsCredentials()
-        self._credentials.adapter.on_turn_error = self._on_turn_error
+        self._adapter = self._credentials.new_adapter()
+        self._adapter.on_turn_error = self._on_turn_error
 
         if config.teams.tenant_id:
             self._log.info(f"Using Teams App ID: {self._credentials.app_id} with Tenant ID: {config.teams.tenant_id}")
@@ -155,7 +161,7 @@ class TeamsInboundAdapter(InboundAdapter):
                 parsed.append(request)
 
         try:
-            invoke_response = await self._credentials.adapter.process_activity({"body": body}, auth_header, _on_turn)
+            invoke_response = await self._adapter.process_activity({"body": body}, auth_header, _on_turn)
         except PermissionError as pe:
             self._log.warning(f"Rejected unauthenticated Teams activity: {pe}")
             raise HTTPException(status_code=401, detail="Unauthorized")
@@ -517,7 +523,7 @@ class TeamsOutboundAdapter(OutboundAdapter):
             await turn_context.send_activity(text)
 
         try:
-            await self._credentials.adapter.continue_conversation(reference, _callback, self._credentials.app_id)
+            await self._credentials.new_adapter().continue_conversation(reference, _callback, self._credentials.app_id)
         except Exception as e:
             self._log.error(f"Failed to continue the Teams conversation: {e}")
             if raise_on_failure:
