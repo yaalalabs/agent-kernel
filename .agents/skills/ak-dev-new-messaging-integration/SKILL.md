@@ -295,6 +295,8 @@ Add `docs/docs/integrations/<platform>.md` covering:
 - Webhook URL setup
 - The `multimodal.enabled` requirement if the platform accepts attachments
 
+Then update the docs-site React pages that enumerate platforms: the `MESSAGING_PLATFORMS` list in `docs/src/pages/features.tsx` (logo under `docs/static/img/integrations/`, link to the new page) and the `pills` on the `ak-add-integration` entry in `AGENT_SKILLS` in `docs/src/pages/index.tsx`. Grep `docs/src/pages/*.tsx`, `README.md`, and `docs/docs/intro.md` for the platform roll call ("Slack, WhatsApp, ...") and add the new name wherever the others are listed.
+
 ## Checklist
 
 - [ ] `ak-py/src/agentkernel/integration/<platform>/adapter.py` with the inbound/outbound pair
@@ -310,3 +312,4 @@ Add `docs/docs/integrations/<platform>.md` covering:
 - [ ] Example in `examples/api/<platform>/` mounting through `IOHandler.run`
 - [ ] `IntegrationAdapterContract` subclass plus the per-platform test file
 - [ ] Documentation in `docs/docs/integrations/<platform>.md`
+- [ ] Platform inventories on the docs-site pages (`docs/src/pages/features.tsx` `MESSAGING_PLATFORMS`, `docs/src/pages/index.tsx` `AGENT_SKILLS` pills) and in the README/intro roll calls

@@ -17,5 +17,5 @@ else
   # one, pulling a newly added extra's dependencies that the published release doesn't have yet.
   # Note: this rewrites uv.lock to the local dist source for the duration; do not commit that
   # lock — commit the PyPI-resolved lock produced by `uv lock` after the extra is published.
-  uv sync --find-links ../../../ak-py/dist --upgrade-package agentkernel
+  uv sync --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel
 fi

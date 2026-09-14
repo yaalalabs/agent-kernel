@@ -5,7 +5,7 @@ from google.adk.models.lite_llm import LiteLlm
 
 general_agent = Agent(
     name="general",
-    model=LiteLlm(model="openai/gpt-4o-mini"),
+    model=LiteLlm(model="openai/gpt-4.1-mini"),
     description="Assistant with general queries",
     instruction="You provide assistance with general queries. Give short and clear answers",
 )

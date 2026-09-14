@@ -133,7 +133,7 @@ EXECUTION PROTOCOL:
     knowledge_tools = knowledge_builder.build()
     return Agent(
         name="KB_Router_Agent",
-        model="gpt-4o-mini",
+        model="gpt-4.1-mini",
         instructions=instructions,
         tools=OpenAIToolBuilder.bind(knowledge_tools),
     )

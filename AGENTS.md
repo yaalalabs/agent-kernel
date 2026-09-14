@@ -84,6 +84,32 @@ This is why the core/adapter boundary above is a hard rule, not a style preferen
 `core/` starts depending on a specific framework or service, the framework/service's opinions leak
 into code every adapter has to live with.
 
+## House patterns for new features
+
+Three rules shape every new feature; `ak-dev-write-spec` designs against them and `ak-dev-review-pr`
+reviews against them (full detail in the "House Patterns for New Features" section of
+`.agents/skills/ak-dev-architecture`):
+
+- **Pluggable by default.** Any touchpoint with an external system, backend, or provider is an ABC
+  plus thin adapters behind a factory in the `core/util/factory.py` shape (built-ins via `if/elif`
+  real imports, `require_extra` for optional SDKs, a dotted-path bring-your-own branch), even when
+  only one backend ships in the first PR.
+- **Reuse existing configuration; add knobs only when nothing existing expresses them.** Reuse whole
+  `AKConfig` models where the shape exists (`_QueuesConfig` serves both `execution.queues` and
+  `sandbox.broker.queue`), subclass to change defaults only, and let already-configured components
+  enable a feature implicitly where that applies instead of adding `enabled`/`type` fields. Every new
+  field needs a reason, a reader, a description, and a default that keeps existing YAML and `AK_*` env
+  vars valid.
+- **Classes, not scripts.** Feature logic lives in classes with one responsibility each (ABC,
+  backends, `*Factory`, `*Manager`/`*Handler`/`*Runner`, Pydantic models), state on instances.
+  Module-level functions are reserved for small stateless shared utilities and the tool functions the
+  tool builders bind.
+
+When documentation changes, the React landing and features pages (`docs/src/pages/index.tsx`,
+`docs/src/pages/features.tsx`) hold hard-coded inventories of frameworks, integrations, providers,
+deployment targets, and capabilities; update them alongside `docs/docs/` (see
+`ak-dev-sync-docs-from-branch`).
+
 ## Setup, build, lint, test
 
 Setup steps and how to discover the full Makefile command list are canonical in

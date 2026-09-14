@@ -5,7 +5,7 @@ from agentkernel.core import ToolContext
 from agentkernel.pydanticai import PydanticAIModule, PydanticAIToolBuilder
 from pydantic_ai import Agent
 
-MODEL = "openai:gpt-4o-mini"
+MODEL = "openai:gpt-4.1-mini"
 
 
 def get_weather(city: str) -> str:

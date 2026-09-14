@@ -7,7 +7,7 @@ interact with agents via the Agent Kernel CLI.
 
 `agentkernel[pydanticai]` installs the provider-agnostic `pydantic-ai-slim` core only — it ships no
 model provider. Pick one explicitly (this demo declares `pydantic-ai-slim[openai]` in
-`pyproject.toml` and uses the `openai:gpt-4o-mini` model, so it needs an `OPENAI_API_KEY`). Pydantic
+`pyproject.toml` and uses the `openai:gpt-4.1-mini` model, so it needs an `OPENAI_API_KEY`). Pydantic
 AI's strength is that switching providers is a one-line change to the model string in `demo.py`
 (e.g. `anthropic:...`, `google-gla:...`, `bedrock:...`) once the matching provider extra is
 installed (`pydantic-ai-slim[anthropic]`, `[google]`, …).

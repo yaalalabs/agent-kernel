@@ -82,7 +82,7 @@ Best for:
 Agent Kernel supports three comparison modes for validating agent responses:
 
 #### Score Mode
-Deterministic, offline string-match scoring (via DeepEval's `Scorer.quasi_exact_match_score`) with configurable thresholds:
+Deterministic, offline string-match scoring with configurable thresholds. The default `deepeval` evaluator uses `Scorer.quasi_exact_match_score`; the built-in `opik` evaluator uses its graded `LevenshteinRatio` metric instead:
 
 ```python
 from agentkernel.test import Test, Mode
@@ -100,10 +100,10 @@ Test.compare(
 )
 ```
 
-**Note:** The `expected` parameter is a list. The test passes if the actual response's normalised text exactly equals **any** of the expected values (score `1.0`) — there is no partial credit.
+**Note:** The `expected` parameter is a list. With the default `deepeval` evaluator, the test passes if the actual response's normalised text exactly equals **any** of the expected values (score `1.0`) — there is no partial credit. With `opik`, `LevenshteinRatio` gives a graded similarity score instead, so a close-but-not-exact match can still clear the threshold.
 
 #### Llm Mode
-Uses LLM-as-judge evaluation (via DeepEval's `GEval`) for semantic similarity:
+Uses LLM-as-judge evaluation for semantic similarity, via a `GEval` metric from either built-in evaluator (`deepeval` or `opik`):
 
 ```python
 # Use llm mode only - expected is a list
@@ -151,7 +151,7 @@ Set the default test mode via a `test-config.yaml` file in the directory you run
 ```yaml
 # test-config.yaml
 mode: fallback  # Options: score, llm, fallback
-evaluator: deepeval  # Built-in short name, or a dotted path to your own AKEvaluator subclass
+evaluator: deepeval  # Built-in short name ('deepeval' or 'opik'), or a dotted path to your own AKEvaluator subclass
 llm:
   model: gpt-4o-mini
   provider: openai

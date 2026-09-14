@@ -3,6 +3,6 @@
 mode: fallback  # Test comparison mode: score, llm, or fallback (default: fallback)
 # LLM settings are used by the llm and fallback modes (LLM-based evaluation):
 llm:
-  model: gpt-4o-mini
+  model: gpt-4.1-mini
   provider: openai
   embedding_model: text-embedding-3-small

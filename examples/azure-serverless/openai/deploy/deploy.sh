@@ -10,7 +10,7 @@ create_deployment_package() {
       uv pip install -r requirements.txt --target=dist
     else
       echo "Using local ak-py"
-      uv pip install -r requirements.txt --target=dist --find-links ../../../ak-py/dist --upgrade-package agentkernel
+      uv pip install -r requirements.txt --target=dist --find-links ../../../ak-py/dist --upgrade-package agentkernel --reinstall-package agentkernel
     fi
     cp -r src/. dist/
     cd dist && zip -r -q ../dist.zip .

@@ -20,7 +20,7 @@ The assertions are structural (frame shape, ordering, non-empty accumulated text
 semantic, so the test does not depend on the model's exact wording. Nothing here assumes how many
 boundary frames arrive or where: today `Runtime.stream` synthesises one pair because this adapter
 still yields plain strings, and once it emits its own events the adapter decides. Requires
-OPENAI_API_KEY, since the demo agent uses openai:gpt-4o-mini.
+OPENAI_API_KEY, since the demo agent uses openai:gpt-4.1-mini.
 """
 
 import asyncio

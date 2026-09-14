@@ -1,10 +1,10 @@
 # A bring-your-own AKEvaluator example for the CLI. This is a simple token-overlap evaluator that also demonstrates how to
-# call an LLM judge directly via litellm (see llm_based_evaluation below).
+# call an LLM judge directly via litellm (see evaluate_by_llm below).
 
 import re
 
 import litellm
-from agentkernel.test.core.akevaluators import (
+from agentkernel.test.core.evaluator import (
     AKEvaluationCase,
     AKEvaluationError,
     AKEvaluationResult,
@@ -31,15 +31,15 @@ def _tokens(text: str) -> set[str]:
 
 
 class TokenOverlapEvaluator(AKEvaluator):
-    """score_based_evaluation: graded Jaccard token overlap (stdlib only, no LLM call).
+    """evaluate_by_score: graded Jaccard token overlap (stdlib only, no LLM call).
 
-    llm_based_evaluation: a single raw litellm.completion() call with a custom rubric prompt,
+    evaluate_by_llm: a single raw litellm.completion() call with a custom rubric prompt,
     parsed for a bare 0.0-1.0 score - no GEval, no schema-constrained JSON.
     """
 
-    def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
-            raise AKMissingInput("score_based_evaluation requires AKEvaluationCase.expected")
+            raise AKMissingInput("evaluate_by_score requires AKEvaluationCase.expected")
         expected_tokens, actual_tokens = _tokens(case.expected), _tokens(case.actual)
         score = len(expected_tokens & actual_tokens) / len(expected_tokens | actual_tokens) if actual_tokens else 0.0
         return AKEvaluationResult(
@@ -49,9 +49,9 @@ class TokenOverlapEvaluator(AKEvaluator):
             passed=score >= case.threshold,
         )
 
-    def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_llm(self, case: AKEvaluationCase) -> AKEvaluationResult:
         if not case.expected:
-            raise AKMissingInput("llm_based_evaluation requires AKEvaluationCase.expected")
+            raise AKMissingInput("evaluate_by_llm requires AKEvaluationCase.expected")
         llm = self._config.llm
         prompt = _JUDGE_PROMPT.format(question=case.user_input, expected=case.expected, actual=case.actual)
         try:

@@ -585,13 +585,17 @@ module.pre_hook(agent, [RAGPreHook()])
 module.post_hook(agent, [DisclaimerPostHook()])
 ```
 
-**Streaming text hook (optional):** override `on_stream_chunk` on a `PostHook` to inspect or modify each piece of streamed text while `execution.mode: stream` is active (e.g. redact sensitive text before it reaches the client). It sees the text-carrying events only — the assistant's `TextDelta` and the model's `ReasoningDelta` — not tool calls or message boundaries. Return `None` to drop the whole chunk, its event included; a returned string is written back into the event, so `delta` and `event` cannot disagree. Only called when streaming; regular `on_run()` still handles the non-streaming path.
+**Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.mode: stream` is active. Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
 
 ```python
 class RedactingPostHook(DisclaimerPostHook):
-    async def on_stream_chunk(self, session, requests, agent, delta: str) -> str | None:
-        return delta.replace("SECRET", "***")
+    async def on_stream_event(self, session, requests, agent, event):
+        if event.type == "tool_call_result":
+            return event.model_copy(update={"content": event.content.replace("SECRET", "***")})
+        return event
 ```
+
+To rewrite text that spans fragments, hold each `text_delta` by returning `None` while accumulating it in `session.get_volatile_cache()`, then return `[TextDelta(...), event]` at `message_end`. Accumulate in the volatile cache, never on `self` — one hook instance serves every concurrent request.
 
 **Per-run framework context (optional):** hooks are the supported surface for the reserved
 `framework_context` session key — a framework-agnostic, picklable context/state dict that the runner
