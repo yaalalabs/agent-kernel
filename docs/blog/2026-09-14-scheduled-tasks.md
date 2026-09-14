@@ -61,7 +61,12 @@ Swap `at` for a `cron` expression and it repeats forever instead of firing once:
 {"schedule": {"cron": "0 9 * * 1", "timezone": "Asia/Colombo", "session_mode": "new"}}
 ```
 
-That's `0 9 * * 1` — nine in the morning, every Monday. Four fields is the entire contract:
+That's `0 9 * * 1` — nine in the morning, every Monday, in the standard cron the `local` provider
+parses. One flavour caveat before you ship it: the `eventbridge` provider hands the day-of-week field
+straight to AWS, and EventBridge numbers that field Sunday-first — the same expression fires on
+*Sunday* there, and Monday is `0 9 * * 2`. Spell the day out as `0 9 * * MON` and both flavours agree.
+
+Four fields is the entire contract:
 
 | Field | What it does |
 | --- | --- |
@@ -70,7 +75,11 @@ That's `0 9 * * 1` — nine in the morning, every Monday. Four fields is the ent
 | `timezone` | The timezone those times mean. Defaults to UTC — set it, or "9am" won't be the 9am your users live in. |
 | `session_mode` | `reuse` continues the original conversation; `new` gives each run a clean slate. |
 
-Every chat surface behaves identically, because the check for that block runs at the top of all four `ChatService` entry points — before validation, before agent selection. There is no surface where scheduling works slightly differently.
+Every chat surface carrying a JSON body behaves identically, because the check for that block runs at
+the top of all four `ChatService` entry points — before validation, before agent selection. There is no
+JSON surface where scheduling works slightly differently. The multipart route is the one exception:
+`/api/v1/chat-multipart` declares a fixed list of form fields with no `schedule` among them, so
+schedule through the JSON `/api/v1/chat` route.
 
 ## How It Fits Together
 
@@ -157,7 +166,15 @@ execution:
 
 Because runs are delivered *into the input queue*, scheduling needs the queue execution pipeline. On a laptop the `in_memory` transport satisfies that inside a single process, so there's nothing to stand up; on AWS it means `queue_mode = true`.
 
-**Mismatched pairings fail when the scheduling manager is initialized, not necessarily at process startup.** A `local` provider behind an SQS transport would put the management routes in one process and the live timers in another — so a cancellation would report cheerful success while the timer kept right on firing. That's the class of bug you find out about from a customer. Agent Kernel rejects that pairing once the scheduling manager is built.
+**Mismatched pairings are rejected the first time the `ScheduleManager` is built — which is not the same
+moment in every topology.** Mounting `ScheduleRESTRequestHandler` validates eagerly, so an app with the
+management routes fails at build time. An app that reaches scheduling only through chat requests or the
+agent tools constructs its backends on first use, and fails there instead. The pairing is caught either
+way; only the first topology gives you a boot-time failure, so don't plan on one if you mount no routes.
+
+Why it's worth catching at all: a `local` provider behind an SQS transport would put the management
+routes in one process and the live timers in another — so a cancellation would report cheerful success
+while the timer kept right on firing. That's the class of bug you find out about from a customer.
 
 ## Managing What You Scheduled
 
@@ -181,7 +198,19 @@ Two behaviours worth knowing before you build a UI on top of these:
 - **`PUT` replaces the full amendable state — it does not merge.** Send every value, including the ones that aren't changing, or you'll clear them. Read the task with `GET` first if you don't already hold it.
 - **Nothing is ever really deleted.** Pausing keeps the record and stops the firing. Cancelling is a status transition, not a delete — the record survives as the audit trail, alongside `trigger_count`, `last_triggered_at`, and the `last_request_id` that ties a task to the exact run it produced.
 
-One caution worth repeating loudly: these routes are **open until you configure an `Authoriser`**. Without one, any caller can list schedules for arbitrary `user_id` values and read or change any task id. Supply one that resolves the caller's identity from a Bearer token and listings are forced to that user, while reaching for someone else's schedule returns 403. Do that before these routes face the internet.
+One caution worth repeating loudly: these routes are **open until you configure an `Authoriser`**. Be
+precise about where ownership enters, because it isn't where the URLs suggest: `user_id` is a filter on
+the *listing* only, and `GET`/`PUT`/`DELETE` address a task purely by its id. Passing a `user_id` does
+not protect a mutation — there is nowhere to pass one. So without an `Authoriser`, any caller can list
+any user's schedules and read, amend or cancel any task id they hold. Supply one that resolves the
+caller's identity from a Bearer token: listings are then forced to that user, and reaching for someone
+else's task returns 403.
+
+That's the FastAPI story. The serverless example can't tell it the same way — its router is a
+hand-rolled Lambda path table, so the FastAPI handler cannot be mounted and the routes call
+`ScheduleManager` directly. There, the ownership check is only as good as the `user_id` you hand the
+manager, so derive it from an API Gateway authorizer rather than from the query parameter the example
+reads for brevity. Close whichever surface you deploy before it faces the internet.
 
 ## The Bottom Line
 
