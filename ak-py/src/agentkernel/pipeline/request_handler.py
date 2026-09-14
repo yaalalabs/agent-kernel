@@ -262,18 +262,30 @@ class RequestHandler(RestHandler):
         if not body.prompt:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
 
+        self._reject_unroutable(body)
+        if self._effective_mode() == ExecutionMode.STREAM:
+            return await self._run_chat_stream(body)
+        return await self.enqueue_and_wait(body)
+
+    def _reject_unroutable(self, body: BaseRunRequest) -> None:
+        """Reject a request this topology cannot answer on this route, before anything is written.
+
+        Both rejections are about where the reply comes out, not about the request, so they run
+        ahead of every side effect: ``ThreadPipelineRequestHandler`` opens the thread and appends
+        the user message in its own ``run_chat``, and a 400 raised after that would leave a
+        phantom turn no reply ever answers. Subclasses that write before delegating call this
+        first.
+
+        :param body: The chat request; only its session_id reaches the error detail.
+        :raises HTTPException: 400 when the mode or the response store cannot serve this route.
+        """
         mode = self._effective_mode()
         if mode == ExecutionMode.ASYNC:
             raise HTTPException(
                 status_code=400,
                 detail={"error": "ASYNC mode delivers responses over the WebSocket route: connect to /ws instead", "session_id": body.session_id},
             )
-        if mode == ExecutionMode.STREAM:
-            return await self._run_chat_stream(body)
-        return await self.enqueue_and_wait(body)
-
-    async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
-        if not self.get_response_store().supports_chunk_streaming():
+        if mode == ExecutionMode.STREAM and not self.get_response_store().supports_chunk_streaming():
             # Broker topologies pair STREAM with a shared store that cannot stream chunks;
             # there the chunks are pushed over WebSocket and this route has nothing to serve.
             raise HTTPException(
@@ -283,6 +295,9 @@ class RequestHandler(RestHandler):
                     "session_id": body.session_id,
                 },
             )
+
+    async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
+        """Enqueue and serve the chunks over SSE; _reject_unroutable has vouched for the store."""
         request_id = str(uuid.uuid4())
         self._log.info(f"[STREAM REQUEST] session_id={body.session_id}, request_id={request_id}")
         await asyncio.to_thread(self._enqueue_request, body, request_id)

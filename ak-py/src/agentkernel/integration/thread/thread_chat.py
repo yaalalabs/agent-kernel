@@ -266,11 +266,18 @@ class ThreadRequestHandler(RequestHandler):
         return RequestProducer(self.get_transport()).enqueue(body, request_id, attributes=attributes)
 
     async def run_chat(self, body: BaseRunRequest):
-        """POST /api/v1/chat: record the user message, then enqueue as the pipeline normally does."""
+        """POST /api/v1/chat: record the user message, then enqueue as the pipeline normally does.
+
+        Every rejection the inherited route can raise runs before the recording: the two
+        validation messages here, and the mode/response-store checks in ``_reject_unroutable``.
+        A 400 raised after ``_record_user_message`` would leave a thread holding a user message
+        no reply ever answers.
+        """
         if not body.session_id:
             raise HTTPException(status_code=400, detail={"error": "No session_id is provided in the request"})
         if not body.prompt:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
+        self._reject_unroutable(body)
         if body.schedule is None:
             await self._record_user_message(body)
         return await super().run_chat(body)

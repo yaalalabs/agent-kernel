@@ -191,6 +191,37 @@ class TestEdgeRecording:
         assert response.status_code == 400
         assert manager.get_thread("s1") is None
 
+    def test_async_mode_is_rejected_before_any_thread_write(self, monkeypatch, dummy_agent):
+        """The route cannot answer in ASYNC mode, so it must refuse before opening the thread."""
+        manager = _configure(monkeypatch, mode="async")
+
+        response = _client().post(CHAT, json=_chat())
+
+        assert response.status_code == 400
+        assert "/ws" in response.json()["detail"]["error"]
+        assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
+    def test_stream_without_a_chunk_streaming_store_leaves_no_phantom_thread(self, monkeypatch, dummy_agent):
+        """Same for a STREAM topology whose shared store pushes chunks over WebSocket instead."""
+        manager = _configure(monkeypatch, mode="stream")
+
+        class _NoChunkStore:
+            def supports_chunk_streaming(self):
+                return False
+
+        handler = ThreadRequestHandler()
+        handler._response_store = _NoChunkStore()
+        app = FastAPI()
+        app.include_router(handler.get_router())
+
+        response = TestClient(app).post(CHAT, json=_chat())
+
+        assert response.status_code == 400
+        assert "/ws" in response.json()["detail"]["error"]
+        assert manager.get_thread("s1") is None
+        assert not InMemoryTransport().create_consumer(QueueName.INPUT).fetch(10, 0.1)
+
     def test_a_deferred_request_records_nothing_and_is_unmarked(self, monkeypatch, dummy_agent):
         manager = _configure(monkeypatch, mode="rest_async")
 

@@ -356,9 +356,11 @@ threads (their platforms own the history), and neither do scheduled occurrences.
   `RequestHandler`, mounted as `IOHandler.run(request_handler=ThreadRequestHandler())` — it
   **replaces** the pipeline's chat route rather than joining it, because both own `POST
   /api/v1/chat` and FastAPI would otherwise serve whichever registered first, silently unrecorded.
-  The recorder's bracket is split across the queue because the run is: `run_chat` validates,
-  prechecks agent availability, builds the requests and runs `pre_run` (attachment bytes offloaded
-  and the user message committed **before** anything is enqueued), rewrites the body (`requests` =
+  The recorder's bracket is split across the queue because the run is: `run_chat` validates, runs
+  the inherited `_reject_unroutable` (ASYNC mode, and STREAM on a store that cannot stream chunks —
+  every rejection the route can raise happens **before** the recording, so none leaves a phantom
+  thread), prechecks agent availability, builds the requests and runs `pre_run` (attachment bytes
+  offloaded and the user message committed **before** anything is enqueued), rewrites the body (`requests` =
   the rebuilt list, `files`/`images` cleared so no attachment rides the broker twice), and stamps
   the `thread` message attribute; `AgentRunner._record_thread_reply` appends the assistant message
   on the other side. A deferred request (`schedule` block) is left unmarked and unrecorded — the 202

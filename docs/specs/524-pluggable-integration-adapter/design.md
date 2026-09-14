@@ -358,7 +358,8 @@ graph LR
   delegation path (`api/http.py:99-106`) still reaches `IOHandler` unchanged (Decision Q9).
 - For §14, a new `test_thread_pipeline_recording.py`: the marker stamped only by
   `ThreadRequestHandler`, the user message and attachment offload committed before enqueue, the
-  rejections (missing `user_id`, unavailable agent) leaving no phantom thread, deferred requests
+  rejections (missing `user_id`, unavailable agent, ASYNC mode, STREAM without a chunk-streaming
+  store) leaving no phantom thread, deferred requests
   unmarked, `AgentRunner`/`StreamAgentRunner` appending only for a marked message and only after
   the output send, a thread-store failure never retrying the run,
   `IOHandler.run(request_handler=...)` replacing rather than joining the chat route, and an
