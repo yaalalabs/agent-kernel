@@ -181,7 +181,7 @@ Two behaviours worth knowing before you build a UI on top of these:
 - **`PUT` replaces the full amendable state — it does not merge.** Send every value, including the ones that aren't changing, or you'll clear them. Read the task with `GET` first if you don't already hold it.
 - **Nothing is ever really deleted.** Pausing keeps the record and stops the firing. Cancelling is a status transition, not a delete — the record survives as the audit trail, alongside `trigger_count`, `last_triggered_at`, and the `last_request_id` that ties a task to the exact run it produced.
 
-One caution worth repeating loudly: these routes are **open until you configure an `Authoriser`**. Without one, any caller can list and change anyone's schedules just by passing a `user_id`. Supply one that resolves the caller's identity from a Bearer token and listings are forced to that user, while reaching for someone else's schedule returns 403. Do that before these routes face the internet.
+One caution worth repeating loudly: these routes are **open until you configure an `Authoriser`**. Without one, any caller can list schedules for arbitrary `user_id` values and read or change any task id. Supply one that resolves the caller's identity from a Bearer token and listings are forced to that user, while reaching for someone else's schedule returns 403. Do that before these routes face the internet.
 
 ## The Bottom Line
 
