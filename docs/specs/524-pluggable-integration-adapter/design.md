@@ -362,7 +362,8 @@ graph LR
   store) leaving no phantom thread, deferred requests
   unmarked, `AgentRunner`/`StreamAgentRunner` appending only for a marked message and only after
   the output send, a thread-store failure never retrying the run,
-  `IOHandler.run(request_handler=...)` replacing rather than joining the chat route, and an
+  `IOHandler.run(request_handler=...)` replacing rather than joining the chat route and refusing a
+  non-`RequestHandler`, and an
   end-to-end read-back through the thread routes.
 
 ### 13. Compatibility
@@ -455,6 +456,9 @@ POST /api/v1/chat
   (Decision Q11). New `IOHandler.run(request_handler=...)` parameter. Both handlers own
   `POST /api/v1/chat`, so mounting the thread handler through `handlers=[...]` — the way §7 mounts
   a webhook host — would leave FastAPI serving whichever registered first, silently unrecorded.
+  The parameter is checked (`AKConfigError` when it is not a `RequestHandler`): the route it takes
+  over is the queue producer, so a direct-execution handler there would answer in-process while
+  the agent runner idles beside it — the mirror of 14.6's refusal, and as silent.
 - **14.6 `RequestHandler` declares `requires_pipeline`** (inherited by `ThreadRequestHandler`),
   reusing the §7/Q9 marker. It is a queue producer: on a bare `RESTAPI.run([...])` app it would
   enqueue into a queue no runner drains while the caller waits out its response-store budget —
