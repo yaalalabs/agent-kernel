@@ -14,6 +14,7 @@ module "serverless_agents" {
   is_production        = var.is_production
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
+  security_group_id    = var.security_group_id
 
   # ---- Queue Mode ----
   # Mandatory for scheduling: EventBridge Scheduler delivers each occurrence to the Input Queue.

@@ -14,6 +14,9 @@ module "rest_service" {
   vpc_cidr   = local.vpc_cidr
   subnet_ids = local.subnet_ids
 
+  alb_security_group_id         = var.alb_security_group_id
+  ecs_service_security_group_id = var.ecs_service_security_group_id
+
   ecs_cluster_arn = module.ecs.cluster_arn
 
   service_name   = local.service_name

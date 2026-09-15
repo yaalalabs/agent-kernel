@@ -54,7 +54,8 @@ The AWS deployment provisions the following resources:
     ```
 
 2. Set the VPC and subnets to deploy into in `deploy/terraform.tfvars` (`vpc_id`,
-   `private_subnet_ids`), then run the deployment script:
+   `private_subnet_ids`), and optionally `security_group_id` to reuse an existing Lambda security
+   group, then run the deployment script:
     ```bash
     cd deploy && ./deploy.sh # ./deploy.sh local if dependencies are built locally
     ```
