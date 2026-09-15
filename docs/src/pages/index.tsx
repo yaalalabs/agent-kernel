@@ -86,9 +86,8 @@ function WhatsNewBanner() {
         </span>
         <span ref={textRef} className={styles.whatsNewText}>
           <strong>Agent Kernel on Kubernetes</strong> - an official Helm chart
-          deploys the full pipeline to any cluster: bare metal, EKS, or your
-          laptop. NATS, Kafka, or SQS as the broker, KEDA autoscaling, air-gapped
-          installs, and a sandbox broker tier for code execution in your pods.
+          deploys the full pipeline to any cluster: bare metal, EKS, or
+          air-gapped.
         </span>
         <Link
           to="/blog/kubernetes-on-prem-helm-chart"
