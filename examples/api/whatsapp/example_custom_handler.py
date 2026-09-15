@@ -131,6 +131,7 @@ general_agent = OpenAIAgent(
     - Use emojis appropriately to make messages friendly
     - Break long responses into shorter paragraphs
     - Be conversational and friendly""",
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([general_agent])
