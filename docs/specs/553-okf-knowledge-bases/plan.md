@@ -88,8 +88,9 @@ local `pytest` without CI credentials (`AGENTS.md:103-108`).
 
 - **Goal:** bytes at paths, containment enforced in one place, local and S3 stores interchangeable
   through `from_uri`. Nothing consumes it yet.
-- **Files:** `knowledgebase/store/{__init__,base,local,s3}.py` (new), `knowledgebase/testing.py` (new —
-  `DocumentStoreContract` only), `ak-py/tests/test_knowledgebase_stores.py` (new).
+- **Files:** `knowledgebase/store/{__init__,base,local,s3}.py` (new),
+  `knowledgebase/testing.py` (new — `DocumentStoreContract` only),
+  `ak-py/tests/test_knowledgebase_stores.py` (new).
 - **Steps:**
   1. `store/base.py` — the ABC, `normalise_relative` called by every entrypoint and by every path
      `list()` emits, `read_prefix_bytes` with its default, `write_bytes` refusal on a non-writable
@@ -100,8 +101,9 @@ local `pytest` without CI credentials (`AGENTS.md:103-108`).
      `sorted()` global lexicographic `list()`.
   3. `store/s3.py` — `require_extra("aws", …)`, injectable client, paginated `list`, `NoSuchKey`/404 →
      `FileNotFoundError`, ranged-GET `read_prefix_bytes`, declared `writable`.
-  4. `testing.py` — `DocumentStoreContract` in the `SandboxProviderContract` (`sandbox/testing.py:130`)
-     shape. The file imports `pytest`, so it is excluded from every lazy export map.
+  4. `knowledgebase/testing.py` — `DocumentStoreContract` in the `SandboxProviderContract`
+     (`sandbox/testing.py:130`) shape. The file imports `pytest`, so it is excluded from every lazy
+     export map, but it ships in the package so out-of-tree store authors can subclass it.
 - **Verify:** `uv run pytest tests/test_knowledgebase_stores.py` — the contract over a real `tmp_path`
   and a fake boto3 client, plus the containment matrix and the `a/z.md` vs `ab/b.md` ordering case.
 
@@ -156,8 +158,8 @@ local `pytest` without CI credentials (`AGENTS.md:103-108`).
   (new), `examples/cli/knowledgebase/openai/okf/` (new).
 - **Steps:**
   1. `__init__.py` — the PEP 562 `_LAZY_EXPORTS` map of `deployment/aws/__init__.py:13-66`, with the
-     `TYPE_CHECKING` mirror block. The three SDK-backed managers and `testing.py` are deliberately not
-     exported (spec § `knowledgebase/__init__.py`; behavioural change 8).
+     `TYPE_CHECKING` mirror block. The three SDK-backed managers are deliberately not exported, and
+     neither is any contract suite (spec § `knowledgebase/__init__.py`; behavioural change 8).
   2. The example, in its siblings' shape (`build.sh`, `demo.py`, `demo_test.py`, `__init__.py`,
      `pyproject.toml`, `README.md`) plus the checked-in `bundle/` — root and `tables/` `index.md`, a
      `log.md`, three trust tiers, an unknown `type`, and one malformed file. `demo.py` calls no
@@ -176,15 +178,17 @@ local `pytest` without CI credentials (`AGENTS.md:103-108`).
 - **Files:** `knowledgebase/testing.py` (extended), `ak-py/tests/test_knowledgebase_contract.py` (new),
   `ak-py/tests/test_knowledgebase_okf_envelope.py` (new).
 - **Steps:**
-  1. `testing.py` — `KnowledgeBaseContract` and `FakeKnowledgeBase` alongside the existing
-     `DocumentStoreContract`; neither contract class is named `Test*`.
+  1. `knowledgebase/testing.py` — `KnowledgeBaseContract` and `FakeKnowledgeBase` alongside the
+     existing `DocumentStoreContract`; neither contract class is named `Test*`, and the module lives
+     in the package rather than under `tests/`.
   2. `test_knowledgebase_contract.py` — the contract run against `FakeKnowledgeBase` in four capability
      shapes, `OKFManager` over a real local bundle, and the three existing backends with
      `chromadb.PersistentClient`, `neo4j.GraphDatabase.driver`, and `trino.dbapi.connect`
      monkeypatched. The `schema()`-is-callable assertion is the regression guard for the Starburst
      collision.
   3. `test_knowledgebase_okf_envelope.py` — a generated 10,000-concept bundle; all 10,000 kept, and
-     `tracemalloc` allocations attributable to `_walk()` under 50 MB (not RSS).
+     `tracemalloc` allocations attributable to `_walk()` under a 25 KB per-concept budget, measured
+     over a 2,000-concept slice and projected to 250 MB at 10,000 (allocations, not RSS).
 - **Verify:** `cd ak-py && uv run pytest -k knowledgebase` green, then `make lint-check-all`.
 
 ## Iteration 9: Sync docs and skills
@@ -214,14 +218,16 @@ Each surface below was checked against the branch; line numbers are where the st
     `KnowledgeBaseContract` requirement to step 9 (`:149`) and the checklist (`:174`).
   - `.agents/skills/ak-dev-architecture/SKILL.md:520-521` — the `KnowledgeBase` member list and the
     four-tool `KnowledgeBuilder` line; `:714-716` — the directory tree gains `model.py`, `errors.py`,
-    `document.py`, `store/`, `okf/`, `testing.py`.
+    `document.py`, `store/`, `okf/` (not `testing.py` — the contracts live under `ak-py/tests/`).
   - `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md:353-419` — the knowledge-base capability
     section: the new tools, and OKF as a backend option. Its custom-backend pointer at `:418-419` stays
     valid.
 - **Verified as needing no update:** no `AKConfig` section, so nothing under `ak-deployment/` or the
   Helm chart changes; no framework adapter, `Runtime`, or `Session` surface moves; no existing test
   file references the knowledge-base tier (grep over `ak-py/tests/` and `e2e/`), so **no patch target
-  moves anywhere in the suite**; `.agents/skills/ak-dev-testing-conventions` needs no change — the two
-  new contract suites follow the pattern it already documents.
+  moves anywhere in the suite**. `.agents/skills/ak-dev-testing-conventions` **does** need a change,
+  contrary to this plan's original claim: its `## Test File Organization` table inventories individual
+  test modules and already names the other two reusable contracts, so the ten new
+  `test_knowledgebase*` modules and `knowledgebase/testing.py` belong in it.
 - **Verify:** run the `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` flows before
   merge to catch any surface this list missed, then `make lint-check-all`.

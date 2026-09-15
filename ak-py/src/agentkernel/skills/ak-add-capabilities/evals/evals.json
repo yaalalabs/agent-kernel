@@ -142,6 +142,21 @@
       ]
     },
     {
+      "id": "cap-knowledgebase-okf",
+      "name": "Add an Open Knowledge Format knowledge base",
+      "input": "Add a knowledge base backed by a folder of markdown files",
+      "expected_outputs": [
+        "OKFManager",
+        "LocalDocumentStore",
+        "KnowledgeBuilder",
+        "browse_kb",
+        "fetch_kb"
+      ],
+      "must_not_contain": [
+        "add_schema"
+      ]
+    },
+    {
       "id": "cap-knowledgebase-starburst",
       "name": "Add Starburst knowledge base",
       "input": "Use Starburst as a knowledge base backend",
@@ -149,6 +164,7 @@
         "StarburstManager",
         "semantic_map",
         "read-only",
+        "writable=False",
         "agentkernel[",
         "trino"
       ],
