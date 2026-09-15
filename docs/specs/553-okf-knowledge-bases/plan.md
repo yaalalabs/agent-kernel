@@ -136,8 +136,8 @@ local `pytest` without CI credentials (`AGENTS.md:103-108`).
   2. `OKFManager.__init__` — capabilities from the injected store, producer resolved once via
      `importlib.metadata` with the `agentkernel/unknown` fallback.
   3. The manifest: bounded `read_prefix_bytes` walk with a full-read fallback, retained frontmatter +
-     `body_tokens`, `max_concepts` truncation over the store's lexicographic order (spec § Manifest;
-     addition F).
+     per-field `field_tokens`, `max_concepts` truncation over the store's lexicographic order (spec §
+     Manifest; addition F).
   4. `_ensure_manifest` — blocking initial load, non-blocking refresh under `threading.Lock`,
      whole-object swap, failed refresh serving stale and resetting the clock, `reload()` (spec §
      Refresh and concurrency).

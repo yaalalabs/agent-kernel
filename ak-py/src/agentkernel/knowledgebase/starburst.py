@@ -16,10 +16,14 @@ STARBURST_USER = os.getenv("STARBURST_USER", "")
 STARBURST_PASSWORD = os.getenv("STARBURST_PASSWORD", "")
 STARBURST_PORT = int(os.getenv("STARBURST_PORT", "443"))
 
-# Match a real LIMIT clause: the keyword as its own token, followed by its required count.
-# A bare `"LIMIT" in sql` also matched identifiers like `credit_limits`, incorrectly skipping
-# the fallback and exposing the whole table; requiring the count also excludes columns/string literals.
-LIMIT_CLAUSE = re.compile(r"\bLIMIT\s+(?:\d+|ALL)\b", re.IGNORECASE)
+# A row limit on the outer query, which Trino only accepts at the end of the statement. Anchored
+# there because a LIMIT anywhere also matched one in a subquery, which bounds the subquery and
+# not the result. The keyword needs its own token and its count, or `credit_limits` matches too.
+# FETCH FIRST is the other spelling: appending a LIMIT after one is invalid SQL.
+OUTER_ROW_LIMIT = re.compile(
+    r"\b(?:LIMIT\s+(?:\d+|ALL)|FETCH\s+(?:FIRST|NEXT)\s+(?:\d+\s+)?ROWS?\s+ONLY)\s*$",
+    re.IGNORECASE,
+)
 
 
 class StarburstManager(KnowledgeBase):
@@ -176,10 +180,9 @@ class StarburstManager(KnowledgeBase):
             logger.error(f"[KB][{self.name}] Rejected non-read SQL: {sql[:80]}")
             return []
 
-        # Append a safe LIMIT if the agent omitted one for SELECT statements. Any LIMIT
-        # token counts, wherever it sits: one in a subquery already bounds the result, and
-        # appending a second clause to a statement that has one would be invalid SQL.
-        if verb == "SELECT" and not LIMIT_CLAUSE.search(sql):
+        # Append a safe LIMIT when a SELECT does not already end with one. Only a clause closing
+        # the statement counts: one in a subquery bounds that subquery, not the result.
+        if verb == "SELECT" and not OUTER_ROW_LIMIT.search(sql):
             sql = f"{sql} LIMIT {limit}"
 
         return self._execute(sql, retried=False)

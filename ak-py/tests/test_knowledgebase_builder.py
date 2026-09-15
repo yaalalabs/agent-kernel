@@ -115,6 +115,8 @@ class TestToolGating:
         assert _tool_names(KnowledgeBuilder([_vector()])) == BASE_TOOLS
 
     def test_a_query_only_application_gets_exactly_the_four_existing_tools(self):
+        # write_kb is among the four, so a read-only application still sees it. Its gate is
+        # the per-call check, asserted in TestRouting, not its absence from the list.
         assert _tool_names(KnowledgeBuilder([_sql()])) == BASE_TOOLS
 
     def test_fetch_adds_only_fetch_kb(self):

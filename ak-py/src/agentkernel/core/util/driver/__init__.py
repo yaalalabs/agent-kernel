@@ -1,6 +1,6 @@
 """
-Shared database connection drivers for the Session, Multimodal, Response Store,
-and Thread backends.
+Shared connection drivers for the Session, Multimodal, Response Store, Thread,
+and Knowledge Base backends.
 
 Drivers own the connection lifecycle (client creation, lazy connect, retry,
 health-check/reconnect, TTL plumbing) and a generic command surface; data
@@ -9,7 +9,7 @@ never read AKConfig — all connection parameters are explicit constructor
 arguments.
 
 This package intentionally has no eager imports: ``redis``, ``valkey``,
-``azure-data-tables``, and ``google-cloud-firestore`` are optional
+``boto3``, ``azure-data-tables``, and ``google-cloud-firestore`` are optional
 dependencies, so consumers import the concrete module directly, e.g.
 ``from agentkernel.core.util.driver.redis import RedisDriver``.
 """
