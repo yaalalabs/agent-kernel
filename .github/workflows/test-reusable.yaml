@@ -117,6 +117,10 @@ jobs:
         working-directory: scripts
         run: python test_update_skills_version.py
 
+      - name: Test update_chart_versions script
+        working-directory: scripts
+        run: python test_update_chart_versions.py
+
   unit-tests:
     needs: [build-ak-py]
     runs-on: ubuntu-latest

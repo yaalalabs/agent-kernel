@@ -1,10 +1,18 @@
 apiVersion: v2
 name: agent-kernel
+# The description is what GitHub shows on the GHCR package page (via the
+# org.opencontainers.image.description annotation helm push derives from it), next to a
+# "docker pull" box that does not apply to charts, so it leads with the real install command.
+# scripts/update_chart_versions.py pins the versions in it to each release.
 description: >-
-  Agent Kernel queue-execution pipeline on Kubernetes: an io-handler Deployment (Request +
-  Response Handler), an agent-runner Deployment, and an optional WebSocket gateway tier, with
-  condition-gated Valkey and NATS backing services. Flavors (baremetal, EKS, dev) are values
-  files over one set of templates.
+  Agent Kernel queue-execution pipeline on Kubernetes. Install with Helm, not docker pull:
+  helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 --untar
+  (unpacks the flavor values files), then
+  helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0
+  -f agent-kernel/values-<flavor>.yaml (flavors: dev, baremetal, eks).
+  Deploys an io-handler Deployment (Request + Response Handler), an agent-runner Deployment,
+  and an optional WebSocket gateway tier, with condition-gated Valkey and NATS backing
+  services. Guide: https://kernel.yaala.ai/docs/deployment/onprem-kubernetes
 type: application
 version: 0.1.0
 # The Agent Kernel release the templates were written against; the publish workflow overrides

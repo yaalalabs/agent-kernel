@@ -89,7 +89,7 @@ if __name__ == "__main__":
     CLI.main()
 ```
 
-That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps with a single Terraform module. 👉 [Get Started](https://kernel.yaala.ai/docs)
+That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps with a single Terraform module, or to any Kubernetes cluster with the [Helm chart](#kubernetes--on-prem-with-helm). 👉 [Get Started](https://kernel.yaala.ai/docs)
 
 ---
 
@@ -170,14 +170,30 @@ Build once. Ship to every channel your users live on. No bespoke bot code.
 
 ## ☁️ Deploy Anywhere
 
-Same agent code. Pick your runtime. Full Terraform modules included.
+Same agent code. Pick your runtime. Full Terraform modules and a Helm chart included.
 
 | Cloud | Serverless | Containerized |
 |---|---|---|
 | **AWS** | [Lambda](https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws) | [ECS / Fargate](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) |
 | **Azure** | [Functions](https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm) | [Container Apps](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) |
 | **GCP** | [Cloud Run Serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/serverless) | [Cloud Run Containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/containerized) |
-| **On-Prem / Kubernetes** | ✅ Docker image | [Helm chart](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s) (baremetal + EKS, Kafka/NATS queue mode, KEDA autoscaling) |
+| **On-Prem / Kubernetes** | N/A | [Helm chart](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s) (baremetal + EKS, Kafka/NATS queue mode, KEDA autoscaling) |
+
+### Kubernetes / On-Prem with Helm
+
+The chart is published as an OCI artifact at
+[`ghcr.io/yaalalabs/charts/agent-kernel`](https://github.com/yaalalabs/agent-kernel/pkgs/container/charts%2Fagent-kernel).
+Install it with Helm (the `docker pull` command GitHub shows on the package page does not apply to charts):
+
+```bash
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 \
+  -f agent-kernel/values-dev.yaml \
+  --set ioHandler.image.repository=<io image> \
+  --set agentRunner.image.repository=<runner image> --set image.tag=<tag>
+```
+
+Flavors are values files over one set of templates: `values-dev.yaml` for a local cluster, `values-baremetal.yaml` for self-hosted, `values-eks.yaml` for AWS EKS. Valkey and NATS ship as bundled dependencies, and every image the chart references is listed in the `images.txt` attached to each release for air-gapped mirroring. Full guide: [On-Prem / Kubernetes Deployment](https://kernel.yaala.ai/docs/deployment/onprem-kubernetes).
 
 ---
 

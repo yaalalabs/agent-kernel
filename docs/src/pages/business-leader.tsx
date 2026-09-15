@@ -433,7 +433,7 @@ export default function BusinessLeaderPage() {
                   </div>
                   <h4 className={styles.blValueTitle}>Runs on any cloud</h4>
                   <p className={styles.blValueBody}>
-                    Deploy on AWS, GCP, Azure, or your own on-prem Docker. No
+                    Deploy on AWS, GCP, Azure, or your own on-prem Kubernetes. No
                     vendor lock-in. You stay in control of your data and
                     infrastructure.
                   </p>

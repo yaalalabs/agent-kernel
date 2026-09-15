@@ -330,6 +330,7 @@
         "app_io_handler.py",
         "app_agent_runner.py",
         "helm install",
+        "oci://ghcr.io/yaalalabs/charts/agent-kernel",
         "ak-deployment/ak-k8s",
         "values-dev.yaml"
       ],

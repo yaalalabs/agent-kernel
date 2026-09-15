@@ -537,7 +537,7 @@ function ProblemTable() {
     {
       problem: "Deployment",
       without: "Write Terraform/CDK yourself",
-      with: "Pre-built Terraform modules for AWS, Azure & GCP",
+      with: "Pre-built Terraform modules for AWS, Azure & GCP, plus a Helm chart for Kubernetes",
     },
   ];
 
@@ -867,9 +867,9 @@ function CoreFeatures() {
     },
     {
       icon: <MdCloud />,
-      title: "Multi-Cloud Deployment",
+      title: "Multi-Cloud & On-Prem Deployment",
       description:
-        "One agent codebase deploys to AWS, Azure, and GCP with full Terraform modules. No vendor lock-in, ever.",
+        "One agent codebase deploys to AWS, Azure, GCP, or your own Kubernetes cluster: Terraform modules for the clouds, a Helm chart for on-prem. No vendor lock-in, ever.",
       highlights: [
         "AWS Lambda (Serverless)",
         "AWS ECS/Fargate (Containerized)",
@@ -877,6 +877,7 @@ function CoreFeatures() {
         "Azure Container Apps (Containerized)",
         "GCP Cloud Run (Serverless)",
         "GCP Cloud Run (Containerized)",
+        "On-Prem Kubernetes (Helm chart: bare metal, EKS, air-gapped)",
         "Queue-backed scaling: ingress and agent execution scale independently",
       ],
       link: "/docs/deployment/overview",

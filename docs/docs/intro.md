@@ -8,13 +8,12 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+☸️ **On-Prem Kubernetes** - Official Helm chart that runs the queue pipeline on any cluster (bare metal, EKS, or a laptop k3d), with NATS, Kafka, or SQS as the broker, KEDA autoscaling, a sandbox worker tier, and air-gapped installs. [Learn more →](/docs/deployment/onprem-kubernetes)
+
 ⏰ **Scheduling** - Defer chat execution to a later moment or a recurring cadence (`at`/`cron`), with a management REST API and agent-facing scheduling tools. [Learn more →](./advanced/scheduling.md)
 
 📦 **Sandbox** - Let agents execute code and shell commands in an isolated, permission-bounded environment, with pluggable providers, workload profiles, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 
-🧵 **Conversation Threads** - Persistent, named conversation threads with auto-naming and REST APIs for listing threads and reading history. [Learn more →](/docs/advanced/threads)
-
-🧠 **Knowledge Base Support** - Backend-agnostic, capability-declaring knowledge base interface with support for ChromaDB (vector), Neo4j (graph), Starburst Galaxy (SQL/analytics) and Open Knowledge Format markdown bundles (local directory or S3). [Learn more →](/docs/advanced/knowledge-bases)
 :::
 
 ## What is Agent Kernel?

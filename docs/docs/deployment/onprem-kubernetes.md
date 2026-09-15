@@ -47,8 +47,9 @@ Build your application images (the
 example walks this end to end on k3d, microk8s, and k3s), load them into your cluster, then:
 
 ```bash
-helm dependency build ak-deployment/ak-k8s/chart
-helm install ak ak-deployment/ak-k8s/chart -f ak-deployment/ak-k8s/chart/values-dev.yaml \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 \
+  -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag>
 
@@ -57,6 +58,12 @@ curl -s -X POST http://localhost:8000/api/v1/chat \
   -H 'Content-Type: application/json' \
   -d '{"prompt": "Hello", "session_id": "s1", "agent": "triage"}'
 ```
+
+The chart is published to GHCR as an OCI artifact with every Agent Kernel release, versioned
+like the package, and the flavor values files (`values-dev.yaml`, `values-baremetal.yaml`,
+`values-eks.yaml`) ship inside it, which is what the `helm pull --untar` unpacks. To work from
+a repository checkout instead (unreleased chart changes), add the valkey and nats chart repos,
+run `helm dependency build ak-deployment/ak-k8s/chart`, and install from that path.
 
 The dev flavor runs single replicas over in-cluster NATS and Valkey with the JetStream
 objects auto-provisioned at startup. The smallest install is the single-process profile
@@ -117,8 +124,8 @@ for the values.
 
 Enabling `sandboxWorker` adds the sandbox broker worker: it consumes sandbox execution
 requests from the sandbox queues (same transport, its own queue names), runs them through a
-sandbox provider (typically `kubernetes` pods with a read-only ServiceAccount as the security
-boundary), and returns completions over the sandbox output queue into the shared response
+sandbox provider (typically `kubernetes` pods running as a ServiceAccount the chart binds to
+nothing, so the RBAC you grant it is the security boundary), and returns completions over the sandbox output queue into the shared response
 store. The tier ships with its own ServiceAccount and RBAC, KEDA scaling on the sandbox input
 backlog, and values-gated namespace hardening (Pod Security Admission, default-deny egress,
 quotas).
@@ -142,8 +149,9 @@ SIGTERM: consumers stop claiming work and finish in-flight turns within
 
 Observability ships as documented recipes (kube-prometheus-stack, per-broker exporters, an
 OpenTelemetry Collector funnel for the Langfuse/OpenLLMetry/Logfire tracing providers), not as
-chart dependencies. Air-gapped installs set one `global.imageRegistry` override and mirror the
-per-release `images.txt` manifest. Both are covered in the
+chart dependencies. Air-gapped installs set `global.imageRegistry` (application images and
+Valkey) plus `global.image.registry` (the NATS subchart) and mirror the per-release
+`images.txt` manifest. Both are covered in the
 [chart README](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s).
 
 ## Next Steps

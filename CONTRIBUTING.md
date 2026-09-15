@@ -113,8 +113,10 @@ If you have followed the guidelines in [Developer Guide](DEVELOPER_GUIDE.md) to 
 
 ### Review Workflow
 
-- **Copilot review**: A GitHub Copilot code review is requested automatically when a PR is
-  opened, reopened, or marked ready for review. You do not need to request it yourself.
+- **Copilot review**: A GitHub Copilot code review is requested automatically when a PR from a
+  repository collaborator is opened, reopened, or marked ready for review. Collaborators do not
+  need to request it themselves. For PRs from outside contributors, a maintainer requests the
+  review after a first read of the PR.
 - **`Reviewed` label**: Maintainers add the `Reviewed` label once they have gone through a PR.
   Pushing new commits removes the label automatically so the PR shows up again in the review
   queue (`is:pr is:open -label:Reviewed`). Do not add or remove the label yourself.

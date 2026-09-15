@@ -64,7 +64,8 @@ Use current module version (`0.9.0`) unless user requests another.
 
 Kubernetes does not use Terraform: the Helm chart lives at `ak-deployment/ak-k8s/chart` in the
 Agent Kernel repository and is published as an OCI artifact
-(`oci://ghcr.io/yaalalabs/charts/agent-kernel`).
+(`oci://ghcr.io/yaalalabs/charts/agent-kernel`, versioned with each release). Install the
+published chart, as in the Kubernetes section below, not a repository checkout.
 
 All modules are provider-agnostic: they declare `required_providers` but do not configure them internally. Configure each provider (`aws`/`docker`, `azurerm`, or `google`/`google-beta`/`docker`) in the root module and pass it explicitly via the module's `providers = { ... }` argument, as shown in the examples below. Azure's containerized module builds and pushes its image via a nested submodule with its own internal `docker` provider, so no `docker` provider needs to be configured or passed by the caller there.
 
@@ -1294,14 +1295,19 @@ also cross-installs Linux wheels so builds work from macOS).
 **Install:**
 
 ```bash
-helm dependency build ak-deployment/ak-k8s/chart
-helm install ak ak-deployment/ak-k8s/chart -f ak-deployment/ak-k8s/chart/values-dev.yaml \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 \
+  -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag> \
   --set 'extraEnv[0].name=OPENAI_API_KEY' \
   --set 'extraEnv[0].valueFrom.secretKeyRef.name=openai' \
   --set 'extraEnv[0].valueFrom.secretKeyRef.key=api-key'
 ```
+
+The chart version tracks the Agent Kernel release (the pin above is the current one); the
+flavor values files ship inside the chart, so no repository checkout is needed.
+`ak-deployment/ak-k8s/chart` in the repository is for developing the chart itself.
 
 - `values-dev.yaml`: micro-clusters (k3d/kind/microk8s/k3s), single replicas, auto-provisioned
   JetStream, port-forward entry; also documents the single-process profile (one pod,

@@ -27,6 +27,8 @@ Build the application images (see [the example](../../examples/k8s/openai-queue-
 walks this end to end on k3d, microk8s, and k3s), load them into your cluster, then:
 
 ```bash
+helm repo add valkey https://valkey-io.github.io/valkey-helm/
+helm repo add nats https://nats-io.github.io/k8s/helm/charts/
 helm dependency build ./chart
 helm install ak ./chart -f ./chart/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
@@ -291,7 +293,8 @@ the completion from the shared store.
 ## Air-gapped installs
 
 Set `global.imageRegistry` to your private registry: it prefixes the application image and
-the subcharts' images. Every release publishes an `images.txt` manifest (see
+the Valkey subchart's images. The NATS subchart reads `global.image.registry` instead, so set
+both when the in-cluster NATS is enabled. Every release publishes an `images.txt` manifest (see
 [the publish workflow](../../.github/workflows/publish-chart.yaml)) listing every image the
 chart references, for mirroring. The chart itself is published as an OCI artifact, so it can
 be copied into the same registry and installed by digest:
@@ -351,5 +354,9 @@ for a CI node, expecting the example image preloaded via `kind load docker-image
 ## Publishing
 
 The chart is pushed as an OCI artifact to `oci://ghcr.io/yaalalabs/charts` by the
-`publish-chart` workflow (manual dispatch per release tag), which also attaches the
-`images.txt` manifest to the GitHub release.
+`publish-chart` workflow, which the release pipeline (`publish.yaml`) dispatches for every
+release tag once the GitHub release exists (it can also be dispatched by hand to republish a
+tag). The tag minus its `v` is the chart version; the same release run pins the install
+commands in the examples, the docs site, and the bundled `ak-cloud-deploy` skill to it with
+`scripts/update_chart_versions.py`, and the workflow attaches the `images.txt` manifest to the
+GitHub release.
