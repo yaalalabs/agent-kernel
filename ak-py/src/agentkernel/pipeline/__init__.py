@@ -18,6 +18,7 @@ _LAZY_EXPORTS = {
     "ConsumerLoop": ".consumer",
     "QueueMessage": ".envelope",
     "QueueName": ".envelope",
+    "RequestProducer": ".producer",
     "IOHandler": ".io_handler",
     "RequestHandler": ".request_handler",
     "RestHandler": ".request_handler",
@@ -41,6 +42,7 @@ if TYPE_CHECKING:  # pragma: no cover: static resolution only, preserves lazines
     from .consumer import ConsumerLoop
     from .envelope import QueueMessage, QueueName
     from .io_handler import IOHandler
+    from .producer import RequestProducer
     from .request_handler import RequestHandler, RestHandler
     from .response_handler import ResponseHandler
     from .thread_runner import ThreadRunner

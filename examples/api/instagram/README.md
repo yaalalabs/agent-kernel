@@ -19,7 +19,7 @@ This integration uses the Instagram Graph API (`graph.instagram.com`) directly, 
 
 ### 1. Get Instagram API Credentials
 
-Follow the setup guide in [AgentInstagramRequestHandler](../../../ak-py/src/agentkernel/integration/instagram/README.md)
+Follow the setup guide in [InstagramInboundAdapter](../../../ak-py/src/agentkernel/integration/instagram/README.md)
 
 You'll need:
 

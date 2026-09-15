@@ -11,4 +11,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .messenger_chat import AgentMessengerRequestHandler
+from .adapter import MessengerInboundAdapter, MessengerOutboundAdapter

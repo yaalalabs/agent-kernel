@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ..api.handler import AgentRESTRequestHandler
 from ..core.config import AKConfig
 from ..core.model import BaseRunRequest, ExecutionMode, FileData, ImageData
-from .envelope import ATTR_REQUEST_ID, QueueMessage, QueueName
+from .producer import RequestProducer
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
@@ -58,18 +58,12 @@ class RestHandler(AgentRESTRequestHandler):
         return self._transport
 
     def _enqueue_request(self, body: BaseRunRequest, request_id: str) -> Dict[str, Any]:
-        """Build the input-queue envelope for a chat request and send it.
+        """Send a chat request to the input queue through the shared producer seam.
 
-        ``exclude_none`` keeps the body JSON identical to the pre-#495 SQS path (which dumped
-        the validated body model with ``exclude_none=True``).
+        Stays a method so ``get_transport()`` remains the transport injection point subclasses
+        (and tests) rely on; the envelope itself is built by RequestProducer (spec #524 §3).
         """
-        message = QueueMessage(
-            body=json.dumps(body.model_dump(exclude_none=True)),
-            attributes={ATTR_REQUEST_ID: request_id},
-            group_id=body.session_id,
-            dedup_id=request_id,
-        )
-        return self.get_transport().send(QueueName.INPUT, message) or {}
+        return RequestProducer(self.get_transport()).enqueue(body, request_id)
 
     def _is_queue_mode(self) -> bool:
         """True when an input queue is configured (enqueue mode); False for direct mode."""
@@ -225,7 +219,15 @@ class RestHandler(AgentRESTRequestHandler):
 
 class RequestHandler(RestHandler):
     """Pipeline REST surface (spec #495 §8): enqueues to the configured transport and serves
-    the poll/SSE routes. Always queue mode; the transport decides the topology."""
+    the poll/SSE routes. Always queue mode; the transport decides the topology.
+
+    ``requires_pipeline``, for the same reason the messaging webhook host declares it: this is a
+    queue producer, so on a bare ``RESTAPI.run([...])`` app it would enqueue into a queue no
+    runner drains while the caller still waits out its response-store budget. Mount it (and its
+    subclasses) through ``IOHandler.run``, which starts the runner behind it.
+    """
+
+    requires_pipeline = True
 
     def __init__(self):
         super().__init__(logger_name="ak.pipeline.request_handler")
@@ -260,18 +262,30 @@ class RequestHandler(RestHandler):
         if not body.prompt:
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
 
+        self._reject_unroutable(body)
+        if self._effective_mode() == ExecutionMode.STREAM:
+            return await self._run_chat_stream(body)
+        return await self.enqueue_and_wait(body)
+
+    def _reject_unroutable(self, body: BaseRunRequest) -> None:
+        """Reject a request this topology cannot answer on this route, before anything is written.
+
+        Both rejections are about where the reply comes out, not about the request, so they run
+        ahead of every side effect: ``ThreadPipelineRequestHandler`` opens the thread and appends
+        the user message in its own ``run_chat``, and a 400 raised after that would leave a
+        phantom turn no reply ever answers. Subclasses that write before delegating call this
+        first.
+
+        :param body: The chat request; only its session_id reaches the error detail.
+        :raises HTTPException: 400 when the mode or the response store cannot serve this route.
+        """
         mode = self._effective_mode()
         if mode == ExecutionMode.ASYNC:
             raise HTTPException(
                 status_code=400,
                 detail={"error": "ASYNC mode delivers responses over the WebSocket route: connect to /ws instead", "session_id": body.session_id},
             )
-        if mode == ExecutionMode.STREAM:
-            return await self._run_chat_stream(body)
-        return await self.enqueue_and_wait(body)
-
-    async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
-        if not self.get_response_store().supports_chunk_streaming():
+        if mode == ExecutionMode.STREAM and not self.get_response_store().supports_chunk_streaming():
             # Broker topologies pair STREAM with a shared store that cannot stream chunks;
             # there the chunks are pushed over WebSocket and this route has nothing to serve.
             raise HTTPException(
@@ -281,6 +295,9 @@ class RequestHandler(RestHandler):
                     "session_id": body.session_id,
                 },
             )
+
+    async def _run_chat_stream(self, body: BaseRunRequest) -> StreamingResponse:
+        """Enqueue and serve the chunks over SSE; _reject_unroutable has vouched for the store."""
         request_id = str(uuid.uuid4())
         self._log.info(f"[STREAM REQUEST] session_id={body.session_id}, request_id={request_id}")
         await asyncio.to_thread(self._enqueue_request, body, request_id)

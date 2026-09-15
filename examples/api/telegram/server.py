@@ -1,6 +1,7 @@
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.telegram import AgentTelegramRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.telegram import TelegramInboundAdapter
 from agents import Agent as OpenAIAgent
 
 # Create your agent
@@ -15,5 +16,4 @@ OpenAIModule([general_agent])
 
 
 if __name__ == "__main__":
-    handler = AgentTelegramRequestHandler()
-    RESTAPI.run([handler])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(TelegramInboundAdapter())])

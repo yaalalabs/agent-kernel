@@ -11,4 +11,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .whatsapp_chat import AgentWhatsAppRequestHandler
+from .adapter import WhatsAppInboundAdapter, WhatsAppOutboundAdapter

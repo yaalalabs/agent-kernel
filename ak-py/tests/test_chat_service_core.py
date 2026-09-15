@@ -135,6 +135,21 @@ class TestExecuteSync:
                 service.execute_sync(BaseRunRequest(prompt="", session_id="s1"), requests=prebuilt)
         assert handler.run_sync.call_args.args[0] is prebuilt
 
+    def test_process_chat_request_forwards_a_prebuilt_list(self):
+        """#524: the Agent Runner hands the queue body's request list straight through."""
+        prebuilt = [AgentRequestText(prompt="from the platform")]
+        handler = _mock_handler(AgentReplyText(response="ok"))
+
+        def _fail(req):
+            raise AssertionError("RequestBuilder must not run on the prebuilt path")
+
+        with patch("agentkernel.core.chat_service.RequestBuilder.from_base_request_sync", _fail):
+            with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+                status_code, body = ChatService().process_chat_request(BaseRunRequest(prompt="", session_id="s1"), requests=prebuilt)
+
+        assert (status_code, body["result"]) == (200, "ok")
+        assert handler.run_sync.call_args.args[0] is prebuilt
+
 
 class TestExecuteStream:
     @pytest.mark.asyncio

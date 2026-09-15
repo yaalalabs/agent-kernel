@@ -218,7 +218,22 @@ class TestConversationThreadManager:
         AKConfig.get().multimodal.storage_type = "session_cache"
         try:
             with pytest.raises(ValueError, match="session_cache"):
-                thread_enabled.store_attachments("s1", [AgentRequestText(prompt="hi")])
+                thread_enabled.store_attachments("s1", [AgentRequestImage(image_data="ZmFrZQ==", name="shot.png", mime_type="image/png")])
+        finally:
+            AKConfig.get().multimodal.enabled = original_enabled
+            AKConfig.get().multimodal.storage_type = original_storage
+
+    def test_store_attachments_session_cache_allows_a_turn_without_attachments(self, thread_enabled):
+        """session_cache only loses attachment bytes; a text-only turn never reaches the store."""
+        original_enabled = AKConfig.get().multimodal.enabled
+        original_storage = AKConfig.get().multimodal.storage_type
+        AKConfig.get().multimodal.enabled = True
+        AKConfig.get().multimodal.storage_type = "session_cache"
+        try:
+            requests = [AgentRequestText(prompt="hi")]
+            rebuilt, refs = thread_enabled.store_attachments("s1", requests)
+            assert refs == []
+            assert rebuilt is requests
         finally:
             AKConfig.get().multimodal.enabled = original_enabled
             AKConfig.get().multimodal.storage_type = original_storage

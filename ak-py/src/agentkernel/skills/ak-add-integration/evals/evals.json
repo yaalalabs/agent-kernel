@@ -8,17 +8,19 @@
       "name": "Add Slack integration",
       "input": "Add Slack integration to my Agent Kernel project",
       "expected_outputs": [
-        "agentkernel[", "slack",
-        "AgentSlackRequestHandler",
-        "RESTAPI.run([",
+        "agentkernel[",
+        "slack",
+        "WebhookRESTRequestHandler",
+        "SlackInboundAdapter",
+        "IOHandler.run(",
         "SLACK_BOT_TOKEN",
         "SLACK_SIGNING_SECRET",
         "slack:",
         "config.yaml"
       ],
       "must_not_contain": [
-        "AgentWhatsAppRequestHandler",
-        "AgentTelegramRequestHandler"
+        "WhatsAppInboundAdapter",
+        "TelegramInboundAdapter"
       ]
     },
     {
@@ -26,8 +28,10 @@
       "name": "Add WhatsApp integration",
       "input": "Add WhatsApp integration to my project",
       "expected_outputs": [
-        "agentkernel[", "whatsapp",
-        "AgentWhatsAppRequestHandler",
+        "agentkernel[",
+        "whatsapp",
+        "WebhookRESTRequestHandler",
+        "WhatsAppInboundAdapter",
         "AK_WHATSAPP__ACCESS_TOKEN",
         "AK_WHATSAPP__PHONE_NUMBER_ID",
         "whatsapp:",
@@ -39,8 +43,10 @@
       "name": "Add Facebook Messenger integration",
       "input": "Add Messenger integration",
       "expected_outputs": [
-        "agentkernel[", "messenger",
-        "AgentMessengerRequestHandler",
+        "agentkernel[",
+        "messenger",
+        "WebhookRESTRequestHandler",
+        "MessengerInboundAdapter",
         "AK_MESSENGER__ACCESS_TOKEN"
       ]
     },
@@ -49,8 +55,10 @@
       "name": "Add Instagram integration",
       "input": "Add Instagram integration",
       "expected_outputs": [
-        "agentkernel[", "instagram",
-        "AgentInstagramRequestHandler",
+        "agentkernel[",
+        "instagram",
+        "WebhookRESTRequestHandler",
+        "InstagramInboundAdapter",
         "AK_INSTAGRAM__ACCESS_TOKEN"
       ]
     },
@@ -59,8 +67,10 @@
       "name": "Add Telegram integration",
       "input": "Add Telegram integration",
       "expected_outputs": [
-        "agentkernel[", "telegram",
-        "AgentTelegramRequestHandler",
+        "agentkernel[",
+        "telegram",
+        "WebhookRESTRequestHandler",
+        "TelegramInboundAdapter",
         "AK_TELEGRAM__BOT_TOKEN"
       ]
     },
@@ -69,8 +79,11 @@
       "name": "Add Gmail integration",
       "input": "Add Gmail integration",
       "expected_outputs": [
-        "agentkernel[", "gmail",
-        "AgentGmailRequestHandler",
+        "agentkernel[",
+        "gmail",
+        "PollerRunner",
+        "IOHandler.run(pollers=",
+        "GmailInboundAdapter",
         "gmail:",
         "poll_interval",
         "token_file"
@@ -81,8 +94,10 @@
       "name": "Add Teams integration",
       "input": "Add Microsoft Teams integration",
       "expected_outputs": [
-        "agentkernel[", "teams",
-        "AgentTeamsRequestHandler",
+        "agentkernel[",
+        "teams",
+        "WebhookRESTRequestHandler",
+        "TeamsInboundAdapter",
         "AK_TEAMS__APP_ID",
         "AK_TEAMS__APP_PASSWORD",
         "teams:",
@@ -94,10 +109,13 @@
       "name": "Add multiple integrations",
       "input": "Add both Slack and WhatsApp integrations to my project",
       "expected_outputs": [
-        "RESTAPI.run([",
-        "AgentSlackRequestHandler()",
-        "AgentWhatsAppRequestHandler()",
-        "agentkernel[", "slack", "whatsapp"
+        "IOHandler.run(",
+        "SlackInboundAdapter()",
+        "WebhookRESTRequestHandler",
+        "WhatsAppInboundAdapter()",
+        "agentkernel[",
+        "slack",
+        "whatsapp"
       ]
     },
     {

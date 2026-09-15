@@ -1,6 +1,7 @@
-from agentkernel.api import RESTAPI
-from agentkernel.messenger import AgentMessengerRequestHandler
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.messenger import MessengerInboundAdapter
 from agentkernel.openai import OpenAIModule
+from agentkernel.pipeline import IOHandler
 from agents import Agent as OpenAIAgent
 
 # Create your agent
@@ -15,5 +16,4 @@ OpenAIModule([general_agent])
 
 
 if __name__ == "__main__":
-    handler = AgentMessengerRequestHandler()
-    RESTAPI.run([handler])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(MessengerInboundAdapter())])

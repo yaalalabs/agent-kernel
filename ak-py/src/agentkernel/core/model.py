@@ -1,9 +1,9 @@
 import json
 import uuid
 from enum import Enum
-from typing import Any, Callable, List, Literal, Optional, Union
+from typing import Annotated, Any, Callable, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .event import StreamEvent
 
@@ -124,6 +124,11 @@ class AgentReplyImage(AgentRequestImage):
 
 type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef]
 type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyAny]
+
+AgentRequestUnion = Annotated[
+    Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef],
+    Field(discriminator="type"),
+]
 
 
 class AgentReplyAny(BaseModel):
@@ -268,10 +273,18 @@ class BaseRunRequest(BaseChatRequest):
     it delivers, identifying the task and the occurrence this run belongs to. They are
     typed fields (not extras) so an occurrence's metadata never reaches the agent as
     additional context.
+
+    requests carries an already-built AgentRequest list, for producers that compose it
+    themselves rather than leaving it to RequestBuilder: a messaging integration downloads
+    its attachments at the edge and stores them, so what reaches the queue is a request list
+    (including AgentRequestAttachmentRef entries, which files/images cannot express). Typed
+    for the same reason as the scheduling fields: an extra would reach the agent as
+    AgentRequestAny context.
     """
 
     files: Optional[List[FileData]] = None
     images: Optional[List[ImageData]] = None
+    requests: Optional[List[AgentRequestUnion]] = None
     scheduled_task_id: Optional[str] = None
     scheduled_time: Optional[str] = None
     model_config = ConfigDict(extra="allow")

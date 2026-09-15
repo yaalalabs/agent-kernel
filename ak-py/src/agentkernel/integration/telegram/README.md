@@ -2,7 +2,7 @@
 
 Telegram Bot API integration for Agent Kernel using webhooks.
 
-The `AgentTelegramRequestHandler` class handles conversations with agents via Telegram Bot API webhooks. This integration uses the official Telegram Bot API (https://core.telegram.org/bots/api) without requiring third-party libraries beyond standard HTTP clients.
+The `TelegramInboundAdapter` class handles conversations with agents via Telegram Bot API webhooks. This integration uses the official Telegram Bot API (https://core.telegram.org/bots/api) without requiring third-party libraries beyond standard HTTP clients.
 
 ## How It Works
 
@@ -51,9 +51,10 @@ Telegram doesn't require webhook verification like Meta platforms. The webhook U
 
 ```python
 from agents import Agent as OpenAIAgent
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.telegram import AgentTelegramRequestHandler
+from agentkernel.telegram import TelegramInboundAdapter
 
 # Create your agent
 general_agent = OpenAIAgent(
@@ -66,8 +67,7 @@ general_agent = OpenAIAgent(
 OpenAIModule([general_agent])
 
 if __name__ == "__main__":
-    handler = AgentTelegramRequestHandler()
-    RESTAPI.run([handler])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(TelegramInboundAdapter())])
 ```
 
 > **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analyze_attachments` tool is automatically attached to your agent by Agent Kernel at startup. 
