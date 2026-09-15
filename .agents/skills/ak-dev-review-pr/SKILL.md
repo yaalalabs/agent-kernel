@@ -129,6 +129,16 @@ Evaluate the delta on each dimension. For each finding, record: file, line (in t
 - **Config-driven behavior**: new knobs go through `AKConfig` (Pydantic, YAML/env with `AK_` prefix), not module-level constants or ad-hoc `os.environ` reads.
 - **Session lifecycle correctness**: session state mutations happen inside the session context; transient per-request data uses `v_cache`, cross-request data uses `nv_cache`; no state stored on module globals.
 - **Plugin interfaces**: pluggable components are registered through the existing factories/builders, not special-cased with `if/else` chains in core.
+- **Config surface cohesion**: when a component already has a canonical settings surface (an
+  object-typed variable — Terraform's `rest_service`/`agent_runner`/`queue_config`/`scaling_config`; an
+  `AKConfig` Pydantic section; a settings dataclass; builder kwargs), new config for that component
+  belongs on it, not as a disconnected sibling variable/parameter/env var. This fragments one
+  component's config across two places — a defect even if the sibling wires through and
+  plans/type-checks fine. Check every layer the PR touches: a root module and the submodule it calls can
+  each have their own canonical object for the same service, and either can independently fragment (a
+  root fixing its `rest_service` object doesn't guarantee the submodule's identically-shaped object stays
+  cohesive too). A flat sibling is legitimate only when the PR/spec states a concrete reason it can't be
+  a nested field; otherwise it's a finding.
 
 ### 2. Correctness
 
