@@ -9,11 +9,14 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from fastapi import APIRouter
 
+from agentkernel.api.handler import RESTRequestHandler
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.io_handler import IOHandler
+from agentkernel.pipeline.request_handler import RequestHandler
 from agentkernel.pipeline.thread_runner import ThreadRunner
 
 
@@ -91,6 +94,25 @@ class TestTopologyValidation:
 
     def test_in_memory_topology_passes(self):
         IOHandler._validate_topology(ExecutionMode.STREAM, "in_memory", _cfg(ExecutionMode.STREAM))
+
+
+class TestRequestHandlerValidation:
+    """request_handler replaces the pipeline's queue producer, so it has to be one."""
+
+    def test_a_direct_execution_handler_is_refused(self):
+        """Mounting one here would answer every chat request in-process while the runner idles."""
+
+        class DirectHandler(RESTRequestHandler):
+            def get_router(self):  # pragma: no cover: never reached, the mount is refused first
+                return APIRouter()
+
+        with pytest.raises(AKConfigError, match="DirectHandler is not a pipeline RequestHandler"):
+            IOHandler._validate_request_handler(DirectHandler())
+
+    def test_a_request_handler_and_none_are_accepted(self):
+        """None keeps the pipeline's own producer; a RequestHandler subclass substitutes for it."""
+        IOHandler._validate_request_handler(None)
+        IOHandler._validate_request_handler(MagicMock(spec=RequestHandler))
 
 
 class TestSignalHandlers:
