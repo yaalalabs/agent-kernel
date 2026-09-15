@@ -250,7 +250,7 @@ terraform init && terraform apply
 Uses the Agent Kernel Helm chart.
 
 ```bash
-helm install ak ak-deployment/ak-k8s/chart -f values-<flavor>.yaml
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 -f values-<flavor>.yaml
 ```
 
 - io-handler + agent-runner Deployments over Kafka/NATS JetStream (or SQS on EKS)
