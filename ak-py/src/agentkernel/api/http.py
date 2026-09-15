@@ -105,6 +105,7 @@ class RESTAPI:
                 cls._log.info("in_memory queue transport resolved: starting the single-process pipeline topology")
                 return IOHandler.run()
 
+        handlers = handlers if handlers is not None else cls.get_default_handlers()
         cls._reject_pipeline_only_handlers(handlers)
 
         host = AKConfig.get().api.host

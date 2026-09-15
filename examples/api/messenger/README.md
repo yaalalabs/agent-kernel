@@ -14,7 +14,7 @@ This example demonstrates how to create a Facebook Messenger Platform integratio
 
 ### 1. Get Facebook Messenger Credentials
 
-Follow the setup guide in [MessengerInboundAdapter](../../../ak-py/src/agentkernel/integrations/messenger/README.md)
+Follow the setup guide in [MessengerInboundAdapter](../../../ak-py/src/agentkernel/integration/messenger/README.md)
 
 You'll need:
 - Page Access Token
@@ -277,7 +277,7 @@ Extend this example with:
 - [Webhook Reference](https://developers.facebook.com/docs/messenger-platform/webhooks)
 - [Platform Policy](https://developers.facebook.com/docs/messenger-platform/policy-overview)
 - [Agent Kernel Documentation](../../../docs/)
-- [Facebook Messenger Integration Guide](../../../ak-py/src/agentkernel/integrations/messenger/README.md)
+- [Facebook Messenger Integration Guide](../../../ak-py/src/agentkernel/integration/messenger/README.md)
 
 ## Support
 

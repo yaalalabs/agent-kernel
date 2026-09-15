@@ -49,15 +49,25 @@ class CustomWhatsAppInboundAdapter(WhatsAppInboundAdapter):
             await self._say(message.get("from"), reply, message.get("id"))
             return None
 
-        if text:
+        if text and message.get("type") == "text":
             message = {**message, "text": {"body": self._expand_shorthand(text)}}
 
         return await super()._to_request(message)
 
     @staticmethod
     def _text_of(message: dict) -> str:
-        if message.get("type") == "text":
+        """The message's text, however WhatsApp phrased it.
+
+        Interactive replies count: the parent adapter normalizes a button or list selection to its
+        title, so a /help button would otherwise slip past the command check and reach the agent.
+        """
+        message_type = message.get("type")
+        if message_type == "text":
             return (message.get("text", {}).get("body") or "").strip()
+        if message_type == "interactive":
+            interactive = message.get("interactive", {})
+            reply = interactive.get(interactive.get("type"), {})
+            return (reply.get("title") or "").strip()
         return ""
 
     @staticmethod

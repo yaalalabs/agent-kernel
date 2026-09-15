@@ -78,8 +78,17 @@ class _WhatsAppClient:
             self._log.error(f"Error getting media info {media_id}: {e}")
             return None, None
 
-    async def download_media(self, media_id: str) -> Optional[str]:
-        """Download a media file and return it base64-encoded."""
+    async def download_media(self, media_id: str, max_file_size: int) -> Optional[str]:
+        """Stream a media file and return it base64-encoded, aborting past ``max_file_size``.
+
+        ``media_info`` has already refused anything Meta *declares* as oversized; this second
+        ceiling is what keeps a body that turns out larger than its declaration from filling this
+        process before the transfer ends.
+
+        :param media_id: The platform's media id.
+        :param max_file_size: The ``api.max_file_size`` ceiling, in bytes.
+        :return: The base64-encoded file, or None when it could not be taken.
+        """
         try:
             headers = {"Authorization": f"Bearer {self._access_token}"}
             async with httpx.AsyncClient() as client:
@@ -89,9 +98,16 @@ class _WhatsAppClient:
                 if not media_url:
                     self._log.error(f"No URL found for media ID {media_id}")
                     return None
-                media = await client.get(media_url, headers=headers)
-                media.raise_for_status()
-            return base64.b64encode(media.content).decode("utf-8")
+
+                buffer = bytearray()
+                async with client.stream("GET", media_url, headers=headers) as media:
+                    media.raise_for_status()
+                    async for chunk in media.aiter_bytes():
+                        buffer.extend(chunk)
+                        if len(buffer) > max_file_size:
+                            self._log.error(f"Media {media_id} exceeded {max_file_size} bytes mid-transfer; download aborted")
+                            return None
+            return base64.b64encode(bytes(buffer)).decode("utf-8")
         except Exception as e:
             self._log.error(f"Error downloading media {media_id}: {e}")
             return None
@@ -217,7 +233,7 @@ class WhatsAppInboundAdapter(InboundAdapter):
             )
             return None
 
-        data = await self._client.download_media(media_id)
+        data = await self._client.download_media(media_id, self._max_file_size)
         if data is None:
             await self._say(from_number, f"Sorry, I could not download the {noun}. Please try again.", message_id)
             return None

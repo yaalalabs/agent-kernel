@@ -106,21 +106,37 @@ class MetaSendAPIClient:
             self._log.warning(f"Failed to send sender action '{action}': {e}")
 
     async def download_attachment(self, url: str, max_file_size: int) -> Optional[Tuple[str, str, str]]:
-        """Download one attachment by URL.
+        """Stream one attachment by URL, aborting as soon as it exceeds ``max_file_size``.
 
+        Streamed rather than buffered because the limit has to be enforced *during* the transfer:
+        reading the whole body first would let a multi-gigabyte file exhaust this process before
+        the check it is meant to fail ever runs. ``content-length`` is honoured when the server
+        declares one, and the running total catches the servers that do not.
+
+        :param url: The attachment's URL, as the platform gave it.
+        :param max_file_size: The ``api.max_file_size`` ceiling, in bytes.
         :return: (base64 data, file name, MIME type), or None when it is missing or too large.
         """
         async with httpx.AsyncClient() as client:
-            response = await client.get(url, timeout=10.0)
-            response.raise_for_status()
-            content = response.content
+            async with client.stream("GET", url, timeout=10.0) as response:
+                response.raise_for_status()
 
-        if len(content) > max_file_size:
-            self._log.warning(
-                f"Attachment size ({len(content) / (1024 * 1024):.2f} MB) exceeds maximum allowed size of {max_file_size / (1024 * 1024):.2f} MB"
-            )
-            return None
+                declared = response.headers.get("content-length")
+                if declared and declared.isdigit() and int(declared) > max_file_size:
+                    self._log_oversized(int(declared), max_file_size)
+                    return None
 
-        mime_type = response.headers.get("content-type", "application/octet-stream")
+                buffer = bytearray()
+                async for chunk in response.aiter_bytes():
+                    buffer.extend(chunk)
+                    if len(buffer) > max_file_size:
+                        self._log_oversized(len(buffer), max_file_size)
+                        return None
+
+                mime_type = response.headers.get("content-type", "application/octet-stream")
+
         filename = url.split("/")[-1].split("?")[0] or "attachment"
-        return base64.b64encode(content).decode("utf-8"), filename, mime_type
+        return base64.b64encode(bytes(buffer)).decode("utf-8"), filename, mime_type
+
+    def _log_oversized(self, size: int, max_file_size: int) -> None:
+        self._log.warning(f"Attachment size ({size / (1024 * 1024):.2f} MB) exceeds maximum allowed size of {max_file_size / (1024 * 1024):.2f} MB")

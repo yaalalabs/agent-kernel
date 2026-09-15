@@ -2,6 +2,7 @@
 
 import base64
 import threading
+from collections import OrderedDict
 from unittest.mock import MagicMock
 
 import pytest
@@ -89,7 +90,7 @@ def _inbound(client=None, agent="helper", allowed_senders=None, subject_keywords
     adapter._service = _gmail_service(client if client is not None else _service())
     adapter._allowed_senders = allowed_senders
     adapter._subject_keywords = subject_keywords
-    adapter._handled = set()
+    adapter._handled = OrderedDict()
     return adapter
 
 
@@ -315,6 +316,27 @@ class TestDeliver:
         await adapter.deliver(AgentReplyText(response="hi"), self._context())
 
         client.users.return_value.messages.return_value.send.assert_not_called()
+
+
+class TestHandledLedger:
+    """The ledger must not grow for the life of a poller that runs for months."""
+
+    def test_it_evicts_the_oldest_once_the_cap_is_reached(self, monkeypatch):
+        monkeypatch.setattr(adapter_module, "MAX_HANDLED_IDS", 3)
+        adapter = _inbound()
+
+        for message_id in ["m1", "m2", "m3", "m4"]:
+            adapter.mark_handled(message_id)
+
+        assert list(adapter._handled) == ["m2", "m3", "m4"]
+
+    def test_re_marking_an_id_does_not_grow_the_ledger(self):
+        adapter = _inbound()
+
+        adapter.mark_handled("m1")
+        adapter.mark_handled("m1")
+
+        assert list(adapter._handled) == ["m1"]
 
 
 class TestThreadSafety:

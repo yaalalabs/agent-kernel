@@ -13,8 +13,9 @@ import logging
 import os
 import pickle
 import threading
+from collections import OrderedDict
 from email.mime.text import MIMEText
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -27,6 +28,11 @@ from ..adapter.base import ATTACHMENTS_DISABLED_ERROR, SESSION_CACHE_ERROR, Inbo
 
 NAME = "gmail"
 MAX_RESULTS = 10
+
+# How many message ids the handled ledger keeps. An id only has to outlive the reply that marks its
+# message read: once read, the unread query never returns it again, so the oldest entries are dead
+# weight. The cap is what stops a poller that runs for months from growing without bound.
+MAX_HANDLED_IDS = 10_000
 MAX_THREAD_HISTORY = 5
 
 # Gmail API scopes needed to read, send and mark messages.
@@ -171,8 +177,10 @@ class GmailInboundAdapter(PollingInboundAdapter):
         self._subject_keywords = [s.strip() for s in subject_filter.split(",")] if subject_filter else None
 
         # A message stays unread until its reply is sent, so without this the next poll would
-        # enqueue it again. This is why the poller runs at a single replica.
-        self._handled: Set[str] = set()
+        # enqueue it again. This is why the poller runs at a single replica. Bounded and insertion
+        # ordered: the oldest ids have already been answered and marked read, so evicting them
+        # cannot resurrect them.
+        self._handled: "OrderedDict[str, None]" = OrderedDict()
 
     def authenticate(self) -> None:
         """Authenticate eagerly, so a bad token fails at startup rather than on the first poll."""
@@ -203,13 +211,20 @@ class GmailInboundAdapter(PollingInboundAdapter):
             if not self._passes_filters(message_id):
                 self._log.debug(f"Email {message_id} filtered out by sender or subject filter")
                 # Marked handled so the filter is not re-evaluated every interval.
-                self._handled.add(message_id)
+                self._remember(message_id)
                 continue
             pending.append(message_id)
         return pending
 
     def mark_handled(self, raw: Any) -> None:
-        self._handled.add(raw)
+        self._remember(raw)
+
+    def _remember(self, message_id: str) -> None:
+        """Record one id in the handled ledger, evicting the oldest once the cap is reached."""
+        self._handled[message_id] = None
+        self._handled.move_to_end(message_id)
+        while len(self._handled) > MAX_HANDLED_IDS:
+            self._handled.popitem(last=False)
 
     async def parse(self, raw: Any) -> InboundParseResult:
         """Turn one unread message into a request, with its thread history and attachments."""
