@@ -65,7 +65,8 @@ class IntegrationProducer:
         WebSocket-entered marker the runner and Response Handler branch on, and integration
         traffic is neither. The user id travels in the body instead.
 
-        :param adapter_name: The inbound adapter's ``name``; becomes the routing attribute.
+        :param adapter_name: The inbound adapter's ``name``; becomes the routing attribute and
+            namespaces the dedup key.
         :param request: The normalized request to send.
         :return: The transport's send response.
         :raises ValueError: If the serialized reply context exceeds the budget.
@@ -84,7 +85,7 @@ class IntegrationProducer:
             request_id=request.request_id,
             attributes=attributes,
             group_id=request.session_id,
-            dedup_id=request.request_id,
+            dedup_id=f"{adapter_name}:{request.request_id}",
         )
         self._log.info(f"[ENQUEUED] integration={adapter_name}, session_id={request.session_id}, request_id={request.request_id}")
         return result

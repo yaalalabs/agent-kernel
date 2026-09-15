@@ -88,7 +88,7 @@ class TestPolling:
         transport = InMemoryTransport()
         adapter = FakePollingAdapter()
         assert _runner(adapter, transport).poll_once() == 2
-        assert sorted(m.dedup_id for m in _drain(transport)) == ["m1", "m2"]
+        assert sorted(m.dedup_id for m in _drain(transport)) == [f"{adapter.name}:m1", f"{adapter.name}:m2"]
 
     def test_an_event_is_marked_handled_only_after_it_is_enqueued(self):
         adapter = FakePollingAdapter()
@@ -133,7 +133,7 @@ class TestLoop:
         ThreadRunner.shutdown_event.set()
         thread.join(timeout=5)
         assert not thread.is_alive()
-        assert [m.dedup_id for m in _drain(transport)] == ["m1"]
+        assert [m.dedup_id for m in _drain(transport)] == [f"{FakePollingAdapter.name}:m1"]
 
 
 class TestTopology:

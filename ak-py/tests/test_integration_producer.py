@@ -28,7 +28,7 @@ def _reset(monkeypatch):
 def _request(**overrides) -> InboundRequest:
     defaults = dict(
         session_id="C9:111.222",
-        request_id="slack:C9:111.222",
+        request_id="C9:111.222",
         requests=[AgentRequestText(prompt="hello"), AgentRequestAttachmentRef(attachment_id="att-1")],
         prompt="hello",
         agent="helper",
@@ -68,7 +68,18 @@ def test_the_platform_ids_become_the_ordering_and_dedup_keys():
     message = _enqueue(_request())
     assert message.group_id == "C9:111.222"
     assert message.dedup_id == "slack:C9:111.222"
-    assert message.attributes[ATTR_REQUEST_ID] == "slack:C9:111.222"
+    assert message.attributes[ATTR_REQUEST_ID] == "C9:111.222"
+
+
+def test_the_dedup_key_is_namespaced_so_two_platforms_cannot_collide():
+    """One input queue, seven platform-local id spaces: Telegram's update_id is a bare counter."""
+    transport = InMemoryTransport()
+    producer = IntegrationProducer(transport)
+    producer.enqueue("telegram", _request(request_id="42", session_id="tg-1"))
+    producer.enqueue("gmail", _request(request_id="42", session_id="gm-1"))
+
+    messages = transport.create_consumer(QueueName.INPUT).fetch(10, 1.0)
+    assert [m.dedup_id for m in messages] == ["telegram:42", "gmail:42"]
 
 
 def test_a_platform_retry_dedupes_instead_of_running_twice():

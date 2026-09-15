@@ -155,7 +155,7 @@ class SlackInboundAdapter(InboundAdapter):
 
         return InboundRequest(
             session_id=thread_ts,
-            request_id=f"slack:{channel}:{body.get('ts')}",
+            request_id=f"{channel}:{body.get('ts')}",
             requests=requests,
             prompt=question,
             agent=self._agent,

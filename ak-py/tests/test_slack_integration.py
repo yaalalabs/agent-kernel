@@ -86,7 +86,7 @@ class TestParse:
     async def test_the_request_id_dedupes_a_slack_retry(self):
         # Bolt hands over the inner event, not the envelope, so there is no Slack id to use;
         # channel plus ts is unique per message.
-        assert (await _inbound()._to_request(_event())).request_id == "slack:C9:111.222"
+        assert (await _inbound()._to_request(_event())).request_id == "C9:111.222"
 
     @pytest.mark.asyncio
     async def test_the_event_body_travels_as_agent_context(self):

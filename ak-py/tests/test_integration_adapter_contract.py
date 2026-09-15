@@ -253,7 +253,7 @@ class TestSlackContract(_ConfiguredContract):
         assert await adapter._to_request(self.ignorable_delivery()) is None
 
     expected_session_id = "111.222"
-    expected_request_id = "slack:C9:111.222"
+    expected_request_id = "C9:111.222"
 
 
 class TestTeamsContract(_ConfiguredContract):

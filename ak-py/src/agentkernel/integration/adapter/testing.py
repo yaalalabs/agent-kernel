@@ -145,7 +145,7 @@ class IntegrationAdapterContract:
         assert message.attributes[ATTR_INTEGRATION] == adapter.name
         assert message.attributes[ATTR_REQUEST_ID] == request.request_id
         assert message.group_id == request.session_id, "group_id is the per-conversation FIFO key"
-        assert message.dedup_id == request.request_id, "dedup_id is what makes a platform retry safe"
+        assert message.dedup_id == f"{adapter.name}:{request.request_id}", "the namespaced dedup_id is what makes a platform retry safe"
         delivered = {k.removeprefix(REPLY_CONTEXT_PREFIX): v for k, v in message.attributes.items() if k.startswith(REPLY_CONTEXT_PREFIX)}
         assert delivered == request.reply_context
 

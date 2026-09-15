@@ -154,8 +154,12 @@ graph LR
 - `request_id` prefers the platform id so a platform retry dedupes instead of double-running:
   WhatsApp `message.id`, Messenger/Instagram `message.mid`, Telegram `update_id`, Teams
   `activity.id`, Gmail `message_id`.
+  - The producer namespaces it into the dedup key as `f"{adapter_name}:{request_id}"`: every
+    integration shares one input queue, each platform's id space is local to that platform
+    (Telegram's `update_id` is a bare counter), and a collision inside the broker's dedup window
+    would drop a real message with no error. The raw id still travels as the request id for tracing.
   - **Slack has no usable id at the handler** — Bolt hands over the inner event, not the envelope
-    (`slack_chat.py:48-50`). Slack's adapter must synthesise `f"slack:{channel}:{ts}"`, which is
+    (`slack_chat.py:48-50`). Slack's adapter must synthesise `f"{channel}:{ts}"`, which is
     unique per message.
   - **Telegram's `update_id` is currently discarded**: `_handle_message` receives `body["message"]`
     (`telegram_chat.py:79`). The adapter must parse the whole update object.

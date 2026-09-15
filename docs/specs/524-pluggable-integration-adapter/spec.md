@@ -614,7 +614,7 @@ public aliases (`agentkernel.slack`, …) keep working with new contents (design
 
 | Platform | `name` | `session_id` (unchanged) | `request_id` | `reply_context` keys | `MESSAGE_LIMIT` |
 |---|---|---|---|---|---|
-| Slack | `slack` | `thread_ts or ts` (`slack_chat.py:81`) | `f"slack:{channel}:{ts}"` | `channel`, `thread_ts`, `user`, `ack_ts`, `ack_channel` | 3000, 5 chunks |
+| Slack | `slack` | `thread_ts or ts` (`slack_chat.py:81`) | `f"{channel}:{ts}"` | `channel`, `thread_ts`, `user`, `ack_ts`, `ack_channel` | 3000, 5 chunks |
 | WhatsApp | `whatsapp` | `from` (`whatsapp_chat.py:278`) | `message.id` | `to`, `reply_to_message_id` | 4096 |
 | Messenger | `messenger` | `sender.id` (`messenger_chat.py:193`) | `message.mid` | `recipient_id` | 2000 |
 | Instagram | `instagram` | `sender.id` (`instagram_chat.py:211`) | `message.mid` | `recipient_id` | 1000 |
@@ -767,10 +767,17 @@ All intentional; each is user-visible or operator-visible.
 3. **Attachment-bearing messages now require `multimodal.enabled: true`** and reject
    `multimodal.storage_type: session_cache` on all seven platforms (design §8). Today an
    attachment reaches the agent as inline base64 with multimodal disabled. This breaks an existing
-   app that receives attachments with multimodal off; the rejection message names the setting.
+   app that receives attachments with multimodal off; the rejection message names the setting. A broker transport additionally refuses any
+   process-local store at mount time (`in_memory` as well as `session_cache`): the adapter offloads
+   at the edge and `MultimodalPreHook` resolves in the runner process, so only a store reporting
+   `AttachmentStore.shared` can serve both. The `in_memory` transport is exempt — one process
+   writes and reads.
 4. **A platform retry no longer double-runs the agent** within the transport's dedup window,
-   because `dedup_id` is the platform's own message id. Slack, which has no usable id at the
-   handler, synthesizes `slack:{channel}:{ts}`.
+   because `dedup_id` is `f"{adapter_name}:{request_id}"` — the platform's own message id, prefixed
+   with the integration that minted it. The prefix matters because all seven share one input queue
+   while their id spaces are platform-local (Telegram's `update_id` is a bare counter), and a
+   collision inside the window would drop a real message silently. Slack, which has no usable id at
+   the handler, synthesizes `{channel}:{ts}`.
 5. **Agent-failure wording is unified.** A failed run (status ≥ 400 on the output message,
    including "no agent available") now delivers `OutboundAdapter.ERROR_MESSAGE`
    ("Sorry, there was an error processing your request.") instead of each platform's own sentence
