@@ -1,10 +1,13 @@
 import logging
 from typing import Any, Dict, Optional
 
+from ...core.config import AKConfig
 from ...core.model import BaseRunRequest
+from ...core.multimodal.storage import AttachmentStorageManager
+from ...core.util.factory import AKConfigError
 from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
 from ...pipeline.producer import RequestProducer
-from ...pipeline.transport.base import QueueTransport
+from ...pipeline.transport.base import QueueTransport, QueueTransportFactory
 from .base import InboundRequest
 
 
@@ -23,8 +26,37 @@ class IntegrationProducer:
     def __init__(self, transport: Optional[QueueTransport] = None):
         """
         :param transport: Transport to send on; defaults to the configured one.
+        :raises AKConfigError: If attachments would be offloaded into a store the runner cannot read.
         """
+        self._validate_attachment_storage()
         self._producer = RequestProducer(transport)
+
+    @staticmethod
+    def _validate_attachment_storage() -> None:
+        """Refuse a store whose attachments cannot cross the queue hop.
+
+        Both hosts of the seam construct this producer, so the check lands once for the webhook
+        handler and the poller alike. On a broker transport the adapter offloads at the edge and
+        ``MultimodalPreHook`` resolves in the runner process: a store that keeps its bytes in the
+        writing process (``in_memory``) or inside that process's session copy (``session_cache``)
+        hands the runner an attachment id it cannot resolve. The single-process ``in_memory``
+        transport is exempt because there is only one process to read from.
+
+        :raises AKConfigError: If the configured store is not shared on a broker transport.
+        """
+        if not AKConfig.get().multimodal.enabled:
+            # Attachments are refused outright before they reach a store (ATTACHMENTS_DISABLED_ERROR).
+            return
+        if QueueTransportFactory.resolve_type() == "in_memory":
+            return
+        if AttachmentStorageManager.store_is_shared():
+            return
+        raise AKConfigError(
+            f"multimodal.storage_type '{AKConfig.get().multimodal.storage_type}' keeps attachments in the process "
+            "that wrote them, but this transport runs the agent in another one: an integration attachment offloaded "
+            "at the webhook or poller would be unresolvable in the runner. Use redis or dynamodb, or run the "
+            "single-process in_memory transport"
+        )
 
     def enqueue(self, adapter_name: str, request: InboundRequest) -> Dict[str, Any]:
         """Enqueue one parsed platform message.

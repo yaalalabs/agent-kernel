@@ -6,9 +6,12 @@ import pytest
 
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentRequestAttachmentRef, AgentRequestText
+from agentkernel.core.multimodal.storage import AttachmentStorageManager
+from agentkernel.core.util.factory import AKConfigError
 from agentkernel.integration.adapter.base import InboundRequest
 from agentkernel.integration.adapter.producer import IntegrationProducer
 from agentkernel.pipeline.envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, ATTR_USER_ID, QueueName
+from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
 
 
@@ -102,3 +105,41 @@ def test_a_realistic_teams_context_fits_the_budget():
         {"bot": {"id": "b" * 60}, "conversation": {"id": "c" * 200, "tenantId": "t" * 36}, "serviceUrl": "https://smba/" + "s" * 60}
     )
     _enqueue(_request(reply_context={"conversation_reference": reference}), name="teams")
+
+
+class TestAttachmentStorageTopology:
+    """A broker transport resolves attachments in another process, so the store has to be shared."""
+
+    @pytest.fixture
+    def _broker(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+
+    @staticmethod
+    def _multimodal(monkeypatch, *, enabled: bool, storage_type: str):
+        config = AKConfig.get()
+        monkeypatch.setattr(config.multimodal, "enabled", enabled)
+        monkeypatch.setattr(config.multimodal, "storage_type", storage_type)
+
+    @pytest.mark.parametrize("storage_type", ["in_memory", "session_cache"])
+    def test_a_process_local_store_is_refused_on_a_broker_transport(self, monkeypatch, _broker, storage_type):
+        """in_memory fails the same way session_cache does: the runner cannot read either one."""
+        self._multimodal(monkeypatch, enabled=True, storage_type=storage_type)
+        with pytest.raises(AKConfigError) as excinfo:
+            IntegrationProducer(InMemoryTransport())
+        assert storage_type in str(excinfo.value)
+
+    def test_a_process_local_store_is_fine_on_the_in_memory_transport(self, monkeypatch):
+        """One process writes and reads, so there is no hop to lose the bytes across."""
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        self._multimodal(monkeypatch, enabled=True, storage_type="in_memory")
+        IntegrationProducer(InMemoryTransport())
+
+    def test_a_shared_store_passes_on_a_broker_transport(self, monkeypatch, _broker):
+        self._multimodal(monkeypatch, enabled=True, storage_type="redis")
+        monkeypatch.setattr(AttachmentStorageManager, "store_is_shared", classmethod(lambda cls: True))
+        IntegrationProducer(InMemoryTransport())
+
+    def test_the_check_is_skipped_when_multimodal_is_disabled(self, monkeypatch, _broker):
+        """No attachment reaches a store at all; ATTACHMENTS_DISABLED_ERROR refuses it first."""
+        self._multimodal(monkeypatch, enabled=False, storage_type="in_memory")
+        IntegrationProducer(InMemoryTransport())

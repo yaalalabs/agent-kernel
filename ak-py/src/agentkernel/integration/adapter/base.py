@@ -24,9 +24,14 @@ from ...core.model import AgentReply, AgentRequestUnion
 ATTACHMENTS_DISABLED_ERROR = (
     "Attachments from messaging integrations require multimodal support — " "set multimodal.enabled: true in config.yaml to accept images and files"
 )
+# in_memory is deliberately not offered here: it is process-local too, and on every transport but
+# in_memory the runner that resolves the attachment is a different process. The mount-time check in
+# IntegrationProducer refuses that pairing; this message only has to name the stores that work
+# everywhere.
 SESSION_CACHE_ERROR = (
     "multimodal.storage_type 'session_cache' is not supported for messaging integrations — "
-    "the agent runs in a different process; use in_memory, redis, or dynamodb"
+    "it writes into a session copy the agent's process never sees; use redis or dynamodb "
+    "(or in_memory only on the single-process in_memory transport)"
 )
 
 

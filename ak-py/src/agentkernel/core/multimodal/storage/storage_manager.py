@@ -109,6 +109,37 @@ class AttachmentStorageManager:
             )
         return resolve_dotted(storage_type, base=AttachmentStore)(session_id)
 
+    @classmethod
+    def store_is_shared(cls) -> bool:
+        """Whether the configured store can be read by a process other than the one that wrote it.
+
+        Resolves the driver class without constructing it, so a caller can check the topology at
+        mount time without opening a connection. The answer comes from the driver's own ``shared``
+        attribute rather than a list here, so a bring-your-own store answers for itself.
+
+        :return: True when the configured store is backed by an external service.
+        :raises AKConfigError: If ``multimodal.storage_type`` names no known store.
+        """
+        storage_type = AKConfig.get().multimodal.storage_type
+        key = storage_type.lower()
+        if key == "session_cache":
+            from .session_cache import SessionNonVolatileCacheAttachmentStore as store
+        elif key == "in_memory":
+            from .in_memory import InMemoryAttachmentStore as store
+        elif key == "redis":
+            with require_extra("redis", "multimodal.storage_type: redis"):
+                from .redis import RedisAttachmentStore as store
+        elif key == "dynamodb":
+            with require_extra("aws", "multimodal.storage_type: dynamodb"):
+                from .dynamodb import DynamoDBAttachmentStore as store
+        elif "." in storage_type:
+            store = resolve_dotted(storage_type, base=AttachmentStore)
+        else:
+            raise AKConfigError(
+                f"unknown multimodal storage_type '{storage_type}'; expected one of {_BUILTIN_ATTACHMENT_STORES} or a dotted path to an AttachmentStore subclass"
+            )
+        return store.shared
+
     @staticmethod
     def has_attachments(requests: List[AgentRequest]) -> bool:
         """Whether any request in the list carries attachment bytes.
