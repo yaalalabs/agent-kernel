@@ -1,0 +1,154 @@
+{
+  "meta": {
+    "category": "CEB/LECO Domestic (Sri Lanka)",
+    "effective_date": "2026-05-11",
+    "retrieved": "2026-07-16",
+    "currency": "LKR",
+    "status": "VERIFIED — cross-checked against the official PUCSL domestic electricity calculator implementation on 2026-07-16; re-verified 2026-08-27 against the PUCSL electricity news feed (no domestic decision effective after 2026-05-11; the 2026 Q2 decision effective 2026-04-01 was superseded by this table).",
+    "sources": [
+      "https://www.pucsl.gov.lk/calculator/",
+      "https://www.pucsl.gov.lk/electricity-tariff-revision-2026-may/",
+      "https://www.pucsl.gov.lk/wp-content/uploads/2026/05/Full-Final_Decision-on-Electricity-Tariffs-May-2026.pdf"
+    ],
+    "fas_rate_per_kwh": 0.0,
+    "reference_billing_days": 30,
+    "fixed_charge_prorated": false,
+    "model": "Total units select one tariff category. Block ceilings are floor(base ceiling × billing days / 30), rates stay unchanged, and the selected category's fixed charge is applied once. Consumption above the final 180-unit-equivalent boundary uses its own two-rate ladder.",
+    "reverified": "2026-08-27",
+    "sscl_rate_of_total": 0.025
+  },
+  "cycles": {
+    "monthly": {
+      "boundary_scale": 1,
+      "fixed_scale": 1,
+      "slabs": [
+        {
+          "id": "A",
+          "min": 0,
+          "max": 30,
+          "fixed": 80.0,
+          "ladder": [
+            [
+              30,
+              5.0
+            ]
+          ]
+        },
+        {
+          "id": "B",
+          "min": 31,
+          "max": 60,
+          "fixed": 210.0,
+          "ladder": [
+            [
+              30,
+              5.0
+            ],
+            [
+              60,
+              9.0
+            ]
+          ]
+        },
+        {
+          "id": "C",
+          "min": 61,
+          "max": 90,
+          "fixed": 400.0,
+          "ladder": [
+            [
+              60,
+              14.0
+            ],
+            [
+              90,
+              20.0
+            ]
+          ]
+        },
+        {
+          "id": "D",
+          "min": 91,
+          "max": 120,
+          "fixed": 1000.0,
+          "ladder": [
+            [
+              60,
+              14.0
+            ],
+            [
+              90,
+              20.0
+            ],
+            [
+              120,
+              28.0
+            ]
+          ]
+        },
+        {
+          "id": "E",
+          "min": 121,
+          "max": 180,
+          "fixed": 1500.0,
+          "ladder": [
+            [
+              60,
+              14.0
+            ],
+            [
+              90,
+              20.0
+            ],
+            [
+              120,
+              28.0
+            ],
+            [
+              180,
+              44.0
+            ]
+          ]
+        },
+        {
+          "id": "F",
+          "min": 181,
+          "max": null,
+          "fixed": 2500.0,
+          "ladder": [
+            [
+              180,
+              32.5
+            ],
+            [
+              null,
+              100.0
+            ]
+          ]
+        }
+      ]
+    }
+  },
+  "time_of_use": {
+    "note": "Domestic Time-of-Use (D-TOU), an optional domestic tariff with three separately metered periods. Rates are Annex 2 of the PUCSL May 2026 decision (the post-revision column; D-TOU took the 18% revision listed in that decision's Table 10).",
+    "verified_against": "A real CEB D-TOU bill, reading date 2026-08-13: consumption 275 off-peak, 540 day, 173 peak reproduces the printed Charge of LKR 55,293.00 exactly, and the printed SSC Levy of LKR 1,417.77 and Monthly Bill of LKR 56,710.77 follow from it.",
+    "fixed_charge": 2500.0,
+    "periods": {
+      "off_peak": {
+        "rate": 33.0,
+        "window": "22:30-05:30",
+        "hours": 7
+      },
+      "day": {
+        "rate": 47.0,
+        "window": "05:30-18:30",
+        "hours": 13
+      },
+      "peak": {
+        "rate": 106.0,
+        "window": "18:30-22:30",
+        "hours": 4
+      }
+    }
+  }
+}
