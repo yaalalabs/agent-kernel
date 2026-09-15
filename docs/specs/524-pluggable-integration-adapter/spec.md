@@ -671,6 +671,46 @@ Per-platform behaviour each adapter must preserve (design §10):
   the transport dedup window (5 minutes on SQS FIFO) is shorter than a slow agent turn. This is
   why the poller runs at one replica.
 
+### 10. Conversation-thread recording on the pipeline — `integration/thread/thread_chat.py`, `pipeline/agent_runner.py`
+
+Design §14. `ThreadRequestHandler` is a `RequestHandler` subclass mounted through the new
+`IOHandler.run(request_handler=...)` parameter; `AgentRunner` appends the assistant message when the
+message carries `ATTR_THREAD`.
+
+**Why this is not the adapter seam.** Every clause of the §1 contract fails against a caller-waits
+surface, which is why threads ride the pipeline's own producer/runner seam instead (design Q12):
+
+| Seam contract | Threads |
+|---|---|
+| `InboundAdapter`'s side effects are limited to platform calls and attachment storage (§1) | Recording writes thread rows — outside the contract |
+| `OutboundAdapter.deliver(reply, reply_context)` pushes out-of-band; `reply_context` is flat strings under 8 KB (§3) | The caller waits on the open connection; the reply returns through the response store |
+| `parse(raw) -> InboundParseResult` | Redundant — `RequestHandler.run_chat` already normalizes a chat body |
+| — | `ThreadRESTRequestHandler`'s GET routes have no delivery at all |
+
+**The split run.** The `ThreadRecorder` bracket the direct handler runs inline splits across the
+queue hop — everything that must commit before the caller is told the request was accepted stays at
+the edge, and the assistant message is appended after the reply is safely on the output queue:
+
+```
+POST /api/v1/chat
+   │
+   ▼  ThreadRequestHandler  (IOHandler process)
+   ├─ ensure_agent_available          ─┐
+   ├─ RequestBuilder                   │  everything that must commit before the
+   ├─ pre_run: offload attachments,    │  caller can be told the request was accepted
+   │           open thread, append     │
+   │           the user message       ─┘
+   ├─ body.requests = rebuilt list; body.files/images = None
+   └─ enqueue with attribute  thread=1
+   │
+   ▼  input queue
+   │
+   ▼  AgentRunner  (may be a different process)
+   ├─ ChatService.process_chat_request(req=body, requests=body.requests)
+   ├─ _send_to_output(...)             ← the reply is safe first
+   └─ post_run: append the assistant message
+```
+
 ### Consumer changes
 
 | Consumer | Change |
@@ -685,9 +725,11 @@ The `ak-deployment/ak-k8s` chart is **not** touched (design Non-goals): the webh
 the existing io tier and its CPU HPA (`templates/hpa-io.yaml`), and the poller tier's Deployment is
 a follow-up CR.
 
-Unchanged and verified: every non-integration `RESTRequestHandler`
+Unchanged and verified: every direct-execution `RESTRequestHandler`
 (`AgentRESTRequestHandler`, `AgentThreadRequestHandler`, `ScheduleRESTRequestHandler`,
-`AGUIRequestHandler`, `RequestHandler`) inherits `requires_pipeline = False` and is unaffected;
+`AGUIRequestHandler`) inherits `requires_pipeline = False` and is unaffected. `RequestHandler` is
+the exception — it declares `requires_pipeline = True` because it is itself a queue producer
+(§10, design §14.6) — and `RestHandler` does not declare it, so `ECSQueueRequestHandler`,
 `ECSIOHandler` and the `deployment/aws` runners are untouched (design §13).
 
 ### Config changes

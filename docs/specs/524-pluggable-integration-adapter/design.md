@@ -393,48 +393,21 @@ prebuilt `requests` list on the body (§4), edge-side attachment offload (§8), 
 `requires_pipeline` marker (§7) — and because moving integrations onto the queue makes the queue the
 normal way to run chat, which is the topology where threads currently do not work at all.
 
-**The gap.** `grep -r 'ThreadRecorder\|ConversationThreadManager' ak-py/src/agentkernel/pipeline/`
-returns nothing. `IOHandler.run` always mounts `RequestHandler` (`io_handler.py:91`), which enqueues
-and returns, so thread support works only on the direct path,
-`RESTAPI.run([AgentThreadRequestHandler()])`. An application that adopts queue mode silently loses
-thread history — no error, no warning. The previously documented position ("thread recording does
-not apply to queue-mode/deployment adapters") described that gap; it was never a design constraint.
-
-**Why not the adapter seam.** Considered and rejected — the seam is for surfaces whose reply leaves
-out-of-band over a platform API, and threads are a caller-waits surface:
-
-| Seam contract | Threads |
-|---|---|
-| `InboundAdapter`'s side effects are limited to platform calls and attachment storage (§1) | Recording writes thread rows — outside the contract |
-| `OutboundAdapter.deliver(reply, reply_context)` pushes out-of-band; `reply_context` is flat strings under 8 KB (§3) | The caller waits on the open connection; the reply returns through the response store |
-| `parse(raw) -> InboundParseResult` | Redundant — `RequestHandler.run_chat` already normalizes a chat body |
-| — | `ThreadRESTRequestHandler`'s GET routes have no delivery at all |
-
-The seam that fits is the one already in the pipeline: **producer → queue → runner**.
-
-**Shape.** The existing `ThreadRecorder` bracket splits across the queue, because the run already
-does:
-
-```
-POST /api/v1/chat
-   │
-   ▼  ThreadRequestHandler  (IOHandler process)
-   ├─ ensure_agent_available          ─┐
-   ├─ RequestBuilder                   │  everything that must commit before the
-   ├─ pre_run: offload attachments,    │  caller can be told the request was accepted
-   │           open thread, append     │
-   │           the user message       ─┘
-   ├─ body.requests = rebuilt list; body.files/images = None
-   └─ enqueue with attribute  thread=1
-   │
-   ▼  input queue
-   │
-   ▼  AgentRunner  (may be a different process)
-   ├─ ChatService.process_chat_request(req=body, requests=body.requests)
-   ├─ _send_to_output(...)             ← the reply is safe first
-   └─ post_run: append the assistant message
-```
-
+- **The gap this closes.** Nothing in `agentkernel.pipeline` references `ThreadRecorder` or
+  `ConversationThreadManager`, and `IOHandler.run` always mounts the plain `RequestHandler`, which
+  enqueues and returns. Thread support therefore works only on the direct path,
+  `RESTAPI.run([AgentThreadRequestHandler()])`: an application that adopts queue mode silently
+  loses thread history, with no error and no warning. The previously documented position ("thread
+  recording does not apply to queue-mode/deployment adapters") described that gap; it was never a
+  design constraint.
+- **The seam is producer → queue → runner, not the adapter seam** (Decision Q12). Threads are a
+  caller-waits surface: the reply returns through the response store rather than out-of-band over a
+  platform API, so `OutboundAdapter` has no target and recording falls outside `InboundAdapter`'s
+  side-effect contract. The clause-by-clause comparison and the split-run flow are in `spec.md` §10.
+- **The `ThreadRecorder` bracket splits across the queue.** Everything that must commit before the
+  caller is told the request was accepted (agent availability, request building, attachment
+  offload, opening the thread, appending the user message) runs in the `IOHandler` process; the
+  assistant message is appended in the `AgentRunner` process after the reply is sent.
 - **14.1 A `thread` message attribute is the join.** `ATTR_THREAD` in `pipeline/envelope.py`,
   stamped only by `ThreadRequestHandler`. Without it the runner records nothing, so a request
   enqueued by any other producer — the plain `RequestHandler`, a schedule provider, a messaging
