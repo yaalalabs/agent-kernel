@@ -11,10 +11,11 @@ jobs stop creating their own SGs.
 
 **This document covers Phase 1 (AWS serverless) only.** Phase 2 (AWS containerized) will be added
 to this same document as a separate section once Phase 1 is settled — containerized has three
-independently-toggleable SGs (`alb_security_group_id`, `ecs_service_security_group_id`,
-`agent_runner_security_group_id`, per `docs/specs/689-security-group-from-outside/design.md`
-§ `containerized` root) instead of serverless's one, so it needs its own requirements pass and is
-deliberately out of scope here.
+independently-toggleable SGs (`rest_service.alb_security_group_id`,
+`rest_service.ecs_service_security_group_id`, `agent_runner.security_group_id`, nested fields on
+the `rest_service`/`agent_runner` object variables per
+`docs/specs/689-security-group-from-outside/design.md` § `containerized` root) instead of
+serverless's one, so it needs its own requirements pass and is deliberately out of scope here.
 
 ## Motivation
 
@@ -232,9 +233,9 @@ All three questions raised in the previous review cycle are now resolved:
    migration when Phase 2 adds containerized's three SG IDs?~~ No — kept as a singular flag.
    There is no migration to avoid: Phase 1's flag maps 1:1 to serverless's one shared
    `security_group_id` variable (confirmed one SG per #689), and Phase 2 targets a structurally
-   different module with different variable names (`alb_security_group_id`,
-   `ecs_service_security_group_id`, `agent_runner_security_group_id`) — those will be new,
-   additive flags in Phase 2 that don't touch or replace this one. A JSON-map flag would only trade
+   different module with different variable names (`rest_service.alb_security_group_id`,
+   `rest_service.ecs_service_security_group_id`, `agent_runner.security_group_id`) — those will be
+   new, additive flags in Phase 2 that don't touch or replace this one. A JSON-map flag would only trade
    a plain string CLI arg for one needing JSON-encoding/quoting (replicating the same fragility the
    pipeline already works around for `--private-subnet-ids`'s single-quoted `'${{ ... }}'`), for a
    migration risk that doesn't actually exist.
