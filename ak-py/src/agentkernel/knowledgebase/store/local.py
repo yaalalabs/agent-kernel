@@ -115,6 +115,10 @@ class LocalDocumentStore(DocumentStore):
         """
         List every document under a namespace, in global lexicographic order.
 
+        The walk is rooted at the namespace, so listing one directory costs that directory
+        rather than the whole tree. That rooting is also what makes a namespace match a directory
+        match, as both stores must: listing "tables" cannot reach "tables_extra/x.md".
+
         A file whose real path leaves the root — reached through a symlink planted inside
         it — is skipped with a warning rather than listed.
 
@@ -122,22 +126,17 @@ class LocalDocumentStore(DocumentStore):
         :return: Sorted store-relative paths.
         :raises KnowledgePathError: If the prefix escapes the store namespace.
         """
-        namespace = self.normalise_relative(prefix)
-        # A namespace match is a directory match: listing "tables" must not also return
-        # "tables_extra/x.md". Both stores agree on this so a bundle lists identically.
-        match_prefix = f"{namespace}/" if namespace else ""
+        top = self._contained_path(prefix)
 
         matches: list[str] = []
-        for directory, _, filenames in os.walk(self._root, followlinks=False):
+        for directory, _, filenames in os.walk(top, followlinks=False):
             for filename in filenames:
                 full_path = os.path.join(directory, filename)
                 if not self._is_contained(full_path):
                     log.warning("[local.list] skipping entry resolving outside the store root: %r", full_path)
                     continue
 
-                relative = self.normalise_relative(os.path.relpath(full_path, self._root))
-                if relative.startswith(match_prefix):
-                    matches.append(relative)
+                matches.append(self.normalise_relative(os.path.relpath(full_path, self._root)))
 
         # os.walk orders per directory, which is not globally lexicographic ("a/z.md" sorts
         # after "ab/b.md" within the walk but before it globally). Callers truncate this

@@ -12,6 +12,7 @@ importing this package stays free of the storage axis.
 from .model import DiagnosticCode, OKFBundle, OKFConcept, OKFDiagnostic, TrustTier
 from .parser import (
     BODY_INDEX_MAX_BYTES,
+    BODY_INDEX_MAX_TOKENS,
     FRONTMATTER_MAX_BYTES,
     INDEX_FILENAME,
     LOG_FILENAME,
@@ -22,6 +23,7 @@ from .parser import (
 
 __all__ = [
     "BODY_INDEX_MAX_BYTES",
+    "BODY_INDEX_MAX_TOKENS",
     "FRONTMATTER_MAX_BYTES",
     "INDEX_FILENAME",
     "LOG_FILENAME",
