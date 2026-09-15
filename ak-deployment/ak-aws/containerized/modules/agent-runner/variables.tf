@@ -28,6 +28,12 @@ variable "vpc_id" {
   description = "VPC ID"
 }
 
+variable "security_group_id" {
+  type        = string
+  description = "Agent Runner security group ID. If not provided, a new one will be created"
+  default     = null
+}
+
 variable "subnet_ids" {
   type        = list(string)
   description = "Private subnet IDs for ECS tasks"

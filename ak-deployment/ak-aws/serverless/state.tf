@@ -11,7 +11,7 @@ locals {
   vpc_id                                = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
   vpc_cidr                              = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
   subnet_ids                            = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
-  security_group_id                     = aws_security_group.lambda.id
+  security_group_id                     = var.security_group_id != null ? var.security_group_id : aws_security_group.lambda[0].id
   security_group_name                   = "${var.product_alias}-${var.env_alias}-lambda-sg"
   redis_url                             = (var.create_redis_cluster == true || var.create_redis_response_store) ? module.redis[0].url : null
   valkey_url                            = (var.create_valkey_cluster == true || var.create_valkey_response_store) ? module.valkey[0].url : null
@@ -90,6 +90,7 @@ locals {
 }
 
 resource "aws_security_group" "lambda" {
+  count       = var.security_group_id == null ? 1 : 0
   name        = local.security_group_name
   description = "Security group for Lambda functions"
   vpc_id      = local.vpc_id

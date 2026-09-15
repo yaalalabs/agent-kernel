@@ -35,6 +35,8 @@ module "agent_runner" {
   vpc_id     = local.vpc_id
   subnet_ids = local.subnet_ids
 
+  security_group_id = var.agent_runner_security_group_id
+
   ecs_cluster_arn  = module.ecs.cluster_arn
   ecs_cluster_name = module.ecs.cluster_name
 
