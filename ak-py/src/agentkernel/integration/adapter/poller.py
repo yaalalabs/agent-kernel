@@ -99,7 +99,7 @@ class PollerRunner:
         """
         if QueueTransportFactory.resolve_type() == "in_memory":
             raise AKConfigError(
-                "the in_memory transport runs in-process: start IOHandler(pollers=[...]) " "(single-process topology) instead of PollerRunner"
+                "the in_memory transport runs in-process: start IOHandler.run(pollers=[...]) " "(single-process topology) instead of PollerRunner"
             )
         ThreadRunner.install_shutdown_signal_handlers(cls._log)
         cls(adapter).start()

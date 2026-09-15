@@ -493,7 +493,7 @@ class PollerRunner:
     def run(cls, adapter: PollingInboundAdapter) -> None:
         if QueueTransportFactory.resolve_type() == "in_memory":
             raise AKConfigError(
-                "the in_memory transport runs in-process: start IOHandler(pollers=[...]) "
+                "the in_memory transport runs in-process: start IOHandler.run(pollers=[...]) "
                 "(single-process topology) instead of PollerRunner"
             )
         ThreadRunner.install_shutdown_signal_handlers(cls._log)
@@ -835,7 +835,7 @@ All intentional; each is user-visible or operator-visible.
 | Unknown adapter name / unimportable dotted path | `IntegrationAdapterFactory` | `AKConfigError` at construction |
 | Missing optional dependency for a built-in adapter | `IntegrationAdapterFactory` | `ImportError` naming the extra, via `require_extra` (`core/util/factory.py:49-64`) |
 | Adapter host mounted outside a pipeline topology | `RESTAPI.run` | `AKConfigError` naming `IOHandler.run(handlers=[...])` |
-| `PollerRunner.run` on the `in_memory` transport | `PollerRunner.run` | `AKConfigError` naming `IOHandler(pollers=[...])` |
+| `PollerRunner.run` on the `in_memory` transport | `PollerRunner.run` | `AKConfigError` naming `IOHandler.run(pollers=[...])` |
 | Pollers passed to `IOHandler` on a broker transport | `IOHandler.run` | Warning naming `PollerRunner.run(adapter)`; pollers not started |
 | Output message names an adapter that cannot be resolved | Response Handler | `AKConfigError` from the factory propagates → `ConsumerLoop` retries → `on_permanent_failure`; the message never silently disappears, and the `integration` attribute value is named in the error log |
 | `deliver` raises | Response Handler | Propagates; retried up to `output.max_receive_count`, then `on_permanent_failure` → `deliver_error` |
