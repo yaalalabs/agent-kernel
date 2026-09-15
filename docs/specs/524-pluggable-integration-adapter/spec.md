@@ -777,17 +777,25 @@ All intentional; each is user-visible or operator-visible.
    (e.g. `slack_chat.py:166`, `whatsapp_chat.py:296`). Deliberate: the raw error string must not
    reach a platform user, and it is logged at error level instead. Adapters may override the
    constant.
-6. **Telegram no longer defers to `BackgroundTasks`** and parses the whole update object rather
+6. **Slack's listener now runs inside the 3-second ack window.** `AsyncApp(process_before_response=True)`
+   is forced by the seam — `parse` returns the events Bolt's listener collected, which a background
+   task would not have produced yet — so the attachment downloads, the offload and the
+   acknowledgement post all happen before Slack is answered. A large file can exceed the deadline;
+   the enqueue still completes (Slack stops waiting, it does not stop the coroutine), so `parse`
+   drops the `http_timeout` retries that follow rather than re-downloading and posting a second
+   acknowledgement. `http_error` retries still run: those are the platform recovering from a
+   delivery this process genuinely failed.
+7. **Telegram no longer defers to `BackgroundTasks`** and parses the whole update object rather
    than `body["message"]`, so `update_id` is available.
-7. **Teams' proactive `continue_conversation` runs in the Response Handler process**, not the
+8. **Teams' proactive `continue_conversation` runs in the Response Handler process**, not the
    webhook process. The acknowledgement is still sent inline at the edge.
-8. **Both processes hold platform send credentials** (design §11, Decision Q6): the edge needs the
+9. **Both processes hold platform send credentials** (design §11, Decision Q6): the edge needs the
    send token for attachment download and the acknowledgement; the Response Handler needs it for
    `deliver`. Deployment note, not a code change.
-9. **Integration apps must change their mounting call** — `RESTAPI.run([...])` now raises
+10. **Integration apps must change their mounting call** — `RESTAPI.run([...])` now raises
    `AKConfigError`. Combined with the deletion of the seven handler classes (Decision Q8), this is
    the CR's breaking change; both edits land in the same file of a user's app.
-10. **A REST body field named `requests` is now typed** rather than surfaced to the agent as
+11. **A REST body field named `requests` is now typed** rather than surfaced to the agent as
     `AgentRequestAny` context. A caller who was relying on that (undocumented) behaviour now gets a
     validation error unless the value matches `List[AgentRequestUnion]`.
 

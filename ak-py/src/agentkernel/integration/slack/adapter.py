@@ -61,7 +61,23 @@ class SlackInboundAdapter(InboundAdapter):
                 collected.append(message)
 
     async def parse(self, raw: Request) -> InboundParseResult:
-        """Run Bolt's dispatch and normalize whatever message events it produced."""
+        """Run Bolt's dispatch and normalize whatever message events it produced.
+
+        A delivery Slack is retrying after its own 3-second timeout is dropped: the first attempt
+        already ran this listener to completion (Slack stopped waiting for the response, it did not
+        stop the coroutine), so dispatching again would re-download the attachments and post a
+        second acknowledgement for a message the transport's ``dedup_id`` will discard anyway.
+        Only ``http_timeout`` retries short-circuit — an ``http_error`` retry is the platform
+        recovering from a delivery this process genuinely failed, and it must run.
+        """
+        if raw.headers.get("x-slack-retry-reason") == "http_timeout":
+            self._log.warning(
+                f"Dropping Slack retry {raw.headers.get('x-slack-retry-num')} after a delivery timeout: the first "
+                f"attempt completed out of band. Attachment downloads run inside Slack's 3s window "
+                f"(process_before_response), so a large file can exceed it."
+            )
+            return InboundParseResult()
+
         token = _events.set([])
         try:
             response = await self._handler.handle(raw)

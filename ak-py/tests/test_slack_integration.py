@@ -157,14 +157,19 @@ class TestBoltDispatch:
     """Bolt owns verification and the HTTP response; parse runs it and hands the response back."""
 
     @staticmethod
-    def _post(client, body: dict):
+    def _post(client, body: dict, extra_headers: dict = None):
         payload = json.dumps(body)
         timestamp = str(int(time.time()))
         signature = "v0=" + hmac.new(SIGNING_SECRET.encode(), f"v0:{timestamp}:{payload}".encode(), hashlib.sha256).hexdigest()
         return client.post(
             "/slack/events",
             content=payload,
-            headers={"Content-Type": "application/json", "X-Slack-Request-Timestamp": timestamp, "X-Slack-Signature": signature},
+            headers={
+                "Content-Type": "application/json",
+                "X-Slack-Request-Timestamp": timestamp,
+                "X-Slack-Signature": signature,
+                **(extra_headers or {}),
+            },
         )
 
     @pytest.fixture(autouse=True)
@@ -207,6 +212,26 @@ class TestBoltDispatch:
         assert message.attributes["integration"] == "slack"
         assert message.attributes["reply_channel"] == "C9"
         assert json.loads(message.body)["prompt"] == "hello"
+
+    def test_a_timeout_retry_is_dropped_without_redispatching(self):
+        """The first attempt finished out of band; re-running it would re-download and re-acknowledge."""
+        transport = InMemoryTransport()
+        body = {"type": "event_callback", "team_id": "T1", "event": {**_event(), "type": "message", "channel_type": "channel"}}
+        headers = {"X-Slack-Retry-Num": "1", "X-Slack-Retry-Reason": "http_timeout"}
+
+        assert self._post(self._client(transport), body, headers).status_code == 200
+
+        assert transport.create_consumer(QueueName.INPUT).fetch(1, 0.1) == []
+
+    def test_an_error_retry_still_runs(self):
+        """http_error means this process genuinely failed the delivery, so the retry is the recovery."""
+        transport = InMemoryTransport()
+        body = {"type": "event_callback", "team_id": "T1", "event": {**_event(), "type": "message", "channel_type": "channel"}}
+        headers = {"X-Slack-Retry-Num": "1", "X-Slack-Retry-Reason": "http_error"}
+
+        assert self._post(self._client(transport), body, headers).status_code == 200
+
+        assert len(transport.create_consumer(QueueName.INPUT).fetch(1, 1.0)) == 1
 
 
 class TestDeliver:
