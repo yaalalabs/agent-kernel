@@ -63,7 +63,7 @@ def find_files(directories: List[str], exclude_patterns: List[str] = None) -> Li
             continue
 
         if dir_path.is_file():
-            if dir_path.suffix in FILE_SUFFIXES:
+            if dir_path.suffix in FILE_SUFFIXES and not any(pattern in dir_path.parts for pattern in exclude_patterns):
                 files.append(dir_path)
             continue
 

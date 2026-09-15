@@ -181,14 +181,17 @@ def test_find_files_globs_and_excludes():
 
 
 def test_find_files_accepts_single_file():
-    """An entry naming a file is scanned as given; a file with a foreign suffix is ignored."""
+    """An entry naming a file is scanned as given; foreign suffixes and excluded path segments still apply."""
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         readme = root / "README.md"
         readme.write_text("")
         (root / "pyproject.toml").write_text("")
+        excluded = root / ".venv" / "README.md"
+        excluded.parent.mkdir()
+        excluded.write_text("")
 
-        found = find_files([str(readme), str(root / "pyproject.toml"), str(root / "missing.md")])
+        found = find_files([str(readme), str(root / "pyproject.toml"), str(root / "missing.md"), str(excluded)])
 
         assert found == [readme], f"Unexpected file set: {found}"
         print("✅ test_find_files_accepts_single_file passed")
