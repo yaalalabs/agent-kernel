@@ -12,6 +12,7 @@ import base64
 import logging
 import os
 import pickle
+import threading
 from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional, Set
 
@@ -58,6 +59,9 @@ EXTENSION_MIME_TYPES = {
 _log = logging.getLogger("ak.integration.gmail")
 
 
+_UNSET = object()
+
+
 class _GmailService:
     """OAuth2 credentials and the Gmail client both halves use."""
 
@@ -69,53 +73,81 @@ class _GmailService:
         if not (self._client_id and self._client_secret):
             _log.error("Gmail credentials are not configured. Please set AK_GMAIL__CLIENT_ID and AK_GMAIL__CLIENT_SECRET.")
             raise ValueError("Incomplete Gmail configuration.")
-        self._service = None
+        self._creds = None
+        self._test_mode = False
+        self._authenticated = False
+        self._auth_lock = threading.Lock()
+        self._local = threading.local()
 
     @property
     def client(self):
-        """The Gmail API client, authenticating on first use. None in test mode."""
-        if self._service is None:
+        """The Gmail API client for the calling thread, authenticating on first use.
+
+        Per thread, not per instance: ``build()`` returns a service wrapping one ``httplib2.Http``
+        connection, which is not thread-safe, and ``IntegrationAdapterFactory`` caches one outbound
+        adapter that every Response Handler consumer thread delivers through. The expensive,
+        possibly interactive half — resolving the OAuth2 credentials — is shared and happens once;
+        only the cheap client wrapper is duplicated.
+
+        :return: The thread's Gmail client, or None in test mode.
+        """
+        cached = getattr(self._local, "service", _UNSET)
+        if cached is _UNSET:
             self.authenticate()
-        return self._service
+            cached = None if self._test_mode else build("gmail", "v1", credentials=self._creds)
+            self._local.service = cached
+        return cached
 
     def authenticate(self) -> None:
-        """Authenticate with the Gmail API using OAuth2.
+        """Resolve the OAuth2 credentials, once per process.
+
+        Guarded by a lock because the poller thread and the Response Handler's consumer threads can
+        reach it together on first use, and the OAuth2 flow is interactive: racing it would open two
+        browser prompts and write the token file twice.
 
         Skipped when AK_TEST_MODE=1, which leaves the client unset so every call short-circuits.
         """
-        if os.environ.get("AK_TEST_MODE") == "1":
-            _log.info("Test mode enabled: Skipping Gmail authentication.")
-            self._service = None
+        if self._authenticated:
             return
+        with self._auth_lock:
+            if self._authenticated:
+                return
 
-        creds = None
-        if os.path.exists(self._token_file):
-            with open(self._token_file, "rb") as token:
-                creds = pickle.load(token)
+            if os.environ.get("AK_TEST_MODE") == "1":
+                _log.info("Test mode enabled: Skipping Gmail authentication.")
+                self._test_mode = True
+                self._authenticated = True
+                return
 
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                _log.info("Refreshing expired credentials...")
-                creds.refresh(Request())
-            else:
-                _log.info("Starting OAuth2 flow with environment variables...")
-                client_config = {
-                    "installed": {
-                        "client_id": self._client_id,
-                        "client_secret": self._client_secret,
-                        "redirect_uris": self._redirect_uris,
-                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                        "token_uri": "https://oauth2.googleapis.com/token",
+            creds = None
+            if os.path.exists(self._token_file):
+                with open(self._token_file, "rb") as token:
+                    creds = pickle.load(token)
+
+            if not creds or not creds.valid:
+                if creds and creds.expired and creds.refresh_token:
+                    _log.info("Refreshing expired credentials...")
+                    creds.refresh(Request())
+                else:
+                    _log.info("Starting OAuth2 flow with environment variables...")
+                    client_config = {
+                        "installed": {
+                            "client_id": self._client_id,
+                            "client_secret": self._client_secret,
+                            "redirect_uris": self._redirect_uris,
+                            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                            "token_uri": "https://oauth2.googleapis.com/token",
+                        }
                     }
-                }
-                creds = InstalledAppFlow.from_client_config(client_config, SCOPES).run_local_server(port=0)
+                    creds = InstalledAppFlow.from_client_config(client_config, SCOPES).run_local_server(port=0)
 
-            with open(self._token_file, "wb") as token:
-                pickle.dump(creds, token)
-            _log.info(f"Credentials saved to {self._token_file}")
+                with open(self._token_file, "wb") as token:
+                    pickle.dump(creds, token)
+                _log.info(f"Credentials saved to {self._token_file}")
 
-        self._service = build("gmail", "v1", credentials=creds)
-        _log.info("Gmail API authentication successful")
+            self._creds = creds
+            self._authenticated = True
+            _log.info("Gmail API authentication successful")
 
 
 class GmailInboundAdapter(PollingInboundAdapter):

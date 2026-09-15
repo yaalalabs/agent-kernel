@@ -1,6 +1,7 @@
 """Gmail adapter: unread mail -> InboundRequest, and agent reply -> a threaded reply."""
 
 import base64
+import threading
 from unittest.mock import MagicMock
 
 import pytest
@@ -10,6 +11,7 @@ pytest.importorskip("googleapiclient")
 from agentkernel.core.config import AKConfig  # noqa: E402
 from agentkernel.core.model import AgentReplyText, AgentRequestText  # noqa: E402
 from agentkernel.integration.adapter.base import Source  # noqa: E402
+from agentkernel.integration.gmail import adapter as adapter_module  # noqa: E402
 from agentkernel.integration.gmail.adapter import GmailInboundAdapter, GmailOutboundAdapter, _GmailService  # noqa: E402
 
 SENDER = "alice@example.com"
@@ -64,12 +66,18 @@ def _service(messages=None, listed=None, thread=None):
 
 
 def _gmail_service(client):
+    """A _GmailService with its credentials already resolved and this thread's client injected."""
     service = object.__new__(_GmailService)
     service._token_file = "token.pickle"
     service._client_id = "client-id"
     service._client_secret = "client-secret"
     service._redirect_uris = ["http://localhost"]
-    service._service = client
+    service._creds = None
+    service._test_mode = client is None
+    service._authenticated = True
+    service._auth_lock = threading.Lock()
+    service._local = threading.local()
+    service._local.service = client
     return service
 
 
@@ -126,8 +134,7 @@ class TestPoll:
     @pytest.mark.asyncio
     async def test_test_mode_polls_nothing(self):
         adapter = _inbound(client=None)
-        adapter._service._service = None
-        adapter._service.authenticate = lambda: None
+        adapter._service._local.service = None
         assert await adapter.poll() == []
 
 
@@ -221,8 +228,7 @@ class TestParse:
     @pytest.mark.asyncio
     async def test_test_mode_parses_nothing(self):
         adapter = _inbound()
-        adapter._service._service = None
-        adapter._service.authenticate = lambda: None
+        adapter._service._local.service = None
         assert (await adapter.parse(MESSAGE_ID)).requests == []
 
 
@@ -303,10 +309,65 @@ class TestDeliver:
     @pytest.mark.asyncio
     async def test_test_mode_sends_nothing(self):
         adapter = _outbound()
-        client = adapter._service._service
-        adapter._service._service = None
-        adapter._service.authenticate = lambda: None
+        client = adapter._service.client
+        adapter._service._local.service = None
 
         await adapter.deliver(AgentReplyText(response="hi"), self._context())
 
         client.users.return_value.messages.return_value.send.assert_not_called()
+
+
+class TestThreadSafety:
+    """One cached outbound adapter, several Response Handler consumer threads."""
+
+    @staticmethod
+    def _unauthenticated(monkeypatch, built):
+        """A _GmailService that has not authenticated yet, with build() and the OAuth flow stubbed."""
+        service = object.__new__(_GmailService)
+        service._token_file = "token.pickle"
+        service._client_id = "client-id"
+        service._client_secret = "client-secret"
+        service._redirect_uris = ["http://localhost"]
+        service._creds = None
+        service._test_mode = False
+        service._authenticated = False
+        service._auth_lock = threading.Lock()
+        service._local = threading.local()
+        monkeypatch.setattr(adapter_module, "build", lambda *a, **kw: built())
+        return service
+
+    def test_each_thread_builds_its_own_client(self, monkeypatch):
+        """googleapiclient's service wraps one httplib2.Http, which is not thread-safe."""
+        service = self._unauthenticated(monkeypatch, built=lambda: MagicMock())
+        monkeypatch.setattr(service, "authenticate", lambda: setattr(service, "_authenticated", True))
+
+        clients = []
+        threads = [threading.Thread(target=lambda: clients.append(service.client)) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert len(clients) == 4
+        assert len({id(client) for client in clients}) == 4
+        assert service.client is not clients[0], "the calling thread gets its own too"
+
+    def test_the_credentials_are_resolved_once_across_threads(self, monkeypatch):
+        """The OAuth2 flow is interactive: racing it would prompt twice and rewrite the token file."""
+        service = self._unauthenticated(monkeypatch, built=lambda: MagicMock())
+        flows = []
+
+        def _resolve():
+            flows.append(1)
+            service._creds = object()
+            service._authenticated = True
+
+        monkeypatch.setattr(service, "authenticate", lambda: None if service._authenticated else _resolve())
+
+        threads = [threading.Thread(target=lambda: service.client) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert flows == [1]

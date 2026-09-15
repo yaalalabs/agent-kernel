@@ -866,7 +866,11 @@ docstring states this. Each `deliver` call runs on its own event loop (`run_asyn
 `asyncio.run` in a thread with no loop), so an adapter holding an `httpx.AsyncClient` on `self`
 would bind it to a dead loop — built-in adapters construct their client per call, as every
 current `_send_message` already does (`whatsapp_chat.py:326`, `telegram_chat.py:249`,
-`messenger_chat.py:331`, `instagram_chat.py:344`).
+`messenger_chat.py:331`, `instagram_chat.py:344`). Gmail is the one adapter whose client is not
+cheap enough to build per call: `_GmailService` keeps the OAuth2 credentials on the instance behind
+a lock (the flow is interactive, so racing it would prompt twice and rewrite the token file) and
+builds the `googleapiclient` service per thread, since that object wraps one `httplib2.Http`
+connection and is not thread-safe.
 
 **Per-operation cost.** The edge gains one queue send per message (previously: none) and the
 outbound side gains one factory lookup per output message (cached). The agent run itself moves

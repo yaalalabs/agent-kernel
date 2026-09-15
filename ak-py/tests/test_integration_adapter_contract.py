@@ -200,7 +200,7 @@ class TestGmailContract(_ConfiguredContract):
         from agentkernel.integration.gmail.adapter import GmailInboundAdapter
 
         adapter = GmailInboundAdapter()
-        adapter._service._service = self._gmail_client()
+        adapter._service._local.service = self._gmail_client()
         return adapter
 
     def make_outbound(self):
