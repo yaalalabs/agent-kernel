@@ -146,26 +146,37 @@ locals {
 
 ### `containerized` root (`variables.tf`, `state.tf`, `rest_service.tf`, `queue_mode.tf`, `outputs.tf`)
 
-Three new root variables in `variables.tf`, placed alongside the existing `vpc_id`/`private_subnet_ids`
-block (`variables.tf:100-110`), same shape:
+**Amendment (post-implementation):** rather than three new flat root variables, the SG IDs are added as
+`optional(string, null)` fields on the existing `rest_service` and `agent_runner` object variables — this
+supersedes the flat-variable shape originally specified below in this section, because it avoids a
+second, parallel flat surface for config that already belongs to those two objects.
+
+`variables.tf`'s `rest_service` object gains two fields:
 
 ```hcl
-variable "alb_security_group_id" {
-  type        = string
-  description = "ALB security group ID. If not provided, a new one will be created"
-  default     = null
+variable "rest_service" {
+  description = "REST service configuration object"
+  type = object({
+    # ...existing fields...
+    alb_security_group_id         = optional(string, null) # ALB security group ID. If not provided, a new one will be created
+    ecs_service_security_group_id = optional(string, null) # ECS service security group ID. If not provided, a new one will be created
+  })
 }
+```
 
-variable "ecs_service_security_group_id" {
-  type        = string
-  description = "ECS service security group ID. If not provided, a new one will be created"
-  default     = null
-}
+`variables.tf`'s `agent_runner` object gains one field (and its `default` block a matching entry):
 
-variable "agent_runner_security_group_id" {
-  type        = string
-  description = "Agent Runner security group ID (queue mode only). If not provided, a new one will be created"
-  default     = null
+```hcl
+variable "agent_runner" {
+  description = "Agent runner configuration object"
+  type = object({
+    # ...existing fields...
+    security_group_id = optional(string, null) # Agent Runner security group ID (queue mode only). If not provided, a new one will be created
+  })
+  default = {
+    # ...existing fields...
+    security_group_id = null
+  }
 }
 ```
 
@@ -173,10 +184,13 @@ Wiring (no `state.tf` locals needed — these pass straight through as literal v
 which needs VPC lookup/derivation):
 
 - `rest_service.tf`'s `module "rest_service"` block (`rest_service.tf:4-65`) gets two new arguments:
-  `alb_security_group_id = var.alb_security_group_id` and
-  `ecs_service_security_group_id = var.ecs_service_security_group_id`.
+  `alb_security_group_id = var.rest_service.alb_security_group_id` and
+  `ecs_service_security_group_id = var.rest_service.ecs_service_security_group_id`. The submodule's own
+  flat `alb_security_group_id`/`ecs_service_security_group_id` variables (per the `rest-service` section
+  above) are unchanged — only where the root sources their values from changes.
 - `queue_mode.tf`'s `module "agent_runner"` block (`queue_mode.tf:25-79`) gets one new argument:
-  `security_group_id = var.agent_runner_security_group_id`.
+  `security_group_id = var.agent_runner.security_group_id`. The submodule's own flat `security_group_id`
+  variable is unchanged.
 
 New outputs in `outputs.tf` (grouped near the existing `vpc_id`/`private_subnet_ids` outputs,
 `outputs.tf:34-42`):
@@ -253,9 +267,9 @@ output "security_group_id" {
 | `containerized/modules/agent-runner/main.tf` | `agent_runner` gains `count`; `network_configuration.security_groups` updated to read the new local |
 | `containerized/modules/agent-runner/variables.tf` | + `security_group_id` |
 | `containerized/modules/agent-runner/outputs.tf` | `security_group_id` now returns the effective local |
-| `containerized/variables.tf` | + `alb_security_group_id`, `ecs_service_security_group_id`, `agent_runner_security_group_id` |
-| `containerized/rest_service.tf` | passes the two rest-service variables through |
-| `containerized/queue_mode.tf` | passes `agent_runner_security_group_id` through as `security_group_id` |
+| `containerized/variables.tf` | + `alb_security_group_id`/`ecs_service_security_group_id` fields on `rest_service`; + `security_group_id` field on `agent_runner` (amended — not new flat variables) |
+| `containerized/rest_service.tf` | passes `var.rest_service.alb_security_group_id` / `var.rest_service.ecs_service_security_group_id` through to the submodule's flat variables |
+| `containerized/queue_mode.tf` | passes `var.agent_runner.security_group_id` through to the submodule's flat `security_group_id` variable |
 | `containerized/outputs.tf` | + `alb_security_group_id`, `ecs_service_security_group_id`, `agent_runner_security_group_id` |
 | `containerized/api_gateway.tf` | **unchanged** — verified `module.rest_service.alb_security_group_id` keeps working via the updated output |
 | `serverless/state.tf` | `aws_security_group.lambda` gains `count`; `local.security_group_id` resolves from either source |

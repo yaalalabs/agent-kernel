@@ -28,14 +28,19 @@
 
 ## Iteration 3: `containerized` root wiring
 
-- **Goal:** the three new SG variables are exposed at the root and reach the two modules above; new
-  root outputs expose the effective IDs.
+- **Goal:** the three new SG fields are exposed at the root and reach the two modules above; new root
+  outputs expose the effective IDs.
 - **Files:** `ak-deployment/ak-aws/containerized/{variables.tf,rest_service.tf,queue_mode.tf,outputs.tf}`
+- **Amended:** instead of three new flat root variables, the SG IDs are added as fields on the existing
+  `rest_service`/`agent_runner` object variables (spec.md's containerized-root section, Amendment).
 - **Steps:**
-  1. Add `alb_security_group_id`, `ecs_service_security_group_id`, `agent_runner_security_group_id` to
-     `variables.tf`, next to the existing `vpc_id`/`private_subnet_ids` block.
-  2. Pass the two rest-service variables through in `rest_service.tf`'s `module "rest_service"` call.
-  3. Pass `agent_runner_security_group_id` through as `security_group_id` in `queue_mode.tf`'s
+  1. Add `alb_security_group_id`/`ecs_service_security_group_id` fields to the `rest_service` object
+     type in `variables.tf`, and `security_group_id` to the `agent_runner` object type (and its
+     `default` block).
+  2. Pass `var.rest_service.alb_security_group_id` / `var.rest_service.ecs_service_security_group_id`
+     through in `rest_service.tf`'s `module "rest_service"` call (to that submodule's unchanged flat
+     variables).
+  3. Pass `var.agent_runner.security_group_id` through as `security_group_id` in `queue_mode.tf`'s
      `module "agent_runner"` call.
   4. Add the three new outputs to `outputs.tf`.
   5. Confirm `api_gateway.tf:24` needs no edit (it already reads `module.rest_service.alb_security_group_id`).
@@ -84,11 +89,10 @@ modules are wired:
   its "Input Variables" block (`README.md:212-232`) — both currently only document the nested
   `rest_service`/`agent_runner` config objects, not the flat SG variables sitting alongside them, so this
   needs a short added note rather than a table edit.
-- **`ak-deployment/ak-aws/containerized/README.md`**: add `alb_security_group_id`,
-  `ecs_service_security_group_id`, `agent_runner_security_group_id` as new rows in the root variables
-  table (`README.md:283-324` region). Note: this table does not currently document `vpc_id` /
-  `private_subnet_ids` either (pre-existing gap, confirmed by grep — out of scope to backfill here); add
-  the three new rows regardless, following the table's existing row format.
+- **`ak-deployment/ak-aws/containerized/README.md`**: document `alb_security_group_id` /
+  `ecs_service_security_group_id` as fields on the `rest_service` object and `security_group_id` as a
+  field on the `agent_runner` object (amended — these are object fields, not root variables), in both
+  the "Configuration" object examples and the "Security Groups" section (`README.md:195-352` region).
 - **`ak-deployment/ak-aws/serverless/README.md`**: add one new row for `security_group_id` directly
   below the existing `vpc_id` / `private_subnet_ids` rows (`README.md:512-513`), matching their exact
   format.

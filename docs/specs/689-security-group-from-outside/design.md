@@ -136,22 +136,21 @@ Redis/Valkey SGs are explicitly out of scope (user decision).
   containerized root today, but should stay correct for any future/external consumer).
 ### `containerized` root (`state.tf`, `variables.tf`, `rest_service.tf`, `queue_mode.tf`)
 
-- New root-level variables, one per independently-toggleable SG, each `string` default `null`,
-  following `vpc_id`'s exact convention at this layer:
-  - `alb_security_group_id`
-  - `ecs_service_security_group_id`
-  - `agent_runner_security_group_id`
-- All three are always declared regardless of mode. Confirmed current behavior: `rest_service.tf`'s
-  `module "rest_service"` call is unconditional, so the ALB SG and ECS-service SG exist in **every**
-  mode (2 SGs in normal/non-queue mode). `queue_mode.tf`'s `module "agent_runner"` call has
-  `count = var.queue_mode ? 1 : 0`, so the agent-runner SG (the 3rd) only exists — and
-  `agent_runner_security_group_id` only has any effect — when `queue_mode = true`. This matches how
-  other queue-mode-only variables (e.g. `var.agent_runner`) already behave: harmlessly ignored outside
-  queue mode.
-- `rest_service.tf`'s `module "rest_service"` call passes `alb_security_group_id` and
-  `ecs_service_security_group_id` straight through.
-- `queue_mode.tf`'s `module "agent_runner"` call passes `agent_runner_security_group_id` through as
-  that module's `security_group_id`.
+- **Amendment (post-implementation):** the root already exposes `rest_service` and `agent_runner` as
+  object-typed variables for that service's other settings (`variables.tf`'s `rest_service`/
+  `agent_runner` blocks). To avoid a second, parallel flat-variable surface for config that belongs to
+  the same service, the three SG IDs are added as `optional(string, null)` fields on those existing
+  objects instead of new standalone root variables:
+  - `rest_service.alb_security_group_id`, `rest_service.ecs_service_security_group_id`.
+  - `agent_runner.security_group_id`.
+  This supersedes the "three flat singular variables" decision recorded in Open Questions item 3 below.
+- The ALB and ECS-service SG fields have an effect in every mode; the agent-runner SG field only has any
+  effect when `queue_mode = true`, matching how other queue-mode-only `agent_runner` fields already
+  behave outside queue mode.
+- Each field is read straight through (`var.rest_service.alb_security_group_id`, etc.) and passed to the
+  corresponding module call's existing flat `alb_security_group_id` / `ecs_service_security_group_id` /
+  `security_group_id` argument — the submodules' own interfaces are unchanged (see the
+  `containerized/modules/*` sections above).
 - No change to `containerized/api_gateway.tf:24` itself — it keeps consuming
   `module.rest_service.alb_security_group_id`, which now resolves correctly in both create and
   provided-SG cases per the rest-service change above.
@@ -195,10 +194,12 @@ Requirements above:
 1. ~~Fan the serverless list out to all five submodules?~~ Moot — all five Lambdas share exactly one SG
    (confirmed), so the variable is singular and no submodule needs changing.
 2. ~~Root-level output naming for `serverless`?~~ Singular `security_group_id`, per (1).
-3. ~~containerized root variable granularity?~~ Three flat singular variables
+3. ~~containerized root variable granularity?~~ Originally three flat singular variables
    (`alb_security_group_id`, `ecs_service_security_group_id`, `agent_runner_security_group_id`),
-   matching `vpc_id`'s existing flat-variable convention at that layer; confirmed normal mode uses the
-   first two, queue mode adds the third.
+   matching `vpc_id`'s existing flat-variable convention at that layer. **Superseded**: since
+   `rest_service`/`agent_runner` are already object-typed config variables at this layer, the three SG
+   IDs are nested fields on those objects instead of new flat variables — see the Amendment in
+   Requirements above.
 4. ~~Independent vs. both-or-neither toggle for `rest-service`'s two SGs?~~ Independent — you may
    provide an ID for one and let the module create the other.
 
