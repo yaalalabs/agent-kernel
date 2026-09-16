@@ -4,6 +4,11 @@ name: Publish Helm Chart
 # Terraform module publishing in sync-terraform.yaml. Also generates the per-release
 # images.txt manifest (every image the chart references, for air-gapped mirroring) and
 # attaches it to the GitHub release.
+#
+# publish.yaml dispatches this for every production release once the GitHub release exists
+# (the tag minus its "v" becomes the chart version; the examples, docs site, and ak-cloud-deploy
+# skill are pinned to it by scripts/update_chart_versions.py in that same run); the manual
+# dispatch republishes a tag.
 
 on:
   workflow_dispatch:
@@ -35,9 +40,13 @@ jobs:
 
       - name: Package chart
         id: package
+        # A clean runner has no repo definitions; dependency build needs them even with
+        # Chart.lock present (same as chart-test.yaml).
         run: |
           TAG_NAME="${{ inputs.tag_name }}"
           CHART_VERSION="${TAG_NAME#v}"
+          helm repo add valkey https://valkey-io.github.io/valkey-helm/
+          helm repo add nats https://nats-io.github.io/k8s/helm/charts/
           helm dependency build "$CHART_DIR"
           helm package "$CHART_DIR" --version "$CHART_VERSION" --app-version "$CHART_VERSION" --destination .
           echo "chart_version=$CHART_VERSION" >> "$GITHUB_OUTPUT"

@@ -136,7 +136,7 @@ async for event in runner.stream(agent, session, requests):
     print(event)   # a StreamEvent, e.g. TextDelta, ToolCallStart, MessageEnd
 ```
 
-In practice you rarely call this directly; use `AgentService.stream_multi()` or the REST API, which wrap each event in `StreamChunk` objects (`delta`, `event`, `done`, `error`, `session_id`) and run the post-hook `on_stream_chunk()` filter on every event:
+In practice you rarely call this directly; use `AgentService.stream_multi()` or the REST API, which wrap each event in `StreamChunk` objects (`delta`, `event`, `done`, `error`, `session_id`) and run every event through the post-hook `on_stream_event()` chain:
 
 ```python
 async for chunk in service.stream_multi(requests):

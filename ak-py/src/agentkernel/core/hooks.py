@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .base import Agent, Session
 
+from .event import StreamEvent
 from .model import AgentReply, AgentRequest
 
 """
@@ -14,6 +15,26 @@ These hooks allow for modification of prompts before execution and replies after
 
 Currently, they will get only called for the initial execution of an agent when a user prompt is provided. It's unable to hook into agent-to-agent calls within a workflow. This will be a future enhancement.
 """
+
+
+class StreamHalt(Exception):
+    """
+    Raised by a post-hook to end a streamed run early.
+
+    Runtime.stream catches it, emits the closing event for any boundary the stream left open, and
+    yields one terminal StreamChunk carrying `reason` as its error. The session is not stored, so a
+    halted turn leaves no trace in conversation state.
+
+    The partial response is invalid rather than merely truncated: a client must discard what it has
+    already rendered instead of presenting it as a short answer.
+    """
+
+    def __init__(self, reason: str):
+        """
+        :param reason: Why the run was halted. Reaches the client verbatim as StreamChunk.error.
+        """
+        super().__init__(reason)
+        self.reason = reason
 
 
 class PreHook(ABC):
@@ -70,19 +91,38 @@ class PostHook(ABC):
         """
         raise NotImplementedError
 
-    async def on_stream_chunk(
+    async def on_stream_event(
         self,
         session: "Session",
         requests: list[AgentRequest],
         agent: "Agent",
-        delta: str,
-    ) -> str | None:
+        event: StreamEvent,
+    ) -> StreamEvent | list[StreamEvent] | None:
         """
-        Called for each streaming token delta before it is sent to the client.
-        Return the (optionally modified) delta string, or None to drop the token.
-        Default implementation passes the delta through unchanged.
+        Hook method called for every event a streamed run produces, before it reaches the client.
+
+        Unlike on_run, this sees the whole stream: message and reasoning text, tool call names,
+        arguments and results, and the boundaries that pair them.
+
+        Returning a list emits several events in place of one, which is what makes hold-and-release
+        possible: return None per fragment while accumulating in the session's volatile cache, then
+        return [rewritten_payload, closing_event] at the boundary. Accumulate there, not on `self` —
+        one hook instance serves every concurrent request. A returned list is emitted as-is and ends
+        the chain for that event, so `return event` and `return [event]` are not equivalent.
+
+        :param: session (Session): The session instance.
+        :param: requests (list[AgentRequest]): The requests provided to the agent, after pre-hooks.
+        :param: agent (Agent): The agent being streamed.
+        :param: event (StreamEvent): The event to process, as produced by the runner or by an
+                              earlier hook in the chain.
+        :return:
+                - StreamEvent: The event, or a modified event of the same `type`, to pass on. A
+                               different `type` raises TypeError; use a list to emit another type.
+                - list[StreamEvent]: Emitted in order, in place of `event`, ending the chain for it.
+                - None: Drops the event; nothing is sent to the client for it.
+        :raises StreamHalt: To end the run without emitting anything further.
         """
-        return delta
+        return event
 
     @abstractmethod
     def name(self) -> str:

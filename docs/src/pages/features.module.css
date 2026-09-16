@@ -2068,6 +2068,12 @@
   }
 }
 
+@media (min-width: 996px) {
+  .testingApproachesGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 .testingApproachCell {
   display: flex;
   margin: 0;
