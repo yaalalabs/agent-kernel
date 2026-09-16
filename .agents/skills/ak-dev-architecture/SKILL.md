@@ -157,6 +157,20 @@ knowledge of conversation threads (that lives in `integration/thread/`).
 - **Execution core**: transport-neutral, typed results, exceptions propagate:
   - `execute(req, requests=None) -> tuple[AgentReply, session_id]` (async) and `execute_sync(...)`; both thread `req.user_id` through as `acting_user_id` to `AgentHandler.run_async`/`run_sync` (see Runtime and Session's Reserved keys)
   - `execute_stream(req, requests=None) -> AsyncGenerator[StreamChunk, None]` (raw chunks, no framing) and `execute_stream_sync(...)`
+  - **The sync streaming path is incremental** (#741): `AgentHandler.run_stream_sync` returns an *iterator*, not a
+    list, built by `iterate_async_sync` (`core/util/async_bridge.py`) — it pumps the async generator one `__anext__`
+    per item on the calling thread, holding one event loop for the whole run (reusing this thread's open loop, else
+    owning one via `asyncio.Runner`). A coroutine hands the loop exactly one value, which is why the old
+    `_collect()` wrapper could only ever deliver the whole run at once. Two behavioural consequences: a chunk
+    reaches a sync consumer as the run produces it, and a mid-run exception arrives as an error chunk **after** the
+    chunks already yielded — the same shape the async path always had. All four sync consumers
+    (`pipeline/agent_runner.py`'s `StreamAgentRunner`, the serverless and containerized `akagentrunner.py`,
+    `serverless/core/router/ws_lambda.py`) already iterate, so none needed changing. **The pump pins one
+    `contextvars.copy_context()` across every step, and that is load-bearing, not tidiness**: each step is its own
+    task and a task otherwise runs in a fresh copy, so `Runtime.stream`'s current-session/current-agent tokens
+    would be reset from a context they never belonged to and every sync stream would end on a spurious
+    `"Token ... was created in a different Context"` error chunk after the real terminal one. `run_async_sync`
+    (the coroutine half) is untouched — still a fresh `asyncio.run` loop per call on a consumer thread
   - `requests=None`: `RequestBuilder` builds the list from the pydantic request (prompt required).
     `requests` supplied: the caller-built list is used as-is (prompt optional, list must be non-empty): this
     is how messaging integrations pass platform-downloaded attachments and extra `AgentRequestAny` context
@@ -1152,6 +1166,9 @@ User Input
       chunk, `ECSOutputConsumer` broadcasts each as `STREAM_CHUNK`; direct mode: `ECSWebSocketRequestHandler`
       broadcasts chunks inline via `ChatService.process_stream_chat_async`
 ```
+
+Every consumer above sees chunks **as the run produces them**, async and sync alike: the sync surfaces
+drive the same async generator through `iterate_async_sync` (see the ChatService section, #741).
 
 ### Multimodal Execution Flow
 

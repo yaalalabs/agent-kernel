@@ -1,7 +1,7 @@
 import pytest
 
-from agentkernel.core.chat_service import ChatService
-from agentkernel.core.model import BaseChatRequest, StreamChunk
+from agentkernel.core.chat_service import AgentHandler, ChatService
+from agentkernel.core.model import BaseChatRequest, BaseRunRequest, StreamChunk
 
 
 class _FakeService:
@@ -28,23 +28,9 @@ class _FakeHandler:
             yield chunk
 
     def run_stream_sync(self, requests, acting_user_id=None):
-        import asyncio
+        from agentkernel.core.util.async_bridge import iterate_async_sync
 
-        async def _collect():
-            chunks = []
-            async for chunk in self.service.stream_multi(requests, acting_user_id=acting_user_id):
-                chunks.append(chunk)
-            return chunks
-
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                asyncio.set_event_loop(asyncio.new_event_loop())
-                return asyncio.run(_collect())
-            else:
-                return loop.run_until_complete(_collect())
-        except RuntimeError:
-            return asyncio.run(_collect())
+        return iterate_async_sync(self.service.stream_multi(requests, acting_user_id=acting_user_id))
 
 
 @pytest.mark.asyncio
@@ -98,8 +84,6 @@ async def test_process_stream_chat_async_can_return_sse_frames(monkeypatch):
 
 
 def test_process_stream_chat_sync_raises_immediately_on_missing_session_id():
-    from agentkernel.core.model import BaseRunRequest
-
     service = ChatService()
     req = BaseRunRequest(prompt="Hi", session_id=None, agent="test-agent")
 
@@ -108,8 +92,6 @@ def test_process_stream_chat_sync_raises_immediately_on_missing_session_id():
 
 
 def test_process_stream_chat_sync_raises_immediately_on_missing_prompt():
-    from agentkernel.core.model import BaseRunRequest
-
     service = ChatService()
     req = BaseRunRequest(prompt="", session_id="session-1", agent="test-agent")
 
@@ -118,8 +100,6 @@ def test_process_stream_chat_sync_raises_immediately_on_missing_prompt():
 
 
 def test_process_stream_chat_sync_yields_chunks(monkeypatch):
-    from agentkernel.core.model import BaseRunRequest
-
     chunks = [StreamChunk(delta="Hello"), StreamChunk(done=True, session_id="session-1")]
     fake_service = _FakeService(chunks)
     fake_handler = _FakeHandler(fake_service)
@@ -139,4 +119,93 @@ def test_process_stream_chat_sync_yields_chunks(monkeypatch):
     assert collected == [
         '{"delta": "Hello", "done": false, "session_id": "session-1"}',
         '{"done": true, "session_id": "session-1"}',
+    ]
+
+
+class _StreamingAgentService:
+    """Stands in for AgentService so the real AgentHandler bridge is the thing under test."""
+
+    def __init__(self, stream_multi):
+        self._stream_multi = stream_multi
+
+    def ensure_agent_available(self, agent):
+        pass
+
+    def select(self, session_id, agent):
+        pass
+
+    def get_response_session_id(self, session_id):
+        return session_id
+
+    def stream_multi(self, requests, acting_user_id=None):
+        return self._stream_multi(requests, acting_user_id)
+
+
+def _install_agent_service(monkeypatch, stream_multi):
+    """Point ChatService's AgentHandler at a fake AgentService and skip request building."""
+    monkeypatch.setattr("agentkernel.core.chat_service.RequestBuilder.from_base_request_sync", lambda req: ["request-1"])
+    monkeypatch.setattr("agentkernel.core.chat_service.AgentService", lambda: _StreamingAgentService(stream_multi))
+
+
+def test_run_stream_sync_hands_over_each_chunk_before_the_next_is_produced():
+    """The sync bridge streams: a buffering one could not interleave these."""
+    timeline = []
+
+    async def _stream_multi(requests, acting_user_id=None):
+        for index in range(3):
+            timeline.append(f"produced-{index}")
+            yield StreamChunk(delta=str(index))
+
+    handler = AgentHandler()
+    handler.service = _StreamingAgentService(_stream_multi)
+
+    for chunk in handler.run_stream_sync(["request-1"]):
+        timeline.append(f"consumed-{chunk.delta}")
+
+    assert timeline == ["produced-0", "consumed-0", "produced-1", "consumed-1", "produced-2", "consumed-2"]
+
+
+def test_process_stream_chat_sync_streams_chunks_as_the_run_produces_them(monkeypatch):
+    timeline = []
+
+    async def _stream_multi(requests, acting_user_id=None):
+        for index in range(2):
+            timeline.append(f"produced-{index}")
+            yield StreamChunk(delta=str(index))
+        timeline.append("produced-done")
+        yield StreamChunk(done=True)
+
+    _install_agent_service(monkeypatch, _stream_multi)
+    service = ChatService()
+    req = BaseRunRequest(prompt="Hi", session_id="session-1", agent="test-agent")
+
+    for payload in service.process_stream_chat_sync(req=req):
+        timeline.append(f"consumed-{payload}")
+
+    assert timeline == [
+        "produced-0",
+        'consumed-{"delta": "0", "done": false, "session_id": "session-1"}',
+        "produced-1",
+        'consumed-{"delta": "1", "done": false, "session_id": "session-1"}',
+        "produced-done",
+        'consumed-{"done": true, "session_id": "session-1"}',
+    ]
+
+
+def test_process_stream_chat_sync_reports_a_mid_run_failure_after_the_chunks_already_sent(monkeypatch):
+    """Error timing moved with the buffering: chunks are on the wire before the run raises."""
+
+    async def _stream_multi(requests, acting_user_id=None):
+        yield StreamChunk(delta="par")
+        raise RuntimeError("stream blew up")
+
+    _install_agent_service(monkeypatch, _stream_multi)
+    service = ChatService()
+    req = BaseRunRequest(prompt="Hi", session_id="session-1", agent="test-agent")
+
+    collected = list(service.process_stream_chat_sync(req=req))
+
+    assert collected == [
+        '{"delta": "par", "done": false, "session_id": "session-1"}',
+        '{"done": true, "error": "stream blew up", "session_id": "session-1"}',
     ]
