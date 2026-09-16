@@ -11,7 +11,7 @@ resolution-markers = [
 [[package]]
 name = "agentkernel"
 version = "0.9.0"
-source = { registry = "../../../../ak-py/dist" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -19,9 +19,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { path = "agentkernel-0.9.0.tar.gz" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/d6/b4c253110afcee7c5190e5f47aded5bb20c714fb299983dcfdc569383caf/agentkernel-0.9.0.tar.gz", hash = "sha256:394c33e46da7eb591effff92d530b9246a5065b02970888bce54c474d3e8cf16", size = 487819, upload-time = "2026-09-02T10:22:41.36Z" }
 wheels = [
-    { path = "agentkernel-0.9.0-py3-none-any.whl" },
+    { url = "https://files.pythonhosted.org/packages/0d/42/488e8e932d071ed2f00788c4017db69e83d34a527a71d226491c6e14911a/agentkernel-0.9.0-py3-none-any.whl", hash = "sha256:772863c829e7814be48f1975b0bc8e17e1fb3ad9d3356d8e4d77afe61bd23e54", size = 653309, upload-time = "2026-09-02T10:22:39.274Z" },
 ]
 
 [package.optional-dependencies]
@@ -282,7 +282,7 @@ name = "cffi"
 version = "1.17.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pycparser", marker = "python_full_version < '3.13' or platform_python_implementation == 'PyPy'" },
+    { name = "pycparser" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/fc/97/c783634659c2920c3fc70419e3af40972dbaf758daa229a7d6ea6135c90d/cffi-1.17.1.tar.gz", hash = "sha256:1c39c6016c32bc48dd54561950ebd6836e1670f2ae46128f67cf49e789c52824", size = 516621, upload-time = "2024-09-04T20:45:21.852Z" }
 wheels = [
