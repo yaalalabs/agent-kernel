@@ -813,6 +813,10 @@ if __name__ == "__main__":
     runner()
 ```
 
+Pass `auth_validator=MyAuthValidator()` to secure the REST routes: `ECSIOHandler.run` binds it
+onto every REST route via `AWSRestAPI.add_auth_handlers` (the same Bearer-token mechanism as
+`RESTAPI.add_auth_handlers` in Basic Mode); omit it to leave the REST routes unauthenticated.
+
 **`app_agent_runner.py`** (Agent Runner container entrypoint):
 
 ```python
