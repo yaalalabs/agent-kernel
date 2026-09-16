@@ -15,6 +15,8 @@ config.nats.yaml        baked in as config.yaml by package.sh (default)
 config.kafka.yaml       the Kafka variant
 deploy/Dockerfile.*     one image per component, python:3.12-slim + staged dependencies
 deploy/package.sh       stages dependencies and builds the three images
+deploy/deploy.sh        installs the chart release: the published chart, or "local" for this checkout's chart
+ak-values.yaml          chart overlay: the example images + the OpenAI key secret reference
 ```
 
 The same wire behavior can be exercised without Kubernetes:
@@ -50,34 +52,22 @@ k3d cluster create ak
 k3d image import -c ak ak-example-io-handler:dev ak-example-agent-runner:dev
 ```
 
-Give the pods the OpenAI key, then install the chart with the dev flavor:
+Give the pods the OpenAI key, then install the chart release with the dev flavor
+(`ak-values.yaml` layers the example images and the secret reference on top of it):
 
 ```bash
 kubectl create secret generic openai --from-literal=api-key="$OPENAI_API_KEY"
 
-cat > ak-values.yaml <<'EOF'
-image:
-  tag: dev
-  pullPolicy: Never          # the images were imported, never pulled
-ioHandler:
-  image:
-    repository: ak-example-io-handler
-agentRunner:
-  image:
-    repository: ak-example-agent-runner
-extraEnv:
-  - name: OPENAI_API_KEY
-    valueFrom:
-      secretKeyRef:
-        name: openai
-        key: api-key
-EOF
-
-helm dependency build ../../../ak-deployment/ak-k8s/chart
-helm install ak ../../../ak-deployment/ak-k8s/chart \
-  -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f ak-values.yaml
+deploy/deploy.sh            # or deploy/deploy.sh local to install this checkout's chart
 kubectl rollout status deployment/ak-agent-kernel-io deployment/ak-agent-kernel-agent-runner
 ```
+
+`deploy.sh` installs the published chart (`oci://ghcr.io/yaalalabs/charts/agent-kernel`,
+pinned to the current Agent Kernel release; the release pipeline keeps the pin current) and
+follows the same contract as `build.sh` and `package.sh`: `local` switches to the chart in
+`../../../ak-deployment/ak-k8s/chart`, which is how CI runs it, so a branch's chart changes
+are what gets tested. Anything after that is passed to `helm upgrade --install`, which the
+variants below use for their `--set` overrides.
 
 The dev flavor has no gateway: port-forward to the io Service and talk to the agents. The
 first request also provisions the JetStream streams (`auto_provision: true` in the dev
@@ -107,8 +97,10 @@ k3d cluster delete ak
 ```
 
 kind differs only in the image step: `kind load docker-image ak-example-io-handler:dev
-ak-example-agent-runner:dev` (the chart's `chart/ci/kind-smoke-values.yaml` carries these
-exact overrides for CI).
+ak-example-agent-runner:dev`. CI's kind smoke
+([chart-test.yaml](../../../.github/workflows/chart-test.yaml)) runs this walkthrough with
+`deploy/deploy.sh local`, plus the chart's `chart/ci/kind-smoke-values.yaml` overlay to size
+it for a CI node.
 
 ## microk8s (native Ubuntu)
 
@@ -133,8 +125,7 @@ Install as under k3d, with the registry prefix and (optionally) a MetalLB-backed
 LoadBalancer instead of the port-forward:
 
 ```bash
-microk8s helm install ak ../../../ak-deployment/ak-k8s/chart \
-  -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f ak-values.yaml \
+HELM="microk8s helm" deploy/deploy.sh \
   --set global.imageRegistry=localhost:32000 \
   --set image.pullPolicy=IfNotPresent \
   --set serviceLB.enabled=true
@@ -170,8 +161,7 @@ kubectl set env deployment/strimzi-cluster-operator -n kafka STRIMZI_NAMESPACE=d
 cd deploy && ./package.sh kafka && cd ..   # bake config.kafka.yaml in as config.yaml
 k3d image import -c ak ak-example-io-handler:dev ak-example-agent-runner:dev
 
-helm upgrade --install ak ../../../ak-deployment/ak-k8s/chart \
-  -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f ak-values.yaml \
+deploy/deploy.sh \
   --set transport.type=kafka --set kafka.enabled=true --set kafka.replicas=1 \
   --set kafka.partitions=4 --set kafka.topicReplicas=1 --set nats.enabled=false
 ```
@@ -194,8 +184,7 @@ mode override is one env var away):
 ```bash
 k3d image import -c ak ak-example-ws-gateway:dev    # kind: kind load docker-image ...
 
-helm upgrade ak ../../../ak-deployment/ak-k8s/chart \
-  -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f ak-values.yaml \
+deploy/deploy.sh \
   --set execution.mode=stream \
   --set wsGateway.enabled=true --set wsGateway.replicaCount=1 \
   --set wsGateway.image.repository=ak-example-ws-gateway \
