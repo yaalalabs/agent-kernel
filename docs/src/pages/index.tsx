@@ -27,7 +27,7 @@ import {
   FaMicrosoft,
   FaDocker,
 } from "react-icons/fa";
-import { SiTerraform, SiGmail, SiGooglecloud } from "react-icons/si";
+import { SiTerraform, SiGmail, SiGooglecloud, SiKubernetes, SiHelm } from "react-icons/si";
 import { useHistory } from "@docusaurus/router";
 
 /* ─── What's New Banner ─────────────────────────────────────────────────── */
@@ -85,12 +85,12 @@ function WhatsNewBanner() {
           </svg>
         </span>
         <span ref={textRef} className={styles.whatsNewText}>
-          <strong>Agent Kernel Execution Broker</strong> - sandboxed code
-          execution for any agent: Docker, E2B, Daytona, your own EC2,{" "}
-          or bring your own provider.
+          <strong>Agent Kernel on Kubernetes</strong> - an official Helm chart
+          deploys the full pipeline to any cluster: bare metal, EKS, or
+          air-gapped.
         </span>
         <Link
-          to="/blog/agent-kernel-execution-broker"
+          to="/blog/kubernetes-on-prem-helm-chart"
           className={styles.whatsNewLink}
           ref={linkRef}
         >
@@ -584,11 +584,12 @@ const AGENT_SKILLS = [
     icon: MdBugReport,
     name: "ak-test",
     description:
-      "Tests your agent across multiple modes including fuzzy, judge, and fallback. When something breaks, a step-by-step debugging playbook helps you fix it fast.",
+      "Tests your agent in score, llm, and fallback modes through a pluggable evaluator: DeepEval built in, or your own AKEvaluator. When something breaks, a step-by-step debugging playbook helps you fix it fast.",
     pills: [
-      "Fuzzy testing",
-      "Judge mode",
-      "Fallback testing",
+      "Score mode",
+      "LLM mode",
+      "Fallback mode",
+      "Pluggable evaluators",
       "Debugging playbook",
     ],
   },
@@ -916,10 +917,12 @@ function Deployment() {
       modes: ["AWS Lambda (Serverless)", "AWS ECS/Fargate (Containerized)"],
       modules: [
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "AWS Serverless",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws",
         },
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "AWS Containerized",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws",
         },
@@ -937,10 +940,12 @@ function Deployment() {
       ],
       modules: [
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "Azure Serverless",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm",
         },
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "Azure Containerized",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm",
         },
@@ -958,12 +963,34 @@ function Deployment() {
       ],
       modules: [
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "GCP Serverless",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-serverless/google",
         },
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "GCP Containerized",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-containerized/google",
+        },
+      ],
+      comingSoon: false,
+    },
+    {
+      icon: <SiKubernetes className={styles.cloudIconSvg} />,
+      name: "On-Prem Kubernetes",
+      description:
+        "Official Helm chart for any Kubernetes cluster",
+      modes: [
+        "Bare Metal / Self-Hosted Cluster",
+        "AWS EKS (Pod Identity, SQS / NATS / Kafka)",
+        "KEDA autoscaling on queue depth",
+        "Air-gapped installs (mirrored images)",
+      ],
+      modules: [
+        {
+          icon: <SiHelm className={styles.terraformIcon} />,
+          name: "Helm Chart",
+          url: "https://github.com/yaalalabs/agent-kernel/pkgs/container/charts%2Fagent-kernel",
         },
       ],
       comingSoon: false,
@@ -1021,7 +1048,7 @@ function Deployment() {
                 ))}
               </ul>
 
-              {/* Terraform links — styled as "Read More" buttons */}
+              {/* Terraform module / Helm chart links, styled as "Read More" buttons */}
               <div className={styles.cloudModules}>
                 {c.modules.length > 0 ? (
                   c.modules.map((m, j) => (
@@ -1032,7 +1059,7 @@ function Deployment() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <SiTerraform className={styles.terraformIcon} />
+                      {m.icon}
                       <span>{m.name}</span>
                     </Link>
                   ))
@@ -1060,6 +1087,13 @@ const SANDBOX_PROVIDER_CARDS = [
     name: "Docker",
     tag: "Container sandboxes on your own infrastructure",
     link: "/docs/advanced/sandbox#docker-setup",
+  },
+  {
+    key: "kubernetes",
+    icon: <SiKubernetes />,
+    name: "Kubernetes",
+    tag: "Pod per sandbox, RBAC as the boundary",
+    link: "/docs/advanced/sandbox#kubernetes-setup",
   },
   {
     key: "e2b",
@@ -1117,17 +1151,21 @@ function SandboxSection() {
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     const header = section.querySelector(`.${styles.sandboxHeader}`);
+    const flow = section.querySelector(`.${styles.sandboxFlow}`);
+    const stem = section.querySelector(`.${styles.sandboxFlowStem}`);
     const cards = Array.from(
       section.querySelectorAll(`.${styles.sandboxLogoCard}`),
     );
     const footer = section.querySelector(`.${styles.sandboxFooter}`);
 
     if (reducedMotion) {
-      gsap.set([header, ...cards, footer], { opacity: 1, y: 0 });
+      gsap.set([header, flow, stem, ...cards, footer], { opacity: 1, y: 0 });
       return;
     }
 
     gsap.set(header, { opacity: 0, y: 24 });
+    gsap.set(flow, { opacity: 0, y: 20 });
+    gsap.set(stem, { opacity: 0 });
     gsap.set(cards, { opacity: 0, y: 20 });
     gsap.set(footer, { opacity: 0, y: 16 });
 
@@ -1142,9 +1180,15 @@ function SandboxSection() {
 
     tl.to(header, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" })
       .to(
+        flow,
+        { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" },
+        "+=0.2",
+      )
+      .to(stem, { opacity: 1, duration: 0.3, ease: "power2.out" }, "-=0.1")
+      .to(
         cards,
         { opacity: 1, y: 0, duration: 0.45, stagger: 0.07, ease: "power2.out" },
-        "+=0.5",
+        "-=0.05",
       )
       .to(footer, { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }, "-=0.2");
 
@@ -1172,15 +1216,70 @@ function SandboxSection() {
             Flip one switch and every agent gains code, shell, and file tools
             that run in isolated sandboxes.
             <br />
-            Each execution flows through the Agent Kernel Execution Broker to
-            a pluggable provider, governed by fail-closed policies.
+            Each execution flows through the Agent Kernel Execution Broker,
+            in-process or over a queue, to a pluggable provider governed by
+            fail-closed policies.
           </p>
         </div>
 
-        {/* Provider logo cards */}
-        <div className={styles.sandboxLogoGrid}>
+        {/* Execution path: agent tools, the broker, then its two lanes into the provider grid */}
+        <div className={styles.sandboxFlow} aria-label="Sandbox execution path">
+          <div className={styles.sandboxFlowNode}>
+            <p className={styles.sandboxFlowEyebrow}>Any framework</p>
+            <p className={styles.sandboxFlowTitle}>Agent + sandbox tools</p>
+            <p className={styles.sandboxFlowSub}>
+              run_code · run_command · files · sessions
+            </p>
+          </div>
+          <span className={styles.sandboxFlowArrow} aria-hidden="true" />
+          <div className={`${styles.sandboxFlowNode} ${styles.sandboxFlowBroker}`}>
+            <img
+              src="/img/branding/agent-kernel-icon-color.svg"
+              alt=""
+              className={styles.sandboxFlowLogo}
+            />
+            <div className={styles.sandboxFlowBrokerText}>
+              <p className={styles.sandboxFlowEyebrow}>Agent Kernel</p>
+              <p className={styles.sandboxFlowTitle}>Execution Broker</p>
+              <p className={styles.sandboxFlowSub}>
+                fail-closed policy · identity · workload profiles
+              </p>
+            </div>
+          </div>
+          <span className={styles.sandboxFlowArrow} aria-hidden="true" />
+          <div className={styles.sandboxFlowLanes}>
+            <div className={styles.sandboxFlowLane}>
+              <p className={styles.sandboxFlowEyebrow}>in-process</p>
+              <p className={styles.sandboxFlowLaneTitle}>thread · embedded</p>
+              <p className={styles.sandboxFlowSub}>CLI and REST deployments</p>
+            </div>
+            <div className={`${styles.sandboxFlowLane} ${styles.sandboxFlowLaneQueue}`}>
+              <p className={styles.sandboxFlowEyebrow}>queue-decoupled</p>
+              <p className={styles.sandboxFlowLaneTitle}>
+                <span className={styles.sandboxFlowChip}>Request queue</span>
+                <span className={styles.sandboxFlowChipArrow} aria-hidden="true" />
+                <span
+                  className={`${styles.sandboxFlowChip} ${styles.sandboxFlowChipWorker}`}
+                >
+                  Sandbox Worker fleet
+                </span>
+              </p>
+              <p className={styles.sandboxFlowSub}>
+                sqs · kafka · nats · completions return over the output queue
+                and response store
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Stem from the broker lanes into the provider fan-out below */}
+        <div className={styles.sandboxFlowStem} aria-hidden="true" />
+
+        {/* Provider logo cards (the fan-out) */}
+        <div className={`${styles.sandboxLogoGrid} ${styles.sandboxLogoGridWired}`}>
           {SANDBOX_PROVIDER_CARDS.map((p) => (
             <Link key={p.key} to={p.link} className={styles.sandboxLogoCard}>
+              <span className={styles.sandboxLogoDrop} aria-hidden="true" />
               <span className={styles.sandboxLogoIcon} aria-hidden="true">
                 {p.icon}
               </span>
@@ -1193,8 +1292,9 @@ function SandboxSection() {
         {/* Footer: text left, CTA right */}
         <div className={styles.sandboxFooter}>
           <p className={styles.sandboxFooterText}>
-            Fully pluggable by design: swap sandbox providers, or bring your
-            own, without changing your agents.
+            Fully pluggable by design: swap providers, bring your own, or move
+            execution onto a queue-backed worker fleet, all in configuration
+            and never in agent code.
           </p>
           <Link
             className={`button button--primary button--md ${styles.terraformLink}`}

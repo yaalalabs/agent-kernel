@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 620" width="1050" height="620" role="img" aria-label="A day in the life of a scheduled agent. Five pieces of work fire on their own across one day: at 06:00 the overnight alerts are digested; at 08:00 the weekday nudge the user asked for in plain English arrives; at 12:30 a follow-up on the Acme lead, booked three days earlier; at 17:00 Friday's weekly report; at 23:00 the nightly data-quality sweep. Nobody sent a single message. You were asleep, in a meeting, or on leave. It ran anyway.">
+  <defs>
+    <style>
+      .t    { font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+      .ttl  { font-size: 30px; font-weight: 700; fill: #E8E4F0; letter-spacing: -0.4px; }
+      .sub  { font-size: 15px; fill: #9A91B8; }
+      .time { font-size: 19px; font-weight: 700; fill: #00DDFF; }
+      .head { font-size: 18px; font-weight: 600; fill: #E8E4F0; }
+      .desc { font-size: 14px; fill: #9A91B8; }
+      .foot { font-size: 17px; font-weight: 600; fill: #E8E4F0; }
+      .kick { font-size: 14px; fill: #9A91B8; }
+    </style>
+    <linearGradient id="spine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#00DDFF"/>
+      <stop offset="100%" stop-color="#F200FF"/>
+    </linearGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#00DDFF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#F200FF" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1050" height="620" fill="#010002"/>
+
+  <g class="t">
+    <text x="60" y="62" class="ttl">Your agent&#8217;s day &#8212; nobody had to ask</text>
+    <rect x="60" y="78" width="120" height="3" rx="1.5" fill="url(#rule)"/>
+    <text x="60" y="108" class="sub">Five pieces of work, each one booked once and then simply handled.</text>
+  </g>
+
+  <line x1="208" y1="160" x2="208" y2="480" stroke="url(#spine)" stroke-width="2" stroke-opacity="0.55"/>
+
+  <g class="t">
+    <g>
+      <text x="180" y="166" class="time" text-anchor="end">06:00</text>
+      <circle cx="208" cy="160" r="6.5" fill="#010002" stroke="#00DDFF" stroke-width="2.5"/>
+      <rect x="240" y="131" width="750" height="58" rx="8" fill="#081226" stroke="#00DDFF" stroke-opacity="0.3"/>
+      <text x="262" y="156" class="head">Overnight alerts, digested</text>
+      <text x="262" y="177" class="desc">The night&#8217;s noise, already sorted into what actually matters.</text>
+    </g>
+    <g>
+      <text x="180" y="246" class="time" text-anchor="end">08:00</text>
+      <circle cx="208" cy="240" r="6.5" fill="#010002" stroke="#2FD4F5" stroke-width="2.5"/>
+      <rect x="240" y="211" width="750" height="58" rx="8" fill="#081226" stroke="#00DDFF" stroke-opacity="0.3"/>
+      <text x="262" y="236" class="head">The weekday nudge you asked for</text>
+      <text x="262" y="257" class="desc">&#8220;Every weekday at 8am, remind me to review the overnight alerts.&#8221;</text>
+    </g>
+    <g>
+      <text x="180" y="326" class="time" text-anchor="end">12:30</text>
+      <circle cx="208" cy="320" r="6.5" fill="#010002" stroke="#7FB6F0" stroke-width="2.5"/>
+      <rect x="240" y="291" width="750" height="58" rx="8" fill="#081226" stroke="#9A91B8" stroke-opacity="0.28"/>
+      <text x="262" y="316" class="head">Follow-up on the Acme lead</text>
+      <text x="262" y="337" class="desc">Booked three days ago, back when it was still fresh.</text>
+    </g>
+    <g>
+      <text x="180" y="406" class="time" text-anchor="end">17:00</text>
+      <circle cx="208" cy="400" r="6.5" fill="#010002" stroke="#C78BF7" stroke-width="2.5"/>
+      <rect x="240" y="371" width="750" height="58" rx="8" fill="#081226" stroke="#F200FF" stroke-opacity="0.26"/>
+      <text x="262" y="396" class="head">Friday&#8217;s weekly report</text>
+      <text x="262" y="417" class="desc">Same time every week. Nobody has to chase it.</text>
+    </g>
+    <g>
+      <text x="180" y="486" class="time" text-anchor="end">23:00</text>
+      <circle cx="208" cy="480" r="6.5" fill="#010002" stroke="#F200FF" stroke-width="2.5"/>
+      <rect x="240" y="451" width="750" height="58" rx="8" fill="#081226" stroke="#F200FF" stroke-opacity="0.3"/>
+      <text x="262" y="476" class="head">Nightly data-quality sweep</text>
+      <text x="262" y="497" class="desc">Runs the checks and writes up whatever it found.</text>
+    </g>
+  </g>
+
+  <g class="t">
+    <rect x="60" y="540" width="930" height="56" rx="10" fill="#081226" stroke="#00DDFF" stroke-opacity="0.18"/>
+    <text x="84" y="566" class="foot">You were asleep, in a meeting, or on leave.</text>
+    <text x="84" y="586" class="kick">Nobody sent a single message. It all ran anyway.</text>
+  </g>
+</svg>

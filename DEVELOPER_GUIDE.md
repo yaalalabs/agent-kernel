@@ -105,6 +105,34 @@ The workflow runs the selected target and pushes a `chore:` commit with any form
 changes back to the chosen branch. Protected branches (currently `develop`) are rejected —
 the workflow fails before making any changes.
 
+### Pull Request Automation (CI)
+
+Three small workflows run on every pull request without any manual step:
+
+- **PR Title Check** (`.github/workflows/pr-title-check.yaml`): fails unless the PR title follows
+  Conventional Commits (`type: description` or `type(scope): description`, with the types listed
+  in [CONTRIBUTING.md](CONTRIBUTING.md)). `develop` accepts squash merges only, so the title
+  becomes the commit subject. Fix a failure by editing the title; the check re-runs on the edit.
+- **Request Copilot Review** (`.github/workflows/copilot-review-request.yaml`): requests a GitHub
+  Copilot code review when a PR is opened, reopened, or marked ready for review, using the
+  `COPILOT_REVIEW_PAT` secret. The develop ruleset's own Copilot rule only fires for authors who
+  hold a license, which is why this workflow exists. Only PRs from collaborators (anyone with
+  access to the repository, checked through the collaborators API) are requested automatically,
+  since each review is a premium request billed to the PAT owner's license; bot-authored PRs are
+  skipped too. For a PR from an outside contributor, read it first and then run the workflow from
+  the Actions tab (`workflow_dispatch`) with the PR number, which bypasses the collaborator check.
+  `COPILOT_REVIEW_PAT` is a fine-grained PAT created by a licensed maintainer with resource owner
+  `yaalalabs`, access to this repository, and "Pull requests: Read and write". It is separate from
+  `COPILOT_REQUEST_TOKEN` (used by the docs-sync workflow) because GitHub only allows the
+  account-level Copilot Requests permission on user-owned tokens, and a user-owned token cannot
+  hold repository permissions on an organization repo.
+- **Reset Reviewed Label** (`.github/workflows/reviewed-label-reset.yaml`): maintainers add the
+  `Reviewed` label after going through a PR; any new push removes it again so the PR reappears
+  in the review queue (`is:pr is:open -label:Reviewed`).
+
+The last two use `pull_request_target` so they also work for fork PRs. Neither checks out PR
+code; they only call the GitHub API. Keep it that way when editing them.
+
 ## Contributing
 
 ### Development Workflow

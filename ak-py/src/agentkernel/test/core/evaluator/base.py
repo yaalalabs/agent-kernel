@@ -57,10 +57,10 @@ class AKEvaluator(ABC):
         self._config = config
 
     @abstractmethod
-    def score_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_score(self, case: AKEvaluationCase) -> AKEvaluationResult:
         """Deterministic scoring — no LLM call. Must set result.passed. Raise AKMetricNotSupported
         if unavailable."""
 
     @abstractmethod
-    def llm_based_evaluation(self, case: AKEvaluationCase) -> AKEvaluationResult:
+    def evaluate_by_llm(self, case: AKEvaluationCase) -> AKEvaluationResult:
         """LLM-as-judge scoring. Must set result.passed. Raise AKMetricNotSupported if unavailable."""

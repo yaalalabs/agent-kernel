@@ -237,7 +237,7 @@ sequenceDiagram
     participant R as Runtime
     participant PH as PreHooks
     participant Run as Runner.stream()
-    participant PoH as PostHook.on_stream_chunk()
+    participant PoH as PostHook.on_stream_event()
 
     U->>R: stream(agent, session, requests)
     R->>PH: pre-hook pipeline (same as run)
@@ -245,16 +245,18 @@ sequenceDiagram
         R-->>U: StreamChunk(error=..., done=true)
     else streaming
         loop each event
-            Run-->>R: StreamEvent (or legacy str, normalised)
-            alt event is TextDelta/ReasoningDelta
-                R->>PoH: on_stream_chunk(content)
-                alt hook returns None
-                    Note over R: chunk dropped, event included
-                else
-                    R-->>U: StreamChunk(delta=..., event=...)
-                end
-            else
-                R-->>U: StreamChunk(event=...)
+            Run-->>R: StreamEvent
+            R->>PoH: on_stream_event(event)
+            break hook raises StreamHalt
+                R-->>U: closing events for open boundaries
+                R-->>U: StreamChunk(error=..., done=true)
+                Note over R: session not stored
+            end
+
+            alt hook returns None
+                Note over R: chunk dropped, event included
+            else hook returns an event or a list
+                R-->>U: StreamChunk(delta=..., event=...) per event
             end
         end
         R->>R: store session, clear volatile cache
@@ -263,7 +265,7 @@ sequenceDiagram
 ```
 
 - Each `StreamChunk` carries `delta`, `event`, `done`, `error`, and `session_id` fields. `delta` is populated only when `event` is a `TextDelta`; every other event type (message/step boundaries, tool calls, reasoning) is carried in `event` alone.
-- Post-hooks can filter or redact `TextDelta`/`ReasoningDelta` content via `on_stream_chunk()`; returning `None` drops the whole chunk.
+- Post-hooks see **every** event via `on_stream_event()` — tool arguments and results included — and can rewrite one in place, return `None` to drop it, or return a list to emit several in its place. Raising `StreamHalt` ends the run.
 - Delivery depends on the surface: the REST API serves chunks as **Server-Sent Events** (`text/event-stream`); AWS serverless and AWS ECS containerized WebSocket modes push each chunk as a separate `STREAM_CHUNK` WebSocket message (optionally through SQS queues).
 - OpenAI Agents SDK, LangGraph, and Google ADK stream natively; CrewAI and Smolagents declare `supports_streaming = False` and do not support token streaming (their runners raise `NotImplementedError` in stream mode).
 
