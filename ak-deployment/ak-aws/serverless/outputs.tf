@@ -40,9 +40,19 @@ output "private_subnet_ids" {
   value       = local.subnet_ids
 }
 
-output "security_group_id" {
-  description = "Security group ID used for Lambda functions"
-  value       = local.security_group_id
+output "request_handler_security_group_id" {
+  description = "Security group ID used for the request handler Lambda (also used by the authorizer and WebSocket connection handler Lambdas)"
+  value       = local.request_handler_security_group_id
+}
+
+output "agent_runner_security_group_id" {
+  description = "Security group ID used for the agent runner Lambda (queue mode only; created or provided)"
+  value       = var.queue_mode ? local.agent_runner_security_group_id : null
+}
+
+output "response_handler_security_group_id" {
+  description = "Security group ID used for the response handler Lambda (queue mode only; created or provided)"
+  value       = var.queue_mode ? local.response_handler_security_group_id : null
 }
 
 output "api_gateway_id" {

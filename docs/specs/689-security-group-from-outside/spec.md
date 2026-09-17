@@ -229,6 +229,95 @@ output "agent_runner_security_group_id" {
 
 ### `serverless/state.tf`
 
+**Amendment (post-implementation):** superseded the single-shared-SG shape below with **three** logical
+SGs, one per Lambda pipeline stage, following the same "field on the existing service object" convention
+as the `containerized` root amendment. `request_handler`/`agent_runner`/`response_handler` (all in
+`variables.tf`) each gain a `security_group_id = optional(string, null)` field:
+
+```hcl
+variable "request_handler" {
+  type = object({
+    # ...existing fields...
+    security_group_id = optional(string, null) # Request handler security group ID, also shared by the authorizer and WebSocket connection handler Lambdas. If not provided, a new one will be created
+  })
+}
+
+variable "agent_runner" {
+  type = object({
+    # ...existing fields...
+    security_group_id = optional(string, null) # Agent runner security group ID (queue mode only). If not provided, a new one will be created
+  })
+}
+
+variable "response_handler" {
+  type = object({
+    # ...existing fields...
+    security_group_id = optional(string, null) # Response handler security group ID (queue mode only). If not provided, a new one will be created
+  })
+}
+```
+
+`state.tf` replaces the single `aws_security_group.lambda` with three resources, each gated purely on
+its own field being `null` — **not** additionally on `queue_mode`/`enable_api_gateway` — so the
+resolving `local` never has to branch into a resource whose `count` depends on a different condition
+than the one the `local` itself checks (that mismatch is exactly the "index into a zero-length resource"
+trap the shared convention's rule 1 warns about: if the SG resource's `count` were `var.queue_mode &&
+security_group_id == null` while the `local` only checks `security_group_id == null`, a `queue_mode =
+false` deployment with the field left unset would try to index `aws_security_group.agent_runner[0]`
+into a resource that was never created). This mirrors the original single-SG shape's own
+unconditional-`count` behavior (that resource, too, was always created regardless of what else was
+enabled), so it's not a new tradeoff — just preserved across the split:
+
+```hcl
+resource "aws_security_group" "request_handler" {
+  count = var.request_handler.security_group_id == null ? 1 : 0
+  # name/description reference the request handler explicitly; egress-all; unchanged otherwise
+}
+
+resource "aws_security_group" "agent_runner" {
+  count = var.agent_runner.security_group_id == null ? 1 : 0
+}
+
+resource "aws_security_group" "response_handler" {
+  count = var.response_handler.security_group_id == null ? 1 : 0
+}
+
+locals {
+  request_handler_security_group_id  = var.request_handler.security_group_id != null ? var.request_handler.security_group_id : aws_security_group.request_handler[0].id
+  agent_runner_security_group_id     = var.agent_runner.security_group_id != null ? var.agent_runner.security_group_id : aws_security_group.agent_runner[0].id
+  response_handler_security_group_id = var.response_handler.security_group_id != null ? var.response_handler.security_group_id : aws_security_group.response_handler[0].id
+}
+```
+
+Submodule call sites are rewired (unlike the superseded design, where no rewiring was needed since every
+call site already shared one local):
+
+- `module.authorizer`'s `security_group_ids` and `module.ws_connection_handler`'s `security_group_id` →
+  `local.request_handler_security_group_id` (both are part of the request-handling front door).
+- `module.request_handler`'s `security_group_id` → `local.request_handler_security_group_id`.
+- `module.agent_runner`'s `security_group_id` → `local.agent_runner_security_group_id`.
+- `module.response_handler`'s `security_group_id` → `local.response_handler_security_group_id`.
+
+Three outputs in `outputs.tf` replace the single `security_group_id` output (the `agent_runner`/
+`response_handler` ones are nulled when `queue_mode = false`, matching this file's existing convention
+for every other agent-runner/response-handler output — the underlying local is still always resolvable,
+this only suppresses a meaningless value in the output):
+
+```hcl
+output "request_handler_security_group_id" {
+  value = local.request_handler_security_group_id
+}
+output "agent_runner_security_group_id" {
+  value = var.queue_mode ? local.agent_runner_security_group_id : null
+}
+output "response_handler_security_group_id" {
+  value = var.queue_mode ? local.response_handler_security_group_id : null
+}
+```
+
+<details>
+<summary>Superseded: original single-shared-SG design</summary>
+
 One root variable, one shared SG, matching `vpc_id`'s exact shape:
 
 ```hcl
@@ -270,6 +359,8 @@ output "security_group_id" {
 }
 ```
 
+</details>
+
 ### Consumer changes
 
 | File | Change |
@@ -285,10 +376,10 @@ output "security_group_id" {
 | `containerized/queue_mode.tf` | passes `var.agent_runner.security_group_id` through to the submodule's flat `security_group_id` variable |
 | `containerized/outputs.tf` | + `alb_security_group_id`, `ecs_service_security_group_id`, `agent_runner_security_group_id` |
 | `containerized/api_gateway.tf` | **unchanged** — verified `module.rest_service.alb_security_group_id` keeps working via the updated output |
-| `serverless/state.tf` | `aws_security_group.lambda` gains `count`; `local.security_group_id` resolves from either source |
-| `serverless/variables.tf` | + `security_group_id` |
-| `serverless/outputs.tf` | + `security_group_id` |
-| `serverless/state.tf` submodule calls (`authorizer`, `ws_connection_handler`, `request_handler`, `agent_runner`, `response_handler`) | **unchanged** — verified they already read `local.security_group_id`, which now resolves from either source |
+| `serverless/state.tf` | **Amended** — the single `aws_security_group.lambda` is replaced by three resources (`request_handler`, `agent_runner`, `response_handler`), each gated on its own object field; three resolving locals replace the one shared local |
+| `serverless/variables.tf` | **Amended** — + `security_group_id` field on each of `request_handler`, `agent_runner`, `response_handler` (not a new flat root variable) |
+| `serverless/outputs.tf` | **Amended** — `request_handler_security_group_id`, `agent_runner_security_group_id`, `response_handler_security_group_id` replace the single `security_group_id` output |
+| `serverless/state.tf` submodule calls (`authorizer`, `ws_connection_handler`, `request_handler`, `agent_runner`, `response_handler`) | **Amended** — rewired to the three new locals (`request_handler_security_group_id` for `authorizer`/`ws_connection_handler`/`request_handler`; `agent_runner_security_group_id` / `response_handler_security_group_id` for their own modules) |
 | `common/modules/authorizer/*` | **unchanged** — out of scope; already supports a list-shaped `security_group_ids`, always fed a single-element list |
 | `common/modules/redis/*`, `common/modules/valkey/*` | **unchanged** — explicitly out of scope (design.md Non-goals) |
 
@@ -303,10 +394,11 @@ None. This change is entirely Terraform infrastructure variables — it does not
    today's create-a-new-SG behavior exactly. A deployment that doesn't set any of these new variables
    sees no plan diff from this change (same SG rules, same resource count).
 2. **SG resources gain `count`.** `aws_security_group.ecs_alb`, `aws_security_group.ecs_service`,
-   `aws_security_group.agent_runner` (all in `containerized`), and `aws_security_group.lambda`
-   (`serverless`) move from unconditional resources to `count`-based ones. No state-migration handling
-   (no `moved` blocks) — confirmed with the requester that no production deployment of these modules
-   exists yet.
+   `aws_security_group.agent_runner` (all in `containerized`), and `aws_security_group.request_handler` /
+   `aws_security_group.agent_runner` / `aws_security_group.response_handler` (`serverless`, amended —
+   three resources replacing the original single `aws_security_group.lambda`) move from unconditional
+   resources to `count`-based ones. No state-migration handling (no `moved` blocks) — confirmed with the
+   requester that no production deployment of these modules exists yet.
 3. **New capability**: when a `*_security_group_id` variable is set, the module skips creating its own
    SG and wires the provided ID into every place that SG's ID was previously used (ingress rules, load
    balancer, ECS `network_configuration`, Lambda `vpc_security_group_ids`, module outputs).
@@ -316,6 +408,15 @@ None. This change is entirely Terraform infrastructure variables — it does not
    ALB SG (not a module-created one); if only `ecs_service_security_group_id` is provided, the ALB SG is
    still created by the module and the provided ECS-service SG's ingress rule (defined outside this
    module, by the caller) is expected to allow that ALB SG.
+5. **(Amended) `serverless`'s three SG toggles are independent, and one is shared by three Lambdas.**
+   `request_handler.security_group_id`, `agent_runner.security_group_id`, and
+   `response_handler.security_group_id` may each be set or left unset in any combination.
+   `request_handler.security_group_id` (created or provided) is also wired into the authorizer and
+   WebSocket connection handler Lambdas — those two were not given their own SG field, since neither was
+   asked for one and both belong to the same request-handling tier as the request handler.
+   `agent_runner.security_group_id` and `response_handler.security_group_id` only have an effect when
+   `queue_mode = true` (their Lambdas don't exist otherwise), matching how other queue-mode-only fields
+   on those same objects already behave.
 
 **Non-changes**: the SG *rule content* (ports, protocols, CIDR blocks, egress-to-`0.0.0.0/0`) created
 when a module still creates its own SG is untouched. `common/modules/authorizer`'s own
