@@ -116,10 +116,13 @@ Three small workflows run on every pull request without any manual step:
 - **Request Copilot Review** (`.github/workflows/copilot-review-request.yaml`): requests a GitHub
   Copilot code review when a PR is opened, reopened, or marked ready for review, using the
   `COPILOT_REVIEW_PAT` secret. The develop ruleset's own Copilot rule only fires for authors who
-  hold a license, which is why this workflow exists. Bot-authored PRs are skipped. It can also be
-  run from the Actions tab (`workflow_dispatch`) with a PR number. `COPILOT_REVIEW_PAT` is a
-  fine-grained PAT created by a licensed maintainer with resource owner `yaalalabs`, access to
-  this repository, and "Pull requests: Read and write". It is separate from
+  hold a license, which is why this workflow exists. Only PRs from collaborators (anyone with
+  access to the repository, checked through the collaborators API) are requested automatically,
+  since each review is a premium request billed to the PAT owner's license; bot-authored PRs are
+  skipped too. For a PR from an outside contributor, read it first and then run the workflow from
+  the Actions tab (`workflow_dispatch`) with the PR number, which bypasses the collaborator check.
+  `COPILOT_REVIEW_PAT` is a fine-grained PAT created by a licensed maintainer with resource owner
+  `yaalalabs`, access to this repository, and "Pull requests: Read and write". It is separate from
   `COPILOT_REQUEST_TOKEN` (used by the docs-sync workflow) because GitHub only allows the
   account-level Copilot Requests permission on user-owned tokens, and a user-owned token cannot
   hold repository permissions on an organization repo.
