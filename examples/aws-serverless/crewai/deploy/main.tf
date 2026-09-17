@@ -23,6 +23,7 @@ module "serverless_agents" {
     package_type         = "Image"
     memory_size          = 1024
     timeout              = 60
+    security_group_id    = var.request_handler_security_group_id
     environment_variables = {
       OPENAI_API_KEY     = var.openai_api_key,
       CREWAI_STORAGE_DIR = "/tmp/crewai",

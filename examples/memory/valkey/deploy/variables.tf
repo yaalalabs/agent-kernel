@@ -38,3 +38,9 @@ variable "private_subnet_ids" {
   description = "List of private subnet IDs for Lambda deployment"
   type        = list(string)
 }
+
+variable "request_handler_security_group_id" {
+  description = "Request handler security group ID for Lambda deployment (also shared by the authorizer and WebSocket connection handler Lambdas)"
+  type        = string
+  default     = null
+}

@@ -161,6 +161,7 @@ jobs:
     outputs:
       vpc_id: ${{ steps.base-outputs.outputs.vpc_id }}
       private_subnet_ids: ${{ steps.base-outputs.outputs.private_subnet_ids }}
+      request_handler_security_group_id: ${{ steps.base-outputs.outputs.request_handler_security_group_id }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -291,6 +292,14 @@ jobs:
           if [[ "${{ matrix.type }}" == aws-* ]]; then
             ARGS+=(--vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}')
           fi
+          # aws-serverless deploys also reuse the base's request handler security group (Phase 1 of
+          # #716; also shared by the authorizer/WebSocket connection handler tier. The agent runner
+          # and response handler tiers still create their own SG per job, since the base deployment
+          # doesn't run in queue_mode and so has none to share. aws-containerized needs its own SG
+          # variables and is Phase 2, not wired here).
+          if [[ "${{ matrix.type }}" == "aws-serverless" ]]; then
+            ARGS+=(--request-handler-security-group-id "${{ needs.get-base-outputs.outputs.request_handler_security_group_id }}")
+          fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"
 
       - name: Test - ${{ matrix.path }}
@@ -331,6 +340,9 @@ jobs:
           ARGS=(--type ${{ matrix.type }} --path ${{ matrix.path }} --deploy-dir ${{ matrix.deploy_dir }} --action destroy)
           if [[ "${{ matrix.type }}" == aws-* ]]; then
             ARGS+=(--vpc-id "${{ needs.get-base-outputs.outputs.vpc_id }}" --private-subnet-ids '${{ needs.get-base-outputs.outputs.private_subnet_ids }}')
+          fi
+          if [[ "${{ matrix.type }}" == "aws-serverless" ]]; then
+            ARGS+=(--request-handler-security-group-id "${{ needs.get-base-outputs.outputs.request_handler_security_group_id }}")
           fi
           python .github/scripts/run_single_test.py "${ARGS[@]}"
       - name: Upload test results

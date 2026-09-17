@@ -4,15 +4,19 @@ data "aws_vpc" "provided" {
 }
 
 locals {
-  lambda_kms_key_arn                    = null
-  cloudwatch_kms_key_arn                = null
-  lambda_signer_profile_name            = "sample_profile"
-  lambda_signing_config_arn             = null
-  vpc_id                                = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
-  vpc_cidr                              = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
-  subnet_ids                            = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
-  security_group_id                     = aws_security_group.lambda.id
-  security_group_name                   = "${var.product_alias}-${var.env_alias}-lambda-sg"
+  lambda_kms_key_arn         = null
+  cloudwatch_kms_key_arn     = null
+  lambda_signer_profile_name = "sample_profile"
+  lambda_signing_config_arn  = null
+  vpc_id                     = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
+  vpc_cidr                   = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
+  subnet_ids                 = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
+  # Three logical security groups, one per Lambda tier (mirrors the containerized module's
+  # per-service SG split). The authorizer and WebSocket connection handler Lambdas — both part of
+  # the request-handling front door — share the request handler's security group.
+  request_handler_security_group_id     = var.request_handler.security_group_id != null ? var.request_handler.security_group_id : aws_security_group.request_handler[0].id
+  agent_runner_security_group_id        = var.agent_runner.security_group_id != null ? var.agent_runner.security_group_id : aws_security_group.agent_runner[0].id
+  response_handler_security_group_id    = var.response_handler.security_group_id != null ? var.response_handler.security_group_id : aws_security_group.response_handler[0].id
   redis_url                             = (var.create_redis_cluster == true || var.create_redis_response_store) ? module.redis[0].url : null
   valkey_url                            = (var.create_valkey_cluster == true || var.create_valkey_response_store) ? module.valkey[0].url : null
   dynamodb_memory_table_arn             = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
@@ -89,9 +93,10 @@ locals {
   shared_source_bucket = local.any_s3zip ? module.lambda_source_storage[0].source_storage_s3_bucket : null
 }
 
-resource "aws_security_group" "lambda" {
-  name        = local.security_group_name
-  description = "Security group for Lambda functions"
+resource "aws_security_group" "request_handler" {
+  count       = var.request_handler.security_group_id == null ? 1 : 0
+  name        = "${var.product_alias}-${var.env_alias}-request-handler-sg"
+  description = "Security group for the request handler Lambda (also used by the authorizer and WebSocket connection handler Lambdas)"
   vpc_id      = local.vpc_id
 
   egress {
@@ -101,7 +106,39 @@ resource "aws_security_group" "lambda" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = { Name = local.security_group_name }
+  tags = { Name = "${var.product_alias}-${var.env_alias}-request-handler-sg" }
+}
+
+resource "aws_security_group" "agent_runner" {
+  count       = var.agent_runner.security_group_id == null ? 1 : 0
+  name        = "${var.product_alias}-${var.env_alias}-agent-runner-sg"
+  description = "Security group for the agent runner Lambda"
+  vpc_id      = local.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "${var.product_alias}-${var.env_alias}-agent-runner-sg" }
+}
+
+resource "aws_security_group" "response_handler" {
+  count       = var.response_handler.security_group_id == null ? 1 : 0
+  name        = "${var.product_alias}-${var.env_alias}-response-handler-sg"
+  description = "Security group for the response handler Lambda"
+  vpc_id      = local.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "${var.product_alias}-${var.env_alias}-response-handler-sg" }
 }
 
 # Single shared S3 bucket for all lambda source packages
@@ -180,7 +217,7 @@ module "authorizer" {
   tags                       = var.tags
   vpc_id                     = local.vpc_id
   subnet_ids                 = local.subnet_ids
-  security_group_ids         = [local.security_group_id]
+  security_group_ids         = [local.request_handler_security_group_id]
   is_production              = var.is_production
   lambda_kms_key_arn         = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn     = local.cloudwatch_kms_key_arn
@@ -528,7 +565,7 @@ module "ws_connection_handler" {
   is_production          = var.is_production
   vpc_id                 = local.vpc_id
   subnet_ids             = local.subnet_ids
-  security_group_id      = local.security_group_id
+  security_group_id      = local.request_handler_security_group_id
   lambda_kms_key_arn     = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
   ws_connection_handler = merge(var.ws_connection_handler, {
@@ -556,7 +593,7 @@ module "request_handler" {
   api_base_path                     = var.api_base_path
   vpc_id                            = local.vpc_id
   subnet_ids                        = local.subnet_ids
-  security_group_id                 = local.security_group_id
+  security_group_id                 = local.request_handler_security_group_id
   lambda_signer_profile_name        = local.lambda_signer_profile_name
   lambda_signing_config_arn         = local.lambda_signing_config_arn
   lambda_kms_key_arn                = local.lambda_kms_key_arn
@@ -687,7 +724,7 @@ module "agent_runner" {
   }
 
   subnet_ids             = local.subnet_ids
-  security_group_id      = local.security_group_id
+  security_group_id      = local.agent_runner_security_group_id
   lambda_kms_key_arn     = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
 
@@ -705,7 +742,7 @@ module "response_handler" {
   lambda_signer_profile_name = local.lambda_signer_profile_name
   lambda_signing_config_arn  = local.lambda_signing_config_arn
   subnet_ids                 = local.subnet_ids
-  security_group_id          = local.security_group_id
+  security_group_id          = local.response_handler_security_group_id
   lambda_kms_key_arn         = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn     = local.cloudwatch_kms_key_arn
   source_bucket              = local.shared_source_bucket
