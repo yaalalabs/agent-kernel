@@ -547,6 +547,7 @@ module "serverless_api_auth" {
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the request handler | `map(string)` | `{}` | no |
 | `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
+| `security_group_id` | Request handler security group ID, also shared by the authorizer and WebSocket connection handler Lambdas. If not provided, a new one will be created | `string` | `null` | no |
 
 ### WebSocket Connection Handler Object Structure
 
@@ -617,6 +618,7 @@ This configuration creates WebSocket routes accessible via:
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the response handler | `map(string)` | `{}` | no |
+| `security_group_id` | Response handler security group ID (queue mode only). If not provided, a new one will be created | `string` | `null` | no |
 
 ### Agent Runner Object Structure
 
@@ -635,6 +637,7 @@ This configuration creates WebSocket routes accessible via:
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the agent runner | `map(string)` | `{}` | no |
+| `security_group_id` | Agent runner security group ID (queue mode only). If not provided, a new one will be created | `string` | `null` | no |
 
 ### Queue Configuration
 
@@ -676,12 +679,61 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 
 **Note**: When `queue_mode = true`, the response handler and agent runner package paths must be provided. The queue configuration defaults can be used as-is, or you can override only the queue names and sizing values you need.
 
+### Security Groups
+
+These three fields live on the `request_handler`, `agent_runner`, and `response_handler` config objects
+(see the object-structure tables above) alongside that Lambda's other settings, rather than as
+standalone top-level variables — one security group per pipeline stage, mirroring the containerized
+module's per-service SG split.
+
+| Field | Object | Description | Type | Default | Required |
+|---|---|---|---|---|---|
+| `security_group_id` | `request_handler` | Request handler security group ID, also shared by the authorizer and WebSocket connection handler Lambdas. If not provided, a new one will be created | `string` | `null` | no |
+| `security_group_id` | `agent_runner` | Agent runner security group ID (queue mode only). If not provided, a new one will be created | `string` | `null` | no |
+| `security_group_id` | `response_handler` | Response handler security group ID (queue mode only). If not provided, a new one will be created | `string` | `null` | no |
+
+```hcl
+request_handler = {
+  package_path      = "./dist/request-handler"
+  security_group_id = "sg-0123456789abcdef0"
+}
+
+agent_runner = {
+  package_path      = "./dist/agent-runner"
+  security_group_id = "sg-0123456789abcdef1"
+}
+
+response_handler = {
+  package_path      = "./dist/response-handler"
+  security_group_id = "sg-0123456789abcdef2"
+}
+```
+
+Each of the three is independent — you may provide any subset of them and let the module create the
+rest. Useful when the deploying pipeline can't create security groups (no `ec2:CreateSecurityGroup`),
+when org policy disallows the default `0.0.0.0/0` egress these modules create, or when a downstream
+resource (e.g. RDS, ElastiCache) already has ingress rules referencing a specific, pre-approved
+security group. `agent_runner.security_group_id` and `response_handler.security_group_id` only have an
+effect when `queue_mode = true`.
+
+A provided security group must permit the egress its Lambda needs (ElastiCache/Redis, DynamoDB, SQS,
+model APIs), since traffic fails at runtime (not at plan/apply) if it doesn't — the module-created SGs
+are egress-all:
+
+- `request_handler.security_group_id`: also used by the authorizer and WebSocket connection handler
+  Lambdas, since both are part of the same request-handling front door as the request handler.
+- `agent_runner.security_group_id`: used by the agent runner Lambda only.
+- `response_handler.security_group_id`: used by the response handler Lambda only.
+
 ## 📤 Outputs
 
 | Name | Description |
 |------|-------------|
 | `agent_invoke_url` | Invoke URL for the agent chat endpoint |
 | `authorizer_status` | Status message indicating whether the authorizer Lambda will be created |
+| `request_handler_security_group_id` | Security group ID used for the request handler Lambda (also used by the authorizer and WebSocket connection handler Lambdas; created or provided) |
+| `agent_runner_security_group_id` | Security group ID used for the agent runner Lambda (created or provided; returns null when `queue_mode = false`) |
+| `response_handler_security_group_id` | Security group ID used for the response handler Lambda (created or provided; returns null when `queue_mode = false`) |
 | `request_handler_lambda_function_arn` | ARN of the request-handler Lambda function |
 | `request_handler_lambda_function_name` | Name of the request-handler Lambda function |
 | `request_handler_lambda_function_invoke_arn` | Invoke ARN for API Gateway integration |

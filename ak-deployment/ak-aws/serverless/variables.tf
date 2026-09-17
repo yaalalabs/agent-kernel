@@ -68,11 +68,11 @@ variable "execution_mode" {
   description = "Execution mode for the deployment. Allowed values: rest_sync, async, stream (always allowed), rest_async (only when queue_mode is true). Use 'stream' for WebSocket streaming where each chunk is sent individually via SQS."
   default     = "rest_sync"
   validation {
-    condition = contains(["rest_sync", "rest_async", "async", "stream"], var.execution_mode)
+    condition     = contains(["rest_sync", "rest_async", "async", "stream"], var.execution_mode)
     error_message = "execution_mode must be one of: rest_sync, rest_async, async, stream."
   }
   validation {
-    condition = var.queue_mode || contains(["rest_sync", "async", "stream"], var.execution_mode)
+    condition     = var.queue_mode || contains(["rest_sync", "async", "stream"], var.execution_mode)
     error_message = "execution_mode must be rest_sync, async, or stream when queue_mode is false."
   }
 }
@@ -359,6 +359,7 @@ variable "request_handler" {
     event_source_mapping              = optional(any, [])
     lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
+    security_group_id                 = optional(string, null) # Request handler security group ID, also shared by the authorizer and WebSocket connection handler Lambdas. If not provided, a new one will be created
   })
   default = {}
   validation {
@@ -395,6 +396,7 @@ variable "agent_runner" {
     environment_variables             = optional(map(string), {})
     lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
+    security_group_id                 = optional(string, null) # Agent runner security group ID (queue mode only). If not provided, a new one will be created
   })
   default = {}
   validation {
@@ -431,6 +433,7 @@ variable "response_handler" {
     environment_variables             = optional(map(string), {})
     lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
+    security_group_id                 = optional(string, null) # Response handler security group ID (queue mode only). If not provided, a new one will be created
   })
   default = {}
   validation {
