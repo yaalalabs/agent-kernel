@@ -4,7 +4,7 @@ locals {
 
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.1"
+  version = "0.9.1"
 
   providers = { aws = aws, docker = docker }
 

@@ -5,8 +5,9 @@ variable "region" {
 }
 
 variable "prefix" {
+  description = "Prefix applied to every resource name."
   type        = string
-  description = "Prefix applied to every resource name"
+  default     = "ak-dev-waste-sorting"
 }
 
 variable "openai_api_key" {
