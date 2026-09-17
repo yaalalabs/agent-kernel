@@ -2,72 +2,93 @@
 
 Phase 2 (AWS containerized) is not planned here — it will get its own iterations once designed.
 
+**Amendment (post-implementation):** per `design.md`/`spec.md`'s own Amendments, #689's serverless
+module split into three per-tier SGs; every `security_group_id` reference below is amended to
+`request_handler_security_group_id`, and Iteration 2's file-specific insertion point moves from a
+top-level module argument to a line inside each file's `request_handler = { ... }` block.
+
 ## Iteration 1: Base deployment exposes its security group ID
 
-- **Goal:** `examples/aws-serverless/openai/deploy` outputs the SG ID it already creates, so it's
-  readable via `terraform output` exactly like `vpc_id`/`private_subnet_ids` already are.
+- **Goal:** `examples/aws-serverless/openai/deploy` outputs the request-handler-tier SG ID it
+  already creates, so it's readable via `terraform output` exactly like `vpc_id`/`private_subnet_ids`
+  already are.
 - **Files:** `examples/aws-serverless/openai/deploy/outputs.tf`
 - **Steps:**
-  1. Add the `security_group_id` output (spec.md § Base deployment).
+  1. Add the `request_handler_security_group_id` output (spec.md § Base deployment).
 - **Verify:** `terraform validate` in this deploy dir (after `python3 scripts/deploy/inject_dependencies.py`
-  so the module source resolves locally); `terraform output -raw security_group_id` against the
-  base's existing remote state returns a non-empty SG ID.
+  so the module source resolves locally); `terraform output -raw request_handler_security_group_id`
+  against the base's existing remote state returns a non-empty SG ID.
 
 ## Iteration 2: Example projects accept a reusable security group
 
 - **Goal:** each of the 9 weekly `aws-serverless` matrix examples can accept an externally-provided
-  SG ID and forward it into its own module call; unset behaves exactly as today (module still
-  creates its own SG).
+  request-handler-tier SG ID and forward it into its own module call's `request_handler` block;
+  unset behaves exactly as today (module still creates its own SG for that tier).
 - **Files:** `examples/aws-serverless/{adk,crewai,langgraph,scalable-openai,openai-auth,schedule-openai}/deploy/{variables.tf,main.tf}`,
   `examples/memory/{redis,valkey,dynamodb}/deploy/{variables.tf,main.tf}`
 - **Steps:**
-  1. Add the nullable `security_group_id` variable to each `variables.tf` (spec.md § Example
-     projects).
-  2. Add `security_group_id = var.security_group_id` to each `main.tf`'s `module
-     "serverless_agents"` block, at the file-specific line noted in spec.md's insertion table,
-     matching that file's existing alignment style.
+  1. Add the nullable `request_handler_security_group_id` variable to each `variables.tf` (spec.md
+     § Example projects).
+  2. Add `security_group_id = var.request_handler_security_group_id` **inside** each `main.tf`'s
+     `request_handler = { ... }` block (not a top-level `module "serverless_agents"` argument —
+     amended from the original design, since the underlying module's top-level `security_group_id`
+     variable no longer exists per #689's amendment), matching that block's existing alignment
+     style. For `scalable-openai`/`schedule-openai`, only their `request_handler` block gets this
+     line — their `agent_runner`/`response_handler` blocks are untouched.
 - **Verify:** `terraform validate` in each of the 9 deploy dirs (after `inject_dependencies.py`);
-  `terraform plan` with no `security_group_id` set shows zero diff (create-path unchanged) in at
-  least one representative example (`adk`).
+  `terraform plan` with no `request_handler_security_group_id` set shows zero diff (create-path
+  unchanged) in at least one representative example (`adk`).
 
 ## Iteration 3: `get_base_outputs.py` retrieves the security group ID
 
 - **Goal:** the script that already surfaces `vpc_id`/`private_subnet_ids` to `$GITHUB_OUTPUT` does
-  the same for `security_group_id`.
+  the same for `request_handler_security_group_id`.
 - **Files:** `.github/scripts/get_base_outputs.py`
 - **Steps:**
-  1. Add the `terraform output -raw security_group_id` retrieval, print line, and `$GITHUB_OUTPUT`
-     write (spec.md § `get_base_outputs.py`).
+  1. Add the `terraform output -raw request_handler_security_group_id` retrieval, print line, and
+     `$GITHUB_OUTPUT` write (spec.md § `get_base_outputs.py`).
 - **Verify:** run the script directly against the base deployment's existing state
   (`python3 .github/scripts/get_base_outputs.py --base-path examples/aws-serverless/openai
-  --deploy-dir deploy`, with `GITHUB_OUTPUT` unset so it just prints); confirm `Security Group ID:
-  <sg-id>` prints alongside the existing VPC/subnet lines. Depends on Iteration 1's output existing.
+  --deploy-dir deploy`, with `GITHUB_OUTPUT` unset so it just prints); confirm `Request Handler
+  Security Group ID: <sg-id>` prints alongside the existing VPC/subnet lines. Depends on
+  Iteration 1's output existing.
 
 ## Iteration 4: `run_single_test.py` threads the security group ID into Terraform
 
-- **Goal:** a new `--security-group-id` CLI flag sets `TF_VAR_security_group_id` for both deploy and
-  destroy, exactly like `--vpc-id` already does.
+- **Goal:** a new `--request-handler-security-group-id` CLI flag sets
+  `TF_VAR_request_handler_security_group_id` for both deploy and destroy, exactly like `--vpc-id`
+  already does; the Lambda-SG ENI sweeper's naming list is updated to the three per-tier names.
 - **Files:** `.github/scripts/run_single_test.py`
 - **Steps:**
-  1. Add the `--security-group-id` argparse entry in `main()` (spec.md § `run_single_test.py`).
-  2. Add the fourth `security_group_id` parameter and `TF_VAR_security_group_id` injection block to
-     `deploy_aws_resources` and `destroy_aws_resources`.
-  3. Update both call sites in `main()` to pass `args.security_group_id` through.
+  1. Add the `--request-handler-security-group-id` argparse entry in `main()` (spec.md §
+     `run_single_test.py`).
+  2. Add the fourth `request_handler_security_group_id` parameter and
+     `TF_VAR_request_handler_security_group_id` injection block to `deploy_aws_resources` and
+     `destroy_aws_resources`.
+  3. Update both call sites in `main()` to pass `args.request_handler_security_group_id` through.
+  4. Amend `_resolve_lambda_sg_ids`'s `sg_names` list from the single `-lambda-sg`/
+     `-authorizer-lambda-sg` pair to the three per-tier names (`-request-handler-sg`,
+     `-agent-runner-sg`, `-response-handler-sg`), so the ENI sweeper still covers
+     `scalable-openai`/`schedule-openai`'s self-created `agent_runner`/`response_handler` SGs.
 - **Verify:** `python3 -c "import ast; ast.parse(open('.github/scripts/run_single_test.py').read())"`
   parses cleanly; manually invoke
   `run_single_test.py --type aws-serverless --path examples/aws-serverless/adk --action deploy
-  --vpc-id <base vpc> --private-subnet-ids '<base subnets>' --security-group-id <base sg>` against a
-  scratch/dev deployment and confirm the log prints `TF_VAR_security_group_id=<base sg>` and the
-  resulting `terraform plan`/`apply` shows `aws_security_group.lambda` at 0 count with the module's
-  Lambda submodules resolving to the provided SG. Depends on Iteration 2 (example accepts the var).
+  --vpc-id <base vpc> --private-subnet-ids '<base subnets>' --request-handler-security-group-id
+  <base sg>` against a scratch/dev deployment and confirm the log prints
+  `TF_VAR_request_handler_security_group_id=<base sg>` and the resulting `terraform plan`/`apply`
+  shows `aws_security_group.request_handler` at 0 count with the request handler (plus
+  authorizer/`ws_connection_handler`) submodules resolving to the provided SG. Depends on
+  Iteration 2 (example accepts the var).
 
 ## Iteration 5: Wire the workflow end-to-end
 
-- **Goal:** the weekly pipeline's `get-base-outputs` job exposes `security_group_id`, and Deploy/Destroy
-  steps pass `--security-group-id` for `aws-serverless` matrix entries only.
+- **Goal:** the weekly pipeline's `get-base-outputs` job exposes
+  `request_handler_security_group_id`, and Deploy/Destroy steps pass
+  `--request-handler-security-group-id` for `aws-serverless` matrix entries only.
 - **Files:** `.github/workflows/integration-test-weekly.yaml`
 - **Steps:**
-  1. Add `security_group_id` to the `get-base-outputs` job's `outputs:` map (spec.md § workflow).
+  1. Add `request_handler_security_group_id` to the `get-base-outputs` job's `outputs:` map
+     (spec.md § workflow).
   2. Add the `aws-serverless`-scoped conditional to the Deploy step, alongside the existing `aws-*`
      one.
   3. Add the same conditional to the Destroy step.
@@ -82,12 +103,16 @@ From spec.md § Testing — no Terraform unit-test framework and no pytest suite
 run together as a final pass once all five iterations are wired:
 
 - `terraform validate` (with `inject_dependencies.py` applied) in all 10 touched deploy dirs (base +
-  9 examples).
+  9 examples). Done during implementation: 9/10 validated cleanly (only pre-existing deprecation
+  warnings from the AWS provider, unrelated to this change); `memory/redis` hit a local
+  provider-cache miss for a pinned `aws` version unrelated to this change's correctness.
 - The manual dry run from Iterations 3-4 (deploy + destroy against a real `aws-serverless` example
-  with the base's actual outputs).
+  with the base's actual outputs), including the `scalable-openai`/`schedule-openai`
+  agent_runner/response_handler-still-self-created check from spec.md § Testing.
 - A full `workflow_dispatch` run of `integration-test-weekly.yaml` (`keep_resources_on_failure: true`
   for easier first-run debugging), confirming:
-  - Every `aws-serverless` matrix job's Deploy step log shows `TF_VAR_security_group_id=<base sg>`.
+  - Every `aws-serverless` matrix job's Deploy step log shows
+    `TF_VAR_request_handler_security_group_id=<base sg>`.
   - Every `aws-containerized` matrix job's Deploy step log shows **no** such line (confirms the
     type-scoping excludes them, per spec.md Behavioural changes item 5).
   - All `aws-serverless` jobs' Test and Destroy steps succeed exactly as they do today (no
@@ -107,15 +132,18 @@ run together as a final pass once all five iterations are wired:
 - **`docs/docs/deployment/aws-serverless.md`**: checked — no `vpc_id`/`private_subnet_ids`/pipeline
   mention exists to extend in parallel (confirmed by the earlier `grep`, which found no hits in this
   file). No update needed.
-- **Example README changes** — `ak-deployment/ak-aws/serverless` itself is unchanged (#689 already
-  landed it), but three of the example READMEs already document the `vpc_id`-equivalent reuse flow
-  and need a matching `security_group_id` step:
-  `examples/aws-serverless/{crewai,langgraph,openai-auth}/README.md:27-37` walk the reader through
+- **Example README changes** — `ak-deployment/ak-aws/serverless` itself is amended by #689, not by
+  this change, but three of the example READMEs already documented the original single-SG reuse
+  flow and are amended in place to the per-tier name:
+  `examples/aws-serverless/{crewai,langgraph,openai-auth}/README.md` walk the reader through
   `terraform output vpc_id` / `private_subnet_ids` on the `openai` deployment and
-  `export TF_VAR_vpc_id=...`; add the equivalent `terraform output security_group_id` /
-  `export TF_VAR_security_group_id=<SG_FROM_OPENAI>` lines to each. `examples/memory/valkey/README.md:56-57`
-  tells the reader to set `vpc_id`/`private_subnet_ids` in `terraform.tfvars`; add
-  `security_group_id` to that same instruction. Per `ak-dev-sync-docs-from-branch`, example READMEs
-  are a required docs surface when an example's inputs change.
+  `export TF_VAR_vpc_id=...`; the `terraform output security_group_id` /
+  `export TF_VAR_security_group_id=<SG_FROM_OPENAI>` lines each already had are renamed to
+  `terraform output request_handler_security_group_id` /
+  `export TF_VAR_request_handler_security_group_id=<SG_FROM_OPENAI>`.
+  `examples/memory/valkey/README.md` tells the reader to set `vpc_id`/`private_subnet_ids` in
+  `terraform.tfvars`; its `security_group_id` mention is renamed to
+  `request_handler_security_group_id`. Per `ak-dev-sync-docs-from-branch`, example READMEs are a
+  required docs surface when an example's inputs change.
 - Before merge, run `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` against the
   branch's actual diff to catch anything this plan missed.

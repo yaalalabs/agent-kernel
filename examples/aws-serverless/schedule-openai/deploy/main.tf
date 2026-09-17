@@ -14,7 +14,6 @@ module "serverless_agents" {
   is_production        = var.is_production
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
-  security_group_id    = var.security_group_id
 
   # ---- Queue Mode ----
   # Mandatory for scheduling: EventBridge Scheduler delivers each occurrence to the Input Queue.
@@ -78,6 +77,7 @@ module "serverless_agents" {
     package_path         = "../dist_request_handler.zip"
     memory_size          = 256
     timeout              = 45
+    security_group_id    = var.request_handler_security_group_id
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }

@@ -13,7 +13,6 @@ module "serverless_agents" {
   is_production        = var.is_production
   vpc_id               = var.vpc_id
   private_subnet_ids   = var.private_subnet_ids
-  security_group_id    = var.security_group_id
 
   # Execution mode - using for scalable processing
   queue_mode     = true        # recommended for production
@@ -52,6 +51,7 @@ module "serverless_agents" {
     lambda_package_s3    = var.request_handler_lambda_package_s3
     memory_size          = 256
     timeout              = 45
+    security_group_id    = var.request_handler_security_group_id
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }

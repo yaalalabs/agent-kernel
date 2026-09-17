@@ -13,7 +13,7 @@ output "private_subnet_ids" {
   value       = module.serverless_agents.private_subnet_ids
 }
 
-output "security_group_id" {
-  description = "Security group ID used for the deployment"
-  value       = module.serverless_agents.security_group_id
+output "request_handler_security_group_id" {
+  description = "Request handler security group ID used for the deployment (also used by the authorizer and WebSocket connection handler Lambdas)"
+  value       = module.serverless_agents.request_handler_security_group_id
 }
