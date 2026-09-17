@@ -51,19 +51,32 @@
 
 ## Iteration 4: `serverless/state.tf`
 
-- **Goal:** `serverless` accepts one `security_group_id`, shared by all five Lambda submodules; unset
-  behaves exactly as today.
+- **Goal (amended, post-implementation):** `serverless` accepts three independent SG fields — one per
+  Lambda pipeline stage — instead of one `security_group_id` shared by all five submodules. Unset
+  behaves exactly as today (one SG created per stage, same rule content as the original shared SG).
 - **Files:** `ak-deployment/ak-aws/serverless/{variables.tf,state.tf,outputs.tf}`
 - **Steps:**
-  1. Add `security_group_id` to `variables.tf`, next to the existing `vpc_id`/`private_subnet_ids` block.
-  2. Add `count` to `aws_security_group.lambda`; change `local.security_group_id`'s definition to
-     resolve from the variable or the created resource.
-  3. Add the `security_group_id` output.
-  4. Confirm no changes needed at the five submodule call sites (`authorizer`, `ws_connection_handler`,
-     `request_handler`, `agent_runner`, `response_handler`) — they already read `local.security_group_id`.
+  1. Add `security_group_id = optional(string, null)` to the `request_handler`, `agent_runner`, and
+     `response_handler` object variables (not a new flat root variable — the object-field convention
+     Iteration 3 already established for `containerized`).
+  2. Replace `aws_security_group.lambda` with three resources (`request_handler`, `agent_runner`,
+     `response_handler`), each `count`-gated on its own object field being `null` only (not on
+     `queue_mode`/`enable_api_gateway` — see spec.md's Amendment for why that would break the resolving
+     `local`). Replace the single shared local with three: `request_handler_security_group_id`,
+     `agent_runner_security_group_id`, `response_handler_security_group_id`.
+  3. Rewire the five submodule call sites: `authorizer` and `ws_connection_handler` →
+     `local.request_handler_security_group_id` (both share the request-handling front door);
+     `request_handler` → `local.request_handler_security_group_id`; `agent_runner` →
+     `local.agent_runner_security_group_id`; `response_handler` →
+     `local.response_handler_security_group_id`.
+  4. Replace the single `security_group_id` output with three: `request_handler_security_group_id`
+     (unconditional), `agent_runner_security_group_id` and `response_handler_security_group_id` (both
+     `null` when `queue_mode = false`, matching this file's existing convention for other
+     agent-runner/response-handler outputs).
 - **Verify:** `terraform fmt -check` and `terraform validate` at the serverless root; same two-sided
-  `terraform plan` check as Iteration 3 (unset → zero diff; fake ID set → SG resource drops to 0 count,
-  all five submodule calls and the new output resolve to the fake ID).
+  `terraform plan` check as Iteration 3 (unset → zero diff; a fake ID set on one of the three fields
+  drops only that field's SG resource to 0 count and resolves every consumer of that field's local to
+  the fake ID, while the other two SGs still get created).
 
 ## Iteration 5: Tests
 
@@ -93,9 +106,11 @@ modules are wired:
   `ecs_service_security_group_id` as fields on the `rest_service` object and `security_group_id` as a
   field on the `agent_runner` object (amended — these are object fields, not root variables), in both
   the "Configuration" object examples and the "Security Groups" section (`README.md:195-352` region).
-- **`ak-deployment/ak-aws/serverless/README.md`**: add one new row for `security_group_id` directly
-  below the existing `vpc_id` / `private_subnet_ids` rows (`README.md:512-513`), matching their exact
-  format.
+- **`ak-deployment/ak-aws/serverless/README.md`** (amended): remove the single `security_group_id` root
+  input row; add a `security_group_id` row to each of the `request_handler`/`agent_runner`/
+  `response_handler` object-structure tables; add a "Security Groups" section (mirroring
+  `containerized/README.md`'s) documenting the three fields, their independence, and which Lambdas each
+  one covers; replace the single `security_group_id` output row with the three new output rows.
 - **`docs/docs/deployment/aws-containerized.md`** and **`docs/docs/deployment/aws-serverless.md`**:
   checked for an existing "bring your own VPC" prose section to extend in parallel — neither has one
   (verified: `vpc_id` appears only inside an example code comment in the containerized doc, and not at

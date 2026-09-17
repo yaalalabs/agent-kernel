@@ -5,9 +5,11 @@ groups today. This change adds an opt-in "bring your own SG" toggle wherever the
 `security_group_id` variable per logical SG, mirroring the existing `var.vpc_id` bring-your-own-VPC
 convention — `null` (default) keeps today's create-a-new-SG behavior; a provided ID skips creation and
 wires that ID into the same downstream resources instead. Every logical SG in scope needs exactly one
-ID (confirmed: all Lambdas share one SG, each ECS-level SG is single-purpose), so no list-typed variable
-is needed anywhere. Scope: ECS-level SGs in `containerized` and the shared Lambda SG in `serverless`.
-Redis/Valkey SGs are explicitly out of scope (user decision).
+ID (each SG, ECS-level or Lambda-tier, is single-purpose), so no list-typed variable is needed anywhere.
+Scope: ECS-level SGs in `containerized` and, per Lambda pipeline stage (request handler, agent runner,
+response handler — **amended**, see the `serverless/state.tf` section below; originally one SG shared
+by all five Lambdas), the Lambda-tier SGs in `serverless`. Redis/Valkey SGs are explicitly out of scope
+(user decision).
 
 ## Motivation
 
@@ -157,22 +159,43 @@ Redis/Valkey SGs are explicitly out of scope (user decision).
 
 ### `serverless/state.tf`
 
-- New root-level variable: `security_group_id` (`string`, default `null`) — one ID shared by all five
-  Lambda submodules, confirmed with the requester (all serverless Lambdas use the same SG; no submodule
-  needs a distinct one).
-- `aws_security_group.lambda` (`state.tf:92`) gets `count = var.security_group_id == null ? 1 : 0`.
-- `local.security_group_id` (`state.tf:14`) changes from `aws_security_group.lambda.id` to:
-  `var.security_group_id != null ? var.security_group_id : aws_security_group.lambda[0].id`.
-- No changes needed at any of the five submodule call sites (`module.authorizer` `state.tf:183`,
-  `module.ws_connection_handler` `state.tf:531`, `module.request_handler` `state.tf:559`,
-  `module.agent_runner` `state.tf:690`, `module.response_handler` `state.tf:708`) — they already
-  reference `local.security_group_id` (wrapped in `[...]` for `authorizer`, singular for the other
-  four), and that local now transparently resolves to either the created or the provided ID.
-- New output at the serverless root: `security_group_id`, exposing `local.security_group_id` — issue
-  #689 explicitly asks for a `lambda_security_group_id`-style output; no SG output currently exists at
-  either root module (`containerized/outputs.tf`, `serverless/outputs.tf` — verified, neither has one
-  today). `containerized` root gets equivalent outputs for its three SGs for the same reason (external
-  consumers need to discover the effective ID either way).
+**Amendment (post-implementation):** superseding the single-shared-SG shape below, `serverless` now
+splits into **three** logical security groups — one per Lambda pipeline stage (request handler, agent
+runner, response handler) — mirroring `containerized`'s per-service SG split instead of one SG shared by
+all five Lambdas. Each of the three lives as a field on the corresponding `request_handler`/
+`agent_runner`/`response_handler` object variable (the same "field on the existing service object,
+not a new flat variable" convention the containerized-root amendment above already established), rather
+than as a single root-level `security_group_id` variable:
+
+- `request_handler.security_group_id` — used by the request handler Lambda, and also by the authorizer
+  and WebSocket connection handler Lambdas, since both are part of the same request-handling front door
+  and neither was asked to get its own dedicated SG.
+- `agent_runner.security_group_id` — used by the agent runner Lambda only (queue mode only).
+- `response_handler.security_group_id` — used by the response handler Lambda only (queue mode only).
+
+Each toggles independently, exactly like `containerized/modules/rest-service`'s two SG fields. Three
+`aws_security_group` resources replace the single `aws_security_group.lambda`, each `count`-gated on its
+own field being `null` (not on `queue_mode`/`enable_api_gateway`, to keep the resolving `local` always
+safe to evaluate — see spec.md's Amendment for the reasoning). Three root outputs
+(`request_handler_security_group_id`, `agent_runner_security_group_id`,
+`response_handler_security_group_id`) replace the single `security_group_id` output.
+
+<details>
+<summary>Superseded: original single-shared-SG design</summary>
+
+- New root-level variable: `security_group_id` — one ID shared by all five Lambda submodules,
+  confirmed with the requester (all serverless Lambdas use the same SG; no submodule needs a distinct
+  one).
+- The Lambda SG resource becomes conditional; the existing shared local resolves to either the created
+  or the provided ID.
+- No changes needed at any of the five submodule call sites — they already reference that local, which
+  now transparently resolves to either source.
+- New output at the serverless root exposing the effective ID — issue #689 explicitly asks for a
+  `lambda_security_group_id`-style output, and no SG output currently exists at either root module.
+  `containerized` root gets equivalent outputs for its three SGs for the same reason (external consumers
+  need to discover the effective ID either way).
+
+</details>
 
 ## Non-goals
 
@@ -191,9 +214,14 @@ Redis/Valkey SGs are explicitly out of scope (user decision).
 All four questions raised in the previous review cycle are now resolved and folded into the
 Requirements above:
 
-1. ~~Fan the serverless list out to all five submodules?~~ Moot — all five Lambdas share exactly one SG
-   (confirmed), so the variable is singular and no submodule needs changing.
-2. ~~Root-level output naming for `serverless`?~~ Singular `security_group_id`, per (1).
+1. ~~Fan the serverless list out to all five submodules?~~ Originally moot — all five Lambdas were
+   confirmed to share exactly one SG, so the variable was singular and no submodule needed changing.
+   **Superseded (post-implementation)**: revisited to split into three SGs — one per Lambda pipeline
+   stage (request handler, agent runner, response handler) — mirroring `containerized`'s per-service
+   split; the authorizer and WebSocket connection handler Lambdas share the request handler's SG rather
+   than getting their own. See the `serverless/state.tf` Amendment in Requirements above.
+2. ~~Root-level output naming for `serverless`?~~ Originally singular `security_group_id`, per (1).
+   **Superseded**: three outputs now, one per SG — see the same Amendment.
 3. ~~containerized root variable granularity?~~ Originally three flat singular variables
    (`alb_security_group_id`, `ecs_service_security_group_id`, `agent_runner_security_group_id`),
    matching `vpc_id`'s existing flat-variable convention at that layer. **Superseded**: since
