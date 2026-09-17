@@ -6,7 +6,7 @@ data "azurerm_client_config" "current" {}
 
 locals {
   subscription_hash    = substr(md5(data.azurerm_subscription.current.subscription_id), 0, 8)
-  storage_account_name = substr(replace("${var.product_alias}${var.env_alias}src${local.subscription_hash}", "/[^a-z0-9]/", ""), 0, 24)
+  storage_account_name = substr(replace("${var.prefix}src${local.subscription_hash}", "/[^a-z0-9]/", ""), 0, 24)
   container_name       = "sources"
 
   key_vault_uri = var.blob_kms_key_id != null ? regex("(https://[^/]+)", var.blob_kms_key_id)[0] : null

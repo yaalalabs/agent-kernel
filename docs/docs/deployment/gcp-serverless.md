@@ -110,9 +110,7 @@ module "serverless_agent" {
 
   project_id           = var.project_id
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK GCP Serverless"
 
   package_path = "${path.module}/../dist"
@@ -140,9 +138,7 @@ module "serverless_agent" {
 
   project_id           = var.project_id
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK GCP Serverless Firestore"
 
   package_path = "${path.module}/../dist"
@@ -169,9 +165,7 @@ module "serverless_agent" {
 
   project_id           = var.project_id
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK GCP Serverless Auth"
 
   package_path = "${path.module}/../dist"
@@ -234,9 +228,7 @@ terraform apply
 |----------|----------|---------|-------------|
 | `project_id` | ✅ | - | GCP project ID |
 | `region` | ✅ | - | GCP region (e.g. `us-central1`) |
-| `product_alias` | ✅ | - | Short name for resource naming |
-| `env_alias` | ✅ | - | Environment label (e.g. `dev`, `prod`) |
-| `module_name` | ✅ | - | Module identifier |
+| `prefix` | ✅ | - | Prefix applied to every resource name (e.g. `myapp-dev-chat`) |
 | `package_path` | ✅ | - | Path to Docker build context |
 | `create_redis_cluster` | ❌ | `false` | Create Memorystore Redis |
 | `create_firestore_db` | ❌ | `false` | Create Firestore database |

@@ -32,8 +32,7 @@ module "lambda_storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
   product_display_name = "Lambda Packages"
   is_production        = true
 }
@@ -43,9 +42,7 @@ module "api_package" {
   source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
-  product_alias    = "myapp"
-  env_alias        = "prod"
-  module_name      = "api"
+  prefix           = "myapp-prod-api"
   package_dir_path = "${path.module}/dist/api-function.zip"
   s3_bucket        = module.lambda_storage.source_storage_s3_bucket
   is_layer         = false
@@ -70,9 +67,7 @@ module "shared_layer" {
   source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
-  product_alias    = "myapp"
-  env_alias        = "prod"
-  module_name      = "shared-libs"
+  prefix           = "myapp-prod-shared-libs"
   package_dir_path = "${path.module}/dist/layer.zip"
   s3_bucket        = module.lambda_storage.source_storage_s3_bucket
   is_layer         = true  # Marks as layer package
@@ -95,9 +90,7 @@ module "dev_package" {
   source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
-  product_alias    = "myapp"
-  env_alias        = "dev"
-  module_name      = "worker"
+  prefix           = "myapp-dev-worker"
   package_dir_path = "${path.module}/dist/worker-dev.zip"
   s3_bucket        = module.dev_storage.source_storage_s3_bucket
 }
@@ -107,9 +100,7 @@ module "prod_package" {
   source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "prod"
-  module_name         = "worker"
+  prefix              = "myapp-prod-worker"
   package_dir_path    = "${path.module}/dist/worker-prod.zip"
   s3_bucket           = module.prod_storage.source_storage_s3_bucket
   is_production       = true
@@ -125,9 +116,7 @@ module "ci_package" {
   source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
-  product_alias    = "myapp"
-  env_alias        = var.environment
-  module_name      = "api"
+  prefix           = "myapp-${var.environment}-api"
   package_dir_path = "${path.module}/artifacts/api-${var.build_version}.zip"
   s3_bucket        = var.lambda_bucket
   
@@ -143,11 +132,9 @@ module "ci_package" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `region` | AWS region for deployment | `string` | `"ap-southeast-2"` | no |
-| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
-| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name for tagging | `string` | `null` | no |
 | `is_production` | Production flag for additional safeguards | `bool` | `false` | no |
-| `module_name` | Module/service name for resource identification | `string` | n/a | yes |
 | `package_dir_path` | Path to Lambda function or layer ZIP package | `string` | n/a | yes |
 | `is_layer` | Whether package is a Lambda layer (true) or function (false) | `bool` | `false` | no |
 | `s3_bucket` | S3 bucket name for package storage | `string` | n/a | yes |
@@ -169,7 +156,7 @@ module "ci_package" {
 The module creates a hierarchical S3 key structure:
 
 ```
-{product_alias}/{region}/{env_alias}/{module_name}/{package_type}/{filename}
+{prefix}/{region}/{package_type}/{filename}
                                                      └── "function" or "layer"
 ```
 
@@ -208,8 +195,7 @@ myapp/us-west-2/dev/worker/function/worker.zip
 module "dev_storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
   
-  product_alias = "myapp"
-  env_alias     = "dev"
+  prefix        = "myapp-dev"
   # ... other config
 }
 
@@ -217,8 +203,7 @@ module "dev_storage" {
 module "prod_storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
   
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod"
   is_production = true  # Enables versioning
   # ... other config
 }
@@ -247,17 +232,17 @@ cd ../..
 terraform apply
 ```
 
-### 3. Use Descriptive Module Names
+### 3. Use Descriptive Prefixes
 
 ```hcl
 # Good: Descriptive names
-module_name = "user-api"
-module_name = "auth-service"
-module_name = "shared-utilities-layer"
+prefix      = "user-api"
+prefix      = "auth-service"
+prefix      = "shared-utilities-layer"
 
 # Avoid: Generic names
-module_name = "function1"
-module_name = "lambda"
+prefix      = "function1"
+prefix      = "lambda"
 ```
 
 ### 4. Version in Filenames for Releases
@@ -324,8 +309,7 @@ module "storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
   product_display_name = "My Application"
   is_production        = true
 }
@@ -335,9 +319,7 @@ module "layer_package" {
   source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
-  product_alias    = "myapp"
-  env_alias        = "prod"
-  module_name      = "dependencies"
+  prefix           = "myapp-prod-dependencies"
   package_dir_path = "${path.module}/dist/layer.zip"
   s3_bucket        = module.storage.source_storage_s3_bucket
   is_layer         = true
@@ -356,9 +338,7 @@ module "function_package" {
   source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
-  product_alias    = "myapp"
-  env_alias        = "prod"
-  module_name      = "api"
+  prefix           = "myapp-prod-api"
   package_dir_path = "${path.module}/dist/function.zip"
   s3_bucket        = module.storage.source_storage_s3_bucket
   is_layer         = false
@@ -459,7 +439,7 @@ Error: Access Denied
 module "api_package_v2" {
   source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
-  module_name      = "api-v2"
+  prefix           = "api-v2"
   package_dir_path = "${path.module}/dist/api-v2.zip"
   # ... other config
 }

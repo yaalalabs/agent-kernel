@@ -1,11 +1,6 @@
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias for resource naming"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias for resource naming"
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 }
 
 variable "region" {
@@ -17,12 +12,6 @@ variable "module_type" {
   type        = string
   description = "Module type (python or nodejs)"
   default     = "python"
-}
-
-variable "module_name" {
-  type        = string
-  description = "Module name"
-  default     = "ws-connection-handler"
 }
 
 variable "is_production" {
@@ -82,7 +71,6 @@ variable "ws_connection_handler" {
     timeout               = optional(number, 30)
     memory_size           = optional(number, 256)
     handler_path          = optional(string, "ws_connection_handler.handler")
-    module_name           = optional(string, "ws-connection-handler")
     package_path          = string
     layers                = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)

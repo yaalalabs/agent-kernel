@@ -1,4 +1,2 @@
 region        = "ap-southeast-2"
-product_alias = "ak-oai-ws-str"
-env_alias     = "dev"
-module_name   = "examples"
+prefix        = "ak-oai-ws-str-dev-examples"

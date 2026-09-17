@@ -41,12 +41,10 @@ function read_tfvar() {
 }
 
 function wait_for_ecs_stable() {
-	local region product_alias env_alias module_name cluster services
+	local region prefix cluster services
 	region=$(read_tfvar region)
-	product_alias=$(read_tfvar product_alias)
-	env_alias=$(read_tfvar env_alias)
-	module_name=$(read_tfvar module_name)
-	cluster="${product_alias}-${env_alias}-${module_name}"
+	prefix=$(read_tfvar prefix)
+	cluster="${prefix}"
 
 	echo "Resolving ECS services in cluster '${cluster}' (region ${region})..."
 	services=$(aws ecs list-services --cluster "$cluster" --region "$region" \

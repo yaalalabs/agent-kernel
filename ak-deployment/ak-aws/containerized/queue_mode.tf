@@ -7,9 +7,7 @@ module "queues" {
   count  = var.queue_mode ? 1 : 0
   source = "./modules/queues"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix = var.prefix
 
   # EventBridge Scheduler cannot set a MessageDeduplicationId on the triggers it delivers, so
   # scheduling forces content-based deduplication on the Input Queue.
@@ -26,11 +24,8 @@ module "agent_runner" {
   count  = var.queue_mode ? 1 : 0
   source = "./modules/agent-runner"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  region        = var.region
-  prefix        = local.prefix
+  prefix = var.prefix
+  region = var.region
 
   vpc_id     = local.vpc_id
   subnet_ids = local.subnet_ids

@@ -3,14 +3,8 @@ region = "eastus"
 # The Azure Resource Group you want to deploy the resources into
 resource_group_name = ""
 
-# Product alias
-product_alias = "demo"
-
-# Environment alias (dev, staging, d, etc.)
-env_alias = "dev"
-
-# Module name
-module_name = "api"
+# Prefix applied to every resource name
+prefix = "demo-dev-api"
 
 # Choose whether to create a Redis cluster or not
 create_redis_cluster=false

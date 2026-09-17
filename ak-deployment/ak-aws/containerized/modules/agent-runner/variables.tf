@@ -1,18 +1,3 @@
-variable "product_alias" {
-  type        = string
-  description = "Product alias for resource naming"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias for resource naming"
-}
-
-variable "module_name" {
-  type        = string
-  description = "Module name for resource naming"
-}
-
 variable "region" {
   type        = string
   description = "AWS region"

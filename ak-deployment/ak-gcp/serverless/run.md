@@ -57,18 +57,14 @@ terraform init
 terraform plan \
   -var="project_id=my-project-123" \
   -var="region=us-central1" \
-  -var="product_alias=myapp" \
-  -var="env_alias=dev" \
-  -var="module_name=chatbot" \
+  -var="prefix=myapp-dev-chatbot" \
   -var="package_path=../../../examples/gcp-serverless/openai/dist"
 
 # Deploy
 terraform apply \
   -var="project_id=my-project-123" \
   -var="region=us-central1" \
-  -var="product_alias=myapp" \
-  -var="env_alias=dev" \
-  -var="module_name=chatbot" \
+  -var="prefix=myapp-dev-chatbot" \
   -var="package_path=../../../examples/gcp-serverless/openai/dist"
 ```
 
@@ -79,9 +75,7 @@ Or use a tfvars file to avoid repeating vars:
 cat > dev.tfvars <<EOF
 project_id     = "my-project-123"
 region         = "us-central1"
-product_alias  = "myapp"
-env_alias      = "dev"
-module_name    = "chatbot"
+prefix         = "myapp-dev-chatbot"
 package_path   = "../../../examples/gcp-serverless/openai/dist"
 environment_variables = {
   OPENAI_API_KEY = "sk-your-key-here"

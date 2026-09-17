@@ -3,19 +3,9 @@ variable "region" {
   description = "Region"
 }
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias"
-}
-
-variable "module_name" {
-  type        = string
-  description = "Module name"
+  description = "Prefix applied to every resource name"
 }
 
 variable "is_production" {

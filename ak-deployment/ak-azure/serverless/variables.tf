@@ -8,14 +8,14 @@ variable "resource_group_name" {
   description = "Name of the Azure resource group"
 }
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias"
-}
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 
-variable "env_alias" {
-  type        = string
-  description = "Environment alias"
+  validation {
+    condition     = var.prefix != ""
+    error_message = "prefix must be set to a non-empty value."
+  }
 }
 
 variable "product_display_name" {
@@ -32,11 +32,6 @@ variable "module_type" {
     condition     = contains(["python", "nodejs"], var.module_type)
     error_message = "Module type must be either 'python' or 'nodejs'."
   }
-}
-
-variable "module_name" {
-  type        = string
-  description = "Module name"
 }
 
 variable "is_production" {

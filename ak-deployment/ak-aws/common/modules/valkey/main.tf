@@ -1,5 +1,5 @@
 resource "aws_security_group" "valkey" {
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-valkey-sg"
+  name        = "${var.prefix}-valkey-sg"
   description = "Security group for Valkey cluster"
   vpc_id      = var.vpc_id
 
@@ -21,7 +21,7 @@ resource "aws_security_group" "valkey" {
 }
 
 resource "aws_elasticache_subnet_group" "valkey" {
-  name       = "${var.product_alias}-${var.env_alias}-${var.module_name}-valkey-subnet"
+  name       = "${var.prefix}-valkey-subnet"
   subnet_ids = var.subnet_ids
 }
 
@@ -30,8 +30,8 @@ resource "aws_elasticache_subnet_group" "valkey" {
 # A single-node, cluster-mode-disabled replication group provides the same
 # single-primary topology the Redis module's aws_elasticache_cluster does.
 resource "aws_elasticache_replication_group" "valkey" {
-  replication_group_id = "${var.product_alias}-${var.env_alias}-${var.module_name}-valkey"
-  description          = "Valkey cluster for ${var.product_alias}-${var.env_alias}-${var.module_name}"
+  replication_group_id = "${var.prefix}-valkey"
+  description          = "Valkey cluster for ${var.prefix}"
   engine               = "valkey"
   engine_version       = var.engine_version
   node_type            = var.node_type
@@ -44,8 +44,8 @@ resource "aws_elasticache_replication_group" "valkey" {
 
   lifecycle {
     precondition {
-      condition     = length("${var.product_alias}-${var.env_alias}-${var.module_name}-valkey") <= 40
-      error_message = "The ElastiCache replication group ID '${var.product_alias}-${var.env_alias}-${var.module_name}-valkey' exceeds the 40-character limit. Shorten product_alias, env_alias, or module_name."
+      condition     = length("${var.prefix}-valkey") <= 40
+      error_message = "The ElastiCache replication group ID '${var.prefix}-valkey' exceeds the 40-character limit. Shorten prefix."
     }
   }
 }

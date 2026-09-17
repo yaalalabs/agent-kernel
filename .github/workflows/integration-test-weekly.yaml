@@ -426,7 +426,7 @@ jobs:
           # if the aliases/region are edited there (mirrors deploy.sh's read_tfvar).
           read_tfvar() { awk -F'=' -v k="$1" '$1 ~ "^[[:space:]]*"k"[[:space:]]*$" {gsub(/[" ]/, "", $2); print $2; exit}' terraform.tfvars; }
           region=$(read_tfvar region)
-          cluster="$(read_tfvar product_alias)-$(read_tfvar env_alias)-$(read_tfvar module_name)"
+          cluster="$(read_tfvar prefix)"
           echo "Waiting for ECS services in cluster '$cluster' (region $region)..."
           services=$(aws ecs list-services --cluster "$cluster" --region "$region" --query 'serviceArns' --output text)
           # Word-splitting on $services is intentional: one --services arg per ARN.

@@ -54,11 +54,9 @@ module "python_api" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-api"
   product_display_name = "My Application API"
   
-  module_name          = "api"
   function_name        = "handler"
   function_description = "Main API handler"
   module_type          = "python"
@@ -113,11 +111,9 @@ module "nodejs_api" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-chat"
   product_display_name = "Node.js API"
   
-  module_name          = "chat"
   function_name        = "handler"
   function_description = "Chat API endpoint"
   module_type          = "nodejs"
@@ -156,11 +152,9 @@ module "serverless_api_redis" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-chat"
   product_display_name = "Serverless API with Redis"
   
-  module_name          = "chat"
   function_name        = "handler"
   function_description = "Chat API with Redis session storage"
   module_type          = "python"
@@ -199,11 +193,9 @@ module "serverless_api_cosmosdb" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-chat"
   product_display_name = "Serverless API with Cosmos DB"
   
-  module_name          = "chat"
   function_name        = "handler"
   function_description = "Chat API with Cosmos DB session storage"
   module_type          = "python"
@@ -248,11 +240,9 @@ module "production_api" {
 
   region               = "centralus"
   resource_group_name  = "enterprise-prod-rg"
-  product_alias        = "enterprise"
-  env_alias            = "prod"
+  prefix               = "enterprise-prod-core-api"
   product_display_name = "Enterprise API"
   
-  module_name          = "core-api"
   function_name        = "handler"
   function_description = "Production API handler"
   module_type          = "python"
@@ -316,11 +306,9 @@ module "production_api" {
 |------|-------------|------|---------|:--------:|
 | `region` | Azure region for deployment | `string` | n/a | yes |
 | `resource_group_name` | Name of the Azure resource group | `string` | n/a | yes |
-| `product_alias` | Short identifier for the product | `string` | n/a | yes |
-| `env_alias` | Environment identifier (dev, staging, prod) | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name | `string` | `"An Agent Kernel deployment"` | no |
 | `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
 | `is_production` | Enable production features (Basic APIM SKU) | `bool` | `false` | no |
 | `package_path` | Path to function ZIP package | `string` | n/a | yes |
 | `package_type` | Deployment type: `LocalZip` or `Image` | `string` | `"LocalZip"` | no |
@@ -573,7 +561,7 @@ locals {
       create_cosmosdb_cluster = true
     }
   }
-  env_config = local.config[var.env_alias]
+  env_config = local.config[var.environment]
 }
 
 module "api" {

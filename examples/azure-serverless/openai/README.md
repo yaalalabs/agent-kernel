@@ -52,9 +52,7 @@ publisher_email = "your-email@domain.com"
 region = "eastus"
 
 # Naming configuration
-product_alias = "demo"          # Used in resource names
-env_alias = "dev"               # Environment identifier
-module_name = "api"             # Module identifier
+prefix        = "demo-dev-api"          # Used in resource names
 
 # Feature flags
 create_redis_cluster = true     # Required for agent memory

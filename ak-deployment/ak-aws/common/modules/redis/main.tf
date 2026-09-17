@@ -1,5 +1,5 @@
 resource "aws_security_group" "redis" {
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-sg"
+  name        = "${var.prefix}-redis-sg"
   description = "Security group for Redis cluster"
   vpc_id      = var.vpc_id
 
@@ -21,12 +21,12 @@ resource "aws_security_group" "redis" {
 }
 
 resource "aws_elasticache_subnet_group" "redis" {
-  name       = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-subnet"
+  name       = "${var.prefix}-redis-subnet"
   subnet_ids = var.subnet_ids
 }
 
 resource "aws_elasticache_cluster" "redis" {
-  cluster_id           = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis"
+  cluster_id           = "${var.prefix}-redis"
   engine               = "redis"
   node_type            = var.node_type
   num_cache_nodes      = var.node_count

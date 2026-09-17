@@ -6,9 +6,7 @@ module "serverless_agents" {
   version = "0.9.1"
 
   providers            = { aws = aws, docker = docker }
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK OpenAI Scheduled Chats Serverless Example"
   region               = var.region
   is_production        = var.is_production
@@ -69,7 +67,6 @@ module "serverless_agents" {
   # ---- Request handler ----
   # Chat ingress plus the custom schedule management routes.
   request_handler = {
-    module_name          = "rqst-hdlr"
     function_name        = "rqh-func"
     function_description = "Chat ingress and scheduled-task management routes"
     handler_path         = "lambda_request_handler.handler"
@@ -88,7 +85,6 @@ module "serverless_agents" {
   # inside Lambda's 250 MB unzipped zip limit. Terraform builds ../dist_agent_runner (deps under
   # data/ plus the Dockerfile deploy.sh copies in) and pushes it to an ECR repository it creates.
   agent_runner = {
-    module_name          = "agent-runner"
     function_name        = "ar-func"
     function_description = "Runs scheduled occurrences and registers new tasks"
     timeout              = 45
@@ -104,7 +100,6 @@ module "serverless_agents" {
   # ---- Response handler ----
   response_handler = {
     function_name        = "rsh-func"
-    module_name          = "rspns-hdlr"
     function_description = "Writes completed responses to the response store"
     timeout              = 45
     memory_size          = 256
