@@ -8,7 +8,7 @@ general_agent = Agent(
     goal="Assistant with general queries",
     backstory="You provide assistance with general queries. Give short and clear answers",
     verbose=False,
-    model="openai/gpt-4.1-mini",
+    llm="openai/gpt-4.1-mini",
 )
 
 CrewAIModule([general_agent])

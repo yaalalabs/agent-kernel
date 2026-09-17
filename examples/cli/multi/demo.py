@@ -24,7 +24,7 @@ history_agent = CrewAIAgent(
     goal="Specialist agent for history questions",
     backstory="You provide assistance with history queries. Explain important details and context clearly.",
     verbose=False,
-    model="openai/gpt-4.1-mini",
+    llm="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([general_agent, math_agent])
