@@ -570,7 +570,7 @@ def _start_lambda_eni_sweeper(sg_ids: list[str], region: str, stop_event: thread
     return thread
 
 
-def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None, request_handler_security_group_id: str = None) -> bool:
+def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None, request_handler_security_group_id: str = None, agent_runner_security_group_id: str = None, response_handler_security_group_id: str = None) -> bool:
     """Destroy AWS resources."""
     deploy_path = Path(path) / deploy_dir
     deploy_script = deploy_path / 'deploy.sh'
@@ -596,6 +596,12 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = N
     if request_handler_security_group_id:
         tf_env['TF_VAR_request_handler_security_group_id'] = request_handler_security_group_id
         print(f"   TF_VAR_request_handler_security_group_id={request_handler_security_group_id}")
+    if agent_runner_security_group_id:
+        tf_env['TF_VAR_agent_runner_security_group_id'] = agent_runner_security_group_id
+        print(f"   TF_VAR_agent_runner_security_group_id={agent_runner_security_group_id}")
+    if response_handler_security_group_id:
+        tf_env['TF_VAR_response_handler_security_group_id'] = response_handler_security_group_id
+        print(f"   TF_VAR_response_handler_security_group_id={response_handler_security_group_id}")
     if private_subnet_ids:
         try:
             parsed = json.loads(private_subnet_ids)
@@ -638,7 +644,7 @@ def destroy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = N
             sweeper.join(timeout=20)
 
 
-def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None, request_handler_security_group_id: str = None) -> bool:
+def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = None, private_subnet_ids: str = None, request_handler_security_group_id: str = None, agent_runner_security_group_id: str = None, response_handler_security_group_id: str = None) -> bool:
     """Deploy AWS resources only (without running tests)."""
     deploy_path = Path(path) / deploy_dir
     deploy_script = deploy_path / 'deploy.sh'
@@ -666,6 +672,12 @@ def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = No
     if request_handler_security_group_id:
         tf_env['TF_VAR_request_handler_security_group_id'] = request_handler_security_group_id
         print(f"   TF_VAR_request_handler_security_group_id={request_handler_security_group_id}")
+    if agent_runner_security_group_id:
+        tf_env['TF_VAR_agent_runner_security_group_id'] = agent_runner_security_group_id
+        print(f"   TF_VAR_agent_runner_security_group_id={agent_runner_security_group_id}")
+    if response_handler_security_group_id:
+        tf_env['TF_VAR_response_handler_security_group_id'] = response_handler_security_group_id
+        print(f"   TF_VAR_response_handler_security_group_id={response_handler_security_group_id}")
     if private_subnet_ids:
         try:
             parsed = json.loads(private_subnet_ids)
@@ -683,7 +695,7 @@ def deploy_aws_resources(path: str, deploy_dir: str = 'deploy', vpc_id: str = No
         env=tf_env
     ):
         return False
-    
+
     # Deploy
     return run_command(
         ['./deploy.sh', 'local'],
@@ -767,16 +779,18 @@ def main():
     parser.add_argument('--vpc-id', default=None, help='VPC ID from base deployment')
     parser.add_argument('--private-subnet-ids', default=None, help='Private subnet IDs (JSON array) from base deployment')
     parser.add_argument('--request-handler-security-group-id', default=None, help='Request handler security group ID from base deployment; sets TF_VAR_request_handler_security_group_id (used for aws-serverless jobs)')
+    parser.add_argument('--agent-runner-security-group-id', default=None, help='Agent runner security group ID from base deployment; sets TF_VAR_agent_runner_security_group_id (used for the queue-mode aws-serverless jobs)')
+    parser.add_argument('--response-handler-security-group-id', default=None, help='Response handler security group ID from base deployment; sets TF_VAR_response_handler_security_group_id (used for the queue-mode aws-serverless jobs)')
 
     args = parser.parse_args()
-    
+
     print(f"\n🚀 Running {args.action} for {args.type}: {args.path}\n")
-    
+
     success = False
-    
+
     if args.action == 'deploy':
         if args.type in ['aws-containerized', 'aws-serverless']:
-            success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.request_handler_security_group_id)
+            success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.request_handler_security_group_id, args.agent_runner_security_group_id, args.response_handler_security_group_id)
         elif args.type in ['azure-serverless', 'azure-containerized']:
             success = deploy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['gcp-serverless', 'gcp-containerized']:
@@ -786,7 +800,7 @@ def main():
             success = True
     elif args.action == 'destroy':
         if args.type in ['aws-containerized', 'aws-serverless']:
-            success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.request_handler_security_group_id)
+            success = destroy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.request_handler_security_group_id, args.agent_runner_security_group_id, args.response_handler_security_group_id)
         elif args.type in ['azure-serverless', 'azure-containerized']:
             success = destroy_azure_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids)
         elif args.type in ['gcp-serverless', 'gcp-containerized']:

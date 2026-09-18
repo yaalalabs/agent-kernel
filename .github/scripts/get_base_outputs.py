@@ -3,8 +3,9 @@
 Retrieve VPC, subnet, and security group outputs from the base deployment.
 
 This script initializes Terraform in the base deployment directory and
-retrieves the VPC ID, private subnet IDs, and security group ID. Results are
-written to $GITHUB_OUTPUT for use in subsequent workflow steps.
+retrieves the VPC ID, private subnet IDs, and the three per-tier Lambda
+security group IDs (request handler, agent runner, response handler). Results
+are written to $GITHUB_OUTPUT for use in subsequent workflow steps.
 """
 
 import argparse
@@ -79,9 +80,31 @@ def main():
     )
     request_handler_security_group_id = result.stdout.strip()
 
+    # Retrieve agent_runner_security_group_id (base runs queue_mode, so this always resolves)
+    result = subprocess.run(
+        ["terraform", "output", "-raw", "agent_runner_security_group_id"],
+        cwd=str(deploy_path),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    agent_runner_security_group_id = result.stdout.strip()
+
+    # Retrieve response_handler_security_group_id (base runs queue_mode, so this always resolves)
+    result = subprocess.run(
+        ["terraform", "output", "-raw", "response_handler_security_group_id"],
+        cwd=str(deploy_path),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    response_handler_security_group_id = result.stdout.strip()
+
     print(f"VPC ID: {vpc_id}")
     print(f"Private Subnet IDs: {private_subnet_ids}")
     print(f"Request Handler Security Group ID: {request_handler_security_group_id}")
+    print(f"Agent Runner Security Group ID: {agent_runner_security_group_id}")
+    print(f"Response Handler Security Group ID: {response_handler_security_group_id}")
 
     # Write to GitHub Actions output
     github_output = os.environ.get("GITHUB_OUTPUT", "")
@@ -90,6 +113,8 @@ def main():
             f.write(f"vpc_id={vpc_id}\n")
             f.write(f"private_subnet_ids={private_subnet_ids}\n")
             f.write(f"request_handler_security_group_id={request_handler_security_group_id}\n")
+            f.write(f"agent_runner_security_group_id={agent_runner_security_group_id}\n")
+            f.write(f"response_handler_security_group_id={response_handler_security_group_id}\n")
         print("Outputs written to $GITHUB_OUTPUT")
     else:
         print("GITHUB_OUTPUT not set — printing outputs only")

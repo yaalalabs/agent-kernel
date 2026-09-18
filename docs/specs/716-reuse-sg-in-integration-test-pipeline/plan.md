@@ -147,3 +147,41 @@ run together as a final pass once all five iterations are wired:
   required docs surface when an example's inputs change.
 - Before merge, run `ak-dev-sync-docs-from-branch` and `ak-dev-sync-skills-from-branch` against the
   branch's actual diff to catch anything this plan missed.
+
+## Iteration 8: Amendment 2 — convert the base to queue mode, reuse all three tiers
+
+Per `design.md`'s Amendment 2 / `## Requirements — Amendment 2` and `spec.md`'s Amendment 2.
+
+- **Goal:** the base deployment stops being the one `aws-serverless` example with only a request
+  handler tier, so `scalable-openai`/`schedule-openai` can reuse its `agent_runner`/
+  `response_handler` SGs too, the same way every `aws-serverless` example already reuses its request
+  handler SG.
+- **Files:**
+  - `examples/aws-serverless/openai/{lambda_request_handler.py,lambda_agent_runner.py,
+    lambda_response_handler.py,config.yaml,pyproject.toml,.gitignore,README.md}` (new/changed;
+    `lambda.py` removed) and `deploy/{main.tf,outputs.tf,deploy.sh,Dockerfile.request_handler,
+    Dockerfile.agent_runner,Dockerfile.response_handler}` (`Dockerfile` removed).
+  - `.github/scripts/get_base_outputs.py`, `.github/scripts/run_single_test.py`,
+    `.github/workflows/integration-test-weekly.yaml`.
+  - `examples/aws-serverless/{scalable-openai,schedule-openai}/deploy/{variables.tf,main.tf}`.
+- **Steps:**
+  1. Convert the base to `queue_mode = true` with the three-Lambda split (Requirements —
+     Amendment 2, base deployment).
+  2. Add the two new outputs to the base's `outputs.tf`.
+  3. Add the two new retrievals/prints/`$GITHUB_OUTPUT` writes to `get_base_outputs.py`.
+  4. Add the two new job outputs to `get-base-outputs`, and the `matrix.path`-scoped conditional to
+     the Deploy and Destroy steps in `integration-test-weekly.yaml`.
+  5. Add the two new CLI flags and function parameters to `run_single_test.py`
+     (`_resolve_lambda_sg_ids` needs no change — already amended in Iteration 4).
+  6. Add the two new nullable variables to `scalable-openai`/`schedule-openai`'s `variables.tf` and
+     wire `security_group_id` into their `agent_runner`/`response_handler` blocks.
+- **Verify:** `terraform validate` (with `inject_dependencies.py` applied, then reverted) in the
+  base + `scalable-openai` + `schedule-openai` deploy dirs — done during implementation, all three
+  validate cleanly (same pre-existing provider deprecation warnings as Iteration 6, unrelated to
+  this change). `python3 -c "import ast; ast.parse(...)"` on both touched scripts. A full
+  `workflow_dispatch` run (`keep_resources_on_failure: true`) is still needed to confirm against
+  real AWS credentials: the base's `terraform apply` succeeds with the new three-Lambda/queue shape,
+  `get_base_outputs.py` prints non-null values for both new outputs, and `scalable-openai`/
+  `schedule-openai`'s Deploy steps show `TF_VAR_agent_runner_security_group_id`/
+  `TF_VAR_response_handler_security_group_id` pointing at the base's SGs rather than creating new
+  ones (0 count for `aws_security_group.agent_runner`/`.response_handler` in their plans).

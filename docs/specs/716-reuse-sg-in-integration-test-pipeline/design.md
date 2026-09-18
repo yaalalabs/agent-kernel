@@ -34,6 +34,28 @@ throughout (variable, output, CLI flag, env var) to make this scoping explicit; 
 plumbing shape (base output → job output → CLI flag → `TF_VAR_*`) is otherwise unchanged from the
 original Phase 1 design.
 
+**Amendment 2 (base converted to queue mode — full three-tier reuse):** the base deployment
+(`examples/aws-serverless/openai`) is converted from `queue_mode = false` (single request-handler
+Lambda) to `queue_mode = true`, splitting it into the same three-Lambda shape
+(`request_handler`/`agent_runner`/`response_handler`, connected by SQS input/output queues) as
+`scalable-openai`/`schedule-openai`, while keeping its own triage/math/history agents and
+`/app`/`/app_info` custom routes. Each tier deploys as a Terraform-built/pushed container image
+(`package_type = "Image"`, own `package_path`/Dockerfile per tier) — no S3 bucket or manual
+`docker push` is introduced, keeping the base's original single-`terraform apply` simplicity. This
+means the base now creates and exposes all three per-tier SGs (`request_handler_security_group_id`,
+`agent_runner_security_group_id`, `response_handler_security_group_id` — the latter two no longer
+`null`), so `scalable-openai` and `schedule-openai` (the only two weekly-matrix examples with an
+`agent_runner`/`response_handler` tier to reuse SGs on) now also accept and forward
+`agent_runner_security_group_id`/`response_handler_security_group_id`, exactly mirroring how
+`request_handler_security_group_id` is already threaded through every `aws-serverless` example.
+Every other `aws-serverless` weekly example (`adk`, `crewai`, `langgraph`, `openai-auth`,
+`memory/{redis,valkey,dynamodb}`) stays `queue_mode = false` and unaffected — they only ever have a
+request handler tier. The pipeline gates the two new CLI flags on `matrix.path` (rather than
+`matrix.type`, since `matrix.type == "aws-serverless"` also covers the 7 non-queue-mode examples)
+matching `examples/aws-serverless/scalable-openai` and `examples/aws-serverless/schedule-openai`
+specifically. `_resolve_lambda_sg_ids`'s naming list already covered all three per-tier names from
+Amendment 1 above, so no further change is needed there.
+
 ## Motivation
 
 - The weekly pipeline (`.github/workflows/integration-test-weekly.yaml`) already has a working
@@ -223,15 +245,98 @@ openai-auth,schedule-openai}/deploy` and `examples/memory/{redis,valkey,dynamodb
   Their own ElastiCache/Redis or Valkey security groups (`ak-deployment/ak-aws/common/modules/redis`,
   `.../valkey`) are unaffected — #689 explicitly kept those out of scope, and this change doesn't
   touch them either.
-- `scalable-openai` and `schedule-openai` specifically (both `queue_mode = true`): only their
-  `request_handler` block gets the new field. Their `agent_runner`/`response_handler` blocks are
-  unchanged — the base deployment has no SG to offer for those tiers (Amendment above), so those two
-  Lambdas keep creating their own SG every weekly run, same as before this change.
+- `scalable-openai` and `schedule-openai` specifically (both `queue_mode = true`): per Amendment 2
+  above, their `agent_runner`/`response_handler` blocks now also reuse the base's SGs — see
+  Requirements — Amendment 2 below.
 - `vpc_id`/`private_subnet_ids` on these 9 examples have **no** default and are **required** inputs
   today, so a standalone `deploy.sh` run (e.g. a developer running it locally without the CI
   harness) already requires `-var vpc_id=... -var 'private_subnet_ids=[...]'` or equivalent today,
   with or without this change. This new `request_handler_security_group_id` variable is nullable
   specifically so it does **not** add a third mandatory input on top of the two that already exist.
+
+## Requirements — Amendment 2 (base queue mode, full three-tier reuse)
+
+### `examples/aws-serverless/openai` (base deployment)
+
+- `deploy/main.tf`: `queue_mode = true`, `execution_mode = "rest_sync"`, `create_redis_response_store
+  = true` (reuses the same Redis cluster `create_redis_cluster` already creates); three
+  `request_handler`/`agent_runner`/`response_handler` blocks, all `package_type = "Image"` with
+  their own `package_path`/Dockerfile (`Dockerfile.request_handler`/`.agent_runner`/
+  `.response_handler`) — Terraform builds and pushes each via the module's own
+  `yaalalabs/ak-common/aws//modules/ecr` submodule, same mechanism the base's single Lambda already
+  used, so `deploy.sh` still only builds local `dist_*` directories and runs `terraform apply` (no
+  S3 bucket, no manual `docker push`); `queue_config` mirrors `scalable-openai`/`schedule-openai`'s.
+  `lambda.py` is split into `lambda_request_handler.py` (the `/app`/`/app_info` custom routes),
+  `lambda_agent_runner.py` (the triage/math/history agents), `lambda_response_handler.py`
+  (`handler = ResponseHandler.handle`); `config.yaml` gains an `execution:` block (SQS queues, Redis
+  response store); `pyproject.toml` gains per-Lambda `request_handler`/`agent_runner`/
+  `response_handler` extras mirroring `scalable-openai`'s. **`uv.lock` must be regenerated
+  (`uv lock`)** after this change — the old lock reflects the pre-split single `dependencies =
+  [agentkernel[openai,redis]]` list and doesn't know the new extras exist, so `deploy.sh`'s
+  `uv export --extra <name>` would resolve against a stale/mismatched lock. Verified post-regen:
+  `uv export --extra request_handler`/`--extra response_handler` do not pull in the `agents`
+  (OpenAI Agents SDK) package; only `--extra agent_runner` does — matching `scalable-openai`'s own
+  per-extra export output byte-for-byte on that dimension. `deploy.sh` is restructured into three
+  named functions (`create_request_handler_deployment_package`, etc.), mirroring
+  `scalable-openai`/`schedule-openai`'s style (tab indentation, `set -eo pipefail`,
+  `LOCAL_BUILD=${1-}`, and the local-build branch's `uv pip install --force-reinstall --target=...
+  --find-links ../../../ak-py/dist "agentkernel[<tier's extras>]" --no-cache-dir` pattern —
+  matching `schedule-openai`'s local-build handling exactly, since the base's original single-Lambda
+  deploy.sh used a different, now-stale `-r requirements.txt ... --upgrade-package
+  --reinstall-package` combination that predates the per-tier extras split), instead of one generic
+  parameterized helper.
+- `deploy/outputs.tf`: add `agent_runner_security_group_id`/`response_handler_security_group_id`
+  outputs, alongside the existing `request_handler_security_group_id` (module-level outputs already
+  exist per #689's amendment — no `ak-deployment/ak-aws/serverless` change needed).
+- No change to `deploy/variables.tf` — the base still always creates its own VPC/SGs/queues; it only
+  needs to expose what it now creates for all three tiers.
+
+### `.github/scripts/get_base_outputs.py`
+
+- Add two more `terraform output -raw` retrievals (`agent_runner_security_group_id`,
+  `response_handler_security_group_id`), print lines, and `$GITHUB_OUTPUT` writes, mirroring
+  `request_handler_security_group_id` exactly. Unlike Phase 1 (where the base never ran
+  `queue_mode`), these now always resolve to a real SG ID rather than being unreachable.
+
+### `.github/workflows/integration-test-weekly.yaml`
+
+- `get-base-outputs` job's `outputs:` map gets two more entries.
+- **Scoped to `scalable-openai`/`schedule-openai` by `matrix.path`, not `matrix.type`** — unlike
+  `--request-handler-security-group-id` (every `aws-serverless` entry has a request handler tier),
+  only these two of the 9 weekly `aws-serverless` examples have an `agent_runner`/`response_handler`
+  tier to reuse a SG on; `matrix.type == "aws-serverless"` alone would incorrectly also match the
+  other 7. Add a third conditional in both the Deploy and Destroy steps:
+  ```bash
+  if [[ "${{ matrix.path }}" == "examples/aws-serverless/scalable-openai" || "${{ matrix.path }}" == "examples/aws-serverless/schedule-openai" ]]; then
+    ARGS+=(--agent-runner-security-group-id "${{ needs.get-base-outputs.outputs.agent_runner_security_group_id }}" --response-handler-security-group-id "${{ needs.get-base-outputs.outputs.response_handler_security_group_id }}")
+  fi
+  ```
+
+### `.github/scripts/run_single_test.py`
+
+- Two more `argparse` flags (`--agent-runner-security-group-id`, `--response-handler-security-group-id`),
+  mirroring `--request-handler-security-group-id`.
+- `deploy_aws_resources`/`destroy_aws_resources` gain two more parameters and
+  `TF_VAR_agent_runner_security_group_id`/`TF_VAR_response_handler_security_group_id` injection
+  blocks; both `main()` call sites pass them through.
+- `_resolve_lambda_sg_ids`'s naming list is unchanged — Amendment 1 already amended it to the three
+  per-tier names, anticipating this.
+
+### `scalable-openai`/`schedule-openai` (`deploy/{variables.tf,main.tf}`)
+
+- Add two more nullable variables (`agent_runner_security_group_id`,
+  `response_handler_security_group_id`), mirroring `request_handler_security_group_id`.
+- Add `security_group_id = var.agent_runner_security_group_id` inside the `agent_runner` block and
+  `security_group_id = var.response_handler_security_group_id` inside the `response_handler` block.
+  Both default to `null`, so standalone use without these vars set is unchanged (module still
+  self-creates the SG for that tier).
+
+### Non-changes
+
+`adk`, `crewai`, `langgraph`, `openai-auth`, `memory/{redis,valkey,dynamodb}` — unaffected; they stay
+`queue_mode = false` and only ever have a request handler tier. `ak-deployment/ak-aws/serverless/*` —
+unaffected; #689's amendment already exposes all three per-tier outputs unconditionally on
+`queue_mode`. Phase 2 (`aws-containerized`) — still out of scope.
 
 ## Non-goals — Phase 1
 

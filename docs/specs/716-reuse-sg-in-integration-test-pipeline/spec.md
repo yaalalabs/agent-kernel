@@ -14,6 +14,14 @@ the base deployment never runs in `queue_mode` and so only ever has the request 
 to share. The two queue-mode weekly examples (`scalable-openai`, `schedule-openai`) keep creating
 their own `agent_runner`/`response_handler` SGs — nothing changes for those two tiers.
 
+**Amendment 2 (post-implementation):** the base deployment (`examples/aws-serverless/openai`) is
+converted to `queue_mode = true`, so it now exposes `agent_runner_security_group_id`/
+`response_handler_security_group_id` too (previously always `null`). See `design.md`'s own
+Amendment 2 and `## Requirements — Amendment 2` for the full design; this spec's Phase 1 sections
+below (request-handler-tier-only reuse across all 9 examples) are unchanged and still accurate —
+Amendment 2 only adds two more SG IDs, threaded the same way, and scoped to `scalable-openai`/
+`schedule-openai` specifically (the only two examples with those tiers).
+
 ## Design
 
 ### Base deployment (`examples/aws-serverless/openai/deploy/outputs.tf`)

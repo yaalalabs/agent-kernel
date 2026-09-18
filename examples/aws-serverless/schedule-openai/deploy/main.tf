@@ -97,6 +97,7 @@ module "serverless_agents" {
     handler_path         = "lambda_agent_runner.handler"
     package_type         = "Image"
     package_path         = "../dist_agent_runner"
+    security_group_id    = var.agent_runner_security_group_id
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }
@@ -112,6 +113,7 @@ module "serverless_agents" {
     handler_path         = "lambda_response_handler.handler"
     package_type         = "LocalZip"
     package_path         = "../dist_response_handler.zip"
+    security_group_id    = var.response_handler_security_group_id
   }
 
   # ---- Queue configuration ----
