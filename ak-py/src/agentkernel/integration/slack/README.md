@@ -2,14 +2,14 @@
 Slack allows developers to interact with the application conversations via SlackApps (https://api.slack.com/apps/)
 It uses the Slack Events Http API (https://docs.slack.dev/apis/events-api/)
 
-The class AgentSlackRequestHandler handles simple conversations with Agents of your choice in API deployment. This class does the following
+The class SlackInboundAdapter handles simple conversations with Agents of your choice in API deployment. This class does the following
 
 1. When a message is received from slack addressed to the bot it will first acknowledge with a message ("agent_acknowledgement" ) and processing emoji, if it's defined in the config 
 2. The question is extracted and passed to the Agent of your choice
 3. Once the Agent response is ready, the previously posted message is modified
 4. The response is posted to the thread.
 
-You can implement a more feature rich integration  based on the AgentSlackRequestHandler class.
+You can implement a more feature rich integration  based on the SlackInboundAdapter class.
 
 ## Slack setup
 You need to setup Slack app and obtain signing-secret & a bot user token. Also enable subscription to the following events.
@@ -30,8 +30,8 @@ export SLACK_SIGNING_SECRET=< >
 export SLACK_BOT_TOKEN=< >
 ```
 
-The AgentSlackRequestHandler listens on /slack/events, hence you need to setup the webhook URL as **https://<your-domain-or-ip>:<port>/slack/events**
-During URL registration, Slack sends a challenge to the URL before enabling. The AgentSlackRequestHandler handles this, hence you don't need any separate code to activate.
+The SlackInboundAdapter listens on /slack/events, hence you need to setup the webhook URL as **https://<your-domain-or-ip>:<port>/slack/events**
+During URL registration, Slack sends a challenge to the URL before enabling. The SlackInboundAdapter handles this, hence you don't need any separate code to activate.
 
 You can use https://pinggy.io/ or similar for local testing (e.g. ssh -p 443 -R0:localhost:8000 a.pinggy.io). [How to use pinggy to test Slack](https://pinggy.io/blog/how_to_get_slack_webhook/)
 
@@ -49,9 +49,10 @@ Please read the [following](https://github.com/yaalalabs/agent-kernel/tree/devel
 
 ```
 from agents import Agent as OpenAIAgent
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.slack import AgentSlackRequestHandler
+from agentkernel.slack import SlackInboundAdapter
 
 general_agent = OpenAIAgent(
     name="general",
@@ -63,7 +64,7 @@ OpenAIModule([general_agent])
 
 
 if __name__ == "__main__":
-    handler = AgentSlackRequestHandler()
-    RESTAPI.run([ AgentSlackRequestHandler()]) # Note: you can pass multiple handlers to support multiple integrations
+    handler = SlackInboundAdapter()
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(SlackInboundAdapter())])
 ```
 

@@ -1,8 +1,8 @@
-import asyncio
 import base64
+import contextlib
 import json
 import logging
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Generator, Iterator
 from typing import Any, Dict, List, Optional, Union
 
 from .config import AKConfig
@@ -21,6 +21,7 @@ from .model import (
     StreamChunk,
 )
 from .service import AgentService
+from .util.async_bridge import iterate_async_sync, run_async_sync
 
 
 class RequestBuilder:
@@ -138,6 +139,7 @@ class RequestBuilder:
             "schedule",
             "scheduled_task_id",
             "scheduled_time",
+            "requests",
         }
         for key, value in req.model_dump().items():
             if key in known_fields:
@@ -225,21 +227,25 @@ class AgentHandler:
     def _run_async_sync(coro) -> Any:
         """Run an async coroutine from sync code, handling event loop state.
 
-        Only a RuntimeError from get_event_loop() itself (no loop in this thread) falls back to
-        asyncio.run: a RuntimeError raised by the coroutine must propagate as-is, not trigger a
-        second await of the already-consumed coroutine.
+        Kept as a method because callers (and their tests) reach the bridge through it; the
+        loop handling itself is shared with the pipeline's synchronous consumers.
 
         :param coro: Coroutine to execute
         :return: Result of the coroutine
         """
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            return asyncio.run(coro)
-        if loop.is_closed():
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            return asyncio.run(coro)
-        return loop.run_until_complete(coro)
+        return run_async_sync(coro)
+
+    @staticmethod
+    def _iterate_async_sync(agen) -> Iterator[Any]:
+        """Consume an async generator from sync code, handling event loop state.
+
+        The streaming sibling of _run_async_sync, and a method for the same reason: callers
+        (and their tests) reach the bridge through the handler.
+
+        :param agen: Async generator to consume
+        :return: Iterator over the generator's items
+        """
+        return iterate_async_sync(agen)
 
     def run_sync(self, requests: List[Any], acting_user_id: Optional[str] = None) -> Any:
         """Run agent requests synchronously.
@@ -259,23 +265,17 @@ class AgentHandler:
         """
         return await self.service.run_multi(requests=requests, acting_user_id=acting_user_id)
 
-    def run_stream_sync(self, requests: List[Any], acting_user_id: Optional[str] = None) -> List[Any]:
+    def run_stream_sync(self, requests: List[Any], acting_user_id: Optional[str] = None) -> Iterator[Any]:
         """Run agent streaming requests synchronously.
 
-        Manages event loop lifecycle internally and returns all chunks as a list.
+        Manages event loop lifecycle internally and hands over each chunk as the run produces
+        it, so a sync consumer streams live instead of receiving the whole run at once.
 
         :param requests: List of AgentRequest objects to process
         :param acting_user_id: When given, published as the run's acting user (see Runtime.stream)
-        :return: List of StreamChunk objects
+        :return: Iterator of StreamChunk objects
         """
-
-        async def _collect():
-            chunks = []
-            async for chunk in self.service.stream_multi(requests=requests, acting_user_id=acting_user_id):
-                chunks.append(chunk)
-            return chunks
-
-        return AgentHandler._run_async_sync(_collect())
+        return AgentHandler._iterate_async_sync(self.service.stream_multi(requests=requests, acting_user_id=acting_user_id))
 
     async def run_stream_async(self, requests: List[Any], acting_user_id: Optional[str] = None) -> AsyncGenerator[Any, None]:
         """Run agent streaming requests asynchronously.
@@ -444,8 +444,9 @@ class ChatService:
     def execute_stream_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> Generator[StreamChunk, None, None]:
         """Synchronous counterpart of execute_stream().
 
-        Preserves the sync path's buffering semantics: AgentHandler.run_stream_sync collects
-        all chunks before this generator yields the first one.
+        Chunks arrive as the run produces them: AgentHandler.run_stream_sync pumps the async
+        stream one chunk at a time, so an exception mid-run reaches the caller as an error
+        chunk after the chunks already yielded, exactly as on the async path.
 
         :param req: Run request carrying prompt, agent, and session_id
         :param requests: Optional prebuilt AgentRequest list (see execute())
@@ -460,11 +461,12 @@ class ChatService:
         handler = self.prepare_agent_handler(req.session_id, req.agent)
 
         def _stream() -> Generator[StreamChunk, None, None]:
-            try:
-                for chunk in handler.run_stream_sync(requests, acting_user_id=req.user_id):
-                    yield chunk
-            except Exception as e:
-                yield StreamChunk(error=str(e), done=True)
+            with contextlib.closing(handler.run_stream_sync(requests, acting_user_id=req.user_id)) as chunks:
+                try:
+                    for chunk in chunks:
+                        yield chunk
+                except Exception as e:
+                    yield StreamChunk(error=str(e), done=True)
 
         return _stream()
 
@@ -575,15 +577,18 @@ class ChatService:
         self._validate(req, requests)
         return RequestBuilder.from_base_request_sync(req) if requests is None else requests
 
-    def process_chat_request(self, req: BaseRunRequest) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
+    def process_chat_request(
+        self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None
+    ) -> Union[tuple[int, Dict[str, Any]], Dict[str, Any]]:
         """Process a chat request synchronously.
 
         :param req: Base run request with prompt, session_id, agent, and attachments
+        :param requests: Optional prebuilt AgentRequest list (see execute_sync())
         :return: When rest_api_mode=False: tuple of (status_code, response_dict).
                  When rest_api_mode=True: response_dict only.
         """
         try:
-            result, session_id = self.execute_sync(req)
+            result, session_id = self.execute_sync(req, requests)
             return ResponseBuilder.build_response(self._success_status(req), session_id, self.rest_api_mode, result=result)
         except ValueError as ve:
             self._log.error(f"ValueError processing request: {ve}")
@@ -642,6 +647,7 @@ class ChatService:
         self,
         req: BaseRunRequest,
         sse_format: bool = False,
+        requests: Optional[List[AgentRequest]] = None,
     ) -> Generator[str, None, None]:
         """Process a streaming chat request synchronously.
 
@@ -652,19 +658,21 @@ class ChatService:
         :param req: Base run request with prompt, session_id, agent, and attachments
         :param sse_format: When True, yield Server-Sent Events formatted frames.
                            When False, yield raw StreamChunk JSON payloads.
+        :param requests: Optional prebuilt AgentRequest list (see execute_stream_sync())
         :return: Generator yielding StreamChunk payloads as JSON or SSE-formatted strings
         :raises ValueError: If session_id or prompt is missing, or no agent is available
         """
         session_id = req.session_id
-        chunks = self.execute_stream_sync(req)
+        chunks = self.execute_stream_sync(req, requests)
 
         def _stream() -> Generator[str, None, None]:
-            try:
-                for chunk in chunks:
-                    yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
-            except Exception as e:
-                error_chunk = StreamChunk(error=str(e), done=True)
-                yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
+            with contextlib.closing(chunks) as raw_chunks:
+                try:
+                    for chunk in raw_chunks:
+                        yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
+                except Exception as e:
+                    error_chunk = StreamChunk(error=str(e), done=True)
+                    yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
 
         return _stream()
 

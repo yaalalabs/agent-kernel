@@ -4,7 +4,7 @@ Deploy your Agent Kernel agents as Gmail bots that automatically read and reply 
 
 ## Overview
 
-The `AgentGmailHandler` bridges Agent Kernel and Gmail. Incoming emails are processed by your agent, which generates and sends replies via Gmail. The integration handles OAuth2 authentication, polling, message parsing, and reply threading.
+The `GmailInboundAdapter`/`GmailOutboundAdapter` pair bridges Agent Kernel and Gmail. `PollerRunner` hosts the inbound adapter, which polls for new mail and enqueues each message; the agent runs behind the queue and the outbound adapter sends the reply. The integration handles OAuth2 authentication, polling, message parsing, and reply threading.
 
 ### How it works:
 
@@ -92,9 +92,10 @@ gmail:
 
 ```python
 from agents import Agent as OpenAIAgent
+from agentkernel.gmail import GmailInboundAdapter
+from agentkernel.integration.adapter import PollerRunner
 from agentkernel.openai import OpenAIModule
-from agentkernel.gmail import AgentGmailRequestHandler
-import asyncio
+from agentkernel.pipeline import IOHandler
 
 general_agent = OpenAIAgent(
     name="general",
@@ -110,10 +111,25 @@ general_agent = OpenAIAgent(
 OpenAIModule([general_agent])
 
 if __name__ == "__main__":
-    handler = AgentGmailRequestHandler()
-    handler.authenticate()
-    asyncio.run(handler.start_polling())
+    adapter = GmailInboundAdapter()
+    # Fail at startup rather than on the first poll if the OAuth token is unusable.
+    adapter.authenticate()
+
+    # Single-process topology: the poller runs alongside the agent runner.
+    # On a broker transport it is its own container instead: PollerRunner.run(adapter).
+    IOHandler.run(pollers=[PollerRunner(adapter)])
 ```
+
+
+:::note Mounting and scaling
+Gmail is the only *polled* integration: there is no webhook, so its adapter is hosted by
+`PollerRunner`. Run it at **one replica** — the poller remembers which messages it has already
+handed to the queue, and a message stays unread until its reply is sent.
+
+Attachments are stored before the request is queued, so a message carrying an image or a document
+requires `multimodal.enabled: true` with a shared `storage_type` (`in_memory`, `redis` or
+`dynamodb`).
+:::
 
 ## Email Threading & Conversation Context
 
@@ -139,7 +155,20 @@ Bot:   "Yes! Here are customization options..."
 
 ### Custom Email Query
 
-The Gmail handler uses a default query (for example, to fetch unread messages). To customize which emails are processed (such as only unread messages from specific senders), configure the handler via your application’s settings or by extending the `AgentGmailHandler` in your own code to use a custom Gmail search query (e.g., `is:unread from:important@example.com`). Refer to the Agent Kernel Gmail integration documentation for the supported configuration options.
+`GmailInboundAdapter` polls with `is:unread label:<label_filter>`, so `gmail.label_filter` in `config.yaml` is the first thing to reach for, alongside the sender and subject allow-lists below. For a query the configuration does not cover, subclass the adapter and override `poll()` — the same extension point the other platforms expose through `parse()`:
+
+```python
+from agentkernel.gmail import GmailInboundAdapter
+
+
+class ImportantMailAdapter(GmailInboundAdapter):
+    async def poll(self):
+        client = self._service.client
+        results = client.users().messages().list(userId="me", q="is:unread from:important@example.com").execute()
+        return [message["id"] for message in results.get("messages", []) if message["id"] not in self._handled]
+```
+
+Mount it exactly like the built-in one: `IOHandler.run(pollers=[PollerRunner(ImportantMailAdapter())])`.
 
 ### Email Filtering by Sender & Subject
 

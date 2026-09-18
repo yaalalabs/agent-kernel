@@ -2,7 +2,7 @@
 
 Microsoft Teams integration for Agent Kernel using Azure Bot Framework.
 
-The `AgentTeamsRequestHandler` class handles conversations with agents via Microsoft Teams. This integration uses the Azure Bot Framework to receive messages and send responses, supporting text, images, and file attachments.
+The `TeamsInboundAdapter` class handles conversations with agents via Microsoft Teams. This integration uses the Azure Bot Framework to receive messages and send responses, supporting text, images, and file attachments.
 
 ## How It Works
 

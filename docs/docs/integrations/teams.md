@@ -52,6 +52,20 @@ Setting up a Teams bot involves three main parts: Azure, your Agent Kernel Serve
 5.  Select scopes (Personal, Team, Group Chat) and Save.
 6.  Go to **Publish to org** to submit for admin approval, or **Preview in Teams** to test immediately.
 
+
+:::note Mounting
+Integrations run on the queue execution pipeline, so they are mounted with `IOHandler.run(...)`
+rather than `RESTAPI.run(...)`. The webhook answers as soon as the message is queued; the agent
+runs behind it, so a slow model call can no longer become a platform delivery timeout.
+:::
+
+:::caution Attachments need multimodal storage
+Attachment bytes are stored before the request is queued, so a message carrying an image or a file
+requires `multimodal.enabled: true` with a shared `storage_type` (`in_memory`, `redis` or
+`dynamodb`). `session_cache` is rejected: the agent runs in a different process and would never
+see it.
+:::
+
 ## Configuration
 
 Pick the agent in `config.yaml`:
