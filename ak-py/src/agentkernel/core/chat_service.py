@@ -461,9 +461,6 @@ class ChatService:
         handler = self.prepare_agent_handler(req.session_id, req.agent)
 
         def _stream() -> Generator[StreamChunk, None, None]:
-            # closing(): a for loop does not close its iterator when GeneratorExit unwinds this
-            # frame, so a consumer that abandons the stream would leave the run's teardown to
-            # whenever the bridge generator happens to be collected. See iterate_async_sync.
             with contextlib.closing(handler.run_stream_sync(requests, acting_user_id=req.user_id)) as chunks:
                 try:
                     for chunk in chunks:
@@ -669,7 +666,6 @@ class ChatService:
         chunks = self.execute_stream_sync(req, requests)
 
         def _stream() -> Generator[str, None, None]:
-            # closing(): see execute_stream_sync — the same reason, one wrapper further out.
             with contextlib.closing(chunks) as raw_chunks:
                 try:
                     for chunk in raw_chunks:
