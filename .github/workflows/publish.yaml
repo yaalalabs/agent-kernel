@@ -141,13 +141,14 @@ jobs:
         if: inputs.environment == 'production'
         run: |
           # The skill's pin went out with the version bump commit above; this covers the
-          # examples, the docs site source, and the chart README.
-          if git diff --quiet -- examples/ docs/docs/ ak-deployment/; then
+          # examples, the docs site source, the chart README and Chart.yaml description, and
+          # the root README (rendered on the chart's GHCR package page).
+          if git diff --quiet -- examples/ docs/docs/ ak-deployment/ README.md; then
             echo "No Helm chart version reference changes"
           else
             VERSION="${{ steps.bump_version.outputs.new_version }}"
             TAG_VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)([ab][0-9]+)$/\1-\2/')
-            git add examples/ docs/docs/ ak-deployment/
+            git add examples/ docs/docs/ ak-deployment/ README.md
             git commit -m "chore: update helm chart version references to ${TAG_VERSION}"
             git push origin ${{ github.ref_name }}
           fi

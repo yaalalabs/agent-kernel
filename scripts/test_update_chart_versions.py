@@ -180,6 +180,23 @@ def test_find_files_globs_and_excludes():
         print("✅ test_find_files_globs_and_excludes passed")
 
 
+def test_find_files_accepts_single_file():
+    """An entry naming a file is scanned as given; foreign suffixes and excluded path segments still apply."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        readme = root / "README.md"
+        readme.write_text("")
+        (root / "pyproject.toml").write_text("")
+        excluded = root / ".venv" / "README.md"
+        excluded.parent.mkdir()
+        excluded.write_text("")
+
+        found = find_files([str(readme), str(root / "pyproject.toml"), str(root / "missing.md"), str(excluded)])
+
+        assert found == [readme], f"Unexpected file set: {found}"
+        print("✅ test_find_files_accepts_single_file passed")
+
+
 def test_semver_validation():
     """Tag-form versions are accepted; PEP 440 prereleases and v-prefixed tags are not."""
     for version in ("0.9.1", "1.0.0-a1", "1.0.0-b2", "2.0.0-rc.1"):
@@ -200,6 +217,7 @@ if __name__ == "__main__":
     test_update_deploy_script_pin()
     test_shell_pin_needs_the_chart_reference()
     test_find_files_globs_and_excludes()
+    test_find_files_accepts_single_file()
     test_semver_validation()
 
     print("\n✅ All tests passed!")

@@ -2,12 +2,13 @@
 """
 Update the published Helm chart version in example install commands.
 
-The examples, the docs site, and the bundled ak-cloud-deploy skill install the Agent Kernel
-chart from its OCI artifact: `oci://ghcr.io/yaalalabs/charts/agent-kernel --version X.Y.Z` in
-READMEs and docs pages, and a `CHART_VERSION="X.Y.Z"` variable in the examples' deploy/deploy.sh
-scripts. The publish workflow runs this script for each release so those pins track the chart
-version it is about to publish, the way update_terraform_versions.py tracks the Terraform
-module versions.
+The examples, the docs site, the bundled ak-cloud-deploy skill, the chart's own Chart.yaml
+description, and the root README (what GitHub renders on the chart's GHCR package page) install
+the Agent Kernel chart from its OCI artifact: `oci://ghcr.io/yaalalabs/charts/agent-kernel
+--version X.Y.Z` in READMEs and docs pages, and a `CHART_VERSION="X.Y.Z"` variable in the
+examples' deploy/deploy.sh scripts. The publish workflow runs this script for each release so
+those pins track the chart version it is about to publish, the way update_terraform_versions.py
+tracks the Terraform module versions.
 """
 
 import argparse
@@ -33,14 +34,24 @@ CHART_VERSION_PATTERN = re.compile(rf"({re.escape(CHART_REF)}\s+--version\s+)({S
 SHELL_VERSION_PATTERN = re.compile(rf'^(\s*CHART_VERSION=")({SEMVER})(")', re.MULTILINE)
 
 FILE_GLOBS = ("*.md", "*.yaml", "*.yml", "*.sh")
+FILE_SUFFIXES = tuple(glob[1:] for glob in FILE_GLOBS)
 # docs/docs is the live docs source (versioned_docs snapshots are frozen); the skills tree is
-# packaged into the wheel, so the publish workflow runs this before building it.
-DEFAULT_DIRECTORIES = ["examples", "ak-deployment", "docs/docs", "ak-py/src/agentkernel/skills"]
+# packaged into the wheel, so the publish workflow runs this before building it. Entries may
+# also name a single file: the root README.md is scanned because GitHub renders it on the
+# chart's GHCR package page, where its install snippet stands in for the missing helm command.
+DEFAULT_DIRECTORIES = [
+    "examples",
+    "ak-deployment",
+    "docs/docs",
+    "ak-py/src/agentkernel/skills",
+    "README.md",
+]
 DEFAULT_EXCLUDES = [".venv", "node_modules", ".terraform", "__pycache__", "versioned_docs"]
 
 
 def find_files(directories: List[str], exclude_patterns: List[str] = None) -> List[Path]:
-    """Find every Markdown and YAML file under the directories, minus excluded path parts."""
+    """Find every Markdown, YAML, and shell file under the directories, minus excluded path
+    parts. An entry that names a file is taken as given when its suffix qualifies."""
     if exclude_patterns is None:
         exclude_patterns = DEFAULT_EXCLUDES
 
@@ -48,7 +59,12 @@ def find_files(directories: List[str], exclude_patterns: List[str] = None) -> Li
     for directory in directories:
         dir_path = Path(directory)
         if not dir_path.exists():
-            print(f"Warning: Directory {directory} does not exist, skipping...")
+            print(f"Warning: Path {directory} does not exist, skipping...")
+            continue
+
+        if dir_path.is_file():
+            if dir_path.suffix in FILE_SUFFIXES and not any(pattern in dir_path.parts for pattern in exclude_patterns):
+                files.append(dir_path)
             continue
 
         for glob in FILE_GLOBS:
@@ -115,7 +131,7 @@ def main():
         "--directories",
         nargs="+",
         default=DEFAULT_DIRECTORIES,
-        help=f"Directories to search for .md/.yaml/.yml/.sh files (default: {' '.join(DEFAULT_DIRECTORIES)})",
+        help=f"Directories (or individual files) to search for .md/.yaml/.yml/.sh files (default: {' '.join(DEFAULT_DIRECTORIES)})",
     )
     parser.add_argument(
         "--exclude",

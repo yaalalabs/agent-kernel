@@ -47,8 +47,8 @@ Build your application images (the
 example walks this end to end on k3d, microk8s, and k3s), load them into your cluster, then:
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.1 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.1 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag>
@@ -136,8 +136,8 @@ for the values.
 
 Enabling `sandboxWorker` adds the sandbox broker worker: it consumes sandbox execution
 requests from the sandbox queues (same transport, its own queue names), runs them through a
-sandbox provider (typically `kubernetes` pods with a read-only ServiceAccount as the security
-boundary), and returns completions over the sandbox output queue into the shared response
+sandbox provider (typically `kubernetes` pods running as a ServiceAccount the chart binds to
+nothing, so the RBAC you grant it is the security boundary), and returns completions over the sandbox output queue into the shared response
 store. The tier ships with its own ServiceAccount and RBAC, KEDA scaling on the sandbox input
 backlog, and values-gated namespace hardening (Pod Security Admission, default-deny egress,
 quotas).
@@ -161,8 +161,9 @@ SIGTERM: consumers stop claiming work and finish in-flight turns within
 
 Observability ships as documented recipes (kube-prometheus-stack, per-broker exporters, an
 OpenTelemetry Collector funnel for the Langfuse/OpenLLMetry/Logfire tracing providers), not as
-chart dependencies. Air-gapped installs set one `global.imageRegistry` override and mirror the
-per-release `images.txt` manifest. Both are covered in the
+chart dependencies. Air-gapped installs set `global.imageRegistry` (application images and
+Valkey) plus `global.image.registry` (the NATS subchart) and mirror the per-release
+`images.txt` manifest. Both are covered in the
 [chart README](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s).
 
 ## Next Steps
