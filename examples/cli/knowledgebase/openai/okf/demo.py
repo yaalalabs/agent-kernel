@@ -24,7 +24,7 @@ from agentkernel.openai import OpenAIModule
 # no knowledge-base tools -- there is no error to notice, so the names are the contract.
 
 consumer = Agent(
-    name="KB_Consumer_Agent",
+    name="kb_consumer_agent",
     model="gpt-4o-mini",
     instructions=(
         "You are an analytics knowledge assistant. You answer questions about the data warehouse "
@@ -34,7 +34,7 @@ consumer = Agent(
 )
 
 producer = Agent(
-    name="KB_Producer_Agent",
+    name="kb_producer_agent",
     model="gpt-4o-mini",
     instructions=(
         "You are an analytics knowledge author. When you learn something about the warehouse that "
@@ -44,7 +44,7 @@ producer = Agent(
 )
 
 curator = Agent(
-    name="KB_Curator_Agent",
+    name="kb_curator_agent",
     model="gpt-4o-mini",
     instructions=(
         "You are an analytics knowledge curator. You review what the knowledge base already holds, "
