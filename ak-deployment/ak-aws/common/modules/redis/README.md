@@ -30,9 +30,7 @@ Perfect for session storage, application caching, real-time analytics, pub/sub m
 module "redis" {
   source = "yaalalabs/ak-common/aws//modules/redis"
 
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "cache"
+  prefix        = "myapp-prod-cache"
   
   vpc_id        = module.vpc.vpc_id
   vpc_cidr      = "10.0.0.0/16"
@@ -56,8 +54,7 @@ module "redis" {
 module "vpc" {
   source = "yaalalabs/ak-common/aws//modules/vpc"
 
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod"
   vpc_cidr      = "10.0.0.0/16"
 }
 
@@ -65,9 +62,7 @@ module "vpc" {
 module "redis" {
   source = "yaalalabs/ak-common/aws//modules/redis"
 
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "session"
+  prefix        = "myapp-prod-session"
   
   vpc_id     = module.vpc.vpc_id
   vpc_cidr   = module.vpc.vpc_cidr_block
@@ -106,9 +101,7 @@ resource "aws_lambda_function" "api" {
 module "redis_dev" {
   source = "yaalalabs/ak-common/aws//modules/redis"
 
-  product_alias = "myapp"
-  env_alias     = "dev"
-  module_name   = "cache"
+  prefix        = "myapp-dev-cache"
   
   vpc_id     = module.vpc_dev.vpc_id
   vpc_cidr   = module.vpc_dev.vpc_cidr_block
@@ -122,9 +115,7 @@ module "redis_dev" {
 module "redis_prod" {
   source = "yaalalabs/ak-common/aws//modules/redis"
 
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "cache"
+  prefix        = "myapp-prod-cache"
   
   vpc_id     = module.vpc_prod.vpc_id
   vpc_cidr   = module.vpc_prod.vpc_cidr_block
@@ -144,9 +135,7 @@ module "redis_prod" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
-| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
-| `module_name` | Module/service name for resource identification | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `vpc_id` | VPC ID where Redis will be deployed | `string` | n/a | yes |
 | `vpc_cidr` | CIDR block of the VPC (for security group rules) | `string` | n/a | yes |
 | `subnet_ids` | List of private subnet IDs for Redis deployment | `list(string)` | n/a | yes |
@@ -176,7 +165,7 @@ module "redis_prod" {
 
 ### ⚙️ Cluster Configuration
 
-- **Naming Convention**: `{product_alias}-{env_alias}-{module_name}-redis`
+- **Naming Convention**: `{prefix}-redis`
 - **Parameter Group**: Uses `default.redis7` parameter group
 - **Subnet Group**: Automatic subnet group creation for multi-AZ
 - **Flexible Sizing**: Configurable node types and cluster size
@@ -234,7 +223,7 @@ resource "aws_security_group_rule" "lambda_to_redis" {
 
 ```hcl
 resource "aws_cloudwatch_metric_alarm" "redis_cpu" {
-  alarm_name          = "${var.product_alias}-${var.env_alias}-redis-cpu"
+  alarm_name          = "${var.prefix}-redis-cpu"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
   metric_name         = "CPUUtilization"
@@ -273,9 +262,7 @@ resource "aws_cloudwatch_metric_alarm" "redis_cpu" {
 module "session_cache" {
   source = "yaalalabs/ak-common/aws//modules/redis"
 
-  product_alias = "webapp"
-  env_alias     = "prod"
-  module_name   = "session"
+  prefix        = "webapp-prod-session"
   
   vpc_id     = module.vpc.vpc_id
   vpc_cidr   = module.vpc.vpc_cidr_block
@@ -292,9 +279,7 @@ module "session_cache" {
 module "api_cache" {
   source = "yaalalabs/ak-common/aws//modules/redis"
 
-  product_alias = "api"
-  env_alias     = "prod"
-  module_name   = "ratelimit"
+  prefix        = "api-prod-ratelimit"
   
   vpc_id     = module.vpc.vpc_id
   vpc_cidr   = module.vpc.vpc_cidr_block
@@ -310,9 +295,7 @@ module "api_cache" {
 module "analytics_cache" {
   source = "yaalalabs/ak-common/aws//modules/redis"
 
-  product_alias = "analytics"
-  env_alias     = "prod"
-  module_name   = "realtime"
+  prefix        = "analytics-prod-realtime"
   
   vpc_id     = module.vpc.vpc_id
   vpc_cidr   = module.vpc.vpc_cidr_block

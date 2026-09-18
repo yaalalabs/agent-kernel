@@ -35,8 +35,7 @@ This shared module provides:
 module "shared_api_gateway_resources" {
   source = "./modules/shared-api-gateway-resources"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
+  prefix        = var.prefix
   tags          = var.tags
 }
 ```

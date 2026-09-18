@@ -4,14 +4,9 @@ variable "region" {
   default     = "ap-southeast-2"
 }
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias"
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 }
 
 variable "product_display_name" {
@@ -29,11 +24,6 @@ variable "is_production" {
 variable "package_dir_path" {
   type        = string
   description = "Lambda function / layer path"
-}
-
-variable "module_name" {
-  type        = string
-  description = "module name"
 }
 
 variable "is_layer" {

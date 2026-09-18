@@ -5,9 +5,7 @@ module "serverless_agents" {
 
   providers = { aws = aws, docker = docker }
   # Basic lambda configuration
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK OpenAI Auth Serverless Example"
   region               = var.region
   vpc_id               = var.vpc_id
@@ -21,7 +19,6 @@ module "serverless_agents" {
     function_name        = "openai-auth-agents"
     function_description = "Agent Kernel OpenAI Auth Sample Lambda"
     handler_path         = "lambda.handler"
-    module_name          = var.module_name
     package_path         = "../dist"
     package_type         = "Image"
     memory_size          = 256
@@ -54,7 +51,6 @@ module "serverless_agents" {
     handler_path          = "lambda_auth.handler"
     package_path          = "../dist_auth.zip"
     package_type          = "LocalZip"
-    module_name           = "auth-eg"
     result_ttl_in_seconds = 0
     environment_variables = {
       "SOME_OTHER_KEY" = "Some Other Value"

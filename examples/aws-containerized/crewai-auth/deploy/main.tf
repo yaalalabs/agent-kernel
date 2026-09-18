@@ -9,9 +9,7 @@ module "containered_agents" {
 
   providers = { aws = aws, docker = docker }
   # Basic ECS configuration
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   container_type       = "ecs"
   region               = var.region
   vpc_id               = "vpc-09033229d67314c1c"

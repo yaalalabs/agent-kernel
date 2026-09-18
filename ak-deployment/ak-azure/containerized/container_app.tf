@@ -1,6 +1,6 @@
 # Container Apps Environment
 resource "azurerm_container_app_environment" "env" {
-  name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-env"
+  name                = "${var.prefix}-env"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.rg.name
 
@@ -18,7 +18,7 @@ resource "azurerm_container_app_environment" "env" {
 
 # Log Analytics Workspace for Container Apps
 resource "azurerm_log_analytics_workspace" "container_logs" {
-  name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-logs"
+  name                = "${var.prefix}-logs"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.rg.name
   sku                 = "PerGB2018"
@@ -29,7 +29,7 @@ resource "azurerm_log_analytics_workspace" "container_logs" {
 
 # Application Insights for Container Apps
 resource "azurerm_application_insights" "container_insights" {
-  name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-insights"
+  name                = "${var.prefix}-insights"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.rg.name
   workspace_id        = azurerm_log_analytics_workspace.container_logs.id
@@ -40,7 +40,7 @@ resource "azurerm_application_insights" "container_insights" {
 
 # Container App
 resource "azurerm_container_app" "app" {
-  name                         = "${var.product_alias}-${var.env_alias}-${var.module_name}-app"
+  name                         = "${var.prefix}-app"
   container_app_environment_id = azurerm_container_app_environment.env.id
   resource_group_name          = data.azurerm_resource_group.rg.name
   revision_mode                = "Single"
@@ -90,7 +90,7 @@ resource "azurerm_container_app" "app" {
     max_replicas = var.container_max_replicas
 
     container {
-      name   = "${var.product_alias}-${var.env_alias}-${var.module_name}-container"
+      name   = "${var.prefix}-container"
       image  = "${module.docker_image.docker_image_uri}:latest"
       cpu    = var.is_production ? "1.0" : "0.5"
       memory = var.is_production ? "2Gi" : "1Gi"

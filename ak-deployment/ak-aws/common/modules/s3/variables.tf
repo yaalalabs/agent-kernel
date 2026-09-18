@@ -2,18 +2,13 @@ data "aws_region" "current" {}
 
 data "aws_caller_identity" "current" {}
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias"
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 }
 
 variable "region" {
   description = "AWS region"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias"
 }
 
 variable "product_display_name" {

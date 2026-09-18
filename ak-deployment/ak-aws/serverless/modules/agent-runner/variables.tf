@@ -1,11 +1,6 @@
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias for resource naming"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias for resource naming"
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 }
 
 variable "region" {
@@ -189,7 +184,6 @@ variable "agent_runner" {
     package_path                   = optional(string, null)
     package_type                   = string
     handler_path                   = optional(string, "agent_runner.handler")
-    module_name                    = optional(string, "agent-runner")
     layers                         = optional(list(string), [])
     environment_variables          = optional(map(string), {})
     cloudwatch_logs_retention_in_days = optional(number, 90)

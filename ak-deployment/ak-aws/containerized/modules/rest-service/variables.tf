@@ -1,24 +1,3 @@
-variable "product_alias" {
-  type        = string
-  description = "Product alias for resource naming"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias for resource naming"
-}
-
-variable "module_name" {
-  type        = string
-  description = "Module name for resource naming"
-
-  validation {
-    # + 6 accounts for the "-alb"/"-nlb" suffix and its 2 joining hyphens
-    condition     = length(var.product_alias) + length(var.env_alias) + length(var.module_name) + 6 <= 32
-    error_message = "product_alias + env_alias + module_name must be at most 26 characters combined, so that the \"${var.product_alias}-${var.env_alias}-${var.module_name}-alb\"/\"-nlb\" load balancer name stays within AWS's 32-character limit."
-  }
-}
-
 variable "region" {
   type        = string
   description = "AWS region"
@@ -27,6 +6,12 @@ variable "region" {
 variable "prefix" {
   type        = string
   description = "Resource name prefix"
+
+  validation {
+    # + 4 accounts for the "-alb"/"-nlb" suffix
+    condition     = length(var.prefix) + 4 <= 32
+    error_message = "prefix must be at most 28 characters, so that the \"${var.prefix}-alb\"/\"-nlb\" load balancer name stays within AWS's 32-character limit."
+  }
 }
 
 variable "vpc_id" {

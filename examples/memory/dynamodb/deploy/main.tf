@@ -5,9 +5,7 @@ module "serverless_agents" {
 
   providers = { aws = aws, docker = docker }
   # Basic lambda configuration
-  product_alias                = var.product_alias
-  env_alias                    = var.env_alias
-  module_name                  = var.module_name
+  prefix                       = var.prefix
   product_display_name         = "Agent Kernel OpenAI with DynamoDB"
   create_dynamodb_memory_table = true
   vpc_id                       = var.vpc_id
@@ -19,7 +17,6 @@ module "serverless_agents" {
     function_description = "Agent Kernel OpenAI with DynamoDB"
     function_name        = "oai-ddb"
     handler_path         = "lambda.handler"
-    module_name          = var.module_name
     package_path         = "../dist"
     package_type         = "Image"
     memory_size          = 512

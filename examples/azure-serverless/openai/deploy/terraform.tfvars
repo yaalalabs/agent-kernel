@@ -2,8 +2,6 @@
 region = "eastus"
 # The Azure Resource Group you want to deploy the resources into
 resource_group_name = "openai_daily"
-product_alias = "demo"
-env_alias = "dev"
-module_name = "api"
+prefix              = "demo-dev-api"
 # Email integration for Azure APIM Put Your Own here
-publisher_email="agentkernel@yaala.ai"
+publisher_email = "agentkernel@yaala.ai"

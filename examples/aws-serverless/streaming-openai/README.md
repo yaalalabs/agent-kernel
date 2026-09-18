@@ -59,9 +59,7 @@ Update the Redis URL to point at your cluster endpoint.
 Terraform variables are declared in `deploy/variables.tf`:
 
 - `region`
-- `product_alias`
-- `env_alias`
-- `module_name`
+- `prefix`
 - `is_production`
 - `openai_api_key` (sensitive)
 

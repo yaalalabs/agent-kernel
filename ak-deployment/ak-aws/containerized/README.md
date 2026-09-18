@@ -101,9 +101,7 @@ module "containerized_agents" {
   version   = "0.8.1"
   providers = { aws = aws, docker = docker }
 
-  product_alias = "my-agent"
-  env_alias     = "dev"
-  module_name   = "chatbot"
+  prefix        = "my-agent-dev-chatbot"
   region        = "us-east-1"
 
   # REST Service configuration
@@ -131,9 +129,7 @@ module "containerized_agents" {
   version   = "0.8.1"
   providers = { aws = aws, docker = docker }
 
-  product_alias = "my-agent"
-  env_alias     = "prod"
-  module_name   = "assistant"
+  prefix        = "my-agent-prod-assistant"
   region        = "us-east-1"
 
   # REST Service (handles HTTP requests)
@@ -287,8 +283,8 @@ enable_api_gateway_logs = true
 ```
 
 - Off by default, matching the AWS serverless deployment. When `false`:
-  - **REST/queue modes:** no `/aws/apigateway/{product_alias}-{env_alias}-http-api` log group is created and the HTTP API stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
-  - **WebSocket modes:** no `/aws/apigateway/{product_alias}-{env_alias}-ws-api` log group is created, the WebSocket API stage carries no `access_log_settings`, and the account-level CloudWatch role (`aws_iam_role.apigw_cloudwatch` / `aws_api_gateway_account.this`) is not created; the `websocket_api_cloudwatch_log_group_arn` / `websocket_api_cloudwatch_log_group_name` outputs return `null`.
+  - **REST/queue modes:** no `/aws/apigateway/{prefix}-http-api` log group is created and the HTTP API stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
+  - **WebSocket modes:** no `/aws/apigateway/{prefix}-ws-api` log group is created, the WebSocket API stage carries no `access_log_settings`, and the account-level CloudWatch role (`aws_iam_role.apigw_cloudwatch` / `aws_api_gateway_account.this`) is not created; the `websocket_api_cloudwatch_log_group_arn` / `websocket_api_cloudwatch_log_group_name` outputs return `null`.
 - When `true`, the relevant log group is created with 90-day retention (tagged with `var.tags`). REST/queue modes log request ID, source IP, request time, protocol, HTTP method, route key, status, response length, and integration error message; WebSocket modes log the same fields plus `connectionId` in place of HTTP method.
 - Unlike the serverless REST API, the HTTP API (`aws_apigatewayv2_*` with `protocol_type = "HTTP"`) does **not** require the account-level `aws_api_gateway_account` CloudWatch role for access logging, so enabling it there does not contend with other deployments in the same account/region. The WebSocket API (`protocol_type = "WEBSOCKET"`) **does** require that account-level role — it is created only when `enable_api_gateway_logs = true` in a WebSocket mode, and it is a region-wide singleton shared with any other API Gateway in the account that also enables access logging.
 - **Upgrade note:** deployments created before this toggle existed always had logging on. Applying with the new default (`false`) removes the stage's access log settings and destroys the log group (and, in WebSocket modes, the account-level CloudWatch role resources). Set `enable_api_gateway_logs = true` to keep the existing behaviour.

@@ -6,9 +6,7 @@ module "containerized_agents" {
   version = "0.9.1"
 
   providers            = { aws = aws, docker = docker }
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   product_display_name = "OpenAI Agents - Scheduled Chats"
 
@@ -118,7 +116,7 @@ module "containerized_agents" {
   }
 
   tags = {
-    Example     = "openai-schedule"
-    Environment = var.env_alias
+    Example    = "openai-schedule"
+    Deployment = var.prefix
   }
 }

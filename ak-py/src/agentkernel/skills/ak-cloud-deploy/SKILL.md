@@ -48,7 +48,7 @@ If missing, suggest `ak-init` first.
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
-7. Environment aliases: `product_alias`, `env_alias`, `module_name`.
+7. Resource naming: a single `prefix` applied to every resource name (e.g. `myapp-dev-chat`).
 
 ### Step 3: Choose the Correct Terraform Module
 
@@ -324,16 +324,13 @@ module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
   version = "0.9.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK Serverless"
   region               = var.region
 
   execution_mode = "rest_sync"
 
   request_handler = {
-    module_name          = "request-handler"
     function_name        = "chat-handler"
     function_description = "AK request handler"
     handler_path         = "lambda.handler"
@@ -378,9 +375,7 @@ module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
   version = "0.9.1"
 
-  product_alias      = var.product_alias
-  env_alias          = var.env_alias
-  module_name        = var.module_name
+  prefix             = var.prefix
   region             = var.region
   product_display_name = "AK Scalable REST"
 
@@ -395,7 +390,6 @@ module "serverless_agents" {
   # create_dynamodb_schedule_table = true
 
   request_handler = {
-    module_name          = "rqst-hdlr"
     function_name        = "request-handler"
     function_description = "Receives REST requests"
     handler_path         = "lambda_request_handler.handler"
@@ -409,7 +403,6 @@ module "serverless_agents" {
   }
 
   agent_runner = {
-    module_name          = "agent-runner"
     function_name        = "agent-runner"
     function_description = "Processes queued requests"
     handler_path         = "lambda_agent_runner.handler"
@@ -423,7 +416,6 @@ module "serverless_agents" {
   }
 
   response_handler = {
-    module_name          = "response-handler"
     function_name        = "response-handler"
     function_description = "Handles async response completion"
     handler_path         = "lambda_response_handler.handler"
@@ -454,7 +446,6 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
 
 ```hcl
   request_handler = {
-    module_name      = "rqst-hdlr"
     function_name    = "request-handler"
     handler_path     = "lambda_request_handler.handler"
     package_type     = "S3Zip"
@@ -469,7 +460,6 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
   }
 
   agent_runner = {
-    module_name   = "agent-runner"
     function_name = "agent-runner"
     handler_path  = "lambda_agent_runner.handler"
     package_type  = "Image"
@@ -480,7 +470,6 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
   }
 
   response_handler = {
-    module_name      = "response-handler"
     function_name    = "response-handler"
     handler_path     = "lambda_response_handler.handler"
     package_type     = "S3Zip"
@@ -534,9 +523,7 @@ module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
   version = "0.9.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   product_display_name = "AK WebSocket Serverless Example"
 
@@ -547,7 +534,6 @@ module "serverless_agents" {
   create_dynamodb_response_store = true
 
   request_handler = {
-    module_name          = "request-handler"
     function_name        = "request-handler"
     function_description = "Receives WebSocket requests"
     handler_path         = "lambda_request_handler.handler"
@@ -561,7 +547,6 @@ module "serverless_agents" {
   }
 
   agent_runner = {
-    module_name          = "agent-runner"
     function_name        = "agent-runner"
     function_description = "Processes chat tasks"
     handler_path         = "lambda_agent_runner.handler"
@@ -575,7 +560,6 @@ module "serverless_agents" {
   }
 
   response_handler = {
-    module_name          = "response-handler"
     function_name        = "response-handler"
     function_description = "Sends responses to connections"
     handler_path         = "lambda_response_handler.handler"
@@ -586,7 +570,6 @@ module "serverless_agents" {
   }
 
   ws_connection_handler = {
-    module_name          = "ws-connection-handler"
     function_name        = "ws-connection-handler"
     function_description = "Handles $connect/$disconnect"
     handler_path         = "lambda_ws_connection_handler.handler"
@@ -691,9 +674,7 @@ module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
   version = "0.9.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   product_display_name = "AK Streaming WebSocket Example"
 
@@ -749,7 +730,6 @@ authorizer = {
   handler_path          = "lambda_auth.handler"
   package_path          = "../dist_auth.zip"
   package_type          = "LocalZip"
-  module_name           = "auth-module"
   result_ttl_in_seconds = 0
   environment_variables = {
     SOME_OTHER_KEY = "Some Other Value"
@@ -776,9 +756,7 @@ module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
   version = "0.9.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   product_display_name = "AK ECS Deployment"
 
@@ -856,9 +834,7 @@ module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
   version = "0.9.1"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   region        = var.region
 
   rest_service = {
@@ -981,9 +957,7 @@ module "containerized_agents" {
 
   providers = { aws = aws, docker = docker }
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   region        = var.region
   vpc_id        = var.vpc_id
   private_subnet_ids = var.private_subnet_ids
@@ -1041,9 +1015,7 @@ module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
   version = "0.9.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   resource_group_name  = var.resource_group_name
   publisher_email      = var.publisher_email
@@ -1085,9 +1057,7 @@ module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
   version = "0.9.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   resource_group_name  = var.resource_group_name
   publisher_email      = var.publisher_email
@@ -1133,9 +1103,7 @@ module "serverless_agent" {
 
   project_id           = var.project_id
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK GCP Serverless"
 
   package_path = "${path.module}/../dist"
@@ -1164,9 +1132,7 @@ module "serverless_agent" {
 
   project_id           = var.project_id
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK GCP Serverless Firestore"
 
   package_path = "${path.module}/../dist"
@@ -1217,9 +1183,7 @@ module "containerized_agent" {
 
   project_id           = var.project_id
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK GCP Containerized"
 
   package_path       = "${path.module}/../dist"

@@ -4,7 +4,6 @@ locals {
   timeout               = var.ws_connection_handler.timeout
   memory_size           = var.ws_connection_handler.memory_size
   handler_path          = var.ws_connection_handler.handler_path
-  module_name           = var.ws_connection_handler.module_name
   package_path          = var.ws_connection_handler.package_path
   layers                = var.ws_connection_handler.layers
   environment_variables = var.ws_connection_handler.environment_variables
@@ -13,7 +12,7 @@ locals {
 
 # IAM Role for WebSocket Connection Handler Lambda
 resource "aws_iam_role" "ws_connection_handler_lambda_role" {
-  name = "${var.product_alias}-${var.env_alias}-${local.module_name}-${local.function_name}-lambda-role"
+  name = "${var.prefix}-${local.function_name}-lambda-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -43,7 +42,7 @@ resource "aws_iam_role_policy_attachment" "ws_connection_handler_vpc_execution" 
 
 # DynamoDB permissions for WebSocket connection table
 resource "aws_iam_policy" "ws_connection_handler_dynamodb_policy" {
-  name = "${var.product_alias}-${var.env_alias}-${local.module_name}-${local.function_name}-dynamodb"
+  name = "${var.prefix}-${local.function_name}-dynamodb"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -78,7 +77,7 @@ module "ws_connection_handler_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name          = "${var.product_alias}-${var.env_alias}-${local.module_name}-${local.function_name}"
+  function_name          = "${var.prefix}-${local.function_name}"
   description            = local.function_description
   handler                = local.handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"

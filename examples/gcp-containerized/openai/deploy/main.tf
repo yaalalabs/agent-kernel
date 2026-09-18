@@ -10,9 +10,7 @@ module "containerized_agents" {
   providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration
   project_id           = var.project_id
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   package_path         = "../dist"
   region               = var.region
   product_display_name = "AK OpenAI Containerized Example"

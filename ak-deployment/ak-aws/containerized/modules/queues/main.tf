@@ -6,13 +6,9 @@ module "input_queue" {
   source  = "yaalalabs/ak-common/aws//modules/sqs"
   version = "0.9.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
-  queue_name           = var.queue_config.input_queue_name
-  region               = data.aws_region.current.name
-  product_display_name = var.product_alias
-  is_production        = var.env_alias == "prod"
+  prefix     = var.prefix
+  queue_name = var.queue_config.input_queue_name
+  region     = data.aws_region.current.name
 
   fifo_queue                  = true
   content_based_deduplication = var.queue_config.input_queue_content_based_deduplication
@@ -42,13 +38,9 @@ module "output_queue" {
   source  = "yaalalabs/ak-common/aws//modules/sqs"
   version = "0.9.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
-  queue_name           = var.queue_config.output_queue_name
-  region               = data.aws_region.current.name
-  product_display_name = var.product_alias
-  is_production        = var.env_alias == "prod"
+  prefix     = var.prefix
+  queue_name = var.queue_config.output_queue_name
+  region     = data.aws_region.current.name
 
   fifo_queue                  = true
   content_based_deduplication = false

@@ -71,11 +71,9 @@ module "serverless_agent" {
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-api"
   product_display_name = "My Application API"
   
-  module_name  = "api"
   package_path = "${path.module}/dist"
   
   cpu    = "1"
@@ -115,11 +113,9 @@ module "serverless_api_redis" {
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-chat"
   product_display_name = "Serverless API with Redis"
   
-  module_name  = "chat"
   package_path = "${path.module}/dist"
   
   # Enable Memorystore Redis for session storage
@@ -146,11 +142,9 @@ module "serverless_api_firestore" {
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-chat"
   product_display_name = "Serverless API with Firestore"
   
-  module_name  = "chat"
   package_path = "${path.module}/dist"
   
   # Enable Firestore for session storage (GCP equivalent of DynamoDB)
@@ -176,11 +170,9 @@ module "serverless_api_vpc" {
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-api"
   product_display_name = "Serverless API with Existing VPC"
   
-  module_name  = "api"
   package_path = "${path.module}/dist"
   
   # Use existing VPC instead of creating new one
@@ -205,11 +197,9 @@ module "production_api" {
 
   project_id           = "enterprise-gcp-project"
   region               = "us-central1"
-  product_alias        = "enterprise"
-  env_alias            = "prod"
+  prefix               = "enterprise-prod-core-api"
   product_display_name = "Enterprise Production API"
   
-  module_name  = "core-api"
   package_path = "${path.module}/dist"
   is_production = true
   
@@ -267,10 +257,8 @@ module "custom_endpoints_api" {
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
-  product_alias = "myapp"
-  env_alias     = "dev"
+  prefix        = "myapp-dev-api"
   
-  module_name  = "api"
   package_path = "${path.module}/dist"
   
   api_version    = "v1"
@@ -313,10 +301,8 @@ module "mcp_api" {
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod-mcp"
   
-  module_name  = "mcp"
   package_path = "${path.module}/dist"
   
   # Enable MCP server endpoint
@@ -338,10 +324,8 @@ module "mcp_api" {
 |------|-------------|------|---------|:--------:|
 | `project_id` | GCP project ID | `string` | n/a | yes |
 | `region` | GCP region for deployment | `string` | n/a | yes |
-| `product_alias` | Short identifier for the product | `string` | n/a | yes |
-| `env_alias` | Environment identifier (dev, staging, prod) | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name | `string` | `"An Agent Kernel deployment"` | no |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
 | `is_production` | Enable production features | `bool` | `false` | no |
 | `package_path` | Path to Docker build context (dist/ directory with Dockerfile) | `string` | n/a | yes |
 | `environment_variables` | Environment variables for the container | `map(string)` | `{}` | no |
@@ -721,7 +705,7 @@ locals {
       create_firestore   = true
     }
   }
-  env_config = local.config[var.env_alias]
+  env_config = local.config[var.environment]
 }
 
 module "api" {

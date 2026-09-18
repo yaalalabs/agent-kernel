@@ -4,14 +4,9 @@ variable "module_type" {
   default     = "python"
 }
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias for resource naming"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias for resource naming"
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 }
 
 variable "region" {
@@ -79,7 +74,6 @@ variable "response_handler" {
     timeout                        = optional(number, 30)
     memory_size                    = optional(number, 256)
     handler_path                   = optional(string, "response_handler.handler")
-    module_name                    = optional(string, "response-handler")
     package_path                   = optional(string, null)
     package_type                   = string
     layers                         = optional(list(string), [])

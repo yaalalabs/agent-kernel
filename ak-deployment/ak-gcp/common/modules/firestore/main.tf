@@ -1,6 +1,6 @@
 # Database name — Firestore allows multiple named databases per project
 locals {
-  database_id = "${var.product_alias}-${var.env_alias}-${var.module_name}"
+  database_id = "${var.prefix}"
 }
 
 # Create a Firestore database in Native mode

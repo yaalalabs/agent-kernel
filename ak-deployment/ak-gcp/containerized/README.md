@@ -73,11 +73,9 @@ module "container_app" {
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-api"
   product_display_name = "My Containerized App"
   
-  module_name  = "api"
   package_path = "${path.module}/src"  # Directory with Dockerfile
   
   # Cloud Run Configuration (always-on by default)
@@ -138,11 +136,9 @@ module "container_app_redis" {
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-chat"
   product_display_name = "Containerized API with Redis"
   
-  module_name  = "chat"
   package_path = "${path.module}/dist"
   
   # Enable Memorystore Redis for session storage
@@ -170,11 +166,9 @@ module "container_app_firestore" {
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-chat"
   product_display_name = "Containerized API with Firestore"
   
-  module_name  = "chat"
   package_path = "${path.module}/dist"
   
   # Enable Firestore for session storage
@@ -202,11 +196,9 @@ module "container_app_vpc" {
 
   project_id           = "my-gcp-project"
   region               = "us-central1"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-api"
   product_display_name = "Containerized API with Existing VPC"
   
-  module_name  = "api"
   package_path = "${path.module}/dist"
   
   # Use existing VPC instead of creating new one
@@ -236,12 +228,10 @@ module "production_app" {
 
   project_id           = "enterprise-gcp-project"
   region               = "us-central1"
-  product_alias        = "enterprise"
-  env_alias            = "prod"
+  prefix               = "enterprise-prod-core-api"
   product_display_name = "Enterprise Production API"
   is_production        = true
 
-  module_name  = "core-api"
   package_path = "${path.module}/dist"
 
   # Keep multiple instances warm for high availability
@@ -287,10 +277,8 @@ module "production_app" {
 |------|-------------|------|---------|:--------:|
 | `project_id` | GCP project ID | `string` | n/a | yes |
 | `region` | GCP region for deployment | `string` | n/a | yes |
-| `product_alias` | Short identifier for the product | `string` | n/a | yes |
-| `env_alias` | Environment identifier (dev, staging, prod) | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name | `string` | `"An Agent Kernel deployment"` | no |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
 | `is_production` | Enable production features | `bool` | `false` | no |
 | `package_path` | Path to Docker build context (dist/ directory with Dockerfile) | `string` | n/a | yes |
 | `environment_variables` | Environment variables for the container | `map(string)` | `{}` | no |
@@ -672,7 +660,7 @@ locals {
       create_firestore   = true
     }
   }
-  env_config = local.config[var.env_alias]
+  env_config = local.config[var.environment]
 }
 
 module "api" {
