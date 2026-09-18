@@ -8,6 +8,7 @@ bridge could not produce — rather than the items themselves.
 import asyncio
 import contextvars
 import threading
+import warnings
 
 import pytest
 
@@ -120,6 +121,26 @@ class TestIterateAsyncSync:
                 loop.close()
 
         assert _in_fresh_thread(_consume) == (["a", "b"], True, False)
+
+    def test_does_not_leave_a_manufactured_loop_on_the_main_thread(self):
+        """The main thread is the one place get_event_loop() creates a loop instead of raising.
+
+        Reusing that one would leak it — nobody closes it or shuts its async generators down, so
+        it outlives the run and the next run on that thread inherits whatever was left on it. AWS
+        Lambda invokes a handler on the main thread of a container it reuses, so this is the
+        serverless consumers' path, not a test-only one. The bridge must own its loop here too.
+        """
+        assert threading.current_thread() is threading.main_thread()
+
+        async def _agen():
+            yield "a"
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            assert list(iterate_async_sync(_agen())) == ["a"]
+
+        with pytest.raises(RuntimeError):
+            asyncio.get_event_loop()
 
     def test_replaces_a_closed_loop_rather_than_driving_it(self):
         async def _agen():

@@ -13,6 +13,8 @@ time and yields each as it is produced.
 
 import asyncio
 import contextvars
+import threading
+import warnings
 from typing import Any, AsyncGenerator, Coroutine, Generator, Optional
 
 
@@ -47,11 +49,11 @@ def iterate_async_sync(agen: AsyncGenerator) -> Generator[Any, None, None]:
     loop time, because the loop runs for the whole of each await; only the caller's own
     handling of a yielded item happens with the loop stopped.
 
-    Loop handling matches run_async_sync: an open loop already on this thread is reused and
-    left as it was found, and otherwise a loop is owned for the duration of the run.
-    asyncio.Runner owns that one, so it is torn down exactly as asyncio.run tears down its
-    own (pending tasks cancelled, async generators shut down, loop closed, thread left with
-    no current loop).
+    A loop this thread already had is reused and left as it was found; otherwise a loop is
+    owned for the duration of the run. asyncio.Runner owns that one, so it is torn down
+    exactly as asyncio.run tears down its own (pending tasks cancelled, async generators shut
+    down, loop closed, thread left with no current loop). See _open_loop for why "already had"
+    is narrower than what asyncio.get_event_loop() hands back.
 
     :param agen: Async generator to consume.
     :return: Generator yielding each item the async generator produces.
@@ -65,14 +67,38 @@ def iterate_async_sync(agen: AsyncGenerator) -> Generator[Any, None, None]:
 
 
 def _open_loop() -> Optional[asyncio.AbstractEventLoop]:
-    """Return this thread's usable event loop, or None when it has none to reuse.
+    """Return a loop this thread already has, or None when it has none worth reusing.
 
-    :return: The thread's open event loop, or None when there is no loop or it is closed.
+    `asyncio.get_event_loop()` does not simply look one up. On a worker thread with no loop it
+    raises RuntimeError, which is the answer we want. On the **main** thread it instead warns
+    `There is no current event loop` and then manufactures a loop and sets it — and a loop made
+    that way is not one we can reuse and leave as we found it, because nobody owns it: it is
+    never closed and its async generators are never shut down, so it outlives the run and every
+    later one on that thread inherits whatever the previous left behind. AWS Lambda invokes a
+    handler on the main thread and reuses the container, so that is a live surface, not a
+    theoretical one.
+
+    Turning the warning into an error is what stops the manufacture: asyncio warns before it
+    creates the loop, so raising there leaves the thread with no loop and sends the caller down
+    the owned-loop path. The filter is scoped to the main thread because that is the only thread
+    where the manufacture can happen, and because `warnings.catch_warnings()` mutates global
+    state — entering it on the pipeline's consumer threads would race.
+
+    :return: A loop this thread already had, or None when it has none or the one it has is
+        closed.
     """
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        return None
+    if threading.current_thread() is threading.main_thread():
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            try:
+                loop = asyncio.get_event_loop()
+            except (RuntimeError, DeprecationWarning):
+                return None
+    else:
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            return None
     return None if loop.is_closed() else loop
 
 
