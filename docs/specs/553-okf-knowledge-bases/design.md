@@ -12,6 +12,14 @@ without growing new abstract base classes.
 Supporting research: [`research/okf-format-survey.md`](research/okf-format-survey.md) — what OKF is,
 what it binds a consumer to, and which of its properties drive the decisions below.
 
+**Amended 2026-09-18** (`feature/553-okf-4`). The amendment adds a configuration-driven **role layer**
+over OKF — an `okf` block in `AKConfig` declaring one or more bundles, each naming its `consumer` /
+`producer` / `curator` agents, with Agent Kernel constructing the backends, binding the tools, and
+appending the instructions — and removes `KnowledgeBase.read()` from the ABC, moving its routing into
+the `read_kb` tool. Amended and new points are marked **[A2]**; points the amendment overturns are
+kept in place under **Superseded by [A2]** rather than deleted, so the original review trail stays
+readable.
+
 ## Motivation
 
 ### The current contract has one retrieval hole, and OKF needs three
@@ -81,6 +89,27 @@ what it binds a consumer to, and which of its properties drive the decisions bel
 - There are no tests for the knowledge-base tier anywhere under `ak-py/tests/` (the suite has files
   for every other pluggable tier), so nothing pins the contract this change refactors.
 
+### [A2] Using OKF requires the application to wire the whole KB tier by hand
+
+- `examples/cli/knowledgebase/openai/okf/demo.py` is the reference for consuming a bundle, and it
+  constructs `LocalDocumentStore` -> `OKFManager` -> `KnowledgeBuilder` -> `OpenAIToolBuilder.bind(...)`
+  itself, then hand-writes a five-step EXECUTION PROTOCOL into the agent's instructions
+  (`demo.py:21-34`, `demo.py:45-72`, `demo.py:85`).
+  - Every step of that protocol is OKF-internal knowledge: that a bundle is navigable rather than
+    searchable, that `browse_kb` precedes `fetch_kb`, that trust tiers are advisory signals. An
+    application author must learn the representation before they can use it.
+  - The protocol is also the part most likely to be copied wrong or dropped, and it is the part that
+    decides whether the agent uses the bundle well at all.
+- Nothing expresses *who may write*. `write_kb` is emitted unconditionally and gated per call on
+  `capabilities.writable` (`knowledgebuilder.py:366`), so every agent sharing one `KnowledgeBuilder`
+  gets the same write surface.
+  - A read-only consumer and a curating agent cannot be told apart, though that separation is the
+    normal way an organization runs a knowledge base.
+- Every other capability in the repo is switched on by configuration and attaches its own tools and
+  prompt section — sandbox (`sandbox/tools.py:309-340`), scheduling (`schedule/tools.py`), multimodal,
+  AG-UI state, all through `SystemToolFactory` (`core/tool.py:179,224`). Knowledge bases are the
+  outlier, and the OKF example is where that shows most.
+
 ### The house patterns this change should have been using already exist
 
 - Honest per-backend capability declaration plus optional operations that raise a typed error:
@@ -117,7 +146,6 @@ classDiagram
         +fetch(ids)
         +browse(path, limit)
         +write(records)
-        +read(query, limit) "routes to query/search"
     }
     class KnowledgeCapabilities {
         +kinds
@@ -198,7 +226,7 @@ classDiagram
       the actionable capability string, exactly as any other undeclared operation does.
   - **Query coherence**: `query_language` is non-empty **iff** `query` is `True`. Bidirectional, so a
     backend cannot declare a query language it does not serve, and `capabilities.query` alone decides
-    the `read()` route below.
+    the `read_kb` route below.
 - Declaring `kinds` as data — rather than as `VectorKB` / `StructuredKB` / `FileSystemKB` base
   classes — is the load-bearing choice; see [Deviations from the proposed class
   diagram](#deviations-from-the-proposed-class-diagram).
@@ -220,22 +248,34 @@ classDiagram
 
 - **Every operation keeps `**kwargs`**, matching today's `read`/`write` (`base.py:74,84`) and all three
   backends (`chroma.py:102`, `neo4j.py:125`, `starburst.py`), which already accept and ignore it.
-  - `read()` forwards its `**kwargs` unchanged to whichever primitive it delegates to, so a caller
-    passing backend-specific options through `read()` reaches the same code it reaches today.
+  - **[A2]** `read_kb` forwards its `**kwargs` unchanged to whichever primitive it routes to, so a
+    caller passing backend-specific options through the tool reaches the same code it reaches today.
   - Dropping `**kwargs` on the read path would be a signature change; the **Non-changes** assertion
     below covers it.
-- `read(query, limit, **kwargs)` becomes a **concrete** method on the base that delegates to `query()`
-  when `capabilities.query` is `True`, else to `search()`. **This is the one statement of the routing
-  rule**; every other mention in this document refers back to it.
+- **Superseded by [A2].** The original rule made `read(query, limit, **kwargs)` a **concrete** method
+  on the base, delegating to `query()` when `capabilities.query` is `True` and to `search()`
+  otherwise. It is retained here because the routing *rule* survives the amendment unchanged — only
+  its home moves.
+- **[A2]** `read()` is **removed from `KnowledgeBase`**. The ABC exposes the five operations and
+  nothing else; there is no concrete retrieval method on it.
+  - **The routing rule is unchanged and moves into `read_kb`** (`knowledgebuilder.py:209`): a backend
+    declaring `query` receives the text as a statement, every other backend receives it as a relevance
+    search. **This is the one statement of the routing rule**; every other mention in this document
+    refers back to it.
   - Gating on the boolean rather than on `query_language` is what makes the rule total. With the
     bidirectional invariant the two can no longer disagree, so a backend declaring `search` but not
     `query` can never be routed at a `query()` that raises `KnowledgeCapabilityError`.
-  - Keeps `read_kb` and every external caller working with no signature change.
-  - A subclass that still overrides `read()` — including any application's own backend — keeps
-    winning, so **for the read path** bring-your-own backends written against today's ABC need no
-    edit. The `__init__` signature change still reaches them: see migration item 13.
-  - When a backend declares **both** `search` and `query`, `read()` routes to `query()` and the
-    relevance path is reached through `search_kb` instead (see [Agent surface](#agent-surface--knowledgebuilder)).
+  - **Why it moves**: `read()` existed only to let one tool serve every backend, and its only in-tree
+    caller is that tool. A concrete method on the ABC that no backend overrides and no other caller
+    uses is routing logic sitting one layer below where the routing decision is made — the tool layer
+    already branches per capability for `search_kb` / `fetch_kb` / `browse_kb`, and `read_kb` was the
+    one exception.
+  - The `read_kb` tool keeps its name, signature and behavior, so no agent and no prompt changes.
+  - **This is a public API break**, not an internal move: `read()` is a public method on a public ABC.
+    A third-party subclass that *overrode* `read()` keeps its method, but nothing calls it any more —
+    it must declare `search` or `query` and implement that instead. Behavioural change 14.
+  - `KnowledgeBaseContract` stops asserting `read()`'s routing and asserts the same rule at the tool
+    layer instead (`testing.py:678-701` moves).
   - Renaming `Neo4jManager.read` to `query` moves its default from `limit=10` (`neo4j.py:125`) to the
     base's `limit=3`. `read_kb` always passes `limit` explicitly, so only a direct
     `neo4j.read(q)` call sees the change; it is listed as a behavioural change below.
@@ -378,7 +418,7 @@ classDiagram
   writable=store.writable, derives_schema=True`.
   - `writable` is the reason capabilities are per instance — the same class over a read-only
     `S3DocumentStore` prefix declares `writable=False`.
-  - `query=False` (and so `query_language=None`) means `read()` routes to `search()` under the rule
+  - `query=False` (and so `query_language=None`) means `read_kb` routes to `search()` under the rule
     in [Operation set](#operation-set-on-knowledgebase), and `search_kb` is not emitted on its
     account.
   - `fetch(ids)` — bundle paths in, concept records out. The natural companion to `metadata["links"]`.
@@ -471,16 +511,26 @@ classDiagram
   - Routing a call at a backend that does not declare the capability returns an actionable string
     naming the backends that do — matching `read_kb`'s existing error-to-string behavior
     (`knowledgebuilder.py:118-119,128-130`), never an exception into the framework.
-- **Why `search_kb` exists**: without it, a backend declaring both `search` and `query` has an
-  unreachable `search()`, because `read()` routes to `query()` whenever `capabilities.query` is
+- **Why `search_kb` exists**: a backend declaring both `search` and `query` would otherwise have an
+  unreachable `search()`, because `read_kb` routes to `query()` whenever `capabilities.query` is
   `True`.
-  - No in-tree backend is affected today — Chroma is search-only, Neo4j and Starburst are query-only,
-    OKF is search-only — but the capability model exists precisely so backends can grow, and a
-    declared-but-unreachable capability would be the same dishonesty the model is meant to remove.
-  - `search_kb`'s gate is narrower than the other two: it is emitted only when at least one backend
-    declares **both** `search` and `query`. For a search-only backend `read_kb` already reaches
-    `search()`, and emitting a second tool that does the same thing would only give the agent a
-    redundant choice.
+  - The capability model exists precisely so backends can grow, and a declared-but-unreachable
+    capability would be the same dishonesty the model is meant to remove.
+  - **Superseded by [A2].** The original gate was narrower than the other two: `search_kb` was emitted
+    only when at least one backend declared **both** `search` and `query`, on the reasoning that for a
+    search-only backend `read_kb` already reaches `search()` and a second tool doing the same thing
+    would only give the agent a redundant choice.
+  - **[A2]** `search_kb` is emitted whenever **any registered backend declares `search`**, matching
+    the flat `fetch_kb` / `browse_kb` gates.
+    - OKF declares `search` (lexical) with no query language, so under the original gate an OKF-only
+      application never received `search_kb` at all. Relevance retrieval was reachable only through
+      `read_kb`, which is the tool the role prompts steer agents *away* from for a navigable bundle.
+    - The cost the original gate avoided is real and is accepted rather than denied: for a
+      search-only backend `read_kb` and `search_kb` now reach the same `search()` call. The two tools
+      are differentiated by docstring — `read_kb` is documented as the backend-agnostic entry point
+      that routes on the backend's declaration, `search_kb` as relevance retrieval specifically — and
+      the docstrings that imply a distinction no longer true for search-only backends are corrected
+      (`knowledgebuilder.py:278-279`). Behavioural change 15.
   - The gate is a property of the registered set, not of one backend: once emitted, `search_kb` routes
     at any backend declaring `search`, and returns the capability string for the others.
 - `write_kb` stops emitting Neo4j's `cypher_query` / `cypher_params` keys
@@ -497,6 +547,158 @@ classDiagram
   whole call.
 - Semantic-map placeholder resolution (`knowledgebuilder.py:76-89`) applies to `fetch_kb` ids and
   `browse_kb` paths as well as queries, so an OKF bundle root can be an environment-swappable token.
+- **[A2]** `build()` gains a `writable: bool = True` parameter that decides whether `write_kb` is
+  emitted at all.
+  - Today `write_kb` is emitted unconditionally and gated per call (`knowledgebuilder.py:366`),
+    deliberately, because the original four tools are a compatibility promise. That default is
+    unchanged: an existing `build()` call with no argument emits exactly the tools it emits today.
+  - A consumer needs the tool **absent**, not present-and-refusing — an attached tool the agent is
+    told it may not use is prompt surface spent on a dead end. `build(writable=False)` omits it.
+  - Filtering the returned list by function name in the OKF layer was rejected: it couples the caller
+    to the tool functions' `__name__`s, which `ToolBuilder.bind()` already treats as load-bearing.
+- **[A2]** `KnowledgeBuilder.__init__` accepts a **per-backend** semantic map in addition to the
+  existing flat one, because `okf.databases.<name>.semantic_map` is declared per database.
+  - The existing `semantic_map: dict[str, str]` parameter keeps its meaning — one map applied to every
+    registered backend — and is unchanged for every current caller.
+  - The new form maps a backend name to its own map; a per-backend entry wins over the flat map for
+    that backend. Merging the per-database maps into one flat map was rejected: an agent's builder
+    holds several databases, and two of them may legitimately bind the same token to different paths.
+  - `KnowledgeBuilder` gains no role, agent, or OKF knowledge from this — it stays a generic router
+    over declared backends.
+
+### [A2] OKF configuration — the `okf` block
+
+- New **`okf`** section in `AKConfig` (`core/config.py`). **The presence of the block is the
+  enablement signal**, matching `thread` and `schedule`; there is no `enabled` flag, because naming an
+  agent in a role is itself the deliberate opt-in.
+- The block declares **one or more OKF databases**, keyed by name, each naming the agents that hold
+  each role against it:
+
+```yaml
+okf:
+  databases:
+    warehouse:
+      type: local                     # local | s3 | <dotted path to a DocumentStore>
+      uri: ./bundle
+      description: "Analytics warehouse concepts, one per table."
+      refresh_seconds: 300
+      semantic_map:
+        "<TABLES>": tables
+      consumer: [reader1, reader2]
+      producer: [writer1]
+      curator:  [curator1]
+
+    policies:
+      type: s3
+      uri: s3://kb-bucket/policies
+      description: "Company policy knowledge."
+      refresh_seconds: 600
+      consumer: [reader1]
+      curator:  [writer1]
+```
+
+- **The map key is the backend name.** It is what `OKFManager` is constructed with and therefore what
+  the agent passes as the `backend` argument to every KB tool.
+  - No separate `name` field: two unnamed bundles would both fall back to the literal `"okf"`
+    (`okf/manager.py:159`) and collide on `KnowledgeBuilder`'s duplicate-name check.
+- **Per-database fields**, each mapping to an existing constructor argument so the block adds no
+  concept the programmatic path does not already have:
+
+  | Field | Maps to | Required |
+  |---|---|---|
+  | `type` | selects the `DocumentStore` implementation | yes |
+  | `uri` | `DocumentStore.from_uri(uri)` (`store/base.py:151`) | yes |
+  | `description` | `OKFManager(description=...)` | no |
+  | `refresh_seconds` | `OKFManager(refresh_seconds=...)`, default 300, `null` disables refresh | no |
+  | `semantic_map` | `KnowledgeBuilder`'s per-backend map | no |
+  | `consumer` / `producer` / `curator` | role membership, below | >= 1 agent across the three |
+
+- **`type` is deliberately redundant with `uri`, and is validated against it.** `from_uri` already
+  infers the store from the scheme, so this is a departure from the house rule against adding a
+  selector existing configuration can derive (`ak-dev-architecture`, House Patterns 2).
+  - The reason: the block is the surface a deployment edits by hand, and an explicit declaration that
+    must agree with the uri turns a silent misconfiguration into a startup error. `type: local` with
+    an `s3://` uri raises `AKConfigError` naming both values.
+  - `type` accepts the two built-in short names plus a dotted path to a `DocumentStore` subclass,
+    which is what keeps the bring-your-own store reachable from config as it is from code.
+  - **How the two combine**: `local` and `s3` hand `uri` to `DocumentStore.from_uri`, which already
+    resolves both schemes; a dotted-path `type` resolves the class through `resolve_dotted`
+    (`core/util/factory.py`) and passes `uri` to it as its location argument. The agreement check
+    applies only to the two built-ins, since a custom store defines its own uri meaning.
+- `max_concepts` and `write_prefix` stay implementation defaults and are **not** configurable.
+  `max_concepts` is the manifest envelope decision 7 already settled and bounded; `write_prefix` is
+  bundle layout the OKF layer owns. Neither is a per-deployment property, and both remain settable on
+  the programmatic path.
+- **Validation, at config load**, each raising `AKConfigError`:
+  - A declared database naming **no agent** across its three role lists. A bundle nobody can reach is
+    always a mistake, and it is the one that fails silently otherwise.
+  - The same agent named as both `producer` **and** `curator` of the **same** database. Across
+    *different* databases this is legitimate and expected.
+  - `type` disagreeing with the `uri` scheme, or a `type` short name that is neither built-in nor a
+    resolvable dotted path.
+
+### [A2] OKF roles — what each one gets
+
+- Three roles, **specific to OKF**. This introduces no generic role or permission framework into Agent
+  Kernel: nothing outside `knowledgebase/okf/` learns the words consumer, producer, or curator, and
+  `SystemToolFactory._agent_allowed` (`core/tool.py:167`) — the flat `agents` allow-list every other
+  capability uses — is untouched.
+
+  | Role | Tools | Mandate carried in the prompt |
+  |---|---|---|
+  | `consumer` | read | navigate the bundle and answer from it |
+  | `producer` | read + write | add new knowledge to the bundle |
+  | `curator` | read + write | review, correct, update and maintain existing knowledge |
+
+- **`producer` and `curator` are identical in permission** and differ only in the prompt section
+  appended for them. The distinction is responsibility, not capability.
+- **Read tools** for an OKF backend are `get_schemas`, `get_all_kb_descriptions`, `read_kb`,
+  `search_kb`, `fetch_kb`, `browse_kb` — `search_kb` among them only because of the relaxed gate
+  above. **Write adds** `write_kb`.
+- **Permission is per `(agent, database)` pair, not per agent.** An agent may be a producer of one
+  database and a consumer of another, and both hold simultaneously.
+- An agent named in no database receives no OKF tools and no OKF prompt.
+
+### [A2] Binding and enforcement
+
+- **Binding goes through the existing capability path**, with no new machinery: one OKF branch in
+  `SystemToolFactory.get_all(agent_name)` (`core/tool.py:179`) and
+  `get_system_prompt_suffix(agent_name)` (`core/tool.py:224`), reaching agents through
+  `Agent._attach_system_tools()` and `Agent._setup_system_prompt()` (`core/base.py:530,520`). The
+  capability's prompt section rides the first `SystemTool.description`, the sandbox pattern
+  (`sandbox/tools.py:309-340`).
+  - `SystemTool.name` and its `func.__name__` must stay identical, per the `AnalyzeAttachmentsTool`
+    regression (`ak-dev-architecture`, Tools).
+- **Agent Kernel constructs everything on the config path**: the `DocumentStore`s, the `OKFManager`s,
+  and a **per-agent `KnowledgeBuilder`** holding only the databases that agent has a role in, built
+  with `writable=<agent holds a writable role in at least one of them>`.
+- **What is attached, at agent init:**
+  - no role in any database -> nothing at all;
+  - a role in >= 1 database -> the read tools;
+  - a writable role in >= 1 database -> `write_kb` as well.
+- **What is permitted, at call time.** A per-agent builder alone cannot express the mixed case —
+  `write_kb(backend, ...)` takes the backend as an *argument*, so one attached tool reaches every
+  database in that agent's builder. The OKF layer therefore wraps the write tool and enforces the
+  writable subset per call:
+  - the calling agent resolves through `ToolContext` / `Agent.current()`, both populated by all six
+    framework adapters (`framework/*/`, `core/base.py:415`);
+  - `get_schemas` and `get_all_kb_descriptions` list only that agent's databases;
+  - `write_kb` against a database where the agent is consumer-only returns the actionable capability
+    string, never an exception into the framework — the established tool-boundary behavior.
+  - The enforcement wrapper lives in the OKF layer. `KnowledgeBuilder` is not made agent-aware, which
+    is what keeps the role model out of the generic router.
+- **The role prompt is composed per agent from config alone** — the databases it can reach, each
+  `description`, whether it reads or reads-and-writes each one, and the per-database mandate.
+  - Nothing in the prompt requires a constructed backend, so **agent construction order does not
+    matter**: an agent built before or after the backends gets the same instructions. The tools
+    resolve their backend when called.
+  - The protocol the OKF example hand-writes today (schema first, browse before search, fetch the
+    concept, cite the path, report the trust tier) moves into the consumer section of this prompt, so
+    it ships with the capability instead of being copied per application.
+- **Backends are constructed once and shared** across the per-agent builders. `OKFManager.connect()`
+  walks the whole store from `__init__` and blocks by design, so N configured databases cost N walks
+  at startup — for S3, a paginated listing plus a ranged GET per concept, per bundle. Stated because
+  it is the one cost that scales with the new config.
 
 ### Extensibility
 
@@ -514,8 +716,9 @@ classDiagram
   returns a mapping (the `StarburstManager` collision above); records carry `metadata["id"]` when
   `fetch` is declared, and that id contains no `,`; unknown keys round-trip at both record and
   metadata level; every operation accepts `**kwargs`; both construction-time invariants are enforced
-  and each error names the backend without reading `backend_name`; and `read()` routes on
-  `capabilities.query` — to `query()` when it is `True`, to `search()` otherwise.
+  and each error names the backend without reading `backend_name`. **[A2]** The routing assertion
+  moves to the tool layer: `read_kb` routes on `capabilities.query` — to `query()` when it is `True`,
+  to `search()` otherwise — since the ABC no longer carries `read()`.
 - `knowledgebase/__init__.py` gains **lazy** exports via PEP 562 `__getattr__` (the
   `deployment/aws/__init__.py` pattern) for `KnowledgeBase`, `KnowledgeBuilder`,
   `KnowledgeCapabilities`, `Record`, `KnowledgeRecord`, `KnowledgeMetadata`, and the errors — fixing
@@ -533,6 +736,17 @@ of "complete" for a new backend, and the PR guidelines ask for an example with a
   through `KnowledgeBuilder`, and a `README.md` exercising `browse_kb` → `fetch_kb` → `search_kb`
   against real bundle paths, which is the capability-gated tool set this change exists to make
   reachable.
+  - **[A2]** The example grows to **three agents** — one consumer, one producer, one curator — wired
+    entirely through a `config.yaml` beside `demo.py`, the convention every other example follows.
+  - **[A2]** `demo.py` loses its `KnowledgeBuilder`, its `OpenAIToolBuilder.bind(...)` call and its
+    hand-written EXECUTION PROTOCOL. What is left is three agents and their descriptions, which is the
+    point of the amendment: the file stops teaching OKF and starts using it.
+  - **[A2]** The bundle becomes writable so the producer and curator have somewhere to write. Writes
+    land under the bundle's `write_prefix`; the example prescribes no special git-ignore or
+    temp-copy handling, and the agent chooses its write target from the configured databases
+    (decision 16).
+  - **[A2]** The `README.md` covers both paths — the config-driven one as the default, and the
+    programmatic one it does not replace.
 - `docs/docs/advanced/knowledge-bases.md` — the capability model (`KnowledgeCapabilities`, the five
   operations, which tools each capability emits), the OKF backend, and `DocumentStore` local-vs-S3
   configuration.
@@ -580,6 +794,8 @@ Each is intentional; each needs a test.
    `ChromaManager`, `Neo4jManager`, `StarburstManager` are **renamed** to `search`/`query`/`query`
    respectively; the base alias preserves `read()` for every caller. A third-party subclass that
    overrides `read()` is unaffected.
+   - **Superseded in part by [A2] item 14**: the renames stand, but no base alias remains — `read()`
+     is removed, and a third-party override is left uncalled rather than unaffected.
 2. `StarburstManager.write` raises `KnowledgeCapabilityError` instead of `NotImplementedError`
    (`starburst.py:141`). `KnowledgeCapabilityError` does **not** subclass `NotImplementedError`, so
    any caller catching the old type must be updated — in-tree there are none.
@@ -622,15 +838,49 @@ Each is intentional; each needs a test.
     not optional. Every functioning bring-your-own backend calls `super().__init__()` today, since
     that is what initializes `_dynamic_schema` (`base.py:29`), so this item reaches all of them; the
     "no edit needed" claim under [Operation set](#operation-set-on-knowledgebase) is about the `read()`
-    path only.
+    path only, and **[A2] item 14 withdraws even that**: with `read()` removed, a bring-your-own
+    backend must declare and implement `search` or `query` to stay reachable.
 
-**Non-changes**, to be asserted: `Record` stays `Mapping[str, Any]` and stays the type on every
-signature (`KnowledgeMetadata`/`KnowledgeRecord` are documentation-only); `read`/`write` signatures,
-including their `**kwargs`, which every new operation also carries; the four existing tool names and
-signatures; `KnowledgeBuilder.__init__`'s `backends` + `semantic_map` signature;
-`add_schema`/`format_results`/`close`; the `schema=` keyword on `StarburstManager.__init__`; no
-framework adapter changes; no `AKConfig` section added; every existing example
-(`examples/cli/knowledgebase/openai/*`) runs unmodified.
+**[A2] Added by the amendment.** Items 14-19 are new; each is intentional and each needs a test.
+
+14. **`KnowledgeBase.read()` is removed.** A public method on a public ABC disappears; the routing it
+    performed is unchanged and now lives in `read_kb`. A third-party backend that overrode `read()`
+    keeps the method but nothing calls it — it must declare and implement `search` or `query`
+    instead. This supersedes item 1: `ChromaManager`/`Neo4jManager`/`StarburstManager` are still
+    renamed to `search`/`query`/`query`, but no base alias remains behind them.
+15. **`search_kb` is emitted whenever any backend declares `search`**, no longer requiring `query` as
+    well. Every application with a search-capable backend gains a tool it did not have. For a
+    search-only backend `read_kb` and `search_kb` now reach the same `search()`; their docstrings are
+    corrected so the difference they claim is the difference that exists. Prompt-visible for every
+    Chroma and OKF deployment. This supersedes the narrow-gate half of item 7.
+16. **`build()` gains `writable: bool = True`.** Default behavior is byte-for-byte unchanged; passing
+    `False` omits `write_kb` from the returned list.
+17. **`KnowledgeBuilder.__init__` accepts a per-backend semantic map** alongside the existing flat
+    one. Additive; the flat parameter's meaning and every current call are unchanged. This narrows
+    the Non-changes assertion below, which previously froze that signature.
+18. **`OKFManager.__init__`'s `producer` parameter is renamed to `write_actor`**
+    (`okf/manager.py:106`). It names the actor stamped into `generated.by` on write and collides
+    head-on with the `producer` *role* the amendment introduces, in the same class. The parameter is
+    keyword-only in practice and has no in-tree caller passing it, but it is a public constructor
+    argument and the rename is therefore breaking for anyone who set it.
+19. **An `okf` block in `AKConfig` binds tools and appends instructions to named agents.** For an
+    application that adds the block, agents gain tools and prompt text they did not have; for every
+    application without it, nothing changes. This supersedes decision 1 and the corresponding
+    non-goal.
+
+**Non-changes**, to be asserted, **as amended by [A2]**: `Record` stays `Mapping[str, Any]` and stays
+the type on every signature (`KnowledgeMetadata`/`KnowledgeRecord` are documentation-only); the
+`write` signature including its `**kwargs`, which every operation carries; the four existing tool
+names and their signatures, `read_kb` included; `add_schema`/`format_results`/`close`; the `schema=`
+keyword on `StarburstManager.__init__`; no framework adapter changes; the programmatic construction
+path (`OKFManager` + `KnowledgeBuilder` + a framework `ToolBuilder`) keeps working with no config
+present; the examples for the other backends
+(`examples/cli/knowledgebase/openai/{chromadb,neo4j,starburst,multi}`) run unmodified.
+
+Three entries of the original list no longer hold and are superseded above: the `read` signature
+(item 14 removes the method), `KnowledgeBuilder.__init__`'s signature (item 17 extends it additively),
+and "no `AKConfig` section added" (item 19 adds the `okf` block). The OKF example itself is rewritten
+by this amendment; it is the change's own example, not a pre-existing one.
 
 ## Deviations from the proposed class diagram
 
@@ -666,7 +916,15 @@ is adopted as-is in substance. Two changes:
   `OKFManager` an embedder.
 - **An OKF authoring/enrichment agent.** `write` emits conformant documents; the producer-side
   pipeline is a separate change.
-- **A `knowledgebase` block in `AKConfig`.** Backends stay application-constructed, as today.
+- **Superseded by [A2]: a `knowledgebase` block in `AKConfig`.** The original non-goal kept all
+  backends application-constructed. The amendment adds an `okf` block — **for OKF only**. Chroma,
+  Neo4j, Starburst and any bring-your-own backend remain application-constructed with no config
+  surface, and the programmatic path stays fully supported for OKF too.
+- **[A2] A generic role or permission framework.** `consumer`/`producer`/`curator` are OKF concepts
+  living in the OKF package. No other capability learns them, `SystemToolFactory._agent_allowed` is
+  untouched, and `KnowledgeBuilder` gains no agent awareness.
+- **[A2] Per-database roles for non-OKF backends**, and mixing a configured OKF database into an
+  application's own hand-built `KnowledgeBuilder`. The two paths coexist but are not composed.
 - Bundle-level concurrency control, versioning, or locking on write.
 - A shared or cross-pod manifest cache, spill-to-disk, or LRU eviction. The manifest is per process
   and bounded by `max_concepts`; a bundle outgrowing that envelope is a separate change.
@@ -683,6 +941,8 @@ Resolved with the maintainer on 2026-08-31. The requirements above already refle
 1. **Config — no `AKConfig` section.** Applications construct the backend and its `DocumentStore`
    explicitly, as they do today. `DocumentStore.from_uri` keeps local-in-dev / S3-in-prod a one-string
    change; reading that string from the environment stays the application's job.
+   - **Superseded by [A2] decision 12**, for OKF only. The programmatic path it describes remains
+     fully supported and is still the only path for every other backend.
 2. **`kinds` — open `list[str]`.** `vector`, `structured`, `graph`, `document` are documented
    conventional values, not a closed enum. Extensibility wins over agent-side routability, and the
    values are advisory anyway — routing is driven by the boolean capability flags and
@@ -717,7 +977,8 @@ Resolved with the maintainer on 2026-08-31. The requirements above already refle
 
 Items 9-11 were resolved in review of this document on 2026-09-01.
 
-9. **`read()` routes on `capabilities.query`, and `query_language` is bidirectional with it.** Gating
+9. **`read()` routes on `capabilities.query`, and `query_language` is bidirectional with it.**
+   (**[A2]**: the rule is unchanged; it is `read_kb` that applies it now — see item 14.) Gating
    on `query_language` left `query=False` with a language set constructible, which would have routed
    `read()` at a `query()` that raises even though `search` was declared and implemented. The boolean
    is the gate, the invariant makes the two inseparable, and the rule is stated once — in [Operation
@@ -730,3 +991,56 @@ Items 9-11 were resolved in review of this document on 2026-09-01.
     trades a parse failure agents hit routinely for an id-space restriction they never hit; the
     restriction is enforced at write and walk time rather than assumed, so it cannot silently produce
     an unfetchable id.
+
+Items 12-17 were resolved with the maintainer on 2026-09-18 and are the substance of amendment [A2].
+
+12. **OKF is configuration-driven, and the config carries the databases.** An `okf` block declares one
+    or more bundles with their `type`, `uri`, `description`, `refresh_seconds` and `semantic_map`, and
+    Agent Kernel constructs the stores, the managers and the builders. The goal is that an application
+    using OKF does not have to know how OKF works — which the hand-wired example showed it currently
+    must. The programmatic path is not replaced; the change is additive.
+13. **Write permission is per `(agent, database)`, enforced at call time.** An agent listed as
+    `producer` or `curator` of a database may write to *that* database; being writable somewhere does
+    not grant writing everywhere. The alternative — coarse "write somewhere means write everywhere" —
+    was rejected because it would contradict what the configuration plainly says. `write_kb` resolves
+    the calling agent through `ToolContext` and refuses a database where it is consumer-only.
+14. **`producer` and `curator` differ by prompt, not by permission.** Both read and write; the
+    producer's mandate is to add new knowledge, the curator's to review and maintain what exists.
+    Giving them different tool sets was considered and rejected — the responsibilities differ, the
+    operations do not.
+15. **`type` is kept alongside `uri` and validated against it.** Explicitness at the cost of a
+    redundant field, with the redundancy converted into a startup check. This is a stated departure
+    from the house rule against selectors that existing configuration can derive.
+16. **The example prescribes nothing about where writes land.** The bundle is writable and the agent
+    chooses its target from the configured databases. No git-ignore rule, no temp-copy step: the
+    example demonstrates the capability rather than working around the fact that it is checked in.
+17. **`max_concepts` and `write_prefix` stay out of the config.** They are implementation defaults the
+    OKF layer owns, not per-deployment properties.
+
+Items 18-19 were the amendment's open questions, resolved with the maintainer on 2026-09-18.
+
+18. **Double-binding warns; it does not skip or fail.** An application may add the `okf` block *and*
+    keep a hand-built `KnowledgeBuilder` bound to the same agent, producing two sets of identically
+    named tools — `Agent._append_tools` dedups by object identity only (`core/base.py:540`), so it
+    does not catch this. The OKF layer logs a `WARNING` naming the agent and the duplicated tool
+    names, and **attaches anyway**.
+    - Detection is possible because the framework adapters hand the already-built native agent to the
+      AK wrapper, which only then calls `_attach_system_tools()`
+      (`framework/openai/openai.py:366-376`) — so the manually bound tools are visible at attach time.
+    - Attaching anyway keeps the rule that no existing application's behavior changes. The cost is
+      accepted: on a framework that rejects duplicate tool names, such an agent still fails at bind
+      time, with the warning explaining it rather than preventing it.
+    - Skipping AK's own binding was the alternative and stays a one-method change if the warning
+      proves insufficient in practice.
+19. **A read-only store under a writable role warns; it does not fail the app build.** A database
+    whose resolved store reports `writable=False` while the block names a `producer` or `curator`
+    logs a `WARNING` naming the database and the agents, and the app starts.
+    - The reason it is not an `AKConfigError` like the block's other validations: those check the
+      config **text** — a database naming no agents, a `type` disagreeing with its `uri` — and are
+      wrong wherever they run. This one checks the **environment**, and the same file can be correct
+      in production while the bundle is read-only in CI, under a read-only volume mount, or behind an
+      S3 prefix whose write permission is not visible at construction time. Failing the build on an
+      environmental condition would stop a correct config from booting where it was never meant to
+      write.
+    - The residual cost is a warning that can be missed in a busy log, leaving an agent that is
+      instructed to write and refused every time.
