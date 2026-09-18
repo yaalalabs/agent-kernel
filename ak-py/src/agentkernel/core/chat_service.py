@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import json
 import logging
 from collections.abc import AsyncGenerator, Generator, Iterator
@@ -460,11 +461,15 @@ class ChatService:
         handler = self.prepare_agent_handler(req.session_id, req.agent)
 
         def _stream() -> Generator[StreamChunk, None, None]:
-            try:
-                for chunk in handler.run_stream_sync(requests, acting_user_id=req.user_id):
-                    yield chunk
-            except Exception as e:
-                yield StreamChunk(error=str(e), done=True)
+            # closing(): a for loop does not close its iterator when GeneratorExit unwinds this
+            # frame, so a consumer that abandons the stream would leave the run's teardown to
+            # whenever the bridge generator happens to be collected. See iterate_async_sync.
+            with contextlib.closing(handler.run_stream_sync(requests, acting_user_id=req.user_id)) as chunks:
+                try:
+                    for chunk in chunks:
+                        yield chunk
+                except Exception as e:
+                    yield StreamChunk(error=str(e), done=True)
 
         return _stream()
 
@@ -664,12 +669,14 @@ class ChatService:
         chunks = self.execute_stream_sync(req, requests)
 
         def _stream() -> Generator[str, None, None]:
-            try:
-                for chunk in chunks:
-                    yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
-            except Exception as e:
-                error_chunk = StreamChunk(error=str(e), done=True)
-                yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
+            # closing(): see execute_stream_sync — the same reason, one wrapper further out.
+            with contextlib.closing(chunks) as raw_chunks:
+                try:
+                    for chunk in raw_chunks:
+                        yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
+                except Exception as e:
+                    error_chunk = StreamChunk(error=str(e), done=True)
+                    yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
 
         return _stream()
 

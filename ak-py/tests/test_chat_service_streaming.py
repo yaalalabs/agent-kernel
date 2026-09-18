@@ -209,3 +209,59 @@ def test_process_stream_chat_sync_reports_a_mid_run_failure_after_the_chunks_alr
         '{"delta": "par", "done": false, "session_id": "session-1"}',
         '{"done": true, "error": "stream blew up", "session_id": "session-1"}',
     ]
+
+
+def test_execute_stream_sync_closes_its_inner_iterator_by_contract(monkeypatch):
+    """Abandoning the stream must close the run because the wrapper closes it, not because
+    CPython happened to collect it.
+
+    A plain ``for`` does not close its iterator when ``GeneratorExit`` unwinds the wrapper's
+    frame; today's teardown rides on the refcount finalizer instead. Keeping a reference to the
+    inner iterator here is what tells the two apart: it cannot be collected, so if the teardown
+    still runs, the wrapper is the one that ran it.
+    """
+    torn_down = []
+
+    def _inner():
+        try:
+            yield StreamChunk(delta="a")
+            yield StreamChunk(delta="b")  # pragma: no cover - the consumer stops before this
+        finally:
+            torn_down.append("closed")
+
+    held = _inner()  # outlives the wrapper, so nothing but the wrapper can close it
+
+    monkeypatch.setattr(
+        "agentkernel.core.chat_service.AgentHandler.run_stream_sync",
+        lambda self, requests, acting_user_id=None: held,
+    )
+    _install_agent_service(monkeypatch, None)
+    monkeypatch.setattr("agentkernel.core.chat_service.ChatService.prepare_agent_handler", lambda self, session_id, agent: AgentHandler())
+
+    stream = ChatService().execute_stream_sync(BaseRunRequest(prompt="Hi", session_id="session-1", agent="test-agent"))
+    next(stream)
+    stream.close()
+
+    assert torn_down == ["closed"], "the wrapper left the inner iterator's teardown to the garbage collector"
+
+
+def test_process_stream_chat_sync_closes_its_inner_iterator_by_contract(monkeypatch):
+    """The same contract one wrapper further out (see the test above for why the reference)."""
+    torn_down = []
+
+    def _inner():
+        try:
+            yield StreamChunk(delta="a")
+            yield StreamChunk(delta="b")  # pragma: no cover - the consumer stops before this
+        finally:
+            torn_down.append("closed")
+
+    held = _inner()
+
+    monkeypatch.setattr("agentkernel.core.chat_service.ChatService.execute_stream_sync", lambda self, req, requests=None: held)
+
+    stream = ChatService().process_stream_chat_sync(req=BaseRunRequest(prompt="Hi", session_id="session-1", agent="test-agent"))
+    next(stream)
+    stream.close()
+
+    assert torn_down == ["closed"], "the wrapper left the inner iterator's teardown to the garbage collector"

@@ -13,9 +13,12 @@ time and yields each as it is produced.
 
 import asyncio
 import contextvars
+import logging
 import threading
 import warnings
 from typing import Any, AsyncGenerator, Coroutine, Generator, Optional
+
+_log = logging.getLogger("ak.core.async_bridge")
 
 
 def run_async_sync(coro: Coroutine) -> Any:
@@ -120,6 +123,13 @@ def _pump(loop: asyncio.AbstractEventLoop, agen: AsyncGenerator) -> Generator[An
     without it the run's own `finally` — storing the session, clearing the volatile cache —
     would not run until the generator was garbage collected.
 
+    That close is also the only place a teardown failure can be reported from. A caller that
+    abandons a stream does not call close() itself — it drops the generator and lets the
+    interpreter finalize it — and an exception raised while finalizing a generator is printed
+    to stderr as "Exception ignored in: ..." and goes no further. Logging it here is what puts
+    it in front of an operator; it is re-raised so a caller that did close explicitly still
+    sees it.
+
     :param loop: Event loop to drive each step on.
     :param agen: Async generator to consume.
     :return: Generator yielding each item the async generator produces.
@@ -133,4 +143,8 @@ def _pump(loop: asyncio.AbstractEventLoop, agen: AsyncGenerator) -> Generator[An
                 return
             yield item
     finally:
-        loop.run_until_complete(loop.create_task(agen.aclose(), context=context))
+        try:
+            loop.run_until_complete(loop.create_task(agen.aclose(), context=context))
+        except Exception:
+            _log.exception("Streaming run failed while being torn down")
+            raise

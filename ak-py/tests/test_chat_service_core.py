@@ -41,8 +41,13 @@ def _stream_handler(chunks):
         for chunk in chunks:
             yield chunk
 
+    def _chunks(requests, acting_user_id=None):
+        # A generator, not a list: run_stream_sync hands back an iterator now (#741), and the
+        # wrapper closes it, so a double that returns a list no longer matches the interface.
+        yield from chunks
+
     handler.run_stream_async.side_effect = _achunks
-    handler.run_stream_sync.return_value = list(chunks)
+    handler.run_stream_sync.side_effect = _chunks
     return handler
 
 

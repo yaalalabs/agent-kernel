@@ -7,6 +7,7 @@ bridge could not produce — rather than the items themselves.
 
 import asyncio
 import contextvars
+import logging
 import threading
 import warnings
 
@@ -92,6 +93,30 @@ class TestIterateAsyncSync:
         iterator.close()
 
         assert cleaned_up == ["closed"]
+
+    def test_a_teardown_failure_is_logged_and_re_raised(self, caplog):
+        """A teardown failure has nowhere else to surface.
+
+        The consumers abandon a stream rather than closing it, and an exception raised while the
+        interpreter finalizes a generator is printed to stderr as "Exception ignored in: ..." and
+        reaches no logger and no caller. Logging it at the close is what puts it in front of an
+        operator; the re-raise keeps it visible to a caller that did close explicitly.
+        """
+
+        async def _agen():
+            try:
+                yield 1
+            finally:
+                raise RuntimeError("session store failed during teardown")
+
+        iterator = iterate_async_sync(_agen())
+        assert next(iterator) == 1
+        with caplog.at_level(logging.ERROR, logger="ak.core.async_bridge"):
+            with pytest.raises(RuntimeError, match="session store failed during teardown"):
+                iterator.close()
+
+        assert "Streaming run failed while being torn down" in caplog.text
+        assert "session store failed during teardown" in caplog.text
 
     def test_runs_on_a_thread_that_has_no_event_loop(self):
         async def _agen():
