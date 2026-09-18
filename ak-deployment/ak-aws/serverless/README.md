@@ -1066,7 +1066,6 @@ authorizer = {
   handler_path          = "auth.handler"                   # Required
   package_path          = "./dist/auth.zip"                # Required
   package_type          = "LocalZip"                       # Required
-  prefix                = "auth"                           # Required
   result_ttl_in_seconds = 0                                # Optional, defaults to 150
   environment_variables = {                                # Optional, defaults to {}
     JWT_SECRET = "your-secret-key"
