@@ -34,7 +34,7 @@ ak-py/                  The agentkernel PyPI package (core framework, all Python
     framework/           Adapters: openai, crewai, langgraph, adk, smolagents
     api/                 REST, MCP, A2A server layers
     deployment/          AWS (Lambda + ECS), Azure Functions, GCP Cloud Run handlers
-    integration/         Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail
+    integration/         adapter/ (the messaging seam) + Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail
     knowledgebase/       ChromaDB, Neo4j, Starburst backends
     guardrail/           OpenAI, AWS Bedrock, Walled AI guardrail providers
     trace/               Langfuse, OpenLLMetry tracing adapters

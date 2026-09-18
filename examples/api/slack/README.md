@@ -4,7 +4,7 @@ You need to setup the required Slack Apps and obtain the necessary slack key and
 Please enable subscription to **app_mention** event for the Bot.
 
 ## Setup
-Please refer to the [AgentSlackRequestHandler](../../../ak-py/src/agentkernel/integration/slack/README.md) for setting up the Slack
+Please refer to the [SlackInboundAdapter](../../../ak-py/src/agentkernel/integration/slack/README.md) for setting up the Slack
 
 ## Build
 
@@ -33,4 +33,4 @@ Run server:
 
 
 ## Advanced Slack integrations
-You can write your own Handler and pass it to RESTAPI.run() method. Please look at the AgentSlackRequestHandler class for details.
+You can subclass `SlackInboundAdapter` (override `_to_request`) or `SlackOutboundAdapter` and pass your instance to `WebhookRESTRequestHandler`. Please look at the `SlackInboundAdapter` class for details.
