@@ -376,6 +376,7 @@ kb = KnowledgeBuilder([backend])
 kb_tools = kb.build()  # -> get_schemas, read_kb, write_kb, get_all_kb_descriptions
                       #    (+ search_kb / fetch_kb / browse_kb when a registered
                       #     backend declares those capabilities - see step 4)
+                      # build(writable=False) omits write_kb for a read-only agent
 
 router = Agent(
   name="kb_router",
@@ -411,10 +412,11 @@ kb = KnowledgeBuilder(
   `derives_schema`, and inherits the store's writability.
 
 **Which tools the agent gets is decided by those declarations.** Four are always built
-(`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`). `fetch_kb` and `browse_kb` are added
-when a registered backend declares `fetch` / `browse`; `search_kb` only when one backend declares both
-`search` and `query`, which none of the built-ins does. So a Chroma, Neo4j or Starburst app gets four
-tools and an OKF app gets six — the agent's prompt never names an operation nothing can serve.
+(`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`), unless `build(writable=False)` drops
+`write_kb` for an agent that must never write. `fetch_kb`, `browse_kb` and `search_kb` are added when a
+registered backend declares `fetch` / `browse` / `search`. So a Neo4j or Starburst app gets four tools,
+a Chroma app five, and an OKF app seven — the agent's prompt never names an operation nothing can
+serve.
 
 **4a. Open Knowledge Format bundle:**
 

@@ -648,6 +648,20 @@ class KnowledgeBaseContract:
 
         assert knowledge_base.schema()["capabilities"] == knowledge_base.capabilities.model_dump()
 
+    def _read(self, knowledge_base: KnowledgeBase) -> list:
+        """
+        Call whichever read-shaped operation the backend declares.
+
+        The ABC no longer routes between the two, so the contract picks the operation the
+        declaration names rather than going through a shared entrypoint.
+
+        :param knowledge_base: Backend under test.
+        :return: Records the declared operation returned.
+        """
+        if knowledge_base.capabilities.query:
+            return knowledge_base.query(self.query_statement())
+        return knowledge_base.search(self.search_query())
+
     def test_contract_deriving_a_schema_means_deriving_something(self, knowledge_base: KnowledgeBase):
         if not knowledge_base.capabilities.derives_schema:
             pytest.skip(f"{knowledge_base.backend_name} does not derive a schema")
@@ -658,31 +672,8 @@ class KnowledgeBaseContract:
         # And the payoff: schema() answers with no add_schema() call at all.
         assert isinstance(knowledge_base.schema(), Mapping)
 
-    def test_contract_read_routes_on_the_declaration(self, knowledge_base: KnowledgeBase, monkeypatch):
-        # Spied rather than compared by result: a backend whose two operations happened to
-        # return the same rows would otherwise pass with a broken router.
-        routed = []
-        target = "query" if knowledge_base.capabilities.query else "search"
-        other = "search" if knowledge_base.capabilities.query else "query"
-
-        def record_call(text, limit=3, **kwargs):
-            routed.append((target, text, limit, kwargs))
-            return []
-
-        def refuse(text, limit=3, **kwargs):
-            pytest.fail(f"read() routed to {other} on a backend declaring query={knowledge_base.capabilities.query}")
-
-        monkeypatch.setattr(knowledge_base, target, record_call)
-        monkeypatch.setattr(knowledge_base, other, refuse)
-
-        knowledge_base.read("probe", limit=7, extra="forwarded")
-
-        assert routed == [(target, "probe", 7, {"extra": "forwarded"})]
-
-    def test_contract_read_returns_records_through_the_real_operation(self, knowledge_base: KnowledgeBase):
-        text = self.query_statement() if knowledge_base.capabilities.query else self.search_query()
-
-        self._assert_records(knowledge_base, knowledge_base.read(text))
+    def test_contract_the_declared_read_operation_returns_records(self, knowledge_base: KnowledgeBase):
+        self._assert_records(knowledge_base, self._read(knowledge_base))
 
     def test_contract_get_description_names_the_backend(self, knowledge_base: KnowledgeBase):
         description = knowledge_base.get_description()
@@ -697,8 +688,7 @@ class KnowledgeBaseContract:
 
     def test_contract_format_results_renders_the_rows_the_backend_produced(self, knowledge_base: KnowledgeBase):
         # Catches an override that raises on a record shape its own operation emits.
-        text = self.query_statement() if knowledge_base.capabilities.query else self.search_query()
-        rendered = knowledge_base.format_results(knowledge_base.read(text))
+        rendered = knowledge_base.format_results(self._read(knowledge_base))
 
         assert isinstance(rendered, str) and rendered
 

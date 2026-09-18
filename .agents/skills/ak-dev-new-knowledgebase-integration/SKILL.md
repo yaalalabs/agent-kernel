@@ -27,7 +27,7 @@ If the new source is **documents addressed by path**, do not start from scratch:
 
 - Understand architecture and contribution patterns from `.agents/skills/ak-dev-architecture/SKILL.md`
 - Understand existing knowledge base APIs:
-  - `ak-py/src/agentkernel/knowledgebase/base.py` (the ABC, `read()` routing, `schema()`)
+  - `ak-py/src/agentkernel/knowledgebase/base.py` (the ABC, the capability gates, `schema()`)
   - `ak-py/src/agentkernel/knowledgebase/model.py` (`KnowledgeCapabilities`, record typing)
   - `ak-py/src/agentkernel/knowledgebase/errors.py` (the error hierarchy)
   - `ak-py/src/agentkernel/knowledgebase/knowledgebuilder.py` (tool gating)
@@ -109,7 +109,7 @@ write operation is optional, and the declaration decides which ones you must imp
 
 | Declare | Implement | Serves |
 |---|---|---|
-| `search` | `search(query, limit)` | `read_kb`, and `search_kb` when `query` is declared too |
+| `search` | `search(query, limit)` | `read_kb` and `search_kb` |
 | `query` + `query_language` | `query(statement, limit)` | `read_kb` |
 | `fetch` | `fetch(ids)` | `fetch_kb` |
 | `browse` | `browse(path, limit)` | `browse_kb` |
@@ -129,12 +129,14 @@ Rules `KnowledgeBase.__init__` enforces:
 `KnowledgeBase.validate_capabilities(capabilities, subject)` is a static method, so a declaration can
 be checked without constructing a backend — which is how the contract suite exercises it.
 
-Never implement `read()`. It is concrete and routes on the declaration — to `query()` when `query` is
-declared, to `search()` otherwise — which is what lets one `read_kb` tool serve every backend.
+Never implement `read()`. There is no such method on the ABC, and one defined on your subclass is
+never called. The routing it used to do lives in the `read_kb` tool, which reaches `query()` when you
+declared `query` and `search()` otherwise — which is what lets one tool serve every backend.
 
-Note the narrow `search_kb` gate: it is checked **per backend**, so it appears only when one backend
-declares both `search` and `query`. A search-only backend needs no extra tool because `read_kb` already
-reaches `search()`.
+`search_kb`'s gate is the same shape as the other two: any backend declaring `search`. For a
+search-only backend it therefore reaches the same `search()` that `read_kb` does. That redundancy is
+deliberate — the two tools differ in what they promise, not in what they reach — and it is what lets a
+backend with no query language still advertise relevance retrieval by name.
 
 If the backend derives its own schema, declare `derives_schema=True` **and** return a non-empty mapping
 from `_derived_schema()`; the contract suite fails a backend that declares one without the other.
@@ -354,7 +356,7 @@ Validate that your backend works with `KnowledgeBuilder.build()` and tools:
   `search()` otherwise
 - `write_kb()` behaves as expected (or returns a readable capability message, not an exception)
 - the gated tools appear exactly when they should: `fetch_kb` if you declared `fetch`, `browse_kb` if
-  you declared `browse`, `search_kb` only if you declared both `search` and `query`
+  you declared `browse`, `search_kb` if you declared `search`
 - if you declared `derives_schema`, `get_schemas()` works with no `add_schema()` call anywhere
 
 ## Checklist

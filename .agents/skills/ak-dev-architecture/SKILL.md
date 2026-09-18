@@ -557,9 +557,10 @@ backend, use the `ak-dev-new-knowledgebase-integration` skill.
 - **`KnowledgeBase`** (`base.py`): the ABC. Only three members are abstract: `backend_name`,
   `connect()`, `get_description()`. Five operations are optional and each raises
   `KnowledgeCapabilityError` unless the backend declares it: `search(query, limit)`,
-  `query(statement, limit)`, `fetch(ids)`, `browse(path, limit)`, `write(records)`. `read()` is
-  **concrete** and routes to `query()` when `query` is declared and `search()` otherwise, which is what
-  lets one agent tool serve every backend. `schema()`, `add_schema()`, `_derived_schema()`,
+  `query(statement, limit)`, `fetch(ids)`, `browse(path, limit)`, `write(records)`. There is **no
+  `read()`**: every member is a declared capability, never a router over the others, and the rule that
+  lets one agent tool serve every backend lives in `KnowledgeBuilder.read_kb`. `schema()`,
+  `add_schema()`, `_derived_schema()`,
   `format_results()`, `close()` and the static `validate_capabilities()` come from the base;
   `schema()` writes `capabilities` last and unoverridably.
 - **`KnowledgeCapabilities`** (`model.py`): the per-instance declaration — `kinds` (open taxonomy),
@@ -570,13 +571,16 @@ backend, use the `ak-dev-new-knowledgebase-integration` skill.
 - **Errors** (`errors.py`): `KnowledgeError` base; `KnowledgeCapabilityError` (an undeclared operation,
   deliberately *not* a `NotImplementedError`); `KnowledgePathError` (a path escaping a store namespace).
 - **`KnowledgeBuilder`** (`knowledgebuilder.py`): wraps one or more `KnowledgeBase` instances and
-  `build()`s plain-function tools for binding via a framework's `ToolBuilder`. Four are always emitted
-  (`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`) and up to three more are appended on
-  their gates: `fetch_kb` (any backend declares `fetch`), `browse_kb` (any declares `browse`), and
-  `search_kb` (one backend declares **both** `search` and `query` — a per-backend check no built-in
-  satisfies). `write_kb` is the exception: the original four are a compatibility promise, so it is
-  always emitted and gated per call. It also resolves `semantic_map` placeholders in queries, browse
-  paths and each comma-separated `fetch` id segment.
+  `build(writable=True)`s plain-function tools for binding via a framework's `ToolBuilder`. Three are
+  always emitted (`get_schemas`, `read_kb`, `get_all_kb_descriptions`), `write_kb` joins them at index 2
+  unless `writable=False`, and up to three more are appended on their gates: `fetch_kb` (any backend
+  declares `fetch`), `browse_kb` (any declares `browse`), `search_kb` (any declares `search`).
+  `write_kb` is the exception to *capability* gating: the original four are a compatibility promise, so
+  a registered backend declaring `writable=False` is refused per call rather than hiding the tool —
+  `writable=False` answers the different question of whether this agent may write at all. `read_kb`
+  owns the routing rule (`query()` when `query` is declared, `search()` otherwise). It also resolves
+  `semantic_map` placeholders — and per-backend `backend_semantic_maps` merged over it — in queries,
+  browse paths and each comma-separated `fetch` id segment.
 - **Storage axis** (`store/`): `DocumentStore` (`store/base.py`) is bytes at paths, owning path
   containment for every caller; `LocalDocumentStore` (`local.py`, probes writability) and
   `S3DocumentStore` (`s3.py`, declares it, needs `boto3`). `DocumentStore.from_uri()` resolves a bare

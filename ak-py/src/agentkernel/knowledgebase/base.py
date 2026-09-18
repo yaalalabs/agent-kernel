@@ -22,8 +22,10 @@ class KnowledgeBase(ABC):
     optional; an undeclared one raises :class:`KnowledgeCapabilityError`, so the
     declaration and the implemented set must agree.
 
-    ``read()`` is concrete and routes to ``query()`` or ``search()`` on the declaration,
-    which is what lets one agent tool serve every backend.
+    There is deliberately no ``read()``. Every member of this class is a capability a
+    backend declares, never a convenience router over the others. The rule that one agent
+    tool serves every backend still holds, but it lives in ``KnowledgeBuilder.read_kb``,
+    which branches on the declaration and calls ``query()`` or ``search()`` itself.
 
     Backends can also receive runtime schema configuration via add_schema(), or
     self-describe by overriding _derived_schema(). The schema() method is an instance
@@ -187,23 +189,6 @@ class KnowledgeBase(ABC):
         :raises KnowledgeCapabilityError: If the backend does not declare ``writable``.
         """
         raise KnowledgeCapabilityError(self.backend_name, "write")
-
-    def read(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
-        """
-        Return the most relevant records for a query, routing on the declaration.
-
-        Backends declaring ``query`` receive the text as a statement; every other
-        backend receives it as a relevance search. This is the single entrypoint the
-        generic read tool uses, so one tool serves every backend.
-
-        :param query: Backend-specific query string.
-        :param limit: Maximum number of records to return.
-        :param kwargs: Backend-specific read options, forwarded unchanged.
-        :return: List of matched records.
-        """
-        if self.capabilities.query:
-            return self.query(query, limit=limit, **kwargs)
-        return self.search(query, limit=limit, **kwargs)
 
     def format_results(self, rows: List[Record]) -> str:
         """
