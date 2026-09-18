@@ -365,8 +365,8 @@ from agentkernel.knowledgebase import KnowledgeBase, KnowledgeCapabilities
 # - write(records)            persistence
 #
 # An undeclared operation raises KnowledgeCapabilityError rather than returning
-# an empty result. read(query, limit) is concrete and routes to query() or
-# search() on the declaration, so one read tool serves every backend.
+# an empty result. There is no read() on the ABC: the read_kb tool routes to
+# query() or search() on the declaration, so one tool serves every backend.
 # schema() and format_results() are provided by the base.
 ```
 

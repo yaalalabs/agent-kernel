@@ -9,7 +9,12 @@ log = logging.getLogger("ak.KnowledgeBuilder")
 
 
 class KnowledgeBuilder:
-    def __init__(self, backends: List[KnowledgeBase], semantic_map: Optional[Dict[str, str]] = None):
+    def __init__(
+        self,
+        backends: List[KnowledgeBase],
+        semantic_map: Optional[Dict[str, str]] = None,
+        backend_semantic_maps: Optional[Dict[str, Dict[str, str]]] = None,
+    ):
         """
         Initialize a knowledge builder that routes reads and writes to named backends.
 
@@ -55,7 +60,11 @@ class KnowledgeBuilder:
             interface methods used by this builder.
         :param semantic_map: Optional mapping of logical placeholders to physical
             identifiers used by backend queries. When omitted, no placeholder
-            translation is applied.
+            translation is applied. Applies to every registered backend.
+        :param backend_semantic_maps: Optional per-backend maps, keyed by ``backend_name``.
+            A backend's own map is applied over ``semantic_map``, so one token can mean
+            different things in two backends while the rest stay shared. An entry naming
+            an unregistered backend is ignored with a warning.
         :return: None.
         """
         validated_backends: Dict[str, KnowledgeBase] = {}
@@ -73,18 +82,35 @@ class KnowledgeBuilder:
 
         self.backends = validated_backends
         self.semantic_map = semantic_map or {}
+        self.backend_semantic_maps = backend_semantic_maps or {}
 
-    def _resolve_placeholders(self, text: str) -> str:
+        # Warned rather than raised: the per-backend maps are assembled by whichever layer
+        # decided which backends this builder holds, so a name that is not here is that
+        # layer's bug and not something a user typed.
+        for mapped_backend in self.backend_semantic_maps:
+            if mapped_backend not in validated_backends:
+                log.warning(
+                    "[init] Semantic map for %r will never be applied: no such backend is registered. Registered: %s.",
+                    mapped_backend,
+                    list(validated_backends.keys()),
+                )
+
+    def _resolve_placeholders(self, text: str, backend_name: str) -> str:
         """
         Translate semantic placeholders to backend-specific identifiers.
 
+        The backend's own map is merged over the shared one, so a token both define
+        resolves the way that backend declared it while every other token still resolves.
+
         :param text: Input text that may contain logical placeholder tags.
+        :param backend_name: Backend the text is bound for.
         :return: Text with placeholders resolved when mappings are available.
         """
-        if not text or not self.semantic_map:
+        mappings = {**self.semantic_map, **self.backend_semantic_maps.get(backend_name, {})}
+        if not text or not mappings:
             return text
         resolved_text = text
-        for logical_tag, physical_path in self.semantic_map.items():
+        for logical_tag, physical_path in mappings.items():
             if logical_tag in resolved_text:
                 resolved_text = resolved_text.replace(logical_tag, physical_path)
         return resolved_text
@@ -144,18 +170,21 @@ class KnowledgeBuilder:
         alternatives = self._backends_declaring(*(capabilities or (label,)))
         return f"Backend '{backend_name}' does not support {label}. Backends that do: {alternatives}."
 
-    def build(self):
+    def build(self, writable: bool = True):
         """
         Build and return callable tools for schema discovery, reads, and writes.
 
-        Four tools are always returned. Up to three more are appended, each only when
-        some registered backend declares the capability behind it, so an application's
-        agent never sees a tool nothing can serve.
+        Three tools are always returned, plus ``write_kb`` unless ``writable`` is False.
+        Up to three more are appended, each only when some registered backend declares the
+        capability behind it, so an application's agent never sees a tool nothing can serve.
 
-        ``write_kb`` is emitted unconditionally, unlike the other capability-bearing tools:
-        the design freezes the original four as a compatibility promise, so its gate is the
-        per-call check inside the tool rather than its presence in this list.
+        ``write_kb`` is not gated on any backend declaring ``writable``: the design freezes
+        the original four as a compatibility promise, so a read-only backend refuses the
+        call rather than hiding the tool. ``writable=False`` is a different question and the
+        caller's to answer -- an agent that must never write is not told the tool exists,
+        because an advertised tool it may never use is prompt surface spent on a dead end.
 
+        :param writable: When False, ``write_kb`` is omitted from the returned list.
         :return: List of callable tool functions.
         """
         for name, backend in self.backends.items():
@@ -184,29 +213,37 @@ class KnowledgeBuilder:
 
         def read_kb(backend: str, query: str, limit: int = 3) -> str:
             """
-            Query a knowledge base backend for relevant information.
+            Read from a knowledge base backend, whatever kind of backend it is.
 
-            :param backend: Backend name to query, as returned by get_schemas().
-            :param query: Backend-specific query text.
+            This is the backend-agnostic entry point: the backend's own declaration decides
+            how the text is read. A backend carrying a query language receives it as a
+            statement to execute; every other backend receives it as a relevance search.
+
+            :param backend: Backend name to read from, as returned by get_schemas().
+            :param query: Backend-specific query text, or a natural-language question.
             :param limit: Maximum number of results to return.
-            :return: Formatted query result string or error message.
+            :return: Formatted result string or error message.
             """
             log.debug(f"[read_kb] backend={backend!r} raw_query={query!r}")
             db = self.backends.get(backend)
             if not db:
                 return f"Unknown backend '{backend}'. Available: {list(self.backends.keys())}"
 
-            # read() falls through to search() whenever query is undeclared, so a backend
-            # declaring neither would report a missing search the agent never asked for.
+            # Both checked before either is reached: the routing below falls through to
+            # search() whenever query is undeclared, so a backend declaring neither would
+            # otherwise report a missing search the agent never asked for.
             if not self._declares(db, "search") and not self._declares(db, "query"):
                 return self._unsupported(backend, "reads", "search", "query")
 
-            resolved_query = self._resolve_placeholders(query)
+            resolved_query = self._resolve_placeholders(query, backend)
             if resolved_query != query:
                 log.debug(f"[read_kb] Translated query to: {resolved_query!r}")
 
             try:
-                results = db.read(resolved_query, limit=limit)
+                # The rule the ABC used to carry: a declared query language wins, search is
+                # the fallback. It lives here because it is a convenience this tool offers,
+                # not an operation a backend implements.
+                results = db.query(resolved_query, limit=limit) if self._declares(db, "query") else db.search(resolved_query, limit=limit)
                 return db.format_results(results)
             except Exception as e:
                 log.error(f"[read_kb] Execution error on {backend}: {e}")
@@ -235,7 +272,7 @@ class KnowledgeBuilder:
                 return "Error: provide at least one of 'text' or 'query'."
 
             # Apply semantic routing to write queries as well
-            resolved_query = self._resolve_placeholders(query)
+            resolved_query = self._resolve_placeholders(query, backend)
 
             metadata: dict[str, Any] = {"source": source}
             if resolved_query:
@@ -275,8 +312,9 @@ class KnowledgeBuilder:
             """
             Find the knowledge most relevant to a natural-language question.
 
-            Use this instead of read_kb when the backend also accepts a query language
-            and you want relevance ranking rather than an exact statement.
+            Always performs relevance retrieval, and refuses a backend that cannot rank.
+            Use read_kb to let the backend decide how to read your text; use this when you
+            specifically want ranked results and want to be told if you cannot have them.
 
             :param backend: Backend name to search, as returned by get_schemas().
             :param query: Natural-language description of what you are looking for.
@@ -291,7 +329,7 @@ class KnowledgeBuilder:
             if not self._declares(db, "search"):
                 return self._unsupported(backend, "search")
 
-            resolved_query = self._resolve_placeholders(query)
+            resolved_query = self._resolve_placeholders(query, backend)
             if resolved_query != query:
                 log.debug(f"[search_kb] Translated query to: {resolved_query!r}")
 
@@ -322,7 +360,7 @@ class KnowledgeBuilder:
 
             # Resolution runs per segment, after the split, so a placeholder standing for a
             # namespace root resolves the same way whether it arrives alone or in a list.
-            resolved_ids = [self._resolve_placeholders(segment) for segment in (raw.strip() for raw in ids.split(",")) if segment]
+            resolved_ids = [self._resolve_placeholders(segment, backend) for segment in (raw.strip() for raw in ids.split(",")) if segment]
             if not resolved_ids:
                 return "Error: provide at least one id."
 
@@ -352,7 +390,7 @@ class KnowledgeBuilder:
             if not self._declares(db, "browse"):
                 return self._unsupported(backend, "browse")
 
-            resolved_path = self._resolve_placeholders(path)
+            resolved_path = self._resolve_placeholders(path, backend)
             if resolved_path != path:
                 log.debug(f"[browse_kb] Translated path to: {resolved_path!r}")
 
@@ -363,12 +401,17 @@ class KnowledgeBuilder:
                 log.error(f"[browse_kb] Execution error on {backend}: {e}")
                 return f"Execution Error: {str(e)}"
 
-        tools = [get_schemas, read_kb, write_kb, get_all_kb_descriptions]
+        tools = [get_schemas, read_kb, get_all_kb_descriptions]
+        if writable:
+            # Inserted, not appended: the original four have a fixed order the design
+            # freezes, and get_all_kb_descriptions has always come last of them.
+            tools.insert(2, write_kb)
 
-        # search_kb has the narrowest gate of the three: for a search-only backend read_kb
-        # already reaches search(), so the tool is only worth its slot in the prompt once a
-        # backend declares query as well and read() therefore routes away from search().
-        if any(self._declares(backend, "search") and self._declares(backend, "query") for backend in self.backends.values()):
+        # The same shape as fetch_kb's and browse_kb's gate: emitted when some registered
+        # backend can serve it. For a search-only backend this does duplicate what read_kb
+        # reaches, which the two docstrings state rather than deny -- the alternative left an
+        # OKF-only or Chroma-only application with no search_kb at all.
+        if self._backends_declaring("search"):
             tools.append(search_kb)
         if self._backends_declaring("fetch"):
             tools.append(fetch_kb)

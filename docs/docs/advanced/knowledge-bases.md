@@ -42,9 +42,9 @@ declaration and the implemented set must agree:
 | `browse` | `browse(path="", limit=50)` | namespace enumeration |
 | `writable` | `write(records)` | persistence |
 
-`read(query, limit=3)` is **concrete and must not be overridden**. It routes on the declaration - to
-`query()` for a backend declaring `query`, to `search()` for every other backend - which is what lets one
-`read_kb` tool serve every backend.
+There is no `read()` on the ABC. Every member of it is a capability a backend declares, never a router
+over the others. One `read_kb` tool still serves every backend - the rule that makes that work lives in
+[`read_kb`](#knowledgebuilder-and-tools), which calls `query()` or `search()` on the declaration.
 
 The base also provides `add_schema()`, `schema()`, `_derived_schema()`, `format_results()` and `close()`;
 see [Schemas](#schemas) and [Optional overrides](#optional-overrides).
@@ -249,8 +249,9 @@ Four tools are always built:
 - `get_schemas()`: returns JSON with each backend's schema and metadata, including its declared
   `capabilities`. A backend whose `schema()` fails degrades to an `{"error": ...}` entry rather than failing
   the whole call.
-- `read_kb(backend: str, query: str, limit: int = 3)`: retrieve from a specific backend, routed through
-  `read()`.
+- `read_kb(backend: str, query: str, limit: int = 3)`: retrieve from a specific backend. This is the
+  backend-agnostic entry point: it calls `query()` on a backend declaring a query language and `search()`
+  on every other backend, so the agent does not need to know which kind it is addressing.
 - `write_kb(backend: str, text: str = "", source: str = "agent", query: str = "", params_json: str = "{}")`:
   persist to a backend.
 - `get_all_kb_descriptions()`: short descriptions of each registered backend.
@@ -260,15 +261,16 @@ agent's prompt never names an operation nothing can serve:
 
 | Tool | Emitted when |
 |---|---|
-| `search_kb(backend, query, limit=3)` | some backend declares **both** `search` and `query` |
+| `search_kb(backend, query, limit=3)` | some backend declares `search` |
 | `fetch_kb(backend, ids)` | some backend declares `fetch` |
 | `browse_kb(backend, path="", limit=50)` | some backend declares `browse` |
 
-`search_kb` has the narrowest gate, and it is checked **per backend**: for a search-only backend `read_kb`
-already reaches `search()`, so the extra tool is only worth its slot in the prompt once one backend declares
-`query` as well and `read()` therefore routes away from search. None of the built-in backends declares both,
-so a stock application - including the `multi/` demo that registers Chroma, Neo4j and Starburst together -
-gets the four base tools, while an OKF application gets six.
+All three gates have the same shape: the tool is emitted when some registered backend can serve it. For a
+search-only backend such as Chroma or OKF, `read_kb` reaches the same `search()` call that `search_kb` does;
+the two are distinguished by what they promise rather than by what they reach. `read_kb` lets the backend
+decide how to read the text, and `search_kb` always ranks and refuses a backend that cannot. So a stock
+application registering Chroma gets five tools, the `multi/` demo that registers Chroma, Neo4j and Starburst
+together gets five, and an OKF application gets seven.
 
 `write_kb` is the exception to gating. The original four tools are a compatibility promise, so it is always
 emitted and its check happens per call: a write to a backend declaring `writable=False` returns a message
@@ -285,6 +287,8 @@ result straight back into a fetch.
 In practice, the agent writes a query against the logical placeholder, and `KnowledgeBuilder` performs the translation immediately before the backend executes it. That means the agent can stay portable across environments while each deployment maps the same logical token to its own concrete target.
 
 Resolution is not limited to query strings: `KnowledgeBuilder` resolves placeholders in `read_kb` and `search_kb` queries, in `write_kb` queries, in `browse_kb` paths, and in each comma-separated segment of a `fetch_kb` id list - so a token can stand for a namespace root as naturally as for a table.
+
+A second parameter, `backend_semantic_maps`, takes one map per backend keyed by `backend_name`. A backend's own map is applied *over* `semantic_map`, so a token both define resolves the way that backend declared it while every other token still resolves from the shared map. This is what lets one builder hold two backends that bind the same token to different paths - unrepresentable if the maps were flattened into one. An entry naming a backend the builder does not hold is ignored with a warning.
 
 Example:
 
@@ -479,15 +483,16 @@ class MyBackend(KnowledgeBase):
         return "MyBackend stores domain-specific knowledge and supports full-text search."
 ```
 
-Do not implement `read()`. It is concrete and routes on the declaration: a backend declaring `query`
-receives the text as a statement, and every other backend receives it as a relevance `search`. That
-routing is what lets the one `read_kb` tool serve every backend.
+There is no `read()` to implement or override. Implement the operations you declared and nothing else:
+the `read_kb` tool routes to `query()` on a backend declaring a query language and to `search()` on every
+other backend, which is what lets one tool serve every backend. A `read()` defined on your subclass is
+never called.
 
 ### The operation set
 
 | Declare | Implement | Serves |
 |---|---|---|
-| `search` | `search(query, limit)` | relevance retrieval — `read_kb`, and `search_kb` when `query` is declared too |
+| `search` | `search(query, limit)` | relevance retrieval — `read_kb` and `search_kb` |
 | `query` + `query_language` | `query(statement, limit)` | query-language retrieval — `read_kb` |
 | `fetch` | `fetch(ids)` | retrieval by identity — `fetch_kb` |
 | `browse` | `browse(path, limit)` | namespace enumeration — `browse_kb` |
@@ -548,8 +553,9 @@ The capability model changes a few things an already-deployed agent can see. Eac
   generic `query` / `params` keys. `Neo4jManager.write` reads the generic keys and falls back to the old
   ones, so agent-issued writes are unaffected - but records already stored by Chroma carry the dead keys and
   are not migrated.
-- **`build()` may return up to seven callables rather than four**, when registered backends declare `fetch`,
-  `browse`, or both `search` and `query`.
+- **`build()` may return up to seven callables rather than four**, when registered backends declare
+  `search`, `fetch` or `browse`. It also takes `writable=False`, which drops `write_kb` and can return as
+  few as three.
 - **`format_results()` prefixes `[<id>]`** for backends declaring `fetch`. No built-in backend other than
   `OKFManager` declares it, so existing output is unchanged.
 - **`Neo4jManager.query` (formerly `read`) defaults to `limit=3`** instead of `limit=10`. `read_kb` always

@@ -1,9 +1,11 @@
 """The reshaped KnowledgeBase ABC (#553 iteration 2).
 
-Three things here are the contract every backend depends on and are easy to break silently:
-read() routing on the declaration, an undeclared operation raising rather than returning
-empty, and schema() precedence — where capabilities must be the one key a deployment cannot
-contradict through add_schema().
+Two things here are the contract every backend depends on and are easy to break silently:
+an undeclared operation raising rather than returning empty, and schema() precedence — where
+capabilities must be the one key a deployment cannot contradict through add_schema().
+
+Routing between query() and search() is no longer among them. It was a concrete read() on
+this class; it now lives in KnowledgeBuilder.read_kb, and so do its tests.
 
 Backends are declared inline rather than through a shared fixture; the reusable
 FakeKnowledgeBase lands with KnowledgeBaseContract.
@@ -77,44 +79,16 @@ class TestConstruction:
     def test_only_three_members_stay_abstract(self):
         assert set(KnowledgeBase.__abstractmethods__) == {"backend_name", "connect", "get_description"}
 
+    def test_the_abc_exposes_no_read_method(self):
+        # The guard that the removal stays removed. read() was a router over the operations
+        # rather than a capability any backend declared, and reviving it would put the
+        # routing rule in two places at once.
+        assert not hasattr(KnowledgeBase, "read")
+
     def test_a_backend_implementing_neither_read_nor_write_constructs(self):
         # read and write stopped being abstract, so the required surface is three members.
         backend = MinimalBackend(KnowledgeCapabilities(browse=True))
         assert backend.get_description().startswith("minimal:")
-
-
-class TestReadRouting:
-    def test_read_routes_to_query_for_a_query_backend(self):
-        backend = _querier()
-        assert backend.read("SELECT 1") == [{"text": "query:SELECT 1", "metadata": {}}]
-        assert backend.calls[0][0] == "query"
-
-    def test_read_routes_to_search_for_a_non_query_backend(self):
-        backend = _searcher()
-        assert backend.read("refund policy") == [{"text": "search:refund policy", "metadata": {}}]
-        assert backend.calls[0][0] == "search"
-
-    def test_read_forwards_limit_and_kwargs_unchanged(self):
-        backend = _querier()
-        backend.read("SELECT 1", limit=17, where="x", flag=True)
-        operation, positional, kwargs = backend.calls[0]
-        assert operation == "query"
-        assert positional == ("SELECT 1", 17)
-        assert kwargs == {"where": "x", "flag": True}
-
-    def test_read_defaults_to_a_limit_of_three(self):
-        backend = _searcher()
-        backend.read("anything")
-        assert backend.calls[0][1] == ("anything", 3)
-
-    def test_a_subclass_overriding_read_still_wins(self):
-        class OverridingBackend(RecordingBackend):
-            def read(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
-                return [{"text": "override", "metadata": {}}]
-
-        backend = OverridingBackend(KnowledgeCapabilities(query=True, query_language="sql"))
-        assert backend.read("SELECT 1") == [{"text": "override", "metadata": {}}]
-        assert backend.calls == []
 
 
 class TestUndeclaredOperations:

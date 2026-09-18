@@ -176,11 +176,13 @@ class TestCapabilities:
         store = LocalDocumentStore(write_bundle(tmp_path, BUNDLE), writable=False)
         assert OKFManager(store).capabilities.writable is False
 
-    def test_declaring_no_query_language_routes_read_to_search(self, tmp_path):
+    def test_relevance_is_the_only_read_shaped_operation_declared(self, tmp_path):
+        # OKF ranks; it has no query language. read_kb therefore routes to search() here,
+        # which is asserted where that routing lives, in test_knowledgebase_builder.py.
         manager = make_manager(tmp_path)
+        assert manager.capabilities.search is True
         assert manager.capabilities.query is False
         assert manager.capabilities.query_language is None
-        assert ids(manager.read("customers")) == ids(manager.search("customers"))
 
     def test_the_backend_name_falls_back_to_okf(self, tmp_path):
         assert make_manager(tmp_path).backend_name == "okf"

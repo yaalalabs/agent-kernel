@@ -29,11 +29,11 @@ class TestChromaManager:
 
     def test_relevance_retrieval_is_now_named_search(self, chroma):
         assert "search" in ChromaManager.__dict__
-        assert "read" not in ChromaManager.__dict__  # inherited and routing, no longer overridden
+        assert "read" not in ChromaManager.__dict__  # the rename left nothing behind
         assert chroma.search("refund policy") == [{"text": "doc one", "metadata": {"source": "kb"}}]
 
-    def test_read_routes_to_search(self, chroma):
-        chroma.read("refund policy", limit=7)
+    def test_search_forwards_the_limit(self, chroma):
+        chroma.search("refund policy", limit=7)
         assert chroma.collection.queries == [(["refund policy"], 7)]
 
     def test_writes_still_reach_the_collection(self, chroma):
@@ -57,10 +57,6 @@ class TestNeo4jManager:
         assert "read" not in Neo4jManager.__dict__
         rows = neo4j.query("MATCH (n) RETURN n")
         assert rows == [{"text": '{"n": 1}', "metadata": {"source": "graph"}}]
-
-    def test_read_routes_to_query(self, neo4j, neo4j_driver):
-        neo4j.read("MATCH (n) RETURN n")
-        assert "MATCH (n) RETURN n" in neo4j_driver.executed[0][0]
 
     def test_query_defaults_to_a_limit_of_three(self, neo4j, neo4j_driver):
         neo4j.query("MATCH (n) RETURN n")
@@ -150,10 +146,6 @@ class TestStarburstManager:
         assert "query" in StarburstManager.__dict__
         assert "read" not in StarburstManager.__dict__
         assert starburst.query("SELECT 1") == [{"text": "col: value", "metadata": {"source": "mongo.sales.orders"}}]
-
-    def test_read_routes_to_query(self, starburst):
-        starburst.read("SELECT * FROM orders")
-        assert starburst.connection.cursors[0].executed == ["SELECT * FROM orders LIMIT 3"]
 
     def test_query_defaults_to_a_limit_of_three(self, starburst):
         starburst.query("SELECT * FROM orders")

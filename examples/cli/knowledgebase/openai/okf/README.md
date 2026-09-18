@@ -110,16 +110,19 @@ physical layout differs between environments.
 holds frontmatter and a bounded token index, which is what keeps a large bundle affordable —
 so a concept's complete text and its `links` are available only after a fetch.
 
-## Six Tools, Not Seven
+## Seven Tools
 
 `KnowledgeBuilder.build()` returns `get_schemas`, `read_kb`, `write_kb`,
-`get_all_kb_descriptions`, `fetch_kb` and `browse_kb`.
+`get_all_kb_descriptions`, `search_kb`, `fetch_kb` and `browse_kb`.
 
-`fetch_kb` and `browse_kb` are present because this backend declares `fetch` and `browse`.
-`search_kb` is **absent**: its gate needs a backend declaring both `search` and `query`, and an
-OKF bundle has no query language. Nothing is lost — `read_kb` reaches `search()` directly. A
-Chroma-only application gets the four base tools and neither of the two added here. That is the
-capability model doing its job: the agent's prompt only ever names operations that exist.
+All three gated tools are present because this backend declares `search`, `fetch` and `browse`.
+A Neo4j or Starburst application declares none of them and gets the four base tools; a
+Chroma-only application declares `search` and gets five. That is the capability model doing its
+job: the agent's prompt only ever names operations that exist.
+
+`read_kb` and `search_kb` both reach `search()` here, because OKF ranks and has no query
+language. They are not redundant in what they promise — `read_kb` lets the backend decide how to
+read the text, while `search_kb` always ranks and would refuse a backend that could not.
 
 ## Read-Only, And How To Change It
 

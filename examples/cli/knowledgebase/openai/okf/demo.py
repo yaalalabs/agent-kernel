@@ -74,10 +74,10 @@ EXECUTION PROTOCOL:
 
     # Step 3: build() produces framework-agnostic callables; bind(...) makes them OpenAI tools.
     #
-    # Six tools here, not seven. fetch_kb and browse_kb exist because this backend declares
-    # fetch and browse; search_kb does not, because its gate needs a backend declaring both
-    # search and query, and an OKF bundle has no query language. read_kb reaches search()
-    # directly, so nothing is lost.
+    # Seven tools here: search_kb, fetch_kb and browse_kb all appear because this backend
+    # declares search, fetch and browse. read_kb and search_kb both reach search(), since an
+    # OKF bundle has no query language -- they differ in what they promise, not in what they
+    # reach, and read_kb is the one that would route elsewhere on a different backend.
     return Agent(
         name="KB_Router_Agent",
         model="gpt-4o-mini",
