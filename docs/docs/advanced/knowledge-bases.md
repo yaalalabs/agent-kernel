@@ -399,6 +399,125 @@ kb_router_agent = Agent(
 Note: `kb_tools` used above is the result of calling `build()` on a `KnowledgeBuilder` instance (for example, `kb_tools = KnowledgeBuilder([...], semantic_map={...}).build()` or `kb_tools = kb.build()`); ensure you have created that variable before binding it into the agent to avoid confusion.
 
 
+## Configuration-Driven OKF
+
+Everything above is the programmatic path: build a store, wrap it in a backend, build a
+`KnowledgeBuilder`, bind its tools, and write the agent's navigation instructions yourself.
+
+For OKF bundles there is a shorter path. An `okf` block in `config.yaml` names the bundles and
+the agents that may reach them, and Agent Kernel attaches each agent's tools and appends its
+instructions automatically. The application writes no knowledge-base code at all.
+
+```yaml
+okf:
+  databases:
+    warehouse:
+      type: local                  # 'local', 's3', or a dotted path to a DocumentStore subclass
+      uri: ./bundle                # a path, an s3://bucket/prefix, or your store's own location
+      description: "Analytics warehouse concepts, one per table."
+      refresh_seconds: 300         # null disables automatic refresh
+      semantic_map:
+        "<TABLES>": tables         # applies to this database only
+      consumer: [Support_Agent]
+      producer: [Ingest_Agent]
+      curator:  [Steward_Agent]
+```
+
+The block's **presence is the enablement signal** - there is no `enabled` flag, matching `thread`
+and `schedule`. Absent, the capability is off and nothing about an existing application changes.
+
+### The three roles
+
+| Role | Tools | What the agent is instructed to do |
+|---|---|---|
+| `consumer` | `get_schemas`, `get_all_kb_descriptions`, `read_kb`, `search_kb`, `fetch_kb`, `browse_kb` | Navigate the bundle and answer from it |
+| `producer` | the same, plus `write_kb` | Add new knowledge to the bundle as it learns it |
+| `curator` | the same, plus `write_kb` | Review, correct, update and maintain existing knowledge |
+
+`producer` and `curator` are **identical in permission** and differ only in the sentence appended
+to the agent's prompt. The distinction is responsibility, not capability.
+
+An agent named in no database receives no OKF tools and no OKF prompt. This is a capability
+specific to OKF: it introduces no general role or permission system, and the flat `agents`
+allow-list used by `schedule` and `sandbox` is untouched.
+
+### Permission is per `(agent, database)`
+
+An agent can be a producer of one bundle and only a consumer of another, and both hold at once:
+
+```yaml
+okf:
+  databases:
+    warehouse:
+      type: local
+      uri: ./warehouse
+      producer: [Ingest_Agent]
+    policies:
+      type: local
+      uri: ./policies
+      consumer: [Ingest_Agent]
+```
+
+`Ingest_Agent` receives `write_kb`, because it may write *somewhere*. A call against `policies`
+is refused at call time with a string naming what it may write to instead - never an exception
+into the framework:
+
+```
+Agent 'Ingest_Agent' has read-only access to 'policies'. Knowledge bases it may write to: ['warehouse'].
+```
+
+Reads need no such check. Each agent's `KnowledgeBuilder` registers only the databases it holds a
+role in, so a database it has no role in is simply not there, and reaching for one returns the
+ordinary `Unknown backend '...'. Available: [...]` message. `get_schemas()` and
+`get_all_kb_descriptions()` list only that agent's own databases for the same reason.
+
+### Validation
+
+Checked when the capability is first reached, so a mistake fails at agent construction naming the
+offending database rather than inside a tool call:
+
+- A declared database naming **no agent** across its three role lists is an `AKConfigError`. A
+  bundle nobody can reach is always a mistake, and it is the one that otherwise fails silently.
+- The same agent named as both `producer` **and** `curator` of the **same** database is an
+  `AKConfigError`. Across *different* databases this is legitimate and accepted.
+- `type` disagreeing with the `uri` scheme - `type: local` with an `s3://` uri, or `type: s3`
+  without one - is an `AKConfigError` naming the database, the type and the uri. The redundancy
+  between `type` and the uri's scheme is deliberate, and this check is what keeps it from becoming
+  a second source of truth.
+- A database whose store is **read-only** while it names a `producer` or `curator` logs a
+  `WARNING` naming the database and the agents, and does **not** raise. The other checks read
+  configuration text and are wrong wherever they run; this one reads the environment, and the same
+  file is legitimately correct in production while the bundle is read-only in CI or under a
+  read-only volume mount.
+
+### Construction is lazy
+
+Deciding which tools an agent gets needs only the configuration, so constructing agents opens no
+store and walks no bundle. A bundle is walked the first time an agent actually reaches for it, and
+one `OKFManager` per database is shared by every agent that holds a role in it - two agents
+reading the same bundle pay one walk and one refresh cycle, not two.
+
+This is also why construction order does not matter: an agent built before any bundle exists still
+receives its full instructions, because the prompt is composed from configuration alone.
+
+### Choosing between the two paths
+
+Use the **configuration path** when the bundles are known at deploy time and the three roles
+describe what your agents do. It is less code, and the navigation protocol ships maintained
+instead of being copied into each application's instructions.
+
+Use the **programmatic path** when the bundle location is computed at runtime, when an agent needs
+a tool set the roles do not describe, when you are composing OKF with other backends in one
+builder, or when you want to write the navigation instructions yourself. Nothing about it is
+deprecated - the configuration block is a convenience built on the same public API.
+
+Do not use both for the same agent. An agent named in the `okf` block that also has
+knowledge-base tools bound by hand ends up carrying two sets of identically named tools; Agent
+Kernel logs a `WARNING` naming the collisions and attaches anyway, because silently ignoring a
+newly added block would be the worse failure. Frameworks that tolerate duplicate tool names will
+show the model the same tool twice; frameworks that reject them fail at bind time, with the
+warning explaining why.
+
 ## KB Router Pattern
 
 The recommended pattern is to build a **“knowledge base router” agent**:

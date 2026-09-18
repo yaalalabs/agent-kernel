@@ -4,101 +4,57 @@ Open Knowledge Format knowledge base demo using Agent Kernel + OpenAI Agents SDK
 An OKF bundle is a directory of markdown concepts with YAML frontmatter. Because the knowledge
 lives in files rather than a service, this demo needs no database and no credentials beyond an
 OpenAI key -- ./bundle is the whole knowledge base.
+
+Look at what is *not* in this file. There is no import from agentkernel.knowledgebase: no
+document store, no OKFManager, no KnowledgeBuilder, no tool binding, and no instructions
+explaining how to navigate a bundle. All of it comes from the `okf` block in config.yaml, which
+names these three agents. Agent Kernel gives each one the tools its role allows and appends the
+navigation protocol to its prompt.
+
+The three agents differ only in what they are for. Consumer reads. Producer adds new knowledge.
+Curator maintains what is already there. Producer and curator have identical permissions -- the
+difference is responsibility, and it arrives as a different sentence in the prompt.
 """
 
 from agents import Agent
 from agentkernel.cli import CLI
-from agentkernel.knowledgebase import KnowledgeBuilder, LocalDocumentStore, OKFManager
-from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
+from agentkernel.openai import OpenAIModule
 
+# Every name below must match config.yaml exactly. An agent the block does not name simply gets
+# no knowledge-base tools -- there is no error to notice, so the names are the contract.
 
-# Step 1: Point the backend at the bundle. There is no add_schema() call anywhere in this file:
-# OKFManager declares derives_schema=True and describes itself from what the bundle contains.
-#
-# writable=False because a bundle checked into git is a knowledge source, not a scratchpad. The
-# store's writability folds into the backend's declaration, so this one keyword is what makes
-# write_kb report the backend as read-only instead of adding files under bundle/generated/.
-okf_backend = OKFManager(
-    LocalDocumentStore("./bundle", writable=False),
-    name="OKF",
-    description=(
-        "Open Knowledge Format bundle describing the analytics warehouse: one markdown concept "
-        "per table and per upstream source system, organised into browsable namespaces."
+consumer = Agent(
+    name="KB_Consumer_Agent",
+    model="gpt-4o-mini",
+    instructions=(
+        "You are an analytics knowledge assistant. You answer questions about the data warehouse "
+        "from the knowledge base, and you cite the concept path you took each answer from. "
+        "If the bundle does not cover a question, say so before answering from general knowledge."
     ),
 )
 
-# Step 2: Turn backend capabilities into callable KB tools.
-#
-# The semantic_map lets a namespace be referred to by a logical token, so the same agent
-# instructions work against a bundle whose physical layout differs per environment.
-knowledge_builder = KnowledgeBuilder([okf_backend], semantic_map={"<TABLES>": "tables"})
+producer = Agent(
+    name="KB_Producer_Agent",
+    model="gpt-4o-mini",
+    instructions=(
+        "You are an analytics knowledge author. When you learn something about the warehouse that "
+        "the knowledge base does not already record, write it down as a new concept. Check first "
+        "that it is genuinely new, and write one fact per concept."
+    ),
+)
 
+curator = Agent(
+    name="KB_Curator_Agent",
+    model="gpt-4o-mini",
+    instructions=(
+        "You are an analytics knowledge curator. You review what the knowledge base already holds, "
+        "correct what is wrong, and bring what is out of date up to date. Read the existing concept "
+        "before you change it, and say what you changed and why."
+    ),
+)
 
-def build_agent(description: str) -> Agent:
-    """Create the router agent and bind knowledge-base tools.
-
-    The protocol below is written around browse/fetch rather than search, because a bundle is
-    a navigable tree: listing a namespace and then reading a named concept beats guessing
-    search terms.
-    """
-
-    instructions = f"""{description}
-
-EXECUTION PROTOCOL:
-
-1. SCHEMA FIRST - ONCE ONLY:
-   Call get_schemas() exactly once at the very start of every session. Never call it again.
-   The schema tells you the bundle's version, how many concepts it holds, which concept types
-   exist, and which top-level namespaces you can browse.
-
-2. NAVIGATE BEFORE YOU SEARCH:
-   Call browse_kb() with an empty path to read the bundle's own front page, then browse a
-   namespace such as <TABLES> to see what it holds. Browsing a namespace that has a curated
-   listing returns that listing verbatim - trust it, it was written by a human.
-
-3. READ THE CONCEPT:
-   Call fetch_kb() with the exact concept path you saw while browsing, for example
-   'tables/orders.md'. Only fetch_kb returns a concept's full body and its links to other
-   concepts, so this is the step that actually answers the question.
-
-4. SEARCH ONLY WHEN YOU CANNOT NAVIGATE:
-   If browsing does not reveal the right concept, call read_kb() with the words you would
-   expect to appear in it. Ranking is lexical, so use terms from the domain, not a sentence.
-
-5. RESPOND:
-   Answer from the concept you read, and name the concept path you took it from.
-   Every result carries a trust signal: 'human-reviewed' was checked by a person,
-   'machine-confirmed' by an automated check, 'unverified' by nobody. Say so when it matters.
-   If nothing in the bundle covers the question, say so before answering from general knowledge.
-"""
-
-    # Step 3: build() produces framework-agnostic callables; bind(...) makes them OpenAI tools.
-    #
-    # Seven tools here: search_kb, fetch_kb and browse_kb all appear because this backend
-    # declares search, fetch and browse. read_kb and search_kb both reach search(), since an
-    # OKF bundle has no query language -- they differ in what they promise, not in what they
-    # reach, and read_kb is the one that would route elsewhere on a different backend.
-    return Agent(
-        name="KB_Router_Agent",
-        model="gpt-4o-mini",
-        instructions=instructions,
-        tools=OpenAIToolBuilder.bind(knowledge_builder.build()),
-    )
-
-
-AGENT_DESCRIPTION = """
-You are an analytics knowledge assistant.
-You answer questions about the data warehouse from an Open Knowledge Format bundle.
-
-The bundle is the source of truth. Browse it, read the concept that answers the question, and
-cite the concept path you used.
-"""
-
-# Step 4: Create and register the agent in the OpenAI module runtime.
-agent = build_agent(AGENT_DESCRIPTION)
-OpenAIModule([agent])
+OpenAIModule([consumer, producer, curator])
 
 
 if __name__ == "__main__":
-    # Step 5: Launch interactive CLI chat.
     CLI.main()

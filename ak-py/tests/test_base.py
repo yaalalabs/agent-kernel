@@ -1,9 +1,12 @@
+import logging
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from agentkernel.core.base import Agent, Runner, Session
-from agentkernel.core.model import AgentReply, AgentRequest
+from agentkernel.core.model import AgentReply, AgentRequest, SystemTool
+from agentkernel.core.tool import SystemToolFactory
 
 
 class MockRunner(Runner):
@@ -136,3 +139,73 @@ def test_get_framework_session_scoped_to_current_agents_runner_name():
     session.set("openai", "native-openai-session")
     with agent._activate():
         assert session.get_framework_session() is None
+
+
+class ToolCarryingAgent(MockAgent):
+    """An agent exposing a framework-native agent with a list-shaped `tools`, as all six adapters do."""
+
+    def __init__(self, name: str, runner: Runner, tool_names: list):
+        self._native = SimpleNamespace(tools=[SimpleNamespace(name=n) for n in tool_names])
+        self.attached: list = []
+        super().__init__(name, runner)
+
+    @property
+    def agent(self) -> Any:
+        return self._native
+
+    def attach_tool(self, tool: Any) -> None:
+        self.attached.append(tool)
+
+
+def _system_tool(name: str):
+    def func():
+        return name
+
+    func.__name__ = name
+    return SystemTool(name=name, description="", func=func)
+
+
+class TestSystemToolNameCollisions:
+    """Warn when a capability's system tool shadows one the application bound by hand (#553).
+
+    Attaching anyway is the deliberate choice: skipping would make newly enabling a capability
+    silently do nothing for that agent, which is the worse of the two failures.
+    """
+
+    def test_a_collision_warns_and_still_attaches(self, monkeypatch, caplog):
+        monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda name=None: [_system_tool("read_kb")]))
+
+        with caplog.at_level(logging.WARNING, logger="ak.core.runner"):
+            agent = ToolCarryingAgent("kb-agent", MockRunner("r"), ["read_kb", "write_kb"])
+            agent._attach_system_tools()
+
+        assert "kb-agent" in caplog.text
+        assert "read_kb" in caplog.text
+        assert [tool.__name__ for tool in agent.attached] == ["read_kb"]
+
+    def test_the_warning_names_only_the_colliding_tools(self, monkeypatch, caplog):
+        monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda name=None: [_system_tool("read_kb"), _system_tool("browse_kb")]))
+
+        with caplog.at_level(logging.WARNING, logger="ak.core.runner"):
+            ToolCarryingAgent("kb-agent", MockRunner("r"), ["read_kb"])._attach_system_tools()
+
+        assert "['read_kb']" in caplog.text
+
+    def test_no_overlap_is_silent(self, monkeypatch, caplog):
+        monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda name=None: [_system_tool("browse_kb")]))
+
+        with caplog.at_level(logging.WARNING, logger="ak.core.runner"):
+            ToolCarryingAgent("kb-agent", MockRunner("r"), ["something_else"])._attach_system_tools()
+
+        assert caplog.text == ""
+
+    def test_an_agent_exposing_no_native_tools_attribute_warns_nothing(self, monkeypatch, caplog):
+        # Entirely defensive: not every adapter exposes a list-shaped `tools`, and a missing one
+        # must mean no warning, never a raise.
+        monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda name=None: [_system_tool("read_kb")]))
+
+        with caplog.at_level(logging.WARNING, logger="ak.core.runner"):
+            agent = MockAgent("plain-agent", MockRunner("r"))
+            agent._attach_system_tools()
+
+        assert caplog.text == ""

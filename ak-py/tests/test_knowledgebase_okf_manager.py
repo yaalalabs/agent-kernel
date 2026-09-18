@@ -430,7 +430,7 @@ class TestWrite:
 
     def test_the_emitted_document_is_conformant_with_a_fixed_key_order(self, tmp_path):
         root = write_bundle(tmp_path, BUNDLE)
-        manager = OKFManager(LocalDocumentStore(root, writable=True), producer="process:demo")
+        manager = OKFManager(LocalDocumentStore(root, writable=True), write_actor="process:demo")
         metadata = {"id": "n.md", "type": "Note", "title": "T", "description": "D", "tags": ["x"], "status": "stable", "owner": "me"}
         manager.write([{"text": "Body.", "metadata": metadata}])
 
@@ -453,7 +453,7 @@ class TestWrite:
 
     def test_the_provenance_stamp_is_the_backends_to_make_not_the_callers(self, tmp_path):
         root = write_bundle(tmp_path, BUNDLE)
-        manager = OKFManager(LocalDocumentStore(root, writable=True), producer="process:demo")
+        manager = OKFManager(LocalDocumentStore(root, writable=True), write_actor="process:demo")
         manager.write([{"text": "x", "metadata": {"id": "g.md", "generated": {"by": "someone-else", "at": "1999-01-01"}}}])
 
         stamped = yaml.safe_load((tmp_path / "g.md").read_text(encoding="utf-8").split("---\n")[1])
@@ -470,7 +470,7 @@ class TestWrite:
         assert "verified" not in (tmp_path / "v.md").read_text(encoding="utf-8")
 
     def test_two_writes_of_the_same_content_differ_only_in_the_generated_stamp(self, tmp_path):
-        manager = make_manager(tmp_path, producer="process:demo")
+        manager = make_manager(tmp_path, write_actor="process:demo")
         record = {"text": "Body.", "metadata": {"id": "n.md", "type": "Note", "title": "T"}}
         manager.write([record])
         first = (tmp_path / "n.md").read_text(encoding="utf-8")
@@ -528,7 +528,7 @@ class TestFetchWriteRoundTrip:
         assert "note" not in frontmatter
 
     def test_a_round_trip_is_byte_identical_apart_from_the_generated_stamp(self, tmp_path):
-        manager = make_manager(tmp_path, {"t.md": ATTESTED}, refresh_seconds=None, producer="process:demo")
+        manager = make_manager(tmp_path, {"t.md": ATTESTED}, refresh_seconds=None, write_actor="process:demo")
         manager.write([manager.fetch(["t.md"])[0]])
         first = (tmp_path / "t.md").read_text(encoding="utf-8")
         manager.write([manager.fetch(["t.md"])[0]])

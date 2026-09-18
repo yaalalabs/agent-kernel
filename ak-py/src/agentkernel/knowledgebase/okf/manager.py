@@ -52,7 +52,7 @@ _FIELD_WEIGHTS = {"title": 4, "tags": 3, "type": 2, "description": 2, "body": 1}
 # byte-identical documents. Caller extras follow, in the order the caller supplied them.
 _WRITE_KEY_ORDER = ("type", "title", "description", "resource", "tags", "status", "stale_after", "generated", "sources")
 
-# `generated` and `verified` are reserved provenance metadata; allowing callers to supply them would let writers forge the producer or trust tier.
+# `generated` and `verified` are reserved provenance metadata; allowing callers to supply them would let writers forge the write actor or trust tier.
 # `source`, `kind`, `trust`, `stale` and `links` are derived on read, so writing a fetched record back would persist a derived signal as frontmatter.
 # Other unknown metadata is preserved as `extra` rather than dropped.
 _WRITE_RESERVED_METADATA = frozenset(
@@ -103,7 +103,7 @@ class OKFManager(DocumentKnowledgeBase):
         description: Optional[str] = None,
         refresh_seconds: Optional[float] = 300.0,
         max_concepts: int = 10_000,
-        producer: Optional[str] = None,
+        write_actor: Optional[str] = None,
         write_prefix: str = "generated",
     ) -> None:
         """
@@ -115,8 +115,9 @@ class OKFManager(DocumentKnowledgeBase):
         :param refresh_seconds: How stale the manifest may get before the next operation
             re-walks; ``None`` disables automatic refresh entirely.
         :param max_concepts: Ceiling on retained concepts; the walk truncates beyond it.
-        :param producer: Actor stamped into ``generated.by`` on write; defaults to
-            ``"agentkernel/<version>"``.
+        :param write_actor: Actor stamped into ``generated.by`` on write; defaults to
+            ``"agentkernel/<version>"``. Named for what it records rather than for the OKF
+            ``producer`` role, which is a different concept declared in configuration.
         :param write_prefix: Directory synthesised write paths are placed under.
         :return: None.
         :raises ValueError: If the resulting capability declaration is incoherent.
@@ -139,7 +140,7 @@ class OKFManager(DocumentKnowledgeBase):
         self._refresh_seconds = refresh_seconds
         self._max_concepts = max_concepts
         self._write_prefix = write_prefix
-        self._producer = producer.strip() if producer and producer.strip() else self._default_producer()
+        self._write_actor = write_actor.strip() if write_actor and write_actor.strip() else self._default_write_actor()
 
         self._manifest: Optional[OKFBundle] = None
         self._loaded_at = 0.0
@@ -790,7 +791,7 @@ class OKFManager(DocumentKnowledgeBase):
             "tags": metadata.get("tags"),
             "status": metadata.get("status"),
             "stale_after": metadata.get("stale_after"),
-            "generated": {"by": self._producer, "at": datetime.now(timezone.utc).replace(microsecond=0).isoformat()},
+            "generated": {"by": self._write_actor, "at": datetime.now(timezone.utc).replace(microsecond=0).isoformat()},
             "sources": metadata.get("sources"),
         }
         ordered = {key: frontmatter[key] for key in _WRITE_KEY_ORDER if frontmatter[key] is not None}
@@ -832,7 +833,7 @@ class OKFManager(DocumentKnowledgeBase):
         return slug[:_SLUG_MAX_LENGTH] or _FALLBACK_SLUG
 
     @staticmethod
-    def _default_producer() -> str:
+    def _default_write_actor() -> str:
         """
         Resolve the actor string stamped into ``generated.by``.
 

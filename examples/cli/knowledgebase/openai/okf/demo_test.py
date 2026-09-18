@@ -1,3 +1,6 @@
+import ast
+import pathlib
+
 import pytest
 import pytest_asyncio
 from agentkernel.test import Test
@@ -15,44 +18,67 @@ async def test_client():
         await test.stop()
 
 
+async def select(test_client, agent_name: str) -> None:
+    """Point the CLI at one of the three agents defined in demo.py."""
+    await test_client.send(f"!select {agent_name}")
+
+
+async def test_demo_imports_nothing_from_the_knowledgebase_package():
+    # The point of the example: the whole knowledge-base tier arrives from config.yaml. If this
+    # fails, someone has re-wired by hand what the okf block is supposed to provide. Only the
+    # import statements are inspected -- demo.py's docstring names these pieces to say they are
+    # deliberately absent.
+    tree = ast.parse(pathlib.Path(__file__).with_name("demo.py").read_text())
+    modules = {node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)}
+    modules |= {alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names}
+    names = {alias.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) for alias in node.names}
+
+    assert not any(module.startswith("agentkernel.knowledgebase") for module in modules)
+    assert not {"KnowledgeBuilder", "OKFManager"} & names
+
+
 @pytest.mark.order(1)
-async def test_kb_descriptions_exposed(test_client):
-    await test_client.send("Which knowledge base do you read from? Reply with its name only.")
-    await test_client.expect(["OKF"])
-
-
-@pytest.mark.order(2)
-async def test_browse_lists_the_tables_namespace(test_client):
-    # browse_kb on a namespace holding an index.md returns that curated listing verbatim, so the
-    # reply is a multi-line listing rather than a short answer. expect() scores the whole response
-    # against each expected string as an alternative, which a listing never matches, and it could
-    # not require both names anyway -- assert on the response directly.
-    await test_client.send("Browse the tables namespace and list the concepts it holds.")
-    response = (test_client.last_agent_response or "").lower()
-    assert "orders" in response
-    assert "customers" in response
-
-
-@pytest.mark.order(3)
-async def test_fetch_reads_a_concept_body(test_client):
+async def test_consumer_browses_and_answers_citing_a_concept_path(test_client):
     # Only fetch_kb reads a full body, so a column that appears nowhere but the body of
-    # tables/orders.md is what proves the fetch happened.
-    await test_client.send("Fetch the concept at tables/orders.md and name the column that holds the revenue.")
+    # tables/orders.md is what proves the agent navigated to it.
+    await select(test_client, "KB_Consumer_Agent")
+    await test_client.send("Find the orders table concept and name the column that holds the revenue.")
     await test_client.expect(["amount_usd"])
 
 
-@pytest.mark.order(4)
-async def test_search_finds_the_upstream_source(test_client):
-    # No curated listing points at datasets/, so this one has to be found by ranking.
-    await test_client.send("Where is the orders data loaded from? Name the upstream system.")
-    await test_client.expect(["Postgres"])
-
-
-@pytest.mark.order(5)
-async def test_trust_signal_is_reported(test_client):
+@pytest.mark.order(2)
+async def test_consumer_reports_the_trust_signal(test_client):
     # customers.md is machine-confirmed, not human-reviewed, so the answer is no. Trust is
     # advisory, never a filter: the concept is returned either way, and the agent is expected to
     # pass the signal on rather than present an unreviewed concept as settled.
+    await select(test_client, "KB_Consumer_Agent")
     await test_client.send("Has the customers table concept been reviewed by a human? Answer yes or no.")
     response = (test_client.last_agent_response or "").lower()
     assert "no" in response
+
+
+@pytest.mark.order(3)
+async def test_consumer_is_refused_a_write(test_client):
+    # The consumer never receives write_kb at all, so it cannot attempt the write and should say
+    # it has no way to do it. This is the per-(agent, database) permission rule, from the agent's
+    # side: same bundle, same tools otherwise, different answer.
+    await select(test_client, "KB_Consumer_Agent")
+    await test_client.send("Add a new concept recording that refunds are processed weekly. If you cannot, say you cannot and why.")
+    response = (test_client.last_agent_response or "").lower()
+    assert any(phrase in response for phrase in ("cannot", "can't", "unable", "read-only", "read only", "no ability"))
+
+
+@pytest.mark.order(4)
+async def test_producer_writes_a_new_concept_and_reads_it_back(test_client):
+    await select(test_client, "KB_Producer_Agent")
+    await test_client.send("Record this as new knowledge: the orders table is rebuilt nightly at 02:00 UTC.")
+    await test_client.send("Search the knowledge base for what you just recorded about the nightly rebuild, and state the time it happens.")
+    await test_client.expect(["02:00"])
+
+
+@pytest.mark.order(5)
+async def test_curator_reads_before_it_amends(test_client):
+    await select(test_client, "KB_Curator_Agent")
+    await test_client.send("Review the concept at tables/customers.md, then record a corrected version noting it also holds the signup channel.")
+    response = (test_client.last_agent_response or "").lower()
+    assert "customers" in response

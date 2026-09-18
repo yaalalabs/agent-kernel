@@ -581,6 +581,16 @@ backend, use the `ak-dev-new-knowledgebase-integration` skill.
   owns the routing rule (`query()` when `query` is declared, `search()` otherwise). It also resolves
   `semantic_map` placeholders — and per-backend `backend_semantic_maps` merged over it — in queries,
   browse paths and each comma-separated `fetch` id segment.
+- **Config-driven OKF** (`okf/roles.py`, `okf/capability.py`, `okf/prompts.py`, `okf/tools.py`): an
+  optional `okf` block names bundles and, per bundle, the agents that `consumer`/`producer`/`curator`
+  them. `OKFCapabilityManager` (`get()`/`reset()` singleton, None when the block is absent) is the
+  **only** reader of that block and resolves it to stores, one shared `OKFManager` per database, and a
+  per-agent `KnowledgeBuilder` holding only that agent's databases — which makes read scoping
+  structural rather than checked. `OKFToolFactory.get_tools(agent_name)` is reached from one branch in
+  `SystemToolFactory.get_all`, deliberately **not** through `_agent_allowed` (OKF's scoping is per
+  `(agent, database)`, and the block has no `agents` field). Write permission is the one thing checked
+  at call time, in a `write_kb` wrapper. The role vocabulary never leaves `okf/`: this introduces no
+  generic role or permission framework. Construction is lazy — `get_tools` walks no store.
 - **Storage axis** (`store/`): `DocumentStore` (`store/base.py`) is bytes at paths, owning path
   containment for every caller; `LocalDocumentStore` (`local.py`, probes writability) and
   `S3DocumentStore` (`s3.py`, declares it, needs `boto3`). `DocumentStore.from_uri()` resolves a bare
@@ -827,7 +837,9 @@ ak-py/src/agentkernel/
 │   │   ├── model.py         # OKFConcept / OKFBundle / TrustTier / DiagnosticCode
 │   │   ├── parser.py        # OKFParserUtil (pure text -> concepts)
 │   │   ├── roles.py         # OKFRole / OKFAssignment / OKFRoleRegistry (config -> permissions)
-│   │   └── capability.py    # OKFCapabilityManager (the only reader of the `okf` config block)
+│   │   ├── capability.py    # OKFCapabilityManager (the only reader of the `okf` config block)
+│   │   ├── prompts.py       # OKFPromptComposer (per-role mandates + the navigation protocol)
+│   │   └── tools.py         # OKFToolFactory (the per-agent SystemTool closures)
 │   ├── chroma.py            # ChromaDB (vector)
 │   ├── neo4j.py             # Neo4j (graph)
 │   └── starburst.py         # Starburst/Trino (read-only SQL)
