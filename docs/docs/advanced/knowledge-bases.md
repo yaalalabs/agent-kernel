@@ -198,19 +198,33 @@ See the per-backend READMEs for step-by-step usage and routing behavior:
 
 ## Custom KnowledgeBase Adapters
 
-You can bring your own storage backend by subclassing `KnowledgeBase`. Any backend registered with `KnowledgeBuilder` (built-in or custom) is exposed to agents through the same `read_kb` / `write_kb` / `get_schemas` tools.
+You can bring your own storage backend by subclassing `KnowledgeBase`. Any backend registered with `KnowledgeBuilder` (built-in or custom) is exposed to agents through the same `read_kb` / `write_kb` / `get_schemas` tools, plus `search_kb` / `fetch_kb` / `browse_kb` where the registered backends declare those capabilities.
 
 ### Minimal implementation
 
-Subclass `KnowledgeBase` and implement the five required members: `connect`, `write`, `read`, `backend_name`, and `get_description`:
+Three members stay abstract — `backend_name`, `connect`, and `get_description`. Everything else is
+optional, and which of them you implement is fixed by the `KnowledgeCapabilities` you declare to
+`super().__init__()`: an operation you do not declare raises `KnowledgeCapabilityError` instead of
+returning an empty result, so the declaration and the implemented set must agree.
 
 ```python
 from typing import Any, Iterable, List, Mapping
-from agentkernel.knowledgebase.base import KnowledgeBase, Record
+from agentkernel.knowledgebase import KnowledgeBase, KnowledgeCapabilities, Record
 
 
 class MyBackend(KnowledgeBase):
     """Example custom knowledge base adapter."""
+
+    def __init__(self) -> None:
+        # Declare only what this backend actually supports.
+        super().__init__(
+            capabilities=KnowledgeCapabilities(
+                kinds=["vector"],
+                search=True,
+                search_mode="semantic",
+                writable=True,
+            ),
+        )
 
     @property
     def backend_name(self) -> str:
@@ -225,7 +239,7 @@ class MyBackend(KnowledgeBase):
         for record in records:
             self._client.store(record["text"], record.get("metadata", {}))
 
-    def read(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
+    def search(self, query: str, limit: int = 3, **kwargs) -> List[Record]:
         # Return the most relevant records for the query
         raw = self._client.search(query, top_k=limit)
         return [{"text": r.text, "metadata": r.meta} for r in raw]
@@ -233,6 +247,23 @@ class MyBackend(KnowledgeBase):
     def get_description(self) -> str:
         return "MyBackend stores domain-specific knowledge and supports full-text search."
 ```
+
+Do not implement `read()`. It is concrete and routes on the declaration: a backend declaring `query`
+receives the text as a statement, and every other backend receives it as a relevance `search`. That
+routing is what lets the one `read_kb` tool serve every backend.
+
+### The operation set
+
+| Declare | Implement | Serves |
+|---|---|---|
+| `search` | `search(query, limit)` | relevance retrieval — `read_kb`, and `search_kb` when `query` is declared too |
+| `query` + `query_language` | `query(statement, limit)` | query-language retrieval — `read_kb` |
+| `fetch` | `fetch(ids)` | retrieval by identity — `fetch_kb` |
+| `browse` | `browse(path, limit)` | namespace enumeration — `browse_kb` |
+| `writable` | `write(records)` | persistence — `write_kb` |
+
+At least one of them must be declared, and declaring `query` without a `query_language` (or a
+`query_language` without `query`) is rejected in `__init__`.
 
 ### Registering the custom backend
 
@@ -257,7 +288,8 @@ kb_tools = kb.build()
 | `format_results(rows)` | Bullet-list of `text` + `source` | Custom display format for agent responses |
 | `close()` | No-op | Release connections or flush write buffers |
 | `add_schema(config)` | Merges dict into `_dynamic_schema` | Rarely needed; just call it rather than override |
-| `schema()` | Returns `{"backend": name, ...schema_config}` | If your backend needs computed schema fields |
+| `schema()` | Returns `{"backend": name, ...schema_config, "capabilities": {...}}` | Rarely needed; override `_derived_schema()` instead |
+| `_derived_schema()` | `{}` | Self-describe without `add_schema()`; declare `derives_schema=True` alongside it |
 
 
 ## When to Use Knowledge Bases vs. Memory
