@@ -8,4 +8,4 @@ prefix = "ak-oai-dev-daily"
 # Optional display name (used for tags, can be null)
 product_display_name = "Demo Platform API"
 
-publisher_email="agentkernel@yaala.ai" 
+publisher_email = "agentkernel@yaala.ai"

@@ -144,7 +144,7 @@ module "ci_package" {
 | Name | Description | Example |
 |------|-------------|---------|
 | `s3_bucket` | S3 bucket name containing the package | `myapp-prod-sources-123456789012` |
-| `s3_key` | S3 object key for the package | `myapp/us-west-2/prod/api/function/api-function.zip` |
+| `s3_key` | S3 object key for the package | `myapp-prod-api/us-west-2/lambda/source_code.zip` |
 | `s3_object_version` | Version ID of the S3 object | `abc123def456` |
 | `package_etag` | ETag/checksum of the package | `"d41d8cd98f00b204e9800998ecf8427e"` |
 | `package_size` | Size of the package in bytes | `1048576` |
@@ -157,14 +157,15 @@ The module creates a hierarchical S3 key structure:
 
 ```
 {prefix}/{region}/{package_type}/{filename}
-                                                     └── "function" or "layer"
+                  │              └── always "source_code.zip"
+                  └── "lambda" or "layer"
 ```
 
 **Example**:
 ```
-myapp/us-west-2/prod/api/function/api-handler.zip
-myapp/us-west-2/prod/shared/layer/dependencies.zip
-myapp/us-west-2/dev/worker/function/worker.zip
+myapp-prod-api/us-west-2/lambda/source_code.zip
+myapp-prod-shared-libs/us-west-2/layer/source_code.zip
+myapp-dev-worker/us-west-2/lambda/source_code.zip
 ```
 
 ### 🔄 Version Management
@@ -178,7 +179,7 @@ myapp/us-west-2/dev/worker/function/worker.zip
 
 **Function Packages** (`is_layer = false`):
 - Contains Lambda function code and dependencies
-- Stored in `/function/` subdirectory
+- Stored in `/lambda/` subdirectory
 - Used with `aws_lambda_function` resource
 
 **Layer Packages** (`is_layer = true`):

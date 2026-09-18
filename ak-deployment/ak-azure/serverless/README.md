@@ -24,6 +24,22 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 | Azure Provider | >= 4.57.0, < 5.0.0 |
 | Null Provider | 3.2.4 |
 
+### Naming limits
+
+`prefix` must contain **at most 10 alphanumeric characters**, not counting separators. The
+module derives the Function App's storage account name by stripping the separators out of
+`prefix` and appending 14 characters (4 characters of the subscription ID plus `deployment`),
+and Azure caps storage account names at 24 lowercase alphanumerics:
+
+```
+myapp-chat  ->  myappchat  +  a1b2  +  deployment  =  myappchata1b2deployment   (23 chars)
+```
+
+`prefix` is validated against this, so an over-long value fails at plan time rather than
+surfacing as an opaque Azure API error during apply. Because the budget is tight, the
+examples below use two-segment prefixes such as `myapp-chat` rather than the
+three-segment `product-env-module` form the other cloud modules can afford.
+
 ## 🔌 Providers
 
 This module is provider-agnostic: it declares `azurerm` in `required_providers` but does **not** configure it internally. Configure the provider in your root module and pass it explicitly via the `providers` argument. This is what lets you use `count`, `for_each`, or `depends_on` on the module block, and lets a minimal/standalone config destroy the resources it created.
@@ -54,7 +70,7 @@ module "python_api" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  prefix               = "myapp-prod-api"
+  prefix               = "myapp-api"
   product_display_name = "My Application API"
   
   function_name        = "handler"
@@ -111,7 +127,7 @@ module "nodejs_api" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  prefix               = "myapp-prod-chat"
+  prefix               = "myapp-chat"
   product_display_name = "Node.js API"
   
   function_name        = "handler"
@@ -152,7 +168,7 @@ module "serverless_api_redis" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  prefix               = "myapp-prod-chat"
+  prefix               = "myapp-chat"
   product_display_name = "Serverless API with Redis"
   
   function_name        = "handler"
@@ -193,7 +209,7 @@ module "serverless_api_cosmosdb" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  prefix               = "myapp-prod-chat"
+  prefix               = "myapp-chat"
   product_display_name = "Serverless API with Cosmos DB"
   
   function_name        = "handler"
@@ -240,7 +256,7 @@ module "production_api" {
 
   region               = "centralus"
   resource_group_name  = "enterprise-prod-rg"
-  prefix               = "enterprise-prod-core-api"
+  prefix               = "acme-core"
   product_display_name = "Enterprise API"
   
   function_name        = "handler"
@@ -306,7 +322,7 @@ module "production_api" {
 |------|-------------|------|---------|:--------:|
 | `region` | Azure region for deployment | `string` | n/a | yes |
 | `resource_group_name` | Name of the Azure resource group | `string` | n/a | yes |
-| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-chat`). At most 10 alphanumeric characters, excluding separators — see [Naming limits](#naming-limits) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name | `string` | `"An Agent Kernel deployment"` | no |
 | `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
 | `is_production` | Enable production features (Basic APIM SKU) | `bool` | `false` | no |

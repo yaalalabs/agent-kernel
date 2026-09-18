@@ -1,2 +1,2 @@
-region        = "ap-southeast-2"
-prefix        = "ak-crewai-dev-examples"
+region = "ap-southeast-2"
+prefix = "ak-crewai-dev-examples"

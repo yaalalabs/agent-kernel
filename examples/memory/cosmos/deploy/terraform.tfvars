@@ -2,6 +2,6 @@
 region = "eastus"
 # The Azure Resource Group you want to deploy the resources into
 resource_group_name = "central_resources"
-prefix        = "demo-mem-api"
+prefix              = "demo-mem-api"
 # Email integration for Azure APIM Put Your Own here
-publisher_email="agentkernel@yaala.ai"
+publisher_email = "agentkernel@yaala.ai"

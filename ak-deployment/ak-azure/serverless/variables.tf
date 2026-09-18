@@ -10,11 +10,19 @@ variable "resource_group_name" {
 
 variable "prefix" {
   type        = string
-  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
+  description = "Prefix applied to every resource name (e.g. \"myapp-chat\"). Azure storage account names cap the alphanumeric part at 10 characters; see the validation below."
 
   validation {
     condition     = var.prefix != ""
     error_message = "prefix must be set to a non-empty value."
+  }
+
+  validation {
+    # azurerm_storage_account.function_storage strips the separators out of the
+    # prefix and appends 14 characters (4 subscription characters + "deployment"),
+    # and Azure caps storage account names at 24 lowercase alphanumerics.
+    condition     = length(replace(var.prefix, "/[^a-zA-Z0-9]/", "")) + 14 <= 24
+    error_message = "prefix must contain at most 10 alphanumeric characters (separators do not count), so that the \"${lower(replace(var.prefix, "/[^a-zA-Z0-9]/", ""))}<subscription>deployment\" storage account name stays within Azure's 24-character limit."
   }
 }
 

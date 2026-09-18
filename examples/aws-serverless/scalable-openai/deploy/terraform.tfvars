@@ -1,5 +1,5 @@
-region        = "ap-southeast-2"
-prefix        = "ak-openai-srvls-qmde-dev-examples"
+region = "ap-southeast-2"
+prefix = "ak-openai-srvls-qmde-dev-examples"
 request_handler_lambda_package_s3 = {
   bucket = "lambda-s3-packages-329597159169-ap-southeast-2-an"
   key    = "dist_request_handler.zip"
