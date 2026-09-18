@@ -263,8 +263,8 @@ Pydantic-based configuration:
 - **Auto-initialized** at import time via `AKConfig._set()`
 - **Config sources** (priority order): environment variables (`AK_` prefix) → config file (YAML/JSON, default `config.yaml`) → defaults
 - **Override path**: Set `AK_CONFIG_PATH_OVERRIDE` env var
-- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`, `multimodal`, `thread`, `schedule`, `trace`, `guardrail`, `sandbox`, `execution`, `logging`. Every messaging block carries an `outbound_adapter` dotted-path override (#524)
-- **Optional (capability-gating) sections**: `thread` and `schedule` are `Optional` — the presence of the block is the enabled-check, so they have no default value
+- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`, `multimodal`, `thread`, `schedule`, `okf`, `trace`, `guardrail`, `sandbox`, `execution`, `logging`. Every messaging block carries an `outbound_adapter` dotted-path override (#524)
+- **Optional (capability-gating) sections**: `thread`, `schedule` and `okf` are `Optional` — the presence of the block is the enabled-check, so they have no default value
 
 ## Request/Reply Model (`ak-py/src/agentkernel/core/model.py`)
 
@@ -930,7 +930,9 @@ ak-py/src/agentkernel/
 │   ├── okf/                 # Representation axis: Open Knowledge Format
 │   │   ├── manager.py       # OKFManager (search/fetch/browse/write over a store)
 │   │   ├── model.py         # OKFConcept / OKFBundle / TrustTier / DiagnosticCode
-│   │   └── parser.py        # OKFParserUtil (pure text -> concepts)
+│   │   ├── parser.py        # OKFParserUtil (pure text -> concepts)
+│   │   ├── roles.py         # OKFRole / OKFAssignment / OKFRoleRegistry (config -> permissions)
+│   │   └── capability.py    # OKFCapabilityManager (the only reader of the `okf` config block)
 │   ├── chroma.py            # ChromaDB (vector)
 │   ├── neo4j.py             # Neo4j (graph)
 │   └── starburst.py         # Starburst/Trino (read-only SQL)
