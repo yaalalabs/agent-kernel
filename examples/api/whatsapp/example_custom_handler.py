@@ -79,7 +79,7 @@ general_agent = OpenAIAgent(
     name="general",
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and clear answers suitable for WhatsApp messaging.",
-    model="openai/gpt-4.1-mini"
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([general_agent])
