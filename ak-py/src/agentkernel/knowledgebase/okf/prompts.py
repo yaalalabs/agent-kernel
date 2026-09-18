@@ -16,8 +16,24 @@ from .roles import OKFRole, OKFRoleRegistry
 _HEADER = "[Organizational knowledge (OKF)]"
 
 _PREAMBLE = (
-    "You have access to Open Knowledge Format bundles. Each one is a navigable tree of concept "
-    "documents, not a search index -- browse and fetch before you search."
+    "You have access to one or more Open Knowledge Format (OKF) bundles. A bundle is not a search "
+    "index and not a database -- it is a directory tree of markdown files that you can navigate and "
+    "read, the way a person explores a documentation folder. You can list any directory in it, and "
+    "you can retrieve any file in it by name and read its full contents.\n"
+    "\n"
+    "What is in a bundle:\n"
+    "- One file is one concept. Its path inside the bundle -- for example 'tables/orders.md' -- is "
+    "its identity. There is no separate id: the path is how you ask for it.\n"
+    "- A concept is YAML frontmatter followed by a body. The frontmatter carries its 'type' (an open "
+    "vocabulary the bundle's authors chose, such as 'BigQuery Table' or 'Dataset'), and usually a "
+    "title, description, tags and status.\n"
+    "- Concepts link to each other by path. Following those links is often faster than searching, "
+    "and only a retrieved file shows you its links.\n"
+    "- A directory may hold an 'index.md': a listing a person wrote by hand for that directory. It "
+    "is curated, so prefer it over guessing what the directory contains.\n"
+    "- A directory may hold a 'log.md' recording what changed in it and when.\n"
+    "- Directories are meaningful. They group related concepts into namespaces, so the tree itself "
+    "tells you how this organisation divides its knowledge."
 )
 
 # Preserved in substance from the protocol OKF applications wrote by hand: schemas once, browse
@@ -26,21 +42,36 @@ _PREAMBLE = (
 _PROTOCOL = (
     "How to use them:\n"
     "1. Call get_schemas() exactly once at the start of a session, never again. It tells you each "
-    "bundle's version, how many concepts it holds, which concept types exist, and which top-level "
-    "namespaces you can browse.\n"
-    "2. Navigate before you search. Call browse_kb() with an empty path to read a bundle's own front "
-    "page, then browse a namespace to see what it holds. A namespace with a curated listing returns "
-    "that listing verbatim -- trust it, a person wrote it.\n"
-    "3. Read the concept. Call fetch_kb() with the exact concept path you saw while browsing, for "
-    "example 'tables/orders.md'. Only fetch_kb returns a concept's full body and its links to other "
-    "concepts, so this is the step that actually answers the question.\n"
-    "4. Search only when you cannot navigate. Call search_kb() -- or read_kb(), which routes to the "
-    "same relevance search on a bundle -- with the words you expect to appear in the concept. Ranking "
-    "is lexical, so use domain terms, not a sentence.\n"
-    "5. Answer from the concept you read, and name the concept path you took it from. Every result "
-    "carries a trust signal: 'human-reviewed' was checked by a person, 'machine-confirmed' by an "
-    "automated check, 'unverified' by nobody. Say which when it matters. If nothing in the bundle "
-    "covers the question, say so before answering from general knowledge."
+    "bundle's OKF version, how many concepts it holds, which concept types exist in it, and which "
+    "top-level namespaces you can browse. Use it to decide which bundle a question belongs to.\n"
+    "2. Navigate before you search. Call browse_kb() with an empty path to see the bundle's own "
+    "front page, then browse a namespace such as 'tables' to see what it holds. Browsing a "
+    "directory that has an index.md returns that curated listing verbatim -- trust it, a person "
+    "wrote it. Browsing is how you find out what exists; it costs nothing to look.\n"
+    "3. Get the file. Call fetch_kb() with the exact concept path you saw while browsing, for "
+    "example 'tables/orders.md'. You may pass several paths separated by commas. Only fetch_kb "
+    "returns a concept's full body and its links to other concepts, so this is the step that "
+    "actually answers the question -- browsing and searching only ever show you summaries. When a "
+    "fetched concept links to another, fetch that one too rather than guessing what it says.\n"
+    "4. Search only when you cannot navigate. Call search_kb() -- or read_kb(), which performs the "
+    "same relevance search on a bundle -- with the words you expect to appear in the concept. "
+    "Ranking is lexical, not semantic: use the domain's own terms, not a sentence. Then fetch what "
+    "the search points you at, because search results are summaries, not bodies.\n"
+    "5. Answer from the concept you actually read, and name the concept path you took it from so "
+    "the reader can check you. If nothing in the bundle covers the question, say so plainly before "
+    "answering from general knowledge -- never present your own knowledge as the bundle's.\n"
+    "\n"
+    "Reading what comes back:\n"
+    "- Every result carries a trust signal derived from who has verified that concept. "
+    "'human-reviewed' means a person checked it. 'machine-confirmed' means only an automated check "
+    "did. 'unverified' means nobody has. Say which when it matters to the answer, and never present "
+    "an unverified concept as settled fact.\n"
+    "- A concept may be marked stale, meaning it is past the review date its authors set. It is "
+    "still the bundle's answer; say that it may be out of date rather than withholding it.\n"
+    "- Trust and staleness are advisory signals, never filters. A concept is returned to you "
+    "whatever they say, and deciding what they mean for the answer is your job, not the tool's.\n"
+    "- A bundle is read tolerantly: a malformed or unusual file is reported alongside the data "
+    "rather than hidden, so an occasional diagnostic in a schema is normal and not an error."
 )
 
 
@@ -51,9 +82,29 @@ class OKFPromptComposer:
     #: different roles in different bundles gets both, each scoped to its own bundle -- which is
     #: why the mandate is per line rather than once per agent.
     MANDATES: ClassVar[Dict[OKFRole, str]] = {
-        OKFRole.CONSUMER: "Your role is CONSUMER: navigate this bundle and answer from it. Do not write to it.",
-        OKFRole.PRODUCER: "Your role is PRODUCER: add new knowledge to this bundle as you learn it, using write_kb.",
-        OKFRole.CURATOR: ("Your role is CURATOR: review, correct, update and maintain the existing knowledge in this bundle, using write_kb."),
+        OKFRole.CONSUMER: (
+            "Your role here is CONSUMER. Navigate this bundle and answer from it: browse its namespaces, follow the links "
+            "between concepts, and fetch the files you need to read in full. You have no way to change this bundle and "
+            "must not claim you have -- if asked to record or correct something here, say that you can only read it, and "
+            "report what the concept currently says instead."
+        ),
+        OKFRole.PRODUCER: (
+            "Your role here is PRODUCER. As well as reading this bundle, add new knowledge to it with write_kb as you "
+            "learn things it does not yet record. Before writing, browse and search to confirm the knowledge is genuinely "
+            "new -- a duplicate concept is worse than no concept, because later readers cannot tell which one is current. "
+            "Write one self-contained fact per call, in prose a stranger could act on without your conversation for "
+            "context, and say where it came from. Each write becomes a new concept file under 'generated/' with a path "
+            "chosen for you and your authorship recorded; you cannot choose its path or overwrite an existing concept, "
+            "so never promise to edit one in place."
+        ),
+        OKFRole.CURATOR: (
+            "Your role here is CURATOR. As well as reading this bundle, keep what it already holds correct and current "
+            "with write_kb. Fetch and read the existing concept in full before you judge it -- browse and search show you "
+            "summaries, and a summary is not enough to decide something is wrong. Prioritise concepts marked stale or "
+            "carrying a weak trust signal ('unverified', or 'machine-confirmed' where a person should have looked). Your "
+            "correction is written as a new concept under 'generated/' rather than replacing the original, so state "
+            "plainly which concept path you are correcting, what was wrong with it, and what the correct position is."
+        ),
     }
 
     def __init__(self, registry: OKFRoleRegistry, descriptions: Mapping[str, Optional[str]]) -> None:

@@ -263,7 +263,7 @@ class TestPromptSuffix:
     def test_the_suffix_reaches_the_named_agent_only(self, monkeypatch, tmp_path):
         configure(monkeypatch, {"warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path), curator=["keeper"])})
 
-        assert "Your role is CURATOR" in SystemToolFactory.get_system_prompt_suffix("keeper")
+        assert "Your role here is CURATOR" in SystemToolFactory.get_system_prompt_suffix("keeper")
         assert SystemToolFactory.get_system_prompt_suffix("stranger") == ""
 
     def test_system_tool_factory_emits_the_tools_for_a_named_agent(self, monkeypatch, tmp_path):

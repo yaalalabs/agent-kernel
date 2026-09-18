@@ -9,6 +9,6 @@ okf:
         "<TABLES>": tables
       # The agent names here must match the Agent(name=...) values in demo.py exactly.
       # A typo produces an agent with no knowledge-base tools and no error anywhere.
-      consumer: [KB_Consumer_Agent]
-      producer: [KB_Producer_Agent]
-      curator: [KB_Curator_Agent]
+      consumer: [kb_consumer_agent]
+      producer: [kb_producer_agent]
+      curator: [kb_curator_agent]

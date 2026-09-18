@@ -54,7 +54,7 @@ class TestCompose:
     def test_each_role_carries_its_own_mandate(self, role, marker):
         section = _compose({"warehouse": _database(**{role: ["agent"]})}, "agent")
 
-        assert f"Your role is {marker}" in section
+        assert f"Your role here is {marker}" in section
 
     def test_producer_and_curator_are_told_different_things(self):
         # They are identical in permission and differ only here, so if these two sentences ever
@@ -72,8 +72,8 @@ class TestCompose:
 
         assert "- warehouse (read and write): Warehouse." in section
         assert "- policies (read only): Policies." in section
-        assert "Your role is PRODUCER" in section
-        assert "Your role is CONSUMER" in section
+        assert "Your role here is PRODUCER" in section
+        assert "Your role here is CONSUMER" in section
 
     def test_a_mandate_is_scoped_under_the_database_it_applies_to(self):
         section = _compose(
@@ -137,4 +137,4 @@ class TestCompose:
         section = OKFPromptComposer(registry, {"warehouse": "Only config."}).compose("keeper")
 
         assert "Only config." in section
-        assert "Your role is CURATOR" in section
+        assert "Your role here is CURATOR" in section
