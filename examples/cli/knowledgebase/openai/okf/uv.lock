@@ -9,8 +9,8 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.0"
-source = { registry = "../../../../../ak-py/dist" }
+version = "0.9.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -18,9 +18,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { path = "agentkernel-0.9.0.tar.gz" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/c3/dc8db84fe163a24aae1603447ef4402ee181e3abfeb5eac9f527b699951c/agentkernel-0.9.1.tar.gz", hash = "sha256:89b3e602183faac570a80d04330d06b8186ea40212282b99a0f3309930ac703c", size = 492907, upload-time = "2026-09-16T12:23:42.172Z" }
 wheels = [
-    { path = "agentkernel-0.9.0-py3-none-any.whl" },
+    { url = "https://files.pythonhosted.org/packages/73/58/ff51a977dc34a14cab349c7d3339c530a7f66b525726ee4bd6e8ba4515f6/agentkernel-0.9.1-py3-none-any.whl", hash = "sha256:3a318474132ae127a419ab4edd0c809e7fb14be31c068f19b23630e0abeac45c", size = 659483, upload-time = "2026-09-16T12:23:40.364Z" },
 ]
 
 [package.optional-dependencies]

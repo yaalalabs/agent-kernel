@@ -205,6 +205,15 @@ class SystemToolFactory:
 
             tools.extend(get_schedule_tools())
 
+        # Deliberately not passed through _agent_allowed: that helper reads a flat `agents`
+        # list, and OKF's scoping is per (agent, database) and lives in its own role registry.
+        # Passing the block would silently allow every agent, since it has no `agents` field.
+        okf_config = getattr(AKConfig.get(), "okf", None)
+        if okf_config is not None:
+            from ..knowledgebase.okf.tools import OKFToolFactory
+
+            tools.extend(OKFToolFactory.get_tools(agent_name))
+
         agui_config = getattr(AKConfig.get(), "agui", None)
         state_config = getattr(agui_config, "state", None)
         if state_config and state_config.enabled and SystemToolFactory._agent_allowed(state_config, agent_name):

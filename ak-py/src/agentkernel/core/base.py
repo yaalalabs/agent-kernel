@@ -533,8 +533,41 @@ class Agent(ABC):
         """
         from agentkernel.core.tool import SystemToolFactory
 
-        for tool in SystemToolFactory.get_all(self.name):
+        system_tools = SystemToolFactory.get_all(self.name)
+        self._warn_on_tool_name_collisions(system_tools)
+
+        for tool in system_tools:
             self.attach_tool(tool.func)
+
+    def _warn_on_tool_name_collisions(self, system_tools: list[Any]) -> None:
+        """
+        Warn when a system tool is about to shadow one the application already bound by hand.
+
+        Runs after the framework adapter has taken the built native agent, so tools the
+        application bound itself are already present and visible here. The collision is warned
+        about and then allowed: skipping would make newly enabling a capability silently do
+        nothing for this agent, which is the worse of the two failures. The cost is that both
+        tools reach the framework -- tolerated by some, rejected at bind time by others, with
+        this warning explaining why.
+
+        Entirely defensive: an adapter exposing no list-shaped `tools` yields no warning, never
+        a raise.
+
+        :param system_tools: The SystemTool instances about to be attached.
+        :return: None.
+        """
+        native = getattr(self, "agent", None)
+        existing = {
+            name for name in (getattr(tool, "name", None) or getattr(tool, "__name__", None) for tool in getattr(native, "tools", None) or []) if name
+        }
+        colliding = sorted(existing.intersection(tool.name for tool in system_tools))
+        if colliding:
+            _log.warning(
+                "Agent '%s' already has tools named %s; Agent Kernel is attaching system tools with the same names. "
+                "The agent will carry both. If this agent was wired by hand, remove the manual binding or the configuration that enables it.",
+                self.name,
+                colliding,
+            )
 
     @staticmethod
     def _append_tools(agent: Any, wrapped: list[Any]) -> None:

@@ -87,8 +87,8 @@ class CLI:
                 if not prompt.strip():
                     continue
                 if prompt.startswith("!"):
-                    tokens = prompt.lower().split()
-                    command = tokens[0]
+                    tokens = prompt.split()
+                    command = tokens[0].lower()  # only the command is case-insensitive; arguments are names
                     if command in ["!h", "!help"]:
                         self.help()
                     elif command in ["!c", "!clear"]:
