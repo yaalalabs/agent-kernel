@@ -538,6 +538,8 @@ class OKFManager(DocumentKnowledgeBase):
             bundle.diagnostics.append(OKFDiagnostic(path=path, code=DiagnosticCode.UNREADABLE.value, message=f"document disappeared: {error}"))
         except KnowledgePathError as error:
             bundle.diagnostics.append(OKFDiagnostic(path=path, code=DiagnosticCode.PATH_ESCAPE.value, message=str(error)))
+        except Exception as error:
+            bundle.diagnostics.append(OKFDiagnostic(path=path, code=DiagnosticCode.UNREADABLE.value, message=f"document is not readable: {error}"))
         return None
 
     @staticmethod

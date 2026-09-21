@@ -645,6 +645,46 @@ class TestBoundedWalkReads:
         assert ids(manager.search("Padded")) == ["big.md"]
 
 
+class TestUnreadableDocuments:
+    """One file the store refuses costs that file, never the bundle. The walk runs from
+    __init__, so an exception escaping it takes the whole capability down at construction —
+    and the two refusals that matter in production are not related by type: a local file mode
+    raises PermissionError, while an S3 key the pod's role cannot get raises a botocore
+    ClientError, which is no OSError at all."""
+
+    @pytest.mark.parametrize(
+        "error",
+        [PermissionError(13, "Permission denied"), RuntimeError("AccessDenied")],
+        ids=["oserror", "non-oserror"],
+    )
+    def test_an_unreadable_concept_is_a_diagnostic_and_the_rest_of_the_bundle_loads(self, tmp_path, error):
+        class RefusingStore(LocalDocumentStore):
+            def read_prefix_bytes(self, path: str, max_bytes: int) -> bytes:
+                if path == "bad.md":
+                    raise error
+                return super().read_prefix_bytes(path, max_bytes)
+
+        files = {"good.md": "---\ntype: Note\ntitle: Good\n---\n\nbody\n", "bad.md": "---\ntype: Note\n---\n\nbody\n"}
+        manager = OKFManager(RefusingStore(write_bundle(tmp_path, files)))
+
+        assert ids(manager.browse()) == ["good.md"]
+        assert [(d.path, d.code) for d in manager.reload().diagnostics] == [("bad.md", DiagnosticCode.UNREADABLE.value)]
+
+    def test_an_unreadable_index_leaves_the_directory_listable(self, tmp_path):
+        # The whole-read branch of the same guard: a curated listing that cannot be read falls
+        # back to the derived one rather than aborting the walk.
+        class RefusingStore(LocalDocumentStore):
+            def read_bytes(self, path: str) -> bytes:
+                if path == "index.md":
+                    raise PermissionError(13, "Permission denied")
+                return super().read_bytes(path)
+
+        files = {"index.md": "curated listing\n", "a.md": "---\ntype: Note\ntitle: A\n---\n\nbody\n"}
+        manager = OKFManager(RefusingStore(write_bundle(tmp_path, files)))
+
+        assert ids(manager.browse()) == ["a.md"]
+
+
 class TestConcurrentReadsAndWrites:
     def test_a_write_landing_during_a_search_does_not_break_the_iteration(self, tmp_path):
         # The write-through took the refresh lock, but `search` and `_derived_schema` iterate the

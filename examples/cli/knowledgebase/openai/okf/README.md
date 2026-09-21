@@ -240,7 +240,7 @@ builder = KnowledgeBuilder([backend], semantic_map={"<TABLES>": "tables"})
 
 agent = Agent(
     name="KB_Router_Agent",
-    model="gpt-4o-mini",
+    model="gpt-4.1-mini",
     instructions="...your own navigation protocol...",
     tools=OpenAIToolBuilder.bind(builder.build()),
 )

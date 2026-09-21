@@ -42,7 +42,9 @@ async def test_consumer_browses_and_answers_citing_a_concept_path(test_client):
     # Only fetch_kb reads a full body, so a column that appears nowhere but the body of
     # tables/orders.md is what proves the agent navigated to it.
     await select(test_client, "kb_consumer_agent")
-    await test_client.send("Could you please provide the concept definition of the 'orders' table within the data warehouse schema? Additionally, could you specify the name of the column that holds the revenue?")
+    await test_client.send(
+        "Could you please provide the concept definition of the 'orders' table within the data warehouse schema? Additionally, could you specify the name of the column that holds the revenue?"
+    )
     await test_client.expect(["amount_usd"])
 
 
@@ -63,7 +65,9 @@ async def test_consumer_is_refused_a_write(test_client):
     # it has no way to do it. This is the per-(agent, database) permission rule, from the agent's
     # side: same bundle, same tools otherwise, different answer.
     await select(test_client, "kb_consumer_agent")
-    await test_client.send("Add a new concept recording that refunds are processed weekly. If you cannot, say you cannot and why.")
+    await test_client.send(
+        "Add a new concept recording that refunds are processed weekly. If you cannot, say you cannot and why."
+    )
     response = (test_client.last_agent_response or "").lower()
     assert any(phrase in response for phrase in ("cannot", "can't", "unable", "read-only", "read only", "no ability"))
 
@@ -71,14 +75,20 @@ async def test_consumer_is_refused_a_write(test_client):
 @pytest.mark.order(4)
 async def test_producer_writes_a_new_concept_and_reads_it_back(test_client):
     await select(test_client, "kb_producer_agent")
-    await test_client.send("Update knowledge: the orders table is rebuilt nightly at 02:00 UTC. Update the knowledge base accordingly.")
-    await test_client.send("Search the knowledge base for what you just recorded about the nightly rebuild, and state the time it happens.")
+    await test_client.send(
+        "Update knowledge: the orders table is rebuilt nightly at 02:00 UTC. Update the knowledge base accordingly."
+    )
+    await test_client.send(
+        "Search the knowledge base for what you just recorded about the nightly rebuild, and state the time it happens."
+    )
     await test_client.expect(["02:00"])
 
 
 @pytest.mark.order(5)
 async def test_curator_reads_before_it_amends(test_client):
     await select(test_client, "kb_curator_agent")
-    await test_client.send("Review the concept at tables/customers.md, then record a corrected version noting it also holds the signup channel.")
+    await test_client.send(
+        "Review the concept at tables/customers.md, then record a corrected version noting it also holds the signup channel."
+    )
     response = (test_client.last_agent_response or "").lower()
     assert "customers" in response
