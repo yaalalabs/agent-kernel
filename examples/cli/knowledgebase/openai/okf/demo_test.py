@@ -71,7 +71,7 @@ async def test_consumer_is_refused_a_write(test_client):
 @pytest.mark.order(4)
 async def test_producer_writes_a_new_concept_and_reads_it_back(test_client):
     await select(test_client, "kb_producer_agent")
-    await test_client.send("Record this as new knowledge: the orders table is rebuilt nightly at 02:00 UTC. Update the knowledge base accordingly.")
+    await test_client.send("Update knowledge: the orders table is rebuilt nightly at 02:00 UTC. Update the knowledge base accordingly.")
     await test_client.send("Search the knowledge base for what you just recorded about the nightly rebuild, and state the time it happens.")
     await test_client.expect(["02:00"])
 
