@@ -142,10 +142,15 @@ def test_get_framework_session_scoped_to_current_agents_runner_name():
 
 
 class ToolCarryingAgent(MockAgent):
-    """An agent exposing a framework-native agent with a list-shaped `tools`, as all six adapters do."""
+    """An agent exposing a framework-native agent whose `tools` carries names.
 
-    def __init__(self, name: str, runner: Runner, tool_names: list):
-        self._native = SimpleNamespace(tools=[SimpleNamespace(name=n) for n in tool_names])
+    Both shapes the adapters use are supported: a list of tool objects, and the name-keyed
+    mapping smolagents holds (`SmolagentsAgent._append_tools` writes `agent.tools[name] = tool`).
+    """
+
+    def __init__(self, name: str, runner: Runner, tool_names: list, as_mapping: bool = False):
+        tools = {n: SimpleNamespace(name=n) for n in tool_names} if as_mapping else [SimpleNamespace(name=n) for n in tool_names]
+        self._native = SimpleNamespace(tools=tools)
         self.attached: list = []
         super().__init__(name, runner)
 
@@ -200,12 +205,36 @@ class TestSystemToolNameCollisions:
         assert caplog.text == ""
 
     def test_an_agent_exposing_no_native_tools_attribute_warns_nothing(self, monkeypatch, caplog):
-        # Entirely defensive: not every adapter exposes a list-shaped `tools`, and a missing one
+        # Entirely defensive: not every adapter exposes a `tools` collection, and a missing one
         # must mean no warning, never a raise.
         monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda name=None: [_system_tool("read_kb")]))
 
         with caplog.at_level(logging.WARNING, logger="ak.core.runner"):
             agent = MockAgent("plain-agent", MockRunner("r"))
+            agent._attach_system_tools()
+
+        assert caplog.text == ""
+
+    def test_a_collision_is_detected_in_a_name_keyed_tools_mapping(self, monkeypatch, caplog):
+        # Smolagents keys its tools by name, so iterating `tools` directly yields plain strings
+        # whose .name and .__name__ are both None — every name was filtered out and the warning
+        # never fired on that framework at all.
+        monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda name=None: [_system_tool("read_kb")]))
+
+        with caplog.at_level(logging.WARNING, logger="ak.core.runner"):
+            ToolCarryingAgent("kb-agent", MockRunner("r"), ["read_kb", "write_kb"], as_mapping=True)._attach_system_tools()
+
+        assert "['read_kb']" in caplog.text
+
+    def test_a_tools_attribute_that_is_not_a_collection_warns_nothing(self, monkeypatch, caplog):
+        # The other half of "never a raise": an adapter meaning something else entirely by
+        # `tools` must not take agent construction down with a TypeError.
+        monkeypatch.setattr(SystemToolFactory, "get_all", staticmethod(lambda name=None: [_system_tool("read_kb")]))
+
+        agent = MockAgent("odd-agent", MockRunner("r"))
+        monkeypatch.setattr(type(agent), "agent", property(lambda self: SimpleNamespace(tools=object())), raising=False)
+
+        with caplog.at_level(logging.WARNING, logger="ak.core.runner"):
             agent._attach_system_tools()
 
         assert caplog.text == ""

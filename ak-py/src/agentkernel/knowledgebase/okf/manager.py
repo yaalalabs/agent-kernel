@@ -54,6 +54,10 @@ _WRITE_KEY_ORDER = ("type", "title", "description", "resource", "tags", "status"
 
 # `generated` and `verified` are reserved provenance metadata; allowing callers to supply them would let writers forge the write actor or trust tier.
 # `source`, `kind`, `trust`, `stale` and `links` are derived on read, so writing a fetched record back would persist a derived signal as frontmatter.
+# `query` and `params` are how KnowledgeBuilder.write_kb carries the backend-specific write
+# statement a query-language backend executes. An OKF bundle has no query language and ignores
+# both, so they are the tool's transport rather than the concept's content: left unreserved they
+# were written into the document as frontmatter, contradicting the tool's own docstring.
 # Other unknown metadata is preserved as `extra` rather than dropped.
 _WRITE_RESERVED_METADATA = frozenset(
     {
@@ -73,6 +77,8 @@ _WRITE_RESERVED_METADATA = frozenset(
         "trust",
         "stale",
         "links",
+        "query",
+        "params",
     }
 )
 
@@ -84,6 +90,10 @@ _STRUCTURAL_RECORD_KINDS = frozenset({"directory", "index"})
 _SLUG_SEPARATOR = re.compile(r"[^a-z0-9]+")
 _FALLBACK_SLUG = "concept"
 _SLUG_MAX_LENGTH = 48
+
+# How much of its own text a concept the backend authors takes as a title. Long enough to carry
+# a whole fact, short enough to stay a label in a browse listing.
+_TITLE_MAX_LENGTH = 72
 
 
 class OKFManager(DocumentKnowledgeBase):
@@ -291,7 +301,10 @@ class OKFManager(DocumentKnowledgeBase):
         prepared: List[tuple[str, str, dict]] = []
         for record in records or []:
             metadata = dict(record.get("metadata", {}) or {})
-            prepared.append((self._write_path(metadata), record.get("text", "") or "", metadata))
+            text = record.get("text", "") or ""
+            if not self._supplied_id(metadata):
+                self._title_new_concept(text, metadata)
+            prepared.append((self._write_path(metadata), text, metadata))
 
         self._ensure_manifest()
         written: dict[str, OKFConcept] = {}
@@ -755,8 +768,8 @@ class OKFManager(DocumentKnowledgeBase):
         :raises KnowledgePathError: If a supplied id escapes the bundle, contains a ``,``,
             resolves to the bundle root, or names a reserved OKF file.
         """
-        supplied = metadata.get("id")
-        if isinstance(supplied, str) and supplied.strip():
+        supplied = self._supplied_id(metadata)
+        if supplied:
             path = DocumentStore.normalise_relative(supplied)
             if not path:
                 raise KnowledgePathError(f"concept path may not be the bundle root: {supplied!r}")
@@ -773,6 +786,69 @@ class OKFManager(DocumentKnowledgeBase):
 
         slug = self._slug(metadata.get("title") or metadata.get("type") or _FALLBACK_SLUG)
         return f"{self._write_prefix}/{slug}-{uuid4().hex[:8]}{_MARKDOWN_SUFFIX}"
+
+    @staticmethod
+    def _supplied_id(metadata: Mapping[str, Any]) -> str:
+        """
+        Return the bundle path the caller named, or ``""`` when the record names none.
+
+        The one place "did the caller choose where this goes" is decided, because two things
+        hang off the answer: which branch :meth:`_write_path` takes, and whether the concept is
+        the caller's existing document or one the backend is authoring on its behalf.
+
+        :param metadata: The record's metadata.
+        :return: The supplied id, stripped, or ``""``.
+        """
+        supplied = metadata.get("id")
+        return supplied.strip() if isinstance(supplied, str) and supplied.strip() else ""
+
+    @classmethod
+    def _title_new_concept(cls, text: str, metadata: dict) -> None:
+        """
+        Title a concept the caller is authoring, from the concept's own text.
+
+        Only reached for a record naming no id, which is every write the ``write_kb`` tool
+        makes: its signature carries no title, so without this each produced concept is an
+        untitled ``Note`` at ``generated/concept-<hex>.md``. ``search_kb`` and ``browse_kb``
+        return summaries rather than bodies, so such a concept rendered as its own path twice
+        and none of the knowledge, leaving later readers to fetch every generated file to find
+        out what any of them says. The title also gives the synthesised path a slug that means
+        something.
+
+        A record carrying an id is left alone, and a caller supplying its own title keeps it: a
+        fetched concept written back must gain no frontmatter its curator did not write.
+
+        :param text: The body the concept is being written with.
+        :param metadata: The record's metadata, titled in place when it carries none.
+        :return: None.
+        """
+        if metadata.get("title"):
+            return
+        title = cls._summarise(text)
+        if title:
+            metadata["title"] = title
+
+    @staticmethod
+    def _summarise(text: str) -> str:
+        """
+        Reduce a body to one line that can stand as a title.
+
+        The first line carrying words, with markdown heading and list markers taken off, clipped
+        at a word boundary. Deliberately not a sentence splitter: an abbreviation would cut the
+        title short, and a label that is a little long costs less than one that stops mid-fact.
+
+        :param text: The body text.
+        :return: The title, or ``""`` when the body carries no words.
+        """
+        for line in (text or "").splitlines():
+            candidate = line.strip().lstrip("#>-*+ \t").strip()
+            if not candidate:
+                continue
+            if len(candidate) <= _TITLE_MAX_LENGTH:
+                return candidate
+            clipped = candidate[:_TITLE_MAX_LENGTH].rsplit(" ", 1)[0].rstrip(" ,;:.")
+            return f"{clipped or candidate[:_TITLE_MAX_LENGTH]}…"
+        return ""
 
     def _render_document(self, text: str, metadata: dict) -> str:
         """

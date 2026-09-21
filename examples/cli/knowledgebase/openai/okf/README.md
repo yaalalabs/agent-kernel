@@ -197,9 +197,13 @@ under **`bundle/generated/`** as ordinary OKF documents, stamped with a `generat
 naming the actor, and are visible to `browse`, `fetch` and `read` on the very next call — the
 write updates the manifest directly rather than waiting for a refresh.
 
-Those files are left where they land. Clear `bundle/generated/` yourself when you want a clean
-bundle again; this example deliberately adds no git-ignore rule and makes no temporary copy, so
-what the agent wrote is exactly what you can go and read.
+`write_kb` carries no title or path, so the backend takes both from the concept's own text: the
+first line becomes the title and its slug becomes the filename, which is what lets a written
+concept show its knowledge in a `browse` listing instead of just a generated path.
+
+Those files are left where they land, so what the agent wrote is exactly what you can go and
+read. `bundle/generated/` is git-ignored rather than checked in — clear it yourself when you
+want a clean bundle again.
 
 To make the bundle read-only instead, point the database at a store that says so. Capabilities
 fold with `and`, so the more restrictive side always wins and `write_kb` reports the backend as

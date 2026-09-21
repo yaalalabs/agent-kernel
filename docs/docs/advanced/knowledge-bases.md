@@ -236,6 +236,14 @@ ordinary OKF document stamped with a `generated:` block naming the producer, and
 `fetch` and `read` on the very next call, because the write updates the manifest directly rather than
 waiting for a refresh.
 
+A record naming no `metadata["id"]` is one the backend authors on the caller's behalf — which is every
+write the `write_kb` tool makes, since its signature carries no id. Such a concept is titled from the
+first line of its own text and its path is slugged from that title. That matters because `browse` and
+`search` return summaries rather than bodies: an untitled concept would render as its own path and
+nothing else, leaving later readers to fetch every generated file to find out what any of them says. A
+record that does name an id is left exactly as given, so a fetched concept written back gains no
+frontmatter its curator did not write.
+
 A runnable end-to-end example, with a checked-in bundle, lives at
 `examples/cli/knowledgebase/openai/okf/`.
 

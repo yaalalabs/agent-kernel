@@ -386,11 +386,94 @@ class TestWrite:
         assert written[0].endswith(".md")
 
     def test_synthesis_falls_back_through_title_then_type_then_a_constant(self, tmp_path):
+        # A body-less write is what reaches the lower rungs now: a concept the backend authors
+        # takes its title, and so its slug, from its own text whenever it has any.
         manager = make_manager(tmp_path)
-        manager.write([{"text": "a", "metadata": {"type": "Attested Computation"}}, {"text": "b", "metadata": {}}])
+        manager.write([{"text": "", "metadata": {"type": "Attested Computation"}}, {"text": "", "metadata": {}}])
         written = ids(manager.browse("generated"))
         assert any(path.startswith("generated/attested-computation-") for path in written)
         assert any(path.startswith("generated/concept-") for path in written)
+
+
+class TestAuthoredConceptTitles:
+    """A concept the backend authors is titled from its own text.
+
+    `write_kb`'s signature carries no title, so every agent-authored concept was an untitled
+    `Note` at `generated/concept-<hex>.md`. Browse and search return summaries rather than
+    bodies, so such a concept rendered as its own path twice and none of the knowledge — the
+    agent that wrote it, and every later reader, had to fetch each generated file to find out
+    what any of them said.
+    """
+
+    def test_an_authored_concept_shows_its_knowledge_in_a_listing(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "The orders table is rebuilt nightly at 02:00 UTC.", "metadata": {"source": "agent"}}])
+
+        listing = manager.format_results(manager.browse("generated"))
+        assert "The orders table is rebuilt nightly at 02:00 UTC." in listing
+
+    def test_the_derived_title_also_gives_the_synthesised_path_a_meaningful_slug(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "Refunds are processed weekly.", "metadata": {}}])
+
+        assert ids(manager.browse("generated"))[0].startswith("generated/refunds-are-processed-weekly-")
+
+    def test_a_caller_supplied_title_is_never_overwritten(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "a long body that is not the title", "metadata": {"title": "Chosen"}}])
+
+        assert manager.fetch(ids(manager.browse("generated")))[0]["metadata"]["title"] == "Chosen"
+
+    def test_a_record_naming_an_id_gains_no_title(self, tmp_path):
+        # The round-trip invariant: a fetched concept written back must gain no frontmatter its
+        # curator did not write, so titling is scoped to the concepts this backend authors.
+        manager = make_manager(tmp_path, {"u.md": "---\ntype: Note\n---\n\nbody\n"}, refresh_seconds=None)
+        manager.write([manager.fetch(["u.md"])[0]])
+
+        assert "title" not in yaml.safe_load((tmp_path / "u.md").read_text(encoding="utf-8").split("---\n")[1])
+
+    def test_a_long_first_line_is_clipped_at_a_word_boundary(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "The warehouse rebuild pipeline reruns every upstream extraction job before it loads anything", "metadata": {}}])
+
+        title = manager.fetch(ids(manager.browse("generated")))[0]["metadata"]["title"]
+        assert title.endswith("…") and len(title) <= 73 and " " not in title[-2:]
+
+    def test_markdown_markers_and_blank_lines_are_not_taken_for_the_title(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "\n\n## Nightly rebuild\n\nbody\n", "metadata": {}}])
+
+        assert manager.fetch(ids(manager.browse("generated")))[0]["metadata"]["title"] == "Nightly rebuild"
+
+    def test_a_body_with_no_words_leaves_the_concept_untitled(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "   \n\n", "metadata": {}}])
+
+        assert "title" not in manager.fetch(ids(manager.browse("generated")))[0]["metadata"]
+
+
+class TestToolTransportKeysAreNotFrontmatter:
+    """`write_kb` carries a backend-specific write statement in `query`/`params`. An OKF bundle
+    has no query language and ignores both, so they are the tool's transport rather than the
+    concept's content — left unreserved they were written into the document as frontmatter,
+    contradicting the tool's own docstring."""
+
+    def test_query_and_params_do_not_reach_the_document(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "a fact", "metadata": {"source": "agent", "query": "MATCH (n) RETURN n", "params": {"a": 1}}}])
+
+        written = ids(manager.browse("generated"))[0]
+        frontmatter = yaml.safe_load((tmp_path / written).read_text(encoding="utf-8").split("---\n")[1])
+        assert not {"query", "params"} & set(frontmatter)
+
+    def test_unknown_metadata_is_still_carried(self, tmp_path):
+        # The reservation is specific: it must not become a general filter on caller extras.
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "a fact", "metadata": {"row_count": 0, "owner": "data-eng"}}])
+
+        written = ids(manager.browse("generated"))[0]
+        frontmatter = yaml.safe_load((tmp_path / written).read_text(encoding="utf-8").split("---\n")[1])
+        assert frontmatter["row_count"] == 0 and frontmatter["owner"] == "data-eng"
 
     def test_a_supplied_id_without_the_markdown_suffix_still_survives_the_next_walk(self, tmp_path):
         # The write-through makes any path visible immediately, so only a rewalk proves the
