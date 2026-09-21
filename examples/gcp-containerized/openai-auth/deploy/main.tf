@@ -1,6 +1,6 @@
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.9.0"
+  version = "0.9.1"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration

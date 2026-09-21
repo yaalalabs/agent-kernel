@@ -161,6 +161,10 @@ class _SlackConfig(BaseModel):
         default="",
         description="The message to send as an acknowledgement when a Slack message is received",
     )
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Slack outbound adapter",
+    )
 
 
 class _WhatsAppConfig(BaseModel):
@@ -174,6 +178,10 @@ class _WhatsAppConfig(BaseModel):
     app_secret: str = Field(default="", description="WhatsApp app secret for signature verification")
     phone_number_id: str = Field(default="", description="WhatsApp Business phone number ID")
     api_version: str = Field(default="v24.0", description="WhatsApp API version")
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in WhatsApp outbound adapter",
+    )
 
 
 class _MessengerConfig(BaseModel):
@@ -182,6 +190,10 @@ class _MessengerConfig(BaseModel):
     access_token: str = Field(default="", description="Facebook Page access token")
     app_secret: str = Field(default="", description="Facebook app secret for signature verification")
     api_version: str = Field(default="v24.0", description="Facebook Graph API version")
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Facebook Messenger outbound adapter",
+    )
 
 
 class _InstagramConfig(BaseModel):
@@ -191,6 +203,10 @@ class _InstagramConfig(BaseModel):
     app_secret: str = Field(default="", description="Instagram app secret for signature verification")
     instagram_account_id: str = Field(default="", description="Instagram Business Account ID (IGSID)")
     api_version: str = Field(default="v21.0", description="Instagram Graph API version")
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Instagram outbound adapter",
+    )
 
 
 class _TelegramConfig(BaseModel):
@@ -198,6 +214,10 @@ class _TelegramConfig(BaseModel):
     bot_token: str = Field(default="", description="Telegram bot token from BotFather")
     webhook_secret: str = Field(default="", description="Optional secret token for webhook security")
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Telegram outbound adapter",
+    )
 
 
 class _TeamsConfig(BaseModel):
@@ -212,6 +232,10 @@ class _TeamsConfig(BaseModel):
         default="",
         description="Entra ID tenant that owns the bot's app registration. Required only for a single-tenant registration, whose channel tokens must be issued by its own tenant; leave empty for a multi-tenant bot. Also the fallback tenant for the app-only token used to download attachments whose URL is not pre-authenticated, when the incoming activity carries none",
     )
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Microsoft Teams outbound adapter",
+    )
 
 
 class _GmailConfig(BaseModel):
@@ -219,6 +243,10 @@ class _GmailConfig(BaseModel):
     token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")
     poll_interval: int = Field(default=30, description="Email polling interval in seconds")
     label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Gmail outbound adapter",
+    )
 
 
 class _MultimodalStorageRedisConfig(_RedisConfig):

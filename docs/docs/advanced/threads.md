@@ -54,8 +54,11 @@ their own conversation history, and AK threads alongside them would create dupli
 
 ## Enabling Thread Support
 
-Mount `AgentThreadRequestHandler` instead of the default handler; it serves `/api/v1/chat`,
-`/api/v1/chat-multipart`, and the thread read routes:
+Mount a thread chat handler instead of the default one — mounting is what enables threads. Which
+one depends on how chat executes; both serve `/api/v1/chat`, `/api/v1/chat-multipart`, and the
+thread read routes.
+
+**Direct execution** (the agent runs inside the request):
 
 ```python
 from agentkernel.api import RESTAPI
@@ -64,8 +67,24 @@ from agentkernel.thread import AgentThreadRequestHandler
 RESTAPI.run(handlers=[AgentThreadRequestHandler()])
 ```
 
-Then select the store backend in `config.yaml` (constructing the handler without a `thread` block fails
-fast at startup):
+**[Queue mode](./queue-mode-guide)** (the agent runs behind the input queue) — `ThreadRequestHandler`
+replaces the pipeline's own chat route rather than joining it, since both own `/api/v1/chat`:
+
+```python
+from agentkernel.pipeline import IOHandler
+from agentkernel.thread import ThreadRequestHandler
+
+IOHandler.run(request_handler=ThreadRequestHandler())
+```
+
+Recording is split across the queue there, because the run is: the user message, the thread and
+the attachment offload happen before the request is enqueued, and the Agent Runner appends the
+reply — it is the only process holding it. Give the agent-runner process the same `thread`
+configuration as the API process; without it the reply cannot be recorded and the runner logs a
+warning naming the missing block.
+
+Then select the store backend in `config.yaml` (constructing either handler without a `thread` block
+fails fast at startup):
 
 ```yaml
 thread:
@@ -177,6 +196,7 @@ class MyAuthoriser(Authoriser):
 
 
 RESTAPI.run(handlers=[AgentThreadRequestHandler(authoriser=MyAuthoriser())])
+# or, in queue mode:  IOHandler.run(request_handler=ThreadRequestHandler(authoriser=MyAuthoriser()))
 ```
 
 With an `Authoriser` configured:

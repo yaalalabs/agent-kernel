@@ -6,6 +6,7 @@ from agents import Agent
 assistant_agent = Agent(
     name="assistant",
     instructions="You are a helpful assistant. Give short and direct answers.",
+    model="openai/gpt-4.1-mini",
 )
 
 # The agent itself says nothing about scheduling: the `schedule` block in config.yaml is what

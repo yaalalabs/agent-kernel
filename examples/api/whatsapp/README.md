@@ -13,7 +13,7 @@ This example demonstrates how to create a WhatsApp Business API integration with
 
 ### 1. Get WhatsApp Business API Credentials
 
-Follow the setup guide in [AgentWhatsAppRequestHandler](../../../ak-py/src/agentkernel/integrations/whatsapp/README.md)
+Follow the setup guide in [WhatsAppInboundAdapter](../../../ak-py/src/agentkernel/integration/whatsapp/README.md)
 
 You'll need:
 - Phone Number ID
@@ -180,4 +180,4 @@ See deployment documentation for AWS and other platforms.
 
 - [WhatsApp Cloud API Docs](https://developers.facebook.com/docs/whatsapp/cloud-api)
 - [Agent Kernel Documentation](../../../docs/)
-- [WhatsApp Integration Guide](../../../ak-py/src/agentkernel/integrations/whatsapp/README.md)
+- [WhatsApp Integration Guide](../../../ak-py/src/agentkernel/integration/whatsapp/README.md)

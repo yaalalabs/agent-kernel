@@ -1,6 +1,6 @@
 module "FlexFunction" {
   source                  = "yaalalabs/ak-serverless/azurerm"
-  version                 = "0.9.0"
+  version                 = "0.9.1"
   providers               = { azurerm = azurerm }
   product_alias           = var.product_alias
   env_alias               = var.env_alias

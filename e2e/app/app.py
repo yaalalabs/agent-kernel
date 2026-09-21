@@ -1,13 +1,12 @@
-import asyncio
 import base64
 import logging
 import os
-import threading
 
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import PollerRunner, WebhookRESTRequestHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.slack import AgentSlackRequestHandler
-from agentkernel.telegram import AgentTelegramRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.slack import SlackInboundAdapter
+from agentkernel.telegram import TelegramInboundAdapter
 from agents import Agent as OpenAIAgent
 
 general_agent = OpenAIAgent(
@@ -22,45 +21,41 @@ OpenAIModule([general_agent])
 _log = logging.getLogger("ak.e2e")
 
 
-def _maybe_start_gmail():
-    """Start the Gmail polling handler in a background thread, if configured.
+def _maybe_gmail():
+    """Build the Gmail poller, if it is configured.
 
     Gmail's OAuth flow is interactive, so the container cannot authenticate from
     scratch: a pre-generated token.pickle is injected base64-encoded via
     AK_GMAIL__TOKEN_B64 (see e2e/tests/scripts/gmail_login.py) and written to the
-    configured token file before the handler starts. When the Gmail env vars are
+    configured token file before the adapter starts. When the Gmail env vars are
     absent the app simply runs without the Gmail integration.
     """
     token_b64 = os.environ.get("AK_GMAIL__TOKEN_B64")
     if not (os.environ.get("AK_GMAIL__CLIENT_ID") and os.environ.get("AK_GMAIL__CLIENT_SECRET") and token_b64):
         _log.info("Gmail credentials not configured - Gmail integration disabled")
-        return
+        return None
 
     from agentkernel.core import Config
-    from agentkernel.gmail import AgentGmailRequestHandler
+    from agentkernel.gmail import GmailInboundAdapter
 
     try:
-        token_file = Config.get().gmail.token_file
-        with open(token_file, "wb") as f:
-            f.write(base64.b64decode(token_b64))
+        with open(Config.get().gmail.token_file, "wb") as token_file:
+            token_file.write(base64.b64decode(token_b64))
 
-        handler = AgentGmailRequestHandler()
-        handler.authenticate()
-
-        def _run():
-            asyncio.run(handler.start_polling())
-
-        threading.Thread(target=_run, name="gmail-polling", daemon=True).start()
-        _log.info("Gmail polling started in background thread")
+        adapter = GmailInboundAdapter()
+        adapter.authenticate()
+        _log.info("Gmail poller configured")
+        return PollerRunner(adapter)
     except Exception:
         _log.exception("Gmail integration failed to start - continuing without Gmail")
+        return None
 
 
 def _append_optional(handlers, name, env_var, construct):
     """Append an optional messaging handler.
 
     Skip it (with a log) when the credentials are absent, and degrade gracefully
-    when they are only *partially* set: these handlers raise at construction time
+    when they are only *partially* set: these adapters raise at construction time
     unless every required credential (e.g. access_token + phone_number_id +
     verify_token) is present, so a partial config must not crash the whole app and
     take the always-on Slack + Telegram handlers down with it.
@@ -69,33 +64,33 @@ def _append_optional(handlers, name, env_var, construct):
         _log.info("%s credentials not configured - %s integration disabled", name, name)
         return
     try:
-        handlers.append(construct())
+        handlers.append(WebhookRESTRequestHandler(construct()))
     except Exception:
         _log.exception("%s integration failed to construct - continuing without it", name)
 
 
 def _handlers():
-    handlers = [AgentSlackRequestHandler(), AgentTelegramRequestHandler()]
+    handlers = [WebhookRESTRequestHandler(SlackInboundAdapter()), WebhookRESTRequestHandler(TelegramInboundAdapter())]
 
     def _whatsapp():
-        from agentkernel.whatsapp import AgentWhatsAppRequestHandler
+        from agentkernel.whatsapp import WhatsAppInboundAdapter
 
-        return AgentWhatsAppRequestHandler()
+        return WhatsAppInboundAdapter()
 
     def _messenger():
-        from agentkernel.messenger import AgentMessengerRequestHandler
+        from agentkernel.messenger import MessengerInboundAdapter
 
-        return AgentMessengerRequestHandler()
+        return MessengerInboundAdapter()
 
     def _instagram():
-        from agentkernel.instagram import AgentInstagramRequestHandler
+        from agentkernel.instagram import InstagramInboundAdapter
 
-        return AgentInstagramRequestHandler()
+        return InstagramInboundAdapter()
 
     def _teams():
-        from agentkernel.teams import AgentTeamsRequestHandler
+        from agentkernel.teams import TeamsInboundAdapter
 
-        return AgentTeamsRequestHandler()
+        return TeamsInboundAdapter()
 
     _append_optional(handlers, "WhatsApp", "AK_WHATSAPP__ACCESS_TOKEN", _whatsapp)
     _append_optional(handlers, "Messenger", "AK_MESSENGER__ACCESS_TOKEN", _messenger)
@@ -105,8 +100,8 @@ def _handlers():
 
 
 def main():
-    _maybe_start_gmail()
-    RESTAPI.run(_handlers())
+    poller = _maybe_gmail()
+    IOHandler.run(handlers=_handlers(), pollers=[poller] if poller else None)
 
 
 if __name__ == "__main__":

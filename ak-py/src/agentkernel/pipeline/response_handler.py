@@ -3,10 +3,11 @@ import logging
 from typing import Optional
 
 from ..core.config import AKConfig
-from ..core.model import ExecutionMode, StreamChunk
+from ..core.model import AgentReplyText, ExecutionMode, StreamChunk
+from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, QueueMessage, QueueName
+from .envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
@@ -49,7 +50,12 @@ class ResponseHandler:
         return self._ws_handler
 
     def process(self, message: QueueMessage) -> None:
-        """Deliver one output message according to the execution mode."""
+        """Deliver one output message: to its messaging platform, or per the execution mode."""
+        integration = message.attributes.get(ATTR_INTEGRATION)
+        if integration:
+            self._deliver_integration(message, integration)
+            return
+
         mode = AKConfig.get().execution.mode
         if mode == ExecutionMode.STREAM:
             # No USER_ID attribute means the request entered over REST (spec §2 invariant): its
@@ -71,6 +77,13 @@ class ResponseHandler:
         max_receive_count = AKConfig.get().execution.queues.output.max_receive_count
         self._log.error(f"Permanent failure for output message {message.message_id} after {max_receive_count} retries")
         try:
+            integration = message.attributes.get(ATTR_INTEGRATION)
+            if integration:
+                adapter = self._outbound_adapter(integration)
+                run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, self._reply_context(message)))
+                self._log.info(f"Delivered permanent-failure message to {integration}: session_id={message.group_id}")
+                return
+
             request_id = message.attributes.get(ATTR_REQUEST_ID)
             error_text = f"Failed to process message after {max_receive_count} retries"
             mode = AKConfig.get().execution.mode
@@ -130,6 +143,54 @@ class ResponseHandler:
         ).run()
 
     # -- delivery paths ----------------------------------------------------------------------
+
+    @staticmethod
+    def _outbound_adapter(integration: str):
+        """Resolve the outbound adapter named by a message's integration attribute.
+
+        Imported lazily and locally: messaging platforms are an `integration` capability, and
+        importing that package at module scope would make every pipeline process (including a
+        Lambda that never sees integration traffic) pay for its SDKs. The same shape core uses
+        to reach the AG-UI state helpers.
+
+        :param integration: The adapter name stamped by the producer.
+        :return: The outbound adapter for that name.
+        :raises AKConfigError: If the name resolves to no adapter — the message is then retried
+            and permanently failed rather than silently disappearing.
+        """
+        from ..integration.adapter.factory import IntegrationAdapterFactory
+
+        return IntegrationAdapterFactory.create_outbound(integration)
+
+    @staticmethod
+    def _reply_context(message: QueueMessage) -> dict:
+        """Rebuild the adapter's reply context from the message's reply_-prefixed attributes."""
+        return {key.removeprefix(REPLY_CONTEXT_PREFIX): value for key, value in message.attributes.items() if key.startswith(REPLY_CONTEXT_PREFIX)}
+
+    def _deliver_integration(self, message: QueueMessage, integration: str) -> None:
+        """Deliver one reply back to the messaging platform it came from.
+
+        Raising is deliberate, exactly as in ``_broadcast``: the ConsumerLoop retries the message
+        up to ``max_receive_count`` and then hands it to ``on_permanent_failure``, so a briefly
+        unreachable platform API gets its retries.
+        """
+        adapter = self._outbound_adapter(integration)
+        reply_context = self._reply_context(message)
+        request_id = message.attributes.get(ATTR_REQUEST_ID)
+        body = json.loads(message.body) if message.body else {}
+        if not isinstance(body, dict):
+            body = {"result": body}
+        status_code = int(message.attributes.get(ATTR_STATUS_CODE, "200"))
+
+        if status_code >= 400:
+            self._log.error(
+                f"[OUTPUT ERROR] integration={integration}, session_id={message.group_id}, "
+                f"request_id={request_id}, status_code={status_code}, error={body.get('error')}"
+            )
+            run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
+            return
+        run_async_sync(adapter.deliver(AgentReplyText(response=str(body.get("result", ""))), reply_context))
+        self._log.info(f"[OUTPUT DONE] Delivered to {integration}: session_id={message.group_id}, request_id={request_id}")
 
     def _store_response(self, message: QueueMessage) -> None:
         request_id = message.attributes.get(ATTR_REQUEST_ID)

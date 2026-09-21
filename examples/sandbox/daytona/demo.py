@@ -8,6 +8,7 @@ from agents import Agent
 coder_agent = Agent(
     name="coder",
     instructions="You are a coding assistant. Give short, direct answers backed by what you actually executed.",
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([coder_agent])
