@@ -12,3 +12,6 @@ okf:
       consumer: [kb_consumer_agent]
       producer: [kb_producer_agent]
       curator: [kb_curator_agent]
+trace:
+  enabled: true
+  type: langfuse

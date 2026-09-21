@@ -25,7 +25,7 @@ from agentkernel.openai import OpenAIModule
 
 consumer = Agent(
     name="kb_consumer_agent",
-    model="gpt-4o-mini",
+    model="gpt-5.4-mini",
     instructions=(
         "You are an analytics knowledge assistant. You answer questions about the data warehouse "
         "from the knowledge base, and you cite the concept path you took each answer from. "
@@ -35,7 +35,7 @@ consumer = Agent(
 
 producer = Agent(
     name="kb_producer_agent",
-    model="gpt-4o-mini",
+    model="gpt-5.4-mini",
     instructions=(
         "You are an analytics knowledge author. When you learn something about the warehouse that "
         "the knowledge base does not already record, write it down as a new concept. Check first "
@@ -45,7 +45,7 @@ producer = Agent(
 
 curator = Agent(
     name="kb_curator_agent",
-    model="gpt-4o-mini",
+    model="gpt-5.4-mini",
     instructions=(
         "You are an analytics knowledge curator. You review what the knowledge base already holds, "
         "correct what is wrong, and bring what is out of date up to date. Read the existing concept "

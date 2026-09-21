@@ -26,6 +26,7 @@ from agentkernel.core.config import AKConfig, _OKFConfig, _OKFDatabaseConfig
 from agentkernel.core.model import SystemTool
 from agentkernel.core.tool import SystemToolFactory
 from agentkernel.knowledgebase.okf.capability import OKFCapabilityManager
+from agentkernel.knowledgebase.okf.prompts import OKFPromptComposer
 from agentkernel.knowledgebase.okf.tools import OKFToolFactory
 from agentkernel.knowledgebase.store import LocalDocumentStore
 
@@ -252,13 +253,26 @@ class TestWriteScoping:
 
 
 class TestPromptSuffix:
-    def test_the_whole_section_rides_the_first_tool(self, monkeypatch, tmp_path):
+    def test_no_tool_carries_the_section(self, monkeypatch, tmp_path):
+        # The instructions belong to the system prompt, not to a tool description: a future
+        # change that smuggles them back onto a tool has this to contradict.
         configure(monkeypatch, {"warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path), consumer=["reader"])})
 
-        tools = OKFToolFactory.get_tools("reader")
+        assert all(tool.description == "" for tool in OKFToolFactory.get_tools("reader"))
 
-        assert tools[0].description.startswith("[Organizational knowledge (OKF)]")
-        assert all(tool.description == "" for tool in tools[1:])
+    def test_the_section_is_contributed_to_the_system_prompt(self, monkeypatch, tmp_path):
+        configure(monkeypatch, {"warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path), consumer=["reader"])})
+
+        sections = SystemToolFactory.get_prompt_sections("reader")
+
+        assert len(sections) == 1
+        assert sections[0].startswith("[Organizational knowledge (OKF)]")
+        assert sections[0] == SystemToolFactory.get_system_prompt_suffix("reader")
+
+    def test_an_agent_holding_no_role_contributes_no_section(self, monkeypatch, tmp_path):
+        configure(monkeypatch, {"warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path), consumer=["reader"])})
+
+        assert SystemToolFactory.get_prompt_sections("stranger") == []
 
     def test_the_suffix_reaches_the_named_agent_only(self, monkeypatch, tmp_path):
         configure(monkeypatch, {"warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path), curator=["keeper"])})
@@ -276,6 +290,7 @@ class TestPromptSuffix:
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
 
         assert SystemToolFactory.get_all("anyone") == []
+        assert SystemToolFactory.get_prompt_sections("anyone") == []
         assert SystemToolFactory.get_system_prompt_suffix("anyone") == ""
 
     def test_the_okf_branch_does_not_import_the_kb_tier_when_the_block_is_absent(self, monkeypatch):
@@ -284,8 +299,12 @@ class TestPromptSuffix:
         # since the test module itself has already imported it.
         monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
         monkeypatch.setattr(OKFToolFactory, "get_tools", staticmethod(lambda name: pytest.fail("the OKF branch ran with no block configured")))
+        monkeypatch.setattr(
+            OKFPromptComposer, "for_agent", classmethod(lambda cls, name: pytest.fail("the OKF prompt branch ran with no block configured"))
+        )
 
         assert SystemToolFactory.get_all("anyone") == []
+        assert SystemToolFactory.get_prompt_sections("anyone") == []
 
 
 class TestValidation:

@@ -118,6 +118,30 @@ class OKFPromptComposer:
         self._registry = registry
         self._descriptions = descriptions
 
+    @classmethod
+    def for_agent(cls, agent_name: Optional[str]) -> str:
+        """
+        Render the OKF section for one agent from the configured capability.
+
+        The entry point ``SystemToolFactory.get_prompt_sections`` calls: these instructions are
+        the agent's system prompt, so they are composed here and written into it, never carried
+        on a tool's description.
+
+        :param agent_name: Agent to render for.
+        :return: The section, or "" when the capability is off or the agent holds no role.
+        """
+        # Imported inside the method rather than at module scope: this module is composed from
+        # configuration alone, and the capability manager pulls the store and builder tier
+        # behind it.
+        from .capability import OKFCapabilityManager
+
+        manager = OKFCapabilityManager.get()
+        if manager is None:
+            return ""
+
+        composer = cls(manager.roles, {name: config.description for name, config in manager.databases.items()})
+        return composer.compose(agent_name)
+
     def compose(self, agent_name: Optional[str]) -> str:
         """
         Render the whole OKF prompt section for one agent.

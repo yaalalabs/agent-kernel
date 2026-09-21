@@ -14,6 +14,9 @@ Two scoping rules, enforced in two different ways:
 
 Every tool body is a closure over the agent name alone and resolves its builder when called, so
 agent construction neither opens a store nor walks a bundle.
+
+The capability's instructions are not here: they are a system prompt section, composed by
+``OKFPromptComposer.for_agent`` and appended to the agent's own prompt.
 """
 
 from typing import Any, List, Optional
@@ -21,7 +24,6 @@ from typing import Any, List, Optional
 from ...core.model import SystemTool
 from ..knowledgebuilder import KnowledgeBuilder
 from .capability import OKFCapabilityManager
-from .prompts import OKFPromptComposer
 
 _NO_KB = "No OKF knowledge base is configured for this agent."
 
@@ -46,12 +48,12 @@ class OKFToolFactory:
         manager.validate_configuration()
 
         writable = bool(manager.roles.writable_databases_for(agent_name))
-        tools = OKFToolFactory._build(agent_name, writable)
 
-        guidance = OKFPromptComposer(manager.roles, {name: config.description for name, config in manager.databases.items()}).compose(agent_name)
-        # The whole section rides the first tool's description and the rest carry "", which
-        # get_system_prompt_suffix filters out. The sandbox pattern.
-        return [SystemTool(name=func.__name__, description=guidance if index == 0 else "", func=func) for index, func in enumerate(tools)]
+        # Every description is "": the capability's instructions are a system prompt section
+        # (``OKFPromptComposer.for_agent``, collected by ``SystemToolFactory.get_prompt_sections``)
+        # written into the agent's prompt, not a payload smuggled through a tool description --
+        # which no framework reads anyway, since the tool builders bind ``func.__doc__``.
+        return [SystemTool(name=func.__name__, description="", func=func) for func in OKFToolFactory._build(agent_name, writable)]
 
     @staticmethod
     def _build(agent_name: str, writable: bool) -> List[Any]:
