@@ -46,6 +46,20 @@ class IntegrationAdapterFactory:
             cls._cache.clear()
 
     @classmethod
+    def register_outbound(cls, name: str, adapter: OutboundAdapter) -> None:
+        """Register a live outbound adapter instance under a name.
+
+        Built-in adapters are stateless and constructed by :meth:`create_outbound`; a stateful
+        edge like LiveKit (which owns a persistent WebRTC room) constructs itself and registers
+        here so the Response Handler can route replies back to the same connection.
+
+        :param name: The integration name stamped on output messages.
+        :param adapter: The adapter instance to return for that name.
+        """
+        with cls._lock:
+            cls._cache[name] = adapter
+
+    @classmethod
     def _build(cls, name: str) -> OutboundAdapter:
         if name in cls._BUILTIN_NAMES:
             override = getattr(getattr(AKConfig.get(), name), "outbound_adapter", "")

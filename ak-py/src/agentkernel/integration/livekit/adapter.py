@@ -1,0 +1,256 @@
+import asyncio
+import base64
+import json
+import logging
+import time
+import uuid
+from typing import Dict, Optional
+
+from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, BaseRunRequest, ExecutionMode
+from ...core.util.factory import AKConfigError
+from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
+from ...pipeline.producer import RequestProducer
+from ..adapter.base import OutboundAdapter
+from ..adapter.factory import IntegrationAdapterFactory
+
+_log = logging.getLogger("ak.integration.livekit")
+
+INTEGRATION_NAME = "livekit"
+# OpenAI Realtime speaks PCM16 at 24 kHz mono in both directions.
+AUDIO_SAMPLE_RATE = 24000
+# Incoming mic audio is batched into ~100 ms frames before it is enqueued: one queue message per
+# 10 ms LiveKit frame would run the whole pipeline (session load/store, hooks, agent selection)
+# hundreds of times a second. 100 ms is also the smallest buffer the Realtime API accepts.
+AUDIO_BATCH_SECONDS = 0.1
+
+try:
+    from livekit import rtc
+except ImportError:
+    rtc = None  # type: ignore
+
+
+class LiveKitEdgeGateway(OutboundAdapter):
+    """Bridges a LiveKit WebRTC room with the Agent Kernel queue.
+
+    Unlike standard messaging webhook adapters which are stateless and split into Inbound/Outbound
+    halves, WebRTC requires a stateful, persistent connection to a room. This gateway owns that
+    connection: it pushes user audio and chat text to the input queue, and — as the ``livekit``
+    outbound adapter — plays the agent's streamed audio and transcript back to the room.
+    """
+
+    name = INTEGRATION_NAME
+
+    def __init__(
+        self,
+        room_url: str,
+        agent_name: str,
+        session_id: str,
+        token: Optional[str] = None,
+        api_key: Optional[str] = None,
+        api_secret: Optional[str] = None,
+    ):
+        if rtc is None:
+            raise AKConfigError("LiveKit SDK is not installed. Run: pip install livekit-api livekit")
+        self.room_url = room_url
+        self.agent_name = agent_name
+        self.session_id = session_id
+
+        if token:
+            self.token = token
+        elif api_key and api_secret:
+            from livekit import api
+
+            self.token = (
+                api.AccessToken(api_key, api_secret)
+                .with_identity(f"agent-{agent_name}")
+                .with_name(f"{agent_name} Agent")
+                .with_grants(api.VideoGrants(room_join=True, room=session_id))
+                .to_jwt()
+            )
+        else:
+            raise ValueError("Either 'token' or both 'api_key' and 'api_secret' must be provided")
+
+        self.room: Optional["rtc.Room"] = None
+        self.audio_source: Optional["rtc.AudioSource"] = None
+        self.producer: Optional[RequestProducer] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._connected = False
+
+        # Replies route back through the Response Handler to this live connection (see the
+        # `livekit` integration name stamped on every output message).
+        IntegrationAdapterFactory.register_outbound(INTEGRATION_NAME, self)
+
+    async def start(self) -> None:
+        """Connect to the LiveKit room and bridge audio until the pipeline shuts down."""
+        _log.info(f"Connecting to LiveKit room at {self.room_url}")
+
+        self._loop = asyncio.get_running_loop()
+        self.room = rtc.Room()
+        self.producer = RequestProducer()
+
+        @self.room.on("track_subscribed")
+        def on_track_subscribed(track: "rtc.Track", publication: "rtc.RemoteTrackPublication", participant: "rtc.RemoteParticipant"):
+            if track.kind != rtc.TrackKind.KIND_AUDIO:
+                return
+            _log.info(f"Subscribed to audio track from {participant.identity}")
+            asyncio.create_task(self._greet(participant.identity))
+            asyncio.create_task(self._process_incoming_audio(track))
+
+        @self.room.on("data_received")
+        def on_data_received(data_packet: "rtc.DataPacket"):
+            self._handle_chat_message(data_packet)
+
+        await self.room.connect(self.room_url, self.token)
+        self._connected = True
+        _log.info("LiveKit WebRTC connection established.")
+
+        _log.info("Publishing AI audio track to LiveKit...")
+        source = rtc.AudioSource(sample_rate=AUDIO_SAMPLE_RATE, num_channels=1)
+        track = rtc.LocalAudioTrack.create_audio_track("ai-voice", source)
+        options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
+        try:
+            await asyncio.wait_for(self.room.local_participant.publish_track(track, options), timeout=10.0)
+            _log.info("AI audio track published successfully.")
+        except asyncio.TimeoutError:
+            _log.error("Timed out waiting for publish_track!")
+        except Exception as e:
+            _log.error(f"Failed to publish track: {e}")
+        self.audio_source = source
+
+        from ...pipeline.thread_runner import ThreadRunner
+
+        _log.info("Entering LiveKitEdgeGateway main wait loop...")
+        while not ThreadRunner.shutdown_event.is_set():
+            await asyncio.sleep(0.5)
+
+        _log.info("LiveKitEdgeGateway shutting down: disconnecting from room")
+        await self.room.disconnect()
+        _log.info("LiveKitEdgeGateway disconnected successfully")
+
+    # -- inbound: room -> queue --------------------------------------------------------------
+
+    async def _greet(self, participant_identity: str) -> None:
+        """Kick off the conversation once a participant's mic appears."""
+        _log.info(f"Triggering auto-greeting for {participant_identity}")
+        prompt = f"A user named {participant_identity} just connected their microphone. Say a very short hello to them and confirm you are connected!"
+        self._enqueue(AgentRequestText(prompt=prompt, name=self.agent_name))
+
+    def _handle_chat_message(self, data_packet: "rtc.DataPacket") -> None:
+        if data_packet.topic not in ("chat", "lk-chat-topic", "lk-chat", ""):
+            return
+        try:
+            payload_str = data_packet.data.decode("utf-8")
+            try:
+                payload = json.loads(payload_str)
+                text = payload.get("message", payload_str)
+            except json.JSONDecodeError:
+                text = payload_str
+            if not text:
+                return
+            _log.info(f"Text chat received from {data_packet.participant.identity}: {text}")
+            self._enqueue(AgentRequestText(prompt=text, name=self.agent_name))
+        except Exception as e:
+            _log.error(f"Failed to process chat: {e}")
+
+    async def _process_incoming_audio(self, track: "rtc.Track") -> None:
+        """Batch continuous mic audio into ~100 ms PCM16 frames and enqueue them."""
+        audio_stream = rtc.AudioStream(track, sample_rate=AUDIO_SAMPLE_RATE, num_channels=1)
+        _log.info("Listening for audio stream...")
+
+        pending = bytearray()
+        last_flush = time.monotonic()
+        async for event in audio_stream:
+            try:
+                pending.extend(event.frame.data.tobytes())
+                now = time.monotonic()
+                if pending and (now - last_flush) >= AUDIO_BATCH_SECONDS:
+                    self._enqueue(AgentRequestVoice(prompt="", audio_data=base64.b64encode(bytes(pending)).decode("utf-8"), name=self.agent_name))
+                    pending.clear()
+                    last_flush = now
+            except Exception as e:
+                _log.error(f"Failed to process incoming audio frame: {e}")
+
+    def _enqueue(self, request) -> None:
+        """Push one request onto the input queue tagged for this livekit session."""
+        if self.producer is None:
+            return
+        body = BaseRunRequest(prompt="", session_id=self.session_id, mode=ExecutionMode.REALTIME, requests=[request])
+        request_id = str(uuid.uuid4())
+        attributes = {ATTR_INTEGRATION: INTEGRATION_NAME, f"{REPLY_CONTEXT_PREFIX}session_id": self.session_id}
+        asyncio.create_task(asyncio.to_thread(self.producer.enqueue, body=body, request_id=request_id, attributes=attributes))
+
+    # -- outbound: queue -> room -------------------------------------------------------------
+
+    async def deliver_chunk(self, chunk: dict, reply_context: Dict[str, str]) -> None:
+        """Play one streamed chunk (audio delta or transcript delta) back to the room."""
+        event = chunk.get("event") or {}
+        event_type = event.get("type")
+        if event_type == "audio_delta":
+            content = event.get("content")
+            if not content:
+                return
+            audio_bytes = base64.b64decode(content)
+            frame = rtc.AudioFrame(
+                data=audio_bytes,
+                sample_rate=AUDIO_SAMPLE_RATE,
+                num_channels=1,
+                samples_per_channel=len(audio_bytes) // 2,
+            )
+            await self._run_on_room(self.audio_source.capture_frame(frame))
+        elif event_type == "interrupt":
+            # Barge-in: stop the already-buffered AI audio immediately and drop the partial reply.
+            _log.info("Barge-in detected: clearing buffered AI audio")
+            self._clear_playback()
+        elif event_type == "done":
+            status = event.get("status")
+            text = (event.get("transcript") or "").strip()
+            if status == "cancelled":
+                # The user interrupted: don't publish a half-said sentence as a complete message.
+                self._clear_playback()
+            elif text:
+                _log.info(f"AI response: {text}")
+                await self._publish_text(text)
+
+    async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
+        """Publish a completed reply as chat text (used for the non-streamed fallback path)."""
+        text = getattr(reply, "response", "") or str(reply)
+        if text:
+            await self._publish_text(text)
+
+    async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
+        """Surface a failure to the room so the user is never left silent."""
+        await self._publish_text(message)
+
+    async def _publish_text(self, text: str) -> None:
+        if self.room is None:
+            return
+        payload = json.dumps({"id": str(uuid.uuid4()), "message": text, "timestamp": 0})
+        await self._run_on_room(self.room.local_participant.publish_data(payload.encode("utf-8"), reliable=True, topic="lk-chat"))
+
+    def _clear_playback(self) -> None:
+        """Drop AI audio still queued on the LiveKit source so a barge-in cuts it off.
+
+        Called from the Response Handler thread; ``clear_queue`` is synchronous and must run on
+        the gateway's own loop, so it is marshalled across with ``call_soon_threadsafe``.
+        """
+        if self.audio_source is None or self._loop is None:
+            return
+        try:
+            self._loop.call_soon_threadsafe(self.audio_source.clear_queue)
+        except RuntimeError:
+            pass
+
+    async def _run_on_room(self, coro) -> None:
+        """Await a room coroutine on the gateway's own loop.
+
+        Deliveries arrive on the Response Handler's thread (its own short-lived loop), but the
+        room and audio source are bound to the gateway's loop, so the call is marshalled across.
+        """
+        if self._loop is None:
+            coro.close()
+            return
+        if self._loop is asyncio.get_running_loop():
+            await coro
+            return
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        await asyncio.wrap_future(future)

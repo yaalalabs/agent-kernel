@@ -5,6 +5,7 @@ import pytest
 from pydantic import BaseModel, ValidationError
 
 from agentkernel.core.event import (
+    AudioDelta,
     MessageEnd,
     MessageStart,
     ReasoningDelta,
@@ -41,6 +42,7 @@ ALL_EVENTS = [
     ReasoningStart(message_id="m1"),
     ReasoningDelta(message_id="m1", content="thinking"),
     ReasoningEnd(message_id="m1"),
+    AudioDelta(message_id="m1", content="YmFzZTY0Cg=="),
 ]
 
 

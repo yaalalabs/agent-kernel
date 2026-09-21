@@ -56,7 +56,12 @@ class AgentRunner:
 
         # ChatService(rest_api_mode=False) returns (status_code, response_dict); unlike ECS,
         # the status travels to the output message as the STATUS_CODE attribute (spec §12.6).
-        status_code, agent_response = self._chat_service.process_chat_request(req=body, requests=body.requests)
+        tokens = self._enter_run_context(message, body)
+        try:
+            status_code, agent_response = self._chat_service.process_chat_request(req=body, requests=body.requests)
+        finally:
+            self._exit_run_context(tokens)
+
         self._send_to_output(message, agent_response, status_code)
         self._record_thread_reply(message, body, status_code, agent_response.get("result") if isinstance(agent_response, dict) else agent_response)
 
@@ -100,7 +105,7 @@ class AgentRunner:
         if QueueTransportFactory.resolve_type() == "in_memory":
             raise AKConfigError("the in_memory transport runs in-process: start IOHandler (single-process topology) instead of AgentRunner")
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
-        if cls is AgentRunner and AKConfig.get().execution.mode == ExecutionMode.STREAM:
+        if cls is AgentRunner and AKConfig.get().execution.mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME):
             return StreamAgentRunner.run()
         # A standalone runner container is usually PID 1: without these handlers SIGTERM never
         # arrives and pod/task stop hangs until SIGKILL instead of draining in-flight runs.
@@ -180,6 +185,40 @@ class AgentRunner:
             message.attributes.setdefault(ATTR_USER_ID, body.user_id)
         return request_id
 
+    @staticmethod
+    def _enter_run_context(message: QueueMessage, body: BaseRunRequest) -> tuple:
+        """Publish the run's execution mode and delivery coordinates to context vars.
+
+        Framework adapters run deep inside ``ChatService`` with no access to the queue envelope,
+        but realtime adapters need to stamp their asynchronously-produced output with the same
+        request id, integration and reply context the input carried. Context vars bridge that gap
+        for the duration of one run (the same mechanism ``execution_mode_var`` already uses).
+
+        :param message: The input message whose attributes carry the delivery coordinates.
+        :param body: The validated request body supplying the execution mode.
+        :return: Reset tokens, to be handed back to :meth:`_exit_run_context`.
+        """
+        from ..core.model import execution_mode_var, integration_var, reply_context_var, request_id_var
+
+        # A producer may stamp the mode on the request (LiveKit sends REALTIME explicitly);
+        # otherwise the process-wide configured mode applies.
+        mode = getattr(body, "mode", None) or AKConfig.get().execution.mode
+        reply_context = {key[len(REPLY_CONTEXT_PREFIX) :]: value for key, value in message.attributes.items() if key.startswith(REPLY_CONTEXT_PREFIX)}
+        return (
+            execution_mode_var.set(mode),
+            integration_var.set(message.attributes.get(ATTR_INTEGRATION)),
+            reply_context_var.set(reply_context),
+            request_id_var.set(message.attributes.get(ATTR_REQUEST_ID)),
+        )
+
+    @staticmethod
+    def _exit_run_context(tokens: tuple) -> None:
+        """Undo :meth:`_enter_run_context` so a pooled runner thread never leaks one run's context."""
+        from ..core.model import execution_mode_var, integration_var, reply_context_var, request_id_var
+
+        for var, token in zip((execution_mode_var, integration_var, reply_context_var, request_id_var), tokens):
+            var.reset(token)
+
     def _send_to_output(self, source: QueueMessage, response_body, status_code: Optional[int] = None, dedup_suffix: Optional[str] = None) -> None:
         attributes = {key: value for key, value in source.attributes.items() if _is_forwarded(key)}
         if status_code is not None:
@@ -210,10 +249,19 @@ class StreamAgentRunner(AgentRunner):
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
 
     def process(self, message: QueueMessage) -> None:
-        if message.attributes.get(ATTR_INTEGRATION):
+        body = BaseRunRequest.model_validate(json.loads(message.body))
+        # Realtime integrations (e.g. LiveKit voice) need the streaming path: the runner opens a
+        # persistent socket and pushes chunks as they arrive. Every other integration collapses the
+        # reply to one delivery, so it uses the non-streaming AgentRunner.
+        mode = getattr(body, "mode", None) or AKConfig.get().execution.mode
+        if message.attributes.get(ATTR_INTEGRATION) and mode != ExecutionMode.REALTIME:
             return super().process(message)
 
-        body = BaseRunRequest.model_validate(json.loads(message.body))
+        # A realtime adapter emits its own chunks to the output queue; the pipeline's per-input
+        # chunks (just a closing done) would otherwise flood that queue and delay control events
+        # such as barge-in. Only real errors are still forwarded.
+        realtime_input = bool(message.attributes.get(ATTR_INTEGRATION)) and mode == ExecutionMode.REALTIME
+
         request_id = self._resolve_request_metadata(message, body)
         if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
             raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
@@ -223,15 +271,22 @@ class StreamAgentRunner(AgentRunner):
         chunk_count = 0
         deltas: list[str] = []
         error_seen = False
-        for raw_chunk in self._chat_service.process_stream_chat_sync(req=body, requests=body.requests):
-            chunk = json.loads(raw_chunk)
-            if chunk.get("error"):
-                error_seen = True
-            if chunk.get("delta"):
-                deltas.append(chunk["delta"])
-            # Retry attempts get distinct chunk dedup ids so a redelivery's chunks never collide.
-            self._send_to_output(message, chunk, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
-            chunk_count += 1
+
+        tokens = self._enter_run_context(message, body)
+        try:
+            for raw_chunk in self._chat_service.process_stream_chat_sync(req=body, requests=body.requests):
+                chunk = json.loads(raw_chunk)
+                if chunk.get("error"):
+                    error_seen = True
+                if chunk.get("delta"):
+                    deltas.append(chunk["delta"])
+                if realtime_input and chunk.get("done") and not chunk.get("error"):
+                    continue
+                # Retry attempts get distinct chunk dedup ids so a redelivery's chunks never collide.
+                self._send_to_output(message, chunk, status_code=None, dedup_suffix=f"{message.receive_count}-{chunk_count}")
+                chunk_count += 1
+        finally:
+            self._exit_run_context(tokens)
 
         if not error_seen and deltas:
             self._record_thread_reply(message, body, 200, "".join(deltas))

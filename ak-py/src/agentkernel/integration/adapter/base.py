@@ -185,6 +185,17 @@ class OutboundAdapter(ABC):
         :param reply_context: The delivery coordinates resolved at the edge.
         """
 
+    async def deliver_chunk(self, chunk: dict, reply_context: Dict[str, str]) -> None:
+        """Send a real-time streaming chunk to the platform.
+
+        This is called when the runner emits StreamEvents. Platforms that support streaming
+        (e.g., LiveKit for voice) can override this to play chunks in real-time.
+
+        :param chunk: The StreamEvent chunk dictionary.
+        :param reply_context: The delivery coordinates resolved at the edge.
+        """
+        pass
+
     @abstractmethod
     async def deliver_error(self, message: str, reply_context: Dict[str, str]) -> None:
         """Send a user-facing failure message, so a user is never left silent.

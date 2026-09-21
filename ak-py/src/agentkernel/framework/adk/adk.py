@@ -24,15 +24,18 @@ from agentkernel.core.model import (
     AgentReply,
     AgentReplyAny,
     AgentReplyText,
+    AgentReplyVoice,
     AgentRequest,
     AgentRequestAny,
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    AgentRequestVoice,
 )
 
 from ...core import Agent as AKBaseAgent
 from ...core import Module, PostHook, PreHook
+from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
@@ -68,6 +71,8 @@ class GoogleADKSession:
         self._session_service = InMemorySessionService()
         self._log = logging.getLogger("ak.adk.session")
         self._session = None
+        self.realtime_connection = None
+        self._realtime_cm = None
 
     @property
     def session_service(self) -> BaseSessionService:
@@ -645,3 +650,81 @@ class GoogleADKToolBuilder(ToolBuilder):
 
         wrapper.__signature__ = signature.replace(parameters=parameters)
         return wrapper
+
+
+class GoogleADKRealtimeRunner(BaseRealtimeRunner):
+    """
+    GoogleADKRealtimeRunner handles Realtime API connections triggered via the Queue pipeline.
+    It expects requests with ExecutionMode.REALTIME and operates synchronously/asynchronously over the queue.
+    """
+
+    async def connect(self, session: Session, agent: AKBaseAgent = None) -> None:
+        if not isinstance(session, GoogleADKSession):
+            raise ValueError("GoogleADKRealtimeRunner requires a GoogleADKSession.")
+        if not session.realtime_connection:
+            self._log.info("Initializing new Google GenAI Realtime WebSocket connection")
+            from google import genai
+
+            client = genai.Client(api_key=AKConfig.get().providers.google.api_key)
+            model = agent.model if agent else "gemini-2.0-flash-exp"
+
+            session._realtime_cm = client.aio.live.connect(model=model)
+            session.realtime_connection = await session._realtime_cm.__aenter__()
+
+    async def disconnect(self, session: Session) -> None:
+        if not isinstance(session, GoogleADKSession):
+            return
+        if session._realtime_cm:
+            self._log.info("Closing Google GenAI Realtime WebSocket connection")
+            await session._realtime_cm.__aexit__(None, None, None)
+            session._realtime_cm = None
+            session.realtime_connection = None
+
+    async def run(self, agent: AKBaseAgent, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        raise NotImplementedError("Realtime execution mode only supports streaming.")
+
+    async def stream(self, agent: AKBaseAgent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+        request = requests[0]
+
+        await self.connect(session, agent)
+        connection = session.realtime_connection
+
+        if isinstance(request, AgentRequestVoice):
+            self._log.info(f"Sending voice payload to Gemini Realtime socket: {request.name}")
+            import base64
+
+            # google-genai expects raw bytes or base64 encoded bytes for audio/pcm
+            audio_bytes = base64.b64decode(request.prompt) if isinstance(request.prompt, str) else request.prompt
+            await connection.send(input={"data": audio_bytes, "mime_type": "audio/pcm"})
+
+        elif isinstance(request, AgentRequestImage) or getattr(request, "attachment_id", None):
+            self._log.info(f"Sending image payload to Gemini Realtime socket: {request.name}")
+            from ...core.multimodal.storage import AttachmentStorageManager
+
+            image_bytes = None
+            if hasattr(request, "attachment_id"):
+                store = AttachmentStorageManager.get_store()
+                image_bytes = await store.get(request.attachment_id)
+            else:
+                import base64
+
+                image_bytes = base64.b64decode(request.prompt)
+
+            await connection.send(input={"data": image_bytes, "mime_type": "image/jpeg"})
+
+        else:
+            await connection.send(input={"text": request.prompt})
+
+        # Listen for events from the realtime websocket
+        async for event in connection.receive():
+            if event.server_content and event.server_content.model_turn:
+                for part in event.server_content.model_turn.parts:
+                    if part.inline_data:
+                        # Yield binary audio chunks
+                        yield StreamEvent(
+                            audio=part.inline_data.data.decode("utf-8") if isinstance(part.inline_data.data, bytes) else part.inline_data.data,
+                            done=False,
+                        )
+                    elif part.text:
+                        # Yield text chunks
+                        yield StreamEvent(text=part.text, done=False)

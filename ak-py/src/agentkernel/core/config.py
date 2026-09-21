@@ -1,8 +1,8 @@
 import importlib.metadata
 from threading import RLock
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 from .model import ExecutionMode
 from .util.config_yaml_util import YamlBaseSettingsModified
@@ -247,6 +247,27 @@ class _GmailConfig(BaseModel):
         default="",
         description="Dotted path to an OutboundAdapter subclass replacing the built-in Gmail outbound adapter",
     )
+
+
+class _LiveKitConfig(BaseModel):
+    agent: str = Field(default="", description="Default agent to use for LiveKit interactions")
+    livekit_url: str = Field(default="", description="LiveKit server WebSocket URL")
+    api_key: str = Field(default="", description="LiveKit API Key")
+    api_secret: str = Field(default="", description="LiveKit API Secret")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_env_vars(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            import os
+
+            if not data.get("livekit_url"):
+                data["livekit_url"] = os.environ.get("AK_LIVE_VOICE_URL", "")
+            if not data.get("api_key"):
+                data["api_key"] = os.environ.get("AK_LIVE_VOICE_API_KEY", "")
+            if not data.get("api_secret"):
+                data["api_secret"] = os.environ.get("AK_LIVE_VOICE_API_SECRET", "")
+        return data
 
 
 class _MultimodalStorageRedisConfig(_RedisConfig):
@@ -896,6 +917,7 @@ class AKConfig(YamlBaseSettingsModified):
         default_factory=_MCPConfig,
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
+    livekit: _LiveKitConfig = Field(description="LiveKit related configurations", default_factory=_LiveKitConfig)
     whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
     messenger: _MessengerConfig = Field(description="Facebook Messenger related configurations", default_factory=_MessengerConfig)
     instagram: _InstagramConfig = Field(description="Instagram Business API related configurations", default_factory=_InstagramConfig)

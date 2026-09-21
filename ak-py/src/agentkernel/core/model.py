@@ -1,3 +1,4 @@
+import contextvars
 import json
 import uuid
 from enum import Enum
@@ -6,6 +7,11 @@ from typing import Annotated, Any, Callable, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .event import StreamEvent
+
+execution_mode_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("execution_mode", default=None)
+request_id_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("request_id", default=None)
+integration_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("integration", default=None)
+reply_context_var: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar("reply_context", default=None)
 
 
 class AgentRequestText(BaseModel):
@@ -53,6 +59,23 @@ class AgentRequestImage(BaseModel):
     image_data: str
     name: str
     type: Literal["image"] = "image"
+    mime_type: str | None = None
+
+
+class AgentRequestVoice(BaseModel):
+    """
+    AgentRequestVoice encapsulates a voice request to an agent
+
+    audio_data: str  : This should be base64 encoded string or url
+    name: str : name of the voice clip
+    type: Literal["voice"]
+    mime_type: str | None = None : Optional. The IANA standard MIME type of the voice clip
+    """
+
+    prompt: str = ""
+    audio_data: str
+    name: str
+    type: Literal["voice"] = "voice"
     mime_type: str | None = None
 
 
@@ -122,11 +145,27 @@ class AgentReplyImage(AgentRequestImage):
         return f"{self.response}. Image {self.name} is attached."
 
 
-type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef]
-type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyAny]
+class AgentReplyVoice(AgentRequestVoice):
+    """
+    AgentReplyVoice encapsulates a voice reply from an agent.
+
+    response: str : This is the agent output text/transcript
+
+    Inherits `prompt` (input), `audio_data`, `name`, `type`, and `mime_type` from
+    AgentRequestVoice, and `response` holds the agent output text/transcript.
+    """
+
+    response: str
+
+    def __str__(self) -> str:
+        return f"{self.response}. Voice {self.name} is attached."
+
+
+type AgentRequest = Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestVoice, AgentRequestAny, AgentRequestAttachmentRef]
+type AgentReply = Union[AgentReplyText, AgentReplyImage, AgentReplyVoice, AgentReplyAny]
 
 AgentRequestUnion = Annotated[
-    Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef],
+    Union[AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestVoice, AgentRequestAny, AgentRequestAttachmentRef],
     Field(discriminator="type"),
 ]
 
@@ -175,6 +214,7 @@ class ExecutionMode(str, Enum):
     REST_ASYNC = "rest_async"
     STREAM = "stream"
     ASYNC = "async"
+    REALTIME = "realtime"
 
 
 class StreamChunk(BaseModel):

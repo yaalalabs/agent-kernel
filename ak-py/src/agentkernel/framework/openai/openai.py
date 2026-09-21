@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 import copy
+import json
 import logging
+import threading
+import uuid
 from collections.abc import AsyncGenerator
-from typing import Any, Callable, List
+from typing import Any, Callable, List, Optional
 
 from agents import Agent, Runner, function_tool
 from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
@@ -13,6 +18,7 @@ from openai.types.responses.response_text_delta_event import ResponseTextDeltaEv
 
 from ...core import Agent as BaseAgent
 from ...core import Module, PostHook, PreHook
+from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
@@ -39,13 +45,225 @@ from ...core.model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    AgentRequestVoice,
+    ExecutionMode,
 )
 from ...core.util.error_util import user_facing_error_message
+from ...pipeline.envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
+from ...pipeline.transport.base import QueueTransportFactory
 from ...trace import Trace
 
 FRAMEWORK = "openai"
 
 _log = logging.getLogger("ak.openai.runner")
+
+# The GA Realtime API rejects the legacy `beta.realtime` event shape (`beta_api_shape_disabled`)
+# and no longer serves the gpt-4o-realtime-preview models, so realtime runs default to this model
+# unless the agent itself names a realtime model.
+DEFAULT_REALTIME_MODEL = "gpt-realtime"
+
+# The model streams audio in tiny (~10-20 ms) deltas. Forwarding each one as its own queue message
+# floods the output queue (and the Response Handler behind it) at ~50 messages/second, which delays
+# control events such as barge-in past the point where clearing the buffered audio still matters.
+# Deltas are therefore coalesced into ~150 ms of PCM16 (24 kHz mono) before being sent.
+REALTIME_AUDIO_FLUSH_BYTES = 24000 * 2 * 150 // 1000
+
+
+def _resolve_realtime_model(agent: Any) -> str:
+    """Pick the Realtime model for an agent: its own if it names a realtime one, else the default."""
+    sdk_agent = getattr(agent, "agent", None)
+    model = getattr(sdk_agent, "model", None)
+    if isinstance(model, str) and "realtime" in model:
+        return model
+    return DEFAULT_REALTIME_MODEL
+
+
+class RealtimeThreadManager:
+    """Owns the persistent OpenAI Realtime WebSocket for one Agent Kernel session.
+
+    Agent Kernel runs every queue message through its own ``asyncio.run``, so a realtime socket
+    cannot simply live inside one ``stream()`` call — it would be torn down at the end of the
+    first audio frame. This manager instead runs the socket on a dedicated background thread and
+    event loop that outlives each run, and pushes model events straight to the output queue.
+    """
+
+    def __init__(self, session_id: str, agent: BaseAgent):
+        self.session_id = session_id
+        self._agent = agent
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._thread: Optional[threading.Thread] = None
+        self._connection = None
+        self._cm = None
+        self._running = False
+        self._loop_ready = threading.Event()
+        # Delivery coordinates, refreshed by OpenAIRealtimeRunner.stream() on every turn so the
+        # asynchronously-emitted chunks carry the current request's routing attributes.
+        self.request_id: Optional[str] = None
+        self.user_id: Optional[str] = None
+        self.integration: Optional[str] = None
+        self.reply_context: dict = {}
+        # Coalesces small audio deltas into ~150 ms output messages (see REALTIME_AUDIO_FLUSH_BYTES).
+        self._audio_buffer = bytearray()
+        # The edge publishes one transcript per turn (on done), so deltas are accumulated here
+        # rather than sent one-per-token, which would flood the output queue.
+        self._transcript: list[str] = []
+
+    def start_if_needed(self, agent: BaseAgent) -> None:
+        """Start the background socket thread once, blocking until its loop is available."""
+        if self._running:
+            return
+        self._agent = agent
+        self._running = True
+        self._thread = threading.Thread(target=self._run_loop, daemon=True, name=f"Realtime-{self.session_id[:8]}")
+        self._thread.start()
+        self._loop_ready.wait(timeout=10)
+
+    def _run_loop(self) -> None:
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        self._loop_ready.set()
+        try:
+            self._loop.run_until_complete(self._listen())
+        except Exception:
+            _log.exception(f"OpenAI Realtime background loop failed for session {self.session_id}")
+        finally:
+            self._running = False
+            try:
+                self._loop.close()
+            except Exception:
+                pass
+
+    async def _listen(self) -> None:
+        from openai import AsyncOpenAI
+
+        # The OpenAI SDK reads OPENAI_API_KEY from the environment, the same credential the
+        # non-realtime OpenAIRunner path uses.
+        client = AsyncOpenAI()
+        model = _resolve_realtime_model(self._agent)
+        transport = QueueTransportFactory.create()
+        self._cm = client.realtime.connect(model=model)
+
+        async with self._cm as connection:
+            self._connection = connection
+            _log.info(f"OpenAI Realtime connection opened (session={self.session_id}, model={model})")
+            await self._configure_session(connection)
+            async for event in connection:
+                await self._handle_event(event, transport)
+
+    async def _configure_session(self, connection) -> None:
+        """Turn on server VAD so continuous mic audio is auto-committed and answered."""
+        sdk_agent = getattr(self._agent, "agent", None)
+        instructions = getattr(sdk_agent, "instructions", None) or "You are a helpful assistant."
+        await connection.send(
+            {
+                "type": "session.update",
+                "session": {
+                    "type": "realtime",
+                    "instructions": instructions,
+                    "audio": {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}},
+                },
+            }
+        )
+
+    async def _handle_event(self, event, transport) -> None:
+        event_type = event.type
+        if event_type == "response.output_audio.delta":
+            self._audio_buffer.extend(base64.b64decode(event.delta))
+            if len(self._audio_buffer) >= REALTIME_AUDIO_FLUSH_BYTES:
+                await self._flush_audio(transport)
+        elif event_type == "response.output_audio_transcript.delta":
+            self._transcript.append(event.delta)
+        elif event_type == "input_audio_buffer.speech_started":
+            # Barge-in: the user started talking while the model was speaking. Flush what we have,
+            # then forward a control event so the edge can stop the audio it has already buffered
+            # and drop the partial transcript (the server auto-cancels the in-flight response).
+            _log.info("OpenAI Realtime: user speech started (barge-in)")
+            await self._flush_audio(transport)
+            await self._emit(transport, {"event": {"type": "interrupt"}, "done": False})
+        elif event_type == "input_audio_buffer.speech_stopped":
+            _log.info("OpenAI Realtime: user speech stopped")
+        elif event_type == "response.created":
+            _log.info("OpenAI Realtime: response created")
+        elif event_type == "response.done":
+            response = getattr(event, "response", None)
+            status = getattr(response, "status", None)
+            _log.info(f"OpenAI Realtime: response.done status={status}")
+            transcript = "".join(self._transcript).strip() if status == "completed" else ""
+            self._transcript.clear()
+            await self._flush_audio(transport)
+            await self._emit(transport, {"event": {"type": "done", "status": status, "transcript": transcript}, "done": True})
+        elif event_type == "error":
+            _log.error(f"OpenAI Realtime socket error: {getattr(event, 'error', 'unknown')}")
+
+    async def _flush_audio(self, transport) -> None:
+        """Send the coalesced audio buffer (if any) as a single ``audio_delta`` chunk."""
+        if not self._audio_buffer:
+            return
+        content = base64.b64encode(bytes(self._audio_buffer)).decode("utf-8")
+        self._audio_buffer.clear()
+        await self._emit(transport, {"event": {"type": "audio_delta", "content": content}, "done": False})
+
+    async def _emit(self, transport, chunk: dict) -> None:
+        """Send one realtime chunk to the output queue with this turn's delivery attributes."""
+        attributes = {ATTR_REQUEST_ID: self.request_id or "unknown"}
+        if self.user_id:
+            attributes[ATTR_USER_ID] = self.user_id
+        if self.integration:
+            attributes[ATTR_INTEGRATION] = self.integration
+        for key, value in (self.reply_context or {}).items():
+            attributes[f"{REPLY_CONTEXT_PREFIX}{key}"] = value
+        message = QueueMessage(body=json.dumps(chunk), attributes=attributes, group_id=self.session_id, dedup_id=str(uuid.uuid4()))
+        await asyncio.to_thread(transport.send, QueueName.OUTPUT, message)
+
+    def append_audio(self, base64_audio: str) -> None:
+        """Append a chunk of base64 PCM16 (24 kHz, mono) to the model's input buffer."""
+        self._schedule(self._append_audio(base64_audio))
+
+    async def _append_audio(self, base64_audio: str) -> None:
+        await self._await_connection()
+        await self._connection.send({"type": "input_audio_buffer.append", "audio": base64_audio})
+
+    def send_text(self, text: str) -> None:
+        """Inject a text turn and ask the model to answer it."""
+        self._schedule(self._send_text(text))
+
+    async def _send_text(self, text: str) -> None:
+        await self._await_connection()
+        await self._connection.send(
+            {"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}}
+        )
+        await self._connection.send({"type": "response.create"})
+
+    async def _await_connection(self) -> None:
+        for _ in range(200):
+            if self._connection is not None:
+                return
+            await asyncio.sleep(0.05)
+        raise RuntimeError("OpenAI Realtime connection is not ready")
+
+    def _schedule(self, coro) -> None:
+        if self._loop is None:
+            _log.warning("OpenAI Realtime loop is not running; dropping payload")
+            coro.close()
+            return
+        asyncio.run_coroutine_threadsafe(coro, self._loop)
+
+    def disconnect(self) -> None:
+        """Ask the background loop to close the socket. Best-effort."""
+        if self._loop is None:
+            return
+
+        async def _close() -> None:
+            try:
+                if self._connection is not None:
+                    await self._connection.close()
+            except Exception:
+                pass
+
+        try:
+            asyncio.run_coroutine_threadsafe(_close(), self._loop)
+        except RuntimeError:
+            pass
 
 
 class OpenAISession:
@@ -58,6 +276,7 @@ class OpenAISession:
         Initializes an OpenAISession instance.
         """
         self._items = []
+        self.realtime_manager = None
 
     async def get_items(self, limit: int | None = None) -> List[dict]:
         """
@@ -167,6 +386,28 @@ class OpenAIRunner(BaseRunner):
                         }
                     )
 
+            elif isinstance(req, AgentRequestVoice):
+                if not req.audio_data:
+                    raise ValueError("no audio input provided")
+
+                audio_url = req.audio_data
+                if audio_url.startswith(("http://", "https://", "s3://")):
+                    message_content.append({"role": "user", "content": [{"type": "input_audio", "audio_url": audio_url}]})
+                else:
+                    mime_type = req.mime_type or "audio/wav"  # Default mime type if none provided
+                    if not audio_url.startswith(("data:")):
+                        audio_url = f"data:{mime_type};base64,{audio_url}"
+
+                    # Assuming openai supports base64 inline audio similar to images
+                    message_content.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "input_audio", "input_audio": {"data": audio_url.split("base64,")[-1], "format": mime_type.split("/")[-1]}}
+                            ],
+                        }
+                    )
+
         return prompt, message_content
 
     @staticmethod
@@ -246,6 +487,15 @@ class OpenAIRunner(BaseRunner):
         context: ToolContext | None = None
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
+
+            from ...core.model import ExecutionMode, execution_mode_var
+
+            if execution_mode_var.get() == ExecutionMode.REALTIME:
+                realtime_runner = OpenAIRealtimeRunner()
+                async for chunk in realtime_runner.stream(agent, session, requests):
+                    yield chunk
+                return
+
             prompt, message_content = self._process_requests(requests)
 
             if not message_content:
@@ -500,3 +750,64 @@ class OpenAIToolBuilder(ToolBuilder):
                 raise TypeError(f"Expected a callable, got {type(func).__name__}")
             tools.append(function_tool(func))
         return tools
+
+
+class OpenAIRealtimeRunner(BaseRealtimeRunner):
+    """OpenAI Realtime adapter driven through the queue pipeline.
+
+    Each REALTIME request appends its audio (or injects its text) into the session's persistent
+    :class:`RealtimeThreadManager` socket; the manager streams the model's audio/transcript back
+    to the output queue, tagged with the integration and reply context the input carried.
+    """
+
+    def __init__(self):
+        super().__init__(name="openai_realtime")
+
+    @staticmethod
+    def _openai_session(session: Session) -> OpenAISession:
+        """Resolve (or create) the framework session behind a core Session."""
+        return OpenAIRunner._session(session)
+
+    async def connect(self, session: Session, agent: BaseAgent = None) -> None:
+        openai_session = self._openai_session(session)
+        if openai_session.realtime_manager is None:
+            openai_session.realtime_manager = RealtimeThreadManager(session_id=session.id, agent=agent)
+            openai_session.realtime_manager.start_if_needed(agent)
+
+    async def disconnect(self, session: Session) -> None:
+        openai_session = self._openai_session(session)
+        if openai_session.realtime_manager is not None:
+            _log.info(f"Disconnecting OpenAI Realtime session {session.id}")
+            openai_session.realtime_manager.disconnect()
+            openai_session.realtime_manager = None
+
+    async def run(self, agent: BaseAgent, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        raise NotImplementedError("Realtime execution mode only supports streaming.")
+
+    async def stream(self, agent: BaseAgent, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+        from ...core.model import integration_var, reply_context_var, request_id_var
+
+        openai_session = self._openai_session(session)
+        if openai_session.realtime_manager is None:
+            openai_session.realtime_manager = RealtimeThreadManager(session_id=session.id, agent=agent)
+        manager = openai_session.realtime_manager
+        manager.start_if_needed(agent)
+
+        # Refresh the delivery coordinates so the manager tags this turn's asynchronously-produced
+        # chunks with the integration/reply context/request id the input message carried.
+        manager.integration = integration_var.get()
+        manager.reply_context = dict(reply_context_var.get() or {})
+        manager.request_id = request_id_var.get()
+
+        for request in requests:
+            if isinstance(request, AgentRequestVoice):
+                _log.debug(f"Sending voice payload to OpenAI Realtime session {session.id}: {request.name}")
+                manager.append_audio(request.audio_data)
+            else:
+                _log.info(f"Sending text turn to OpenAI Realtime session {session.id}")
+                manager.send_text(request.prompt)
+
+        # The manager emits the real chunks to the output queue as they arrive, so this generator
+        # yields nothing itself — it only needs to keep async-generator shape for the runtime.
+        for _ in ():
+            yield _

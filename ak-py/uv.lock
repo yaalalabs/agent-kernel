@@ -143,6 +143,11 @@ langgraph = [
     { name = "langgraph-prebuilt" },
     { name = "litellm" },
 ]
+livekit = [
+    { name = "litellm" },
+    { name = "livekit" },
+    { name = "livekit-api" },
+]
 logfire = [
     { name = "logfire" },
 ]
@@ -276,9 +281,12 @@ requires-dist = [
     { name = "langgraph-prebuilt", marker = "extra == 'langgraph'", specifier = "~=1.1.0" },
     { name = "litellm", marker = "extra == 'adk'", specifier = "~=1.89.2" },
     { name = "litellm", marker = "extra == 'langgraph'", specifier = "~=1.89.2" },
+    { name = "litellm", marker = "extra == 'livekit'", specifier = ">=1.44.0" },
     { name = "litellm", marker = "extra == 'multimodal'", specifier = ">=1.74.9" },
     { name = "litellm", marker = "extra == 'test'", specifier = ">=1.89.2" },
     { name = "litellm", marker = "extra == 'thread'", specifier = ">=1.74.9" },
+    { name = "livekit", marker = "extra == 'livekit'", specifier = ">=0.18.0" },
+    { name = "livekit-api", marker = "extra == 'livekit'", specifier = ">=0.4.0" },
     { name = "logfire", marker = "extra == 'logfire'", specifier = ">=3.0" },
     { name = "msal", marker = "extra == 'teams'", specifier = ">=1.31.1" },
     { name = "nats-py", marker = "extra == 'nats'", specifier = ">=2.15.0" },
@@ -313,7 +321,7 @@ requires-dist = [
     { name = "valkey", marker = "extra == 'valkey'", specifier = ">=6.0.0" },
     { name = "walledai", marker = "extra == 'walledai'", specifier = ">=4.9.3" },
 ]
-provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "cli", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona", "kubernetes", "opik"]
+provides-extras = ["auth", "langfuse", "openllmetry", "logfire", "crewai", "langgraph", "smolagents", "pydanticai", "cli", "livekit", "aws", "azure", "redis", "valkey", "kafka", "nats", "thread", "agui", "cron", "neo4j", "chromadb", "trino", "openai", "adk", "walledai", "api", "slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail", "gcp", "test", "a2a", "mcp", "multimodal", "sandbox-docker", "e2b", "daytona", "kubernetes", "opik"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3349,6 +3357,54 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/07/d5/30d14b55c30b83196f03715648c995c9fe4c19e8d3bdbfa5319335c56c76/litellm-1.89.7.tar.gz", hash = "sha256:94ed81946194a032eadddf0ab9d75ad8bdcd94e7fa832dd8edb48a8712eb5b9d", size = 14063688, upload-time = "2026-08-09T00:50:04.636Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f6/1a/f087e0555d91ab5f93fb8c740447423aa785468b8edca9987724815b51ec/litellm-1.89.7-py3-none-any.whl", hash = "sha256:4a11bdeaec66b3bd64f7606bf59e238875867678f320e70dd38d8767fddde11b", size = 15474149, upload-time = "2026-08-09T00:50:01.992Z" },
+]
+
+[[package]]
+name = "livekit"
+version = "1.1.19"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiofiles" },
+    { name = "numpy" },
+    { name = "protobuf" },
+    { name = "types-protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/09/94/e07651277616bc0c35048aae0d4135b04cc32d3632804f75bff47e0e22ce/livekit-1.1.19.tar.gz", hash = "sha256:46e5389dd843592ddefae497eb1aad404178596c69c359e0ca4153568a6527a8", size = 389710, upload-time = "2026-09-17T19:40:11.964Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/f4/1565661b353ac1799395fd40393951347c8a11492b8884e6cd5924d34aba/livekit-1.1.19-py3-none-macosx_10_15_x86_64.whl", hash = "sha256:cbcd9ee7e6a83ea6b52e0f38a138d82c00781e62d07ad8f13e0769d016c49573", size = 10485771, upload-time = "2026-09-17T19:39:58.192Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/25/706e0fe35fe0c464d28545af2505746394cf060ccb2012cf5218e1afbe60/livekit-1.1.19-py3-none-macosx_11_0_arm64.whl", hash = "sha256:23a9811d26311073e7776aa091f1b19dae497777198858dd29d7ea0329d9ca0b", size = 9304688, upload-time = "2026-09-17T19:40:01.276Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/8e/b05ea0cd5fa804ef30fff5e1e0e980413e253edb5bd1ec62265836dbf14e/livekit-1.1.19-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:ed8aba52c4e3ff93529a32169af287b0f0299e629cb49a3390f1aa5f255c5af0", size = 10599288, upload-time = "2026-09-17T19:40:03.978Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/0c/4b90aa95429fe91ef1772a18b35f418f6a79cfa27b323d06f88dd7baa4ec/livekit-1.1.19-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:5716a5194ec3ceec19e25285149c62412e227a1fdb8fd9892411e15a1e24b700", size = 11830089, upload-time = "2026-09-17T19:40:06.879Z" },
+    { url = "https://files.pythonhosted.org/packages/af/70/d9ae3c8d76ade0fd710bf12892c5a5f9e344da8e2451f16b40463991da25/livekit-1.1.19-py3-none-win_amd64.whl", hash = "sha256:959b40e7210b302101e563bc59c75e9313dfdf7cb9589407f8d60eba9b0382b3", size = 10989594, upload-time = "2026-09-17T19:40:09.549Z" },
+]
+
+[[package]]
+name = "livekit-api"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "livekit-protocol" },
+    { name = "protobuf" },
+    { name = "pyjwt" },
+    { name = "types-protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/da/0d/ff9502faa5e9785563e9648313a030fab65ed7f6ff8cf52d7bc6c9e01c97/livekit_api-1.2.1.tar.gz", hash = "sha256:eee78dba493b736bc8422660debc7cf89340f1b80c63890a36a18d99c938045c", size = 21780, upload-time = "2026-08-27T14:06:57.419Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a1/c8/bc29cf16427fc446aa4487c552503cef42eebfcb920902bb54b7180e40d3/livekit_api-1.2.1-py3-none-any.whl", hash = "sha256:aa15b0a194c9e8167d4261bc61381682df23f98bc6d77760fcded93d2ce4b4ca", size = 27586, upload-time = "2026-08-27T14:06:56.286Z" },
+]
+
+[[package]]
+name = "livekit-protocol"
+version = "1.1.27"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "protobuf" },
+    { name = "types-protobuf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/15/f3/5572f2b58f04534e22e266e113cb49b4f0b2a4e1d2abf385267cb51559ab/livekit_protocol-1.1.27.tar.gz", hash = "sha256:740a4c6e438da763d204f2a6b0fc8f7f33ca96e27b17ce9abc6557dbb0a28dbd", size = 124650, upload-time = "2026-09-16T12:43:25.761Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7e/04/12a047d5ec0ea5099426d071a0147118767cb231d270cb1d0bece266eb01/livekit_protocol-1.1.27-py3-none-any.whl", hash = "sha256:765bbe0c9c6b626519f6f5952793f81eaf3f5b8c9bd1e1b03994f3177774aa10", size = 151314, upload-time = "2026-09-16T12:43:24.327Z" },
 ]
 
 [[package]]
@@ -7106,6 +7162,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/16/f7/57713ba479fd405eb76de31404b2c744c289e336b2d999511ebf51e496f7/typer-0.27.2.tar.gz", hash = "sha256:269b7eb9d3c202ca84b4bc9618cb04ebb43d3d4d1e567e4c768607232c05f945", size = 204045, upload-time = "2026-08-28T10:26:55.046Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/dc/bf/205d0004930ede8f542fb58f601526fccf4ae7626075ca1e6c4de5d3d652/typer-0.27.2-py3-none-any.whl", hash = "sha256:b3a5fc4342d5fc8fda8fc3010b1cf117e9249aab7fae800c2eff62fd3842d97d", size = 123130, upload-time = "2026-08-28T10:26:53.752Z" },
+]
+
+[[package]]
+name = "types-protobuf"
+version = "7.35.1.20260906"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/6c/e3e5b3e10bc328126a39637c138f9ebfd734bf14342b9f3540039b4ab995/types_protobuf-7.35.1.20260906.tar.gz", hash = "sha256:efd1a3862d4c967dad5512ef8d56b1530ac84f182c41735b94004756518c4998", size = 69895, upload-time = "2026-09-06T06:35:28.308Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/44/4e/f63e826c68f77ef875506d72f225918800346545ee99847bc28f3394f18d/types_protobuf-7.35.1.20260906-py3-none-any.whl", hash = "sha256:5155e48569e0dabff303fdf578db96cd31ea9a4a63b18018a4ceac6b0ae17462", size = 86419, upload-time = "2026-09-06T06:35:27.247Z" },
 ]
 
 [[package]]

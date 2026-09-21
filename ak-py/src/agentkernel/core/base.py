@@ -399,6 +399,29 @@ class Runner(ABC):
         yield  # makes this an async generator, so overrides match the shape rather than a coroutine
 
 
+class RealtimeRunner(Runner):
+    """
+    RealtimeRunner is the base class for framework adapters handling realtime streaming
+    via persistent WebSocket/WebRTC connections (e.g. OpenAI Realtime API).
+    """
+
+    @abstractmethod
+    async def connect(self, session: Session) -> None:
+        """
+        Establishes a persistent socket connection to the framework's Realtime API backend.
+        :param session: The session to bind this connection to.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def disconnect(self, session: Session) -> None:
+        """
+        Closes the active persistent socket connection.
+        :param session: The session whose connection should be closed.
+        """
+        raise NotImplementedError()
+
+
 class Agent(ABC):
     """
     Agent is the base class for all agents.

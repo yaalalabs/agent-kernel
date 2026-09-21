@@ -20,12 +20,14 @@ from .model import (
     AgentReplyAny,
     AgentReplyImage,
     AgentReplyText,
+    AgentReplyVoice,
     AgentRequest,
     AgentRequestAny,
     AgentRequestAttachmentRef,
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    AgentRequestVoice,
     StreamChunk,
 )
 from .multimodal import MultimodalPreHookFactory
@@ -238,13 +240,15 @@ class Runtime:
         pre_hooks = agent.pre_hooks + self._get_system_pre_hooks()  # system pre-hooks are always executed last
         for hook in pre_hooks:
             reply = await hook.on_run(session, agent, requests)
-            if isinstance(reply, (AgentReplyText, AgentReplyImage, AgentReplyAny)):
+            if isinstance(reply, (AgentReplyText, AgentReplyImage, AgentReplyVoice, AgentReplyAny)):
                 return reply
 
             # Validation to ensure the correct type is returned from the hooks. This is important to avoid runtime errors.
             if isinstance(reply, list):
                 for item in reply:
-                    if not isinstance(item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestAny, AgentRequestAttachmentRef)):
+                    if not isinstance(
+                        item, (AgentRequestText, AgentRequestFile, AgentRequestImage, AgentRequestVoice, AgentRequestAny, AgentRequestAttachmentRef)
+                    ):
                         raise TypeError(
                             f"PreHook '{hook.name()}' returned an invalid type in the requests list. Expected AgentRequest, got {type(item)}"
                         )

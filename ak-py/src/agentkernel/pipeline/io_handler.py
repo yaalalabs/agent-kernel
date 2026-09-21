@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import uvicorn
 
@@ -41,6 +42,7 @@ class IOHandler:
         auth_validator: Optional[AuthValidator] = None,
         handlers: Optional[list[RESTRequestHandler]] = None,
         pollers: Optional[list["PollerRunner"]] = None,
+        gateways: Optional[list[Any]] = None,
         request_handler: Optional[RequestHandler] = None,
     ) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
@@ -129,7 +131,7 @@ class IOHandler:
             ),
         ]
         if single_process:
-            runner = StreamAgentRunner() if mode == ExecutionMode.STREAM else AgentRunner()
+            runner = StreamAgentRunner() if mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME) else AgentRunner()
             tasks.append(
                 ThreadRunner.Task(
                     execution_function=lambda: runner.start(exit_on_shutdown=False), thread_name="agent-runner", stop_all_on_failure=True
@@ -143,9 +145,17 @@ class IOHandler:
                         stop_all_on_failure=True,
                     )
                 )
-        elif pollers:
+            for gateway in gateways or []:
+                tasks.append(
+                    ThreadRunner.Task(
+                        execution_function=lambda g=gateway: asyncio.run(g.start()),
+                        thread_name=f"gateway-{gateway.__class__.__name__}",
+                        stop_all_on_failure=True,
+                    )
+                )
+        elif pollers or gateways:
             cls._log.warning(
-                f"pollers ignored: they are co-hosted here only on the in_memory transport "
+                f"pollers and gateways ignored: they are co-hosted here only on the in_memory transport "
                 f"(transport={transport_type}); on broker transports start PollerRunner.run(adapter) as its own container"
             )
 

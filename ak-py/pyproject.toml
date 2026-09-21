@@ -56,6 +56,11 @@ pydanticai = [
 cli = [
     
 ]
+livekit = [
+    "livekit-api>=0.4.0",
+    "livekit>=0.18.0",
+    "litellm>=1.44.0",
+]
 aws = [
     "boto3>=1.41.4",
 ]
