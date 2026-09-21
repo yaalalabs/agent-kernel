@@ -10,7 +10,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "agentkernel[test,langfuse]>=0.9.1",
+    "agentkernel[test]>=0.9.1",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",
