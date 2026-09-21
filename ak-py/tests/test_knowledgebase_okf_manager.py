@@ -17,9 +17,11 @@ No test touches a live bucket or a network: every store here is a LocalDocumentS
 tmp_path, sometimes subclassed to count or to fail.
 """
 
+import re
 import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import yaml
@@ -162,6 +164,22 @@ class FakeClock:
 
     def advance(self, seconds: float) -> None:
         self.now += seconds
+
+
+class SteppingCalendar:
+    """Stands in for the manager module's ``datetime``, so the ``generated.at`` stamp is not
+    wall-clock bound. Each call to ``now()`` returns the next instant and then holds the last."""
+
+    def __init__(self, *instants) -> None:
+        self._instants = list(instants)
+
+    def now(self, tz=None):
+        return self._instants.pop(0) if len(self._instants) > 1 else self._instants[0]
+
+
+def without_stamp(document: str) -> str:
+    """Blank the one line a re-write is allowed to change, so the rest can be compared."""
+    return re.sub(r"^  at: .*$", "  at: <stamp>", document, flags=re.MULTILINE)
 
 
 class TestCapabilities:
@@ -332,6 +350,34 @@ class TestBrowse:
 
     def test_a_curated_listing_is_never_truncated_by_limit(self, tmp_path):
         assert len(make_manager(tmp_path).browse("tables", limit=0)) == 1
+
+    def test_concepts_survive_a_directory_holding_more_subdirectories_than_the_limit(self, tmp_path):
+        # Subdirectories are listed first, so a flat truncation hid every concept here and told
+        # the agent the namespace held nothing it could read.
+        files = {f"d{n:02d}/x.md": ORDERS_DB for n in range(10)}
+        files["note.md"] = ORDERS_DB
+        records = ids(make_manager(tmp_path, files).browse("", limit=4))
+
+        assert "note.md" in records
+        assert len(records) == 4
+
+    def test_each_kind_is_guaranteed_half_the_budget_when_neither_fits(self, tmp_path):
+        files = {f"d{n:02d}/x.md": ORDERS_DB for n in range(10)}
+        files.update({f"n{n:02d}.md": ORDERS_DB for n in range(10)})
+        records = ids(make_manager(tmp_path, files).browse("", limit=6))
+
+        assert sum(1 for path in records if path.endswith("/")) == 3
+        assert sum(1 for path in records if path.endswith(".md")) == 3
+
+    def test_the_kind_that_fits_entirely_keeps_all_of_it(self, tmp_path):
+        # Halving unconditionally would waste budget: two subdirectories and many concepts
+        # should list both subdirectories and spend everything left on concepts.
+        files = {"d0/x.md": ORDERS_DB, "d1/x.md": ORDERS_DB}
+        files.update({f"n{n:02d}.md": ORDERS_DB for n in range(10)})
+        records = ids(make_manager(tmp_path, files).browse("", limit=6))
+
+        assert sum(1 for path in records if path.endswith("/")) == 2
+        assert sum(1 for path in records if path.endswith(".md")) == 4
 
     def test_a_directory_holding_only_an_index_is_still_listed(self, tmp_path):
         # The manifest infers subdirectories from the paths it holds, and this one contributes
@@ -610,13 +656,23 @@ class TestFetchWriteRoundTrip:
         assert frontmatter["row_count"] == 0
         assert "note" not in frontmatter
 
-    def test_a_round_trip_is_byte_identical_apart_from_the_generated_stamp(self, tmp_path):
+    def test_a_round_trip_is_byte_identical_apart_from_the_generated_stamp(self, tmp_path, monkeypatch):
+        # The stamp has one-second resolution and is the one field a re-write is allowed to
+        # move, so comparing raw documents passed only while both writes happened to land inside
+        # the same wall-clock second. The clock is stepped across a second boundary here, which
+        # is what the assertion is meant to tolerate and everything else is meant to survive.
+        first_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        monkeypatch.setattr(manager_module, "datetime", SteppingCalendar(first_at, first_at + timedelta(seconds=1)))
+
         manager = make_manager(tmp_path, {"t.md": ATTESTED}, refresh_seconds=None, write_actor="process:demo")
         manager.write([manager.fetch(["t.md"])[0]])
         first = (tmp_path / "t.md").read_text(encoding="utf-8")
         manager.write([manager.fetch(["t.md"])[0]])
+        second = (tmp_path / "t.md").read_text(encoding="utf-8")
 
-        assert (tmp_path / "t.md").read_text(encoding="utf-8") == first
+        assert without_stamp(second) == without_stamp(first)
+        assert "at: '2024-01-01T00:00:00+00:00'" in first
+        assert "at: '2024-01-01T00:00:01+00:00'" in second
 
     def test_an_untitled_concept_does_not_gain_its_own_path_as_a_title(self, tmp_path):
         # The record's display title used to fall back to the path, which write() then persisted.

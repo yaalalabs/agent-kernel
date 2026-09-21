@@ -656,22 +656,65 @@ class OKFManager(DocumentKnowledgeBase):
         Subdirectories come from :meth:`_child_directories`, the same derivation ``schema``
         reports, so the two views of the bundle an agent is given cannot disagree.
 
+        Subdirectories are listed before concepts, so a flat truncation at ``limit`` hid every
+        concept in a directory holding more subdirectories than the budget — the agent was told
+        the namespace contained nothing it could read. Both kinds are apportioned a share
+        instead, so neither is squeezed out entirely by the other.
+
         :param manifest: The loaded manifest.
         :param directory: Normalised bundle-relative directory.
         :param limit: Maximum number of entries.
-        :return: Child records in lexicographic order.
+        :return: Child records in lexicographic order, directories first.
         """
         prefix = f"{directory}/" if directory else ""
-        subdirectories = self._child_directories(manifest, prefix)
-        concepts = [concept for path, concept in manifest.concepts.items() if path.startswith(prefix) and "/" not in path[len(prefix) :]]
+        subdirectories = sorted(self._child_directories(manifest, prefix))
+        concepts = sorted(
+            (concept for path, concept in manifest.concepts.items() if path.startswith(prefix) and "/" not in path[len(prefix) :]),
+            key=lambda item: item.path,
+        )
 
         if not concepts and not subdirectories and directory:
             log.warning("[%s.browse] no such directory in the bundle: %r", self.backend_name, directory)
             return []
+        if limit <= 0:
+            return []
 
-        entries: List[Record] = [self._directory_record(prefix, name) for name in sorted(subdirectories)]
-        entries.extend(self._concept_record(concept) for concept in sorted(concepts, key=lambda item: item.path))
-        return entries[:limit] if limit > 0 else []
+        directory_count, concept_count = self._apportion(len(subdirectories), len(concepts), limit)
+        if directory_count < len(subdirectories) or concept_count < len(concepts):
+            log.warning(
+                "[%s.browse] %r holds %d subdirector(ies) and %d concept(s); listing %d and %d at limit=%d",
+                self.backend_name,
+                directory or "<root>",
+                len(subdirectories),
+                len(concepts),
+                directory_count,
+                concept_count,
+                limit,
+            )
+
+        entries: List[Record] = [self._directory_record(prefix, name) for name in subdirectories[:directory_count]]
+        entries.extend(self._concept_record(concept) for concept in concepts[:concept_count])
+        return entries
+
+    @staticmethod
+    def _apportion(directories: int, concepts: int, limit: int) -> tuple[int, int]:
+        """
+        Divide a listing budget between subdirectories and concepts.
+
+        Whichever kind fits entirely gets all of it and the other takes the rest; when neither
+        does, each is guaranteed half. That guarantee is the point: a directory is a namespace
+        the agent can browse further and a concept is something it can read, so a listing
+        showing only one of them misrepresents what is there.
+
+        :param directories: How many subdirectories the namespace holds.
+        :param concepts: How many concepts it holds.
+        :param limit: Maximum number of entries to return.
+        :return: How many of each to list.
+        """
+        if directories + concepts <= limit:
+            return directories, concepts
+        directory_count = min(directories, max(limit // 2, limit - concepts))
+        return directory_count, limit - directory_count
 
     @staticmethod
     def _directory_record(prefix: str, name: str) -> Record:

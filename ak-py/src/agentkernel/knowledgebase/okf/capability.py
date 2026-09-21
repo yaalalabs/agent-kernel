@@ -12,7 +12,7 @@ construction; instead a bundle is walked the first time something actually reach
 
 import logging
 from threading import RLock
-from typing import TYPE_CHECKING, ClassVar, Dict, Mapping, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, Mapping, Optional
 
 from ...core.config import AKConfig
 from ...core.util.factory import AKConfigError, resolve_dotted
@@ -65,6 +65,7 @@ class OKFCapabilityManager:
         self._stores: Dict[str, DocumentStore] = {}
         self._backends: Dict[str, "OKFManager"] = {}
         self._builders: Dict[str, KnowledgeBuilder] = {}
+        self._agent_tools: Dict[str, Dict[str, Any]] = {}
 
     @classmethod
     def get(cls) -> Optional["OKFCapabilityManager"]:
@@ -167,6 +168,26 @@ class OKFCapabilityManager:
                 )
                 self._builders[agent_name] = builder
             return builder
+
+    def tools_for(self, agent_name: str) -> Mapping[str, Any]:
+        """
+        Return this agent's KnowledgeBuilder tools, keyed by name and built once.
+
+        ``KnowledgeBuilder.build()`` constructs a fresh set of closures on every call, and the
+        tool surface reaches for one by name on every invocation — so building per call meant
+        rebuilding all seven to use one. Caching them costs nothing in laziness: the builder
+        behind them was already cached per agent, so this resolves no earlier than before.
+
+        :param agent_name: Agent to resolve for.
+        :return: The agent's tools by name; empty when it holds no role.
+        """
+        with self._cache_lock:
+            tools = self._agent_tools.get(agent_name)
+            if tools is None:
+                builder = self.builder_for(agent_name)
+                tools = {tool.__name__: tool for tool in builder.build(writable=True)} if builder else {}
+                self._agent_tools[agent_name] = tools
+            return tools
 
     def store(self, database: str) -> DocumentStore:
         """

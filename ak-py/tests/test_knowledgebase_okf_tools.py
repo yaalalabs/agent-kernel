@@ -25,6 +25,7 @@ import pytest
 from agentkernel.core.config import AKConfig, _OKFConfig, _OKFDatabaseConfig
 from agentkernel.core.model import SystemTool
 from agentkernel.core.tool import SystemToolFactory
+from agentkernel.knowledgebase.knowledgebuilder import KnowledgeBuilder
 from agentkernel.knowledgebase.okf.capability import OKFCapabilityManager
 from agentkernel.knowledgebase.okf.prompts import OKFPromptComposer
 from agentkernel.knowledgebase.okf.tools import OKFToolFactory
@@ -174,6 +175,40 @@ class TestLaziness:
 
         # One walk and one refresh cycle for the bundle, not one per agent.
         assert manager.builder_for("reader").backends["warehouse"] is manager.builder_for("writer").backends["warehouse"]
+
+    def test_an_agents_tools_are_built_once_and_reused(self, monkeypatch, tmp_path):
+        # KnowledgeBuilder.build() returns a fresh set of closures every call, and the tool
+        # surface reaches for one by name on every invocation — so resolving per call rebuilt
+        # all seven to use one.
+        configure(monkeypatch, {"warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path), consumer=["reader"])})
+        manager = OKFCapabilityManager.get()
+
+        builds = []
+        original = KnowledgeBuilder.build
+        monkeypatch.setattr(KnowledgeBuilder, "build", lambda self, *a, **kw: builds.append(1) or original(self, *a, **kw))
+
+        browse_kb = tool_named(OKFToolFactory.get_tools("reader"), "browse_kb")
+        for _ in range(3):
+            browse_kb("warehouse", "")
+
+        assert len(builds) == 1
+        assert manager.tools_for("reader") is manager.tools_for("reader")
+
+    def test_each_agent_gets_its_own_tool_set(self, monkeypatch, tmp_path):
+        # The cache is keyed per agent because the builder behind it is: two agents over
+        # different databases must not be served each other's tools.
+        configure(
+            monkeypatch,
+            {
+                "warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path), consumer=["reader"]),
+                "notes": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path / "other"), producer=["writer"]),
+            },
+        )
+        manager = OKFCapabilityManager.get()
+
+        assert manager.tools_for("reader") is not manager.tools_for("writer")
+        assert "write_kb" in manager.tools_for("writer")
+        assert manager.tools_for("nobody") == {}
 
 
 class TestReadScoping:

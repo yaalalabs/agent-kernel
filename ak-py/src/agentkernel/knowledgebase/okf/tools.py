@@ -22,7 +22,6 @@ The capability's instructions are not here: they are a system prompt section, co
 from typing import Any, List, Optional
 
 from ...core.model import SystemTool
-from ..knowledgebuilder import KnowledgeBuilder
 from .capability import OKFCapabilityManager
 
 _NO_KB = "No OKF knowledge base is configured for this agent."
@@ -166,35 +165,25 @@ class OKFToolFactory:
         Resolve the agent's builder and invoke one of its tools.
 
         Resolution happens per call rather than per construction, so a bundle is opened the
-        first time an agent actually reaches for it and a configuration edited in between is
-        still honoured.
+        first time an agent actually reaches for it. The manager memoises the built tools per
+        agent, so only that first call pays for building them.
 
         :param agent_name: Agent whose builder to use.
         :param tool_name: Name of the KnowledgeBuilder tool to invoke.
         :param args: Positional arguments forwarded to it.
         :return: Whatever the tool returned, or an explanation when there is no builder.
         """
-        builder = OKFToolFactory._builder(agent_name)
-        if builder is None:
+        manager = OKFCapabilityManager.get()
+        tools = manager.tools_for(agent_name) if manager else {}
+        if not tools:
             return _NO_KB
 
-        for tool in builder.build(writable=True):
-            if tool.__name__ == tool_name:
-                return tool(*args)
-        # Reachable only if a backend stopped declaring a capability between construction and
-        # this call; reported rather than raised, like every other tool-boundary failure.
-        return f"'{tool_name}' is not available for this agent's knowledge bases."
-
-    @staticmethod
-    def _builder(agent_name: str) -> Optional[KnowledgeBuilder]:
-        """
-        Return the agent's builder, or None when the capability is off or it holds no role.
-
-        :param agent_name: Agent to resolve for.
-        :return: The builder, or None.
-        """
-        manager = OKFCapabilityManager.get()
-        return manager.builder_for(agent_name) if manager else None
+        tool = tools.get(tool_name)
+        if tool is None:
+            # Reachable only if a backend stopped declaring a capability between construction
+            # and this call; reported rather than raised, like every other tool-boundary failure.
+            return f"'{tool_name}' is not available for this agent's knowledge bases."
+        return tool(*args)
 
     @staticmethod
     def _calling_agent() -> Optional[str]:
