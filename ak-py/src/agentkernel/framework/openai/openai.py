@@ -66,6 +66,8 @@ class OpenAISession:
         :return: List of items in the session.
         """
         if limit is not None:
+            if limit <= 0:
+                return []
             return self._items[-limit:]
         return self._items
 
