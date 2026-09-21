@@ -66,7 +66,7 @@ class OpenAISession:
         :return: List of items in the session.
         """
         if limit is not None:
-            return self._items[:limit]
+            return self._items[-limit:]
         return self._items
 
     async def add_items(self, items: List[dict]) -> None:
