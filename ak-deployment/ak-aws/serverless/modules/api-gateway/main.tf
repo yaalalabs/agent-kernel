@@ -35,8 +35,8 @@ locals {
 
 # API Gateway REST API
 resource "aws_api_gateway_rest_api" "rest_api" {
-  name        = "${var.product_alias}-${var.env_alias}-rest-api-${var.region}"
-  description = "[${var.env_alias}] ${var.product_display_name} REST API"
+  name        = "${var.prefix}-rest-api-${var.region}"
+  description = "[${var.prefix}] ${var.product_display_name} REST API"
   endpoint_configuration { types = ["REGIONAL"] }
   tags        = var.tags
 }
@@ -147,7 +147,7 @@ resource "aws_api_gateway_deployment" "deployment" {
 # CloudWatch Log Group for API Gateway (only when access logging is enabled)
 resource "aws_cloudwatch_log_group" "api_gateway" {
   count             = var.enable_api_gateway_logs ? 1 : 0
-  name              = "/aws/api-gateway/${var.product_alias}-${var.env_alias}-rest-api"
+  name              = "/aws/api-gateway/${var.prefix}-rest-api"
   retention_in_days = 90
   kms_key_id        = var.cloudwatch_kms_key_arn
 }
@@ -227,7 +227,7 @@ resource "aws_lambda_permission" "allow_apigw_authorizer" {
 # API Gateway Authorizer (conditional)
 resource "aws_api_gateway_authorizer" "lambda_authorizer" {
   count         = var.create_authorizer ? 1 : 0
-  name          = "${var.product_alias}-${var.env_alias}-${var.authorizer.module_name}-${var.authorizer.function_name}"
+  name          = "${var.prefix}-${var.authorizer.function_name}"
   rest_api_id   = aws_api_gateway_rest_api.rest_api.id
   authorizer_uri = var.authorizer_lambda_function_invoke_arn
 

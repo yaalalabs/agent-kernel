@@ -58,9 +58,7 @@ publisher_email = "your-email@domain.com"
 region = "eastus"
 
 # Naming configuration
-product_alias = "ak-oai"        # Used in resource names
-env_alias = "dev"               # Environment identifier
-module_name = "examples"        # Module identifier
+prefix        = "ak-oai-dev-examples"        # Used in resource names
 
 # Feature flags
 create_redis_cluster = false    # Redis not needed for this example

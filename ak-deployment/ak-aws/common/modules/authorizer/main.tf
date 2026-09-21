@@ -3,7 +3,7 @@ locals {
 }
 
 resource "aws_iam_role" "authorizer_lambda_role" {
-  name = "${var.product_alias}-${var.env_alias}-${var.authorizer_info.module_name}-${var.authorizer_info.function_name}-lambda-role"
+  name = "${var.prefix}-${var.authorizer_info.function_name}-lambda-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -38,7 +38,7 @@ resource "aws_iam_role_policy_attachment" "authorizer_lambda_vpc_execution_role_
 
 resource "aws_security_group" "authorizer_lambda" {
   count = length(var.security_group_ids) == 0 && length(var.subnet_ids) > 0 ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-authorizer-lambda-sg"
+  name        = "${var.prefix}-authorizer-lambda-sg"
   description = "Security group for authorizer Lambda functions"
   vpc_id      = var.vpc_id
 
@@ -50,14 +50,14 @@ resource "aws_security_group" "authorizer_lambda" {
   }
 
   tags = merge(var.tags, {
-    Name = "${var.product_alias}-${var.env_alias}-authorizer-lambda-sg"
+    Name = "${var.prefix}-authorizer-lambda-sg"
   })
 }
 
 data "aws_s3_object" "authorizer_source_code" {
   count  = (var.authorizer_info.package_type == "S3Zip") ? 1 : 0
   bucket = module.authorizer_source_storage[0].source_storage_s3_bucket
-  key    = "${var.product_alias}/${var.region}/${var.env_alias}/${var.authorizer_info.module_name}/lambda/${local.package_file_name}"
+  key    = "${var.prefix}/${var.region}/lambda/${local.package_file_name}"
   depends_on = [module.authorizer_source_package]
 }
 
@@ -96,7 +96,7 @@ module "authorizer_lambda_deployment" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name          = "${var.product_alias}-${var.env_alias}-${var.authorizer_info.module_name}-${var.authorizer_info.function_name}"
+  function_name          = "${var.prefix}-${var.authorizer_info.function_name}"
   description            = var.authorizer_info.description
   handler                = var.authorizer_info.handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"

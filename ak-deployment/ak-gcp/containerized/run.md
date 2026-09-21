@@ -57,9 +57,7 @@ terraform init
 cat > dev.tfvars <<EOF
 project_id     = "my-project-123"
 region         = "us-central1"
-product_alias  = "myapp"
-env_alias      = "dev"
-module_name    = "api"
+prefix         = "myapp-dev-api"
 package_path   = "../../../examples/aws-containerized/crewai/dist"
 environment_variables = {
   OPENAI_API_KEY = "sk-your-key-here"

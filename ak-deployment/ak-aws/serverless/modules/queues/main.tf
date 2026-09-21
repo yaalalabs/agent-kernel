@@ -3,13 +3,9 @@ module "input_queue" {
   source               = "yaalalabs/ak-common/aws//modules/sqs"
   version              = "0.9.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   queue_name           = var.queue_config.input_queue_name
   region               = data.aws_region.current.region
-  product_display_name = var.product_alias
-  is_production        = var.env_alias == "prod"
 
   # Queue configuration from queue_config variable with defaults
   fifo_queue                    = var.queue_config.fifo_queue
@@ -48,13 +44,9 @@ module "output_queue" {
   source               = "yaalalabs/ak-common/aws//modules/sqs"
   version              = "0.9.1"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   queue_name           = var.queue_config.output_queue_name
   region               = data.aws_region.current.region
-  product_display_name = var.product_alias
-  is_production        = var.env_alias == "prod"
 
   # Queue configuration from queue_config variable with defaults
   fifo_queue                    = var.queue_config.fifo_queue

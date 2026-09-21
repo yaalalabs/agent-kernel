@@ -49,8 +49,8 @@ locals {
 # Service Discovery
 
 resource "aws_service_discovery_http_namespace" "this" {
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-  description = "CloudMap namespace for ${var.product_alias}-${var.env_alias}-${var.module_name}"
+  name        = var.prefix
+  description = "CloudMap namespace for ${var.prefix}"
   tags        = var.tags
 }
 
@@ -58,7 +58,7 @@ resource "aws_service_discovery_http_namespace" "this" {
 
 resource "aws_iam_policy" "dynamodb_policy" {
   count       = var.create_dynamodb_memory_table ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-dynamodb-policy"
+  name        = "${var.prefix}-dynamodb-policy"
   description = "Policy for DynamoDB access"
 
   policy = jsonencode({
@@ -88,7 +88,7 @@ resource "aws_iam_policy" "dynamodb_policy" {
 
 resource "aws_iam_policy" "dynamodb_thread_policy" {
   count       = var.create_dynamodb_thread_table ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-dynamodb-thread-policy"
+  name        = "${var.prefix}-dynamodb-thread-policy"
   description = "Policy for DynamoDB conversation thread table access"
 
   policy = jsonencode({
@@ -116,7 +116,7 @@ resource "aws_iam_policy" "dynamodb_thread_policy" {
 
 resource "aws_iam_policy" "dynamodb_schedule_policy" {
   count       = var.create_dynamodb_schedule_table ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-dynamodb-schedule-policy"
+  name        = "${var.prefix}-dynamodb-schedule-policy"
   description = "Policy for DynamoDB scheduled-task store access"
 
   policy = jsonencode({
@@ -146,7 +146,7 @@ resource "aws_iam_policy" "dynamodb_schedule_policy" {
 
 resource "aws_security_group" "ecs_alb" {
   count       = var.alb_security_group_id == null ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-ecs-alb-sg"
+  name        = "${var.prefix}-ecs-alb-sg"
   description = "ALB SG for ECS"
   vpc_id      = var.vpc_id
   ingress {
@@ -167,7 +167,7 @@ resource "aws_security_group" "ecs_alb" {
 
 resource "aws_security_group" "ecs_service" {
   count       = var.ecs_service_security_group_id == null ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-ecs-svc-sg"
+  name        = "${var.prefix}-ecs-svc-sg"
   description = "ECS service SG"
   vpc_id      = var.vpc_id
   ingress {
@@ -189,7 +189,7 @@ resource "aws_security_group" "ecs_service" {
 # Load Balancer
 
 resource "aws_lb" "app" {
-  name               = "${var.product_alias}-${var.env_alias}-${var.module_name}-alb"
+  name               = "${var.prefix}-alb"
   internal           = true
   load_balancer_type = "application"
   subnets            = var.subnet_ids
@@ -199,7 +199,7 @@ resource "aws_lb" "app" {
 }
 
 resource "aws_lb_target_group" "app" {
-  name        = "${var.product_alias}-${var.env_alias}-tg"
+  name        = "${var.prefix}-tg"
   port        = var.rest_service.container_port
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
@@ -232,7 +232,7 @@ resource "aws_lb_listener" "http" {
 # WebSocket needs VPC Link V1 (NLB-only); NLB fronts the existing ALB. WebSocket mode only.
 resource "aws_lb" "nlb" {
   count              = var.websocket_mode ? 1 : 0
-  name               = "${var.product_alias}-${var.env_alias}-${var.module_name}-nlb"
+  name               = "${var.prefix}-nlb"
   internal           = true
   load_balancer_type = "network"
   subnets            = var.subnet_ids
@@ -242,7 +242,7 @@ resource "aws_lb" "nlb" {
 
 resource "aws_lb_target_group" "nlb_to_alb" {
   count       = var.websocket_mode ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-nlb-tg"
+  name        = "${var.prefix}-nlb-tg"
   port        = 80
   protocol    = "TCP"
   vpc_id      = var.vpc_id
@@ -374,7 +374,7 @@ module "ecs_service" {
       log_configuration = {
         logDriver = "awslogs",
         options = {
-          awslogs-group         = "/ecs/${var.product_alias}-${var.env_alias}-${var.module_name}",
+          awslogs-group         = "/ecs/${var.prefix}",
           awslogs-region        = var.region,
           awslogs-stream-prefix = "ecs"
         }

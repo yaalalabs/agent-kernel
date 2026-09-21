@@ -24,28 +24,26 @@ locals {
   connector_cidr_computed = var.connector_cidr != null ? var.connector_cidr : "10.9.${floor(random_id.deployment.dec / 16777216) % 256}.${(floor(random_id.deployment.dec / 65536) % 16) * 16}/28"
 
   # Naming prefix — used everywhere
-  prefix       = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-  service_name = "${local.prefix}-svc" #service name cannot exceed 49
+  service_name = "${var.prefix}-svc" #service name cannot exceed 49
 
   # GCP service account IDs must be 6-30 chars.
   # Truncate the prefix to 27 chars max, then append "-run" (= 31... use 26 + "-run" = 30).
-  sa_prefix = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-  sa_id     = "${substr(local.sa_prefix, 0, min(length(local.sa_prefix), 26))}-run"
+  sa_id     = "${substr(var.prefix, 0, min(length(var.prefix), 26))}-run"
 
   # VPC Access Connector name must match ^[a-z][-a-z0-9]{0,23}[a-z0-9]$ (max 25 chars).
   # Must start with letter, end with alphanumeric, contain only lowercase letters, numbers, hyphens
-  # Strategy: use first letter of product_alias + deployment_id + letter suffix
+  # Strategy: use a fixed letter + deployment_id + letter suffix
   # Format: a<7hex>-<8hex>-c = 1+7+1+8+1+1 = 19 chars (safe)
   connector_name = "a${substr(local.deployment_id, 0, 7)}-${local.deployment_id}-c"
 
   # Firewall name with unique deployment ID
-  firewall_name = "${substr(local.prefix, 0, min(length(local.prefix), 45))}-${local.deployment_id}-fw"
+  firewall_name = "${substr(var.prefix, 0, min(length(var.prefix), 45))}-${local.deployment_id}-fw"
 
   # API Gateway names with unique deployment ID (max 49 chars for gateway, 63 for API)
   # Gateway regex: ^[a-z0-9]([a-z0-9-]{0,47}[a-z0-9])?$ = max 49 chars
   # Reserve 13 chars for suffix: -<8hex>-gw = 13 chars, leaving 36 for prefix
-  api_id      = "${substr(local.prefix, 0, min(length(local.prefix), 50))}-${local.deployment_id}-api"
-  gateway_id  = "${substr(local.prefix, 0, min(length(local.prefix), 36))}-${local.deployment_id}-gw"
+  api_id      = "${substr(var.prefix, 0, min(length(var.prefix), 50))}-${local.deployment_id}-api"
+  gateway_id  = "${substr(var.prefix, 0, min(length(var.prefix), 36))}-${local.deployment_id}-gw"
 
   # Build the endpoint map for API Gateway
   # Same pattern as AWS: default + multipart + MCP + user endpoints
@@ -109,8 +107,7 @@ module "vpc" {
 
   project_id          = var.project_id
   region              = var.region
-  product_alias       = var.product_alias
-  env_alias           = var.env_alias
+  prefix              = var.prefix
   public_subnet_cidr  = var.public_subnet_cidr
   private_subnet_cidr = var.private_subnet_cidr
 }
@@ -122,9 +119,7 @@ module "docker_image" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   source_path   = var.package_path
 }
 
@@ -143,9 +138,7 @@ module "redis" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   network_id    = local.network_id
 
   depends_on = [
@@ -160,9 +153,7 @@ module "firestore" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
 
   depends_on = [
     time_sleep.wait_for_network

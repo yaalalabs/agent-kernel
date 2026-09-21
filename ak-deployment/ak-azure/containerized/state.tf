@@ -57,8 +57,7 @@ module "vnet" {
   version              = "0.9.1"
   resource_group_name  = var.vnet_resource_group_name == null ? var.resource_group_name : var.vnet_resource_group_name
   location             = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
+  prefix               = var.prefix
   private_subnet_cidrs = var.private_subnet_cidrs
   public_subnet_cidrs  = var.public_subnet_cidrs
   vnet_cidr            = var.vnet_cidr
@@ -71,11 +70,9 @@ module "redis" {
   source                   = "yaalalabs/ak-common/azurerm//modules/redis"
   region                         = var.region
   version                  = "0.9.1"
-  product_alias            = var.product_alias
+  prefix                   = var.prefix
   subnet_name              = local.subnet_name
   function_subnet          = local.function_subnet_name
-  env_alias                = var.env_alias
-  module_name              = var.module_name
   vnet_resource_group_name = var.vnet_resource_group_name
   resource_group_name      = var.resource_group_name
   tags                     = var.tags
@@ -91,9 +88,7 @@ module "cosmos" {
   source                         = "yaalalabs/ak-common/azurerm//modules/cosmos"
   region                         = var.region
   version                        = "0.9.1"
-  product_alias                  = var.product_alias
-  env_alias                      = var.env_alias
-  module_name                    = var.module_name
+  prefix                         = var.prefix
   tags                           = var.tags
   vnet_name                      = local.vnet_name
   subnet_id                      = local.subnet_ids
@@ -114,9 +109,7 @@ module "docker_image" {
   source              = "yaalalabs/ak-common/azurerm//modules/acr"
   version             = "0.9.1"
   enabled             = true
-  env_alias           = var.env_alias
-  module_name         = var.module_name
-  product_alias       = var.product_alias
+  prefix              = var.prefix
   source_path         = var.package_path
   resource_group_name = var.resource_group_name
   region              = var.region

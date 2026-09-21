@@ -288,9 +288,7 @@ When `scaling_config.enabled = true`:
 module "containerized_agents" {
   source = "yaalalabs/ak-containerized/aws"
 
-  product_alias = "my-agent"
-  env_alias     = "dev"
-  module_name   = "chatbot"
+  prefix        = "my-agent-dev-chatbot"
   region        = "us-east-1"
 
   package_path = "./dist"
@@ -313,9 +311,7 @@ module "containerized_agents" {
 module "containerized_agents" {
   source = "yaalalabs/ak-containerized/aws"
 
-  product_alias = "my-agent"
-  env_alias     = "prod"
-  module_name   = "assistant"
+  prefix        = "my-agent-prod-assistant"
   region        = "us-east-1"
 
   package_path = "./dist-rest-service"

@@ -1,6 +1,6 @@
 # API Management Service
 resource "azurerm_api_management" "apim" {
-  name                = "${var.product_alias}-${var.env_alias}-apim-flex"
+  name                = "${var.prefix}-apim-flex"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.rg.name
   publisher_name      = var.publisher_name
@@ -16,11 +16,11 @@ resource "azurerm_api_management" "apim" {
 
 # API within API Management
 resource "azurerm_api_management_api" "rest_api" {
-  name                = "${var.product_alias}-${var.env_alias}-rest-api"
+  name                = "${var.prefix}-rest-api"
   resource_group_name = data.azurerm_resource_group.rg.name
   api_management_name = azurerm_api_management.apim.name
   revision            = "1"
-  display_name        = "[${var.env_alias}] ${var.product_display_name} REST API"
+  display_name        = "[${var.prefix}] ${var.product_display_name} REST API"
   path                = var.api_base_path != null && var.api_base_path != "" ? var.api_base_path : ""
   protocols           = ["https"]
 
@@ -30,7 +30,7 @@ resource "azurerm_api_management_api" "rest_api" {
 
 # API Version Set
 resource "azurerm_api_management_api_version_set" "version_set" {
-  name                = "${var.product_alias}-${var.env_alias}-version-set"
+  name                = "${var.prefix}-version-set"
   resource_group_name = data.azurerm_resource_group.rg.name
   api_management_name = azurerm_api_management.apim.name
   display_name        = "API Versions"
@@ -68,7 +68,7 @@ data "azurerm_function_app_host_keys" "function_keys" {
 
 # Backend for Function App (single backend for all functions)
 resource "azurerm_api_management_backend" "function_backend" {
-  name                = "${var.product_alias}-${var.env_alias}-function-backend"
+  name                = "${var.prefix}-function-backend"
   resource_group_name = data.azurerm_resource_group.rg.name
   api_management_name = azurerm_api_management.apim.name
   protocol            = "http"
@@ -131,7 +131,7 @@ XML
 
 # Diagnostic settings for API Management
 resource "azurerm_api_management_logger" "apim_logger" {
-  name                = "${var.product_alias}-${var.env_alias}-apim-logger"
+  name                = "${var.prefix}-apim-logger"
   api_management_name = azurerm_api_management.apim.name
   resource_group_name = data.azurerm_resource_group.rg.name
   resource_id         = azurerm_application_insights.function_insights.id

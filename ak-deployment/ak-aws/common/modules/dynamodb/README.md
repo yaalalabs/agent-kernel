@@ -13,7 +13,7 @@ It is intended to be consumed by both serverless and containerized stacks to cre
 
 ## Inputs
 Key inputs (see `variables.tf` for full list):
-- `product_alias`, `env_alias`, `module_name`, `tags`
+- `prefix`, `tags`
 - `table_name` (optional) — override the default name
 - `attributes` (required) — attribute definitions
 - `hash_key` (required), `range_key` (optional)
@@ -36,9 +36,7 @@ Key inputs (see `variables.tf` for full list):
 module "orders_table" {
   source = "yaalalabs/ak-common/aws//modules/dynamodb"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = "orders"
+  prefix        = "${var.prefix}-orders"
 
   attributes = [
     { name = "pk", type = "S" },
@@ -56,9 +54,7 @@ module "orders_table" {
 module "events_table" {
   source = "yaalalabs/ak-common/aws//modules/dynamodb"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = "events"
+  prefix        = "${var.prefix}-events"
 
   attributes = [
     { name = "pk", type = "S" },

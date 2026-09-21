@@ -10,9 +10,7 @@ module "serverless_agents" {
 
   providers = { aws = aws, docker = docker }
   # Basic lambda configuration
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   create_redis_cluster = true
   product_display_name = "AK OpenAI Serverless Example"
   region               = var.region

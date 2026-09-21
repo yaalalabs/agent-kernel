@@ -146,14 +146,13 @@ def _read_tfvar(deploy_path: Path, key: str) -> str | None:
 
 def sweep_gcp_error_connectors(deploy_path: Path) -> None:
     region = _read_tfvar(deploy_path, 'region')
-    product_alias = _read_tfvar(deploy_path, 'product_alias')
-    env_alias = _read_tfvar(deploy_path, 'env_alias')
-    if not (region and product_alias and env_alias):
+    prefix = _read_tfvar(deploy_path, 'prefix')
+    if not (region and prefix):
         print("Skipping GCP connector sweep - could not resolve "
-              "region/product_alias/env_alias from terraform.tfvars")
+              "region/prefix from terraform.tfvars")
         return
 
-    network = f"{product_alias}-{env_alias}-vpc"
+    network = f"{prefix}-vpc"
     print(f"\n🧹 Sweeping ERROR-state VPC connectors on network '{network}' (region {region})...")
     try:
         result = subprocess.run(
@@ -495,14 +494,13 @@ def test_azure_deployment(path: str, deploy_dir: str = 'deploy') -> bool:
 
 def _resolve_lambda_sg_ids(deploy_path: Path, region: str) -> list[str]:
     """Look up the example's Lambda security group ids by module-convention name."""
-    product_alias = _read_tfvar(deploy_path, 'product_alias')
-    env_alias = _read_tfvar(deploy_path, 'env_alias')
-    if not (product_alias and env_alias):
+    prefix = _read_tfvar(deploy_path, 'prefix')
+    if not prefix:
         return []
     sg_names = [
-        f"{product_alias}-{env_alias}-request-handler-sg",
-        f"{product_alias}-{env_alias}-agent-runner-sg",
-        f"{product_alias}-{env_alias}-response-handler-sg",
+        f"{prefix}-request-handler-sg",
+        f"{prefix}-agent-runner-sg",
+        f"{prefix}-response-handler-sg",
     ]
     try:
         result = subprocess.run(
