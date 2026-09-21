@@ -687,6 +687,15 @@ The capability model changes a few things an already-deployed agent can see. Eac
   `OKFManager` declares it, so existing output is unchanged.
 - **`Neo4jManager.query` (formerly `read`) defaults to `limit=3`** instead of `limit=10`. `read_kb` always
   passes `limit`, so only direct callers see the difference.
+- **Every built-in backend's `read()` is renamed to the capability it actually implements**, since the
+  ABC no longer carries a router: `ChromaManager.read` → `search`, `StarburstManager.read` → `query`,
+  `Neo4jManager.read` → `query`. Agent-facing behaviour is unchanged, because `read_kb` routes on the
+  declaration; only code calling a backend directly moves.
+- **`StarburstManager.query` (formerly `read`) defaults to `limit=3`** instead of `limit=5`, matching the
+  ABC signature. This is the fallback `LIMIT` appended to a `SELECT` that carries none, so a direct
+  caller relying on the old default now gets three rows.
+- **A written OKF concept naming no `metadata["id"]` is titled from its own text**, and its synthesised
+  path is slugged from that title rather than from its `type`. A record naming an id is untouched.
 
 
 
