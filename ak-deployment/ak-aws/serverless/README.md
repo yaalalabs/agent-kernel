@@ -755,7 +755,7 @@ are egress-all:
 
 ## ✨ Features
 
-### ⚡ Lambda Configuration23a2e26e4ae16940e60809287c70175b030efade
+### ⚡ Lambda Configuration
 
 **Multiple Deployment Methods**:
 - **LocalZip**: Deploy from local ZIP file (< 50 MB)
