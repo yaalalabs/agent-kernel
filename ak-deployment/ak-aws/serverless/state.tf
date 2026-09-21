@@ -95,7 +95,7 @@ locals {
 
 resource "aws_security_group" "request_handler" {
   count       = var.request_handler.security_group_id == null ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-request-handler-sg"
+  name        = "${var.prefix}-request-handler-sg"
   description = "Security group for the request handler Lambda (also used by the authorizer and WebSocket connection handler Lambdas)"
   vpc_id      = local.vpc_id
 
@@ -106,12 +106,12 @@ resource "aws_security_group" "request_handler" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = { Name = "${var.product_alias}-${var.env_alias}-request-handler-sg" }
+  tags = { Name = "${var.prefix}-request-handler-sg" }
 }
 
 resource "aws_security_group" "agent_runner" {
   count       = var.agent_runner.security_group_id == null ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-agent-runner-sg"
+  name        = "${var.prefix}-agent-runner-sg"
   description = "Security group for the agent runner Lambda"
   vpc_id      = local.vpc_id
 
@@ -122,12 +122,12 @@ resource "aws_security_group" "agent_runner" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = { Name = "${var.product_alias}-${var.env_alias}-agent-runner-sg" }
+  tags = { Name = "${var.prefix}-agent-runner-sg" }
 }
 
 resource "aws_security_group" "response_handler" {
   count       = var.response_handler.security_group_id == null ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-response-handler-sg"
+  name        = "${var.prefix}-response-handler-sg"
   description = "Security group for the response handler Lambda"
   vpc_id      = local.vpc_id
 
@@ -138,7 +138,7 @@ resource "aws_security_group" "response_handler" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = { Name = "${var.product_alias}-${var.env_alias}-response-handler-sg" }
+  tags = { Name = "${var.prefix}-response-handler-sg" }
 }
 
 # Single shared S3 bucket for all lambda source packages
