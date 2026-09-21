@@ -21,6 +21,9 @@ class RedisAttachmentStore(AttachmentStore):
     ``{prefix}{session_id}:_index`` tracks insertion order for pruning.
     """
 
+    # Redis is an external service, so any process with the same config reads what another wrote.
+    shared = True
+
     def __init__(self, session_id: str, url: str, ttl: int, prefix: str):
         """
         Initialize the Redis attachment store.

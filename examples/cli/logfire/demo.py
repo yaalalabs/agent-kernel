@@ -22,6 +22,7 @@ math_agent = Agent(
     handoff_description="Specialist agent for math questions",
     instructions="You provide help with math problems. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details.",
+    model="openai/gpt-4.1-mini",
 )
 
 general_agent = Agent(
@@ -29,12 +30,14 @@ general_agent = Agent(
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details",
+    model="openai/gpt-4.1-mini",
 )
 
 weather_agent = Agent(
     name="weather",
     instructions="You provide weather information upon request. Use the get_weather tool for all weather-related questions.",
     tools=OpenAIToolBuilder.bind([get_weather]),
+    model="openai/gpt-4.1-mini",
 )
 
 triage_agent = Agent(
@@ -42,6 +45,7 @@ triage_agent = Agent(
     instructions="You determine which agent to use based on the user's question. Give short and direct answers exactly to the question. "
     "Don't provide any explanations nor additional details",
     handoffs=[general_agent, math_agent, weather_agent],
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([triage_agent, math_agent, general_agent, weather_agent])

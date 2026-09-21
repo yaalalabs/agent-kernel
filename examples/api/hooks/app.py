@@ -11,6 +11,7 @@ qa_agent = Agent(
         "You are a helpful AI assistant that answers questions accurately. "
         "Keep your responses concise and informative."
     ),
+    model="openai/gpt-4.1-mini",
 )
 
 # Register the agent with the OpenAI module

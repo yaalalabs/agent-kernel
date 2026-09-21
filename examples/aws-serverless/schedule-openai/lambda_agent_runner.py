@@ -16,6 +16,7 @@ reminder_agent = Agent(
     "recurring basis, register it with the scheduling tools rather than answering as if it had "
     "already run, and tell the user the task id you registered. When a scheduled prompt reaches "
     "you, answer it normally — it is a plain request.",
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([reminder_agent])

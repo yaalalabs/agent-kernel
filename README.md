@@ -185,8 +185,8 @@ The chart is published as an OCI artifact at
 Install it with Helm (the `docker pull` command GitHub shows on the package page does not apply to charts):
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.0 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.1 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.1 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag>

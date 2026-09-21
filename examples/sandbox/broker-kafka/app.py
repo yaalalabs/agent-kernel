@@ -26,6 +26,7 @@ ops_agent = Agent(
     instructions="You are a Kubernetes operations assistant. Run every kubectl command through "
     "the sandbox as a shell command and answer only from what the command actually printed. "
     "Follow the user's output-format instructions exactly.",
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([ops_agent])

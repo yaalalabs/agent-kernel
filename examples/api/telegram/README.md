@@ -242,9 +242,9 @@ You can customize these in `server.py` by modifying the `_handle_command` method
 ### Custom Command Handler
 
 ```python
-from agentkernel.telegram import AgentTelegramRequestHandler
+from agentkernel.telegram import TelegramInboundAdapter
 
-class CustomTelegramHandler(AgentTelegramRequestHandler):
+class CustomTelegramHandler(TelegramInboundAdapter):
     async def _handle_command(self, chat_id: int, command: str):
         if command == "/status":
             await self._send_message(chat_id, "✅ Bot is running!")

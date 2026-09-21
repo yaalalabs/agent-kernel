@@ -13,6 +13,7 @@ coder_agent = Agent(
         "Use the workspace profile by default; use the scratch profile when the user asks for a quick, "
         "isolated one-off. Give short, direct answers backed by what you actually executed."
     ),
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([coder_agent])
