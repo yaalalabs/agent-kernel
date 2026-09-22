@@ -1,18 +1,20 @@
 # #749: Resolve secrets from a managed store with environment-variable fallback — Implementation Spec
 
 Adds `agentkernel/secret/`, a top-level capability package beside `sandbox/` and `schedule/`, that
-resolves a short key (`openai_api_key`) to a value through a fixed three-layer order — process cache,
-the configured provider, `os.environ[UPPERCASE(key)]` — with the canonical secret name
-`/ak/{prefix}/{key}`. Two seams are config-keyed with dotted-path bring-your-own on both:
-`SecretManager` (`secret.type`, built-in `layered`) owns the resolution strategy, `SecretProvider`
-(`secret.provider.type`, built-ins `noop` and `ssm`) owns where a value lives. The AWS Terraform root
-modules gain one additive `ssm_enabled` flag that injects `AK_SECRET__PREFIX` and grants
-`ssm:GetParameter` on `parameter/ak/${prefix}/*`.
+resolves an **environment-variable-style key** (`OPENAI_API_KEY`) to a value through a fixed
+three-layer order: process cache, the configured provider, `os.environ[key]`. The manager is a plain
+key → value mapping in that one currency — it composes no paths and transforms no names — and each
+provider owns its own addressing: `AWSSMSecretProvider` is what turns `OPENAI_API_KEY` into the SSM
+parameter `/ak/{prefix}/openai_api_key`. Two seams are config-keyed with dotted-path bring-your-own on
+both: `SecretManager` (`secret.type`, built-in `layered`) owns the resolution strategy,
+`SecretProvider` (`secret.provider.type`, built-ins `noop`, `in_memory`, `env`, `awssm`) owns where a
+value lives. The AWS Terraform root modules gain one additive `ssm_enabled` flag that injects
+`AK_SECRET__PREFIX` and grants `ssm:GetParameter` on `parameter/ak/${prefix}/*`.
 
-[`design.md`](design.md) is the requirements source; every section below traces back to it. The two
-decisions design.md left open are resolved in [Resolved open
-questions](#resolved-open-questions), and the three places this spec adds to (rather than restates)
-design.md are listed in [Deviations and additions](#deviations-and-additions).
+[`design.md`](design.md) is the requirements source and has been updated to carry the key-shape
+change this spec implements; [Changes from design.md](#changes-from-designmd) is the change log of
+what moved, for a reviewer who read the earlier draft. The two questions design.md left open are
+settled in [Resolved open questions](#resolved-open-questions).
 
 ## Design
 
@@ -29,8 +31,10 @@ ak-py/src/agentkernel/secret/
 ├── testing.py           # SecretProviderContract, SecretManagerContract (imports pytest)
 └── providers/
     ├── __init__.py
-    ├── noop.py          # NoOpSecretProvider
-    └── ssm.py           # SSMSecretProvider (aws extra)
+    ├── noop.py          # NoOpSecretProvider     — the default; always misses
+    ├── in_memory.py     # InMemorySecretProvider — seedable dict, for tests and local dev
+    ├── env.py           # EnvSecretProvider      — os.environ as the backing store
+    └── awssm.py         # AWSSMSecretProvider    — AWS SSM Parameter Store; aws extra
 ```
 
 Governing rules, in the shape the shared-driver and pipeline rules take:
@@ -38,18 +42,22 @@ Governing rules, in the shape the shared-driver and pipeline rules take:
 1. **`secret/` imports `core` only.** Nothing in `core/`, `pipeline/`, `api/`, `deployment/` or
    `integration/` imports `secret/`. The capability is reached by application code calling
    `SecretManager.current()`; no AK entrypoint calls it (design.md, Public API).
-2. **Providers read no configuration of their own beyond their `from_config` seam**, compose no
-   paths, read no environment, and cache nothing. `get_secret(path)` is the whole contract.
-3. **Only the factories call `AKConfig.get()`.** `LayeredSecretManager.__init__` takes explicit
-   parameters (`prefix`, `provider`, `cache_ttl`); `SecretProviderFactory.create` takes the
-   `secret.provider` block explicitly. Same rule the shared DB drivers and the #503 factory seams
-   follow.
-4. **Every component is a class.** The module-level names are constants only (`_KEY_PATTERN`,
+2. **The manager's currency is one key, unchanged end to end.** It caches under the key it was given,
+   hands that same key to the provider, and reads `os.environ` under that same key. There is no case
+   folding, no prefixing and no path composition anywhere in the manager. A future provider
+   (Secrets Manager, Vault, Key Vault) therefore needs no manager change.
+3. **Each provider owns its own addressing.** `get_secret(key)` receives the env-style key and
+   translates it however its backend requires — `AWSSMSecretProvider` to `/ak/{prefix}/{key.lower()}`,
+   `EnvSecretProvider` to `os.environ[key]`, `InMemorySecretProvider` to a dict lookup. A provider
+   never caches and never falls back to another layer.
+4. **Only the factories call `AKConfig.get()`.** `LayeredSecretManager.__init__` takes explicit
+   parameters (`provider`, `cache_ttl`); `SecretProviderFactory.create` takes the `secret` block
+   explicitly. Same rule the shared DB drivers and the #503 factory seams follow.
+5. **Every component is a class.** The module-level names are constants only (`_KEY_PATTERN`,
    `_UNSET`, `_BUILTIN_SECRET_MANAGERS`, `_BUILTIN_SECRET_PROVIDERS`) — there are no module-level
-   functions in the package. Path composition, environment-variable naming and key validation are
-   `LayeredSecretManager` methods, per design.md's Components table.
-5. **No secret value reaches a log record, an exception message, a trace span or a response body.**
-   Log lines and exception messages carry the key name or the composed path only.
+   functions in the package.
+6. **No secret value reaches a log record, an exception message, a trace span or a response body.**
+   Log lines and exception messages carry the key name, or the provider's composed address, only.
 
 ### `secret/errors.py`
 
@@ -65,21 +73,20 @@ class SecretError(Exception):
 
 
 class SecretNotFoundError(SecretError):
-    """No layer had the key, and no ``default`` was supplied.
+    """No layer had the key, and no ``default`` was supplied."""
 
-    The message names the key and the composed path so a misconfigured prefix is diagnosable
-    without turning on debug logging.
-    """
-
-    def __init__(self, key: str, path: str) -> None:
+    def __init__(self, key: str) -> None:
         self.key = key
-        self.path = path
-        super().__init__(f"secret '{key}' not found (looked up '{path}', then the {key.upper()} environment variable)")
+        super().__init__(f"secret '{key}' not found: no provider entry and no '{key}' environment variable")
 ```
 
-`SecretNotFoundError` subclassing `SecretError` means a caller that only wants "the capability
-failed" catches the base, while a caller distinguishing "absent" from "broken" catches the subclass
-first. The reverse hierarchy would force every caller to catch two types.
+`SecretNotFoundError` names the key only. Under the old shape it also named the composed path; with
+addressing now owned by the provider, the manager has no path to name — a provider that wants its
+address diagnosable logs it at DEBUG on the miss (`AWSSMSecretProvider` does).
+
+`SecretNotFoundError` subclasses `SecretError` so a caller that only wants "the capability failed"
+catches the base, while a caller distinguishing "absent" from "broken" catches the subclass first.
+The reverse hierarchy would force every caller to catch two types.
 
 ### `secret/base.py` — the two ABCs
 
@@ -88,7 +95,12 @@ _UNSET: Any = object()  # "no default supplied"; typed Any so it can default an 
 
 
 class SecretManager(ABC):
-    """Resolves a short key to a secret value. The process-wide instance is SecretManager.current()."""
+    """Resolves an environment-variable-style key to a secret value.
+
+    The process-wide instance is SecretManager.current(). Keys are the same names the SDKs already
+    read from the environment (OPENAI_API_KEY, NEO4J_PASSWORD), so nothing in the manager renames,
+    prefixes or case-folds them.
+    """
 
     # Guards the singleton only. Resolution locking is each implementation's own.
     _instance: ClassVar[Optional["SecretManager"]] = None
@@ -139,20 +151,28 @@ class SecretManager(ABC):
 
 
 class SecretProvider(ABC):
-    """A backend that holds secrets at fully composed paths."""
+    """A backend that holds secrets, addressed by an environment-variable-style key."""
 
     @classmethod
-    def from_config(cls, provider_config: "_SecretProviderConfig") -> "SecretProvider":
-        """Build the provider from the `secret.provider` block. A provider needing no settings
-        inherits this default and ignores the block (the ScheduleProvider.from_config precedent)."""
+    def from_config(cls, config: "_SecretConfig") -> "SecretProvider":
+        """Build the provider from the `secret` block.
+
+        The whole block, not just `secret.provider`: `secret.prefix` is a deployment-wide scope that
+        more than one backend can key off (SSM today, Secrets Manager or Key Vault later), so it
+        stays one field rather than being redeclared per provider. A provider needing no settings
+        inherits this default and ignores the block (the ScheduleProvider.from_config precedent).
+
+        :raises AKConfigError: If the settings this provider needs are missing or malformed.
+        """
         return cls()
 
     @abstractmethod
-    def get_secret(self, path: str) -> Optional[str]:
-        """Return the value at `path`, or None when this backend does not have it.
+    def get_secret(self, key: str) -> Optional[str]:
+        """Return the value stored for `key`, or None when this backend does not have it.
 
-        The provider never composes the path, never reads os.environ, and never caches. It MUST
-        tolerate concurrent calls: the built-in manager serializes them, a bring-your-own one need not.
+        The provider owns its own addressing — it translates `key` to whatever its backend uses —
+        and it never caches and never falls back to another layer. It MUST tolerate concurrent
+        calls: the built-in manager serializes them, a bring-your-own one need not.
 
         :raises SecretError: If the backend failed (as opposed to not holding the value).
         """
@@ -161,8 +181,8 @@ class SecretProvider(ABC):
 
 `from_config` on `SecretManager` is declared but not abstract, so a bring-your-own manager that takes
 no configuration is constructed by the inherited default the same way a provider is. It raises
-`NotImplementedError` rather than returning `cls()` because a manager built with no prefix and no
-provider cannot resolve anything — the failure should be loud.
+`NotImplementedError` rather than returning `cls()` because a manager built with no provider cannot
+resolve anything — the failure should be loud.
 
 `_UNSET` is annotated `Any` so `default: Optional[str] = _UNSET` type-checks under the repo's mypy
 settings while the advertised signature stays `Optional[str]` at both ends (design.md, Public API).
@@ -172,6 +192,9 @@ settings while the advertised signature stays `Optional[str]` at both ends (desi
 ```python
 class SecretCache:
     """TTL'd key -> value store holding resolved hits only.
+
+    Keyed by the same environment-variable-style key the caller passed, so a cache entry, a provider
+    lookup and an environment variable all name one thing. Nothing here transforms the key.
 
     Not internally locked: LayeredSecretManager holds its resolution lock across the whole
     check -> fetch -> store sequence, so a second lock here would be redundant and would invite the
@@ -217,34 +240,27 @@ class SecretCache:
 ### `secret/manager.py` — `LayeredSecretManager`
 
 ```python
-_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+# Environment-variable-style keys: the names the SDKs already read. Uppercase-only so one secret has
+# exactly one spelling across the cache, the provider and os.environ.
+_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
 class LayeredSecretManager(SecretManager):
-    """The built-in manager: cache -> provider -> environment, over `/ak/{prefix}/{key}`."""
+    """The built-in manager: cache -> provider -> environment, over one unchanged key."""
 
-    def __init__(self, prefix: str, provider: SecretProvider, cache_ttl: int = 300) -> None:
+    def __init__(self, provider: SecretProvider, cache_ttl: int = 300) -> None:
         """Constructor arguments are explicit; config reading stays in from_config/the factory.
 
-        :param prefix: Deployment scope. Leading and trailing '/' are stripped; an interior '/'
-                       raises, because a nested path composes outside the parameter/ak/{prefix}/*
-                       grant Terraform provisions and would fail as an authorization error.
-        :raises AKConfigError: On an interior '/' in prefix, or a negative cache_ttl.
+        :raises AKConfigError: If cache_ttl is negative.
         """
-        self._prefix = self._normalize_prefix(prefix)
         self._provider = provider
         self._cache = SecretCache(cache_ttl)
         self._lock = RLock()
 
     @classmethod
     def from_config(cls, config: _SecretConfig) -> "LayeredSecretManager":
-        """:raises AKConfigError: If prefix is empty while a provider other than `noop` is selected."""
-        if not config.prefix.strip("/") and config.provider.type.lower() != "noop":
-            raise AKConfigError(
-                f"secret.prefix is required when secret.provider.type is '{config.provider.type}': "
-                "without it every lookup composes '/ak//<key>' and misses silently into the environment"
-            )
-        return cls(prefix=config.prefix, provider=SecretProviderFactory.create(config.provider), cache_ttl=config.cache_ttl)
+        """:raises AKConfigError: If the configured provider's own settings are unusable."""
+        return cls(provider=SecretProviderFactory.create(config), cache_ttl=config.cache_ttl)
 
     # -- public API ----------------------------------------------------------------------
 
@@ -254,17 +270,16 @@ class LayeredSecretManager(SecretManager):
         if value is not None:
             return value
         if default is _UNSET:
-            raise SecretNotFoundError(key, self._compose_path(key))
+            raise SecretNotFoundError(key)
         return default
 
     def inject(self, key: str) -> None:
         self._validate_key(key)
         value = self._resolve(key)
         if value is None:
-            raise SecretNotFoundError(key, self._compose_path(key))
-        name = self._env_var_name(key)
-        os.environ[name] = value
-        self._log.debug("Injected secret '%s' into environment variable %s", key, name)
+            raise SecretNotFoundError(key)
+        os.environ[key] = value
+        self._log.debug("Injected secret into environment variable %s", key)
 
     def invalidate(self, key: str) -> None:
         self._validate_key(key)
@@ -283,63 +298,57 @@ class LayeredSecretManager(SecretManager):
             cached = self._cache.get(key)
             if cached is not None:
                 return cached
-            value = self._provider.get_secret(self._compose_path(key))  # may raise SecretError
+            value = self._provider.get_secret(key)  # may raise SecretError
             if value is None:
-                value = os.environ.get(self._env_var_name(key))
+                value = os.environ.get(key)
             if value is not None:
                 self._cache.set(key, value)
             return value
 
-    def _compose_path(self, key: str) -> str:
-        return f"/ak/{self._prefix}/{key}"
-
-    @staticmethod
-    def _env_var_name(key: str) -> str:
-        return key.upper()
-
     @staticmethod
     def _validate_key(key: str) -> None:
-        """:raises ValueError: If key does not match ^[a-z][a-z0-9_]*$."""
-
-    @staticmethod
-    def _normalize_prefix(prefix: str) -> str:
-        """:raises AKConfigError: If the stripped prefix still contains '/'."""
+        """:raises ValueError: If key does not match ^[A-Z][A-Z0-9_]*$."""
 ```
 
-Ordering and locking decisions, each of which is testable:
+The manager has no `prefix`, no `_compose_path` and no `_env_var_name`: with the key carried through
+unchanged, all three disappear. Ordering and locking decisions, each of which is testable:
 
 1. **`_validate_key` runs before anything else**, so a malformed key never reaches the provider and
-   never reads or writes `os.environ`. This is what bounds the set of variables `inject` can write:
-   `inject("path")` raises `ValueError` rather than clobbering `PATH` (design.md, Naming and
-   resolution).
-2. **The lock spans the whole resolution.** Guarding the cache alone would leave check→fetch→store
+   never reads or writes `os.environ`. The grammar's job is now to keep the *name* well-formed — it
+   rules out `/`, whitespace, `=` and NUL, which would make an environment-variable name malformed,
+   and it forces a single spelling so two keys cannot address one cache entry.
+2. **The grammar no longer hides a transformation, so it no longer bounds which variables `inject`
+   can reach.** `inject("PATH")` and `inject("AWS_SECRET_ACCESS_KEY")` are now well-formed calls that
+   overwrite those variables. This is a deliberate consequence of dropping the `UPPERCASE(key)` step:
+   the caller now writes the exact variable name it means, so clobbering `PATH` is an explicit act
+   rather than a surprise produced by case folding. It is a caller responsibility, documented on
+   `inject` and in the deployment docs; no denylist is added, because any list of "dangerous" names
+   would be arbitrary and incomplete, and injecting AWS credentials is a legitimate use.
+3. **The lock spans the whole resolution.** Guarding the cache alone would leave check→fetch→store
    interleaved, so a cold key requested by *n* threads would cost *n* provider round trips. Holding
    it across the sequence makes a cold key **single-flight**: the first caller fetches, the rest wait
    and read the entry it wrote. `RLock`, not `Lock`, so a bring-your-own provider that re-enters the
    manager (a provider resolving its own credential through `get`) deadlocks on a second thread
    rather than on itself.
-3. **A provider failure propagates out of `_resolve`**, so it is never mistaken for a miss and never
+4. **A provider failure propagates out of `_resolve`**, so it is never mistaken for a miss and never
    falls through to the environment. `get`'s `default` is therefore returned on a miss only.
-4. **`inject` writes `os.environ` outside the resolution lock.** The write is a single dict
+5. **`inject` writes `os.environ` outside the resolution lock.** The write is a single dict
    assignment and is idempotent for a given key/value; serializing it would extend the critical
    section for no guarantee.
-5. **`invalidate`/`clear` touch the cache only.** Neither writes to the provider, neither unsets an
+6. **`invalidate`/`clear` touch the cache only.** Neither writes to the provider, neither unsets an
    injected variable. An injected key therefore makes the environment layer permanently non-empty
    for that key — documented, not mitigated (design.md, Public API).
-6. `_compose_path` is called twice on the miss path (once in `_resolve`, once to build the error).
-   That is deliberate: the alternative is threading the composed path through the return value of a
-   method whose job is to return a value.
 
 ### `secret/factory.py` — the two factories
 
 Both follow the `core/util/factory.py` house shape exactly as `ScheduleProviderFactory`
-(`schedule/provider/base.py:103-142`) does: `if//elif` real-import branches for built-ins,
+(`schedule/provider/base.py:103-142`) does: `if`/`elif` real-import branches for built-ins,
 `require_extra` around an optional SDK, `resolve_dotted` for any dotted value, `AKConfigError` for an
 unknown short name.
 
 ```python
 _BUILTIN_SECRET_MANAGERS = ["layered"]
-_BUILTIN_SECRET_PROVIDERS = ["noop", "ssm"]
+_BUILTIN_SECRET_PROVIDERS = ["noop", "in_memory", "env", "awssm"]
 
 
 class SecretManagerFactory:
@@ -370,36 +379,45 @@ class SecretProviderFactory:
     _log = logging.getLogger("ak.secret.provider.factory")
 
     @staticmethod
-    def create(provider_config: _SecretProviderConfig) -> SecretProvider:
-        provider_type = provider_config.type
+    def create(config: _SecretConfig) -> SecretProvider:
+        provider_type = config.provider.type
+        SecretProviderFactory._log.info(f"Building '{provider_type}' secret provider")
         key = provider_type.lower()
         if key == "noop":
             from .providers.noop import NoOpSecretProvider
 
-            return NoOpSecretProvider.from_config(provider_config)
-        if key == "ssm":
-            with require_extra("aws", "secret.provider.type: ssm"):
-                from .providers.ssm import SSMSecretProvider
+            return NoOpSecretProvider.from_config(config)
+        if key == "in_memory":
+            from .providers.in_memory import InMemorySecretProvider
 
-            return SSMSecretProvider.from_config(provider_config)
+            return InMemorySecretProvider.from_config(config)
+        if key == "env":
+            from .providers.env import EnvSecretProvider
+
+            return EnvSecretProvider.from_config(config)
+        if key == "awssm":
+            with require_extra("aws", "secret.provider.type: awssm"):
+                from .providers.awssm import AWSSMSecretProvider
+
+            return AWSSMSecretProvider.from_config(config)
         if "." not in provider_type:
             raise AKConfigError(
                 f"unknown secret provider type '{provider_type}'; expected one of {_BUILTIN_SECRET_PROVIDERS} "
                 "or a dotted path to a SecretProvider subclass"
             )
-        return resolve_dotted(provider_type, base=SecretProvider).from_config(provider_config)
+        return resolve_dotted(provider_type, base=SecretProvider).from_config(config)
 ```
 
-`SecretProviderFactory.create` takes the block **explicitly** rather than reading `AKConfig` itself —
-unlike `ScheduleProviderFactory.create()`, which reads config. Two reasons: `LayeredSecretManager`
-already holds the `secret` block when it builds its provider, so a second `AKConfig.get()` would be a
-redundant read of a value the caller has; and a bring-your-own manager that wants to reuse the
-provider seam (design.md, Manager seam) can hand it any `_SecretProviderConfig` it likes rather than
-being forced onto `AKConfig`. This is the same explicit-config seam #503 added to
+`SecretProviderFactory.create` takes the `secret` block **explicitly** rather than reading `AKConfig`
+itself — unlike `ScheduleProviderFactory.create()`, which reads config. Two reasons:
+`LayeredSecretManager` already holds the block when it builds its provider, so a second
+`AKConfig.get()` would re-read a value the caller has; and a bring-your-own manager that wants to
+reuse the provider seam (design.md, Manager seam) can hand it any `_SecretConfig` it likes rather
+than being forced onto `AKConfig`. This is the same explicit-config seam #503 added to
 `QueueTransportFactory.create(queues_config=...)` and `ResponseStoreFactory.create(...)`.
 
 `require_extra` wraps only the `import`, not the construction — matching
-`schedule/provider/base.py:133-136`, so a `SecretError` raised while building a client is not
+`schedule/provider/base.py:133-136`, so an `AKConfigError` raised while validating the prefix is not
 relabelled as a missing extra.
 
 ### `secret/providers/noop.py` — `NoOpSecretProvider`
@@ -408,28 +426,92 @@ relabelled as a missing extra.
 class NoOpSecretProvider(SecretProvider):
     """The null backend and the default: resolution collapses to cache + environment.
 
-    Not named `env`: it never reads the environment. The manager's third layer does that,
-    unconditionally and for every provider.
+    Distinct from EnvSecretProvider: this one never reads the environment. The manager's third layer
+    does that, unconditionally and for every provider.
     """
 
-    def get_secret(self, path: str) -> Optional[str]:
+    def get_secret(self, key: str) -> Optional[str]:
         return None
 ```
 
 No credentials, no network, no configuration. This is the local-development and
 unchanged-deployment path, and it is why the capability needs no `enabled` flag.
 
-### `secret/providers/ssm.py` — `SSMSecretProvider`
+### `secret/providers/in_memory.py` — `InMemorySecretProvider`
 
 ```python
-class SSMSecretProvider(SecretProvider):
-    """AWS SSM Parameter Store, read-only, one call: GetParameter(WithDecryption=True)."""
+class InMemorySecretProvider(SecretProvider):
+    """Seedable dict-backed backend: the test double of the provider seam, and a local-dev store.
 
-    _log = logging.getLogger("ak.secret.provider.ssm")
+    Instance state, not class-level: unlike InMemoryTransport (whose queues must be shared across
+    the producer and consumer threads of one process), nothing here needs to be visible to a second
+    manager, and process-wide state would leak seeded secrets between tests.
+    """
 
-    def __init__(self) -> None:
+    def __init__(self, secrets: Optional[dict[str, str]] = None) -> None:
+        self._secrets: dict[str, str] = dict(secrets or {})
+        self._lock = Lock()
+
+    def put(self, key: str, value: str) -> None:
+        """Seed a value. Not part of SecretProvider — the ABC is read-only by design."""
+        with self._lock:
+            self._secrets[key] = value
+
+    def get_secret(self, key: str) -> Optional[str]:
+        with self._lock:
+            return self._secrets.get(key)
+```
+
+`put` is this class's own method, not an ABC addition: `SecretProvider` stays read-only (design.md,
+Non-goals — nothing writes to a backend from the runtime), and each backend seeds differently, which
+is exactly why `SecretProviderContract` delegates seeding to the subclass.
+
+The `Lock` makes it safe under the concurrent calls the ABC requires, so it is a faithful stand-in
+for a real backend in the single-flight test rather than one that only passes because it is trivial.
+
+### `secret/providers/env.py` — `EnvSecretProvider`
+
+```python
+class EnvSecretProvider(SecretProvider):
+    """os.environ as the backing store: the key IS the variable name, read verbatim."""
+
+    def get_secret(self, key: str) -> Optional[str]:
+        return os.environ.get(key)
+```
+
+**Under `LayeredSecretManager` this provider is observably equivalent to `noop`**, because that
+manager's third layer already reads `os.environ[key]` unconditionally for every provider (design.md,
+Naming and resolution — a settled requirement this spec does not touch). It earns its place for two
+other readers: a **bring-your-own manager**, which owns its whole resolution and may have no
+environment layer at all, gets the environment as a composable provider instead of re-implementing
+it; and the **contract suite** gets a second real, dependency-free backend that actually returns
+values, so the provider seam is exercised end to end without a cloud SDK. That overlap is stated here
+rather than left for a reviewer to notice.
+
+### `secret/providers/awssm.py` — `AWSSMSecretProvider`
+
+This is the only component that knows about paths, prefixes or case.
+
+```python
+class AWSSMSecretProvider(SecretProvider):
+    """AWS SSM Parameter Store, read-only, one call: GetParameter(WithDecryption=True).
+
+    Addressing: the env-style key OPENAI_API_KEY becomes the parameter /ak/{prefix}/openai_api_key.
+    The leading slash is required — SSM rejects a hierarchical name without one — and the IAM
+    resource ARN parameter/ak/{prefix}/* is the ARN of exactly this name.
+    """
+
+    _log = logging.getLogger("ak.secret.provider.awssm")
+
+    def __init__(self, prefix: str) -> None:
+        """:raises AKConfigError: If prefix is empty, or still contains '/' after stripping."""
+        self._prefix = self._normalize_prefix(prefix)
         self._client: Optional[Any] = None
         self._client_lock = Lock()
+
+    @classmethod
+    def from_config(cls, config: _SecretConfig) -> "AWSSMSecretProvider":
+        return cls(prefix=config.prefix)
 
     @property
     def client(self) -> Any:
@@ -441,7 +523,8 @@ class SSMSecretProvider(SecretProvider):
                     self._client = boto3.client("ssm")
         return self._client
 
-    def get_secret(self, path: str) -> Optional[str]:
+    def get_secret(self, key: str) -> Optional[str]:
+        path = self._compose_path(key)
         try:
             response = self.client.get_parameter(Name=path, WithDecryption=True)
         except ClientError as exc:
@@ -453,9 +536,30 @@ class SSMSecretProvider(SecretProvider):
         except BotoCoreError as exc:
             raise SecretError(f"SSM GetParameter failed for '{path}': {type(exc).__name__}") from exc
         return response["Parameter"]["Value"]
+
+    def _compose_path(self, key: str) -> str:
+        return f"/ak/{self._prefix}/{key.lower()}"
+
+    @staticmethod
+    def _normalize_prefix(prefix: str) -> str:
+        """:raises AKConfigError: If prefix is empty, or contains '/' after stripping leading/trailing."""
 ```
 
-Exception scope, stated rather than left to the implementation:
+**Prefix rules**, all enforced here rather than in the manager:
+
+- Empty (after stripping `/`) → `AKConfigError` at construction, i.e. at the first
+  `SecretManager.current()`. Without it every lookup would compose `/ak//openai_api_key` and miss
+  silently into the environment layer. The message names `secret.prefix` and `AK_SECRET__PREFIX`.
+- Leading and trailing `/` are stripped, so `myproduct-dev`, `/myproduct-dev` and `myproduct-dev/`
+  compose identically.
+- An **interior** `/` → `AKConfigError`, because a nested path would compose outside the
+  `parameter/ak/{prefix}/*` grant the Terraform modules provision and would then fail as an
+  authorization error rather than as the configuration error it is.
+- `key.lower()` is applied only here. The manager's grammar guarantees the key is already uppercase
+  ASCII letters, digits and underscores, so the mapping is total and collision-free: two distinct
+  keys can never produce one parameter name.
+
+**Exception scope**, stated rather than left to the implementation:
 
 | Condition | Classified as | Why |
 |---|---|---|
@@ -487,37 +591,54 @@ come from the environment selects `provider.type: noop` and pays nothing.
 
 ### `secret/testing.py` — the two contract suites
 
-Same conventions as `sandbox/testing.py` and `pipeline/testing.py`: the module imports `pytest`,
-the classes are deliberately **not** prefixed `Test` so pytest does not collect them on their own,
-and neither class is exported from `secret/__init__.py` so `import agentkernel.secret` stays free of
-a pytest dependency.
+Same conventions as `sandbox/testing.py` and `pipeline/testing.py`: the module imports `pytest`, the
+classes are deliberately **not** prefixed `Test` so pytest does not collect them on their own, and
+neither class is exported from `secret/__init__.py` so `import agentkernel.secret` stays free of a
+pytest dependency.
 
 ```python
 class SecretProviderContract:
     """Conformance suite every SecretProvider subclasses. Override `provider` and `seed`.
 
-    `supports_round_trip = False` is a *declared* exemption for a backend that structurally cannot
-    hold a value (NoOpSecretProvider). It is read by the suite, never an ad-hoc skip, so a
-    bring-your-own null provider gets the same treatment and no provider can quietly opt out of an
-    assertion that does apply to it.
+    Two declared capability flags let a backend opt out of an assertion its nature makes
+    meaningless. Each is *read by the suite*, never an ad-hoc skip, so a bring-your-own provider
+    gets the same treatment and no provider can quietly opt out of an assertion that does apply.
     """
 
+    # False for a backend that structurally cannot hold a value (NoOpSecretProvider).
     supports_round_trip: bool = True
+    # True for a backend whose store IS the environment (EnvSecretProvider).
+    reads_environment: bool = False
 
     @pytest.fixture
     def provider(self) -> SecretProvider:
         raise NotImplementedError("subclasses must override the `provider` fixture")
 
-    def seed(self, provider: SecretProvider, path: str, value: str) -> None:
-        """Put `value` at `path` in this backend. Required when supports_round_trip is True."""
+    def seed(self, provider: SecretProvider, key: str, value: str) -> None:
+        """Store `value` under `key` in this backend. Required when supports_round_trip is True."""
         raise NotImplementedError("subclasses with supports_round_trip must override `seed`")
 
-    def test_contract_stored_value_round_trips_verbatim(self, provider): ...
-    def test_contract_absent_path_returns_none(self, provider): ...
-    def test_contract_does_not_consult_the_environment(self, provider, monkeypatch): ...
-    def test_contract_uses_the_path_verbatim(self, provider): ...
+    def test_contract_seeded_value_round_trips_verbatim(self, provider): ...
+    def test_contract_absent_key_returns_none(self, provider): ...
+    def test_contract_key_is_used_verbatim(self, provider): ...
+    def test_contract_environment_is_consulted_only_when_declared(self, provider, monkeypatch): ...
+```
 
+- **A seeded value round-trips verbatim** — including leading/trailing whitespace and a multi-line
+  value, so no backend trims or re-encodes what it was given. Skipped by declaration when
+  `supports_round_trip` is False.
+- **An absent key returns `None` rather than raising**, so the manager can fall through to the
+  environment layer.
+- **The key is used verbatim**: seeding under `CONTRACT_KEY_A` and reading `CONTRACT_KEY_B` misses,
+  and reading `CONTRACT_KEY_A` hits — pinning that the provider neither case-folds the key it was
+  handed nor collapses two keys onto one address. (How `CONTRACT_KEY_A` is *spelled inside* the
+  backend is the provider's business — `AWSSMSecretProvider` legitimately lowercases it into a path;
+  what the contract forbids is two distinct keys resolving to one entry.)
+- **The environment is consulted only when declared**: with `reads_environment` False, setting
+  `os.environ[key]` for an unseeded key must still miss; with it True the same setup must **hit**, so
+  the flag cannot be set carelessly just to silence the first form.
 
+```python
 class SecretManagerContract:
     """Conformance suite every SecretManager subclasses. Override `manager`,
     `resolvable_key` and `unresolvable_key`."""
@@ -537,7 +658,7 @@ class SecretManagerContract:
     def test_contract_get_raises_on_a_miss(self, manager, unresolvable_key): ...
     def test_contract_get_returns_the_default_on_a_miss(self, manager, unresolvable_key): ...
     def test_contract_get_default_none_returns_none_rather_than_raising(self, manager, unresolvable_key): ...
-    def test_contract_inject_sets_the_uppercase_environment_variable(self, manager, resolvable_key, monkeypatch): ...
+    def test_contract_inject_sets_the_environment_variable_named_by_the_key(self, manager, resolvable_key, monkeypatch): ...
     def test_contract_invalidate_and_clear_are_callable_and_non_raising(self, manager, resolvable_key): ...
     def test_contract_malformed_key_raises_value_error(self, manager): ...
 ```
@@ -546,22 +667,19 @@ class SecretManagerContract:
   instance under contract, one key it resolves and one it does not — the
   `SandboxProviderContract`/`QueueTransportContract` pattern.
 - **An omitted fixture fails loudly rather than silently skipping**: the base implementations
-  `raise NotImplementedError`, so a subclass that forgets one gets an error at collection/setup, not
-  a green run. This is the mechanism `SandboxProviderContract.provider`
-  (`sandbox/testing.py:151-154`) uses; it is not `pytest.skip`.
-- `test_contract_does_not_consult_the_environment` sets a variable that would match the path's last
-  segment uppercased and asserts `get_secret` still returns `None` — pinning that layer 3 belongs to
-  the manager alone.
-- `test_contract_uses_the_path_verbatim` asserts the provider neither normalizes nor re-prefixes what
-  it was handed (for `ssm`, that the `Name=` kwarg equals the argument).
-- The `malformed_key` assertion is one more than design.md enumerates; see [Deviations and
-  additions](#deviations-and-additions).
+  `raise NotImplementedError`, so a subclass that forgets one gets an error at setup, not a green
+  run. This is the mechanism `SandboxProviderContract.provider` (`sandbox/testing.py:151-154`) uses;
+  it is not `pytest.skip`.
+- `inject` is asserted to set `os.environ[key]` **under the key itself** — the assertion that pins
+  the no-transformation rule.
 
 ### `secret/__init__.py`
 
 ```python
 __all__ = [
     "errors",
+    "EnvSecretProvider",
+    "InMemorySecretProvider",
     "LayeredSecretManager",
     "NoOpSecretProvider",
     "SecretCache",
@@ -572,12 +690,12 @@ __all__ = [
 ]
 ```
 
-Eager imports only — nothing here pulls FastAPI or boto3 (`providers/ssm.py` is imported by the
-factory, behind `require_extra`), so the lazy `__getattr__` indirection `schedule/__init__.py` needs
-is unnecessary. `SSMSecretProvider` is deliberately **not** exported: importing it eagerly would drag
-`boto3` into every process that touches `agentkernel.secret`. `SecretProviderContract` and
-`SecretManagerContract` are not exported either (pytest dependency), matching
-`agentkernel.sandbox`'s treatment of `sandbox/testing.py`.
+Eager imports only — nothing here pulls FastAPI or boto3, so the lazy `__getattr__` indirection
+`schedule/__init__.py` needs is unnecessary. `AWSSMSecretProvider` is deliberately **not** exported:
+importing it eagerly would drag `boto3` into every process that touches `agentkernel.secret`; the
+factory imports it behind `require_extra`, and an application that wants the class by name uses its
+dotted path. `SecretProviderContract`/`SecretManagerContract` are not exported either (pytest
+dependency), matching `agentkernel.sandbox`'s treatment of `sandbox/testing.py`.
 
 No top-level alias module (`agentkernel/secret.py`) is added: `agentkernel.schedule` and
 `agentkernel.sandbox` are imported by their package path, and the alias modules
@@ -609,19 +727,21 @@ questions](#resolved-open-questions)). It is the only consumer this change touch
 
 **Verified unchanged — every other consumer in design.md's Motivation.** All four read their
 environment variable at call time, so `inject(...)` before the agents are built reaches them with no
-code change:
+code change. Under the new key shape the call is literally the variable's own name:
 
-| Site | Read | Reached by `inject` |
+| Site | Read | `inject` call that serves it |
 |---|---|---|
-| `knowledgebase/neo4j.py:43-45` | `os.getenv` in `Neo4jManager.__init__` | yes |
-| `guardrail/walledai.py:46` | `os.getenv` in `WalledAI.__init__` | yes |
-| `integration/slack/adapter.py:285` | `os.environ.get` in `_client()`, per delivery | yes |
-| `sandbox/providers/e2b.py:107` | `os.environ.get(self._config.api_key_env)` in `_api_key()` | yes |
-| `sandbox/providers/daytona.py:125` | `os.environ.get(self._config.api_key_env)` in `_client()` | yes |
+| `knowledgebase/neo4j.py:43-45` | `os.getenv` in `Neo4jManager.__init__` | `inject("NEO4J_PASSWORD")` |
+| `guardrail/walledai.py:46` | `os.getenv` in `WalledAI.__init__` | `inject("WALLED_API_KEY")` |
+| `integration/slack/adapter.py:285` | `os.environ.get` in `_client()`, per delivery | `inject("SLACK_BOT_TOKEN")` |
+| `sandbox/providers/e2b.py:107` | `os.environ.get(self._config.api_key_env)` in `_api_key()` | `inject("E2B_API_KEY")` |
+| `sandbox/providers/daytona.py:125` | `os.environ.get(self._config.api_key_env)` in `_client()` | `inject("DAYTONA_API_KEY")` |
 
-The sandbox providers are reached because `inject("e2b_api_key")` writes `E2B_API_KEY`, which is the
-default of `sandbox.profiles.*.e2b.api_key_env` (`core/config.py:661`); a deployment that renamed
-that field must pick a key whose uppercase form matches it.
+The sandbox providers are reached because the key **is** the variable name, so it must match
+`sandbox.profiles.*.e2b.api_key_env` (default `E2B_API_KEY`, `core/config.py:661`) and
+`...daytona.api_key_env` (default `DAYTONA_API_KEY`, `core/config.py:666`). A deployment that renamed
+either field injects under the renamed value — a direct correspondence now, rather than the
+`UPPERCASE(key)` coincidence the old shape relied on.
 
 **Verified unchanged — no AK entrypoint calls `inject`.** `AgentRunner.run()`,
 `WebSocketGateway.run()`, `IOHandler.run()`, `RESTAPI.run()`, `ECSIOHandler.run()`,
@@ -645,8 +765,9 @@ before `_AGUIStateConfig` (`:856`):
 class _SecretProviderConfig(BaseModel):
     type: str = Field(
         default="noop",
-        description="Secret backend: a built-in short name (noop, ssm) or a dotted path to a SecretProvider subclass. "
-        "'noop' is the null backend — resolution collapses to the process cache plus the UPPERCASE(key) environment variable.",
+        description="Secret backend: a built-in short name (noop, in_memory, env, awssm) or a dotted path to a "
+        "SecretProvider subclass. 'noop' is the null backend — resolution collapses to the process cache plus the "
+        "environment variable named by the key. 'awssm' is AWS SSM Parameter Store and requires secret.prefix.",
     )
 
 
@@ -658,14 +779,14 @@ class _SecretConfig(BaseModel):
 
     type: str = Field(
         default="layered",
-        description="Secret manager: the built-in short name 'layered' (cache -> provider -> environment over /ak/{prefix}/{key}) "
-        "or a dotted path to a SecretManager subclass that owns the whole resolution strategy",
+        description="Secret manager: the built-in short name 'layered' (cache -> provider -> environment, keyed by the "
+        "environment-variable name itself) or a dotted path to a SecretManager subclass that owns the whole resolution strategy",
     )
     prefix: str = Field(
         default="",
-        description="Deployment scope in the canonical secret name /ak/{prefix}/{key}, e.g. 'myproduct-dev-agents'. "
-        "Injected by the AWS Terraform modules as AK_SECRET__PREFIX from their own resource-naming prefix. "
-        "Required whenever secret.provider.type is anything but 'noop'; leading and trailing '/' are stripped, an interior '/' is rejected",
+        description="Deployment scope a provider uses to namespace its secrets, e.g. 'myproduct-dev-agents'. The awssm "
+        "provider reads OPENAI_API_KEY from the SSM parameter /ak/{prefix}/openai_api_key. Injected by the AWS Terraform "
+        "modules as AK_SECRET__PREFIX from their own resource-naming prefix. Required by awssm; ignored by the other built-ins",
     )
     provider: _SecretProviderConfig = Field(
         default_factory=_SecretProviderConfig, description="Backend the secret values are read from"
@@ -689,26 +810,28 @@ Every field justified, with its reader named:
 | Field | Reader | Why it cannot be derived |
 |---|---|---|
 | `secret.type` | `SecretManagerFactory.create` | Chooses the resolution strategy itself; no other configured component implies it. `layered` is the only built-in, so the field exists chiefly as the bring-your-own escape hatch. |
-| `secret.prefix` | `LayeredSecretManager.from_config` → `__init__` → `_compose_path` | The Terraform `prefix` variable (`ak-deployment/ak-aws/serverless/variables.tf:6`) is not injected into the runtime today, so nothing in `AKConfig` carries the deployment identifier. |
+| `secret.prefix` | `AWSSMSecretProvider.from_config` → `__init__` → `_compose_path` | The Terraform `prefix` variable (`ak-deployment/ak-aws/serverless/variables.tf:6`) is not injected into the runtime today, so nothing in `AKConfig` carries the deployment identifier. |
 | `secret.provider.type` | `SecretProviderFactory.create` | The factory selector. Nested to match `schedule.provider.type` (`_ScheduleProviderConfig:356`) and to leave room for a provider's own settings sub-block. |
 | `secret.cache_ttl` | `SecretCache.__init__`, via `LayeredSecretManager.from_config` | The rotation-pickup window; differs per deployment, so it cannot be a constant. Flat rather than a `cache:` sub-block because there is exactly one cache setting. |
 
 - **No `enabled` flag.** The capability is always available and costs nothing at its default, so
   nothing has to be opted into — the house rule reserves `enabled` for features with a real cost
   (`sandbox.enabled`, `trace.enabled`).
-- **No `secret.provider.ssm` block.** The path is composed by the manager, region and credentials come
-  from the boto3 environment default, and decryption rides the AWS-managed key — there is no field
-  that would earn its place.
+- **No `secret.provider.awssm` sub-block.** `prefix` stays top-level because it is a deployment-wide
+  scope a second managed-store provider would key off identically; putting it under `awssm` would
+  force the next provider to redeclare it, and would change the `AK_SECRET__PREFIX` variable the
+  Terraform modules inject. Nothing else about the SSM provider is configurable: region and
+  credentials come from the boto3 environment default, and decryption rides the AWS-managed key.
 - **`_SecretConfig` is non-`Optional` with a `default_factory`**, unlike `thread` and `schedule`.
   Those use block presence as their enabled-check; this capability has no enabled-check, and a
   non-`Optional` block means `AKConfig.get().secret` never needs a `None` guard.
 
 **Compatibility.** Every field has a default and the default provider (`noop`) changes no behavior, so:
 existing `config.yaml` files parse unchanged and keep their meaning; no existing `AK_*` variable
-changes name, type or default; no field description changes, so no generated-docs entry is rewritten.
-`env_ignore_empty=True` (`core/util/config_yaml_util.py:190`) means `AK_SECRET__PREFIX=""` is ignored
-and the default `""` applies — which is exactly the value the fail-fast rejects for a non-`noop`
-provider, so an empty injection cannot silently produce `/ak//key`.
+changes name, type or default; no existing field description changes, so no generated-docs entry is
+rewritten. `env_ignore_empty=True` (`core/util/config_yaml_util.py:190`) means `AK_SECRET__PREFIX=""`
+is ignored and the default `""` applies — which is exactly the value `AWSSMSecretProvider` rejects, so
+an empty injection cannot silently produce `/ak//openai_api_key`.
 
 The existing `AK_SECRETS_PATH` / `<file:...>` mechanism (`core/util/config_yaml_util.py:41-53`) is
 untouched: it substitutes file contents into `config.yaml` at load, which is a different layer from
@@ -722,7 +845,7 @@ Both root modules gain **one** variable, identical in name, type, default and de
 ```hcl
 variable "ssm_enabled" {
   type        = bool
-  description = "Grant the application roles read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX, so the application's `secret.provider.type: ssm` can resolve secrets. Terraform does not create the parameters."
+  description = "Grant the application roles read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX, so the application's `secret.provider.type: awssm` can resolve secrets. Terraform does not create the parameters."
   default     = false
 }
 ```
@@ -788,7 +911,7 @@ resource "aws_iam_policy" "ssm_secret_policy" {
       {
         Sid    = "ReadAKSecrets"
         Effect = "Allow"
-        # The one call SSMSecretProvider makes. No GetParameters, no DescribeParameters,
+        # The one call AWSSMSecretProvider makes. No GetParameters, no DescribeParameters,
         # no write or delete action, and never account-wide ssm:*.
         Action   = ["ssm:GetParameter"]
         Resource = "arn:aws:ssm:${var.region}:${var.account_id}:parameter/ak/${var.prefix}/*"
@@ -859,14 +982,17 @@ Two examples move to the SSM path, one per deployment mode, as #749's acceptance
   ```yaml
   secret:
     provider:
-      type: ssm
+      type: awssm
     # prefix is injected by Terraform as AK_SECRET__PREFIX
   ```
-- `lambda_agent_runner.py`: `SecretManager.current().inject("openai_api_key")` as the first statement,
+- `lambda_agent_runner.py`: `SecretManager.current().inject("OPENAI_API_KEY")` as the first statement,
   before the `Agent(...)` definitions and `OpenAIModule([...])`.
 - `README.md`: replace the `export TF_VAR_openai_api_key=...` step (`:25`) with the required
-  `aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" --type SecureString --value ... --overwrite`
-  prerequisite, plus the rotation story.
+  prerequisite, plus the rotation story:
+  ```bash
+  aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+      --type SecureString --value "$OPENAI_API_KEY" --overwrite
+  ```
 
 **`examples/aws-containerized/openai-dynamodb-scalable`** (`queue_mode = true`; rest service + agent runner):
 
@@ -874,9 +1000,13 @@ Two examples move to the SSM path, one per deployment mode, as #749's acceptance
   `rest_service` (`:29-31`) and `agent_runner` (`:79-81`) blocks.
 - `deploy/variables.tf`: remove the now-unused `openai_api_key` variable.
 - `config.yaml`: same `secret:` block.
-- `app_agent_runner.py`: `SecretManager.current().inject("openai_api_key")` before the agents are built.
-  `app_rest_service.py` is left unchanged — it never calls the model.
+- `app_agent_runner.py`: `SecretManager.current().inject("OPENAI_API_KEY")` before the agents are
+  built. `app_rest_service.py` is left unchanged — it never calls the model.
 - `README.md`: same prerequisite and rotation sections.
+
+The key passed to `inject` is the SDK's own variable name, and the parameter it resolves from is
+`/ak/<prefix>/openai_api_key` — the lowercase mapping `AWSSMSecretProvider` applies, which both
+READMEs show side by side so the correspondence is not left implicit.
 
 Both examples pin the **published** Terraform modules (`yaalalabs/ak-serverless/aws` and
 `yaalalabs/ak-containerized/aws`, both `version = "0.9.1"`), so `ssm_enabled = true` only applies once
@@ -891,13 +1021,14 @@ security-group outputs and never pytest'd — but its deployed Lambdas will fail
 unless the operator has created the parameter. That is stated here rather than worked around; see
 [Resolved open questions](#resolved-open-questions) for the alternative.
 
-The other example deployments stay on environment variables, so both paths are demonstrated side by side
-and the unchanged default keeps its coverage.
+The other example deployments stay on environment variables, so both paths are demonstrated side by
+side and the unchanged default keeps its coverage.
 
-**Docs surfaces** carrying the resolution order, the `/ak/{prefix}/{key}` convention, the IAM
-permissions, the startup-not-hot-path rule with the uncached-miss cost behind it, and the rotation
-story (update the parameter, then `invalidate` or wait out `cache_ttl`, then re-`inject` if the secret
-is consumed through the environment): `ak-deployment/ak-aws/serverless/README.md`,
+**Docs surfaces** carrying the key convention (`OPENAI_API_KEY` → `/ak/{prefix}/openai_api_key`), the
+resolution order, the four built-in providers, the IAM permissions, the startup-not-hot-path rule with
+the uncached-miss cost behind it, the caller responsibility on `inject`, and the rotation story (update
+the parameter, then `invalidate` or wait out `cache_ttl`, then re-`inject` if the secret is consumed
+through the environment): `ak-deployment/ak-aws/serverless/README.md`,
 `ak-deployment/ak-aws/containerized/README.md`, the two example READMEs, and a new page on the docs
 site under `docs/docs/`. The plan's final iteration names the exact files.
 
@@ -938,23 +1069,32 @@ Exhaustive; each intentional with its justification.
 - `terraform plan` is empty for any deployment that leaves `ssm_enabled` at its default.
 - The `AK_SECRETS_PATH` / `<file:...>` config-load substitution is untouched.
 - `inject` never writes to a provider; the capability is read-only against its backend.
+- The SSM parameter naming convention is unchanged from design.md — `/ak/{prefix}/openai_api_key` —
+  so nothing an operator has already provisioned has to be renamed.
 
 ## Error handling
 
 | Condition | Raised | Where | Surfaces as |
 |---|---|---|---|
-| Key does not match `^[a-z][a-z0-9_]*$` | `ValueError` | `LayeredSecretManager._validate_key`, before the provider and before `os.environ` | Programming error; propagates to the caller |
-| No layer had the key, no `default` | `SecretNotFoundError` | `get`, `inject` | Message names key + composed path, never a value |
+| Key does not match `^[A-Z][A-Z0-9_]*$` | `ValueError` | `LayeredSecretManager._validate_key`, before the provider and before `os.environ` | Programming error; propagates to the caller |
+| No layer had the key, no `default` | `SecretNotFoundError` | `get`, `inject` | Message names the key, never a value |
 | No layer had the key, `default` supplied | — | `get` returns `default` | Miss only; never on a failure |
-| Provider miss (`ParameterNotFound`) | — | falls through to `os.environ` | |
-| Provider failure (`AccessDenied`, throttle, credentials, network, any other `ClientError`/`BotoCoreError`) | `SecretError` | `SSMSecretProvider.get_secret` | Propagates out of `get`/`inject`; **never** falls through to the environment |
-| `secret.prefix` empty with a non-`noop` provider (including a dotted path) | `AKConfigError` | `LayeredSecretManager.from_config` | At first `SecretManager.current()` |
-| `secret.prefix` contains an interior `/` | `AKConfigError` | `LayeredSecretManager.__init__` | At first `SecretManager.current()` |
+| Provider miss (`ParameterNotFound`) | — | falls through to `os.environ[key]` | |
+| Provider failure (`AccessDenied`, throttle, credentials, network, any other `ClientError`/`BotoCoreError`) | `SecretError` | `AWSSMSecretProvider.get_secret` | Propagates out of `get`/`inject`; **never** falls through to the environment |
+| `secret.prefix` empty with `provider.type: awssm` | `AKConfigError` | `AWSSMSecretProvider.__init__` | At first `SecretManager.current()` |
+| `secret.prefix` contains an interior `/` with `provider.type: awssm` | `AKConfigError` | `AWSSMSecretProvider._normalize_prefix` | At first `SecretManager.current()` |
 | `secret.cache_ttl` negative in YAML/env | pydantic `ValidationError` | `AKConfig` load (`ge=0`) | At config load |
 | `secret.cache_ttl` negative programmatically | `AKConfigError` | `SecretCache.__init__` | At construction |
 | Unknown `secret.type` / `secret.provider.type` short name | `AKConfigError` | the factories | At first `SecretManager.current()` |
 | Dotted path that will not import or is not a subclass | `AKConfigError` | `resolve_dotted` | At first `SecretManager.current()` |
-| `provider.type: ssm` without `boto3` | `ImportError` naming the `aws` extra | `require_extra` in `SecretProviderFactory.create` | At first `SecretManager.current()` |
+| `provider.type: awssm` without `boto3` | `ImportError` naming the `aws` extra | `require_extra` in `SecretProviderFactory.create` | At first `SecretManager.current()` |
+
+**Prefix validation belongs to the provider now.** design.md put the empty-prefix fail-fast in
+`LayeredSecretManager.from_config` for "any provider other than `noop`". That was correct while the
+manager composed the path; it is wrong now, because `in_memory` and `env` are non-`noop` providers
+with no use for a prefix and a bring-your-own provider may have none either. The check moved to
+`AWSSMSecretProvider`, which is the one component that cannot work without it; a BYO provider needing
+a prefix reads `config.prefix` in its own `from_config` and validates it there.
 
 **Where the config failures fire.** The capability has no mount step of its own (unlike the schedule
 handler's `get_router()`), so every configuration failure surfaces at the first
@@ -963,35 +1103,36 @@ startup — which is where `inject` is called anyway. No `validate_configuration
 added: there is no second surface that would call it.
 
 **Silence rules.** No secret value appears in a log record, an exception message, a trace span or a
-response body. `inject` logs at DEBUG naming the key and the variable, never the value. The SSM
-provider logs at DEBUG on a miss naming the path only.
+response body. `inject` logs at DEBUG naming the variable, never the value. The SSM provider logs at
+DEBUG on a miss naming the composed path only.
 
 ## Testing
 
 New files under `ak-py/tests/`:
 
-**`tests/test_secret_manager.py`** — `LayeredSecretManager` and the `SecretManager.current()` singleton:
+**`tests/test_secret_manager.py`** — `LayeredSecretManager` and the `SecretManager.current()` singleton.
+Driven against `InMemorySecretProvider`, which is a real provider rather than a bespoke test double,
+so the manager tests and the provider contract exercise the same class:
 
 - Three-layer order, first hit wins: a cache hit does not call the provider; a provider hit does not
-  read the environment; a provider miss falls through to `os.environ[UPPERCASE(key)]`.
-- The environment layer is reached for **every** provider, including one that always returns `None`
-  and a dotted-path BYO one — no provider can disable it.
+  read the environment; a provider miss falls through to `os.environ[key]`.
+- **The key is carried through unchanged**: the provider receives exactly `OPENAI_API_KEY`, the cache
+  entry is under `OPENAI_API_KEY`, and layer 3 reads `os.environ["OPENAI_API_KEY"]` — no case folding
+  and no prefixing anywhere in the manager.
+- The environment layer is reached for **every** provider, including `noop`, `in_memory` with nothing
+  seeded, and a dotted-path BYO one — no provider can disable it.
 - A hit is cached; **a miss is not** — a provider seeded after the first failed `get` resolves on the
   next call, and the provider is called twice.
-- `get(key)` on a total miss raises `SecretNotFoundError` whose message contains the key and the
-  composed path and **does not** contain any seeded value.
+- `get(key)` on a total miss raises `SecretNotFoundError` whose message contains the key and **does
+  not** contain any seeded value.
 - `get(key, default="x")` returns `"x"` on a miss, and `get(key, default=None)` returns `None` rather
   than raising — the sentinel assertion.
 - `get(key, default="x")` **re-raises** a provider `SecretError` instead of returning the default.
-- `inject(key)` sets `os.environ["OPENAI_API_KEY"]`, overwrites an existing value, and raises
+- `inject(key)` sets `os.environ[key]` under that exact name, overwrites an existing value, and raises
   `SecretNotFoundError` on a miss; a resolvable key injected once makes layer 3 non-empty afterwards.
-- Key grammar: `"Bad"`, `"bad-key"`, `"1bad"`, `"bad/key"`, `"a b"`, `"a=b"`, `""` each raise
-  `ValueError` from both `get` and `inject`, and `inject("path")` leaves `os.environ["PATH"]`
-  untouched — the assertion that pins why the grammar exists.
-- Prefix: `"p"`, `"/p"`, `"p/"` and `"/p/"` all compose `/ak/p/openai_api_key` (asserted on the path
-  the provider receives); `"a/b"` raises `AKConfigError`.
-- `from_config` raises `AKConfigError` for an empty prefix with `provider.type: ssm` and with a dotted
-  path, and **accepts** it with `provider.type: noop`.
+- Key grammar: `"openai_api_key"`, `"Mixed_Case"`, `"BAD-KEY"`, `"1BAD"`, `"BAD/KEY"`, `"A B"`,
+  `"A=B"`, `""` each raise `ValueError` from both `get` and `inject`, and a rejected key leaves
+  `os.environ` untouched.
 - `cache_ttl`: `>0` serves from cache within the window and re-resolves after it (monkeypatched
   `time.monotonic`); `0` re-resolves every call and leaves `invalidate`/`clear` callable; `-1` raises
   `AKConfigError` from `SecretCache`, and a negative value in the model raises a pydantic
@@ -1004,20 +1145,28 @@ New files under `ak-py/tests/`:
   `LayeredSecretManager` subclass calling `current()` gets the configured singleton rather than
   starting its own.
 - `TestLayeredManagerContract(SecretManagerContract)` runs the manager contract suite against a
-  `LayeredSecretManager` over a seeded fake provider.
+  `LayeredSecretManager` over a seeded `InMemorySecretProvider`.
 
-**`tests/test_secret_providers.py`** — the two built-ins, both against the contract suite:
+**`tests/test_secret_providers.py`** — the four built-ins, each against the contract suite:
 
 - `TestNoOpProviderContract(SecretProviderContract)` with `supports_round_trip = False`; plus a direct
   assertion that the declared exemption is honored (the round-trip test does not run for it) and that
-  the other three do.
-- `TestSSMProviderContract(SecretProviderContract)` with a fake boto3 client (monkeypatched
-  `boto3.client`) whose `seed` writes into the fake's parameter dict, and `get_parameter` raises a
-  real `botocore.exceptions.ClientError` for an unknown name.
-- `SSMSecretProvider` maps `ParameterNotFound` to `None`; maps `AccessDeniedException`,
-  `ThrottlingException`, an unrecognized `ClientError` code and a `BotoCoreError` to `SecretError`;
-  passes `Name=<path>` and `WithDecryption=True` verbatim; and never puts the returned value into the
-  exception message on a subsequent failure.
+  the other assertions do.
+- `TestInMemoryProviderContract(SecretProviderContract)`, seeding via `put`. Plus: instances do not
+  share state (two providers, one seeded, the other misses) — the assertion that pins instance-level
+  rather than class-level storage.
+- `TestEnvProviderContract(SecretProviderContract)` with `reads_environment = True`, seeding via
+  `monkeypatch.setenv`. The environment assertion runs in its inverted form and must pass.
+- `TestAWSSMProviderContract(SecretProviderContract)` with a fake boto3 client (monkeypatched
+  `boto3.client`) whose `seed` writes `/ak/<prefix>/<key.lower()>` into the fake's parameter dict, and
+  whose `get_parameter` raises a real `botocore.exceptions.ClientError` for an unknown name.
+- `AWSSMSecretProvider` addressing, asserted directly rather than only through the contract:
+  `OPENAI_API_KEY` requests `Name="/ak/<prefix>/openai_api_key"` with `WithDecryption=True`; `"p"`,
+  `"/p"`, `"p/"` and `"/p/"` all compose `/ak/p/...`; `""` and `"a/b"` raise `AKConfigError` at
+  construction.
+- `AWSSMSecretProvider` error mapping: `ParameterNotFound` → `None`; `AccessDeniedException`,
+  `ThrottlingException`, an unrecognized `ClientError` code and a `BotoCoreError` → `SecretError`; and
+  a previously returned value never appears in a later exception message.
 - Client creation is lazy: constructing the provider calls no boto3 API.
 
 **`tests/test_secret_factory.py`** — both factories:
@@ -1025,10 +1174,14 @@ New files under `ak-py/tests/`:
 - `secret.type: layered` builds a `LayeredSecretManager`; an unknown short name raises `AKConfigError`
   naming the built-ins; a dotted path to a `SecretManager` subclass resolves; a dotted path to a
   non-subclass or an unimportable module raises `AKConfigError`.
-- `secret.provider.type` for `noop`, `ssm`, a dotted path, an unknown short name, a non-subclass.
-- `provider.type: ssm` with `boto3` made unimportable raises `ImportError` whose message names the
-  `aws` extra.
-- `SecretProviderFactory.create(block)` never calls `AKConfig.get()` — asserted loudly by
+- `secret.provider.type` for each of `noop`, `in_memory`, `env`, `awssm`, a dotted path, an unknown
+  short name, and a non-subclass.
+- `provider.type: awssm` with `boto3` made unimportable raises `ImportError` whose message names the
+  `aws` extra — and does so *before* the empty-prefix `AKConfigError`, so a missing dependency is not
+  reported as a misconfiguration.
+- `provider.type: in_memory` / `env` / `noop` build successfully with an **empty** `secret.prefix`,
+  pinning that the prefix requirement belongs to `awssm` alone.
+- `SecretProviderFactory.create(config)` never calls `AKConfig.get()` — asserted loudly by
   monkeypatching `AKConfig.get` to raise, the `tests/test_pipeline_factory_seams.py` pattern.
 - A BYO manager selected by `secret.type` is constructed through its own `from_config` and may ignore
   `prefix`/`provider`/`cache_ttl` entirely.
@@ -1050,11 +1203,11 @@ New files under `ak-py/tests/`:
   `AK_` + `__` env mechanism. No existing assertion changes.
 - No patch target moves, so no other test file changes.
 
-**Fixtures.** `tests/test_secret_manager.py` and `tests/test_secret_factory.py` carry an
-`autouse` fixture calling `SecretManager.reset()` before and after each test (the
-`ScheduleManager.reset()` fixture at `tests/test_schedule_manager.py:92-97`), and configure the block
-with the `_configure_schedule` shape (`tests/test_schedule_manager.py:125-130`):
-`AKConfig._reset()`, then `monkeypatch.setattr(AKConfig, "get", classmethod(lambda cls: base.model_copy(update={"secret": ...})))`.
+**Fixtures.** `tests/test_secret_manager.py` and `tests/test_secret_factory.py` carry an `autouse`
+fixture calling `SecretManager.reset()` before and after each test (the `ScheduleManager.reset()`
+fixture at `tests/test_schedule_manager.py:92-97`), and configure the block with the
+`_configure_schedule` shape (`tests/test_schedule_manager.py:125-130`): `AKConfig._reset()`, then
+`monkeypatch.setattr(AKConfig, "get", classmethod(lambda cls: base.model_copy(update={"secret": ...})))`.
 Every test touching `os.environ` uses `monkeypatch.setenv`/`delenv` so `inject`'s writes do not leak
 between tests.
 
@@ -1082,25 +1235,59 @@ Both decisions were taken by the requester while this spec was being written.
    `SecretManager.current().get()`) are not taken — the second was already rejected on the coupling
    rule.
 2. **How the examples get their SSM parameter** — resolved as a **README-only manual prerequisite**:
-   the examples drop `OPENAI_API_KEY` entirely and their READMEs document
-   `aws ssm put-parameter` as required. The consequence, stated rather than hidden, is that
+   the examples drop `OPENAI_API_KEY` entirely and their READMEs document `aws ssm put-parameter` as
+   required. The consequence, stated rather than hidden, is that
    `examples/aws-containerized/openai-dynamodb-scalable` leaves the weekly CI matrix, and the
    `deployment_base` serverless example deploys Lambdas that fail at init until the parameter exists.
    The alternatives, if that trade is later judged wrong: have each example's `deploy.sh` run
    `aws ssm put-parameter` before `terraform apply` (keeps both in CI and genuinely exercises SSM), or
    keep `OPENAI_API_KEY` as a live fallback (keeps CI green but never resolves from SSM).
 
-## Deviations and additions
+## Changes from design.md
 
-Three places where this spec goes beyond design.md. None changes a requirement; each is recorded so a
-reviewer comparing the two documents is not surprised.
+The manager's currency changed from a lowercase short key that the manager expanded into a path, to
+the environment-variable name itself, with each provider owning its addressing. Four design.md
+decisions were superseded; **`design.md` has been updated for all four**, so this section is a change
+log rather than an outstanding action.
 
-1. **`SecretManagerContract` asserts the key grammar** (a sixth assertion). design.md enumerates four
-   for that suite but also names the key grammar as part of the contract a bring-your-own manager must
-   preserve (Public API); asserting it is consistent with both statements.
-2. **`SecretCache.__init__` raises `AKConfigError` on a negative TTL in addition to the model's
-   `ge=0`.** design.md states both; this spec records that they are two different boundaries (config
-   load vs. programmatic construction) rather than one.
-3. **`SecretProviderFactory.create` takes the provider block as a parameter** rather than reading
-   `AKConfig` the way `ScheduleProviderFactory.create()` does. Justified above (Factories); it is the
-   #503 explicit-config seam, and it is what lets a bring-your-own manager reuse the provider seam.
+1. **Key grammar is `^[A-Z][A-Z0-9_]*$`, not `^[a-z][a-z0-9_]*$`** (design.md, Naming and resolution).
+   Callers pass `OPENAI_API_KEY`. The grammar still rules out `/`, whitespace, `=` and NUL, and still
+   forces one spelling per secret.
+   - **Consequence that needs your eye:** the grammar no longer bounds *which* environment variables
+     `inject` can write. design.md's argument — "`inject("path")` would clobber `PATH`" — worked
+     because the key was lowercase and got uppercased; with no transformation, `inject("PATH")` is a
+     well-formed call. Handled as a documented caller responsibility rather than a denylist; see
+     `manager.py` decision 2.
+2. **The manager composes no path and does no case transformation.** `UPPERCASE(key)`,
+   `/ak/{prefix}/{key}` composition and `secret.prefix` all move out of `LayeredSecretManager`.
+   `SecretProvider.get_secret` takes the **key**, not a composed path, and `SecretProvider.from_config`
+   takes the whole `_SecretConfig` (so a provider can read `prefix`) rather than just
+   `_SecretProviderConfig`. The parameter naming convention itself is unchanged —
+   `AWSSMSecretProvider` still produces `/ak/{prefix}/openai_api_key` — so Terraform, IAM and any
+   already-provisioned parameter are unaffected.
+3. **The provider short name is `awssm`, not `ssm`**, and the class is `AWSSMSecretProvider` in
+   `providers/awssm.py`. Two more built-ins ship: `in_memory` (seedable, for tests and local dev) and
+   `env` (`os.environ` as the backing store, for a BYO manager and for contract coverage without a
+   cloud SDK). `noop` remains the default. design.md's argument against naming a provider `env` was
+   about the *default*; it still holds, and `env` is not the default.
+   - **Consequence:** under `LayeredSecretManager`, `provider.type: env` is observably equivalent to
+     `noop`, because layer 3 already reads the same place. Stated in the `EnvSecretProvider` section
+     rather than left to be discovered.
+4. **The empty-prefix fail-fast moved** from `LayeredSecretManager.from_config` ("any provider other
+   than `noop`") to `AWSSMSecretProvider.__init__`. `in_memory` and `env` are non-`noop` providers
+   with no use for a prefix, so the old rule would have rejected valid configurations.
+
+Two contract-suite changes, also folded into design.md:
+
+- **`SecretManagerContract` asserts the key grammar** (a sixth assertion), since design.md names the
+  grammar as part of the contract a BYO manager must preserve.
+- **`SecretProviderContract` has two declared capability flags**, `supports_round_trip` (design.md's
+  `NoOpSecretProvider` exemption) and `reads_environment` (new, for `EnvSecretProvider`), and its
+  "path used exactly as given" assertion becomes "the key is used verbatim", since addressing is now
+  the provider's.
+
+One spec-level detail design.md does not restate:
+
+- **`SecretCache.__init__` raises `AKConfigError` on a negative TTL in addition to the model's
+  `ge=0`** — two different boundaries (config load vs. programmatic construction). design.md states
+  both behaviours; which object enforces which is this document's.
