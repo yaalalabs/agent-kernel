@@ -274,7 +274,12 @@ class StreamAgentRunner(AgentRunner):
 
         tokens = self._enter_run_context(message, body)
         try:
-            for raw_chunk in self._chat_service.process_stream_chat_sync(req=body, requests=body.requests):
+            if mode == ExecutionMode.REALTIME:
+                generator = self._chat_service.process_realtime_chat_sync(req=body, requests=body.requests)
+            else:
+                generator = self._chat_service.process_stream_chat_sync(req=body, requests=body.requests)
+
+            for raw_chunk in generator:
                 chunk = json.loads(raw_chunk)
                 if chunk.get("error"):
                     error_seen = True

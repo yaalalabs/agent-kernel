@@ -9,7 +9,7 @@ resolution-markers = [
 
 [[package]]
 name = "agentkernel"
-version = "0.9.1"
+version = "0.9.2"
 source = { registry = "../../../ak-py/dist" }
 dependencies = [
     { name = "deprecated" },
@@ -18,9 +18,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { path = "agentkernel-0.9.1.tar.gz" }
+sdist = { path = "agentkernel-0.9.2.tar.gz" }
 wheels = [
-    { path = "agentkernel-0.9.1-py3-none-any.whl" },
+    { path = "agentkernel-0.9.2-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -1215,7 +1215,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["livekit", "openai", "api"], specifier = ">=0.9.1" }]
+requires-dist = [{ name = "agentkernel", extras = ["livekit", "openai", "api"], specifier = ">=0.9.2" }]
 
 [[package]]
 name = "markdown-it-py"

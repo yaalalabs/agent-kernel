@@ -443,14 +443,16 @@ class Agent(ABC):
         """
         return cls.current_agent.get()
 
-    def __init__(self, name: str, runner: Runner):
+    def __init__(self, name: str, runner: Runner, realtime_runner: "RealtimeRunner | None" = None):
         """
         Initializes an Agent instance.
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
+        :param realtime_runner: Optional realtime runner for WebSocket connections.
         """
         self._name: str = name
         self._runner: Runner = runner
+        self._realtime_runner: "RealtimeRunner | None" = realtime_runner
         self._pre_hooks: list[PreHook] = []
         self._post_hooks: list[PostHook] = []
 
@@ -474,6 +476,13 @@ class Agent(ABC):
         Returns the runner associated with the agent.
         """
         return self._runner
+
+    @property
+    def realtime_runner(self) -> "RealtimeRunner | None":
+        """
+        Returns the realtime runner associated with the agent, if any.
+        """
+        return self._realtime_runner
 
     @property
     def pre_hooks(self) -> list[PreHook]:

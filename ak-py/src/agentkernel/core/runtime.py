@@ -375,6 +375,47 @@ class Runtime:
             finally:
                 session.get_volatile_cache().clear()
 
+    async def realtime_stream(
+        self, agent: Agent, session: Session, requests: list[AgentRequest], acting_user_id: Optional[str] = None
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """
+        Streams the specified agent response via a realtime connection as StreamChunks.
+
+        Similar to stream(), but delegates to the agent's realtime_runner.
+
+        :param agent: The agent to run.
+        :param session: The session to use for the agent.
+        :param requests: The multi-modal inputs provided to the agent.
+        :param acting_user_id: When given, published under ACTING_USER_CACHE_KEY in the session's volatile
+                        cache for the duration of this run, so hooks and tools can attribute work to the caller.
+        :return: An async generator of StreamChunk objects.
+        """
+        if not agent.realtime_runner:
+            raise ValueError(f"Agent '{agent.name}' does not support REALTIME mode: no realtime_runner is configured.")
+
+        async with session:
+            try:
+                if acting_user_id:
+                    session.get_volatile_cache().set(ACTING_USER_CACHE_KEY, acting_user_id)
+                with agent._activate():
+                    self._log.debug(f"Realtime streaming agent '{agent.name}' (hooks bypassed for realtime chunks)")
+
+                    try:
+                        async for ev in agent.realtime_runner.stream(agent, session, requests):
+                            # The realtime runner (e.g. OpenAI) currently yields nothing because it
+                            # emits directly to the output transport. If it does yield, we pass it through.
+                            yield StreamChunk(delta=ev.content if isinstance(ev, TextDelta) else None, event=ev)
+
+                        self.sessions().store(session)
+                        # We do not yield StreamChunk(done=True) here. The Realtime socket is persistent
+                        # across many input queue messages. The adapter emits its own 'done' chunks
+                        # when a spoken turn completes.
+                    except StreamHalt as halt:
+                        self._log.warning(f"Realtime stream halted for agent '{agent.name}': {halt.reason}")
+                        yield StreamChunk(error=halt.reason, done=True)
+            finally:
+                session.get_volatile_cache().clear()
+
     def sessions(self) -> SessionStore:
         """
         Retrieves the session storage.

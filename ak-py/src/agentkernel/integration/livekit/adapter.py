@@ -149,18 +149,30 @@ class LiveKitEdgeGateway(OutboundAdapter):
             _log.error(f"Failed to process chat: {e}")
 
     async def _process_incoming_audio(self, track: "rtc.Track") -> None:
-        """Pass continuous mic audio directly to the queue with no batching."""
+        """Pass continuous mic audio to the queue, batching frames to prevent thread starvation."""
         audio_stream = rtc.AudioStream(track, sample_rate=AUDIO_SAMPLE_RATE, num_channels=1)
-        _log.info("Listening for audio stream (raw pass-through)...")
+        _log.info("Listening for audio stream (with 100ms batching)...")
+
+        buffer = bytearray()
 
         async for event in audio_stream:
             try:
                 raw_bytes = event.frame.data.tobytes()
                 if raw_bytes:
-                    b64_audio = base64.b64encode(raw_bytes).decode("utf-8")
-                    self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
+                    buffer.extend(raw_bytes)
+                    
+                    # Flush to the queue when buffer reaches ~100ms of audio
+                    # 24000 samples/sec * 2 bytes/sample * 1 channel * 0.1s = 4800 bytes
+                    if len(buffer) >= 4800:
+                        b64_audio = base64.b64encode(buffer).decode("utf-8")
+                        self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
+                        buffer.clear()
             except Exception as e:
                 _log.error(f"Failed to process incoming audio frame: {e}")
+                
+        if buffer:
+            b64_audio = base64.b64encode(buffer).decode("utf-8")
+            self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
 
     def _enqueue(self, request) -> None:
         """Push one request onto the input queue tagged for this livekit session."""

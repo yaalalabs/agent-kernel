@@ -222,18 +222,6 @@ class RealtimeThreadManager:
             transcript = "".join(self._transcript).strip() if status == "completed" else ""
             self._transcript.clear()
 
-            if transcript and getattr(self, "_runtime", None):
-                from ...core.model import AgentReplyText
-                reply = AgentReplyText(content=transcript)
-                post_hooks = self._runtime._get_system_post_hooks() + getattr(self._agent, "post_hooks", [])
-                try:
-                    for hook in post_hooks:
-                        reply = await hook.on_run(self.session, [], self._agent, reply)
-                    if hasattr(reply, "content"):
-                        transcript = reply.content
-                except Exception as e:
-                    _log.error(f"PostHook execution failed during Realtime response.done: {e}")
-
             await self._emit(transport, {"event": {"type": "done", "status": status, "transcript": transcript}, "done": True})
         elif event_type == "response.function_call_arguments.done":
             call_id = getattr(event, "call_id", None)
@@ -614,14 +602,6 @@ class OpenAIRunner(BaseRunner):
         try:
             context = ToolContext(Runtime.current(), agent, session, requests).set()
 
-            from ...core.model import ExecutionMode, execution_mode_var
-
-            if execution_mode_var.get() == ExecutionMode.REALTIME:
-                realtime_runner = OpenAIRealtimeRunner()
-                async for chunk in realtime_runner.stream(agent, session, requests):
-                    yield chunk
-                return
-
             prompt, message_content = self._process_requests(requests)
 
             if not message_content:
@@ -739,14 +719,15 @@ class OpenAIAgent(BaseAgent):
     OpenAIAgent class provides an agent wrapping for OpenAI Agent SDK-based agents.
     """
 
-    def __init__(self, name: str, runner: OpenAIRunner, agent: Agent):
+    def __init__(self, name: str, runner: OpenAIRunner, agent: Agent, realtime_runner: Optional[OpenAIRealtimeRunner] = None):
         """
         Initializes an OpenAIAgent instance.
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
         :param agent: The OpenAI agent instance.
+        :param realtime_runner: Optional realtime runner for WebSocket connections.
         """
-        super().__init__(name, runner)
+        super().__init__(name, runner, realtime_runner=realtime_runner)
         self._agent = agent
         self._attach_system_tools()
         self._setup_system_prompt()
@@ -821,7 +802,7 @@ class OpenAIModule(Module):
         :param agents: List of agents in the module.
         :return: OpenAIAgent instance.
         """
-        return OpenAIAgent(agent.name, self.runner, agent)
+        return OpenAIAgent(agent.name, self.runner, agent, realtime_runner=OpenAIRealtimeRunner())
 
     def load(self, agents: list[Agent]) -> OpenAIModule:
         """
