@@ -11,18 +11,18 @@ dependencies = []
 # they omit the (heavy) OpenAI Agents SDK; only the agent runner needs it. deploy.sh installs
 # each package with `uv export --extra <name>`.
 request_handler = [
-    "agentkernel[aws,redis]>=0.9.1",
+    "agentkernel[aws,redis]>=0.9.2",
 ]
 response_handler = [
-    "agentkernel[aws,redis]>=0.9.1",
+    "agentkernel[aws,redis]>=0.9.2",
 ]
 agent_runner = [
-    "agentkernel[aws,openai,redis]>=0.9.1",
+    "agentkernel[aws,openai,redis]>=0.9.2",
 ]
 
 [dependency-groups]
 dev = [
-    "agentkernel[test]>=0.9.1",
+    "agentkernel[test]>=0.9.2",
     "black==26.5.1",
     "isort>=5.0.0",
     "mypy>=1.0.0",

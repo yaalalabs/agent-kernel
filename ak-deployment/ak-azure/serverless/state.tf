@@ -38,7 +38,7 @@ locals {
 module "vnet" {
   count                = var.vnet_id == null ? 1 : 0
   source               = "yaalalabs/ak-common/azurerm//modules/vnet"
-  version              = "0.9.1"
+  version              = "0.9.2"
   resource_group_name  = var.vnet_resource_group_name == null ? var.resource_group_name : var.vnet_resource_group_name
   location             = var.region
   prefix               = var.prefix
@@ -51,7 +51,7 @@ module "vnet" {
 module "redis" {
   source                   = "yaalalabs/ak-common/azurerm//modules/redis"
   region                         = var.region
-  version                  = "0.9.1"
+  version                  = "0.9.2"
   count                    = var.create_redis_cluster == true ? 1 : 0
   prefix                   = var.prefix
   vnet_resource_group_name = var.vnet_resource_group_name
@@ -68,7 +68,7 @@ module "redis" {
 module "cosmos" {
   source                         = "yaalalabs/ak-common/azurerm//modules/cosmos"
   region                         = var.region
-  version                        = "0.9.1"
+  version                        = "0.9.2"
   count                          = var.create_cosmosdb_cluster == true ? 1 : 0
   prefix                         = var.prefix
   tags                           = var.tags
