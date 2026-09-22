@@ -281,6 +281,9 @@ class RealtimeThreadManager:
     async def _pacing_loop(self) -> None:
         """Paces the audio output to prevent massive edge-side buffering."""
         import base64
+        import time
+
+        item_start_time = 0.0
 
         while True:
             try:
@@ -290,6 +293,7 @@ class RealtimeThreadManager:
                     self.current_item_id = item_id
                     self.current_content_index = content_index
                     self.audio_played_ms = 0.0
+                    item_start_time = time.time()
 
                 # Emit the chunk to the output queue
                 await self._emit(transport, {"event": {"type": "audio_delta", "content": delta}, "done": False})
@@ -299,8 +303,15 @@ class RealtimeThreadManager:
                 duration_ms = (len(audio_bytes) / 2) / 24.0
                 self.audio_played_ms += duration_ms
 
-                # Pace the thread
-                await asyncio.sleep(duration_ms / 1000.0)
+                # Drift-free pacing: Calculate how much wall-clock time has actually passed
+                elapsed_ms = (time.time() - item_start_time) * 1000.0
+                
+                # We want to keep the queue emission exactly ~50ms ahead of real-time playback
+                target_elapsed_ms = self.audio_played_ms - 50.0 
+                
+                sleep_ms = target_elapsed_ms - elapsed_ms
+                if sleep_ms > 0:
+                    await asyncio.sleep(sleep_ms / 1000.0)
 
             except asyncio.CancelledError:
                 break
