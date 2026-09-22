@@ -10,7 +10,7 @@ Supporting research: [`research/README.md`](research/README.md),
 [`research/changes.md`](research/changes.md), and the protocol survey at
 [`../523-ag-ui-support/research/a2ui.md`](../523-ag-ui-support/research/a2ui.md).
 
-Code facts verified against `develop` at `564f6e53`; paths are relative to `ak-py/src/agentkernel/`.
+Code facts verified against `develop` at `80936df9` (v0.9.2); paths are relative to `ak-py/src/agentkernel/`.
 
 **Two words used throughout.** A **surface** is a way a client reaches an agent — the REST route, the
 WebSocket gateway, A2A, MCP, the CLI. A **payload** is a structured reply's `content`: a plain dict,
@@ -40,7 +40,7 @@ Today it does not.
 ## 2. The problem, in real bytes
 
 Agents already produce these objects. All six framework adapters build an `AgentReplyAny`
-(`core/model.py:129`) when the agent is configured for structured output — this is a shipped feature
+(`core/model.py:134`) when the agent is configured for structured output — this is a shipped feature
 with existing users, not something new.
 
 Every exit point then encodes it **early**. Here is what a client actually receives from the REST
@@ -52,7 +52,7 @@ route today:
 
 Look at the quoting. `result` is a **string**, and that string's contents happen to be JSON. The
 payload has been encoded twice: `str()` on a structured reply runs `json.dumps(content)`
-(`core/model.py:142`), and then the whole response dict is serialised again on its way out. A client
+(`core/model.py:147`), and then the whole response dict is serialised again on its way out. A client
 must call `json.loads` on the body, then `json.loads` again on `result`.
 
 What it should receive:
@@ -133,7 +133,23 @@ is why A2A, MCP and the CLI never even receive a typed reply to re-encode.
 Anything that needs Agent Kernel to *understand* A2UI — a list of components, a schema, a validator —
 is the application's job, not the framework's.
 
-### The three things we change
+### In scope, and not
+
+| Surface | Carries structure after this? | |
+|---|---|---|
+| REST | **yes** | one shared function |
+| WebSocket | **yes** | same function |
+| Async mode | **yes** | same function |
+| Conversation threads | **yes** | same function |
+| Streaming / AG-UI | **yes** | needs the new stream event |
+| A2A | **yes** | needs its broken dependency pin fixed first — see piece 4 |
+| MCP | **yes** | one-line fix, pending one unverified assumption — see piece 4 |
+
+A2A and MCP lose structure one layer lower than the rest, in `AgentService.run`, so they need their
+own small change; piece 4 covers it. The CLI is not listed: it is a local REPL for testing and first
+steps, and printing text is what it is for.
+
+### The four things we change
 
 **1. The reply type gets one new field.** `media_type`, saying what format its content is in.
 Optional, unset by default, and nothing is forced to use it.
@@ -144,6 +160,10 @@ same function.
 
 **3. Streaming gets an event that can hold an object.** Today no stream event type can, so a payload
 cannot travel mid-stream at all.
+
+**4. A2A and MCP stop flattening one layer lower.** Both call `AgentService.run`, which turns the
+reply into text before either of them sees it. A small change each — plus fixing A2A's dependency
+pin, which is broken today for reasons of its own.
 
 That is the whole framework change. Everything else in this document explains why, or what happens
 around it.
@@ -178,13 +198,9 @@ double-parsing it, and this fixes that whether or not A2UI ever appears.
 be in the example or its tests, and none in `core/`, `api/` or `pipeline/`. A hit inside the
 framework means the format leaked into the plumbing, and the design failed on its own terms.
 
-### Related, but not in this issue
-
-- **A2A** — cannot carry structured replies yet for reasons of its own. Separate issue; this design
-  consumes it.
-- **MCP and the CLI** — same early encoding problem, one small issue each.
-- **Buttons that call back into the agent** — the same problem #696's resume path solves. Reuse that
-  when it lands rather than inventing a second mechanism.
+One more thing left out, which the table above does not cover: **buttons that call back into the
+agent**. That is the same problem #696's resume path solves — reuse it when it lands rather than
+inventing a second mechanism. See Non-goals.
 
 ## 4. A conversation, end to end
 
@@ -323,27 +339,174 @@ exactly the code above, showing the payload arriving over plain REST with no UI 
 ### Piece 1 — a reply can say what format it is in
 
 - `AgentReplyAny` gains one optional field, defaulted to unset, naming the media type of `content`.
-- `__str__` (`core/model.py:142`) is **unchanged**, so every existing string consumer sees
+- `__str__` (`core/model.py:147`) is **unchanged**, so every existing string consumer sees
   byte-identical output.
 - Framework adapters are untouched; they keep constructing replies without it.
 
-### Piece 2 — each surface serialises late
+### Piece 2 — REST, WebSocket, async mode and threads
 
-- **REST, WebSocket, async mode and threads** — one change to the shared response builder, which all
-  four already route through. For an `AgentReplyAny`, `result` carries `content` as an object rather
-  than `str(reply)`; `media_type` rides beside it when set. Text and image replies are untouched, and
-  so is the `"Non textual result received"` fallback.
-  - **This is the breaking change** (Decision 3). No second field, no duplication, no opt-in switch —
-    the bug is fixed rather than shipped alongside its own workaround.
-  - Note `__str__` itself does not change. The builder simply stops calling it for structured
-    replies, which is why the direct-execution surfaces are unaffected.
-- **A2A** — sends structured replies as the protocol's data part. *Delivered by the separate A2A
-  issue (see Dependencies); this design consumes it rather than containing it.*
-- **Streaming / AG-UI** — a structured member added to the stream-event union, and one mapping case
-  onto AG-UI's custom event. Delivery uses `PostHook.on_stream_event` (`core/hooks.py:94`), which
-  already exists; no Runtime change.
+One change to the shared response builder, which all four already route through. For an
+`AgentReplyAny`, `result` carries `content` as an object rather than `str(reply)`, and `media_type`
+rides beside it when set. Text and image replies are untouched, and so is the
+`"Non textual result received"` fallback.
 
-### Piece 3 — what Agent Kernel deliberately never does
+- **This is the breaking change** (Decision 3). No second field, no duplication, no opt-in switch —
+  the bug is fixed rather than shipped alongside its own workaround.
+- `__str__` itself does not change. The builder simply stops calling it for structured replies.
+
+### Piece 3 — streaming and AG-UI
+
+The union has twelve members today and not one can hold a dict, so this is the only part of the
+framework change that is not a handful of lines.
+
+**The new class**, following the existing members' shape in `core/event.py`:
+
+```python
+class DataMessage(StreamEventBase):
+    """A complete structured payload emitted inside the assistant's message.
+
+    `content` is a plain JSON-compatible dict and `media_type` names its format, or is
+    unset when the producer did not say. Agent Kernel never interprets either.
+    """
+
+    type: Literal["data_message"] = "data_message"
+    message_id: str
+    content: dict
+    media_type: str | None = None
+```
+
+- **`message_id`** ties it to the surrounding message, exactly as `TextDelta` and `MessageEnd` do.
+  It is emitted inside the message, immediately before `MessageEnd`.
+- **`content` and `media_type` mirror the reply type** from piece 1, so the same pair travels whether
+  a run streamed or not.
+- **Named for `a2a.helpers.new_data_message`**, which is the same concept on the other surface
+  carrying this payload. The alternative, `DataDelta`, was rejected: it is not a fragment, and the
+  name would invite someone to stream partial payloads, which Non-goals rules out.
+
+**This widens an invariant that `core/event.py` states out loud**, and the docstring must be updated
+in the same change rather than left contradicting the code:
+
+> No field carries a framework-native object. Every field is a `str`, `int` or `bool`, so an event
+> stays picklable and JSON-serialisable no matter which framework produced it.
+
+A plain dict of JSON-compatible values still satisfies the *reason* for that rule — picklable,
+JSON-serialisable, no framework object — but not its current wording. Amend it to name dict as
+allowed and keep the framework-native prohibition, which is the part that matters. (#696's
+`RunPaused` needs the same widening for its interruption list, so this is coming either way.)
+
+**Delivery needs no Runtime change.** `PostHook.on_stream_event` (`core/hooks.py:94`) already exists:
+the application's hook returns `None` for each `TextDelta` while accumulating, then at the closing
+boundary returns `[DataMessage(...), MessageEnd(...)]` — the list form that emits several events in
+place of one.
+
+**AG-UI mapping.** `AGUIMapper.to_agui` gains one `case "data_message"` above its `case _` fallback,
+producing AG-UI's custom event with `media_type` as the name and `content` as the value. Unmapped
+types already return `None`, so an AG-UI client on an older mapper degrades rather than breaks.
+
+### Piece 4 — A2A and MCP
+
+Both lose the reply lower down than the response builder: `AgentService.run` (`core/service.py:156`)
+turns it into text before either surface sees it. The fixes are small. A2A has one blocker that has
+to clear first.
+
+**A2A is broken on a fresh install today, and this issue ports it forward rather than pinning it
+back.** `ak-py/pyproject.toml` pins `a2a-sdk[http-server]>=0.3.6` with **no upper bound**. The
+current release is 1.1.5, and against it three of Agent Kernel's imports do not resolve at all —
+`new_agent_text_message`, `ServerError`, and `RESTAdapter`, whose module no longer exists. CI stays
+green only because the example's lockfile pins 0.3.6, so nothing exercises what a new user installs.
+
+Capping at `<0.4` was considered and rejected. The 0.x line is finished at 0.3.26, and — decisively —
+**1.x already has the exact primitive this design needs**:
+
+```python
+a2a.helpers.new_data_message(data, media_type=None, context_id=None, task_id=None) -> Message
+```
+
+A dict, a media type, a context id, a task id. On 0.3.x the same thing means hand-assembling parts
+against an API with no such helper, and then rewriting it at the eventual port. That is the work
+done twice.
+
+The rest of the migration is mapped, not guessed:
+
+| Broken import | 1.x replacement |
+|---|---|
+| `a2a.utils.new_agent_text_message` | `a2a.helpers.new_message` |
+| `a2a.server.apps.rest.rest_adapter.RESTAdapter` | `a2a.server.routes` — `add_a2a_routes_to_fastapi`, `create_rest_routes` |
+| `a2a.utils.errors.ServerError` | moved; `request_handlers.build_error_response` is the 1.x shape |
+
+`add_a2a_routes_to_fastapi` is also a better fit than what `A2ARESTRequestHandler` does today, which
+is copy routes off a `RESTAdapter` into its own `APIRouter` by hand.
+
+The new pin is **`>=1.1,<2`**. Bounded, because unbounded is what caused this.
+
+**Ordering is a requirement here, not a preference: tests first.** A2A has **no test file at all**
+today. Porting an untested integration across a major version *and* changing its wire behaviour in
+one step is how silent breakage ships. So:
+
+1. **Write `ak-py/tests/test_a2a_*.py` against the current 0.3.6 behaviour**, pinning what "working"
+   means: a text reply produces a text message, the error path stays text, the card carries what it
+   carries, the expected routes exist.
+2. **Port to 1.x.** Those tests still pass — adapted to the new part model where the assertion must
+   be, but with the same observable behaviour for text replies.
+3. **Then add the structured branch**, below.
+
+**A2A: sending the object, on top of the port — roughly ten lines.**
+
+- `_execute_agent` (`api/a2a/a2a.py:63`) calls `run_multi([AgentRequestText(prompt=...)])` instead of
+  `run(prompt)`, so the executor receives an `AgentReply` rather than a string. Its return annotation
+  tightens from `Any`.
+- `execute` (`api/a2a/a2a.py:49`) branches: an `AgentReplyAny` becomes
+  `new_data_message(reply.content, media_type=reply.media_type, ...)`; every other reply type goes
+  through `new_message` exactly as before, and the error path stays text.
+- The agent card already advertises `default_output_modes: ["json"]` (`core/builder.py:44`) while the
+  executor only ever sends text. This makes an existing claim true rather than adding a new one.
+- Also fixed, since it is part of the same brokenness: with A2A enabled and **no agents registered in
+  the serving process**, it publishes no cards and no routes, with no error and nothing in the log.
+  Log a warning naming the cause. Reached only through the cached `_build()`, so it warns once.
+- **Not verified:** the symbols and signatures above were read from an installed a2a-sdk 1.1.5, but
+  Agent Kernel has not been run against it. The port is mapped, not proven, and step 1 above exists
+  precisely because of that gap.
+- **Behavioural change to declare, not discover:** A2A output changes for *all* structured replies,
+  not only A2UI. A client reading `parts[0].root.text` breaks the day its agent returns structured
+  output. Needs a changelog entry and a migration note.
+
+**MCP: sending the object — two changed lines.** The executor (`api/mcp/akmcp.py:39-45`) makes the
+same `run` → `run_multi` switch and returns the content dict for a structured reply:
+
+```python
+ async def execute(self, session_id: str, prompt: str, ctx: Context) -> Any:
+     service = AgentService()
+     await ctx.info(f"Executing agent '{self.agent_name}' ...")
+     service.select(session_id, self.agent_name)
+-    response = await service.run(prompt=prompt)
++    reply = await service.run_multi([AgentRequestText(prompt=prompt)])
++    response = reply.content if isinstance(reply, AgentReplyAny) else str(reply)
+     await ctx.debug(f"Agent response '{response}'")
+     return response
+```
+
+The `-> Any` annotation, the `ctx` logging and the return statement are all untouched; a text reply
+still produces exactly the string it does today.
+
+**Verified** against the pinned fastmcp (3.4.7, inside `>=3.2.0,<4.0.0`), by registering tools on a
+real `FastMCP` instance and calling them through its in-memory client:
+
+| Tool returns | `structuredContent` |
+|---|---|
+| a JSON **string** — today's behaviour | **absent** |
+| a **dict**, annotated `-> Any` — the executor's current annotation | **the dict** |
+| a **dict**, annotated `-> dict` | the dict |
+
+Two things follow. The `-> Any` annotation is not an obstacle, so no signature change is needed. And
+fastmcp emits a `TextContent` block **alongside** the structured content in every case, so a client
+reading only text blocks keeps working — MCP carries both by protocol, which is why the duplication
+argument from §2 does not apply here.
+
+- The renderer caveat stands: an MCP caller is a *model*, so this only becomes **useful** once a host
+  app renders A2UI. It is included anyway because the inconsistency — one surface preserving
+  structure while its neighbour silently flattens it — is worse than the missing feature.
+
+### And what Agent Kernel deliberately never does
 
 These are requirements, not reassurance. Each one is checkable.
 
@@ -356,8 +519,8 @@ These are requirements, not reassurance. Each one is checkable.
   absent label omits it rather than guessing.
 - **The media type is not a routing key and not a reply discriminator.** `type` says what kind of
   outcome a reply is; the media type says what format its content is in. Two different questions.
-- The payoff: an application shipping *its own* format — not A2UI at all — gets the same carriage,
-  with no change to Agent Kernel and no awareness in any surface.
+- The payoff: an application shipping *its own* format — not A2UI at all — travels exactly the same
+  way, with no change to Agent Kernel and no awareness in any surface.
 
 ## 7. Verification
 
@@ -366,20 +529,21 @@ These are requirements, not reassurance. Each one is checkable.
   makes the claim in §3 checkable rather than asserted, and what catches a future surface quietly
   regressing to an early encode.
 - **One regression test** proving `str(AgentReplyAny(...))` is byte-identical to today.
-- Per-surface unit tests for the carriage change; the example's own test suite covers the A2UI hook.
+- Per-surface unit tests for pieces 2 to 4; the example's own test suite covers the A2UI hook.
 
-## 8. Dependencies
+## 8. What this lands next to
 
-- **A2A correctness fixes — separate issue.** A2A cannot carry structured replies today for reasons
-  unrelated to this design: its executor is text-only, and the reply is encoded to text before that
-  executor ever sees it. Both are defects in A2A's own terms. If that issue does not land, A2A is
-  simply not among the surfaces that carry structure.
-- **#678 (streaming post-hooks) is merged.** `PostHook.on_stream_event` exists and is what the
-  streaming path uses. It did **not** add a structured event member, so that gap is still this
-  design's to close.
-- **#696 (HITL) is open, design only.** It adds `AgentReplyPaused` as a subclass of `AgentReplyAny`,
-  which inherits the new field harmlessly, and reopens the response builder — so piece 2 should
-  rebase onto it rather than race it.
+**Nothing blocks this work.** Listed so a reviewer knows what it shares a neighbourhood with.
+
+- **#678 (streaming post-hooks) — merged.** `PostHook.on_stream_event` exists and is what the
+  streaming change uses. It did **not** add a structured event member, so that gap is still this
+  design's to close. A fact, not a dependency.
+- **#696 (HITL) — open, design only.** A **file collision, not a dependency**: both it and this edit
+  `build_response`. Whichever lands second rebases onto the first. Neither needs anything from the
+  other. Its `AgentReplyPaused` subclasses `AgentReplyAny`, so if both land, a paused reply goes
+  through the same branch — a consequence, covered by Decision 4.
+- **a2a-sdk 1.x** — the port is *in* this issue (piece 4), not deferred. Listed here only because it
+  is the one part whose size is estimated rather than known.
 
 ## 9. Non-goals
 
@@ -387,23 +551,31 @@ These are requirements, not reassurance. Each one is checkable.
   validation. See Decision 1 for the trade-off this accepts.
 - **A frontend or renderer of any kind.** The client owns its components; that is the protocol's own
   premise.
+  - This is also the test for whether a surface is worth teaching to carry a payload at all: **only
+    when something at the far end can draw it, and Agent Kernel is never that thing.** REST,
+    WebSocket and AG-UI pass — a real client sits there. A2A passes when the calling agent fronts a
+    UI for a human, which is why the protocol names a data part as its canonical wrapping. MCP is
+    borderline: the caller is a model, so it depends on the host app choosing to render. The CLI
+    fails outright — Agent Kernel would have to be the renderer.
 - **Streaming a partial payload.** The structured event carries a whole payload; incremental
   parse-and-heal is an application concern if anyone wants it.
 - **A callback path from a rendered UI back to the agent.** Same problem as HITL's resume path;
   reuse that when it lands.
 - **Changing `__str__`, the `AgentReply` union, or any framework adapter.**
-- **Teaching MCP or the CLI to carry structured replies.** Both hit the same early encode; each is
-  its own small issue.
+- **Teaching the CLI to carry structured replies.** Out for good, not deferred: it is a local REPL
+  for testing and first steps, and Agent Kernel would have to be the renderer.
 
 ## 10. Decisions
 
 | # | Decision | Trade-off accepted |
 |---|---|---|
-| 1 | **Agent Kernel ships carriage, not A2UI.** The framework gains a media type and surfaces that honour it; A2UI lives in an application post-hook plus an example. | Someone hoping to flip a config flag and have A2UI work does not get that. In exchange the framework does not own a pre-1.0 protocol's version churn, catalog semantics or validation policy — and any other payload format is supported from day one, free. |
+| 1 | **Agent Kernel delivers payloads; it never opens them.** The framework gains a media type and surfaces that pass the object through; A2UI itself lives in an application post-hook plus an example. | Someone hoping to flip a config flag and have A2UI work does not get that. In exchange the framework does not own a pre-1.0 protocol's version churn, catalog semantics or validation policy — and any other payload format is supported from day one, free. |
 | 2 | **The media type is carried, never interpreted.** | Agent Kernel cannot reject a mislabelled payload. That is the point; the alternative is the framework knowing formats. |
 | 3 | **`result` carries the object for a structured reply — a breaking change, taken rather than worked around.** No second field beside it. | Clients of structured agents must stop calling `json.loads` on `result`. Accepted because: Agent Kernel is 0.9.2, pre-1.0; the route declares no `response_model`, so nothing regenerates or fails to compile; the affected clients are *already* parsing, so migration is deleting one line; and the alternative — carrying the payload twice — doubles every response against a 256 KB SQS ceiling the chat pipeline does not check. Needs a changelog entry and a migration note, and should land with a minor or 1.0 rather than quietly. |
 | 4 | **A paused reply (#696) goes through the same branch**, since it subclasses `AgentReplyAny` — so its `result` becomes an object too. | A pause's typed fields then appear both in `result` and in `interruptions`. Accepted: the branch stays type-driven, with no subclass special case to rot, and #696's own rule makes a pause's `content` a faithful view of those fields rather than a drifting copy. |
 | 5 | **Ask #696 to state what `PausedInterruption.payload` means** while it is still design-only. | None — it is a comment on another issue. If that field acquires a meaning by accident, an agent-authored payload on a pause is closed off by convention rather than by design. |
+
+| 6 | **Port A2A to `a2a-sdk >=1.1,<2` in this issue, tests first — do not cap at `<0.4`.** | This issue absorbs an SDK migration, which is real scope and the one estimate here that is not firm. Taken because 0.3 is a finished line, and because 1.x ships `new_data_message(data, media_type, …)` — precisely this design's payload. Capping would mean writing the part assembly by hand against an API lacking that helper, then discarding it at the port. The mitigation is ordering: A2A's first-ever tests are written against 0.3.6 behaviour *before* anything moves. |
 
 **Open for the reviewer.** Does this answer #706 as written? It answers "can an Agent Kernel agent
 serve A2UI to a client" with yes, and "does Agent Kernel contain A2UI" with no. If the issue intends
