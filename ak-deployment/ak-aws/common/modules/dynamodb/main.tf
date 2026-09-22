@@ -3,7 +3,7 @@ module "dynamodb_table" {
   version = "5.3.0"
 
   # Naming
-  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.table_name}"
+  name = "${var.prefix}-${var.table_name}"
 
   # Keys & attributes
   attributes = var.attributes

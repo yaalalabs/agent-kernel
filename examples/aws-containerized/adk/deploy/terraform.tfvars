@@ -1,4 +1,2 @@
-region        = "ap-southeast-2"
-product_alias = "ak-adk-contd"
-env_alias     = "dev"
-module_name   = "examples"
+region = "ap-southeast-2"
+prefix = "ak-adk-contd-dev-examples"

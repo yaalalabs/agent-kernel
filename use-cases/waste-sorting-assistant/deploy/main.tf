@@ -4,20 +4,17 @@ locals {
 
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.8.1"
+  version = "0.9.1"
 
   providers = { aws = aws, docker = docker }
 
-  product_alias                = var.product_alias
-  env_alias                    = var.env_alias
-  module_name                  = var.module_name
+  prefix                       = var.prefix
   product_display_name         = "Waste Sorting Assistant"
   region                       = var.region
   execution_mode               = "rest_sync"
   create_dynamodb_memory_table = true
 
   request_handler = {
-    module_name          = var.module_name
     function_name        = local.lambda_function_name
     function_description = "Agent Kernel OpenAI waste sorting assistant"
     handler_path         = "lambda.handler"

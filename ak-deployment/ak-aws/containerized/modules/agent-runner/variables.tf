@@ -1,18 +1,3 @@
-variable "product_alias" {
-  type        = string
-  description = "Product alias for resource naming"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias for resource naming"
-}
-
-variable "module_name" {
-  type        = string
-  description = "Module name for resource naming"
-}
-
 variable "region" {
   type        = string
   description = "AWS region"
@@ -26,6 +11,12 @@ variable "prefix" {
 variable "vpc_id" {
   type        = string
   description = "VPC ID"
+}
+
+variable "security_group_id" {
+  type        = string
+  description = "Agent Runner security group ID. If not provided, a new one will be created"
+  default     = null
 }
 
 variable "subnet_ids" {

@@ -32,13 +32,13 @@ locals {
   files = sort(setsubtract(local.files_include, local.files_exclude))
 
   dir_sha = sha1(join("", [for f in local.files : filesha1("${local.source_path}/${f}")]))
-  image_name = "${var.product_alias}-${var.env_alias}-${var.module_name}"
+  image_name = "${var.prefix}"
 }
 
 resource "azurerm_container_registry" "acr" {
   count = var.enabled ? 1 : 0
   name = lower(replace(
-    "${var.product_alias}${var.env_alias}${var.module_name}${local.subscription_suffix}",
+    "${var.prefix}${local.subscription_suffix}",
     "/[^a-z0-9]/",
     ""
   ))

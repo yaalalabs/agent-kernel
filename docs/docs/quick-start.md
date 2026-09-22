@@ -549,9 +549,7 @@ module "serverless_agents" {
     version   = "0.8.1"
     providers = { aws = aws, docker = docker }
 
-    product_alias        = "ak"
-    env_alias            = "dev"
-    module_name          = "quickstart"
+    prefix               = "ak-dev-quickstart"
     region               = var.region
     product_display_name = "AK Quick Start"
 
@@ -559,7 +557,6 @@ module "serverless_agents" {
         function_name       = "ak-quickstart"
         function_description = "Agent Kernel Quick Start Lambda"
         handler_path        = "lambda.handler"
-        module_name         = "quickstart"
         package_path        = "../dist"
         package_type        = "Image"
         memory_size         = 256

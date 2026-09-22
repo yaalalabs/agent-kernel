@@ -1,5 +1,3 @@
 region        = "ap-southeast-2"
-product_alias = "ak-oai-ddb-ecs"
-env_alias     = "dev"
-module_name   = "examples"
+prefix        = "ak-oai-ddb-ecs-dev-examples"
 ecr_image_uri = "329597159169.dkr.ecr.ap-southeast-2.amazonaws.com/openai-dynamodb-ext:latest"

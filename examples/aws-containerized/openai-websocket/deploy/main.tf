@@ -5,9 +5,7 @@ module "containerized_agents" {
 
   providers = { aws = aws, docker = docker }
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   container_type       = "ecs"
   region               = var.region
   vpc_id               = var.vpc_id
@@ -38,7 +36,7 @@ module "containerized_agents" {
   enable_api_gateway_logs = false
 
   tags = {
-    Example     = "openai-websocket"
-    Environment = var.env_alias
+    Example    = "openai-websocket"
+    Deployment = var.prefix
   }
 }

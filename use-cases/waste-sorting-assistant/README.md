@@ -92,7 +92,5 @@ Example API body:
 Useful Terraform variables:
 
 - `region`: AWS region, default `us-east-1`.
-- `product_alias`: resource prefix, default `ak`.
-- `env_alias`: environment alias, default `dev`.
-- `module_name`: module namespace, default `waste-sorting`.
+- `prefix`: prefix applied to every resource name, default `ak-dev-waste-sorting`.
 - `openai_api_key`: OpenAI API key loaded from `terraform.tfvars`.

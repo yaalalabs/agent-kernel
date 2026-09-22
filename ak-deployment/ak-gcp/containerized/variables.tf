@@ -8,25 +8,20 @@ variable "region" {
   description = "GCP region"
 }
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias"
-}
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 
-variable "env_alias" {
-  type        = string
-  description = "Environment alias"
+  validation {
+    condition     = var.prefix != ""
+    error_message = "prefix must be set to a non-empty value."
+  }
 }
 
 variable "product_display_name" {
   type        = string
   description = "Product display name"
   default     = "An Agent Kernel deployment"
-}
-
-variable "module_name" {
-  type        = string
-  description = "Module name"
 }
 
 variable "is_production" {

@@ -1,4 +1,2 @@
-region        = "ap-southeast-2"
-product_alias = "ak-oai-sch-ecs"
-env_alias     = "dev"
-module_name   = "schedule"
+region = "ap-southeast-2"
+prefix = "ak-oai-sch-ecs-dev-schedule"

@@ -31,9 +31,7 @@ Perfect for containerized workloads requiring automated image management with Az
 module "api_container" {
   source = "yaalalabs/ak-common/azure//modules/acr"
 
-  product_alias       = "myapp"
-  env_alias           = "prod"
-  module_name         = "api"
+  prefix              = "myapp-prod-api"
   source_path         = "src/api"
   resource_group_name = "myapp-prod-rg"
   region              = "eastus"
@@ -77,9 +75,7 @@ resource "azurerm_container_app" "api" {
 module "dev_container" {
   source = "yaalalabs/ak-common/azure//modules/acr"
 
-  product_alias       = "myapp"
-  env_alias           = "dev"
-  module_name         = "worker"
+  prefix              = "myapp-dev-worker"
   source_path         = "src/worker"
   resource_group_name = "myapp-dev-rg"
   region              = "eastus"
@@ -90,9 +86,7 @@ module "dev_container" {
 module "prod_container" {
   source = "../common/modules/acr"
 
-  product_alias       = "myapp"
-  env_alias           = "prod"
-  module_name         = "worker"
+  prefix              = "myapp-prod-worker"
   source_path         = "src/worker"
   resource_group_name = "myapp-prod-rg"
   region              = "eastus"
@@ -105,9 +99,7 @@ module "prod_container" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `region` | Azure region for ACR deployment(Match with Resource Group name for cost Optimizations) | `string` | `"eastus"` | no |
-| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
-| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
-| `module_name` | Module/service name for resource identification | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `source_path` | Path to directory containing Dockerfile and source code | `string` | n/a | yes |
 | `resource_group_name` | Name of the Azure resource group | `string` | n/a | yes |
 | `enabled` | Enable or disable the module | `bool` | `true` | no |
@@ -132,7 +124,7 @@ module "prod_container" {
 
 ### 📦 Registry Management
 
-- **Naming Convention**: Creates registries with pattern `{product_alias}{env_alias}{module_name}{subscription_suffix}`
+- **Naming Convention**: Creates registries with pattern `{prefix}{subscription_suffix}` (separators stripped)
 - **Subscription Suffix**: Adds 6-character SHA1 hash of subscription ID to ensure global uniqueness
 - **Basic SKU**: Uses cost-effective Basic SKU for standard workloads
 - **Admin Access**: Enables admin user for simplified authentication workflows
@@ -212,7 +204,7 @@ Error: Registry name must be between 5 and 50 characters
 **Solution**: The module automatically handles this by:
 - Removing special characters and converting to lowercase
 - Adding subscription suffix for uniqueness
-- Ensure `product_alias + env_alias + module_name` is reasonably short
+- Ensure `prefix` is reasonably short
 
 ### Authentication Errors
 

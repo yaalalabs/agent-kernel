@@ -2,7 +2,7 @@ locals {
   package_type      = var.is_layer ? "layer" : "lambda"
   package_file_name = "source_code.zip"
   file_exist = fileexists(var.package_dir_path)
-  key               = "${var.product_alias}/${var.region}/${var.env_alias}/${var.module_name}/${local.package_type}/${local.package_file_name}"
+  key               = "${var.prefix}/${var.region}/${local.package_type}/${local.package_file_name}"
 }
 
 data "aws_s3_object" "source_code_object" {
