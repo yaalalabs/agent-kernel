@@ -62,12 +62,6 @@ _log = logging.getLogger("ak.openai.runner")
 # unless the agent itself names a realtime model.
 DEFAULT_REALTIME_MODEL = "gpt-realtime"
 
-# The model streams audio in tiny (~10-20 ms) deltas. Forwarding each one as its own queue message
-# floods the output queue (and the Response Handler behind it) at ~50 messages/second, which delays
-# control events such as barge-in past the point where clearing the buffered audio still matters.
-# Deltas are therefore coalesced into ~150 ms of PCM16 (24 kHz mono) before being sent.
-REALTIME_AUDIO_FLUSH_BYTES = 24000 * 2 * 150 // 1000
-
 
 def _resolve_realtime_model(agent: Any) -> str:
     """Pick the Realtime model for an agent: its own if it names a realtime one, else the default."""
@@ -102,11 +96,17 @@ class RealtimeThreadManager:
         self.user_id: Optional[str] = None
         self.integration: Optional[str] = None
         self.reply_context: dict = {}
-        # Coalesces small audio deltas into ~150 ms output messages (see REALTIME_AUDIO_FLUSH_BYTES).
-        self._audio_buffer = bytearray()
+
         # The edge publishes one transcript per turn (on done), so deltas are accumulated here
         # rather than sent one-per-token, which would flood the output queue.
         self._transcript: list[str] = []
+
+        # Pacing and Memory Truncation State
+        self._pacing_queue: Optional[asyncio.Queue] = None
+        self._pacing_task: Optional[asyncio.Task] = None
+        self.current_item_id: Optional[str] = None
+        self.current_content_index: Optional[int] = None
+        self.audio_played_ms: float = 0.0
 
     def start_if_needed(self, agent: BaseAgent) -> None:
         """Start the background socket thread once, blocking until its loop is available."""
@@ -121,6 +121,8 @@ class RealtimeThreadManager:
     def _run_loop(self) -> None:
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
+        self._pacing_queue = asyncio.Queue()
+        self._pacing_task = self._loop.create_task(self._pacing_loop())
         self._loop_ready.set()
         try:
             self._loop.run_until_complete(self._listen())
@@ -128,6 +130,8 @@ class RealtimeThreadManager:
             _log.exception(f"OpenAI Realtime background loop failed for session {self.session_id}")
         finally:
             self._running = False
+            if self._pacing_task:
+                self._pacing_task.cancel()
             try:
                 self._loop.close()
             except Exception:
@@ -136,8 +140,6 @@ class RealtimeThreadManager:
     async def _listen(self) -> None:
         from openai import AsyncOpenAI
 
-        # The OpenAI SDK reads OPENAI_API_KEY from the environment, the same credential the
-        # non-realtime OpenAIRunner path uses.
         client = AsyncOpenAI()
         model = _resolve_realtime_model(self._agent)
         transport = QueueTransportFactory.create()
@@ -168,17 +170,31 @@ class RealtimeThreadManager:
     async def _handle_event(self, event, transport) -> None:
         event_type = event.type
         if event_type == "response.output_audio.delta":
-            self._audio_buffer.extend(base64.b64decode(event.delta))
-            if len(self._audio_buffer) >= REALTIME_AUDIO_FLUSH_BYTES:
-                await self._flush_audio(transport)
+            item_id = getattr(event, "item_id", None)
+            content_index = getattr(event, "content_index", None)
+            if self._pacing_queue is not None:
+                self._pacing_queue.put_nowait((event.delta, item_id, content_index, transport))
         elif event_type == "response.output_audio_transcript.delta":
             self._transcript.append(event.delta)
         elif event_type == "input_audio_buffer.speech_started":
-            # Barge-in: the user started talking while the model was speaking. Flush what we have,
-            # then forward a control event so the edge can stop the audio it has already buffered
-            # and drop the partial transcript (the server auto-cancels the in-flight response).
+            # Barge-in: the user started talking while the model was speaking.
             _log.info("OpenAI Realtime: user speech started (barge-in)")
-            await self._flush_audio(transport)
+
+            # 1. Clear local pacing queue instantly
+            if self._pacing_queue is not None:
+                while not self._pacing_queue.empty():
+                    try:
+                        self._pacing_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+
+            # 2. Fire truncate command to OpenAI
+            if self.current_item_id:
+                # Using 0 if we haven't played anything yet
+                played_ms = max(0, int(self.audio_played_ms))
+                self.truncate(self.current_item_id, self.current_content_index, played_ms)
+
+            # 3. Forward control event to edge to stop any currently playing chunk
             await self._emit(transport, {"event": {"type": "interrupt"}, "done": False})
         elif event_type == "input_audio_buffer.speech_stopped":
             _log.info("OpenAI Realtime: user speech stopped")
@@ -190,18 +206,38 @@ class RealtimeThreadManager:
             _log.info(f"OpenAI Realtime: response.done status={status}")
             transcript = "".join(self._transcript).strip() if status == "completed" else ""
             self._transcript.clear()
-            await self._flush_audio(transport)
             await self._emit(transport, {"event": {"type": "done", "status": status, "transcript": transcript}, "done": True})
         elif event_type == "error":
             _log.error(f"OpenAI Realtime socket error: {getattr(event, 'error', 'unknown')}")
 
-    async def _flush_audio(self, transport) -> None:
-        """Send the coalesced audio buffer (if any) as a single ``audio_delta`` chunk."""
-        if not self._audio_buffer:
-            return
-        content = base64.b64encode(bytes(self._audio_buffer)).decode("utf-8")
-        self._audio_buffer.clear()
-        await self._emit(transport, {"event": {"type": "audio_delta", "content": content}, "done": False})
+    async def _pacing_loop(self) -> None:
+        """Paces the audio output to prevent massive edge-side buffering."""
+        import base64
+
+        while True:
+            try:
+                delta, item_id, content_index, transport = await self._pacing_queue.get()
+
+                if item_id and item_id != self.current_item_id:
+                    self.current_item_id = item_id
+                    self.current_content_index = content_index
+                    self.audio_played_ms = 0.0
+
+                # Emit the chunk to the output queue
+                await self._emit(transport, {"event": {"type": "audio_delta", "content": delta}, "done": False})
+
+                # Calculate duration in ms: 24kHz, 1 channel, 16-bit = len(bytes)/2 samples
+                audio_bytes = base64.b64decode(delta)
+                duration_ms = (len(audio_bytes) / 2) / 24.0
+                self.audio_played_ms += duration_ms
+
+                # Pace the thread
+                await asyncio.sleep(duration_ms / 1000.0)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                _log.error(f"Error in OpenAI pacing loop: {e}")
 
     async def _emit(self, transport, chunk: dict) -> None:
         """Send one realtime chunk to the output queue with this turn's delivery attributes."""
@@ -233,6 +269,16 @@ class RealtimeThreadManager:
             {"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}}
         )
         await self._connection.send({"type": "response.create"})
+
+    def truncate(self, item_id: str, content_index: int, audio_end_ms: int) -> None:
+        """Truncate the model's audio memory to align with the edge device's playback state."""
+        self._schedule(self._truncate(item_id, content_index, audio_end_ms))
+
+    async def _truncate(self, item_id: str, content_index: int, audio_end_ms: int) -> None:
+        await self._await_connection()
+        await self._connection.send(
+            {"type": "conversation.item.truncate", "item_id": item_id, "content_index": content_index, "audio_end_ms": audio_end_ms}
+        )
 
     async def _await_connection(self) -> None:
         for _ in range(200):

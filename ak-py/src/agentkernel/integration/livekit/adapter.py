@@ -2,7 +2,6 @@ import asyncio
 import base64
 import json
 import logging
-import time
 import uuid
 from typing import Dict, Optional
 
@@ -18,10 +17,7 @@ _log = logging.getLogger("ak.integration.livekit")
 INTEGRATION_NAME = "livekit"
 # OpenAI Realtime speaks PCM16 at 24 kHz mono in both directions.
 AUDIO_SAMPLE_RATE = 24000
-# Incoming mic audio is batched into ~100 ms frames before it is enqueued: one queue message per
-# 10 ms LiveKit frame would run the whole pipeline (session load/store, hooks, agent selection)
-# hundreds of times a second. 100 ms is also the smallest buffer the Realtime API accepts.
-AUDIO_BATCH_SECONDS = 0.1
+
 
 try:
     from livekit import rtc
@@ -153,20 +149,16 @@ class LiveKitEdgeGateway(OutboundAdapter):
             _log.error(f"Failed to process chat: {e}")
 
     async def _process_incoming_audio(self, track: "rtc.Track") -> None:
-        """Batch continuous mic audio into ~100 ms PCM16 frames and enqueue them."""
+        """Pass continuous mic audio directly to the queue with no batching."""
         audio_stream = rtc.AudioStream(track, sample_rate=AUDIO_SAMPLE_RATE, num_channels=1)
-        _log.info("Listening for audio stream...")
+        _log.info("Listening for audio stream (raw pass-through)...")
 
-        pending = bytearray()
-        last_flush = time.monotonic()
         async for event in audio_stream:
             try:
-                pending.extend(event.frame.data.tobytes())
-                now = time.monotonic()
-                if pending and (now - last_flush) >= AUDIO_BATCH_SECONDS:
-                    self._enqueue(AgentRequestVoice(prompt="", audio_data=base64.b64encode(bytes(pending)).decode("utf-8"), name=self.agent_name))
-                    pending.clear()
-                    last_flush = now
+                raw_bytes = event.frame.data.tobytes()
+                if raw_bytes:
+                    b64_audio = base64.b64encode(raw_bytes).decode("utf-8")
+                    self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
             except Exception as e:
                 _log.error(f"Failed to process incoming audio frame: {e}")
 
