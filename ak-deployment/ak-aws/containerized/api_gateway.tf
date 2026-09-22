@@ -1,8 +1,8 @@
 resource "aws_apigatewayv2_api" "http_api" {
   count         = local.is_websocket_mode ? 0 : 1
-  name          = "${var.product_alias}-${var.env_alias}-http-api-${var.region}"
+  name          = "${var.prefix}-http-api-${var.region}"
   protocol_type = "HTTP"
-  description   = "[${var.env_alias}] ${var.product_display_name} HTTP API"
+  description   = "[${var.prefix}] ${var.product_display_name} HTTP API"
   tags          = var.tags
 
   dynamic "cors_configuration" {
@@ -20,7 +20,7 @@ resource "aws_apigatewayv2_api" "http_api" {
 
 resource "aws_apigatewayv2_vpc_link" "ecs_alb" {
   count              = local.is_websocket_mode ? 0 : 1
-  name               = "${var.product_alias}-${var.env_alias}-httpapi-vpclink"
+  name               = "${var.prefix}-httpapi-vpclink"
   security_group_ids = [module.rest_service.alb_security_group_id]
   subnet_ids         = local.subnet_ids
   tags               = var.tags
@@ -50,7 +50,7 @@ resource "aws_apigatewayv2_route" "gateway_routes" {
 # CloudWatch Log Group for API Gateway (only when access logging is enabled)
 resource "aws_cloudwatch_log_group" "http_api" {
   count             = var.enable_api_gateway_logs && !local.is_websocket_mode ? 1 : 0
-  name              = "/aws/apigateway/${var.product_alias}-${var.env_alias}-http-api"
+  name              = "/aws/apigateway/${var.prefix}-http-api"
   retention_in_days = 90
   tags              = var.tags
 }

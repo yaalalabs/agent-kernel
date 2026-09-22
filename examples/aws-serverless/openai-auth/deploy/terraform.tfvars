@@ -1,4 +1,2 @@
-region        = "ap-southeast-2"
-product_alias = "ak-openai-auth-srvls"
-env_alias     = "dev"
-module_name   = "examples"
+region = "ap-southeast-2"
+prefix = "ak-openai-auth-srvls-dev-examples"

@@ -32,17 +32,14 @@ module "vnet" {
   location            = "East US"
   vnet_cidr           = "10.0.0.0/16"
   private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod"
 }
 
 # Redis Module
 module "redis" {
   source = "../common/modules/redis"
   
-  product_alias       = "myapp"
-  env_alias           = "prod"
-  module_name         = "cache"
+  prefix              = "myapp-prod-cache"
   resource_group_name = "myapp-prod-rg"
   vnet_name          = module.vnet.vnet_name
   subnet_name        = module.vnet.private_subnet_name
@@ -53,9 +50,7 @@ module "redis" {
 module "cosmos" {
   source = "../common/modules/cosmos"
   
-  product_alias       = "myapp"
-  env_alias           = "prod"
-  module_name         = "data"
+  prefix              = "myapp-prod-data"
   table_name          = "session_store"
   resource_group_name = "myapp-prod-rg"
   vnet_name          = module.vnet.vnet_name
@@ -66,9 +61,7 @@ module "cosmos" {
 module "acr" {
   source = "../common/modules/acr"
   
-  product_alias       = "myapp"
-  env_alias           = "prod"
-  module_name         = "api"
+  prefix              = "myapp-prod-api"
   source_path         = "src/api"
   resource_group_name = "myapp-prod-rg"
 }
@@ -102,8 +95,7 @@ module "vnet" {
   
   resource_group_name = var.resource_group_name
   location           = var.region
-  product_alias      = var.product_alias
-  env_alias          = var.env_alias
+  prefix             = var.prefix
 }
 
 # Create Redis cache with private endpoint
@@ -111,9 +103,7 @@ module "redis" {
   count = var.create_redis_cluster ? 1 : 0
   source = "../common/modules/redis"
   
-  product_alias       = var.product_alias
-  env_alias           = var.env_alias
-  module_name         = var.module_name
+  prefix              = var.prefix
   resource_group_name = var.resource_group_name
   vnet_name          = module.vnet.vnet_name
   subnet_name        = module.vnet.private_subnet_name
@@ -126,9 +116,7 @@ module "cosmos" {
   count = var.create_cosmosdb_cluster ? 1 : 0
   source = "../common/modules/cosmos"
   
-  product_alias       = var.product_alias
-  env_alias           = var.env_alias
-  module_name         = var.module_name
+  prefix              = var.prefix
   table_name          = "session_store"
   resource_group_name = var.resource_group_name
   vnet_name          = module.vnet.vnet_name
@@ -145,17 +133,14 @@ module "vnet" {
   
   resource_group_name = var.resource_group_name
   location           = var.region
-  product_alias      = var.product_alias
-  env_alias          = var.env_alias
+  prefix             = var.prefix
 }
 
 # Build and store container images
 module "docker_image" {
   source = "../common/modules/acr"
   
-  product_alias       = var.product_alias
-  env_alias           = var.env_alias
-  module_name         = var.module_name
+  prefix              = var.prefix
   source_path         = var.package_path
   resource_group_name = var.resource_group_name
 }
@@ -165,9 +150,7 @@ module "redis" {
   count = var.create_redis_cluster ? 1 : 0
   source = "../common/modules/redis"
   
-  product_alias       = var.product_alias
-  env_alias           = var.env_alias
-  module_name         = var.module_name
+  prefix              = var.prefix
   resource_group_name = var.resource_group_name
   vnet_name          = module.vnet.vnet_name
   subnet_name        = module.vnet.private_subnet_name
@@ -179,9 +162,7 @@ module "cosmos" {
   count = var.create_cosmosdb_cluster ? 1 : 0
   source = "../common/modules/cosmos"
   
-  product_alias       = var.product_alias
-  env_alias           = var.env_alias
-  module_name         = var.module_name
+  prefix              = var.prefix
   table_name          = "session_store"
   resource_group_name = var.resource_group_name
   vnet_name          = module.vnet.vnet_name

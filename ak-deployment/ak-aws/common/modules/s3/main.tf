@@ -1,5 +1,5 @@
 locals {
-  bucket = "${var.product_alias}-${var.env_alias}-sources-${data.aws_caller_identity.current.account_id}"
+  bucket = "${var.prefix}-sources-${data.aws_caller_identity.current.account_id}"
 }
 
 resource "aws_s3_bucket" "source-storage" {

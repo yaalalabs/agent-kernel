@@ -22,9 +22,9 @@ locals {
   files         = sort(setsubtract(local.files_include, local.files_exclude))
   dir_sha       = sha1(join("", [for f in local.files : filesha1("${local.source_path}/${f}")]))
 
-  repo_name = "${var.product_alias}-${var.env_alias}-${var.module_name}"
+  repo_name = var.prefix
   image_tag = local.dir_sha
-  image_url = "${var.region}-docker.pkg.dev/${var.project_id}/${local.repo_name}/${var.module_name}:${local.image_tag}"
+  image_url = "${var.region}-docker.pkg.dev/${var.project_id}/${local.repo_name}/${var.prefix}:${local.image_tag}"
 }
 
 # Create the Artifact Registry repository (Docker format)

@@ -22,7 +22,7 @@ locals {
 
   # Throttling
   enable_throttling    = var.throttling_rate_limit != null && var.throttling_burst_limit != null
-  throttle_metric_name = "${substr(local.prefix, 0, min(length(local.prefix), 45))}-${local.deployment_id}-req"
+  throttle_metric_name = "${substr(var.prefix, 0, min(length(var.prefix), 45))}-${local.deployment_id}-req"
 
   # Per-operation quota cost added when throttling is enabled
   _quota_ext = local.enable_throttling ? {
@@ -148,7 +148,7 @@ locals {
     swagger = "2.0"
     info = {
       title       = "${var.product_display_name} API"
-      description = "[${var.env_alias}] ${var.product_display_name} API"
+      description = "[${var.prefix}] ${var.product_display_name} API"
       version     = var.api_version
     }
     schemes  = ["https"]
@@ -170,13 +170,13 @@ locals {
       quota = {
         limits = [
           {
-            name   = "${substr(local.prefix, 0, min(length(local.prefix), 40))}-${local.deployment_id}-rate"
+            name   = "${substr(var.prefix, 0, min(length(var.prefix), 40))}-${local.deployment_id}-rate"
             metric = local.throttle_metric_name
             unit   = "1/min/{project}"
             values = { STANDARD = var.throttling_rate_limit * 60 }
           },
           {
-            name   = "${substr(local.prefix, 0, min(length(local.prefix), 39))}-${local.deployment_id}-burst"
+            name   = "${substr(var.prefix, 0, min(length(var.prefix), 39))}-${local.deployment_id}-burst"
             metric = local.throttle_metric_name
             unit   = "1/min/{project}"
             values = { STANDARD = var.throttling_burst_limit }
@@ -223,7 +223,7 @@ resource "google_api_gateway_api_config" "config" {
   project       = var.project_id
   provider      = google-beta
   api           = google_api_gateway_api.api.api_id
-  api_config_id = "${local.prefix}-config-${substr(md5(local.openapi_spec_json), 0, 8)}"
+  api_config_id = "${var.prefix}-config-${substr(md5(local.openapi_spec_json), 0, 8)}"
 
   openapi_documents {
     document {

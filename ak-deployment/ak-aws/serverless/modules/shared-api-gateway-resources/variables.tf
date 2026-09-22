@@ -1,11 +1,6 @@
-variable "product_alias" {
-  description = "Product alias for naming resources"
+variable "prefix" {
   type        = string
-}
-
-variable "env_alias" {
-  description = "Environment alias for naming resources"
-  type        = string
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 }
 
 variable "tags" {

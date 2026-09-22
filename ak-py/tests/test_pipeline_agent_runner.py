@@ -6,7 +6,7 @@ import pytest
 
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.agent_runner import AgentRunner, StreamAgentRunner
-from agentkernel.pipeline.envelope import QueueMessage, QueueName
+from agentkernel.pipeline.envelope import ATTR_INTEGRATION, QueueMessage, QueueName
 from agentkernel.pipeline.thread_runner import ThreadRunner
 from agentkernel.pipeline.transport.base import QueueTransportFactory
 from agentkernel.pipeline.transport.in_memory import InMemoryTransport
@@ -168,3 +168,83 @@ class TestStreamAgentRunner:
         assert "after 3 retries" in chunk["error"]
         assert chunk["session_id"] == "s1"
         assert out.dedup_id == "d1-4-error"
+
+
+class TestIntegrationTraffic:
+    """What the runner does with a messaging-integration message (spec #524 §5)."""
+
+    INTEGRATION_ATTRS = {
+        "request_id": "r1",
+        "user_id": "u1",
+        ATTR_INTEGRATION: "slack",
+        "reply_channel": "C9",
+        "reply_thread_ts": "111.222",
+    }
+
+    def test_the_routing_attribute_and_reply_context_survive_the_hop(self):
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_chat_request.return_value = (200, {"result": "hi", "session_id": "s1"})
+
+        AgentRunner(transport=transport, chat_service=chat_service).process(_input_msg(attributes=dict(self.INTEGRATION_ATTRS)))
+
+        [out] = _fetch_output(transport)
+        assert out.attributes[ATTR_INTEGRATION] == "slack"
+        assert out.attributes["reply_channel"] == "C9"
+        assert out.attributes["reply_thread_ts"] == "111.222"
+        # The three that were forwarded before still are.
+        assert out.attributes["request_id"] == "r1"
+        assert out.attributes["user_id"] == "u1"
+
+    def test_unknown_attributes_are_still_dropped(self):
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_chat_request.return_value = (200, {"result": "hi", "session_id": "s1"})
+
+        attributes = {**self.INTEGRATION_ATTRS, "internal_note": "not for the output side"}
+        AgentRunner(transport=transport, chat_service=chat_service).process(_input_msg(attributes=attributes))
+
+        assert "internal_note" not in _fetch_output(transport)[0].attributes
+
+    def test_a_prebuilt_request_list_reaches_the_chat_service(self):
+        chat_service = MagicMock()
+        chat_service.process_chat_request.return_value = (200, {"result": "hi", "session_id": "s1"})
+        body = {
+            "prompt": "hi",
+            "session_id": "s1",
+            "requests": [{"type": "text", "prompt": "hi"}, {"type": "attachment_ref", "attachment_id": "att-1"}],
+        }
+        message = QueueMessage(body=json.dumps(body), attributes=dict(self.INTEGRATION_ATTRS), group_id="s1", dedup_id="d1", message_id="m1")
+
+        AgentRunner(transport=InMemoryTransport(), chat_service=chat_service).process(message)
+
+        requests = chat_service.process_chat_request.call_args.kwargs["requests"]
+        assert [type(r).__name__ for r in requests] == ["AgentRequestText", "AgentRequestAttachmentRef"]
+
+    def test_stream_mode_does_not_apply_to_integration_traffic(self, monkeypatch):
+        """A messaging platform has no streaming consumer: fanning a reply out per token would
+        send one platform message per chunk."""
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+        transport = InMemoryTransport()
+        chat_service = MagicMock()
+        chat_service.process_chat_request.return_value = (200, {"result": "hello", "session_id": "s1"})
+
+        StreamAgentRunner(transport=transport, chat_service=chat_service).process(_input_msg(attributes=dict(self.INTEGRATION_ATTRS)))
+
+        chat_service.process_stream_chat_sync.assert_not_called()
+        [out] = _fetch_output(transport)
+        assert json.loads(out.body) == {"result": "hello", "session_id": "s1"}
+        assert out.attributes["status_code"] == "200"
+
+    def test_stream_permanent_failure_is_shaped_as_an_error_body(self, monkeypatch):
+        """The Response Handler's integration branch reads a status and an error body, not a
+        StreamChunk, so the failure must take the non-streaming shape too."""
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _FakeCfg))
+        transport = InMemoryTransport()
+
+        StreamAgentRunner(transport=transport, chat_service=MagicMock()).on_permanent_failure(_input_msg(attributes=dict(self.INTEGRATION_ATTRS)))
+
+        [out] = _fetch_output(transport)
+        assert json.loads(out.body) == {"error": "Failed to process message after 3 retries"}
+        assert out.attributes["status_code"] == "500"
+        assert out.attributes[ATTR_INTEGRATION] == "slack"

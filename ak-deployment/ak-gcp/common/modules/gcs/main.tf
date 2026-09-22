@@ -1,6 +1,6 @@
 # Build the bucket name from project ID to keep it globally unique
 locals {
-  bucket_name = "${var.product_alias}-${var.env_alias}-sources-${var.project_id}"
+  bucket_name = "${var.prefix}-sources-${var.project_id}"
 }
 
 # The storage bucket — equivalent of S3 or Azure Blob Storage

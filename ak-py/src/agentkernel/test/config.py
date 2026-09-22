@@ -32,7 +32,7 @@ class AKTestConfig(YamlBaseSettingsModified):
     mode: str = Field(default="fallback", pattern="^(fallback|llm|score)$")
     evaluator: str = Field(
         default="deepeval",
-        description="Built-in evaluator short name ('deepeval') or a dotted path to an AKEvaluator subclass",
+        description="Built-in evaluator short name ('deepeval' or 'opik') or a dotted path to an AKEvaluator subclass",
     )
     llm: _LlmConfig = Field(description="LLM configuration for the llm evaluation mode", default_factory=_LlmConfig)
 

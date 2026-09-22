@@ -5,7 +5,7 @@ data "azurerm_resource_group" "rg" {
 data "azurerm_client_config" "current" {}
 
 locals {
-  function_app_name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}"
+  function_app_name = "${var.prefix}-${var.function_name}"
 }
 
 # Use existing VNet if provided
@@ -24,7 +24,9 @@ data "azurerm_subnet" "private" {
 
 # Storage Account for Function App
 resource "azurerm_storage_account" "function_storage" {
-  name                          = "${var.product_alias}${var.env_alias}${var.module_name}${substr(data.azurerm_client_config.current.subscription_id, 0, 4)}deployment"
+  # Storage account names allow lowercase alphanumerics only, so any separators in the prefix are stripped.
+  # The 14 characters appended here are what the length validation on var.prefix budgets for.
+  name                          = lower(replace("${var.prefix}${substr(data.azurerm_client_config.current.subscription_id, 0, 4)}deployment", "/[^a-zA-Z0-9]/", ""))
   resource_group_name           = data.azurerm_resource_group.rg.name
   location                      = var.region
   account_tier                  = "Standard"

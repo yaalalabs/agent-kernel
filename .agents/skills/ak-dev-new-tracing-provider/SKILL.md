@@ -273,6 +273,8 @@ Add `docs/docs/advanced/tracing-<provider>.md` covering:
 - What gets traced (spans, attributes)
 - Dashboard screenshots (optional)
 
+Then add the provider to the docs-site features page (`docs/src/pages/features.tsx`): the Observability card's `highlights` list one entry per provider, and the Problem section's `rows` name the built-in tracing providers in a `with:` cell. Grep `docs/src/pages/*.tsx` for "Langfuse" to find every roll call.
+
 ## How Framework Modules Consume Tracing
 
 Each framework Module's constructor checks for tracing:

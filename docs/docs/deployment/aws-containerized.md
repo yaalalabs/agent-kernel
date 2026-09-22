@@ -184,6 +184,12 @@ if __name__ == "__main__":
     runner()
 ```
 
+Pass `ECSIOHandler.run(auth_validator=CustomAuthValidator())` to secure the REST routes in queue
+mode: it is bound onto every REST route via `RESTAPI.add_auth_handlers` (the same mechanism shown
+in [Authentication](#authentication)) before the `rest-api` thread starts. The same
+`auth_validator` also authenticates the WebSocket `$connect` handshake when [WebSocket
+Mode](#websocket-mode) is enabled, so one validator covers both protocols.
+
 ### Container 2: Agent Runner (`ECSAgentRunner`)
 
 Extends `ECSSQSConsumer` (which in turn extends the shared `RawQueueConsumer` base also used by Lambda's `LambdaSQSConsumer`): runs `execution.queues.input.no_of_consumers` (default **5**) independent threads, each polling the Input Queue in a blocking loop, executing the agent through the full `Runtime.run()` pipeline (hooks, guardrails, session persistence), and putting the result on the Output Queue with the same `request_id`. On permanent failure it forwards an error body to the Output Queue so the client still receives a response.
@@ -371,7 +377,7 @@ module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
   version = "0.8.1"
 
-  # ... product_alias / env_alias / module_name / region / vpc_id / private_subnet_ids ...
+  # ... prefix / region / vpc_id / private_subnet_ids ...
 
   rest_service = {
     package_path   = "../dist"

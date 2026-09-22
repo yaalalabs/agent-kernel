@@ -139,6 +139,7 @@ Reference pattern:
 Document the backend in:
 - `docs/docs/advanced/knowledge-bases.md`
 - `docs/docs/core-concepts/overview.md` (if backend list appears there)
+- the Knowledge Bases card in `docs/src/pages/features.tsx` (its description and `highlights` name every backend) and the Knowledge Base line of the What's New tip in `docs/docs/intro.md`
 
 Include:
 - when to use this backend

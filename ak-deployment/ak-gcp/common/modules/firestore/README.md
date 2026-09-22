@@ -32,9 +32,7 @@ module "firestore" {
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "chatbot"
+  prefix        = "myapp-prod-chatbot"
 }
 ```
 
@@ -47,9 +45,7 @@ module "firestore" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = "prod"
-  module_name   = var.module_name
+  prefix        = var.prefix
 
   collection_name        = "sessions"
   ttl_field              = "expiry_time"
@@ -66,9 +62,7 @@ module "firestore" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
 }
 
 # Cloud Run uses Firestore via environment variables
@@ -82,9 +76,7 @@ module "firestore" {
 |------|-------------|------|---------|:--------:|
 | `project_id` | GCP project ID | `string` | n/a | yes |
 | `region` | GCP region | `string` | `"us-central1"` | no |
-| `product_alias` | Short identifier for the product | `string` | n/a | yes |
-| `env_alias` | Environment identifier | `string` | n/a | yes |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `collection_name` | Firestore collection name | `string` | `"sessions"` | no |
 | `ttl_field` | Field name for TTL expiration | `string` | `"expiry_time"` | no |
 | `deletion_protection` | Enable deletion protection | `bool` | `false` | no |
@@ -105,7 +97,7 @@ module "firestore" {
 
 Firestore supports multiple named databases per project. This module creates a named database (not the default `(default)` database), so you can have separate databases for different services.
 
-Database ID format: `{product_alias}-{env_alias}-{module_name}`
+Database ID format: `{prefix}`
 
 ### TTL Policy
 
@@ -180,7 +172,7 @@ gcloud projects add-iam-policy-binding my-project \
 
 ### Database Already Exists
 
-Firestore database names are unique per project. If you get a conflict, the database already exists. Either import it into Terraform state or use a different `module_name`.
+Firestore database names are unique per project. If you get a conflict, the database already exists. Either import it into Terraform state or use a different `prefix`.
 
 ### TTL Not Working
 

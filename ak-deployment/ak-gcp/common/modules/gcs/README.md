@@ -32,8 +32,7 @@ module "storage" {
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod"
   is_production = false
 }
 ```
@@ -52,8 +51,7 @@ module "storage" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = "prod"
+  prefix        = var.prefix
   is_production = true
   kms_key_id    = google_kms_crypto_key.bucket_key.id
 
@@ -73,8 +71,7 @@ module "source_storage" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
+  prefix        = var.prefix
   is_production = var.is_production
 }
 
@@ -92,8 +89,7 @@ resource "google_storage_bucket_object" "function_source" {
 |------|-------------|------|---------|:--------:|
 | `project_id` | GCP project ID | `string` | n/a | yes |
 | `region` | GCP region | `string` | `"us-central1"` | no |
-| `product_alias` | Short identifier for the product | `string` | n/a | yes |
-| `env_alias` | Environment identifier | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `is_production` | Enable production features (versioning) | `bool` | `false` | no |
 | `kms_key_id` | KMS key ID for encryption (null = Google managed) | `string` | `null` | no |
 | `labels` | Resource labels | `map(string)` | `{}` | no |
@@ -110,7 +106,7 @@ resource "google_storage_bucket_object" "function_source" {
 
 ### Naming Convention
 
-Bucket name: `{product_alias}-{env_alias}-sources-{project_id}`
+Bucket name: `{prefix}-sources-{project_id}`
 
 The project ID is included to ensure global uniqueness (GCS bucket names must be unique across all of Google Cloud).
 

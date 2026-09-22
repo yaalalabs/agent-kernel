@@ -32,8 +32,7 @@ module "vpc" {
 
   project_id          = "my-gcp-project"
   region              = "us-central1"
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod"
   public_subnet_cidr  = "10.0.1.0/24"
   private_subnet_cidr = "10.0.2.0/24"
 }
@@ -48,13 +47,12 @@ module "vpc" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
+  prefix        = var.prefix
 }
 
 # VPC Connector lets Cloud Run talk to private resources
 resource "google_vpc_access_connector" "connector" {
-  name          = "${var.product_alias}-${var.env_alias}-connector"
+  name          = "${var.prefix}-connector"
   project       = var.project_id
   region        = var.region
   network       = module.vpc.network_id
@@ -71,8 +69,7 @@ module "vpc" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
+  prefix        = var.prefix
 }
 
 module "redis" {
@@ -81,9 +78,7 @@ module "redis" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = "cache"
+  prefix        = "${var.prefix}-cache"
   network_id    = module.vpc.network_id
 }
 ```
@@ -94,8 +89,7 @@ module "redis" {
 |------|-------------|------|---------|:--------:|
 | `project_id` | GCP project ID | `string` | n/a | yes |
 | `region` | GCP region | `string` | `"us-central1"` | no |
-| `product_alias` | Short identifier for the product | `string` | n/a | yes |
-| `env_alias` | Environment identifier (dev, staging, prod) | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `public_subnet_cidr` | CIDR block for the public subnet | `string` | `"10.0.1.0/24"` | no |
 | `private_subnet_cidr` | CIDR block for the private subnet | `string` | `"10.0.2.0/24"` | no |
 | `tags` | Resource labels | `map(string)` | `{}` | no |
@@ -137,7 +131,7 @@ module "redis" {
 ### VPC Configuration
 
 - **Custom Mode**: No auto-created subnets. You control the IP ranges
-- **Naming Convention**: `{product_alias}-{env_alias}-vpc`
+- **Naming Convention**: `{prefix}-vpc`
 - **No Default Routes**: Only routes you explicitly create
 
 ### Private Google Access

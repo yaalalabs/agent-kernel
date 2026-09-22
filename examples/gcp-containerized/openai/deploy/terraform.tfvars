@@ -1,5 +1,3 @@
-project_id    = "agent-kernel-test"
-region        = "us-central1"
-product_alias = "ak-openai-containerized"
-env_alias     = "demo"
-module_name   = "examples"
+project_id = "agent-kernel-test"
+region     = "us-central1"
+prefix     = "ak-openai-containerized-demo-examples"
