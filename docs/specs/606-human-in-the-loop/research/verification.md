@@ -231,3 +231,117 @@ change the serialisation choice in `spec.md`.
 > `hasattr(SomeDataclass, "field_with_default_factory")` is `False` on the class — the attribute
 > only exists on instances. Any future verification of a dataclass-based API must enumerate
 > `dataclasses.fields(...)` rather than use `hasattr`.
+
+## Follow-up: does a framework report a stale pause?
+
+Run against the repo venv (`ak-py/.venv`), which is behind the lock for three of the four:
+`openai-agents` 0.19.0, `langgraph` 1.0.10, `pydantic-ai-slim` 2.13.0, `google-adk` 2.5.0.
+Executed, not read from docs, except where noted.
+
+The question: if an ordinary turn happens while a pause is pending, does the framework notice when
+the pause is later resumed?
+
+| Framework | Ordinary turn while paused | Resuming afterwards |
+|---|---|---|
+| **Pydantic AI** | **Refused.** `UserError: Cannot provide a new user prompt when the message history contains unprocessed tool calls.` | Cannot arise. Answering an already-answered pause is also refused: `UserError: Tool call results were provided, but the message history does not contain any unprocessed tool calls.` |
+| **LangGraph** | **Sticky interrupt.** A new input on the same `thread_id` merges into state, re-enters the interrupted node and pauses again — `__interrupt__` present, `get_state().next` unchanged at `('ask',)`, `len(state.interrupts) == 1`. | Cannot go stale; a later `Command(resume=...)` completes the original interrupt normally |
+| **OpenAI** | **Allowed** — the ordinary run returns a normal answer | **No signal.** `RunState.from_json` + `approve` + `Runner.run` returns a normal answer, `interruptions == []`. The snapshot is detached and has no notion of being current |
+| **Google ADK** | not executed | **No validation found.** `long_running_tool_ids` appears only in event emission (`tools/base_tool.py:77`), A2A conversion (`a2a/converters/event_converter.py:183-189,308-332`) and logging plugins; nothing in `flows/llm_flows/functions.py` matches an incoming `function_response` id against outstanding calls. *Source read, not executed* |
+
+Method note: OpenAI and Pydantic AI were driven with fake models (`agents.models.interface.Model`
+subclass, and `pydantic_ai.models.function.FunctionModel`) so no network call was made. LangGraph
+used `InMemorySaver` and a two-node graph.
+
+**Consequence for the design.** The `ak.run_seq` staleness counter was removed: it was a generic
+mechanism for a problem that exists on OpenAI, possibly ADK, and *not at all* on the other two —
+where the framework either refuses the situation outright or makes it unreachable. It also showed
+that the design's "a new prompt runs normally and keeps the pause" held only for OpenAI; Pydantic
+AI raises and LangGraph re-pauses. Both are now recorded per adapter in `design.md`.
+
+## Follow-up: can interruptions be answered one at a time?
+
+Same venv and pins as the section above. Executed except where noted.
+
+The design originally refused any resume that did not address every open interruption, justified
+as "the frameworks cannot take a partial answer". That is false for three of the four.
+
+| Framework | One at a time? | Evidence |
+|---|---|---|
+| **LangGraph** | **Yes** | two parallel nodes each calling `interrupt()`; `Command(resume={id_a: "yes-A"})` completed node A (state shows `A=yes-A`) and returned B as `__interrupt__`; a second `Command(resume={id_b: ...})` then completed the graph |
+| **OpenAI** | **Yes** | two tools with `needs_approval`; `state.approve(interruptions[0])` then `Runner.run(agent, state)` returned `final_output is None` with `interruptions == ['email']` — it pauses again on the remainder |
+| **Google ADK** | **Yes**, by construction | resume is a `FunctionResponse` per call id; no "all must be answered" check exists in `flows/llm_flows/functions.py`. *Source read, not executed* |
+| **Pydantic AI** | **No** | `UserError: Tool call results need to be provided for all deferred tool calls. Expected: {'tc2', 'tc1'}, got: {'tc1'}` |
+
+**AG-UI does not require it either.** `RunAgentInput.resume` is `Optional[List[ResumeEntry]]` and
+`ResumeEntry` is `{interrupt_id, status, payload}` (read at `ag-ui-protocol` 0.1.20 in the venv;
+the lock is 0.1.22). Nothing in the protocol types requires every open interrupt to be addressed
+in one resume, so the earlier claim that it did is withdrawn.
+
+**Consequence for the design.** Partial resume is now allowed and drops out of the failure-mode
+list, which goes from five to four. A partial resume that leaves interruptions open simply pauses
+again, reusing the existing "a resume can pause again" path. Pydantic AI is the single exception
+and AK refuses there **before** calling the framework, naming the missing ids — otherwise its
+clear `UserError` would be swallowed by the adapter's `except Exception`.
+
+## Follow-up: two more claims that asserted a framework limit
+
+Same venv and pins. Both were stated in the design as things the frameworks cannot do.
+
+**"New content cannot travel with a decision."** False for three of the four.
+
+| Framework | Prompt alongside a decision | Evidence | Native intent, or AK making it work? |
+|---|---|---|---|
+| **Pydantic AI** | **Allowed** | `run_sync("and also tell me the weather", message_history=hist, deferred_tool_results=DeferredToolResults(approvals={"tc1": True}))` returned a normal answer | **Native.** `prompt` is the documented way to send a user message, and the guard that blocks it (`Cannot provide a new user prompt when the message history contains unprocessed tool calls`) is lifted precisely by supplying the results — so the framework's own rule is "resolve the pending calls first" |
+| **LangGraph** | **Mechanically allowed** | `Command` has an `update` field; `Command(resume="yes", update={"note": "NEW CONTENT"})` resumed the node *and* the node read the new value | **AK's mapping.** `update` means *update the graph state*; there is no "send a prompt with your resume" feature. AK would encode the prompt as a write to the `messages` channel, which is how its adapter already feeds the graph (`langgraph.py:412`) — consistent, but invented here |
+| **Google ADK** | **Unknown** | a `Content` can hold a text part beside the `function_response`, so it is structurally possible | **Unverified.** Not executed; whether the flow handles a mixed `Content` is a guess |
+| **OpenAI** | **Not possible** | `Runner.run`'s `input` is `str \| list[TResponseInputItem] \| RunState` — mutually exclusive | n/a |
+
+**The third column is the load-bearing one.** Exactly one framework has a parameter meaning "a new
+user prompt" that accepts it beside a decision. So supporting this would not be "stop blocking a
+capability" — it would be building a behaviour, and owning its semantics on two adapters where the
+framework has no opinion. `design.md` records the resulting `400` as a scope decision on that
+basis.
+
+**"A session can hold only one resumable run."** True for LangGraph, Pydantic AI and ADK, each of
+which keeps a single thread or history. **False for OpenAI:** two `RunState` snapshots captured
+from the same agent were serialised, restored, approved and run independently, returning
+different answers. The single `ak.paused_run` record is therefore AK's uniformity choice on that
+adapter, not a framework limit — worth knowing, because it is the one place the constraint could
+be relaxed later without fighting an SDK.
+
+## Follow-up: the answer channel, with a multiple-choice example
+
+Same venv and pins. The scenario throughout: an agent must establish a refund reason, with three
+options — `damaged`, `wrong_item`, `changed_mind`.
+
+| Framework | structured answer (`payload`) | free text (`message`) |
+|---|---|---|
+| **LangGraph** | **Full** — `Command(resume=<any value>)`, and the value becomes what `interrupt()` returns inside the node, so single- and multi-select are native | **Full**, same channel |
+| **Google ADK** | **Full** — `FunctionResponse.response` is an arbitrary dict; a confirmation takes `{"confirmed": bool, "payload": {...}}` | Full, inside that dict |
+| **Pydantic AI** | **Full, on the deferred-call axis** — `DeferredToolResults(calls={id: <any value>})`; on the *approval* axis only `ToolApproved(override_args=dict)` | **Full** through the deferred result; on an approval, denial only (`ToolDenied(message=str)`) |
+| **OpenAI** | **None** — `approve(item, always_approve=False)` takes no value at all | **Denial only** — `reject(item, *, rejection_message=str)`, delivered to the model as the gated call's `function_call_output` |
+
+**Pydantic AI carries a structured answer in full**, which an earlier note got wrong by looking
+only at the approval axis. A tool raising `CallDeferred` surfaces as
+`DeferredToolRequests.calls`, the question rides in that tool's own arguments, and the human's
+answer is supplied as the tool's **result**:
+
+- paused with `calls=[('ask_user', 'q1')]`, args
+  `{'question': 'Which refund reason?', 'options': ['damaged', 'wrong_item', 'changed_mind']}`
+- `DeferredToolResults(calls={"q1": "damaged"})` → the model received the tool return `'damaged'`
+- `DeferredToolResults(calls={"q1": ["damaged", "wrong_item"]})` → the model received
+  `['damaged', 'wrong_item']`, so multi-select works unchanged
+
+**OpenAI cannot express a multiple choice.** `approve(item, always_approve=False)` takes no value
+parameter, so approval carries nothing. The only text channel is
+`reject(item, *, rejection_message=...)`, and the SDK delivers it to the model as the gated
+call's output — captured on the resumed turn as:
+
+```
+{'call_id': 'c1', 'output': 'The customer said damaged, not changed_mind.',
+ 'type': 'function_call_output'}
+```
+
+So the human's words reach the **model**, which then decides whether to re-call the tool with a
+corrected argument. That is a suggestion costing a model round-trip, not a selection — worth
+stating separately in the OpenAI adapter docs, because the two are easy to conflate.
