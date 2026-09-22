@@ -81,9 +81,11 @@ class RealtimeThreadManager:
     event loop that outlives each run, and pushes model events straight to the output queue.
     """
 
-    def __init__(self, session_id: str, agent: BaseAgent):
-        self.session_id = session_id
+    def __init__(self, session: Session, agent: BaseAgent, runtime: Runtime):
+        self.session = session
+        self.session_id = session.id
         self._agent = agent
+        self._runtime = runtime
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._connection = None
@@ -156,12 +158,25 @@ class RealtimeThreadManager:
         """Turn on server VAD so continuous mic audio is auto-committed and answered."""
         sdk_agent = getattr(self._agent, "agent", None)
         instructions = getattr(sdk_agent, "instructions", None) or "You are a helpful assistant."
+
+        tools_payload = []
+        if sdk_agent and hasattr(sdk_agent, "tools"):
+            for tool in sdk_agent.tools:
+                if type(tool).__name__ == "FunctionTool":
+                    tools_payload.append({
+                        "type": "function",
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.params_json_schema
+                    })
+
         await connection.send(
             {
                 "type": "session.update",
                 "session": {
                     "type": "realtime",
                     "instructions": instructions,
+                    "tools": tools_payload,
                     "audio": {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}},
                 },
             }
@@ -206,9 +221,74 @@ class RealtimeThreadManager:
             _log.info(f"OpenAI Realtime: response.done status={status}")
             transcript = "".join(self._transcript).strip() if status == "completed" else ""
             self._transcript.clear()
+
+            if transcript and getattr(self, "_runtime", None):
+                from ...core.model import AgentReplyText
+                reply = AgentReplyText(content=transcript)
+                post_hooks = self._runtime._get_system_post_hooks() + getattr(self._agent, "post_hooks", [])
+                try:
+                    for hook in post_hooks:
+                        reply = await hook.on_run(self.session, [], self._agent, reply)
+                    if hasattr(reply, "content"):
+                        transcript = reply.content
+                except Exception as e:
+                    _log.error(f"PostHook execution failed during Realtime response.done: {e}")
+
             await self._emit(transport, {"event": {"type": "done", "status": status, "transcript": transcript}, "done": True})
+        elif event_type == "response.function_call_arguments.done":
+            call_id = getattr(event, "call_id", None)
+            name = getattr(event, "name", None)
+            arguments = getattr(event, "arguments", "{}")
+            _log.info(f"OpenAI Realtime: tool call {name} ({call_id})")
+            if self._loop:
+                self._loop.create_task(self._execute_tool_and_reply(call_id, name, arguments))
         elif event_type == "error":
             _log.error(f"OpenAI Realtime socket error: {getattr(event, 'error', 'unknown')}")
+
+    async def _execute_tool_and_reply(self, call_id: str, name: str, arguments: str) -> None:
+        _log.info(f"Executing tool {name} with args {arguments}")
+        result_str = "Error: Tool execution failed"
+        try:
+            args_dict = json.loads(arguments) if arguments else {}
+            
+            target_tool = None
+            sdk_agent = getattr(self._agent, "agent", None)
+            if sdk_agent and hasattr(sdk_agent, "tools"):
+                for t in sdk_agent.tools:
+                    if type(t).__name__ == "FunctionTool" and t.name == name:
+                        target_tool = t
+                        break
+            
+            if target_tool:
+                ctx = ToolContext(self._runtime, self._agent, self.session, [])
+                token = ctx.set()
+                try:
+                    result = await target_tool.on_invoke_tool(ctx, arguments)
+                    if hasattr(result, "model_dump_json"):
+                        result_str = result.model_dump_json()
+                    elif hasattr(result, "text"):
+                        result_str = result.text
+                    else:
+                        result_str = str(result)
+                finally:
+                    ctx.reset(token)
+            else:
+                result_str = f"Error: Tool {name} not found."
+        except Exception as e:
+            _log.exception(f"Tool execution {name} failed")
+            result_str = f"Error: {e}"
+
+        _log.info(f"Tool {name} result: {result_str}")
+        if self._connection:
+            await self._connection.send({
+                "type": "conversation.item.create",
+                "item": {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": result_str
+                }
+            })
+            await self._connection.send({"type": "response.create"})
 
     async def _pacing_loop(self) -> None:
         """Paces the audio output to prevent massive edge-side buffering."""
@@ -817,7 +897,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
     async def connect(self, session: Session, agent: BaseAgent = None) -> None:
         openai_session = self._openai_session(session)
         if openai_session.realtime_manager is None:
-            openai_session.realtime_manager = RealtimeThreadManager(session_id=session.id, agent=agent)
+            openai_session.realtime_manager = RealtimeThreadManager(session=session, agent=agent, runtime=Runtime.current())
             openai_session.realtime_manager.start_if_needed(agent)
 
     async def disconnect(self, session: Session) -> None:
@@ -835,7 +915,7 @@ class OpenAIRealtimeRunner(BaseRealtimeRunner):
 
         openai_session = self._openai_session(session)
         if openai_session.realtime_manager is None:
-            openai_session.realtime_manager = RealtimeThreadManager(session_id=session.id, agent=agent)
+            openai_session.realtime_manager = RealtimeThreadManager(session=session, agent=agent, runtime=Runtime.current())
         manager = openai_session.realtime_manager
         manager.start_if_needed(agent)
 
