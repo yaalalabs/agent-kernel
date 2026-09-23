@@ -6,7 +6,7 @@
 # docs/specs/716-reuse-sg-in-integration-test-pipeline.
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.1"
+  version = "0.9.2"
 
   providers = { aws = aws, docker = docker }
   # Basic lambda configuration

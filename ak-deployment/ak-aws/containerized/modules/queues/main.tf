@@ -4,7 +4,7 @@ data "aws_region" "current" {}
 
 module "input_queue" {
   source  = "yaalalabs/ak-common/aws//modules/sqs"
-  version = "0.9.1"
+  version = "0.9.2"
 
   prefix     = var.prefix
   queue_name = var.queue_config.input_queue_name
@@ -36,7 +36,7 @@ module "input_queue" {
 
 module "output_queue" {
   source  = "yaalalabs/ak-common/aws//modules/sqs"
-  version = "0.9.1"
+  version = "0.9.2"
 
   prefix     = var.prefix
   queue_name = var.queue_config.output_queue_name

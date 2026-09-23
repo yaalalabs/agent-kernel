@@ -47,8 +47,8 @@ Build your application images (the
 example walks this end to end on k3d, microk8s, and k3s), load them into your cluster, then:
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.1 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.1 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.2 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.2 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag>
