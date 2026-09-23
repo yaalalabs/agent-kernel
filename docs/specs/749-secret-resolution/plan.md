@@ -138,7 +138,7 @@ make lint-check-all
      examples stay green on the environment path.
 - **Verify:** `make lint-check-all`; both `deploy/main.tf` files `terraform validate` **after** the
   module version pin is bumped by the release flow (spec.md § Examples and docs — the examples pin
-  published modules at `0.9.1`, so this step cannot be validated end to end before that release);
+  published modules at `0.9.2`, so this step cannot be validated end to end before that release);
   then deploy each example twice — variable set, variable empty — and confirm the agent answers both
   times.
 

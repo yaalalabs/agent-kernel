@@ -131,5 +131,5 @@ class SecretManager:
     @staticmethod
     def _validate_key(key: str) -> None:
         """:raises ValueError: If key does not match ^[A-Z][A-Z0-9_]*$."""
-        if not isinstance(key, str) or not _KEY_PATTERN.match(key):
+        if not isinstance(key, str) or not _KEY_PATTERN.fullmatch(key):
             raise ValueError(f"invalid secret key {key!r}: expected an environment-variable-style name matching {_KEY_PATTERN.pattern}")

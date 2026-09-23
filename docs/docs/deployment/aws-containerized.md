@@ -297,6 +297,45 @@ Two further consequences worth knowing:
 For the full example see [examples/aws-containerized/openai-schedule](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-schedule),
 and for the application side see the [Scheduling guide](../advanced/scheduling.md).
 
+## Secret Resolution (SSM Parameter Store)
+
+Application secrets such as `OPENAI_API_KEY` can be read from AWS SSM Parameter Store instead of being
+passed through Terraform as environment variables. One variable, `false` by default and fully
+`count`-gated, turns on the infrastructure:
+
+| Variable | Description | Type | Default |
+|---|---|---|---|
+| `ssm_enabled` | Grant every ECS task role (the REST service, and the agent runner when `queue_mode = true`) `ssm:GetParameter` (and nothing else) on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>` | `bool` | `false` |
+
+```hcl
+ssm_enabled = true
+```
+
+**Terraform is only half of it.** The module never injects `secret.provider.type`; the application's
+`config.yaml` must declare the backend:
+
+```yaml
+secret:
+  provider:
+    type: aws_ssm
+```
+
+Terraform does not create the parameters either, so the key never passes through Terraform state. Create
+each one yourself as a `SecureString` (AWS-managed `alias/aws/ssm` key), named after the key lowercased
+under the prefix:
+
+```bash
+aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+    --type SecureString --value "$OPENAI_API_KEY" --overwrite
+```
+
+Do not also inject the key as an environment variable: a set, non-empty environment variable always wins
+over SSM.
+
+For the full example see [examples/aws-containerized/openai-dynamodb-scalable](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-containerized/openai-dynamodb-scalable),
+and for the application side (resolution order, caching, rotation) see the
+[Secret Resolution guide](../advanced/secrets.md).
+
 ## WebSocket Mode
 
 Set `execution_mode = "async"` to front the ECS service with a **WebSocket API Gateway**

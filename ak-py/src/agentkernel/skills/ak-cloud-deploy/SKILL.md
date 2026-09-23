@@ -5,7 +5,8 @@ description: >
   Kubernetes cluster (on-prem, baremetal, EKS) using the official Helm chart.
   Supports serverless and containerized modes for all three clouds. AWS supports
   execution modes (rest_sync, rest_async, async, stream), queue-based scalable processing,
-  custom API Gateway authorizers, and EventBridge Scheduler for scheduled tasks.
+  custom API Gateway authorizers, EventBridge Scheduler for scheduled tasks, and SSM
+  Parameter Store secret resolution (`ssm_enabled`).
   GCP supports Cloud Run serverless (scale-to-zero)
   and containerized (always-on) with Redis or Firestore session backends. Kubernetes runs
   the queue pipeline over NATS JetStream, Kafka, or SQS with KEDA autoscaling and an
@@ -296,6 +297,49 @@ told about.
 
 New outputs on both AWS stacks (null unless the matching flag is set): `schedule_group_name`,
 `schedule_group_arn`, `scheduler_execution_role_arn`, `schedule_table_name`, `schedule_table_arn`.
+
+### Deploying Secret Resolution (AWS SSM)
+
+Secret resolution (`ak-add-capabilities`) follows the same split: the app declares
+`secret.provider.type: aws_ssm` in `config.yaml` and resolves keys with
+`SecretManager.current().get("OPENAI_API_KEY")`; Terraform grants read access and injects only the
+deployment scope. Terraform never sets `AK_SECRET__PROVIDER__TYPE`.
+
+- **AWS (serverless + containerized)**: `ssm_enabled = true` grants every application role (serverless:
+  request handler, agent runner, response handler, WebSocket connection handler; containerized: the
+  REST service, plus the agent runner when `queue_mode = true`) `ssm:GetParameter` on
+  `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and injects `AK_SECRET__PREFIX = <prefix>`
+  (the module's own `prefix`). Works with or without queue mode.
+- **Terraform does not create the parameters** — create each one yourself as a `SecureString`
+  (AWS-managed `alias/aws/ssm` key) at `/ak/<prefix>/<key lowercased>`, e.g.
+  `aws ssm put-parameter --name /ak/<prefix>/openai_api_key --type SecureString --value sk-...`.
+- Drop the key from `environment_variables`: a set, non-empty environment variable always wins over
+  SSM, so leaving `OPENAI_API_KEY` there bypasses the store.
+- The app needs the `aws` extra (`agentkernel[aws]`) for the `aws_ssm` provider.
+
+```hcl
+ssm_enabled = true
+```
+
+```yaml
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX
+```
+
+```python
+from agentkernel.secret import SecretManager
+from agents import set_default_openai_key
+
+set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
+```
+
+Declaring `aws_ssm` without `ssm_enabled` (and without setting `secret.prefix` yourself) fails at
+startup with an `AKConfigError` on the missing prefix; with a prefix but no IAM grant, lookups raise
+`SecretError` (AccessDenied). Setting `ssm_enabled` without declaring the provider leaves resolution on
+the `env` provider. See `examples/aws-serverless/openai` and
+`examples/aws-containerized/openai-dynamodb-scalable`.
 
 ## AWS Serverless (Lambda + API Gateway)
 

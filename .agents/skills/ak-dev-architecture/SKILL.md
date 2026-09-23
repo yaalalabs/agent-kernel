@@ -8,7 +8,8 @@ description: >
   new knobs, classes over script-style functions), Session, Agent,
   Runner, Module, Runtime, AgentService, ChatService (execution core + presentation wrappers,
   and which layer each surface calls), AKConfig, tools, hooks, multimodal, conversation
-  threads (the integration/thread package), messaging integrations (the integration/adapter
+  threads (the integration/thread package), secret resolution (agentkernel.secret: SecretManager,
+  SecretProvider, env/aws_ssm), messaging integrations (the integration/adapter
   seam: InboundAdapter/OutboundAdapter, WebhookRESTRequestHandler, PollerRunner), the adapter pattern, the queue execution pipeline
   (agentkernel.pipeline: QueueMessage/QueueTransport/ConsumerLoop, the in_memory transport,
   AgentRunner/ResponseHandler/RequestHandler/IOHandler, the RESTAPI.run delegation rule, and the
@@ -263,7 +264,7 @@ Pydantic-based configuration:
 - **Auto-initialized** at import time via `AKConfig._set()`
 - **Config sources** (priority order): environment variables (`AK_` prefix) → config file (YAML/JSON, default `config.yaml`) → defaults
 - **Override path**: Set `AK_CONFIG_PATH_OVERRIDE` env var
-- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`, `multimodal`, `thread`, `schedule`, `trace`, `guardrail`, `sandbox`, `execution`, `logging`. Every messaging block carries an `outbound_adapter` dotted-path override (#524)
+- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`, `multimodal`, `thread`, `schedule`, `trace`, `guardrail`, `sandbox`, `secret`, `execution`, `logging`. Every messaging block carries an `outbound_adapter` dotted-path override (#524)
 - **Optional (capability-gating) sections**: `thread` and `schedule` are `Optional` — the presence of the block is the enabled-check, so they have no default value
 
 ## Request/Reply Model (`ak-py/src/agentkernel/core/model.py`)
@@ -632,6 +633,57 @@ always send an explicit one, which takes precedence. `create_dynamodb_schedule_t
 flag, unlike the thread wiring which is nulled in queue mode: an app can mount
 `ScheduleRESTRequestHandler` on that Lambda.
 
+## Secret Resolution (`ak-py/src/agentkernel/secret/`)
+
+Resolves an environment-variable-style key (`^[A-Z][A-Z0-9_]*$`, the names SDKs already read) to a
+secret value in a **fixed** order: process environment → process cache → configured provider. A set,
+non-empty env var always wins (`""` is a miss, never cached, re-read every call). Always available,
+no `enabled` flag: selecting a provider other than `env` is the only opt-in. Nothing in the package
+ever writes `os.environ` — callers hand the value to the SDK explicitly
+(`set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))`).
+
+- **`SecretManager`** (`manager.py`): process-wide singleton (`current()`, `RLock` guards construction
+  only, `reset()` for tests). Unlike `ScheduleManager.get()` it never returns `None`. `get(key,
+  default=_UNSET)` raises `ValueError` on a malformed key, `SecretNotFoundError` on a miss without
+  `default`, and propagates `SecretError` from the provider (never masked by `default`).
+  `invalidate(key)` / `clear()` drop cache entries. Resolution takes no manager lock; the provider is
+  called outside any lock.
+- **`SecretProvider`** (`base.py`): the ABC — `get_secret(key) -> Optional[str]` (`None` = miss;
+  raise `SecretError` only on backend failure) plus a `from_config(_SecretConfig)` classmethod that
+  receives the **whole** `secret` block (so `secret.prefix` is shared across backends). Providers own
+  their addressing, never cache, never fall back, and must tolerate concurrent calls.
+- **`SecretCache`** (`cache.py`): TTL'd dict of provider hits only; lock-free reads of immutable
+  `(value, expires_at)` tuples, write lock for set/evict/clear. `cache_ttl: 0` disables it.
+- **`SecretProviderFactory`** (`factory.py`): `create(config)` maps `env` / `aws_ssm` (behind
+  `require_extra("aws", ...)`) or a dotted path via `resolve_dotted(..., base=SecretProvider)`;
+  anything else is `AKConfigError`.
+- **Providers** (`providers/`): `EnvSecretProvider` (reads `os.environ` verbatim) and
+  `AWSSMSecretProvider` (`GetParameter(WithDecryption=True)` on `/ak/{prefix}/{key.lower()}`;
+  `ParameterNotFound` → `None`, other `ClientError`/`BotoCoreError` → `SecretError`; lazy boto3
+  client; empty or nested prefix → `AKConfigError`). The provider is the only layer that transforms
+  the key.
+- **`testing.py`**: `SecretProviderContract` pytest suite (override the `provider` fixture and
+  `seed`; `reads_environment` flag). Not re-exported from `agentkernel.secret` so the package stays
+  pytest-free.
+
+### Configuration (`_SecretConfig` in `config.py`)
+
+```yaml
+secret:
+  prefix: myproduct-dev-agents  # deployment scope; required by aws_ssm, ignored by env
+  provider:
+    type: env                   # env | aws_ssm, or a dotted path to a SecretProvider
+  cache_ttl: 300                # seconds; 0 disables caching (rotation-pickup window)
+```
+
+Terraform side (`ak-deployment/ak-aws/{serverless,containerized}/`): `ssm_enabled` (default `false`,
+`count`-gated) grants each application role `ssm:GetParameter` only, on
+`arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*`, and injects `AK_SECRET__PREFIX = var.prefix`.
+Serverless wires all four Lambdas (request, agent runner, response, WS connection handler);
+containerized wires the REST service and, in queue mode, the agent runner. Terraform never sets
+`secret.provider.type` (the app's `config.yaml` does, like `thread.type`) and never creates the
+parameters.
+
 ## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
 
 Pluggable storage backends agents can read from and write to as tools:
@@ -905,6 +957,14 @@ ak-py/src/agentkernel/
 │   ├── tools.py             # The five agent-facing system tools
 │   ├── provider/            # ScheduleProvider ABC + factory; local, eventbridge
 │   └── store/               # ScheduleStore ABC + builder; in_memory, redis, valkey, dynamodb
+├── secret/                  # Secret resolution (env -> cache -> provider)
+│   ├── base.py              # SecretProvider ABC
+│   ├── manager.py           # SecretManager (current(), get/invalidate/clear)
+│   ├── cache.py             # SecretCache (TTL'd provider hits)
+│   ├── factory.py           # SecretProviderFactory
+│   ├── errors.py            # SecretError, SecretNotFoundError
+│   ├── testing.py           # SecretProviderContract (BYO test suite)
+│   └── providers/           # env, aws_ssm
 ├── cli/                     # CLI interface
 │   └── cli.py               # Interactive CLI
 ├── auth/                    # Authentication

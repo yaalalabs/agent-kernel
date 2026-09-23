@@ -12,6 +12,7 @@ Agent Kernel is a lightweight **AI agent runtime** and adapter layer for buildin
 - **Session Management**: Built-in session abstraction with pluggable storage backends
 - **Knowledge Bases**: Unified `KnowledgeBase` interface with ChromaDB, Neo4j, and Starburst/Trino backends via `KnowledgeBuilder`
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment with pluggable providers (`local_subprocess`, `docker`, `kubernetes`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, per-user identity, and a queue-decoupled broker for long-running executions
+- **Secret Resolution**: `SecretManager` resolves API keys and passwords environment-first, falling back to a pluggable provider (`env`, `aws_ssm` for AWS SSM Parameter Store, or your own) with a TTL'd process cache
 - **Scheduled Tasks**: Deferred and recurring chat execution (`schedule.at`/`schedule.cron`) with a management REST API, five agent-facing tools, and pluggable provider (`local`, `eventbridge`) and store (`in_memory`, `redis`, `valkey`, `dynamodb`) backends
 - **Flexible Deployment**: Interactive CLI, REST API, serverless, or containerized deployment — see the "Multi-Cloud Deployment" section below
 - **Pluggable Architecture**: Easy to extend with custom framework adapters
@@ -56,6 +57,12 @@ pip install "agentkernel[kubernetes]"       # kubernetes provider (pod per sandb
 pip install "agentkernel[e2b]"              # e2b cloud provider
 pip install "agentkernel[daytona]"          # daytona cloud provider
 pip install "agentkernel[aws]"              # ec2_ssm provider (boto3)
+```
+
+For the `aws_ssm` secret provider (AWS SSM Parameter Store):
+
+```bash
+pip install "agentkernel[aws]"
 ```
 
 For cron parsing with the Scheduling capability (the `eventbridge` provider rides the `aws` extra):
@@ -673,6 +680,41 @@ sort key; the AWS Terraform modules create it when `create_dynamodb_schedule_tab
   - **Default**: `0` (disabled)
   - **Description**: DynamoDB item TTL in seconds
   - **Environment Variable**: `AK_SCHEDULE__STORE__DYNAMODB__TTL`
+
+#### Secret Resolution
+
+`SecretManager.current().get("OPENAI_API_KEY")` resolves a secret by the same environment-variable-style
+name the SDKs already read (`^[A-Z][A-Z0-9_]*$`). Resolution order is fixed: a set, non-empty environment
+variable always wins, then the process cache, then the configured provider. A resolved value is returned to
+the caller and never written back to the environment, so hand it to the SDK explicitly
+(`set_default_openai_key(...)`). A miss raises `SecretNotFoundError` unless a `default` is passed; a provider
+failure raises `SecretError` even with a `default`. The capability is always available — there is no
+`enabled` flag; selecting a provider other than `env` is the only opt-in. See `examples/cli/openai_secret`.
+
+- **Provider Type**
+  - **Field**: `secret.provider.type`
+  - **Type**: string
+  - **Default**: `env`
+  - **Options**: `env` (the process environment), `aws_ssm` (AWS SSM Parameter Store; requires
+    `secret.prefix` and the `aws` extra — `OPENAI_API_KEY` is read from `/ak/<prefix>/openai_api_key`), or a
+    dotted path to a `SecretProvider` subclass
+  - **Environment Variable**: `AK_SECRET__PROVIDER__TYPE`
+
+- **Prefix**
+  - **Field**: `secret.prefix`
+  - **Type**: string
+  - **Default**: `""`
+  - **Description**: Deployment scope providers namespace secrets under; a single path segment. Required by
+    `aws_ssm`, ignored by `env`. Injected by the AWS Terraform modules when `ssm_enabled = true`
+  - **Environment Variable**: `AK_SECRET__PREFIX`
+
+- **Cache TTL**
+  - **Field**: `secret.cache_ttl`
+  - **Type**: integer
+  - **Default**: `300`
+  - **Description**: Seconds a provider hit is served from the process cache (`0` disables caching); the
+    rotation-pickup window for values read per call
+  - **Environment Variable**: `AK_SECRET__CACHE_TTL`
 
 #### Execution Configuration
 

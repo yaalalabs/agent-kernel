@@ -227,7 +227,7 @@ def test_get_never_writes_environment(monkeypatch, manager, provider):
 # -- key grammar ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("bad_key", ["openai_api_key", "Mixed_Case", "BAD-KEY", "1BAD", "BAD/KEY", "A B", "A=B", ""])
+@pytest.mark.parametrize("bad_key", ["openai_api_key", "Mixed_Case", "BAD-KEY", "1BAD", "BAD/KEY", "A B", "A=B", "", "KEY\n", " KEY", "KEY "])
 def test_malformed_key_rejected_before_any_layer(monkeypatch, manager, provider, bad_key):
     import os
 

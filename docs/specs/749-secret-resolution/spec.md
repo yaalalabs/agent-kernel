@@ -865,7 +865,7 @@ The key passed to `get` is the SDK's own variable name, and the parameter it res
 READMEs show side by side so the correspondence is not left implicit.
 
 Both examples pin the **published** Terraform modules (`yaalalabs/ak-serverless/aws` and
-`yaalalabs/ak-containerized/aws`, both `version = "0.9.1"`), so `ssm_enabled = true` only applies once
+`yaalalabs/ak-containerized/aws`, both `version = "0.9.2"`), so `ssm_enabled = true` only applies once
 a release publishes the modules carrying it and `scripts/update_examples_version.py` bumps the pins —
 the same release sequencing every Terraform-side change in this repo follows.
 
