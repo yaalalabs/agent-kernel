@@ -10,7 +10,7 @@ resolution-markers = [
 [[package]]
 name = "agentkernel"
 version = "0.9.2"
-source = { registry = "https://pypi.org/simple" }
+source = { registry = "../../../ak-py/dist" }
 dependencies = [
     { name = "deprecated" },
     { name = "pydantic" },
@@ -18,9 +18,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "singleton-type" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bd/72/1e5d6d6214990d24fdae7a87e390c76ef1ef6610721af2e7040273f7fe08/agentkernel-0.9.2.tar.gz", hash = "sha256:42a89db94a7ca1b820e05185c68bfeb328334a47167f48f96a199358d44449cf", size = 509520, upload-time = "2026-09-22T04:51:15.151Z" }
+sdist = { path = "agentkernel-0.9.2.tar.gz" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7a/79/30cf11482b24ba9003222a2ecd8751f4f0466f7e9366ab49a663630fefb2/agentkernel-0.9.2-py3-none-any.whl", hash = "sha256:3eb1061aa643a8cc9e5090129c6549bc2af1c7d9efc450e729a983b63e60da1f", size = 684639, upload-time = "2026-09-22T04:51:13.296Z" },
+    { path = "agentkernel-0.9.2-py3-none-any.whl" },
 ]
 
 [package.optional-dependencies]
@@ -617,11 +617,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "agentkernel", extras = ["cli", "openai"], specifier = ">=0.9.1" }]
+requires-dist = [{ name = "agentkernel", extras = ["cli", "openai"], specifier = ">=0.9.2" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "agentkernel", extras = ["test"], specifier = ">=0.9.1" },
+    { name = "agentkernel", extras = ["test"], specifier = ">=0.9.2" },
     { name = "black", specifier = "==26.5.1" },
     { name = "isort", specifier = ">=5.0.0" },
     { name = "mypy", specifier = ">=1.0.0" },
@@ -2251,7 +2251,7 @@ wheels = [
 
 [[package]]
 name = "posthog"
-version = "7.59.0"
+version = "7.59.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "backoff" },
@@ -2259,9 +2259,9 @@ dependencies = [
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c7/25/308b6a180886bd1f389ed84cb8b00329f9ff82b6d8e6549febdfa588159b/posthog-7.59.0.tar.gz", hash = "sha256:a4019044630fe0323add005c95648ae22daf4ff7acf8e997802864cea56075f0", size = 684130, upload-time = "2026-09-22T14:48:57.1Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/21/30/dd5c3c4a6bc1ac9b94b552a90f1c5c2fe13f4fdfd7c5b9671b572a63fc9d/posthog-7.59.1.tar.gz", hash = "sha256:ddc57b0acb3fb2731df19bdd3c8ee577b9c8611737b50c8d2867d3f520aeecc8", size = 685406, upload-time = "2026-09-23T13:35:51.83Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f6/59/86ee81e8e0483ca0e5ac38ed37ccb0623aea10cfe9e3b942b3dab00a69df/posthog-7.59.0-py3-none-any.whl", hash = "sha256:6234efb9820cdec8b3ef17de045fcc1ad8def88ad484652b0ea55e04c37bef93", size = 800045, upload-time = "2026-09-22T14:48:54.986Z" },
+    { url = "https://files.pythonhosted.org/packages/19/e4/67095e227994a76670b7d82289d37544b83528059c15ea2f860f2598dc7d/posthog-7.59.1-py3-none-any.whl", hash = "sha256:e12c0f0b25325e585d991c386eefaf69d8fc922725f88dcbc2c2f03f12af382f", size = 801402, upload-time = "2026-09-23T13:35:50.035Z" },
 ]
 
 [[package]]
@@ -3567,11 +3567,11 @@ wheels = [
 
 [[package]]
 name = "wcwidth"
-version = "0.8.4"
+version = "0.8.5"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3d/7a/f98d4ada7c499565ab0c0fcef28a4e54fafa72b8228a6309803c80493c92/wcwidth-0.8.4.tar.gz", hash = "sha256:2dae09efa25253ae2874188e86d6861af3b1652aef4118cdf3f0bda288a957fb", size = 414609, upload-time = "2026-09-17T23:31:45.287Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/55/6f6b20e3437c832ec6d9cb02ac7555046f2836a89d593530a5895420bf69/wcwidth-0.8.5.tar.gz", hash = "sha256:720336056169eac7744c5a84165d563cc6f569652615071cbfd575f131e7537f", size = 414244, upload-time = "2026-09-23T13:43:31.276Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/cc/9c0adc5861020de426ec71716b6c1bef8d90694b7d6d0a16202cdb1647f5/wcwidth-0.8.4-py3-none-any.whl", hash = "sha256:2097bb1d28a0ba8fe177c2eb607317f9b1627b03f33ebebfd3da670b337a65ba", size = 299474, upload-time = "2026-09-17T23:31:43.816Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/b6/138605bb73076873eb382840af4239127d197bbc3d43e7743e15e80278b0/wcwidth-0.8.5-py3-none-any.whl", hash = "sha256:04c88cff9dc3766fe621898afcaff8af3d803b4268804c348f6d973d61e862dc", size = 299117, upload-time = "2026-09-23T13:43:29.943Z" },
 ]
 
 [[package]]
