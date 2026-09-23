@@ -1,4 +1,4 @@
-# #749: Resolve secrets from a managed store with environment-variable fallback — Implementation Plan
+# #749: Resolve secrets from the environment, falling back to a managed store — Implementation Plan
 
 Ordering only; the *how* lives in [`spec.md`](spec.md). Nine iterations, each leaving the branch
 green. The capability lands before the cloud backend, the cloud backend before Terraform, and
@@ -20,13 +20,15 @@ make lint-check-all
   1. Add `_SecretProviderConfig` and `_SecretConfig` after `_SandboxConfig` (`config.py:786`), per
      spec.md § Config changes.
   2. Add the `secret` field to `AKConfig` between `sandbox` (`:919`) and `execution` (`:920`).
-  3. Add the `test_config.py` case for the defaults and the three `AK_SECRET__*` variables.
+  3. Add the `test_config.py` cases for the defaults, the three `AK_SECRET__*` variables, and a
+     negative `AK_SECRET__CACHE_TTL` rejected at load.
 - **Verify:** `uv run pytest tests/test_config.py`
 
 ## Iteration 2: Capability core — provider ABC, cache, manager, factory, `env` provider
 
-- **Goal:** `SecretManager.current().get("OPENAI_API_KEY")` resolves through cache → provider →
-  environment with the default `env` provider or a dotted-path one. No cloud dependency anywhere in
+- **Goal:** `SecretManager.current().get("OPENAI_API_KEY")` resolves through environment → cache →
+  provider — a set, non-empty variable always wins, `""` is a miss — with the default `env` provider
+  or a dotted-path one. No cloud dependency anywhere in
   the package.
 - **Files:** new `ak-py/src/agentkernel/secret/{__init__,base,errors,cache,manager,factory}.py`,
   `secret/providers/{__init__,env}.py`; new `ak-py/tests/test_secret_manager.py`,
@@ -36,15 +38,17 @@ make lint-check-all
      §§ `secret/errors.py`, `secret/base.py`, `secret/cache.py`.
   2. `providers/env.py`.
   3. `factory.py` — `SecretProviderFactory` with the `env` branch and the dotted-path branch; leave
-     the `awssm` branch for Iteration 4. No manager factory.
+     the `aws_ssm` branch for Iteration 4. No manager factory.
   4. `manager.py` — the concrete `SecretManager`: `from_config`, `current()`/`reset()` reading
-     `AKConfig.get().secret`, key validation, the three-layer `_resolve` under one `RLock`,
+     `AKConfig.get().secret`, key validation, the lock-free environment → cache → provider `_resolve`
+     (provider called outside any lock; `SecretCache` owns the write lock),
      `invalidate`/`clear`. No `inject` — the manager never writes `os.environ`.
   5. `__init__.py` exports (no `AWSSMSecretProvider`, no `testing`).
   6. Tests: the test-local `_DictSecretProvider`, then everything in spec.md § Testing for
      `test_secret_manager.py` (order, key-carried-through, grammar, sentinel, `get` never writes `os.environ`, cache TTL
-     boundaries, `invalidate`/`clear`, single-flight, singleton) and the non-`awssm` half of
-     `test_secret_factory.py` (including `noop`/`in_memory` rejected as unknown).
+     boundaries, `invalidate`/`clear`, concurrent cold reads, no lock across the provider call,
+     re-entrancy, singleton) and the non-`aws_ssm` half of
+     `test_secret_factory.py` (including `noop`/`in_memory`/`awssm` rejected as unknown).
 - **Verify:** `uv run pytest tests/test_secret_manager.py tests/test_secret_factory.py`
 
 ## Iteration 3: Provider contract suite
@@ -60,17 +64,17 @@ make lint-check-all
      test-local `_DictSecretProvider`.
 - **Verify:** `uv run pytest tests/test_secret_providers.py`
 
-## Iteration 4: `awssm` provider
+## Iteration 4: `aws_ssm` provider
 
-- **Goal:** `secret.provider.type: awssm` resolves `OPENAI_API_KEY` from
+- **Goal:** `secret.provider.type: aws_ssm` resolves `OPENAI_API_KEY` from
   `/ak/{prefix}/openai_api_key`.
-- **Files:** new `ak-py/src/agentkernel/secret/providers/awssm.py`,
+- **Files:** new `ak-py/src/agentkernel/secret/providers/aws_ssm.py`,
   `ak-py/src/agentkernel/secret/factory.py`, `ak-py/tests/test_secret_providers.py`,
   `ak-py/tests/test_secret_factory.py`
 - **Steps:**
   1. `AWSSMSecretProvider`: prefix normalization and validation, `_compose_path`, lazy
      `Lock`-guarded client, the `ClientError`/`BotoCoreError` mapping in spec.md § Exception scope.
-  2. Add the `awssm` factory branch inside `require_extra("aws", "secret.provider.type: awssm")`.
+  2. Add the `aws_ssm` factory branch inside `require_extra("aws", "secret.provider.type: aws_ssm")`.
   3. `TestAWSSMProviderContract` against a fake boto3 client, plus the direct addressing,
      error-mapping and lazy-client cases.
   4. Factory cases: the `aws`-extra `ImportError` (and that it fires *before* the empty-prefix
@@ -114,36 +118,38 @@ make lint-check-all
 - **Verify:** `terraform init -backend=false && terraform validate` in `containerized/`; empty plan
   with the flag unset.
 
-## Iteration 7: Examples and CI matrix
+## Iteration 7: Examples
 
-- **Goal:** one serverless and one containerized example resolve their key from SSM, as #749's
-  acceptance criteria require.
+- **Goal:** one serverless and one containerized example resolve their key from SSM when
+  `openai_api_key` is left empty, and behave exactly as today when it is set, as #749's acceptance
+  criteria require.
 - **Files:** `examples/aws-serverless/openai/{config.yaml,lambda_agent_runner.py,README.md,deploy/main.tf,deploy/variables.tf}`;
-  `examples/aws-containerized/openai-dynamodb-scalable/{config.yaml,app_agent_runner.py,README.md,deploy/main.tf,deploy/variables.tf}`;
-  `.github/integration-test-config.yaml`
+  `examples/aws-containerized/openai-dynamodb-scalable/{config.yaml,app_agent_runner.py,README.md,deploy/main.tf,deploy/variables.tf}`
 - **Steps:**
-  1. Per example: `ssm_enabled = true`, drop the `OPENAI_API_KEY` environment entries and the now
-     unused `openai_api_key` variable, add the `secret:` block with `provider.type: awssm`, and call
-     `set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))` at the top of the
-     agent-runner entrypoint, so the key reaches the SDK in memory, never via `os.environ` —
-     spec.md § Examples and docs.
-  2. READMEs: replace the `TF_VAR_openai_api_key` step with the required `aws ssm put-parameter`
-     prerequisite, show the `OPENAI_API_KEY` → `/ak/<prefix>/openai_api_key` correspondence, and
-     document rotation.
-  3. Remove `examples/aws-containerized/openai-dynamodb-scalable` from `weekly.tests`
-     (`.github/integration-test-config.yaml:52-54`). `examples/aws-serverless/openai` needs no matrix
-     edit — it is `deployment_base` (`:5-8`) and is never pytest'd.
+  1. Per example: `ssm_enabled = true`; **keep** the `OPENAI_API_KEY = var.openai_api_key` entries and
+     give `openai_api_key` `default = ""`; add the `secret:` block with `provider.type: aws_ssm`; and
+     call `set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))` at the top of the
+     agent-runner entrypoint, so an SSM-resolved key reaches the SDK in memory, never via
+     `os.environ` — spec.md § Examples and docs.
+  2. READMEs: make the `TF_VAR_openai_api_key` step optional and document both paths — set it
+     (environment wins) or leave it unset after `aws ssm put-parameter` — show the
+     `OPENAI_API_KEY` → `/ak/<prefix>/openai_api_key` correspondence, and document rotation.
+  3. No CI matrix edit: the integration workflows already export `TF_VAR_openai_api_key`, so both
+     examples stay green on the environment path.
 - **Verify:** `make lint-check-all`; both `deploy/main.tf` files `terraform validate` **after** the
   module version pin is bumped by the release flow (spec.md § Examples and docs — the examples pin
-  published modules at `0.9.1`, so this step cannot be validated end to end before that release).
+  published modules at `0.9.1`, so this step cannot be validated end to end before that release);
+  then deploy each example twice — variable set, variable empty — and confirm the agent answers both
+  times.
 
 ## Iteration 8: Cross-component tests and regression pass
 
 - **Goal:** the assertions that need every provider present, plus a clean full-suite and lint run.
 - **Files:** `ak-py/tests/test_secret_manager.py`, `ak-py/tests/test_secret_factory.py`
 - **Steps:**
-  1. The environment layer is reached for **every** provider — `env`, `awssm` on a
-     `ParameterNotFound`, and an unseeded dotted-path `_DictSecretProvider`.
+  1. The environment wins for **every** provider — `env`, `aws_ssm` seeded with a different value
+     (the fake client records no `get_parameter` call), and a seeded dotted-path
+     `_DictSecretProvider` (zero provider calls) — and a `""` variable reaches `aws_ssm`.
   2. `SecretProviderFactory.create(config)` never calls `AKConfig.get()`, asserted loudly (the
      `tests/test_pipeline_factory_seams.py` pattern).
   3. A dotted-path provider is built through its own `from_config` and receives the whole `secret`
@@ -162,7 +168,7 @@ below are what this change invalidates, verified against the branch.
 | `ak-dev-architecture/SKILL.md:45` | Add `SecretProvider` to the list of existing pluggable ABCs (`SecretManager` is concrete, not pluggable) |
 | `ak-dev-architecture/SKILL.md:266` | Add `secret` to AKConfig's "Key sections" list |
 | `ak-dev-architecture/SKILL.md:899-907` | Add a `secret/` block to the Directory Structure, after `schedule/` and before `cli/` |
-| `ak-dev-architecture/SKILL.md` (new section) | A `## Secret Resolution (ak-py/src/agentkernel/secret/)` section beside `## Scheduling` (`:552`) and `## Sandbox` (`:643`) — key shape, fixed layer order, provider-owns-addressing, the `env`/`awssm`/dotted-path provider types, config block |
+| `ak-dev-architecture/SKILL.md` (new section) | A `## Secret Resolution (ak-py/src/agentkernel/secret/)` section beside `## Scheduling` (`:552`) and `## Sandbox` (`:643`) — key shape, fixed layer order, provider-owns-addressing, the `env`/`aws_ssm`/dotted-path provider types, config block |
 | `ak-dev-testing-conventions/SKILL.md:145` | Add `test_secret_manager.py`, `test_secret_providers.py`, `test_secret_factory.py` to the test-file table |
 | `.agents/skills/ak-dev-new-secret-provider/` (new) | A new dev skill, matching the eight existing `ak-dev-new-*` skills — every pluggable seam in this repo has one, and this change adds a seam |
 
@@ -184,7 +190,7 @@ below are what this change invalidates, verified against the branch.
 
 | File / line | Change |
 |---|---|
-| `advanced/secrets.md` (new) | The capability page: key shape, resolution order, the provider types (`env`, `awssm`, dotted path), `get`/`invalidate`/`clear`, that resolved values are never exported to the environment and are passed to the SDK explicitly, startup-not-hot-path with the uncached-miss cost, rotation |
+| `advanced/secrets.md` (new) | The capability page: key shape, resolution order, the resolution order (environment first, `""` is a miss), the provider types (`env`, `aws_ssm`, dotted path), `get`/`invalidate`/`clear`, that resolved values are never exported to the environment and are passed to the SDK explicitly, startup-not-hot-path with the uncached-miss cost, rotation |
 | `sidebars.js:147` | Register the new page in the `advanced/` list |
 | `core-concepts/configuration.md:610`, `:734` | An `AK_SECRET__*` subsection, and the `secret:` block in the Complete Configuration Reference |
 | `deployment/aws-serverless.md:1212` | `ssm_enabled` row + prose, mirroring the `enable_scheduling` entry |
