@@ -225,3 +225,9 @@ variable "cloudwatch_kms_key_arn" {
   description = "KMS key ARN for CloudWatch logs encryption"
   default     = null
 }
+
+variable "ssm_enabled" {
+  type        = bool
+  description = "Whether the application roles may read /ak/<prefix>/* from SSM Parameter Store and receive AK_SECRET__PREFIX"
+  default     = false
+}
