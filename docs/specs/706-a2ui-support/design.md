@@ -2,9 +2,10 @@
 
 An agent can already answer with a JSON object instead of a sentence. Today that object is turned
 into text too early, so by the time it reaches a client it is a string that has to be parsed twice
-and carries no clue what it is. This change lets a reply say *what format its content is in*, and
-lets each exit point pass the object through as an object. A2UI then works without a single line of
-A2UI code in Agent Kernel.
+and carries no clue what it is. This change lets a reply say *what format its content is in* — and
+**when it says so, every exit point passes the object through as an object.** A reply that says
+nothing is serialised exactly as it is today, so nothing an existing user relies on moves. A2UI then
+works without a single line of A2UI code in Agent Kernel.
 
 Supporting research: [`research/README.md`](research/README.md),
 [`research/changes.md`](research/changes.md), and the protocol survey at
@@ -162,7 +163,7 @@ is the application's job, not the framework's.
 | Conversation threads | **yes** | same function |
 | Streaming / AG-UI | **yes** | needs the new stream event |
 | A2A | **yes** | needs its broken dependency pin fixed first — see piece 4 |
-| MCP | **yes** | one-line fix, pending one unverified assumption — see piece 4 |
+| MCP | **yes** | two-line fix; carries the label in `_meta`, verified — see piece 4 |
 
 A2A and MCP lose structure one layer lower than the rest, in `AgentService.run`, so they need their
 own small change; piece 4 covers it. The CLI is not listed: it is a local REPL for testing and first
@@ -177,12 +178,15 @@ Optional, unset by default, and nothing is forced to use it.
 Without one, `result` is the string it is today. WebSocket, async mode and conversation threads come
 along for free; all four already go through the same function.
 
-**3. Streaming gets an event that can hold an object.** Today no stream event type can, so a payload
-cannot travel mid-stream at all.
+**3. Streaming gets an event that can hold an object**, emitted under the same rule. Today no stream
+event type can hold one at all, so a payload cannot travel mid-stream.
 
-**4. A2A and MCP stop flattening one layer lower.** Both call `AgentService.run`, which turns the
-reply into text before either of them sees it. A small change each — plus fixing A2A's dependency
-pin, which is broken today for reasons of its own.
+**4. A2A and MCP stop flattening one layer lower**, under the same rule again. Both call
+`AgentService.run`, which turns the reply into text before either of them sees it. A small change
+each — plus fixing A2A's dependency pin, which is broken today for reasons of its own.
+
+The rule in items 2 to 4 is one rule: **a media type on the reply is the switch.** Without one, every
+surface behaves exactly as it does now.
 
 That is the whole framework change. Everything else in this document explains why, or what happens
 around it.
@@ -360,7 +364,11 @@ exactly the code above, showing the payload arriving over plain REST with no UI 
 ### Piece 1 — a reply can say what format it is in, and its content is JSON-safe
 
 - `AgentReplyAny` gains one optional field, defaulted to unset, naming the media type of `content`.
-- Framework adapters are untouched; they keep constructing replies without it.
+- **Framework adapters never set it.** They keep constructing replies exactly as they do now, so
+  `from_output` needs no new parameter. The label is applied afterwards, by the application's
+  post-hook (§5) — which is what makes it an opt-in rather than something an adapter can trigger.
+- Only `AgentReplyAny` gains the field. `AgentReplyText` and `AgentReplyImage` do not: a text reply
+  has no content whose format needs naming.
 
 **`content` becomes JSON-safe by construction.** Once `result` can carry the object rather than a
 string, *something* has to guarantee that object can be serialised — and today nothing does. This
@@ -400,6 +408,11 @@ The rule, applied once where the value is born:
   the two serialisation gates in piece 2 use pydantic's encoder rather than bare `json.dumps`, so a
   value arriving through a bypass produces the same bytes as everywhere else instead of killing the
   message.
+  - **§5's recommended post-hook uses `model_copy`, and is safe** — it updates only `media_type`,
+    never `content`, so nothing skips validation. The rule for an application is therefore: labelling
+    a reply with `model_copy` is fine; **replacing its `content` means constructing a new
+    `AgentReplyAny`**, or the JSON-safe guarantee is lost for that payload. This has to be in the
+    field's docstring, not just here.
 - Cost: about 1.3 µs for a typical payload and 33 µs for a 60 KB one, once per reply rather than
   once per surface.
 
@@ -695,10 +708,10 @@ These are requirements, not reassurance. Each one is checkable.
 
 ## 7. Verification
 
-- **One cross-surface parity test.** A single structured reply, asserted to arrive with the same dict
-  and the same label on REST, WebSocket, A2A and AG-UI. Nothing like it exists today. This is what
-  makes the claim in §3 checkable rather than asserted, and what catches a future surface quietly
-  regressing to an early encode.
+- **One cross-surface parity test.** A single **labelled** structured reply, asserted to arrive with
+  the same dict and the same label on REST, WebSocket, A2A, MCP and AG-UI — every surface piece 2 to
+  4 touches. Nothing like it exists today. This is what makes the claim in §3 checkable rather than
+  asserted, and what catches a future surface quietly regressing to an early encode.
   The fixture **must carry a datetime and a Decimal**, not plain strings — parity on a payload that
   was never at risk proves nothing, and those are the values the four encoders disagree about.
 - **The back-compat guarantee, tested directly** — this is now the headline claim. An **unlabelled**
