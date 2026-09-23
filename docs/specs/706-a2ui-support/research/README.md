@@ -1,5 +1,34 @@
 # #706 research — A2UI as an unopinionated platform
 
+> **Status: superseded in part — read `design.md` first.**
+>
+> This file records the investigation as it stood. It was written **before PR #678 merged** and
+> before the design changed direction, so parts of it are now wrong rather than merely dated. Kept
+> because it records *why* routes were considered, which is this file's job. Where it and
+> `design.md` disagree, **`design.md` is authoritative.**
+>
+> What is superseded:
+>
+> - **The streaming gap.** `PostHook.on_stream_chunk` no longer exists. `on_stream_event`
+>   (`core/hooks.py:94`) is called at `core/runtime.py:343` for *every* event. Only "`on_run` is
+>   never called on a streamed run" survives, and the "design fork" below is closed — the design
+>   takes the structured-event route.
+> - **The REST contract.** This file prescribes an *additive* structured field beside `result`.
+>   `design.md` Decision 3 landed somewhere else again: **one field, switched by the label** —
+>   `result` carries the object when the reply has a `media_type` and the string it carries today
+>   when it does not. No second field, and not a breaking change. The prescription below is close in
+>   spirit but is not a drop-in: it gates on reply *type* where the decision gates on *media type
+>   presence*, and it adds a field where the decision reuses `result`.
+> - **"The only flattening site."** False. `core/service.py:156` also stringifies, which is why A2A,
+>   MCP and the CLI never receive a typed reply at all.
+> - **The `a2ui` capability.** Every proposal below for an `agentkernel/a2ui/` package, an
+>   `_A2UIConfig`, a `core/tool.py` prompt contributor, a factory registration or an `a2ui` extra is
+>   now an explicit **Non-goal** (`design.md` Decision 7). A2UI lives in an application post-hook.
+> - **Scope.** MCP and the CLI are not mentioned anywhere below; both are scoped in `design.md`
+>   (MCP in, CLI out permanently).
+> - **Line citations** below are historical, taken at `9d3d3a40`; `design.md` is verified against
+>   `develop` at `80936df9`.
+
 Supporting investigation for "[FEATURE] A2UI Support for Agent Kernel" (issue #706).
 
 Read [`../../523-ag-ui-support/research/a2ui.md`](../../523-ag-ui-support/research/a2ui.md) first —
@@ -93,6 +122,11 @@ text message; there is no `DataPart` path at all.
 
 ### 4.2 AG-UI — blocked on a real gap, not on a mapping
 
+> **[corrected]** the second bullet below is stale. `on_stream_chunk` no longer exists;
+> `PostHook.on_stream_event` (`core/hooks.py:94`) is called at `core/runtime.py:343` for *every*
+> event. Only "`on_run` is never called on a streamed run" still holds, and the design fork it sets
+> up is closed — `design.md` takes the structured-event route.
+
 Two things are missing, and only the first is obvious:
 
 - **No `CustomEvent` in the mapper.** `AGUIMapper.to_agui` (`integration/agui/mapping.py`) maps AK
@@ -125,6 +159,10 @@ Good news, and it is worth checking before anyone plans two work items:
 place non-streaming replies are flattened — verified: no other `str(reply)` exists across
 `api/`, `pipeline/`, or `integration/agui/`; the sole other flattening site in the codebase is
 A2A's line 49 above.
+
+> **[corrected]** that inventory was scoped to `api/`, `pipeline/` and `integration/agui/` and so
+> missed `core/service.py:156`, which stringifies one layer lower — before A2A, MCP or the CLI ever
+> see the reply. The claim about the four `ResponseBuilder` surfaces still holds.
 
 And the pipeline reaches it too: `AgentRunner.process` (`pipeline/agent_runner.py:44`) calls
 `ChatService.process_chat_request`, whose response dict travels the output queue and leaves over

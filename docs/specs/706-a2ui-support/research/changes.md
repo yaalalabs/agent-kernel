@@ -1,5 +1,34 @@
 # #706 — the changes, file by file
 
+> **Status: superseded in part — read `design.md` first.**
+>
+> This file records the investigation as it stood. It was written **before PR #678 merged** and
+> before the design changed direction, so parts of it are now wrong rather than merely dated. Kept
+> because it records *why* routes were considered, which is this file's job. Where it and
+> `design.md` disagree, **`design.md` is authoritative.**
+>
+> What is superseded:
+>
+> - **The streaming gap.** `PostHook.on_stream_chunk` no longer exists. `on_stream_event`
+>   (`core/hooks.py:94`) is called at `core/runtime.py:343` for *every* event. Only "`on_run` is
+>   never called on a streamed run" survives, and the "design fork" below is closed — the design
+>   takes the structured-event route.
+> - **The REST contract.** This file prescribes an *additive* structured field beside `result`.
+>   `design.md` Decision 3 landed somewhere else again: **one field, switched by the label** —
+>   `result` carries the object when the reply has a `media_type` and the string it carries today
+>   when it does not. No second field, and not a breaking change. The prescription below is close in
+>   spirit but is not a drop-in: it gates on reply *type* where the decision gates on *media type
+>   presence*, and it adds a field where the decision reuses `result`.
+> - **"The only flattening site."** False. `core/service.py:156` also stringifies, which is why A2A,
+>   MCP and the CLI never receive a typed reply at all.
+> - **The `a2ui` capability.** Every proposal below for an `agentkernel/a2ui/` package, an
+>   `_A2UIConfig`, a `core/tool.py` prompt contributor, a factory registration or an `a2ui` extra is
+>   now an explicit **Non-goal** (`design.md` Decision 7). A2UI lives in an application post-hook.
+> - **Scope.** MCP and the CLI are not mentioned anywhere below; both are scoped in `design.md`
+>   (MCP in, CLI out permanently).
+> - **Line citations** below are historical, taken at `9d3d3a40`; `design.md` is verified against
+>   `develop` at `80936df9`.
+
 Companion to [`README.md`](README.md), which argues *why* the work splits into a payload layer and
 a carriage layer. This file is the *what*: every file that has to change, in the order that lets
 each piece land on its own.
@@ -33,10 +62,19 @@ All six adapters keep calling `from_output` with no media type and are unaffecte
 ## Piece 2 — stop flattening at the response builder
 
 **`ak-py/src/agentkernel/core/chat_service.py`**
+
+> **[corrected]** `design.md` Decision 3 reuses `result` rather than adding a field, and gates the
+> object form on the reply carrying a `media_type` — so an unlabelled structured reply keeps the
+> string exactly as today. The "two fields disagree on any non-plain value" objection below is why
+> there is no second field; the gate is why it is not a breaking change either.
+
 - `ResponseBuilder.build_response` (`:317`) — keep `"result": str(result)` exactly as it is, and
   *add* the structured content when the reply is an `AgentReplyAny`, plus the media type when set.
   Additive only: existing clients keep reading `result`.
 - The field name is a permanent public REST contract. Decide it deliberately.
+
+> **[corrected]** not the only place — `core/service.py:156` also stringifies, one layer lower,
+> which is why A2A, MCP and the CLI never receive a typed reply.
 
 **Reach — verified, and larger than it looks.** This one function is the only place non-streaming
 replies are stringified anywhere outside A2A. It serves:
@@ -139,6 +177,9 @@ sidebar entry, and `docs/docs/core-concepts/configuration.md`.
 Two sub-changes, and the first is a genuine design fork, not a mapping job.
 
 ### 5a — a streamed run has no final reply
+
+> **[corrected]** stale — `on_stream_chunk` no longer exists; `on_stream_event` receives every
+> event (`core/hooks.py:94`, called at `core/runtime.py:343`). Only the `on_run` half still holds.
 
 `Runtime.stream` (`core/runtime.py:233-286`) runs `PostHook.on_stream_chunk` on text deltas and
 **never calls `PostHook.on_run`**. So the A2UI hook from piece 4 does not fire on an AG-UI run at

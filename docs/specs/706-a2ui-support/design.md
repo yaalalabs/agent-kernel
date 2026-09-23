@@ -12,6 +12,11 @@ Supporting research: [`research/README.md`](research/README.md),
 
 Code facts verified against `develop` at `80936df9` (v0.9.2); paths are relative to `ak-py/src/agentkernel/`.
 
+*A note on length.* A Stage-1 design is normally point-form requirements, with worked detail held
+back for `spec.md`. This one deliberately carries more — a conversation walkthrough, the application
+code, a class definition, an SDK migration table — because that detail is what made the design
+reviewable rather than merely assertable. It moves to `spec.md` when Stage 2 starts.
+
 **Two words used throughout.** A **surface** is a way a client reaches an agent — the REST route, the
 WebSocket gateway, A2A, MCP, the CLI. A **payload** is a structured reply's `content`: a plain dict,
 whatever it happens to mean.
@@ -55,7 +60,7 @@ payload has been encoded twice: `str()` on a structured reply runs `json.dumps(c
 (`core/model.py:147`), and then the whole response dict is serialised again on its way out. A client
 must call `json.loads` on the body, then `json.loads` again on `result`.
 
-What it should receive:
+What it should receive, **when the agent labelled its payload**:
 
 ```json
 {"result": {"root": {"type": "Card", "children": [{"type": "Text", "text": "Refund $250 for order 4471?"}]}},
@@ -64,10 +69,23 @@ What it should receive:
 
 `result` is the object. One parse. And `media_type` says what the object is.
 
-### Why this is a fix, not an addition
+**The label is the switch, and that is the whole contract.** A reply with no `media_type` is
+serialised exactly as it is today — string in `result`, byte for byte:
 
-The tempting move is to leave `result` alone and add a second field beside it. That is the wrong
-shape, for four reasons.
+```json
+{"result": "{\"name\": \"Ada\", \"email\": \"ada@example.com\"}"}
+```
+
+So `result` is `string | object`, discriminated by whether a media type is present. Nobody who has
+not opted in sees any change: not a text agent, not an agent already using structured output, not
+the deferred-schedule acknowledgement (`core/chat_service.py:496` builds an `AgentReplyAny` with no
+media type, which is what keeps that contract stable).
+
+### Why one field, switched by the label — and not a second field
+
+The obvious alternative is to leave `result` alone and add a second field beside it, carrying the
+object for everyone. That is the wrong shape, for four reasons — all of which are about the *second
+field*, and none of which the gated single field runs into.
 
 **1. `result` already means "the agent's reply".** For a text agent it *is* the reply. For a
 structured agent it is the reply *re-encoded as text* — a different thing wearing the same name.
@@ -109,7 +127,8 @@ data    ->  {"submitted_at": "2026-09-22T14:30:00", "amount": 250.0}      # ISO 
 Two fields, one value, two answers — and a client's behaviour then depends on which it read. That is
 a correctness bug, not a tidiness argument.
 
-It is a **breaking change** for clients of structured agents. Decision 3 states the terms.
+None of those four objections applies to the design above, because there is no second field and
+nothing changes for an unlabelled reply. Decision 3 records the contract.
 
 > **This is not "don't send a string".** Of course the wire is text — an HTTP body is always a
 > string. The problem is encoding the payload into a string *before* building the response, so it
@@ -154,9 +173,9 @@ steps, and printing text is what it is for.
 **1. The reply type gets one new field.** `media_type`, saying what format its content is in.
 Optional, unset by default, and nothing is forced to use it.
 
-**2. The REST response puts the object in `result`** instead of a string containing the object.
-WebSocket, async mode and conversation threads come along for free — all four already go through the
-same function.
+**2. The REST response puts the object in `result` — but only when the reply carries a media type.**
+Without one, `result` is the string it is today. WebSocket, async mode and conversation threads come
+along for free; all four already go through the same function.
 
 **3. Streaming gets an event that can hold an object.** Today no stream event type can, so a payload
 cannot travel mid-stream at all.
@@ -186,7 +205,7 @@ graph LR
         R["Reply<br/>object + label"] --> S["Response builder"]
     end
     H --> R
-    S -->|"result is the object"| C["Your client<br/>renders it"]
+    S -->|"result is the object<br/>(labelled replies only)"| C["Your client<br/>renders it"]
 ```
 
 ### Two things that follow
@@ -218,8 +237,9 @@ untouched. The client receives:
 {"result": "Hello! How can I help?"}
 ```
 
-`result` is a plain string, so the client renders an ordinary chat bubble. **Most turns look like this** — which
-is why a reply with no UI in it must never be treated as a failure.
+No `media_type`, so `result` is a plain string and the client renders an ordinary chat bubble.
+**Most turns look like this** — which is why a reply with no UI in it must never be treated as a
+failure, and why the unlabelled path has to stay exactly as it is.
 
 **Turn 2 — the agent answers with a form.**
 
@@ -236,8 +256,9 @@ The model emits an A2UI payload. The hook labels it. The client receives:
  "media_type": "application/json+a2ui"}
 ```
 
-`result` is an object this time. The client recognises the media type, reads `result`, and draws a
-real form from its own components.
+`result` is an object this time — the media type is present, so the switch flipped. The client
+recognises the label, reads `result`, and draws a real form from its own components. Same field as
+turn 1, different shape, and the label is how the client knows which it has.
 
 **Turn 3 — the user submits.**
 
@@ -336,23 +357,116 @@ exactly the code above, showing the payload arriving over plain REST with no UI 
 
 ## 6. What changes in the framework
 
-### Piece 1 — a reply can say what format it is in
+### Piece 1 — a reply can say what format it is in, and its content is JSON-safe
 
 - `AgentReplyAny` gains one optional field, defaulted to unset, naming the media type of `content`.
-- `__str__` (`core/model.py:147`) is **unchanged**, so every existing string consumer sees
-  byte-identical output.
 - Framework adapters are untouched; they keep constructing replies without it.
+
+**`content` becomes JSON-safe by construction.** Once `result` can carry the object rather than a
+string, *something* has to guarantee that object can be serialised — and today nothing does. This
+rule is not gated: it applies to every structured reply, labelled or not, so there is one behaviour
+to reason about rather than two.
+`from_output` (`core/model.py:151`) converts a pydantic input with `model_dump(mode="json")`, which
+is JSON-safe, but passes a plain `dict` through unvalidated. Four encoders then disagree about the
+same value, and one of them crashes:
+
+| value in `content` | `__str__` (`default=str`) | pydantic JSON | FastAPI encoder | bare `json.dumps` |
+|---|---|---|---|---|
+| `datetime(2026, 9, 22, 14, 30)` | `"2026-09-22 14:30:00"` | `"2026-09-22T14:30:00"` | `"2026-09-22T14:30:00"` | **TypeError** |
+| `Decimal("250.00")` | `"250.00"` | `"250.00"` | `250.0` (a float) | **TypeError** |
+| `float("nan")` | `NaN` — invalid JSON | `null` | `NaN` | `NaN` |
+| an arbitrary object | `"<Foo object at 0x…>"` shipped as data | raises | `{}` — silent loss | **TypeError** |
+
+The rule, applied once where the value is born:
+
+> **`content` is replaced, on validation, by a single pydantic JSON round trip** — the same thing
+> `from_output` already does for pydantic inputs. A value with a canonical JSON form (datetime,
+> Decimal, UUID, Enum, set, bytes, a non-string key, NaN) coerces silently. A value with no JSON form
+> raises at construction. Every surface then serialises an already-safe dict, so all of them emit the
+> same bytes.
+
+- It lives as a shared annotated type in a new `core/payload.py` — `AgentReplyAny` and the
+  `DataMessage` of piece 3 both need it, and `core/model.py` already imports `core/event.py`, so the
+  rule cannot live in either without an import cycle.
+- **Field-level, not model-level.** A parent `model_validator(mode="after")` is bypassed by a
+  subclass that fills `content` in its own after-validator — which is exactly the shape
+  `AgentReplyPaused` (#696) takes. See Decision 4.
+- **Coerce silently, raise loudly, no warning tier.** Coercion is not new policy: it is what
+  `from_output` already does to the pydantic half of the same method, applied to the other half so
+  the two converge. Raising on an unserialisable object is *better* than today, where `default=str`
+  ships `"<Row object at 0x…>"` to a client as data and FastAPI ships `{}`.
+- **Two bypasses no validator can close**, to be documented rather than defended against:
+  `reply.model_copy(update={"content": …})` and in-place mutation of the dict. As defence in depth
+  the two serialisation gates in piece 2 use pydantic's encoder rather than bare `json.dumps`, so a
+  value arriving through a bypass produces the same bytes as everywhere else instead of killing the
+  message.
+- Cost: about 1.3 µs for a typical payload and 33 µs for a 60 KB one, once per reply rather than
+  once per surface.
+
+**This narrows a promise made earlier in this design.** `__str__`'s *code* is unchanged, and on the
+validated path its `default=str` becomes unreachable. Its *output* is byte-identical only for content
+that was already JSON-safe — which is every payload `from_output` produces today. Content carrying a
+datetime, a Decimal, a set or a NaN now stringifies the way every other surface already stringifies
+it. That is a deliberate convergence and a changelog line, not an accident. §7's regression test is
+parameterised accordingly.
+
 
 ### Piece 2 — REST, WebSocket, async mode and threads
 
-One change to the shared response builder, which all four already route through. For an
-`AgentReplyAny`, `result` carries `content` as an object rather than `str(reply)`, and `media_type`
-rides beside it when set. Text and image replies are untouched, and so is the
-`"Non textual result received"` fallback.
+One change to the shared response builder (`core/chat_service.py:317`), which all four already route
+through. For an `AgentReplyAny` **whose `media_type` is set**, `result` carries `content` as an
+object and the media type rides beside it. Everything else — text replies, image replies, structured
+replies with no media type, and the `"Non textual result received"` fallback — is byte-for-byte what
+it is today.
 
-- **This is the breaking change** (Decision 3). No second field, no duplication, no opt-in switch —
-  the bug is fixed rather than shipped alongside its own workaround.
-- `__str__` itself does not change. The builder simply stops calling it for structured replies.
+- **Not a breaking change.** The media type is the opt-in switch, so a client that never asked for a
+  labelled payload cannot observe this. Decision 3 records the contract.
+- `__str__` itself does not change. The builder simply stops calling it for *labelled* replies.
+
+#### `result` becomes polymorphic, and that has consequences worth naming
+
+`str | dict` in one field is the price of not adding a second one. Everything below was traced
+rather than assumed; each is a defect that only fires for a **labelled** reply, so none of it
+affects an existing user, but all of it has to be fixed in the same change or the feature ships
+broken.
+
+**Breaks silently — the dangerous ones:**
+
+- `pipeline/response_handler.py:192` builds `AgentReplyText(response=str(body.get("result", "")))`
+  for the messaging integrations. On a dict, `str()` yields a **Python repr** — `{'root': ...}`,
+  single quotes, `None` and `True` — and all seven outbound adapters render it verbatim
+  (`slack/adapter.py:264`, `whatsapp/adapter.py:281`, `telegram/adapter.py:303`,
+  `messenger/adapter.py:175`, `instagram/adapter.py:182`, `teams/adapter.py:504`,
+  `gmail/adapter.py:443`). A user sees a Python repr in Slack and nothing logs an error.
+- `pipeline/agent_runner.py:61` feeds the same value into thread recording, which stores
+  `str(result)` into `ThreadMessage.content` (`integration/thread/recorder.py:66`). The **direct**
+  thread handler stores proper JSON for the same reply. So the same agent, in the same thread store,
+  is recorded one way in single-process mode and another way through the queue — **permanently**,
+  and served back that way by the thread read routes. This is the hardest consequence to notice in
+  the whole change.
+
+**Breaks loudly:**
+
+- `pipeline/agent_runner.py:198` does a bare `json.dumps(response_body)`. Anything piece 1's rule was
+  bypassed on raises `TypeError`, the reply never reaches the output queue, and the caller is told
+  `"Failed to process message after N retries"` — naming neither cause nor fix. Use pydantic's
+  encoder. The ECS and Lambda twins need the same treatment
+  (`deployment/aws/.../akagentrunner.py` → `pipeline/transport/sqs.py:52-67`,
+  `deployment/aws/serverless/core/router/rest_lambda.py:284`, `deployment/azure/akfunction.py:50`).
+- **The DynamoDB response store rejects floats outright.** `core/util/driver/dynamodb.py:84` does no
+  float-to-`Decimal` conversion, so boto3 raises `Float types are not supported` — inside the output
+  consumer, burning the retry budget. Any payload carrying a price, a score or a coordinate trips
+  it. Note piece 1's JSON-safe rule does **not** fix this: JSON-safe means the float stays a float.
+  This needs its own conversion on write, and on read every number comes back as `Decimal`.
+- `pipeline/request_handler.py:116` renders the 202 path through `JSONResponse`, a bare `json.dumps`
+  with `allow_nan=False`. Direct REST survives the same payload because FastAPI's `jsonable_encoder`
+  copes — so the two paths disagree, which is exactly the per-surface divergence §2 argues against.
+
+**Unaffected, verified:** the Redis and Valkey response stores (they re-serialise a body that is
+already JSON-native); the WebSocket push path, which passes the dict through as a JSON frame and so
+gets the desired behaviour for free; A2A, MCP and the CLI, which go through `AgentService.run` and
+are handled in piece 4; and every existing test fixture and example client, all of which are
+unlabelled.
 
 ### Piece 3 — streaming and AG-UI
 
@@ -376,9 +490,16 @@ class DataMessage(StreamEventBase):
 ```
 
 - **`message_id`** ties it to the surrounding message, exactly as `TextDelta` and `MessageEnd` do.
-  It is emitted inside the message, immediately before `MessageEnd`.
+  It is emitted inside the message, immediately before `MessageEnd` — and **only when the payload
+  carries a media type**, matching piece 2's gate. An unlabelled run streams exactly as it does
+  today.
 - **`content` and `media_type` mirror the reply type** from piece 1, so the same pair travels whether
-  a run streamed or not.
+  a run streamed or not — including piece 1's JSON-safe rule, which `content` carries as the same
+  shared annotated type. This is not optional here: `core/chat_service.py:346-348` calls
+  `chunk.model_dump(exclude_none=True)` in **python mode** and then a bare `json.dumps`, so an
+  unsafe value raises **mid-stream**, after the client has already rendered part of the message.
+  Switching that call to `model_dump(mode="json", ...)` is byte-identical for today's events, every
+  field of which is a `str`, `int` or `bool`.
 - **Named for `a2a.helpers.new_data_message`**, which is the same concept on the other surface
   carrying this payload. The alternative, `DataDelta`, was rejected: it is not a fragment, and the
   name would invite someone to stream partial payloads, which Non-goals rules out.
@@ -390,9 +511,12 @@ in the same change rather than left contradicting the code:
 > stays picklable and JSON-serialisable no matter which framework produced it.
 
 A plain dict of JSON-compatible values still satisfies the *reason* for that rule — picklable,
-JSON-serialisable, no framework object — but not its current wording. Amend it to name dict as
-allowed and keep the framework-native prohibition, which is the part that matters. (#696's
-`RunPaused` needs the same widening for its interruption list, so this is coming either way.)
+JSON-serialisable, no framework object — but not its current wording. Amend it to name the
+**enforced** constraint rather than merely permitting a dict: *a dict field carries a JSON-safe
+payload, guaranteed by the shared annotated type from piece 1.* That preserves why the invariant
+existed — `StreamChunk` crosses the queue transport in distributed topologies — instead of relaxing
+it. (#696's `RunPaused` needs the same widening for its interruption list, so this is coming either
+way.)
 
 **Delivery needs no Runtime change.** `PostHook.on_stream_event` (`core/hooks.py:94`) already exists:
 the application's hook returns `None` for each `TextDelta` while accumulating, then at the closing
@@ -412,8 +536,26 @@ to clear first.
 **A2A is broken on a fresh install today, and this issue ports it forward rather than pinning it
 back.** `ak-py/pyproject.toml` pins `a2a-sdk[http-server]>=0.3.6` with **no upper bound**. The
 current release is 1.1.5, and against it three of Agent Kernel's imports do not resolve at all —
-`new_agent_text_message`, `ServerError`, and `RESTAdapter`, whose module no longer exists. CI stays
-green only because the example's lockfile pins 0.3.6, so nothing exercises what a new user installs.
+`new_agent_text_message`, `ServerError`, and `RESTAdapter`, whose module no longer exists.
+
+**Why no build ever went red.** Worth writing down, because the same trap is open on every other
+unbounded pin in the repo:
+
+- `examples/api/a2a/multi/build.sh` runs `uv sync`, which installs from the committed `uv.lock`
+  rather than re-resolving. That lock pins `a2a-sdk 0.3.6`, so the example installs 0.3.6 on every
+  PR and passes — permanently, regardless of what the constraint would resolve to today.
+- The one job that *would* re-resolve is gated off:
+  `update-lock-files: if: ${{ github.event.inputs.update_example_locks == 'true' }}`
+  (`.github/workflows/test.yaml:30-31`). It runs only on a manual dispatch with that box ticked,
+  never on a PR or a push to `develop`.
+
+So CI tests the **locked graph** while a new user gets the **declared constraint**, and nothing
+compares the two. The lockfile is doing its job correctly; the side effect is that an unbounded
+constraint can rot for months without a single red build.
+
+> A cheap standing guard would be a scheduled job — weekly, not per-PR — that resolves the extras
+> with no lock and merely imports the package. It would have caught this within days of the 1.0
+> release. That is its own small issue, not this design's.
 
 Capping at `<0.4` was considered and rejected. The 0.x line is finished at 0.3.26, and — decisively —
 **1.x already has the exact primitive this design needs**:
@@ -446,18 +588,27 @@ one step is how silent breakage ships. So:
 1. **Write `ak-py/tests/test_a2a_*.py` against the current 0.3.6 behaviour**, pinning what "working"
    means: a text reply produces a text message, the error path stays text, the card carries what it
    carries, the expected routes exist.
-2. **Port to 1.x.** Those tests still pass — adapted to the new part model where the assertion must
-   be, but with the same observable behaviour for text replies.
-3. **Then add the structured branch**, below.
+2. **Port to 1.x**, and change the pin in `ak-py/pyproject.toml`. Those tests still pass — adapted
+   to the new part model where the assertion must be, but with the same observable behaviour for
+   text replies.
+3. **Regenerate `examples/api/a2a/multi/uv.lock`** — the only lock in the repo carrying `a2a-sdk`.
+   This is the step that turns CI from a rubber stamp into the actual proof: once the lock holds
+   1.x, every subsequent PR runs the ported code against the SDK a real user would install.
+4. **Then add the structured branch**, below.
+
+**The order in step 3 is not optional.** Regenerating the lock *before* the port replaces 0.3.6 with
+1.x underneath code written for 0.3.x, so the example stops importing and CI goes red for the whole
+branch. Port, then relock, then let CI confirm it.
 
 **A2A: sending the object, on top of the port — roughly ten lines.**
 
 - `_execute_agent` (`api/a2a/a2a.py:63`) calls `run_multi([AgentRequestText(prompt=...)])` instead of
   `run(prompt)`, so the executor receives an `AgentReply` rather than a string. Its return annotation
   tightens from `Any`.
-- `execute` (`api/a2a/a2a.py:49`) branches: an `AgentReplyAny` becomes
-  `new_data_message(reply.content, media_type=reply.media_type, ...)`; every other reply type goes
-  through `new_message` exactly as before, and the error path stays text.
+- `execute` (`api/a2a/a2a.py:49`) branches **on the media type, not the reply type**: a labelled
+  `AgentReplyAny` becomes `new_data_message(reply.content, media_type=reply.media_type, ...)`.
+  Everything else — including a structured reply with no label — goes through `new_message` exactly
+  as before, and the error path stays text.
 - The agent card already advertises `default_output_modes: ["json"]` (`core/builder.py:44`) while the
   executor only ever sends text. This makes an existing claim true rather than adding a new one.
 - Also fixed, since it is part of the same brokenness: with A2A enabled and **no agents registered in
@@ -466,9 +617,9 @@ one step is how silent breakage ships. So:
 - **Not verified:** the symbols and signatures above were read from an installed a2a-sdk 1.1.5, but
   Agent Kernel has not been run against it. The port is mapped, not proven, and step 1 above exists
   precisely because of that gap.
-- **Behavioural change to declare, not discover:** A2A output changes for *all* structured replies,
-  not only A2UI. A client reading `parts[0].root.text` breaks the day its agent returns structured
-  output. Needs a changelog entry and a migration note.
+- **No behavioural change to declare.** An earlier draft had A2A sending a data part for *every*
+  structured reply, which would have broken any client reading `parts[0].root.text`. Gated on the
+  label, A2A behaves exactly as it does today until an application opts in.
 
 **MCP: sending the object — two changed lines.** The executor (`api/mcp/akmcp.py:39-45`) makes the
 same `run` → `run_multi` switch and returns the content dict for a structured reply:
@@ -479,14 +630,34 @@ same `run` → `run_multi` switch and returns the content dict for a structured 
      await ctx.info(f"Executing agent '{self.agent_name}' ...")
      service.select(session_id, self.agent_name)
 -    response = await service.run(prompt=prompt)
+-    await ctx.debug(f"Agent response '{response}'")
+-    return response
 +    reply = await service.run_multi([AgentRequestText(prompt=prompt)])
-+    response = reply.content if isinstance(reply, AgentReplyAny) else str(reply)
-     await ctx.debug(f"Agent response '{response}'")
-     return response
++    await ctx.debug(f"Agent response '{reply}'")
++    if isinstance(reply, AgentReplyAny) and reply.media_type:
++        return ToolResult(structured_content=reply.content,
++                          meta={"media_type": reply.media_type})
++    return str(reply)
 ```
 
-The `-> Any` annotation, the `ctx` logging and the return statement are all untouched; a text reply
-still produces exactly the string it does today.
+The `-> Any` annotation and the `ctx` logging are untouched, and **any reply without a media type**
+— text, image, or structured-but-unlabelled — still produces exactly the string it does today.
+
+**The label travels too.** An earlier draft returned `reply.content` alone, which silently dropped
+`media_type` and broke this design's central contract — the format label goes with the payload.
+Verified against the pinned fastmcp (3.4.7) that a `ToolResult` carrying `meta` round-trips to a
+client intact:
+
+```
+structured_content: {"root": {"type": "Card", ...}}
+meta              : {'media_type': 'application/json+a2ui'}
+content blocks    : ['TextContent']
+```
+
+`_meta` is MCP's own protocol slot for implementation metadata, so this is the protocol's answer
+rather than an Agent Kernel invention. The rejected alternative was wrapping the payload
+(`{"media_type": …, "content": …}`), which changes the shape a client receives and is exactly the
+kind of opinion §6 refuses.
 
 **Verified** against the pinned fastmcp (3.4.7, inside `>=3.2.0,<4.0.0`), by registering tools on a
 real `FastMCP` instance and calling them through its in-memory client:
@@ -528,7 +699,27 @@ These are requirements, not reassurance. Each one is checkable.
   and the same label on REST, WebSocket, A2A and AG-UI. Nothing like it exists today. This is what
   makes the claim in §3 checkable rather than asserted, and what catches a future surface quietly
   regressing to an early encode.
-- **One regression test** proving `str(AgentReplyAny(...))` is byte-identical to today.
+  The fixture **must carry a datetime and a Decimal**, not plain strings — parity on a payload that
+  was never at risk proves nothing, and those are the values the four encoders disagree about.
+- **The back-compat guarantee, tested directly** — this is now the headline claim. An **unlabelled**
+  structured reply produces a response dict byte-identical to today's. `test_api_http.py:400-421`
+  already pins today's behaviour (`response["result"] == json.dumps(content)`); it becomes a matrix
+  — labelled gives a dict, unlabelled keeps that exact assertion passing.
+- **The two silent failures, pinned:** a labelled reply through the pipeline records valid JSON in
+  the thread store (not a Python repr), and reaches the messaging adapters as JSON.
+- **The DynamoDB float path:** a labelled payload carrying a float is stored and read back without
+  raising. This fails today and no test covers it, because no body has ever held a number.
+- **Regression tests on `__str__`, parameterised.** Byte-identity holds only for JSON-safe content;
+  a second test pins the intended new output for a datetime, a Decimal, a set and a NaN.
+- **The test that would have caught the gap Copilot found:** build a response through
+  `ResponseBuilder.build_response` for a reply whose content carried a datetime, then assert
+  `json.dumps(response_body)` succeeds — reproducing `agent_runner._send_to_output`'s exact call.
+  Nothing exercises that line with a structured reply today.
+- **Convergence test for piece 1:** a pydantic model with datetime/Decimal/UUID fields through
+  `from_output`, and a plain dict of the same values through `AgentReplyAny(content=...)`, produce
+  **equal** `content`. That is the whole rule in one assertion.
+- **The bypasses, pinned as tested behaviour:** `model_copy(update={"content": ...})` does *not*
+  normalise. Pin it so nobody builds on a guarantee that is not there.
 - Per-surface unit tests for pieces 2 to 4; the example's own test suite covers the A2UI hook.
 
 ## 8. What this lands next to
@@ -561,7 +752,9 @@ These are requirements, not reassurance. Each one is checkable.
   parse-and-heal is an application concern if anyone wants it.
 - **A callback path from a rendered UI back to the agent.** Same problem as HITL's resume path;
   reuse that when it lands.
-- **Changing `__str__`, the `AgentReply` union, or any framework adapter.**
+- **Changing `__str__`'s code, the `AgentReply` union, or any framework adapter.** Note the
+  qualification: `__str__` is not edited, but its *output* changes for content that was never
+  JSON-safe — see piece 1.
 - **Teaching the CLI to carry structured replies.** Out for good, not deferred: it is a local REPL
   for testing and first steps, and Agent Kernel would have to be the renderer.
 
@@ -571,12 +764,14 @@ These are requirements, not reassurance. Each one is checkable.
 |---|---|---|
 | 1 | **Agent Kernel delivers payloads; it never opens them.** The framework gains a media type and surfaces that pass the object through; A2UI itself lives in an application post-hook plus an example. | Someone hoping to flip a config flag and have A2UI work does not get that. In exchange the framework does not own a pre-1.0 protocol's version churn, catalog semantics or validation policy — and any other payload format is supported from day one, free. |
 | 2 | **The media type is carried, never interpreted.** | Agent Kernel cannot reject a mislabelled payload. That is the point; the alternative is the framework knowing formats. |
-| 3 | **`result` carries the object for a structured reply — a breaking change, taken rather than worked around.** No second field beside it. | Clients of structured agents must stop calling `json.loads` on `result`. Accepted because: Agent Kernel is 0.9.2, pre-1.0; the route declares no `response_model`, so nothing regenerates or fails to compile; the affected clients are *already* parsing, so migration is deleting one line; and the alternative — carrying the payload twice — doubles every response against a 256 KB SQS ceiling the chat pipeline does not check. Needs a changelog entry and a migration note, and should land with a minor or 1.0 rather than quietly. |
-| 4 | **A paused reply (#696) goes through the same branch**, since it subclasses `AgentReplyAny` — so its `result` becomes an object too. | A pause's typed fields then appear both in `result` and in `interruptions`. Accepted: the branch stays type-driven, with no subclass special case to rot, and #696's own rule makes a pause's `content` a faithful view of those fields rather than a drifting copy. |
+| 3 | **`result` carries the object when the reply is labelled with a media type, and the string it carries today when it is not.** One field, switched by the label; no second field beside it. | `result` becomes polymorphic — `string \| object` — so a client must read `media_type` to know which it has. Accepted because the alternative shapes are both worse: replacing `result` unconditionally breaks every existing structured-output client for a bug they may not care about, and adding a second field duplicates the payload (size, and two encoders that disagree — §2). The gate means **nothing changes for anyone who has not opted in**: not a text agent, not an existing structured agent, not the deferred-schedule acknowledgement, not one of the six `result` examples in the published docs, not one of the example test suites. No changelog entry needed for `result`; the only behavioural change in this design is `__str__`'s output for non-JSON-safe content (piece 1). |
+| 4 | **A paused reply (#696) carries no media type, so its `result` stays a string** — this contract does not touch it. It still inherits piece 1's JSON-safe rule, since that is ungated. | So #696 is unaffected by the `result` contract and needs no coordination on it. It does still inherit the JSON-safe rule, and three constraints go to #696 so the inheritance actually holds: (a) do not redeclare `content` — a bare `content: dict` on the subclass silently drops the annotated type; (b) build `content` in a `before` validator or `__init__`, **not** an after-validator, which runs after the parent's and bypasses field validation; (c) "a faithful view of the typed fields" means faithful *in JSON form* — a deadline becomes ISO 8601. If `interruptions` carries a raw dict anywhere, it needs the same type or the divergence returns one field over. |
 | 5 | **Ask #696 to state what `PausedInterruption.payload` means** while it is still design-only. | None — it is a comment on another issue. If that field acquires a meaning by accident, an agent-authored payload on a pause is closed off by convention rather than by design. |
 
 | 6 | **Port A2A to `a2a-sdk >=1.1,<2` in this issue, tests first — do not cap at `<0.4`.** | This issue absorbs an SDK migration, which is real scope and the one estimate here that is not firm. Taken because 0.3 is a finished line, and because 1.x ships `new_data_message(data, media_type, …)` — precisely this design's payload. Capping would mean writing the part assembly by hand against an API lacking that helper, then discarding it at the port. The mitigation is ordering: A2A's first-ever tests are written against 0.3.6 behaviour *before* anything moves. |
 
-**Open for the reviewer.** Does this answer #706 as written? It answers "can an Agent Kernel agent
-serve A2UI to a client" with yes, and "does Agent Kernel contain A2UI" with no. If the issue intends
-the second, its title and scope need revisiting rather than this design quietly redefining them.
+| 7 | **The payload layer #706 specified — an `a2ui` config block and extra, catalog prompt injection, a framework post-hook — is not built.** The framework carries payloads; the application owns formats. | A config flag is one line, but behind it sit a parser, a catalog concept, a definition of "valid", a failure policy, prompt-injection machinery in `core/`, and ownership of a pre-1.0 protocol's version churn — and they chain, since a parser needs a catalog, a catalog needs a config shape, that needs validation, which needs a failure policy. The deciding fact: **a catalog must match the components a given frontend implements**, which Agent Kernel cannot know, so any catalog it ships is wrong and the model will confidently emit things that render as nothing. Once the catalog is the application's, the prompt built from it and the parser checking it follow. **Cost:** nobody gets A2UI from a config flag; they write about fifteen lines. **Gain:** any other payload format — their own UI JSON, Adaptive Cards, a chart schema — works identically on day one with no framework change. |
+
+This answers "can an Agent Kernel agent serve A2UI to a client" with yes, and "does Agent Kernel
+contain A2UI" with no. Issue #706 asks for the second; Decision 7 is the deliberate answer to that,
+not an oversight.
