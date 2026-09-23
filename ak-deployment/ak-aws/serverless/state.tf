@@ -539,6 +539,7 @@ module "ws_connection_handler" {
     )
   })
   websocket_connection_table_arn = local.websocket_connection_table_arn
+  account_id                     = data.aws_caller_identity.current.account_id
   ssm_enabled                    = var.ssm_enabled
 }
 
@@ -700,6 +701,7 @@ module "response_handler" {
 
   region                     = var.region
   prefix                     = var.prefix
+  account_id                 = data.aws_caller_identity.current.account_id
   ssm_enabled                = var.ssm_enabled
   is_production              = var.is_production
   lambda_signer_profile_name = local.lambda_signer_profile_name

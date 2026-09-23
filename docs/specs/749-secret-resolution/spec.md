@@ -704,8 +704,19 @@ wiring already shows):
 | containerized | `queue_mode.tf:23` `module "agent_runner"` | `modules/agent-runner` | `aws_iam_role.agent_runner_task_role` (`main.tf:62`) | `locals.agent_runner_environment` (`main.tf:6`) |
 
 Each of those six submodules gains a same-named `variable "ssm_enabled" { type = bool, default = false }`.
-The parameter ARN wildcards the account segment (`arn:aws:ssm:<region>:*:parameter/...`), so no
-module needs an `account_id` for it. All six already have `region` and `prefix`.
+Three of them also need an `account_id` they do not have today, to build the parameter ARN:
+
+- `serverless/modules/response-handler` — **new** `account_id` variable; the root passes
+  `data.aws_caller_identity.current.account_id`, as it already does for `request_handler`
+  (`state.tf:605`) and `agent_runner` (`state.tf:667`).
+- `serverless/modules/ws-connection-handler` — **new** `account_id` variable, same source.
+- `containerized/modules/rest-service` — **new** `account_id` variable; the root passes
+  `data.aws_caller_identity.current.account_id`, as it already does for the containerized
+  `agent_runner` (`queue_mode.tf:73`).
+
+`serverless/modules/request-handler` (`variables.tf:207`), `serverless/modules/agent-runner`
+(`variables.tf:105`) and `containerized/modules/agent-runner` (`variables.tf:187`) already have it.
+All six already have `region` and `prefix`.
 
 **Environment injection**, added to each module's existing merge, beside the scheduling block it
 mirrors (`serverless/modules/request-handler/main.tf:371-375`,
@@ -739,7 +750,7 @@ resource "aws_iam_policy" "ssm_secret_policy" {
         # The one call AWSSMSecretProvider makes. No GetParameters, no DescribeParameters,
         # no write or delete action, and never account-wide ssm:*.
         Action   = ["ssm:GetParameter"]
-        Resource = "arn:aws:ssm:${var.region}:*:parameter/ak/${var.prefix}/*"
+        Resource = "arn:aws:ssm:${var.region}:${var.account_id}:parameter/ak/${var.prefix}/*"
       }
     ]
   })

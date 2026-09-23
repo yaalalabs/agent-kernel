@@ -236,6 +236,12 @@ variable "tags" {
   default     = {}
 }
 
+variable "account_id" {
+  type        = string
+  description = "AWS account ID, used to scope the SSM Parameter Store IAM resource ARN"
+  default     = null
+}
+
 variable "ssm_enabled" {
   type        = bool
   description = "Whether the application roles may read /ak/<prefix>/* from SSM Parameter Store and receive AK_SECRET__PREFIX"
