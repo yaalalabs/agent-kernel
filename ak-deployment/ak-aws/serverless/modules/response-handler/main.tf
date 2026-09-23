@@ -161,7 +161,7 @@ resource "aws_iam_policy" "ssm_secret_policy" {
         # The one call AWSSMSecretProvider makes. No GetParameters, no DescribeParameters,
         # no write or delete action, and never account-wide ssm:*.
         Action   = ["ssm:GetParameter"]
-        Resource = "arn:aws:ssm:${var.region}:${var.account_id}:parameter/ak/${var.prefix}/*"
+        Resource = "arn:aws:ssm:${var.region}:*:parameter/ak/${var.prefix}/*"
       }
     ]
   })

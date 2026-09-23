@@ -143,7 +143,7 @@ variable "ssm_enabled" {
 
   - **Additive only.** Every resource this change adds is `count`-gated on `var.ssm_enabled`; no existing resource is modified, so `terraform plan` at the default is empty.
   - Propagated as a same-named `bool` into the submodules that run application code: `request_handler`, `agent_runner`, `response_handler`, `ws_connection_handler` in `serverless` (`serverless/state.tf:544`, `:628`, `:694`, `:521`); `rest_service`, `agent_runner` in `containerized` (`containerized/rest_service.tf:4`, `containerized/queue_mode.tf:23`).
-  - When `true`, each submodule injects `AK_SECRET__PREFIX = var.prefix` (the existing resource-naming prefix, so path and grant cannot drift) and attaches to **its own** execution role one statement: `Action = ["ssm:GetParameter"]`, `Resource = "arn:aws:ssm:${region}:${account}:parameter/ak/${prefix}/*"`. Nothing broader.
+  - When `true`, each submodule injects `AK_SECRET__PREFIX = var.prefix` (the existing resource-naming prefix, so path and grant cannot drift) and attaches to **its own** execution role one statement: `Action = ["ssm:GetParameter"]`, `Resource = "arn:aws:ssm:${region}:*:parameter/ak/${prefix}/*"`. Nothing broader.
   - **No KMS wiring.** `SecureString` parameters are expected to use the AWS-managed `alias/aws/ssm` key, whose key policy already permits decryption via SSM for account principals. A customer-managed key is the deployment's own `kms:Decrypt` grant (see Non-goals).
 - Terraform does **not** create the parameters and does not set `AK_SECRET__PROVIDER__TYPE`.
 

@@ -91,12 +91,10 @@ make lint-check-all
 - **Steps:**
   1. Root `ssm_enabled` variable (`variables.tf`, beside `enable_scheduling` at `:181`); pass it into
      the four module blocks (`state.tf:521`, `:544`, `:628`, `:694`).
-  2. Add the `account_id` variable to `response-handler` and `ws-connection-handler` and pass
-     `data.aws_caller_identity.current.account_id` to both.
-  3. Per module: `ssm_enabled` variable, the `AK_SECRET__PREFIX` conditional in the env merge, and
+  2. Per module: `ssm_enabled` variable, the `AK_SECRET__PREFIX` conditional in the env merge, and
      the `count`-gated policy + attachment — spec.md § Deployment changes. `ws-connection-handler`
      additionally needs its `main.tf:9` assignment turned into a `merge(...)`.
-  4. README variables-table row (mirroring `README.md:471`).
+  3. README variables-table row (mirroring `README.md:471`).
 - **Verify:** `terraform init -backend=false && terraform validate` in `serverless/`; `terraform plan`
   on an existing deployment with `ssm_enabled` unset shows no diff.
 
@@ -109,12 +107,11 @@ make lint-check-all
 - **Steps:**
   1. Root `ssm_enabled` variable (beside `enable_scheduling` at `variables.tf:137`); pass it into
      `rest_service.tf:4` and `queue_mode.tf:23`.
-  2. Add the `account_id` variable to `rest-service` and pass it from the root.
-  3. `rest-service`: `AK_SECRET__PREFIX` in `locals.rest_service_environment`, policy resource, and an
+  2. `rest-service`: `AK_SECRET__PREFIX` in `locals.rest_service_environment`, policy resource, and an
      `SSMSecret` entry in the `tasks_iam_role_policies` map (`main.tf:328-338`).
-  4. `agent-runner`: `AK_SECRET__PREFIX` in `locals.agent_runner_environment`, policy resource, and a
+  3. `agent-runner`: `AK_SECRET__PREFIX` in `locals.agent_runner_environment`, policy resource, and a
      `count`-gated attachment to `aws_iam_role.agent_runner_task_role` (`main.tf:62`).
-  5. README variables-table row (mirroring `README.md:368`).
+  4. README variables-table row (mirroring `README.md:368`).
 - **Verify:** `terraform init -backend=false && terraform validate` in `containerized/`; empty plan
   with the flag unset.
 
