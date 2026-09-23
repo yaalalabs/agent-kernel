@@ -296,15 +296,6 @@ class AgentHandler:
         """
         return AgentHandler._iterate_async_sync(self.service.realtime_stream_multi(requests=requests, acting_user_id=acting_user_id))
 
-    async def run_realtime_async(self, requests: List[Any], acting_user_id: Optional[str] = None) -> AsyncGenerator[Any, None]:
-        """Run agent realtime streaming requests asynchronously.
-
-        :param requests: List of AgentRequest objects to process
-        :param acting_user_id: When given, published as the run's acting user (see Runtime.realtime_stream)
-        :return: AsyncGenerator yielding StreamChunk objects
-        """
-        async for chunk in self.service.realtime_stream_multi(requests=requests, acting_user_id=acting_user_id):
-            yield chunk
 
     def get_response_session_id(self, session_id: Optional[str]) -> Optional[str]:
         """Get the session ID for the response.
@@ -489,29 +480,7 @@ class ChatService:
 
         return _stream()
 
-    async def execute_realtime(self, req: BaseChatRequest, requests: Optional[List[AgentRequest]] = None) -> AsyncGenerator[StreamChunk, None]:
-        """Validate, initialize, and return a realtime stream generator for an agent.
 
-        :param req: Chat request carrying prompt, agent, and session_id
-        :param requests: Optional prebuilt AgentRequest list
-        :return: Async generator yielding raw StreamChunk objects
-        :raises ValueError: If validation fails or no agent is available
-        """
-        scheduled = self._maybe_schedule(req)
-        if scheduled is not None:
-            return self._acknowledgement_stream(scheduled)
-        self._record_trigger(req)
-        requests = await self._prepare_async(req, requests)
-        handler = self.prepare_agent_handler(req.session_id, req.agent)
-
-        async def _stream() -> AsyncGenerator[StreamChunk, None]:
-            try:
-                async for chunk in handler.run_realtime_async(requests, acting_user_id=req.user_id):
-                    yield chunk
-            except Exception as e:
-                yield StreamChunk(error=str(e), done=True)
-
-        return _stream()
 
     def execute_realtime_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> Generator[StreamChunk, None, None]:
         """Synchronous counterpart of execute_realtime().
@@ -744,31 +713,6 @@ class ChatService:
 
         return _stream()
 
-    async def process_realtime_chat_async(
-        self,
-        req: BaseChatRequest,
-        sse_format: bool = False,
-    ) -> AsyncGenerator[str, None]:
-        """Process a realtime streaming chat request asynchronously.
-
-        :param req: Base chat request with prompt, session_id, agent, and optional attachments
-        :param sse_format: When True, yield Server-Sent Events formatted frames.
-                           When False, yield raw StreamChunk JSON payloads.
-        :return: Async generator yielding StreamChunk payloads as JSON or SSE-formatted strings
-        :raises ValueError: If session_id or prompt is missing, or no agent is available
-        """
-        session_id = req.session_id
-        chunks = await self.execute_realtime(req)
-
-        async def _stream() -> AsyncGenerator[str, None]:
-            try:
-                async for chunk in chunks:
-                    yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
-            except Exception as e:
-                error_chunk = StreamChunk(error=str(e), done=True)
-                yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
-
-        return _stream()
 
     def process_realtime_chat_sync(
         self,
