@@ -15,6 +15,7 @@ variable "is_production" {
 }
 
 variable "openai_api_key" {
-  description = "OpenAI API Key"
+  description = "OpenAI API Key. Leave empty to resolve it from SSM Parameter Store at /ak/<prefix>/openai_api_key"
   type        = string
+  default     = ""
 }

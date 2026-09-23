@@ -20,12 +20,42 @@ This demo deploys the following AWS resources:
 
 ## Deployment Steps
 
-1. Configure environment variables:
-    ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
-    ```
+1. Provide the OpenAI API key, in one of two ways (see [Secrets from SSM Parameter Store](#secrets-from-ssm-parameter-store)):
+    - **From the environment** — the variable is injected into the Lambdas and always wins:
+      ```bash
+      export TF_VAR_openai_api_key=<OPENAI_API_KEY>
+      ```
+    - **From SSM Parameter Store** — leave `TF_VAR_openai_api_key` unset and create the parameter
+      first, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`. The key then never enters
+      Terraform state:
+      ```bash
+      aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+          --type SecureString --value "$OPENAI_API_KEY" --overwrite
+      ```
 
 2. Navigate to the deployment directory and run the deployment script:
     ```bash
     cd deploy && ./deploy.sh #./deploy.sh local if dependencies are built locally
     ```
+
+## Secrets from SSM Parameter Store
+
+The deployment sets `ssm_enabled = true`, which grants every Lambda role `ssm:GetParameter` (and
+nothing else) on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX`. `config.yaml` declares
+`secret.provider.type: aws_ssm`, and `lambda_agent_runner.py` resolves the key at startup:
+
+```python
+set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
+```
+
+- **Resolution order:** a set, non-empty `OPENAI_API_KEY` environment variable wins; an empty one
+  (what an unset `openai_api_key` injects) is a miss and falls through to SSM.
+- **Naming:** the key is the SDK's own variable name, lowercased under the deployment prefix —
+  `OPENAI_API_KEY` → `/ak/<prefix>/openai_api_key`.
+- **Terraform does not create the parameter.** Create it as a `SecureString` with the AWS-managed
+  `alias/aws/ssm` key, as shown above.
+- **Rotation:** overwrite the parameter with `aws ssm put-parameter ... --overwrite`. The key is
+  handed to the SDK once, when the agent runner starts, so new execution environments pick up the
+  new value while warm ones keep the old one until Lambda recycles them. To switch over
+  immediately, update the agent runner function's configuration (for example its description) to
+  force fresh environments.

@@ -20,6 +20,10 @@ module "serverless_agents" {
   queue_mode     = true
   execution_mode = "rest_sync"
 
+  # Secret resolution: grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so an
+  # empty openai_api_key falls back to /ak/<prefix>/openai_api_key (config.yaml `secret:` block)
+  ssm_enabled = true
+
   # Response Store Config - reuses the same Redis cluster created above
   create_redis_response_store = true
 

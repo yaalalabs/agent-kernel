@@ -40,6 +40,11 @@ module "containerized_agents" {
   queue_mode     = true
   execution_mode = "rest_sync" # "rest_sync" | "rest_async"
 
+  # ---- Secret Resolution ----
+  # Grants ssm:GetParameter on /ak/<prefix>/* and injects AK_SECRET__PREFIX, so an empty
+  # openai_api_key falls back to /ak/<prefix>/openai_api_key (config.yaml `secret:` block)
+  ssm_enabled = true
+
   # ---- Queue Configuration ----
   # SQS queues for request/response handling
   queue_config = {
