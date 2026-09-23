@@ -189,6 +189,12 @@ variable "account_id" {
   description = "AWS Account ID"
 }
 
+variable "ssm_enabled" {
+  type        = bool
+  description = "Whether the application roles may read /ak/<prefix>/* from SSM Parameter Store and receive AK_SECRET__PREFIX"
+  default     = false
+}
+
 variable "execution_mode" {
   type        = string
   description = "Execution mode (rest_sync, rest_async, async, stream). Injected as AK_EXECUTION__MODE in WebSocket modes so the runner knows whether to emit a full response (async) or one chunk per stream event (stream)."

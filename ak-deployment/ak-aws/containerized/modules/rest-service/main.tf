@@ -24,6 +24,11 @@ locals {
     var.create_dynamodb_schedule_table ? {
       AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME = var.dynamodb_schedule_table_name
     } : {},
+    # Secret resolution: the deployment scope only. `secret.provider.type` is deliberately never
+    # injected — the application declares it in its committed config.yaml, exactly like `thread.type`.
+    var.ssm_enabled ? {
+      AK_SECRET__PREFIX = var.prefix
+    } : {},
     # Queue mode — inject queue URLs and batch size
     var.queue_mode ? {
       AK_EXECUTION__QUEUES__INPUT__URL  = var.input_queue_url
@@ -135,6 +140,29 @@ resource "aws_iam_policy" "dynamodb_schedule_policy" {
         ]
         # No /index/* : listings Scan, this table has no GSI.
         Resource = var.dynamodb_schedule_table_arn
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+# Secret resolution: read-only access to this deployment's SSM parameters (AWSSMSecretProvider)
+resource "aws_iam_policy" "ssm_secret_policy" {
+  count       = var.ssm_enabled ? 1 : 0
+  name        = "${var.prefix}-rest-service-ssm-secret"
+  description = "Policy for SSM Parameter Store secret resolution"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ReadAKSecrets"
+        Effect = "Allow"
+        # The one call AWSSMSecretProvider makes. No GetParameters, no DescribeParameters,
+        # no write or delete action, and never account-wide ssm:*.
+        Action   = ["ssm:GetParameter"]
+        Resource = "arn:aws:ssm:${var.region}:${var.account_id}:parameter/ak/${var.prefix}/*"
       }
     ]
   })
@@ -323,7 +351,7 @@ module "ecs_service" {
     ]
   }
 
-  # Attach DynamoDB access to the task role for whichever tables exist
+  # Attach DynamoDB access to the task role for whichever tables exist, plus SSM secret reads
   create_tasks_iam_role = true
   tasks_iam_role_policies = merge(
     var.create_dynamodb_memory_table ? {
@@ -334,6 +362,9 @@ module "ecs_service" {
     } : {},
     var.create_dynamodb_schedule_table ? {
       DynamoDBSchedule = aws_iam_policy.dynamodb_schedule_policy[0].arn
+    } : {},
+    var.ssm_enabled ? {
+      SSMSecret = aws_iam_policy.ssm_secret_policy[0].arn
     } : {}
   )
 

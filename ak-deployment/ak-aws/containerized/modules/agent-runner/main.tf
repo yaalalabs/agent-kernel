@@ -30,6 +30,11 @@ locals {
     var.dynamodb_schedule_table_arn != null ? {
       AK_SCHEDULE__STORE__DYNAMODB__TABLE_NAME = var.dynamodb_schedule_table_name
     } : {},
+    # Secret resolution: the deployment scope only. `secret.provider.type` is deliberately never
+    # injected — the application declares it in its committed config.yaml, exactly like `thread.type`.
+    var.ssm_enabled ? {
+      AK_SECRET__PREFIX = var.prefix
+    } : {},
     # WebSocket modes: full response (async) vs one chunk per stream event (stream).
     contains(["async", "stream"], var.execution_mode) ? {
       AK_EXECUTION__MODE = var.execution_mode
@@ -272,6 +277,34 @@ resource "aws_iam_role_policy_attachment" "agent_runner_schedule_store_attachmen
   count      = var.create_dynamodb_schedule_table ? 1 : 0
   role       = aws_iam_role.agent_runner_task_role.name
   policy_arn = aws_iam_policy.agent_runner_schedule_store_policy[0].arn
+}
+
+# Secret resolution: read-only access to this deployment's SSM parameters (AWSSMSecretProvider)
+resource "aws_iam_policy" "ssm_secret_policy" {
+  count = var.ssm_enabled ? 1 : 0
+  name  = "${var.prefix}-agent-runner-ssm-secret"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ReadAKSecrets"
+        Effect = "Allow"
+        # The one call AWSSMSecretProvider makes. No GetParameters, no DescribeParameters,
+        # no write or delete action, and never account-wide ssm:*.
+        Action   = ["ssm:GetParameter"]
+        Resource = "arn:aws:ssm:${var.region}:${var.account_id}:parameter/ak/${var.prefix}/*"
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "ssm_secret_attachment" {
+  count      = var.ssm_enabled ? 1 : 0
+  role       = aws_iam_role.agent_runner_task_role.name
+  policy_arn = aws_iam_policy.ssm_secret_policy[0].arn
 }
 
 # ECS Resources

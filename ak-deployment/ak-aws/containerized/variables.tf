@@ -140,6 +140,12 @@ variable "enable_scheduling" {
   default     = false
 }
 
+variable "ssm_enabled" {
+  type        = bool
+  description = "Grant the application roles read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX, so the application's `secret.provider.type: aws_ssm` can resolve secrets. Terraform does not create the parameters."
+  default     = false
+}
+
 # -
 # REST Service Configuration
 # -
