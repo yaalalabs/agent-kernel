@@ -61,17 +61,12 @@ Both modes use the same 2-image architecture (REST Service + Agent Runner) with 
     export TF_VAR_prefix="ak-oai-scl-ecs-dev-scalable"
     export TF_VAR_region="us-east-1"
     ```
-    Then provide the OpenAI API key, in one of two ways (see [Secrets from SSM Parameter Store](#secrets-from-ssm-parameter-store)):
-    - **From the environment** — the variable is injected into both ECS services and always wins:
-      ```bash
-      export TF_VAR_openai_api_key=<OPENAI_API_KEY>
-      ```
-    - **From SSM Parameter Store** — leave `TF_VAR_openai_api_key` unset and create the parameter
-      first. The key then never enters Terraform state:
-      ```bash
-      aws ssm put-parameter --name "/ak/$TF_VAR_prefix/openai_api_key" \
-          --type SecureString --value "$OPENAI_API_KEY" --overwrite
-      ```
+    Then store the OpenAI API key in SSM Parameter Store (see [Secrets from SSM Parameter Store](#secrets-from-ssm-parameter-store)).
+    The key never passes through Terraform:
+    ```bash
+    aws ssm put-parameter --name "/ak/$TF_VAR_prefix/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
+    ```
 
 2. Build the deployment packages:
     ```bash
@@ -94,8 +89,8 @@ at startup (`app_rest_service.py` never calls the model, so it needs no key):
 set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
 ```
 
-- **Resolution order:** a set, non-empty `OPENAI_API_KEY` environment variable wins; an empty one
-  (what an unset `openai_api_key` injects) is a miss and falls through to SSM.
+- **Resolution order:** a set, non-empty `OPENAI_API_KEY` environment variable still wins (handy
+  for local runs); the deployment does not inject one, so on ECS the key comes from SSM.
 - **Naming:** the key is the SDK's own variable name, lowercased under the deployment prefix —
   `OPENAI_API_KEY` → `/ak/<prefix>/openai_api_key`.
 - **Terraform does not create the parameter.** Create it as a `SecureString` with the AWS-managed

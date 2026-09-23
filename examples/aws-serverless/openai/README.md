@@ -20,18 +20,13 @@ This demo deploys the following AWS resources:
 
 ## Deployment Steps
 
-1. Provide the OpenAI API key, in one of two ways (see [Secrets from SSM Parameter Store](#secrets-from-ssm-parameter-store)):
-    - **From the environment** — the variable is injected into the Lambdas and always wins:
-      ```bash
-      export TF_VAR_openai_api_key=<OPENAI_API_KEY>
-      ```
-    - **From SSM Parameter Store** — leave `TF_VAR_openai_api_key` unset and create the parameter
-      first, where `<prefix>` is `prefix` in `deploy/terraform.tfvars`. The key then never enters
-      Terraform state:
-      ```bash
-      aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
-          --type SecureString --value "$OPENAI_API_KEY" --overwrite
-      ```
+1. Store the OpenAI API key in SSM Parameter Store, where `<prefix>` is `prefix` in
+   `deploy/terraform.tfvars` (see [Secrets from SSM Parameter Store](#secrets-from-ssm-parameter-store)).
+   The key never passes through Terraform:
+    ```bash
+    aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
+    ```
 
 2. Navigate to the deployment directory and run the deployment script:
     ```bash
@@ -48,8 +43,8 @@ nothing else) on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX`. `config.yaml`
 set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
 ```
 
-- **Resolution order:** a set, non-empty `OPENAI_API_KEY` environment variable wins; an empty one
-  (what an unset `openai_api_key` injects) is a miss and falls through to SSM.
+- **Resolution order:** a set, non-empty `OPENAI_API_KEY` environment variable still wins (handy
+  for local runs); the deployment does not inject one, so on Lambda the key comes from SSM.
 - **Naming:** the key is the SDK's own variable name, lowercased under the deployment prefix —
   `OPENAI_API_KEY` → `/ak/<prefix>/openai_api_key`.
 - **Terraform does not create the parameter.** Create it as a `SecureString` with the AWS-managed
