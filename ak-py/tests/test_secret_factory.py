@@ -1,9 +1,12 @@
+import sys
+
 import pytest
 
 from agentkernel.core.config import AKConfig, _SecretConfig
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.secret import EnvSecretProvider, SecretManager, SecretProvider
 from agentkernel.secret.factory import SecretProviderFactory
+from agentkernel.secret.providers.aws_ssm import AWSSMSecretProvider
 
 
 class _RecordingSecretProvider(SecretProvider):
@@ -73,6 +76,28 @@ def test_dotted_path_to_non_subclass_rejected():
 def test_unimportable_dotted_path_rejected():
     with pytest.raises(AKConfigError):
         SecretProviderFactory.create(_config(provider={"type": "no_such_package.module.Provider"}))
+
+
+def test_aws_ssm_builds_aws_ssm_provider():
+    provider = SecretProviderFactory.create(_config(prefix="myproduct-dev", provider={"type": "aws_ssm"}))
+    assert isinstance(provider, AWSSMSecretProvider)
+    assert provider._compose_path("OPENAI_API_KEY") == "/ak/myproduct-dev/openai_api_key"
+
+
+def test_aws_ssm_without_prefix_raises_config_error():
+    with pytest.raises(AKConfigError) as exc_info:
+        SecretProviderFactory.create(_config(provider={"type": "aws_ssm"}))
+    assert "secret.prefix" in str(exc_info.value)
+
+
+def test_aws_ssm_missing_extra_raises_before_prefix_check(monkeypatch):
+    # Empty prefix too: a missing dependency must not be reported as a misconfiguration.
+    monkeypatch.delitem(sys.modules, "agentkernel.secret.providers.aws_ssm", raising=False)
+    monkeypatch.setitem(sys.modules, "boto3", None)  # simulate boto3 not being installed
+    with pytest.raises(ImportError) as exc_info:
+        SecretProviderFactory.create(_config(prefix="", provider={"type": "aws_ssm"}))
+    assert "agentkernel[aws]" in str(exc_info.value)
+    assert "secret.provider.type: aws_ssm" in str(exc_info.value)
 
 
 @pytest.mark.parametrize("provider_type", ["env", _RECORDING])
