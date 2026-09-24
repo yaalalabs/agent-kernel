@@ -259,6 +259,13 @@ your configuration would be worse.
 uv run pytest -s demo_test.py
 ```
 
+The tests need an `agentkernel` that includes the OKF package (`./build.sh local` until it is
+released) and fail straight away if the installed one does not. Without it the `okf` block is
+ignored, the agents get no knowledge-base tools, and they answer from guesswork. The tests also
+clear `bundle/generated/` before they start, so a previous run's writes cannot change this
+run's answers. Assertions check the answer for exact strings, and check the files written
+under `bundle/generated/`, instead of asking an LLM judge.
+
 ## Serving The Same Bundle From S3
 
 `OKFManager` composes whatever `DocumentStore` it is handed, so moving the bundle to an object
