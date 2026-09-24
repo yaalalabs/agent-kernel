@@ -1,0 +1,9 @@
+execution:
+  mode: realtime
+  queues:
+    type: sqs
+    input:
+      url: "http://localhost:4566/000000000000/ak-input"
+    output:
+      url: "http://localhost:4566/000000000000/ak-output"
+

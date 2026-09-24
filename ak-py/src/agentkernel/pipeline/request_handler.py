@@ -263,7 +263,7 @@ class RequestHandler(RestHandler):
             raise HTTPException(status_code=400, detail={"error": "No prompt provided in the request", "session_id": body.session_id})
 
         self._reject_unroutable(body)
-        if self._effective_mode() in (ExecutionMode.STREAM, ExecutionMode.REALTIME):
+        if self._effective_mode() == ExecutionMode.STREAM:
             return await self._run_chat_stream(body)
         return await self.enqueue_and_wait(body)
 
@@ -285,7 +285,7 @@ class RequestHandler(RestHandler):
                 status_code=400,
                 detail={"error": "ASYNC mode delivers responses over the WebSocket route: connect to /ws instead", "session_id": body.session_id},
             )
-        if mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME) and not self.get_response_store().supports_chunk_streaming():
+        if mode == ExecutionMode.STREAM and not self.get_response_store().supports_chunk_streaming():
             # Broker topologies pair STREAM with a shared store that cannot stream chunks;
             # there the chunks are pushed over WebSocket and this route has nothing to serve.
             raise HTTPException(

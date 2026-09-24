@@ -38,33 +38,42 @@ class LiveKitEdgeGateway(OutboundAdapter):
 
     def __init__(
         self,
-        room_url: str,
-        agent_name: str,
-        session_id: str,
+        room_url: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        session_id: Optional[str] = None,
         token: Optional[str] = None,
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
     ):
         if rtc is None:
             raise AKConfigError("LiveKit SDK is not installed. Run: pip install livekit-api livekit")
-        self.room_url = room_url
-        self.agent_name = agent_name
-        self.session_id = session_id
+            
+        from ...core.config import AKConfig
+        import uuid
+        
+        config = AKConfig.get()
+        self.room_url = room_url or config.livekit.livekit_url
+        self.agent_name = agent_name or config.livekit.agent or "general"
+        self.session_id = session_id or str(uuid.uuid4())
 
         if token:
             self.token = token
-        elif api_key and api_secret:
-            from livekit import api
-
-            self.token = (
-                api.AccessToken(api_key, api_secret)
-                .with_identity(f"agent-{agent_name}")
-                .with_name(f"{agent_name} Agent")
-                .with_grants(api.VideoGrants(room_join=True, room=session_id))
-                .to_jwt()
-            )
         else:
-            raise ValueError("Either 'token' or both 'api_key' and 'api_secret' must be provided")
+            final_api_key = api_key or config.livekit.api_key
+            final_api_secret = api_secret or config.livekit.api_secret
+            
+            if final_api_key and final_api_secret:
+                from livekit import api
+    
+                self.token = (
+                    api.AccessToken(final_api_key, final_api_secret)
+                    .with_identity(f"agent-{self.agent_name}")
+                    .with_name(f"{self.agent_name} Agent")
+                    .with_grants(api.VideoGrants(room_join=True, room=self.session_id))
+                    .to_jwt()
+                )
+            else:
+                raise ValueError("Either 'token' or both 'api_key' and 'api_secret' must be provided in code or config")
 
         self.room: Optional["rtc.Room"] = None
         self.audio_source: Optional["rtc.AudioSource"] = None
@@ -160,7 +169,7 @@ class LiveKitEdgeGateway(OutboundAdapter):
                 raw_bytes = event.frame.data.tobytes()
                 if raw_bytes:
                     buffer.extend(raw_bytes)
-                    
+
                     # Flush to the queue when buffer reaches ~100ms of audio
                     # 24000 samples/sec * 2 bytes/sample * 1 channel * 0.1s = 4800 bytes
                     if len(buffer) >= 4800:
@@ -169,7 +178,7 @@ class LiveKitEdgeGateway(OutboundAdapter):
                         buffer.clear()
             except Exception as e:
                 _log.error(f"Failed to process incoming audio frame: {e}")
-                
+
         if buffer:
             b64_audio = base64.b64encode(buffer).decode("utf-8")
             self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
@@ -181,7 +190,7 @@ class LiveKitEdgeGateway(OutboundAdapter):
         body = BaseRunRequest(prompt="", session_id=self.session_id, mode=ExecutionMode.REALTIME, requests=[request])
         request_id = str(uuid.uuid4())
         attributes = {ATTR_INTEGRATION: INTEGRATION_NAME, f"{REPLY_CONTEXT_PREFIX}session_id": self.session_id}
-        asyncio.create_task(asyncio.to_thread(self.producer.enqueue, body=body, request_id=request_id, attributes=attributes))
+        asyncio.create_task(asyncio.to_thread(self.producer.enqueue, body=body, request_id=request_id, attributes=attributes, group_id=self.session_id))
 
     # -- outbound: queue -> room -------------------------------------------------------------
 

@@ -287,16 +287,6 @@ class AgentHandler:
         async for chunk in self.service.stream_multi(requests=requests, acting_user_id=acting_user_id):
             yield chunk
 
-    def run_realtime_sync(self, requests: List[Any], acting_user_id: Optional[str] = None) -> Iterator[Any]:
-        """Run agent realtime streaming requests synchronously.
-
-        :param requests: List of AgentRequest objects to process
-        :param acting_user_id: When given, published as the run's acting user (see Runtime.realtime_stream)
-        :return: Iterator of StreamChunk objects
-        """
-        return AgentHandler._iterate_async_sync(self.service.realtime_stream_multi(requests=requests, acting_user_id=acting_user_id))
-
-
     def get_response_session_id(self, session_id: Optional[str]) -> Optional[str]:
         """Get the session ID for the response.
 
@@ -472,33 +462,6 @@ class ChatService:
 
         def _stream() -> Generator[StreamChunk, None, None]:
             with contextlib.closing(handler.run_stream_sync(requests, acting_user_id=req.user_id)) as chunks:
-                try:
-                    for chunk in chunks:
-                        yield chunk
-                except Exception as e:
-                    yield StreamChunk(error=str(e), done=True)
-
-        return _stream()
-
-
-
-    def execute_realtime_sync(self, req: BaseRunRequest, requests: Optional[List[AgentRequest]] = None) -> Generator[StreamChunk, None, None]:
-        """Synchronous counterpart of execute_realtime().
-
-        :param req: Run request carrying prompt, agent, and session_id
-        :param requests: Optional prebuilt AgentRequest list
-        :return: Generator yielding raw StreamChunk objects
-        :raises ValueError: If validation fails or no agent is available
-        """
-        scheduled = self._maybe_schedule(req)
-        if scheduled is not None:
-            return self._acknowledgement_stream_sync(scheduled)
-        self._record_trigger(req)
-        requests = self._prepare_sync(req, requests)
-        handler = self.prepare_agent_handler(req.session_id, req.agent)
-
-        def _stream() -> Generator[StreamChunk, None, None]:
-            with contextlib.closing(handler.run_realtime_sync(requests, acting_user_id=req.user_id)) as chunks:
                 try:
                     for chunk in chunks:
                         yield chunk
@@ -701,36 +664,6 @@ class ChatService:
         """
         session_id = req.session_id
         chunks = self.execute_stream_sync(req, requests)
-
-        def _stream() -> Generator[str, None, None]:
-            with contextlib.closing(chunks) as raw_chunks:
-                try:
-                    for chunk in raw_chunks:
-                        yield ResponseBuilder.stream_chunk(chunk, session_id, sse_format=sse_format)
-                except Exception as e:
-                    error_chunk = StreamChunk(error=str(e), done=True)
-                    yield ResponseBuilder.stream_chunk(error_chunk, session_id, sse_format=sse_format)
-
-        return _stream()
-
-
-    def process_realtime_chat_sync(
-        self,
-        req: BaseRunRequest,
-        sse_format: bool = False,
-        requests: Optional[List[AgentRequest]] = None,
-    ) -> Generator[str, None, None]:
-        """Process a realtime streaming chat request synchronously.
-
-        :param req: Base run request with prompt, session_id, agent, and attachments
-        :param sse_format: When True, yield Server-Sent Events formatted frames.
-                           When False, yield raw StreamChunk JSON payloads.
-        :param requests: Optional prebuilt AgentRequest list
-        :return: Generator yielding StreamChunk payloads as JSON or SSE-formatted strings
-        :raises ValueError: If session_id or prompt is missing, or no agent is available
-        """
-        session_id = req.session_id
-        chunks = self.execute_realtime_sync(req, requests)
 
         def _stream() -> Generator[str, None, None]:
             with contextlib.closing(chunks) as raw_chunks:

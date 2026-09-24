@@ -196,25 +196,6 @@ class AgentService:
         ):  # using async due to aync iterator
             yield chunk
 
-    async def realtime_stream_multi(self, requests: list[AgentRequest], acting_user_id: str | None = None) -> AsyncGenerator[StreamChunk, None]:
-        """
-        Async generator that streams the agent response via realtime connection.
-
-        :param requests: List of requests to send to the agent.
-        :param acting_user_id: When given, published as the run's acting user in the session's volatile
-                        cache (see Runtime.realtime_stream) so hooks and tools can attribute work to the caller.
-        :return: An async generator yielding StreamChunk objects.
-        """
-        if not self._agent:
-            raise ValueError("No agent selected. Please select an agent before running.")
-        if not self._session:
-            raise ValueError("No session available. Please create or load a session before running.")
-
-        async for chunk in self._runtime.realtime_stream(
-            self._agent, self._session, requests, acting_user_id=acting_user_id
-        ):
-            yield chunk
-
     def get_response_session_id(self, session_id: str | None = None) -> str | None:
         """
         Method will return the session's ID if exists. If not, it will

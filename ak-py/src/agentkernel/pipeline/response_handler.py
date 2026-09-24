@@ -57,7 +57,7 @@ class ResponseHandler:
             return
 
         mode = AKConfig.get().execution.mode
-        if mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME):
+        if mode == ExecutionMode.STREAM:
             # No USER_ID attribute means the request entered over REST (spec §2 invariant): its
             # chunks are drained by the Request Handler's SSE generator from the chunk-streaming
             # store. WS-entered requests always carry the authenticated user id.
@@ -88,7 +88,7 @@ class ResponseHandler:
             error_text = f"Failed to process message after {max_receive_count} retries"
             mode = AKConfig.get().execution.mode
 
-            if mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME):
+            if mode == ExecutionMode.STREAM:
                 error_chunk = StreamChunk(error=error_text, done=True).model_dump(exclude_none=True)
                 if message.group_id:
                     error_chunk["session_id"] = message.group_id
@@ -189,14 +189,15 @@ class ResponseHandler:
             )
             run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
             return
-
-        mode = AKConfig.get().execution.mode
-        if mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME) and ("delta" in body or "event" in body):
-            # Pass the chunk directly to the adapter's deliver_chunk method
+            
+        # Realtime stream chunks carry an "event" key; route through deliver_chunk
+        # when the adapter supports it (e.g. LiveKitEdgeGateway).
+        if "event" in body and hasattr(adapter, "deliver_chunk"):
             run_async_sync(adapter.deliver_chunk(body, reply_context))
-        else:
-            run_async_sync(adapter.deliver(AgentReplyText(response=str(body.get("result", ""))), reply_context))
-
+            self._log.debug(f"[OUTPUT DONE] Delivered chunk to {integration}: session_id={message.group_id}")
+            return
+            
+        run_async_sync(adapter.deliver(AgentReplyText(response=str(body.get("result", ""))), reply_context))
         self._log.info(f"[OUTPUT DONE] Delivered to {integration}: session_id={message.group_id}, request_id={request_id}")
 
     def _store_response(self, message: QueueMessage) -> None:

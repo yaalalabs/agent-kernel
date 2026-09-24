@@ -1,4 +1,3 @@
-import contextvars
 import json
 import uuid
 from enum import Enum
@@ -7,11 +6,6 @@ from typing import Annotated, Any, Callable, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .event import StreamEvent
-
-execution_mode_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("execution_mode", default=None)
-request_id_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("request_id", default=None)
-integration_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("integration", default=None)
-reply_context_var: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar("reply_context", default=None)
 
 
 class AgentRequestText(BaseModel):
@@ -62,6 +56,20 @@ class AgentRequestImage(BaseModel):
     mime_type: str | None = None
 
 
+class AgentRequestAny(BaseModel):
+    """
+    AgentRequestAny encapsulates passing any type of request to be handled by the pre-execution hooks. These are not directly handled by the agent kernel runtime.
+
+    content: Any : This could be base64 encoded string or bytes or url
+    name: str : name of the data
+    type: Literal["other"]
+    """
+
+    content: Any
+    name: str
+    type: Literal["other"] = "other"
+
+
 class AgentRequestVoice(BaseModel):
     """
     AgentRequestVoice encapsulates a voice request to an agent
@@ -77,20 +85,6 @@ class AgentRequestVoice(BaseModel):
     name: str
     type: Literal["voice"] = "voice"
     mime_type: str | None = None
-
-
-class AgentRequestAny(BaseModel):
-    """
-    AgentRequestAny encapsulates passing any type of request to be handled by the pre-execution hooks. These are not directly handled by the agent kernel runtime.
-
-    content: Any : This could be base64 encoded string or bytes or url
-    name: str : name of the data
-    type: Literal["other"]
-    """
-
-    content: Any
-    name: str
-    type: Literal["other"] = "other"
 
 
 class AgentRequestAttachmentRef(BaseModel):

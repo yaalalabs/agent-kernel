@@ -1,7 +1,0 @@
-execution:
-  mode: "realtime"
-
-multimodal:
-  enabled: true
-  storage:
-    type: "in_memory"

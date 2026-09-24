@@ -7,7 +7,7 @@ import pickle
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Iterator, Mapping
 from enum import Enum
-from typing import Any, ClassVar, Self, cast
+from typing import Any, Callable, ClassVar, Self, cast
 
 from .event import StreamEvent
 from .hooks import PostHook, PreHook
@@ -405,19 +405,44 @@ class RealtimeRunner(Runner):
     via persistent WebSocket/WebRTC connections (e.g. OpenAI Realtime API).
     """
 
+    async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        """Not supported for realtime runners."""
+        raise NotImplementedError("Realtime runners do not support unary run().")
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+        """Not supported for realtime runners."""
+        raise NotImplementedError("Realtime runners do not support unary stream().")
+        yield
+
     @abstractmethod
-    async def connect(self, session: Session) -> None:
+    async def connect(self, session: Session, agent: "Agent", callback: Callable) -> None:
         """
         Establishes a persistent socket connection to the framework's Realtime API backend.
         :param session: The session to bind this connection to.
+        :param agent: The agent instance.
+        :param callback: The event callback from the pool.
         """
         raise NotImplementedError()
 
     @abstractmethod
-    async def disconnect(self, session: Session) -> None:
+    async def append_audio(self, base64_audio: str) -> None:
+        """Appends audio to the model's input buffer."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def send_text(self, text: str) -> None:
+        """Sends a text message and requests a response."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def send_tool_result(self, call_id: str, result: str) -> None:
+        """Sends a tool execution result back to the model."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def disconnect(self) -> None:
         """
         Closes the active persistent socket connection.
-        :param session: The session whose connection should be closed.
         """
         raise NotImplementedError()
 
@@ -443,16 +468,16 @@ class Agent(ABC):
         """
         return cls.current_agent.get()
 
-    def __init__(self, name: str, runner: Runner, realtime_runner: "RealtimeRunner | None" = None):
+    def __init__(self, name: str, runner: Runner, realtime_runner_cls: "Type[RealtimeRunner] | None" = None):
         """
         Initializes an Agent instance.
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
-        :param realtime_runner: Optional realtime runner for WebSocket connections.
+        :param realtime_runner_cls: Optional realtime runner class for WebSocket connections.
         """
         self._name: str = name
         self._runner: Runner = runner
-        self._realtime_runner: "RealtimeRunner | None" = realtime_runner
+        self._realtime_runner_cls: "Type[RealtimeRunner] | None" = realtime_runner_cls
         self._pre_hooks: list[PreHook] = []
         self._post_hooks: list[PostHook] = []
 
@@ -478,11 +503,11 @@ class Agent(ABC):
         return self._runner
 
     @property
-    def realtime_runner(self) -> "RealtimeRunner | None":
+    def realtime_runner_cls(self) -> "Type[RealtimeRunner] | None":
         """
-        Returns the realtime runner associated with the agent, if any.
+        Returns the realtime runner class associated with the agent, if any.
         """
-        return self._realtime_runner
+        return self._realtime_runner_cls
 
     @property
     def pre_hooks(self) -> list[PreHook]:
