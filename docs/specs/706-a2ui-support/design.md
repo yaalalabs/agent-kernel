@@ -161,7 +161,7 @@ is the application's job, not the framework's.
 | WebSocket | **yes** | same function |
 | Async mode | **yes** | same function |
 | Conversation threads | **the live reply, yes** | same function — but stored history is not labelled; see Non-goals |
-| Streaming / AG-UI | **yes** | needs the new stream event |
+| Streaming / AG-UI | **yes** | needs the new stream event — and a labelling agent gives up incremental delivery; see piece 3 |
 | A2A | **yes** | depends on the `a2a-sdk` port, which is its own issue — see piece 4 |
 | MCP | **yes** | two-line fix; carries the label in `_meta`, verified — see piece 4 |
 
@@ -197,8 +197,8 @@ around it.
 The A2UI part. No component list, no parser, no validation rules, no config flag, no dependency on
 the A2UI SDK.
 
-The application writes a short post-hook that turns its agent's reply into an object and labels it —
-about ten lines, shown in §5. We ship one runnable example containing exactly that, so nobody starts
+The application writes a short post-hook that decides which replies are UI and labels those — about
+fifteen lines, shown in §5. We ship one runnable example containing exactly that, so nobody starts
 from a blank file.
 
 ```mermaid
@@ -351,12 +351,15 @@ class A2UIPostHook(PostHook):
     async def on_run(self, session, requests, agent, agent_reply):
         if not isinstance(agent_reply, AgentReplyAny):
             return agent_reply
-        if agent_reply.content.get("kind") != "ui":
+        content = agent_reply.content
+        if content.get("kind") != "ui":
             return AgentReplyText(                       # prose: unlabelled, as today
-                response=agent_reply.content["text"], prompt=agent_reply.prompt
+                response=content["text"], prompt=agent_reply.prompt
             )
-        return agent_reply.model_copy(
-            update={"media_type": "application/json+a2ui"}
+        return AgentReplyAny(
+            content={"root": content["root"]},           # the payload alone, no "kind"
+            prompt=agent_reply.prompt,
+            media_type="application/json+a2ui",
         )
 
     def name(self) -> str:
@@ -373,6 +376,14 @@ output into an `AgentReplyAny`, so under the union a greeting comes back as `Tex
 A2UI — §4's Turn 1 would arrive as an object with a media type instead of the plain string shown
 there. Converting the text member back is what keeps the two sections agreeing, and it is why the
 union's members need a discriminator field (`kind` above) the hook can read.
+
+**And why the UI branch builds a new reply rather than copying.** Two reasons, both of which bite
+whoever writes this hook. The discriminator is the application's scaffolding, not part of the
+format — leaving it in would put `"kind": "ui"` on the wire inside a payload claiming to be A2UI, so
+the hook forwards `content["root"]` alone (which is what §4's Turn 2 and the MCP example below both
+show). And `model_copy(update={"content": ...})` **bypasses field validation**, so it would skip
+piece 1's JSON-safe rule; constructing the reply runs it. Copying is fine when only `media_type`
+changes — the prompt route does exactly that — but not when `content` does.
 
 That last line is the whole wiring. It sits beside the module the application already builds, so no
 framework config surface is needed to reach it.
@@ -756,7 +767,8 @@ These are requirements, not reassurance. Each one is checkable.
 - **One cross-surface parity test.** A single **labelled** structured reply, asserted to arrive with
   the same dict and the same label on REST, WebSocket, A2A, MCP and AG-UI — every surface piece 2 to
   4 touches. Nothing like it exists today. This is what makes the claim in §3 checkable rather than
-  asserted, and what catches a future surface quietly regressing to an early encode.
+  asserted, and what catches a future surface quietly regressing to an early encode. Its A2A leg
+  lands with the A2A branch, i.e. after the `a2a-sdk` port; the other four do not wait.
   The fixture **must carry a datetime and a Decimal**, not plain strings — parity on a payload that
   was never at risk proves nothing, and those are the values the four encoders disagree about.
 - **The back-compat guarantee, tested directly** — this is now the headline claim. An **unlabelled**
@@ -785,7 +797,8 @@ These are requirements, not reassurance. Each one is checkable.
 
 ## 8. What this lands next to
 
-**Nothing blocks this work.** Listed so a reviewer knows what it shares a neighbourhood with.
+**Nothing blocks pieces 1 to 3.** The A2A half of piece 4 has one dependency, below; everything else
+here is a neighbour rather than a blocker.
 
 - **#678 (streaming post-hooks) — merged.** `PostHook.on_stream_event` exists and is what the
   streaming change uses. It did **not** add a structured event member, so that gap is still this
