@@ -4,8 +4,8 @@ sidebar_position: 7
 
 # Secret Resolution
 
-Agent Kernel can **resolve secrets (API keys, passwords, tokens) from a managed store, falling back from
-the environment**. Application code asks `SecretManager` for a key by the same name the SDKs already read
+Agent Kernel can **resolve secrets (API keys, passwords, tokens) from the environment, falling back to
+a managed store**. Application code asks `SecretManager` for a key by the same name the SDKs already read
 from the environment — `OPENAI_API_KEY`, `NEO4J_PASSWORD` — and the configured provider supplies it. The
 same code reads the key from an environment variable on a laptop and from AWS SSM Parameter Store in
 production, with only `config.yaml` changing.
