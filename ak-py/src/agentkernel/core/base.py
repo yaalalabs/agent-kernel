@@ -7,12 +7,15 @@ import pickle
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
 from enum import Enum
-from typing import Any, Callable, ClassVar, Self, cast
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Self, cast
 
 from .event import StreamEvent
 from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
+
+if TYPE_CHECKING:  # pragma: no cover: typing only; .tool imports .base, so this avoids a cycle
+    from .tool import ToolContext
 
 _log = logging.getLogger("ak.core.runner")
 
@@ -438,6 +441,23 @@ class RealtimeRunner(Runner):
     async def send_tool_result(self, call_id: str, result: str) -> None:
         """Sends a tool execution result back to the model."""
         raise NotImplementedError()
+
+    async def execute_tool(self, name: str, arguments: str, context: "ToolContext", call_id: str) -> str:
+        """Executes the named tool with JSON ``arguments`` and returns its string result.
+
+        Owned by the adapter because both the tool object and the context it needs are
+        framework-native: the OpenAI SDK expects its own ``ToolContext`` built around the run
+        context, and ADK injects a ``ToolContext`` (session state, actions) into tools that
+        declare one. The adapter activates ``context`` the way its framework expects; the
+        caller only constructs it.
+
+        :param name: Tool name, matching the model's function call.
+        :param arguments: Raw JSON argument string the model emitted.
+        :param context: The Agent Kernel tool context for this call.
+        :param call_id: The model's function-call id (frameworks correlate the response by it).
+        :return: The tool result as a string.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement realtime tool execution")
 
     @abstractmethod
     async def disconnect(self) -> None:

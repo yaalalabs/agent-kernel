@@ -9,7 +9,7 @@ from ..core.base import Agent as BaseAgent
 from ..core.base import Session
 from ..core.runtime import Runtime
 from ..core.tool import ToolContext
-from .envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
+from .envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransportFactory
 
@@ -39,6 +39,9 @@ class RealtimeConnection:
         self.user_id: Optional[str] = None
         self.integration: Optional[str] = None
         self.reply_context: dict = {}
+        # One transport for the connection's lifetime: a realtime turn emits tens of chunks a
+        # second, and building a transport (and its client) per chunk is pure overhead.
+        self._transport = QueueTransportFactory.create()
 
         if not getattr(self.agent, "realtime_runner_cls", None):
             raise ValueError(f"Agent {self.agent.name} has no realtime_runner_cls configured")
@@ -58,55 +61,41 @@ class RealtimeConnection:
 
     async def handle_framework_event(self, event_type: str, data: dict) -> None:
         """Called by the framework adapter (e.g. OpenAI) when an event occurs over the socket."""
-        transport = QueueTransportFactory.create()
-
         if event_type == "audio_delta":
-            await self._emit(transport, {"event": {"type": "audio_delta", "content": data["delta"]}, "done": False})
+            await self._emit({"event": {"type": "audio_delta", "content": data["delta"]}, "done": False})
         elif event_type == "transcript_delta":
             pass  # Phase 2: feed into RealtimeGuardrailHook on transcript text
         elif event_type == "interrupt":
-            await self._emit(transport, {"event": {"type": "interrupt"}, "done": False})
+            await self._emit({"event": {"type": "interrupt"}, "done": False})
         elif event_type == "done":
-            await self._emit(
-                transport,
-                {"event": {"type": "done", "status": data.get("status"), "transcript": data.get("transcript")}, "done": True},
-            )
+            await self._emit({"event": {"type": "done", "status": data.get("status"), "transcript": data.get("transcript")}, "done": True})
         elif event_type == "tool_call":
             self.loop.create_task(self._execute_tool_and_reply(data["call_id"], data["name"], data["arguments"]))
 
     async def _execute_tool_and_reply(self, call_id: str, name: str, arguments: str) -> None:
-        """Execute an AK tool (including system tools) and send the result back to the model.
+        """Execute a tool through the adapter and send the result back to the model.
 
-        System tools (sandbox, knowledge base, schedule, etc.) are attached to the SDK agent
-        via ``_attach_system_tools`` at wrap time, so they appear alongside user-defined tools
-        on ``sdk_agent.tools``.  ``ToolContext`` is set so tool functions can call
-        ``ToolContext.get()`` for access to runtime, agent, and session.
+        The adapter owns invocation (framework-native tool objects differ); this class owns the
+        ``ToolContext`` lifecycle, so a tool function can read ``ToolContext.get()`` while it
+        runs. System tools (sandbox, knowledge base, schedule, ...) are attached to the native
+        agent at wrap time, so they resolve here alongside user-defined tools.
         """
         _log.info(f"Executing tool {name} for session {self.session_id}")
-        result_str = f"Error: Tool {name} not found"
-
+        # The adapter activates this context in its framework's own way (OpenAI sets the
+        # contextvar around ``on_invoke_tool``; ADK enters the cache the wrapper fetches from).
         ctx = ToolContext(self.runtime, self.agent, self.session, [])
-        ctx.set()
         try:
-            sdk_agent = getattr(self.agent, "agent", None)
-            if sdk_agent:
-                for tool in sdk_agent.tools:
-                    if getattr(tool, "name", None) == name:
-                        result = await tool.on_invoke_tool(ctx, arguments)
-                        result_str = str(result) if result is not None else ""
-                        break
+            result_str = await self.adapter.execute_tool(name, arguments, ctx, call_id)
         except Exception as e:
             _log.exception(f"Tool execution {name} failed")
             result_str = f"Error: {e}"
-        finally:
-            ctx.reset()
 
         _log.info(f"Tool {name} result: {result_str[:200]}")
         await self.adapter.send_tool_result(call_id, result_str)
 
-    async def _emit(self, transport, chunk: dict) -> None:
+    async def _emit(self, chunk: dict) -> None:
         """Send a realtime output chunk to the output queue with the current delivery context."""
-        attributes = {ATTR_REQUEST_ID: self.request_id or "unknown"}
+        attributes = {ATTR_REQUEST_ID: self.request_id or "unknown", ATTR_REALTIME: "true"}
         if self.user_id:
             attributes[ATTR_USER_ID] = self.user_id
         if self.integration:
@@ -115,7 +104,7 @@ class RealtimeConnection:
             attributes[f"{REPLY_CONTEXT_PREFIX}{key}"] = value
 
         message = QueueMessage(body=json.dumps(chunk), attributes=attributes, group_id=self.session_id, dedup_id=str(uuid.uuid4()))
-        await asyncio.to_thread(transport.send, QueueName.OUTPUT, message)
+        await asyncio.to_thread(self._transport.send, QueueName.OUTPUT, message)
 
     def append_audio(self, audio_data: str) -> None:
         """Thread-safe: schedule audio append on the pool's event loop."""
@@ -196,6 +185,15 @@ class RealtimeConnectionPool:
             except Exception:
                 _log.exception(f"Failed to close connection for session {session_id}")
         self._connections.clear()
+
+    def get_connection(self, session_id: str) -> Optional["RealtimeConnection"]:
+        """Return the session's existing connection, or None.
+
+        Thread-safe fast path for the hot audio path: a caller resolves the agent/session (and
+        the logging that comes with it) only when this returns None and it must create one.
+        """
+        with self._conn_lock:
+            return self._connections.get(session_id)
 
     def get_or_create(self, session_id: str, agent: BaseAgent, runtime: Runtime, session: Session) -> RealtimeConnection:
         """Get or create a persistent realtime connection for a session.

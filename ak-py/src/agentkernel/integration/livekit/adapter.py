@@ -5,7 +5,7 @@ import logging
 import uuid
 from typing import Dict, Optional
 
-from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, BaseRunRequest, ExecutionMode
+from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, BaseRunRequest
 from ...core.util.factory import AKConfigError
 from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
 from ...pipeline.producer import RequestProducer
@@ -47,10 +47,9 @@ class LiveKitEdgeGateway(OutboundAdapter):
     ):
         if rtc is None:
             raise AKConfigError("LiveKit SDK is not installed. Run: pip install livekit-api livekit")
-            
+
         from ...core.config import AKConfig
-        import uuid
-        
+
         config = AKConfig.get()
         self.room_url = room_url or config.livekit.livekit_url
         self.agent_name = agent_name or config.livekit.agent or "general"
@@ -61,10 +60,10 @@ class LiveKitEdgeGateway(OutboundAdapter):
         else:
             final_api_key = api_key or config.livekit.api_key
             final_api_secret = api_secret or config.livekit.api_secret
-            
+
             if final_api_key and final_api_secret:
                 from livekit import api
-    
+
                 self.token = (
                     api.AccessToken(final_api_key, final_api_secret)
                     .with_identity(f"agent-{self.agent_name}")
@@ -81,8 +80,10 @@ class LiveKitEdgeGateway(OutboundAdapter):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._connected = False
 
-        # Replies route back through the Response Handler to this live connection (see the
-        # `livekit` integration name stamped on every output message).
+        # A stateful edge is the one case the config-driven factory cannot build: replies must
+        # reach this live room, so the gateway registers itself as the `livekit` outbound adapter
+        # (the same name stamped on every output message). One gateway per integration name —
+        # multi-room would need a per-session resolution instead of the shared cache.
         IntegrationAdapterFactory.register_outbound(INTEGRATION_NAME, self)
 
     async def start(self) -> None:
@@ -187,10 +188,12 @@ class LiveKitEdgeGateway(OutboundAdapter):
         """Push one request onto the input queue tagged for this livekit session."""
         if self.producer is None:
             return
-        body = BaseRunRequest(prompt="", session_id=self.session_id, mode=ExecutionMode.REALTIME, requests=[request])
+        body = BaseRunRequest(prompt="", session_id=self.session_id, requests=[request])
         request_id = str(uuid.uuid4())
         attributes = {ATTR_INTEGRATION: INTEGRATION_NAME, f"{REPLY_CONTEXT_PREFIX}session_id": self.session_id}
-        asyncio.create_task(asyncio.to_thread(self.producer.enqueue, body=body, request_id=request_id, attributes=attributes, group_id=self.session_id))
+        asyncio.create_task(
+            asyncio.to_thread(self.producer.enqueue, body=body, request_id=request_id, attributes=attributes, group_id=self.session_id)
+        )
 
     # -- outbound: queue -> room -------------------------------------------------------------
 

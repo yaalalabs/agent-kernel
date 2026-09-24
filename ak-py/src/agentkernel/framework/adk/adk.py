@@ -32,7 +32,6 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
     AgentRequestVoice,
-    ExecutionMode,
 )
 
 from ...core import Agent as AKBaseAgent
@@ -536,8 +535,9 @@ class GoogleADKModule(Module):
         :param agents: List of agents in the module.
         :return: GoogleADKAgent instance.
         """
-        rt_cls = self.realtime_runner_cls if AKConfig.get().execution.mode == ExecutionMode.REALTIME else None
-        return GoogleADKAgent(agent.name, self.runner, agent, realtime_runner_cls=rt_cls)
+        # The realtime adapter class is attached unconditionally: only the pipeline (in REALTIME
+        # mode) ever instantiates it, so the framework need not know the execution mode.
+        return GoogleADKAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
 
     def load(self, agents: list[BaseAgent]) -> "GoogleADKModule":
         """
@@ -697,6 +697,8 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.adk.realtime")
         self._callback: Callable | None = None
+        self._agent = None
+        self._session = None
         self._connection = None
         self._cm = None
         self._listen_task: asyncio.Task | None = None
@@ -745,6 +747,8 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         from google import genai
 
         self._callback = callback
+        self._agent = agent
+        self._session = session
         client = genai.Client()
         model = self._realtime_model(agent)
         self._log.info(f"Connecting to Gemini Live (model={model})")
@@ -804,6 +808,41 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         if self._connection:
             name = self._tool_names.pop(call_id, call_id)
             await self._connection.send_tool_response(function_responses=types.FunctionResponse(id=call_id, name=name, response={"output": result}))
+
+    async def execute_tool(self, name: str, arguments: str, context: AKToolContext, call_id: str) -> str:
+        """Invoke an ADK tool through ADK's own ``run_async`` with a real ToolContext.
+
+        ADK *injects* a ``ToolContext`` (session state, actions, artifacts) into any tool that
+        declares one, so calling the wrapped function directly would hand those tools ``None``
+        and any ``tool_context.state`` access would fail. A fresh ``InvocationContext`` /
+        ``ToolContext`` is built here instead, carrying the active Agent Kernel context id in
+        the ADK session state the same way a normal ADK run does.
+        """
+        from google.adk.agents.invocation_context import InvocationContext
+        from google.adk.tools import ToolContext as ADKToolContext
+
+        sdk_agent = getattr(self._agent, "agent", None)
+        tool = next((t for t in getattr(sdk_agent, "tools", None) or [] if getattr(t, "name", None) == name), None)
+        if tool is None:
+            return f"Error: Tool {name} not found"
+
+        adk_session = GoogleADKRunner._session(self._session)
+        session = await adk_session.create_session(app_name="AgentKernel", user_id="AgentKernel", session_id=self._session.id)
+        invocation_context = InvocationContext(
+            session_service=adk_session.session_service,
+            invocation_id=str(uuid4()),
+            session=session,
+            agent=sdk_agent,
+        )
+        tool_context = ADKToolContext(invocation_context=invocation_context, function_call_id=call_id)
+
+        # Entering the context populates the cache the ADK tool wrapper fetches the Agent
+        # Kernel context from; the wrapper then sets/resets the contextvar itself.
+        with context:
+            tool_context.state["ak_tool_context"] = context.id
+            args = json.loads(arguments) if arguments else {}
+            result = await tool.run_async(args=args, tool_context=tool_context)
+        return str(result) if result is not None else ""
 
     async def disconnect(self) -> None:
         if self._listen_task:

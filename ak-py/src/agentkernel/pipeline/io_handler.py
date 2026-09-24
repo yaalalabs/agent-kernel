@@ -20,6 +20,7 @@ if TYPE_CHECKING:  # pragma: no cover: typing only, so pipeline keeps importing 
 
 class RealtimeGateway(Protocol):
     name: str
+
     async def start(self) -> None: ...
 
 
@@ -79,7 +80,7 @@ class IOHandler:
         cls._validate_topology(mode, transport_type, config, auth_validator)
 
         single_process = transport_type == "in_memory"
-        if not single_process and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME):
+        if not single_process and ExecutionMode.is_live_delivery(mode):
             from .ws.push import default_connection_store
 
             # Raises on session backends without a connection store; a process-local store
@@ -88,7 +89,7 @@ class IOHandler:
                 raise AKConfigError(
                     "WebSocket delivery over a broker transport needs a shared connection store: " "configure session.type redis, valkey or dynamodb"
                 )
-        ws_cohosted = single_process and auth_validator is not None and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME)
+        ws_cohosted = single_process and auth_validator is not None and ExecutionMode.is_live_delivery(mode)
         cls._log.info(
             f"IOHandler starting: mode={mode}, transport={transport_type}, "
             f"topology={'single-process' if single_process else 'multi-process'}, websocket={'co-hosted' if ws_cohosted else 'off'}"
@@ -135,13 +136,13 @@ class IOHandler:
             ),
         ]
         if single_process:
-            runner = StreamAgentRunner() if mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME) else AgentRunner()
+            runner = StreamAgentRunner() if ExecutionMode.is_streaming(mode) else AgentRunner()
             tasks.append(
                 ThreadRunner.Task(
                     execution_function=lambda: runner.start(exit_on_shutdown=False), thread_name="agent-runner", stop_all_on_failure=True
                 )
             )
-            if mode == ExecutionMode.REALTIME:
+            if ExecutionMode.is_realtime(mode):
                 from .realtime_pool import RealtimeConnectionPool
 
                 pool = RealtimeConnectionPool.initialize()
@@ -222,6 +223,8 @@ class IOHandler:
                 "ASYNC (WebSocket) mode on the in_memory transport co-hosts the gateway here: call "
                 "IOHandler.run(auth_validator=...) with a validator whose claims include a 'userId'"
             )
+        # REALTIME is deliberately absent: its replies go through the integration adapter, not
+        # the WebSocket push endpoint, so it needs no push token.
         if mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM) and transport_type != "in_memory":
             # This process's Response Handler pushes replies to the gateway pods: it needs the
             # shared secret (and, checked at delivery setup, the shared connection store).
@@ -230,7 +233,7 @@ class IOHandler:
                     "WebSocket delivery over a broker transport needs websocket_api.push_auth_token: "
                     "the Response Handler authenticates its pushes to the gateway pods with it"
                 )
-        if transport_type != "in_memory" and mode not in (ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME):
+        if transport_type != "in_memory" and not ExecutionMode.is_live_delivery(mode):
             # REST modes only (spec §10): the enqueueing or polling pod and the consuming pod
             # can differ, so replies must travel through a shared store. WebSocket modes never
             # touch the response store: replies push to the gateway pods instead.
@@ -245,5 +248,5 @@ class IOHandler:
     def _run_gateway(gateway: Any) -> None:
         """Run a stateful Edge Gateway in a thread."""
         from ..core.util.async_bridge import run_async_sync
-        
+
         run_async_sync(gateway.start())

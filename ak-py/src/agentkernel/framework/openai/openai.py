@@ -42,7 +42,6 @@ from ...core.model import (
     AgentRequestImage,
     AgentRequestText,
     AgentRequestVoice,
-    ExecutionMode,
 )
 from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
@@ -398,6 +397,7 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         super().__init__(FRAMEWORK)
         self._connection = None
         self._callback = None
+        self._agent = None
         self._cm = None
         self._listen_task = None
         # The edge publishes one transcript per turn (on done), so deltas are accumulated here
@@ -420,6 +420,7 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         from openai import AsyncOpenAI
 
         self._callback = callback
+        self._agent = agent
         client = AsyncOpenAI()
         model = self._realtime_model(agent)
 
@@ -550,6 +551,29 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
             )
             await self._connection.send({"type": "response.create"})
 
+    async def execute_tool(self, name: str, arguments: str, context: ToolContext, call_id: str) -> str:
+        """Invoke a tool on the OpenAI SDK agent and return its result.
+
+        The SDK's ``on_invoke_tool`` wants its own ``ToolContext`` (built around the run
+        context), not the Agent Kernel one, so it is constructed here. The Agent Kernel
+        context is set as the active contextvar for the call, which is what a tool function's
+        ``ToolContext.get()`` reads.
+        """
+        from agents.tool_context import ToolContext as SDKToolContext
+        from agents.usage import Usage
+
+        sdk_agent = getattr(self._agent, "agent", None)
+        for tool in getattr(sdk_agent, "tools", None) or []:
+            if getattr(tool, "name", None) == name:
+                sdk_context = SDKToolContext(context=context, usage=Usage(), tool_name=name, tool_call_id=call_id, tool_arguments=arguments)
+                context.set()
+                try:
+                    result = await tool.on_invoke_tool(sdk_context, arguments)
+                finally:
+                    context.reset()
+                return str(result) if result is not None else ""
+        return f"Error: Tool {name} not found"
+
     async def disconnect(self) -> None:
         if hasattr(self, "_pacing_task") and self._pacing_task:
             self._pacing_task.cancel()
@@ -655,8 +679,9 @@ class OpenAIModule(Module):
         :param agents: List of agents in the module.
         :return: OpenAIAgent instance.
         """
-        rt_cls = self.realtime_runner_cls if AKConfig.get().execution.mode == ExecutionMode.REALTIME else None
-        return OpenAIAgent(agent.name, self.runner, agent, realtime_runner_cls=rt_cls)
+        # The realtime adapter class is attached unconditionally: only the pipeline (in REALTIME
+        # mode) ever instantiates it, so the framework need not know the execution mode.
+        return OpenAIAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
 
     def load(self, agents: list[Agent]) -> OpenAIModule:
         """

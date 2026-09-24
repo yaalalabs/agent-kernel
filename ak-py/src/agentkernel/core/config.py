@@ -250,6 +250,14 @@ class _GmailConfig(BaseModel):
 
 
 class _LiveKitConfig(BaseModel):
+    """LiveKit realtime voice gateway settings.
+
+    Bound like every other block, from YAML or ``AK_LIVEKIT__<FIELD>`` env vars (e.g.
+    ``AK_LIVEKIT__LIVEKIT_URL``, ``AK_LIVEKIT__API_KEY``, ``AK_LIVEKIT__API_SECRET``). The
+    legacy ``AK_LIVE_VOICE_*`` names are still honored as a fallback for deployments that
+    predate the standard binding.
+    """
+
     agent: str = Field(default="", description="Default agent to use for LiveKit interactions")
     livekit_url: str = Field(default="", description="LiveKit server WebSocket URL")
     api_key: str = Field(default="", description="LiveKit API Key")
@@ -257,16 +265,15 @@ class _LiveKitConfig(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _apply_env_vars(cls, data: Any) -> Any:
+    def _legacy_env_aliases(cls, data: Any) -> Any:
+        """Fill any field the standard binding left unset from the legacy ``AK_LIVE_VOICE_*`` name."""
         if isinstance(data, dict):
             import os
 
-            if not data.get("livekit_url"):
-                data["livekit_url"] = os.environ.get("AK_LIVE_VOICE_URL", "")
-            if not data.get("api_key"):
-                data["api_key"] = os.environ.get("AK_LIVE_VOICE_API_KEY", "")
-            if not data.get("api_secret"):
-                data["api_secret"] = os.environ.get("AK_LIVE_VOICE_API_SECRET", "")
+            aliases = {"livekit_url": "AK_LIVE_VOICE_URL", "api_key": "AK_LIVE_VOICE_API_KEY", "api_secret": "AK_LIVE_VOICE_API_SECRET"}
+            for field, env_name in aliases.items():
+                if not data.get(field):
+                    data[field] = os.environ.get(env_name, "")
         return data
 
 
@@ -676,7 +683,11 @@ class _LoggingConfig(BaseModel):
 class _ExecutionConfig(BaseModel):
     mode: Optional[ExecutionMode] = Field(
         default=None,
-        description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, stream for token streaming (WebSocket serverless or containerized direct streaming)",
+        description=(
+            "Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, "
+            "stream for token streaming over WebSocket, async for whole-reply WebSocket delivery, "
+            "realtime for persistent realtime sockets (e.g. the LiveKit voice gateway)"
+        ),
     )
     # The default carries the transport type explicitly: `type` is mandatory inside a declared
     # queues block, and a config that declares no block at all still runs single-process on the

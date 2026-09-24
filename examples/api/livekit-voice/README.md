@@ -36,10 +36,13 @@ Run this demo by first setting up your environment variables. Agent Kernel autom
 # Agent Kernel OpenAI credentials
 export OPENAI_API_KEY="your-openai-api-key"
 
-# Agent Kernel LiveKit credentials
-export AK_LIVE_VOICE_URL="wss://your-project.livekit.cloud"
-export AK_LIVE_VOICE_API_KEY="your-livekit-api-key"
-export AK_LIVE_VOICE_API_SECRET="your-livekit-api-secret"
+# Agent Kernel LiveKit credentials (AK_<SECTION>__<FIELD> binding)
+export AK_LIVEKIT__LIVEKIT_URL="wss://your-project.livekit.cloud"
+export AK_LIVEKIT__API_KEY="your-livekit-api-key"
+export AK_LIVEKIT__API_SECRET="your-livekit-api-secret"
+
+# The legacy AK_LIVE_VOICE_URL / AK_LIVE_VOICE_API_KEY / AK_LIVE_VOICE_API_SECRET names are
+# still accepted as a fallback.
 ```
 
 Start the server:
@@ -52,7 +55,7 @@ python server.py
 
 Once the server is running, the agent will wait in the room. You can connect a frontend client (or use the [LiveKit Agents Playground](https://agents-playground.livekit.io/)) to connect to the exact same room and start speaking to your AI!
 
-For a headless smoke test, run the bundled client in a second terminal (same `AK_LIVE_VOICE_*`
+For a headless smoke test, run the bundled client in a second terminal (same `AK_LIVEKIT__*`
 environment as the server). It joins as a human participant, publishes a mic track to trigger the
 agent's greeting, and prints the transcript the agent streams back:
 
