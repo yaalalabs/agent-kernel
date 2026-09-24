@@ -5,8 +5,6 @@ okf:
       uri: ./bundle
       description: "Analytics warehouse concepts, one markdown concept per table and per upstream source system, organised into browsable namespaces."
       refresh_seconds: 300
-      semantic_map:
-        "<TABLES>": tables
       # The agent names here must match the Agent(name=...) values in demo.py exactly.
       # A typo produces an agent with no knowledge-base tools and no error anywhere.
       consumer: [kb_consumer_agent]

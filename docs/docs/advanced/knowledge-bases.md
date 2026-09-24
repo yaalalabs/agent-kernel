@@ -296,8 +296,6 @@ In practice, the agent writes a query against the logical placeholder, and `Know
 
 Resolution is not limited to query strings: `KnowledgeBuilder` resolves placeholders in `read_kb` and `search_kb` queries, in `write_kb` queries, in `browse_kb` paths, and in each comma-separated segment of a `fetch_kb` id list - so a token can stand for a namespace root as naturally as for a table.
 
-A second parameter, `backend_semantic_maps`, takes one map per backend keyed by `backend_name`. A backend's own map is applied *over* `semantic_map`, so a token both define resolves the way that backend declared it while every other token still resolves from the shared map. This is what lets one builder hold two backends that bind the same token to different paths - unrepresentable if the maps were flattened into one. An entry naming a backend the builder does not hold is ignored with a warning.
-
 Example:
 
 ```python
@@ -424,8 +422,6 @@ okf:
       uri: ./bundle                # a path, an s3://bucket/prefix, or your store's own location
       description: "Analytics warehouse concepts, one per table."
       refresh_seconds: 300         # null disables automatic refresh
-      semantic_map:
-        "<TABLES>": tables         # applies to this database only
       consumer: [Support_Agent]
       producer: [Ingest_Agent]
       curator:  [Steward_Agent]

@@ -176,8 +176,6 @@ okf:
       uri: ./bundle  # a filesystem path, an s3://bucket/prefix, or your store's own location
       description: "Analytics warehouse concepts, one per table."  # surfaced to the agent
       refresh_seconds: 300  # how stale the manifest may get before a re-walk; null disables it
-      semantic_map:  # placeholder tokens resolved for this database only
-        "<TABLES>": tables
       consumer: [Support_Agent]  # read access
       producer: [Ingest_Agent]   # read and write; instructed to add new knowledge
       curator: [Steward_Agent]   # read and write; instructed to maintain existing knowledge

@@ -316,63 +316,6 @@ class TestSemanticMap:
         assert documents.calls == [("fetch", (["prod/kb/a.md", "prod/kb/b.md"],), {})]
 
 
-class TestPerBackendSemanticMaps:
-    """okf.databases.<name>.semantic_map is declared per database, and one builder holds several."""
-
-    def test_a_backend_map_applies_only_to_that_backend(self):
-        vector, documents = _vector(), _documents()
-        builder = KnowledgeBuilder(
-            [vector, documents],
-            backend_semantic_maps={"okf": {"<ROOT>": "prod/kb"}},
-        )
-
-        _tool(builder, "browse_kb")("okf", "<ROOT>/tables")
-        _tool(builder, "search_kb")("vector", "rows in <ROOT>")
-
-        assert documents.calls == [("browse", ("prod/kb/tables", 50), {})]
-        # The vector backend holds no map, so the token is passed through untouched rather
-        # than resolved with a neighbour's mapping.
-        assert vector.calls == [("search", ("rows in <ROOT>", 3), {})]
-
-    def test_a_backend_map_beats_the_flat_map_for_that_backend_only(self):
-        # The case that cannot be expressed by flattening: one token, two meanings.
-        vector, documents = _vector(), _documents()
-        builder = KnowledgeBuilder(
-            [vector, documents],
-            semantic_map={"<ROOT>": "shared/default"},
-            backend_semantic_maps={"okf": {"<ROOT>": "prod/kb"}},
-        )
-
-        _tool(builder, "browse_kb")("okf", "<ROOT>/tables")
-        _tool(builder, "search_kb")("vector", "rows in <ROOT>")
-
-        assert documents.calls == [("browse", ("prod/kb/tables", 50), {})]
-        assert vector.calls == [("search", ("rows in shared/default", 3), {})]
-
-    def test_tokens_the_backend_map_does_not_mention_still_resolve(self):
-        # Merged over, not replacing: overriding one token must not drop the rest.
-        documents = _documents()
-        builder = KnowledgeBuilder(
-            [documents],
-            semantic_map={"<ROOT>": "shared/default", "<AREA>": "sales"},
-            backend_semantic_maps={"okf": {"<ROOT>": "prod/kb"}},
-        )
-
-        _tool(builder, "browse_kb")("okf", "<ROOT>/<AREA>")
-
-        assert documents.calls == [("browse", ("prod/kb/sales", 50), {})]
-
-    def test_a_map_naming_an_unregistered_backend_warns_rather_than_raising(self, caplog):
-        # The OKF layer passes each builder only its own subset, so a name that is not here
-        # is a bug in that layer -- worth a warning, but not worth failing an app build.
-        with caplog.at_level(logging.WARNING, logger="ak.KnowledgeBuilder"):
-            builder = KnowledgeBuilder([_documents()], backend_semantic_maps={"gone": {"<ROOT>": "x"}})
-
-        assert "'gone'" in caplog.text
-        assert "no such backend is registered" in caplog.text
-        assert _tool_names(builder) == BASE_TOOLS + ["search_kb", "fetch_kb", "browse_kb"]
-
-
 class TestWritableToolSet:
     def test_build_defaults_to_the_historical_four_in_their_historical_order(self):
         # The compatibility promise: no existing caller passes the argument, and none of

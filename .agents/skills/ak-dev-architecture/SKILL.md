@@ -663,8 +663,7 @@ backend, use the `ak-dev-new-knowledgebase-integration` skill.
   a registered backend declaring `writable=False` is refused per call rather than hiding the tool —
   `writable=False` answers the different question of whether this agent may write at all. `read_kb`
   owns the routing rule (`query()` when `query` is declared, `search()` otherwise). It also resolves
-  `semantic_map` placeholders — and per-backend `backend_semantic_maps` merged over it — in queries,
-  browse paths and each comma-separated `fetch` id segment.
+  `semantic_map` placeholders in queries, browse paths and each comma-separated `fetch` id segment.
 - **Config-driven OKF** (`okf/roles.py`, `okf/capability.py`, `okf/prompts.py`, `okf/tools.py`): an
   optional `okf` block names bundles and, per bundle, the agents that `consumer`/`producer`/`curator`
   them. `OKFCapabilityManager` (`get()`/`reset()` singleton, None when the block is absent) is the

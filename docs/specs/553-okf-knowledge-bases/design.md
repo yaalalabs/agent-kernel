@@ -556,8 +556,9 @@ classDiagram
     told it may not use is prompt surface spent on a dead end. `build(writable=False)` omits it.
   - Filtering the returned list by function name in the OKF layer was rejected: it couples the caller
     to the tool functions' `__name__`s, which `ToolBuilder.bind()` already treats as load-bearing.
-- **[A2]** `KnowledgeBuilder.__init__` accepts a **per-backend** semantic map in addition to the
-  existing flat one, because `okf.databases.<name>.semantic_map` is declared per database.
+- **[A2], withdrawn.** `KnowledgeBuilder.__init__` was to accept a **per-backend** semantic map
+  alongside the flat one, for a per-database `okf.databases.<name>.semantic_map`. **Withdrawn 2026-09-24.** OKF no longer takes a `semantic_map`, so the per-backend form had no caller and was removed; `KnowledgeBuilder` keeps only its original flat `semantic_map`.
+  The original reasoning, kept for the trail:
   - The existing `semantic_map: dict[str, str]` parameter keeps its meaning — one map applied to every
     registered backend — and is unchanged for every current caller.
   - The new form maps a backend name to its own map; a per-backend entry wins over the flat map for
@@ -582,8 +583,6 @@ okf:
       uri: ./bundle
       description: "Analytics warehouse concepts, one per table."
       refresh_seconds: 300
-      semantic_map:
-        "<TABLES>": tables
       consumer: [reader1, reader2]
       producer: [writer1]
       curator:  [curator1]
@@ -610,7 +609,6 @@ okf:
   | `uri` | `DocumentStore.from_uri(uri)` (`store/base.py:151`) | yes |
   | `description` | `OKFManager(description=...)` | no |
   | `refresh_seconds` | `OKFManager(refresh_seconds=...)`, default 300, `null` disables refresh | no |
-  | `semantic_map` | `KnowledgeBuilder`'s per-backend map | no |
   | `consumer` / `producer` / `curator` | role membership, below | >= 1 agent across the three |
 
 - **`type` is deliberately redundant with `uri`, and is validated against it.** `from_uri` already
@@ -855,9 +853,8 @@ Each is intentional; each needs a test.
     Chroma and OKF deployment. This supersedes the narrow-gate half of item 7.
 16. **`build()` gains `writable: bool = True`.** Default behavior is byte-for-byte unchanged; passing
     `False` omits `write_kb` from the returned list.
-17. **`KnowledgeBuilder.__init__` accepts a per-backend semantic map** alongside the existing flat
-    one. Additive; the flat parameter's meaning and every current call are unchanged. This narrows
-    the Non-changes assertion below, which previously froze that signature.
+17. **Withdrawn.** ~~`KnowledgeBuilder.__init__` accepts a per-backend semantic map.~~ **Withdrawn 2026-09-24.** OKF no longer takes a `semantic_map`, so the per-backend form had no caller and was removed; `KnowledgeBuilder` keeps only its original flat `semantic_map`.
+    The Non-changes assertion freezing the `(backends, semantic_map)` signature holds again.
 18. **`OKFManager.__init__`'s `producer` parameter is renamed to `write_actor`**
     (`okf/manager.py:106`). It names the actor stamped into `generated.by` on write and collides
     head-on with the `producer` *role* the amendment introduces, in the same class. The parameter is
@@ -995,7 +992,7 @@ Items 9-11 were resolved in review of this document on 2026-09-01.
 Items 12-17 were resolved with the maintainer on 2026-09-18 and are the substance of amendment [A2].
 
 12. **OKF is configuration-driven, and the config carries the databases.** An `okf` block declares one
-    or more bundles with their `type`, `uri`, `description`, `refresh_seconds` and `semantic_map`, and
+    or more bundles with their `type`, `uri`, `description` and `refresh_seconds`, and
     Agent Kernel constructs the stores, the managers and the builders. The goal is that an application
     using OKF does not have to know how OKF works — which the hand-wired example showed it currently
     must. The programmatic path is not replaced; the change is additive.

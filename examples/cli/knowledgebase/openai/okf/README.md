@@ -61,8 +61,6 @@ okf:
       uri: ./bundle
       description: "Analytics warehouse concepts, one markdown concept per table..."
       refresh_seconds: 300
-      semantic_map:
-        "<TABLES>": tables
       consumer: [KB_Consumer_Agent]
       producer: [KB_Producer_Agent]
       curator: [KB_Curator_Agent]
@@ -143,17 +141,13 @@ The three tools this backend adds, in the order the agent is told to use them:
 
 ```text
 browse_kb("OKF", "")            -> the bundle front page from index.md
-browse_kb("OKF", "<TABLES>")    -> the curated listing in tables/index.md
+browse_kb("OKF", "tables")      -> the curated listing in tables/index.md
 browse_kb("OKF", "datasets")    -> a listing derived from the manifest
 fetch_kb("OKF", "tables/orders.md")
                                 -> the full body, plus metadata["links"] to customers.md
 read_kb("OKF", "upstream postgres")
                                 -> lexical ranking across the whole bundle
 ```
-
-`<TABLES>` is a `semantic_map` token registered in `demo.py`. `KnowledgeBuilder` resolves it
-before the call reaches the backend, so the same agent instructions work against a bundle whose
-physical layout differs between environments.
 
 **Only `fetch_kb` reads a full body.** `browse_kb` and `read_kb` answer from a manifest that
 holds frontmatter and a bounded token index, which is what keeps a large bundle affordable —
@@ -240,7 +234,7 @@ backend = OKFManager(
     name="OKF",
     description="Open Knowledge Format bundle describing the analytics warehouse.",
 )
-builder = KnowledgeBuilder([backend], semantic_map={"<TABLES>": "tables"})
+builder = KnowledgeBuilder([backend])
 
 agent = Agent(
     name="KB_Router_Agent",

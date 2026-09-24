@@ -176,8 +176,7 @@ then let iteration 9 supersede those two points, so each iteration stays indepen
   2. The example, in its siblings' shape (`build.sh`, `demo.py`, `demo_test.py`, `__init__.py`,
      `pyproject.toml`, `README.md`) plus the checked-in `bundle/` — root and `tables/` `index.md`, a
      `log.md`, three trust tiers, an unknown `type`, and one malformed file. `demo.py` calls no
-     `add_schema()` (that is what `derives_schema=True` buys) and registers a `semantic_map` for the
-     bundle root. `pyproject.toml` follows the sibling convention: runtime `agentkernel[cli,openai]`,
+     `add_schema()` (that is what `derives_schema=True` buys). `pyproject.toml` follows the sibling convention: runtime `agentkernel[cli,openai]`,
      dev group `agentkernel[test]`, and **no KB extra** — `pyyaml` is core.
   3. `README.md` walks `browse_kb` → `fetch_kb` → `search_kb` against real bundle paths.
 - **Verify:** `uv run pytest tests/test_knowledgebase_exports.py` (every `__all__` name resolves;
@@ -230,16 +229,15 @@ then let iteration 9 supersede those two points, so each iteration stays indepen
 
 ## [A2] Iteration 10: `KnowledgeBuilder` extensions
 
-- **Goal:** the builder can emit a read-only tool set and resolve placeholders per backend. Still no
+- **Goal:** the builder can emit a read-only tool set. Still no
   role, agent, or OKF knowledge inside it.
 - **Files:** `knowledgebase/knowledgebuilder.py`, `ak-py/tests/test_knowledgebase_builder.py`.
 - **Steps:**
   1. `build(writable: bool = True)`, inserting `write_kb` at index 2 when true so the historical order
      survives (spec § **[A2] `build(writable: bool = True)`**).
-  2. `__init__`'s third parameter `backend_semantic_maps`, with `_resolve_placeholders` taking the
-     backend name and merging the per-backend map over the flat one; an entry naming an unheld backend
-     warns (spec § **[A2] Per-backend semantic maps**).
-- **Verify:** `uv run pytest tests/test_knowledgebase_builder.py` — behavioural changes 20 and 21,
+  2. ~~`__init__`'s third parameter `backend_semantic_maps`~~ — withdrawn 2026-09-24 with OKF's
+     `semantic_map` (spec § **[A2] Per-backend semantic maps — withdrawn**).
+- **Verify:** `uv run pytest tests/test_knowledgebase_builder.py` — behavioural change 20,
   including that `build()` with no argument returns the same four callables in the same order.
 
 ## [A2] Iteration 11: Config block, roles, and the capability manager

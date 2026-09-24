@@ -161,11 +161,7 @@ class OKFCapabilityManager:
         with self._cache_lock:
             builder = self._builders.get(agent_name)
             if builder is None:
-                semantic_maps = {name: dict(self._databases[name].semantic_map or {}) for name in databases if self._databases[name].semantic_map}
-                builder = KnowledgeBuilder(
-                    [self.backend(name) for name in databases],
-                    backend_semantic_maps=semantic_maps or None,
-                )
+                builder = KnowledgeBuilder([self.backend(name) for name in databases])
                 self._builders[agent_name] = builder
             return builder
 

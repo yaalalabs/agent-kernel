@@ -922,7 +922,9 @@ def build(self, writable: bool = True) -> list[Callable]:
   *consumer agent* must not be told the tool exists, because an advertised tool it may never use is
   prompt surface spent on a dead end. Behavioural change 20.
 
-#### [A2] Per-backend semantic maps
+#### [A2] Per-backend semantic maps — withdrawn
+
+**Withdrawn 2026-09-24.** OKF no longer takes a `semantic_map`, so the per-backend form had no caller and was removed; `KnowledgeBuilder` keeps only its original flat `semantic_map`. The section below is kept for the review trail only.
 
 ```python
 def __init__(
@@ -1029,8 +1031,6 @@ class OKFCapabilityManager:
   not matter" claim true in code.
 - **One `OKFManager` per database, shared** across every agent's builder. Two agents reading the same
   bundle pay one walk and one refresh cycle, not two.
-- `builder_for` passes `backend_semantic_maps` holding only that agent's databases, per the warning
-  rule above.
 - **Store resolution** reuses `DocumentStore.from_uri` for the built-ins and `resolve_dotted` for a
   dotted-path `type`, then asserts agreement:
 
@@ -1201,7 +1201,6 @@ class _OKFDatabaseConfig(BaseModel):
     uri: str = Field(description="Bundle location passed to the resolved store: a filesystem path, an s3://bucket/prefix URI, or the store's own location string")
     description: Optional[str] = Field(default=None, description="Human-readable description of this bundle, surfaced to the agent in its instructions and through get_schemas")
     refresh_seconds: Optional[float] = Field(default=300.0, description="How stale the bundle manifest may get before the next operation re-walks the store; null disables automatic refresh")
-    semantic_map: Optional[dict[str, str]] = Field(default=None, description="Placeholder tokens resolved to real bundle paths for this database only, e.g. {'<TABLES>': 'tables'}")
     consumer: list[str] = Field(default_factory=list, description="Agent names granted read access to this bundle")
     producer: list[str] = Field(default_factory=list, description="Agent names granted read and write access, instructed to add new knowledge to this bundle")
     curator: list[str] = Field(default_factory=list, description="Agent names granted read and write access, instructed to review and maintain existing knowledge in this bundle")
@@ -1231,8 +1230,7 @@ okf: Optional[_OKFConfig] = Field(
   URI plus per-bundle role lists. `_OKFDatabaseConfig` reuses nothing and subclasses nothing.
 - **Every field has a named reader**: `type`/`uri` in `OKFCapabilityManager._resolve_store`,
   `description` in `OKFPromptComposer` and `OKFManager(description=...)`, `refresh_seconds` in
-  `OKFManager(refresh_seconds=...)`, `semantic_map` in `KnowledgeBuilder(backend_semantic_maps=...)`,
-  and the three role lists in `OKFRoleRegistry.from_config`.
+  `OKFManager(refresh_seconds=...)`, and the three role lists in `OKFRoleRegistry.from_config`.
 - **`type` is redundant with `uri`'s scheme and kept anyway** — a stated departure from House Pattern
   2, carrying `design.md` decision 15. The redundancy is converted into a startup agreement check
   rather than a second source of truth. See [Deviations and additions](#deviations-and-additions) K.
@@ -1378,8 +1376,7 @@ okf/
 ```
 
 `demo.py` needs **no** `add_schema()` call — that is the point of `derives_schema=True`, and the
-example demonstrates it. It does register a `semantic_map` for the bundle root so the environment-swap
-story is visible. `pyproject.toml` needs no KB extra (pyyaml is core); it depends on `agentkernel[openai,cli,test]`
+example demonstrates it. `pyproject.toml` needs no KB extra (pyyaml is core); it depends on `agentkernel[openai,cli,test]`
 like its siblings.
 **[A2] The example becomes three agents driven by config.**
 
@@ -1401,8 +1398,6 @@ okf:
       uri: ./bundle
       description: "Analytics warehouse concepts, one per table, in browsable namespaces."
       refresh_seconds: 300
-      semantic_map:
-        "<TABLES>": tables
       consumer: [KB_Consumer_Agent]
       producer: [KB_Producer_Agent]
       curator:  [KB_Curator_Agent]
@@ -1598,9 +1593,8 @@ flagged for design review. Each needs a test.
 20. **`build()` takes `writable: bool = True`.** Default behavior is byte-identical, including tool
     order. `build(writable=False)` omits `write_kb` entirely rather than emitting it to refuse per
     call.
-21. **`KnowledgeBuilder.__init__` takes `backend_semantic_maps`.** Additive third parameter; the flat
-    `semantic_map` keeps its meaning and position. **Narrows** the original Non-changes assertion that
-    froze the `(backends, semantic_map)` signature.
+21. **Withdrawn.** ~~`KnowledgeBuilder.__init__` takes `backend_semantic_maps`.~~ **Withdrawn 2026-09-24.** OKF no longer takes a `semantic_map`, so the per-backend form had no caller and was removed; `KnowledgeBuilder` keeps only its original flat `semantic_map`.
+    The `(backends, semantic_map)` signature is unchanged from before this work.
 22. **`OKFManager.__init__`'s `producer` parameter is renamed `write_actor`.** Breaking for any caller
     that set it; none in-tree. The `generated.by` value it produces is unchanged, so bundles written
     before and after are byte-identical for the same actor.
@@ -1733,7 +1727,7 @@ of them. The patch targets that move are named below, per the plan's requirement
 | File | Adds |
 |---|---|
 | `tests/test_knowledgebase_base.py` | the ABC exposes no `read`; a backend declaring only `browse` still constructs and its `search`/`query` still raise `KnowledgeCapabilityError` |
-| `tests/test_knowledgebase_builder.py` | **still the riskiest consumer.** `read_kb` routing on `capabilities.query` (both directions) and its `limit` default; the neither-`search`-nor-`query` guard string; `search_kb` emitted for a search-only backend; `build(writable=False)` omitting `write_kb` while `build()` keeps all four in their historical order; `backend_semantic_maps` resolving per backend, a per-backend entry beating the flat map for that backend only, and an entry naming an unheld backend warning rather than raising |
+| `tests/test_knowledgebase_builder.py` | **still the riskiest consumer.** `read_kb` routing on `capabilities.query` (both directions) and its `limit` default; the neither-`search`-nor-`query` guard string; `search_kb` emitted for a search-only backend; `build(writable=False)` omitting `write_kb` while `build()` keeps all four in their historical order |
 
 #### New test files
 

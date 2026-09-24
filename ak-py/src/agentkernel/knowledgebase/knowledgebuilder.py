@@ -13,7 +13,6 @@ class KnowledgeBuilder:
         self,
         backends: List[KnowledgeBase],
         semantic_map: Optional[Dict[str, str]] = None,
-        backend_semantic_maps: Optional[Dict[str, Dict[str, str]]] = None,
     ):
         """
         Initialize a knowledge builder that routes reads and writes to named backends.
@@ -61,10 +60,6 @@ class KnowledgeBuilder:
         :param semantic_map: Optional mapping of logical placeholders to physical
             identifiers used by backend queries. When omitted, no placeholder
             translation is applied. Applies to every registered backend.
-        :param backend_semantic_maps: Optional per-backend maps, keyed by ``backend_name``.
-            A backend's own map is applied over ``semantic_map``, so one token can mean
-            different things in two backends while the rest stay shared. An entry naming
-            an unregistered backend is ignored with a warning.
         :return: None.
         """
         validated_backends: Dict[str, KnowledgeBase] = {}
@@ -82,35 +77,18 @@ class KnowledgeBuilder:
 
         self.backends = validated_backends
         self.semantic_map = semantic_map or {}
-        self.backend_semantic_maps = backend_semantic_maps or {}
 
-        # Warned rather than raised: the per-backend maps are assembled by whichever layer
-        # decided which backends this builder holds, so a name that is not here is that
-        # layer's bug and not something a user typed.
-        for mapped_backend in self.backend_semantic_maps:
-            if mapped_backend not in validated_backends:
-                log.warning(
-                    "[init] Semantic map for %r will never be applied: no such backend is registered. Registered: %s.",
-                    mapped_backend,
-                    list(validated_backends.keys()),
-                )
-
-    def _resolve_placeholders(self, text: str, backend_name: str) -> str:
+    def _resolve_placeholders(self, text: str) -> str:
         """
         Translate semantic placeholders to backend-specific identifiers.
 
-        The backend's own map is merged over the shared one, so a token both define
-        resolves the way that backend declared it while every other token still resolves.
-
         :param text: Input text that may contain logical placeholder tags.
-        :param backend_name: Backend the text is bound for.
         :return: Text with placeholders resolved when mappings are available.
         """
-        mappings = {**self.semantic_map, **self.backend_semantic_maps.get(backend_name, {})}
-        if not text or not mappings:
+        if not text or not self.semantic_map:
             return text
         resolved_text = text
-        for logical_tag, physical_path in mappings.items():
+        for logical_tag, physical_path in self.semantic_map.items():
             if logical_tag in resolved_text:
                 resolved_text = resolved_text.replace(logical_tag, physical_path)
         return resolved_text
@@ -235,7 +213,7 @@ class KnowledgeBuilder:
             if not self._declares(db, "search") and not self._declares(db, "query"):
                 return self._unsupported(backend, "reads", "search", "query")
 
-            resolved_query = self._resolve_placeholders(query, backend)
+            resolved_query = self._resolve_placeholders(query)
             if resolved_query != query:
                 log.debug(f"[read_kb] Translated query to: {resolved_query!r}")
 
@@ -272,7 +250,7 @@ class KnowledgeBuilder:
                 return "Error: provide at least one of 'text' or 'query'."
 
             # Apply semantic routing to write queries as well
-            resolved_query = self._resolve_placeholders(query, backend)
+            resolved_query = self._resolve_placeholders(query)
 
             metadata: dict[str, Any] = {"source": source}
             if resolved_query:
@@ -329,7 +307,7 @@ class KnowledgeBuilder:
             if not self._declares(db, "search"):
                 return self._unsupported(backend, "search")
 
-            resolved_query = self._resolve_placeholders(query, backend)
+            resolved_query = self._resolve_placeholders(query)
             if resolved_query != query:
                 log.debug(f"[search_kb] Translated query to: {resolved_query!r}")
 
@@ -360,7 +338,7 @@ class KnowledgeBuilder:
 
             # Resolution runs per segment, after the split, so a placeholder standing for a
             # namespace root resolves the same way whether it arrives alone or in a list.
-            resolved_ids = [self._resolve_placeholders(segment, backend) for segment in (raw.strip() for raw in ids.split(",")) if segment]
+            resolved_ids = [self._resolve_placeholders(segment) for segment in (raw.strip() for raw in ids.split(",")) if segment]
             if not resolved_ids:
                 return "Error: provide at least one id."
 
@@ -390,7 +368,7 @@ class KnowledgeBuilder:
             if not self._declares(db, "browse"):
                 return self._unsupported(backend, "browse")
 
-            resolved_path = self._resolve_placeholders(path, backend)
+            resolved_path = self._resolve_placeholders(path)
             if resolved_path != path:
                 log.debug(f"[browse_kb] Translated path to: {resolved_path!r}")
 

@@ -429,10 +429,6 @@ class _OKFDatabaseConfig(BaseModel):
         default=300.0,
         description="How stale the bundle manifest may get before the next operation re-walks the store; null disables automatic refresh",
     )
-    semantic_map: Optional[dict[str, str]] = Field(
-        default=None,
-        description="Placeholder tokens resolved to real bundle paths for this database only, e.g. {'<TABLES>': 'tables'}",
-    )
     consumer: Optional[list[str]] = Field(default=None, description="Agent names granted read access to this bundle")
     producer: Optional[list[str]] = Field(
         default=None,

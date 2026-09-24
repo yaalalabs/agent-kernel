@@ -71,8 +71,6 @@ class TestConfigModel:
             "      uri: ./bundle\n"
             "      description: Sales knowledge\n"
             "      refresh_seconds: 60\n"
-            "      semantic_map:\n"
-            '        "<TABLES>": tables\n'
             "      consumer: [reader]\n"
             "      producer: [writer]\n"
             "      curator: [keeper]\n"
@@ -84,7 +82,6 @@ class TestConfigModel:
         assert (database.type, database.uri) == ("local", "./bundle")
         assert database.description == "Sales knowledge"
         assert database.refresh_seconds == 60
-        assert database.semantic_map == {"<TABLES>": "tables"}
         assert (database.consumer, database.producer, database.curator) == (["reader"], ["writer"], ["keeper"])
 
     def test_the_block_materialises_from_env_vars(self, monkeypatch):
@@ -112,7 +109,6 @@ class TestConfigModel:
 
         assert database.description is None
         assert database.refresh_seconds == 300.0
-        assert database.semantic_map is None
         assert (database.consumer, database.producer, database.curator) == (None, None, None)
 
     def test_an_omitted_role_list_is_distinguishable_from_an_empty_one(self):
@@ -383,26 +379,6 @@ class TestBackendsAndBuilders:
         assert backend.backend_name == "warehouse"
         assert backend.description == "Sales knowledge"
         assert backend._refresh_seconds is None
-
-    def test_semantic_maps_reach_the_builder_per_database(self, tmp_path):
-        manager = _manager(
-            {
-                "warehouse": _OKFDatabaseConfig(
-                    type="local",
-                    uri=str(_bundle(tmp_path, "warehouse")),
-                    semantic_map={"<TABLES>": "tables"},
-                    consumer=["reader"],
-                ),
-                "policies": _OKFDatabaseConfig(type="local", uri=str(_bundle(tmp_path, "policies")), consumer=["reader"]),
-            }
-        )
-
-        builder = manager.builder_for("reader")
-
-        # Only the database that declared one appears, so KnowledgeBuilder never warns about a
-        # map naming a backend it does not hold.
-        assert builder.backend_semantic_maps == {"warehouse": {"<TABLES>": "tables"}}
-        assert builder.semantic_map == {}
 
     def test_no_store_is_walked_until_a_backend_is_asked_for(self, tmp_path, monkeypatch):
         walks = []
