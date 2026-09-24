@@ -668,6 +668,11 @@ those tests would run in. The workable order is:
 3. **Regenerate both locks** — `ak-py/uv.lock` *and* `examples/api/a2a/multi/uv.lock`. Once they hold
    1.x, every subsequent PR runs the ported code against the SDK a real user would install.
 
+One more defect goes with it, being part of the same brokenness: with A2A enabled and **no agents
+registered in the serving process**, it publishes no cards and no routes, with no error and nothing
+in the log. Log a warning naming the cause. Reached only through the cached `_build()`, so it warns
+once.
+
 **A2A: sending the object, on top of that port — roughly ten lines, and this is the part #706 owns.**
 
 - `_execute_agent` (`api/a2a/a2a.py:63`) calls `run_multi([AgentRequestText(prompt=...)])` instead of
@@ -679,10 +684,6 @@ those tests would run in. The workable order is:
   as before, and the error path stays text.
 - The agent card already advertises `default_output_modes: ["json"]` (`core/builder.py:44`) while the
   executor only ever sends text. This makes an existing claim true rather than adding a new one.
-- Goes to the port issue, since it is part of the same brokenness: with A2A enabled and **no agents
-  registered in the serving process**, it publishes no cards and no routes, with no error and nothing
-  in the log. Log a warning naming the cause. Reached only through the cached `_build()`, so it warns
-  once.
 - **Not verified:** the symbols and signatures above were read from an installed a2a-sdk 1.1.5, but
   Agent Kernel has not been run against it. The port is mapped, not proven — which is the port
   issue's problem to close before this branch is written against it.
