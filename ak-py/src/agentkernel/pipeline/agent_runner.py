@@ -100,13 +100,13 @@ class AgentRunner:
         if QueueTransportFactory.resolve_type() == "in_memory":
             raise AKConfigError("the in_memory transport runs in-process: start IOHandler (single-process topology) instead of AgentRunner")
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
-        if cls is AgentRunner and ExecutionMode.is_streaming(AKConfig.get().execution.mode):
+        if cls is AgentRunner and AKConfig.get().execution.mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME):
             return StreamAgentRunner.run()
         # A standalone runner container is usually PID 1: without these handlers SIGTERM never
         # arrives and pod/task stop hangs until SIGKILL instead of draining in-flight runs.
         ThreadRunner.install_shutdown_signal_handlers(cls._log)
 
-        if ExecutionMode.is_realtime(AKConfig.get().execution.mode):
+        if AKConfig.get().execution.mode == ExecutionMode.REALTIME:
             from .realtime_pool import RealtimeConnectionPool
 
             pool = RealtimeConnectionPool.initialize()
@@ -230,14 +230,14 @@ class StreamAgentRunner(AgentRunner):
         # pipeline); the body never carries it.
         mode = AKConfig.get().execution.mode
 
-        if message.attributes.get(ATTR_INTEGRATION) and not ExecutionMode.is_realtime(mode):
+        if message.attributes.get(ATTR_INTEGRATION) and mode != ExecutionMode.REALTIME:
             return super().process(message)
 
         request_id = self._resolve_request_metadata(message, body)
         if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
             raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
 
-        realtime = ExecutionMode.is_realtime(mode)
+        realtime = mode == ExecutionMode.REALTIME
         # A realtime turn arrives as one message per ~100 ms of audio, so the per-turn INFO lines
         # below would flood the log; only the non-realtime streaming path logs them.
         if not realtime:
@@ -296,7 +296,7 @@ class StreamAgentRunner(AgentRunner):
     def on_permanent_failure(self, message: QueueMessage) -> None:
         mode = AKConfig.get().execution.mode
 
-        if message.attributes.get(ATTR_INTEGRATION) and not ExecutionMode.is_realtime(mode):
+        if message.attributes.get(ATTR_INTEGRATION) and mode != ExecutionMode.REALTIME:
             return super().on_permanent_failure(message)
 
         self._log.error(f"Permanent failure for message {message.message_id}")

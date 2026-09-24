@@ -3,7 +3,7 @@ from __future__ import annotations
 from ..core.base import Agent, Session
 from ..core.config import AKConfig
 from ..core.hooks import PostHook, PreHook
-from ..core.model import AgentReply, AgentReplyAny, AgentReplyImage, AgentReplyText, AgentRequest, AgentRequestText
+from ..core.model import AgentReply, AgentReplyAny, AgentReplyImage, AgentReplyText, AgentReplyVoice, AgentRequest, AgentRequestText
 from ..core.util.factory import AKConfigError, require_extra, resolve_dotted
 
 _BUILTIN_GUARDRAILS = ["openai", "bedrock", "walledai"]
@@ -113,5 +113,7 @@ class BaseGuardrailUtil:
         elif isinstance(agent_reply, AgentReplyAny):
             return str(agent_reply)
         elif isinstance(agent_reply, AgentReplyImage):
+            return str(agent_reply.response)
+        elif isinstance(agent_reply, AgentReplyVoice):
             return str(agent_reply.response)
         return ""

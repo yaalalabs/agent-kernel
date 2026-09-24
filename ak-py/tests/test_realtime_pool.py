@@ -95,25 +95,6 @@ def _connection(session_id="s1", agent=None, loop=None):
     return RealtimeConnection(session_id, agent or _Agent(), Runtime(InMemorySessionStore()), Session(session_id), loop or asyncio.new_event_loop())
 
 
-class TestExecutionModePredicates:
-    def test_realtime(self):
-        assert ExecutionMode.is_realtime(ExecutionMode.REALTIME)
-        assert not ExecutionMode.is_realtime(ExecutionMode.STREAM)
-        assert not ExecutionMode.is_realtime(None)
-
-    def test_streaming(self):
-        assert ExecutionMode.is_streaming(ExecutionMode.STREAM)
-        assert ExecutionMode.is_streaming(ExecutionMode.REALTIME)
-        assert not ExecutionMode.is_streaming(ExecutionMode.ASYNC)
-        assert not ExecutionMode.is_streaming(None)
-
-    def test_live_delivery(self):
-        for mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME):
-            assert ExecutionMode.is_live_delivery(mode)
-        for mode in (ExecutionMode.REST_SYNC, ExecutionMode.REST_ASYNC, None):
-            assert not ExecutionMode.is_live_delivery(mode)
-
-
 class TestRealtimeConnection:
     def test_requires_realtime_runner_cls(self):
         with pytest.raises(ValueError, match="no realtime_runner_cls"):

@@ -203,9 +203,7 @@ class ExecutionMode(str, Enum):
     """How a request is executed and how its reply is delivered.
 
     The mode is a process-level configuration value (``execution.mode``), read wherever a
-    component must branch on it; it is never carried on a request. The three groupings below
-    are the only places several modes behave alike, so the predicates are the single source of
-    truth for them — add a new mode to a predicate, not to scattered tuples.
+    component must branch on it; it is never carried on a request.
 
     - ``REST_SYNC`` / ``REST_ASYNC``: the reply is written to the response store and read back
       over REST.
@@ -220,22 +218,6 @@ class ExecutionMode(str, Enum):
     STREAM = "stream"
     ASYNC = "async"
     REALTIME = "realtime"
-
-    @staticmethod
-    def is_realtime(mode: "ExecutionMode | None") -> bool:
-        """True for the persistent-socket realtime mode."""
-        return mode == ExecutionMode.REALTIME
-
-    @staticmethod
-    def is_streaming(mode: "ExecutionMode | None") -> bool:
-        """Modes served by the streaming runner (``StreamAgentRunner``): STREAM and REALTIME."""
-        return mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME)
-
-    @staticmethod
-    def is_live_delivery(mode: "ExecutionMode | None") -> bool:
-        """Modes whose replies leave over a live connection (WebSocket or realtime) instead of
-        the REST response store: ASYNC, STREAM and REALTIME."""
-        return mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME)
 
 
 class StreamChunk(BaseModel):
