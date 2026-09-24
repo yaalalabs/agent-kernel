@@ -150,6 +150,12 @@ Two things are missing, and only the first is obvious:
   (a) is the smaller change and keeps A2UI on all six frameworks; (b) is the one that eventually
   supports streaming UI. They are not exclusive — (a) first is the cheaper order.
 
+  > **[corrected]** the banner above says this fork is "closed". More precisely: `design.md` takes
+  > route (b), and route (a) is now a **named trade-off** rather than a discarded option — under (b)
+  > a labelling hook must hold every delta back to the closing boundary, so a labelled agent streams
+  > nothing incrementally. That cost is stated in `design.md` piece 3 and recorded as a Non-goal.
+  > (a) remains the fix if anyone wants it back.
+
 ### 4.3 REST and WebSocket — one chokepoint covers both
 
 Good news, and it is worth checking before anyone plans two work items:

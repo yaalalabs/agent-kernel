@@ -15,7 +15,7 @@ Code facts verified against `develop` at `80936df9` (v0.9.2); paths are relative
 
 *A note on length.* A Stage-1 design is normally point-form requirements, with worked detail held
 back for `spec.md`. This one deliberately carries more — a conversation walkthrough, the application
-code, a class definition, an SDK migration table — because that detail is what made the design
+code, a class definition, a per-surface consequence list — because that detail is what made the design
 reviewable rather than merely assertable. It moves to `spec.md` when Stage 2 starts.
 
 **Two words used throughout.** A **surface** is a way a client reaches an agent — the REST route, the
@@ -160,9 +160,9 @@ is the application's job, not the framework's.
 | REST | **yes** | one shared function |
 | WebSocket | **yes** | same function |
 | Async mode | **yes** | same function |
-| Conversation threads | **yes** | same function |
+| Conversation threads | **the live reply, yes** | same function — but stored history is not labelled; see Non-goals |
 | Streaming / AG-UI | **yes** | needs the new stream event |
-| A2A | **yes** | needs its broken dependency pin fixed first — see piece 4 |
+| A2A | **yes** | depends on the `a2a-sdk` port, which is its own issue — see piece 4 |
 | MCP | **yes** | two-line fix; carries the label in `_meta`, verified — see piece 4 |
 
 A2A and MCP lose structure one layer lower than the rest, in `AgentService.run`, so they need their
@@ -183,7 +183,8 @@ event type can hold one at all, so a payload cannot travel mid-stream.
 
 **4. A2A and MCP stop flattening one layer lower**, under the same rule again. Both call
 `AgentService.run`, which turns the reply into text before either of them sees it. A small change
-each — plus fixing A2A's dependency pin, which is broken today for reasons of its own.
+each. A2A also does not import today, for reasons entirely of its own — that fix is a separate
+issue this one depends on.
 
 The rule in items 2 to 4 is one rule: **a media type on the reply is the switch.** Without one, every
 surface behaves exactly as it does now.
@@ -234,8 +235,9 @@ several designs out.
 
 > **User:** hi
 
-The model answers `Hello! How can I help?`. The hook sees text that is not a payload and returns it
-untouched. The client receives:
+The model answers `Hello! How can I help?`. The hook sees prose rather than a UI payload — on the
+prompt route because nothing parsed, on the `output_type` route because the union's text member came
+back — and leaves it unlabelled. The client receives:
 
 ```json
 {"result": "Hello! How can I help?"}
@@ -307,6 +309,14 @@ so the practical form is a union — text or UI — which keeps the interleaving
 enforcing the shape:
 
 ```python
+class TextReply(BaseModel):
+    kind: Literal["text"] = "text"
+    text: str
+
+class UIReply(BaseModel):
+    kind: Literal["ui"] = "ui"
+    root: dict
+
 agent = Agent(name="expenses", instructions=..., output_type=TextReply | UIReply)
 ```
 
@@ -326,16 +336,25 @@ agent = Agent(
 )
 ```
 
-**Handle what comes back** — one post-hook. On the prompt route it parses; on the `output_type`
-route the reply is already structured and the hook only labels it:
+**Handle what comes back** — one post-hook. On the prompt route it parses the model's text and labels
+what parsed. On the `output_type` route the shape is already enforced, so the hook only has to tell
+the two union members apart:
 
 ```python
 class A2UIPostHook(PostHook):
-    """Label the model's structured reply as A2UI. Entirely application code."""
+    """Label a UI reply as A2UI; hand a prose reply back as ordinary text.
+
+    Entirely application code. On the union route *every* reply arrives as an
+    AgentReplyAny, so the discriminator — not the reply type — decides.
+    """
 
     async def on_run(self, session, requests, agent, agent_reply):
         if not isinstance(agent_reply, AgentReplyAny):
-            return agent_reply          # ordinary prose — leave it alone
+            return agent_reply
+        if agent_reply.content.get("kind") != "ui":
+            return AgentReplyText(                       # prose: unlabelled, as today
+                response=agent_reply.content["text"], prompt=agent_reply.prompt
+            )
         return agent_reply.model_copy(
             update={"media_type": "application/json+a2ui"}
         )
@@ -346,6 +365,14 @@ class A2UIPostHook(PostHook):
 
 OpenAIModule([agent]).post_hook(agent, [A2UIPostHook()])
 ```
+
+**Why the prose branch is not optional.** `from_output` (`core/model.py:151`) turns **any** pydantic
+output into an `AgentReplyAny`, so under the union a greeting comes back as `TextReply` and then as
+`AgentReplyAny(content={"kind": "text", "text": "Hello! …"})`. A hook that tested
+`isinstance(agent_reply, AgentReplyAny)` alone would be true on every turn and would label prose as
+A2UI — §4's Turn 1 would arrive as an object with a media type instead of the plain string shown
+there. Converting the text member back is what keeps the two sections agreeing, and it is why the
+union's members need a discriminator field (`kind` above) the hook can read.
 
 That last line is the whole wiring. It sits beside the module the application already builds, so no
 framework config surface is needed to reach it.
@@ -394,8 +421,10 @@ The rule, applied once where the value is born:
 > same bytes.
 
 - It lives as a shared annotated type in a new `core/payload.py` — `AgentReplyAny` and the
-  `DataMessage` of piece 3 both need it, and `core/model.py` already imports `core/event.py`, so the
-  rule cannot live in either without an import cycle.
+  `DataMessage` of piece 3 both need it. No import cycle forces this: `core/model.py:8` imports
+  `core/event.py` and `event.py` imports nothing back, so the type *could* sit in `event.py`. It goes
+  in its own module because it belongs to neither one's subject — a payload rule is not a reply type
+  and not a stream event — and a third module keeps both imports pointing one way.
 - **Field-level, not model-level.** A parent `model_validator(mode="after")` is bypassed by a
   subclass that fills `content` in its own after-validator — which is exactly the shape
   `AgentReplyPaused` (#696) takes. See Decision 4.
@@ -456,7 +485,9 @@ broken.
   thread handler stores proper JSON for the same reply. So the same agent, in the same thread store,
   is recorded one way in single-process mode and another way through the queue — **permanently**,
   and served back that way by the thread read routes. This is the hardest consequence to notice in
-  the whole change.
+  the whole change. Note what fixing it does and does not buy: both paths then record the same valid
+  JSON, but `ThreadMessage` has no media type, so history still replays unlabelled. That half is a
+  Non-goal here.
 
 **Breaks loudly:**
 
@@ -465,12 +496,18 @@ broken.
   `"Failed to process message after N retries"` — naming neither cause nor fix. Use pydantic's
   encoder. The ECS and Lambda twins need the same treatment
   (`deployment/aws/.../akagentrunner.py` → `pipeline/transport/sqs.py:52-67`,
-  `deployment/aws/serverless/core/router/rest_lambda.py:284`, `deployment/azure/akfunction.py:50`).
+  `deployment/aws/serverless/core/router/rest_lambda.py:288`, `deployment/azure/akfunction.py:53`).
 - **The DynamoDB response store rejects floats outright.** `core/util/driver/dynamodb.py:84` does no
   float-to-`Decimal` conversion, so boto3 raises `Float types are not supported` — inside the output
   consumer, burning the retry budget. Any payload carrying a price, a score or a coordinate trips
   it. Note piece 1's JSON-safe rule does **not** fix this: JSON-safe means the float stays a float.
-  This needs its own conversion on write, and on read every number comes back as `Decimal`.
+  This needs its own conversion on write — and the read side is half the fix, not an afterthought.
+  **The rule: the DynamoDB response store converts `Decimal` back to `int`/`float` on read, in the
+  same class that converts on write, so no consumer ever sees a `Decimal`.** Without it the failure
+  just moves one hop: the pipeline `RestHandler` hands `record["body"]` straight to FastAPI
+  (`pipeline/request_handler.py:117`), whose encoder copes, but the Lambda poll path does
+  `json.dumps` on the polled record (`deployment/aws/serverless/core/router/rest_lambda.py:288`) and
+  raises `TypeError` on a `Decimal` — the same class of break as the write side, one step later.
 - `pipeline/request_handler.py:116` renders the 202 path through `JSONResponse`, a bare `json.dumps`
   with `allow_nan=False`. Direct REST survives the same payload because FastAPI's `jsonable_encoder`
   copes — so the two paths disagree, which is exactly the per-surface divergence §2 argues against.
@@ -536,6 +573,19 @@ the application's hook returns `None` for each `TextDelta` while accumulating, t
 boundary returns `[DataMessage(...), MessageEnd(...)]` — the list form that emits several events in
 place of one.
 
+**And that costs incremental delivery, which is worth saying out loud.** The hook cannot know whether
+a message is UI or prose until the closing boundary, so it has to hold back *every* delta — and under
+the recommended `output_type` union (§5) every message is JSON, so this applies to prose turns too.
+Net effect for an agent with a labelling hook: **nothing arrives incrementally over SSE or AG-UI**,
+and a prose turn is re-emitted as one delta at the end. That is a regression on the one surface whose
+whole purpose is incremental delivery, and it is the price of not touching `Runtime.stream`.
+
+The alternative is the research's option (a) — `Runtime.stream` assembling the finished reply and
+running the post-hook chain's `on_run` before the terminal chunk, so prose keeps streaming and only
+the payload waits. It is not taken here: it adds a contract to the streaming path, and it has to
+avoid double-applying the output guardrail that already ran per event. Recorded as a Non-goal rather
+than left to be discovered by whoever first streams a labelled agent.
+
 **AG-UI mapping.** `AGUIMapper.to_agui` gains one `case "data_message"` above its `case _` fallback,
 producing AG-UI's custom event with `media_type` as the name and `content` as the value. Unmapped
 types already return `None`, so an AG-UI client on an older mapper degrades rather than breaks.
@@ -544,20 +594,30 @@ types already return `None`, so an AG-UI client on an older mapper degrades rath
 
 Both lose the reply lower down than the response builder: `AgentService.run` (`core/service.py:156`)
 turns it into text before either surface sees it. The fixes are small. A2A has one blocker that has
-to clear first.
+to clear first, and **that blocker is its own issue, not work this design performs.**
 
-**A2A is broken on a fresh install today, and this issue ports it forward rather than pinning it
-back.** `ak-py/pyproject.toml` pins `a2a-sdk[http-server]>=0.3.6` with **no upper bound**. The
-current release is 1.1.5, and against it three of Agent Kernel's imports do not resolve at all —
-`new_agent_text_message`, `ServerError`, and `RESTAdapter`, whose module no longer exists.
+**A2A does not import today.** `ak-py/pyproject.toml` pins `a2a-sdk[http-server]>=0.3.6` with **no
+upper bound**. Against the current release three of Agent Kernel's imports do not resolve at all —
+`new_agent_text_message`, `ServerError`, and `RESTAdapter`, whose module no longer exists. This is a
+live dependency bug with nothing to do with payload carriage, so it is tracked and shipped
+separately; **this design depends on it** and adds the structured branch on top. Decision 6 records
+the split.
 
 **Why no build ever went red.** Worth writing down, because the same trap is open on every other
-unbounded pin in the repo:
+unbounded pin in the repo. There are **two** independent reasons, not one, and they cover the two
+environments CI runs:
 
-- `examples/api/a2a/multi/build.sh` runs `uv sync`, which installs from the committed `uv.lock`
-  rather than re-resolving. That lock pins `a2a-sdk 0.3.6`, so the example installs 0.3.6 on every
-  PR and passes — permanently, regardless of what the constraint would resolve to today.
-- The one job that *would* re-resolve is gated off:
+- **The example environment never sees 1.x.** `examples/api/a2a/multi/build.sh` runs `uv sync`, which
+  installs from the committed `uv.lock` rather than re-resolving. That lock pins `a2a-sdk 0.3.6`, so
+  the example installs 0.3.6 on every PR and passes — permanently, regardless of what the constraint
+  would resolve to today.
+- **The unit-test environment is already on 1.x, and nothing imports A2A.** `ak-py/uv.lock` pins
+  `a2a-sdk 1.1.2`, and CI's unit-test job installs from it
+  (`.github/workflows/test-reusable.yaml:154`, `./build.sh && uv run pytest`). In that venv
+  `import agentkernel.api.a2a.a2a` already raises
+  `ImportError: cannot import name 'new_agent_text_message' from 'a2a.utils'`. It is green only
+  because A2A has **no test file at all**, so nothing ever imports the module.
+- The one job that *would* re-resolve the example is gated off:
   `update-lock-files: if: ${{ github.event.inputs.update_example_locks == 'true' }}`
   (`.github/workflows/test.yaml:30-31`). It runs only on a manual dispatch with that box ticked,
   never on a PR or a push to `develop`.
@@ -570,50 +630,34 @@ constraint can rot for months without a single red build.
 > with no lock and merely imports the package. It would have caught this within days of the 1.0
 > release. That is its own small issue, not this design's.
 
-Capping at `<0.4` was considered and rejected. The 0.x line is finished at 0.3.26, and — decisively —
-**1.x already has the exact primitive this design needs**:
+**What the port issue settles, and why this design cares.** Capping at `<0.4` was considered and
+rejected there: the 0.x line is finished at 0.3.26, and — decisively — **1.x already ships the exact
+primitive this design needs**:
 
 ```python
 a2a.helpers.new_data_message(data, media_type=None, context_id=None, task_id=None) -> Message
 ```
 
 A dict, a media type, a context id, a task id. On 0.3.x the same thing means hand-assembling parts
-against an API with no such helper, and then rewriting it at the eventual port. That is the work
-done twice.
+against an API with no such helper and then rewriting it at the eventual port — the work done twice.
+So the target pin is **`>=1.1,<2`** (bounded, because unbounded is what caused this), and the import
+mapping, the route rework and the lockfiles live in the port issue rather than here.
 
-The rest of the migration is mapped, not guessed:
+**Its ordering, for reference, because the obvious one does not work.** A2A has no test file at all,
+and the tempting sequence — characterise 0.3.6 behaviour in `ak-py/tests` first, then port — cannot
+run: `ak-py/uv.lock` is already on 1.1.2, so the module under test does not import in the environment
+those tests would run in. The workable order is:
 
-| Broken import | 1.x replacement |
-|---|---|
-| `a2a.utils.new_agent_text_message` | `a2a.helpers.new_message` |
-| `a2a.server.apps.rest.rest_adapter.RESTAdapter` | `a2a.server.routes` — `add_a2a_routes_to_fastapi`, `create_rest_routes` |
-| `a2a.utils.errors.ServerError` | moved; `request_handlers.build_error_response` is the 1.x shape |
-
-`add_a2a_routes_to_fastapi` is also a better fit than what `A2ARESTRequestHandler` does today, which
-is copy routes off a `RESTAdapter` into its own `APIRouter` by hand.
-
-The new pin is **`>=1.1,<2`**. Bounded, because unbounded is what caused this.
-
-**Ordering is a requirement here, not a preference: tests first.** A2A has **no test file at all**
-today. Porting an untested integration across a major version *and* changing its wire behaviour in
-one step is how silent breakage ships. So:
-
-1. **Write `ak-py/tests/test_a2a_*.py` against the current 0.3.6 behaviour**, pinning what "working"
-   means: a text reply produces a text message, the error path stays text, the card carries what it
+1. **Characterise current behaviour from the example**, `examples/api/a2a/multi`, which does install
+   0.3.6 — a text reply produces a text message, the error path stays text, the card carries what it
    carries, the expected routes exist.
-2. **Port to 1.x**, and change the pin in `ak-py/pyproject.toml`. Those tests still pass — adapted
-   to the new part model where the assertion must be, but with the same observable behaviour for
-   text replies.
-3. **Regenerate `examples/api/a2a/multi/uv.lock`** — the only lock in the repo carrying `a2a-sdk`.
-   This is the step that turns CI from a rubber stamp into the actual proof: once the lock holds
+2. **Port, and write `ak-py/tests/test_a2a_*.py` against 1.x**, asserting that same observable
+   behaviour. A2A gets its first tests in the change that makes it importable, rather than a
+   throwaway suite against a version the repo has already moved past.
+3. **Regenerate both locks** — `ak-py/uv.lock` *and* `examples/api/a2a/multi/uv.lock`. Once they hold
    1.x, every subsequent PR runs the ported code against the SDK a real user would install.
-4. **Then add the structured branch**, below.
 
-**The order in step 3 is not optional.** Regenerating the lock *before* the port replaces 0.3.6 with
-1.x underneath code written for 0.3.x, so the example stops importing and CI goes red for the whole
-branch. Port, then relock, then let CI confirm it.
-
-**A2A: sending the object, on top of the port — roughly ten lines.**
+**A2A: sending the object, on top of that port — roughly ten lines, and this is the part #706 owns.**
 
 - `_execute_agent` (`api/a2a/a2a.py:63`) calls `run_multi([AgentRequestText(prompt=...)])` instead of
   `run(prompt)`, so the executor receives an `AgentReply` rather than a string. Its return annotation
@@ -624,12 +668,13 @@ branch. Port, then relock, then let CI confirm it.
   as before, and the error path stays text.
 - The agent card already advertises `default_output_modes: ["json"]` (`core/builder.py:44`) while the
   executor only ever sends text. This makes an existing claim true rather than adding a new one.
-- Also fixed, since it is part of the same brokenness: with A2A enabled and **no agents registered in
-  the serving process**, it publishes no cards and no routes, with no error and nothing in the log.
-  Log a warning naming the cause. Reached only through the cached `_build()`, so it warns once.
+- Goes to the port issue, since it is part of the same brokenness: with A2A enabled and **no agents
+  registered in the serving process**, it publishes no cards and no routes, with no error and nothing
+  in the log. Log a warning naming the cause. Reached only through the cached `_build()`, so it warns
+  once.
 - **Not verified:** the symbols and signatures above were read from an installed a2a-sdk 1.1.5, but
-  Agent Kernel has not been run against it. The port is mapped, not proven, and step 1 above exists
-  precisely because of that gap.
+  Agent Kernel has not been run against it. The port is mapped, not proven — which is the port
+  issue's problem to close before this branch is written against it.
 - **No behavioural change to declare.** An earlier draft had A2A sending a data part for *every*
   structured reply, which would have broken any client reading `parts[0].root.text`. Gated on the
   label, A2A behaves exactly as it does today until an application opts in.
@@ -720,8 +765,11 @@ These are requirements, not reassurance. Each one is checkable.
   — labelled gives a dict, unlabelled keeps that exact assertion passing.
 - **The two silent failures, pinned:** a labelled reply through the pipeline records valid JSON in
   the thread store (not a Python repr), and reaches the messaging adapters as JSON.
-- **The DynamoDB float path:** a labelled payload carrying a float is stored and read back without
-  raising. This fails today and no test covers it, because no body has ever held a number.
+- **The DynamoDB float path, both directions:** a labelled payload carrying a float is stored without
+  raising, **and reads back as a `float`, not a `Decimal`** — asserted by a `json.dumps` on the
+  polled record, which is exactly what `rest_lambda.py:288` does and what would fail if only the
+  write side were fixed. This fails today and no test covers it, because no body has ever held a
+  number.
 - **Regression tests on `__str__`, parameterised.** Byte-identity holds only for JSON-safe content;
   a second test pins the intended new output for a datetime, a Decimal, a set and a NaN.
 - **The test that would have caught the gap Copilot found:** build a response through
@@ -746,8 +794,10 @@ These are requirements, not reassurance. Each one is checkable.
   `build_response`. Whichever lands second rebases onto the first. Neither needs anything from the
   other. Its `AgentReplyPaused` subclasses `AgentReplyAny`, so if both land, a paused reply goes
   through the same branch — a consequence, covered by Decision 4.
-- **a2a-sdk 1.x** — the port is *in* this issue (piece 4), not deferred. Listed here only because it
-  is the one part whose size is estimated rather than known.
+- **a2a-sdk 1.x — a dependency, tracked separately.** A2A does not import against the current SDK,
+  which is a live bug unrelated to payload carriage; it ships on its own issue and this design's A2A
+  branch lands on top of it. The only item here whose size is estimated rather than known, which is
+  part of why it is not in this issue's critical path: pieces 1 to 3 do not wait on it.
 
 ## 9. Non-goals
 
@@ -763,6 +813,17 @@ These are requirements, not reassurance. Each one is checkable.
     fails outright — Agent Kernel would have to be the renderer.
 - **Streaming a partial payload.** The structured event carries a whole payload; incremental
   parse-and-heal is an application concern if anyone wants it.
+- **Incremental delivery for an agent that labels its replies.** A labelling `on_stream_event` hook
+  must hold every delta back until the closing boundary, so such an agent streams nothing
+  incrementally and its prose turns arrive as one delta — see piece 3. Fixing it means the
+  end-of-stream `on_run` the research proposed as option (a); deliberately not taken here.
+- **Replaying a labelled payload out of thread history.** `ThreadMessage.content` is a `str`
+  (`integration/thread/model.py:33`) and `ThreadRecorder.post_run` records `str(result)`
+  (`integration/thread/recorder.py:66`), so the label is dropped on the way into the store. The live
+  reply carries its media type; a conversation reloaded from history does not, and a client cannot
+  tell an A2UI card from any other JSON. Piece 2 fixes the *encoding* on that path — the queue's
+  Python repr — but not the label. A follow-up needs a `media_type` on `ThreadMessage`, a recorder
+  that stops stringifying, and the thread read routes to replay both.
 - **A callback path from a rendered UI back to the agent.** Same problem as HITL's resume path;
   reuse that when it lands.
 - **Changing `__str__`'s code, the `AgentReply` union, or any framework adapter.** Note the
@@ -780,11 +841,29 @@ These are requirements, not reassurance. Each one is checkable.
 | 3 | **`result` carries the object when the reply is labelled with a media type, and the string it carries today when it is not.** One field, switched by the label; no second field beside it. | `result` becomes polymorphic — `string \| object` — so a client must read `media_type` to know which it has. Accepted because the alternative shapes are both worse: replacing `result` unconditionally breaks every existing structured-output client for a bug they may not care about, and adding a second field duplicates the payload (size, and two encoders that disagree — §2). The gate means **nothing changes for anyone who has not opted in**: not a text agent, not an existing structured agent, not the deferred-schedule acknowledgement, not one of the six `result` examples in the published docs, not one of the example test suites. No changelog entry needed for `result`; the only behavioural change in this design is `__str__`'s output for non-JSON-safe content (piece 1). |
 | 4 | **A paused reply (#696) carries no media type, so its `result` stays a string** — this contract does not touch it. It still inherits piece 1's JSON-safe rule, since that is ungated. | So #696 is unaffected by the `result` contract and needs no coordination on it. It does still inherit the JSON-safe rule, and three constraints go to #696 so the inheritance actually holds: (a) do not redeclare `content` — a bare `content: dict` on the subclass silently drops the annotated type; (b) build `content` in a `before` validator or `__init__`, **not** an after-validator, which runs after the parent's and bypasses field validation; (c) "a faithful view of the typed fields" means faithful *in JSON form* — a deadline becomes ISO 8601. If `interruptions` carries a raw dict anywhere, it needs the same type or the divergence returns one field over. |
 | 5 | **Ask #696 to state what `PausedInterruption.payload` means** while it is still design-only. | None — it is a comment on another issue. If that field acquires a meaning by accident, an agent-authored payload on a pause is closed off by convention rather than by design. |
-
-| 6 | **Port A2A to `a2a-sdk >=1.1,<2` in this issue, tests first — do not cap at `<0.4`.** | This issue absorbs an SDK migration, which is real scope and the one estimate here that is not firm. Taken because 0.3 is a finished line, and because 1.x ships `new_data_message(data, media_type, …)` — precisely this design's payload. Capping would mean writing the part assembly by hand against an API lacking that helper, then discarding it at the port. The mitigation is ordering: A2A's first-ever tests are written against 0.3.6 behaviour *before* anything moves. |
-
+| 6 | **The `a2a-sdk` 1.x port is its own issue; this design's A2A branch depends on it — and the target pin is `>=1.1,<2`, not a cap at `<0.4`.** | #706's A2A surface cannot be demonstrated until that lands, which is real scheduling cost. Taken because the port is a live dependency bug — A2A does not import against the current SDK — with nothing to do with payload carriage, and it should not queue behind a design review. Pieces 1 to 3 do not wait on it, so splitting costs this issue nothing it was relying on. The pin is `>=1.1,<2` rather than a cap because 0.3 is a finished line and 1.x ships `new_data_message(data, media_type, …)` — precisely this design's payload; capping would mean hand-assembling parts against an API lacking that helper and discarding the work at the eventual port. |
 | 7 | **The payload layer #706 specified — an `a2ui` config block and extra, catalog prompt injection, a framework post-hook — is not built.** The framework carries payloads; the application owns formats. | A config flag is one line, but behind it sit a parser, a catalog concept, a definition of "valid", a failure policy, prompt-injection machinery in `core/`, and ownership of a pre-1.0 protocol's version churn — and they chain, since a parser needs a catalog, a catalog needs a config shape, that needs validation, which needs a failure policy. The deciding fact: **a catalog must match the components a given frontend implements**, which Agent Kernel cannot know, so any catalog it ships is wrong and the model will confidently emit things that render as nothing. Once the catalog is the application's, the prompt built from it and the parser checking it follow. **Cost:** nobody gets A2UI from a config flag; they write about fifteen lines. **Gain:** any other payload format — their own UI JSON, Adaptive Cards, a chart schema — works identically on day one with no framework change. |
 
 This answers "can an Agent Kernel agent serve A2UI to a client" with yes, and "does Agent Kernel
 contain A2UI" with no. Issue #706 asks for the second; Decision 7 is the deliberate answer to that,
 not an oversight.
+
+## 11. Open questions
+
+Three calls this design makes but a reviewer may want to make differently. Each is a one-line change
+to take the other branch, and none blocks starting Stage 2.
+
+1. **`NaN` coerces to `null` rather than raising** (piece 1). The JSON-safe rule treats `NaN` and the
+   infinities as values with a canonical JSON form — `null` — because that is what every surface
+   already does downstream and it keeps `str()` and the object form agreeing. The alternative is to
+   treat them like a framework object and raise at construction, on the grounds that a silent `null`
+   where a number was expected is worse than a loud failure. Decided silently in the current draft;
+   surfacing it because it is a data-loss choice.
+2. **MCP carries the label in `_meta` rather than a wrapping envelope** (piece 4). `_meta` is the
+   protocol's own slot and was verified to round-trip against the pinned fastmcp (3.4.7); the
+   alternative — an Agent Kernel envelope around the payload — was rejected because it changes the
+   shape the client receives. That is a protocol-shape call a maintainer may want to confirm.
+3. **Thread history replay is out of scope** (see Non-goals). A conversation reloaded from the thread
+   store replays a labelled payload as an unlabelled text bubble. The fix is small and known
+   (`media_type` on `ThreadMessage`, a recorder that stops stringifying), so whether it belongs here
+   or in a follow-up is a scope decision rather than a technical one.
