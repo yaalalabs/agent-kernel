@@ -4,14 +4,21 @@ An agent can already answer with a JSON object instead of a sentence. Today that
 into text too early, so by the time it reaches a client it is a string that has to be parsed twice
 and carries no clue what it is. This change lets a reply say *what format its content is in* — and
 **when it says so, every exit point passes the object through as an object.** A reply that says
-nothing is serialised exactly as it is today, so nothing an existing user relies on moves. A2UI then
-works without a single line of A2UI code in Agent Kernel.
+nothing is serialised exactly as it is today, so nothing an existing user relies on moves. On top of
+that carriage sits one small capability — a two-key config block — that applies the A2UI label for
+you, so an application does not have to write the hook itself.
 
 Supporting research: [`research/README.md`](research/README.md),
 [`research/changes.md`](research/changes.md), and the protocol survey at
 [`../523-ag-ui-support/research/a2ui.md`](../523-ag-ui-support/research/a2ui.md).
 
-Code facts verified against `develop` at `80936df9` (v0.9.2); paths are relative to `ak-py/src/agentkernel/`.
+Code facts verified against `develop` at `80936df9` (v0.9.2); paths are relative to
+`ak-py/src/agentkernel/`. **Protocol facts verified against A2UI at [a2ui.org](https://a2ui.org/),
+September 2026** — not
+inherited from the #523 survey, which has both the message shape and the media type wrong. Two
+versions matter: **v0.9.1 is Current**, and **v1.0 is a release candidate** whose own page says "for
+production use, consider v0.9.1". Neither is a tagged GitHub release. This design is written to carry
+either — see Decision 10.
 
 *A note on length.* A Stage-1 design is normally point-form requirements, with worked detail held
 back for `spec.md`. This one deliberately carries more — a conversation walkthrough, the application
@@ -32,10 +39,25 @@ draws them using its own pre-approved widgets. The agent never sends HTML or Jav
 confused model cannot execute anything on someone's device.
 
 ```json
-{ "root": { "type": "Card", "children": [
-    { "type": "Text",   "text": "Refund $250 for order 4471?" },
-    { "type": "Button", "label": "Approve", "action": "approve" } ] } }
+{ "version": "v1.0",
+  "createSurface": {
+    "surfaceId": "refund_4471",
+    "catalogId": "https://example.com/my-catalog.json",
+    "components": [
+      { "id": "root",   "component": { "Card": { "children": ["msg", "ok"] } } },
+      { "id": "msg",    "component": { "Text": { "text": "Refund $250 for order 4471?" } } },
+      { "id": "ok",     "component": { "Button": { "label": "Approve" } } } ] } }
 ```
+
+Every message carries a `version` and **exactly one** message key. Four exist in both v0.9.1 and the
+v1.0 release candidate — `createSurface`, `updateComponents`, `updateDataModel`, `deleteSurface` —
+and v1.0 adds function-call messages for the callback round trip, which is a Non-goal here. Note
+`root` is a component *id*, not a structural key.
+
+**A UI is often a sequence, not one message.** Embedding components directly in `createSurface`, as
+above, is a **v1.0** feature ("single-message UI instantiation"). On v0.9.1 the same UI is a
+`createSurface` followed by an `updateComponents`, and possibly an `updateDataModel`. So a reply may
+carry one message or several, and this design carries both (Decision 10).
 
 The important part for this design: **A2UI says nothing about how that JSON travels.** Its own docs
 say over REST, WebSockets, A2A, AG-UI, whatever you want. So "supporting A2UI" is not a transport
@@ -53,7 +75,7 @@ Every exit point then encodes it **early**. Here is what a client actually recei
 route today:
 
 ```json
-{"result": "{\"root\": {\"type\": \"Card\", \"children\": [ ... ]}}"}
+{"result": "{\"version\": \"v1.0\", \"createSurface\": {\"surfaceId\": \"refund_4471\", ... }}"}
 ```
 
 Look at the quoting. `result` is a **string**, and that string's contents happen to be JSON. The
@@ -64,8 +86,8 @@ must call `json.loads` on the body, then `json.loads` again on `result`.
 What it should receive, **when the agent labelled its payload**:
 
 ```json
-{"result": {"root": {"type": "Card", "children": [{"type": "Text", "text": "Refund $250 for order 4471?"}]}},
- "media_type": "application/json+a2ui"}
+{"result": {"version": "v1.0", "createSurface": {"surfaceId": "refund_4471", "components": [ ... ]}},
+ "media_type": "application/a2ui+json"}
 ```
 
 `result` is the object. One parse. And `media_type` says what the object is.
@@ -161,7 +183,7 @@ is the application's job, not the framework's.
 | WebSocket | **yes** | same function |
 | Async mode | **yes** | same function |
 | Conversation threads | **the live reply, yes** | same function — but stored history is not labelled; see Non-goals |
-| Streaming / AG-UI | **yes** | needs the new stream event — and a labelling agent gives up incremental delivery; see piece 3 |
+| Streaming / AG-UI | **yes, with your own hook** | needs the new stream event; the config block does not reach a streamed run, and a labelling stream hook gives up incremental delivery — see piece 3 |
 | A2A | **yes** | depends on the `a2a-sdk` port, which is its own issue — see piece 4 |
 | MCP | **yes** | two-line fix; carries the label in `_meta`, verified — see piece 4 |
 
@@ -169,7 +191,7 @@ A2A and MCP lose structure one layer lower than the rest, in `AgentService.run`,
 own small change; piece 4 covers it. The CLI is not listed: it is a local REPL for testing and first
 steps, and printing text is what it is for.
 
-### The four things we change
+### The five things we change
 
 **1. The reply type gets one new field.** `media_type`, saying what format its content is in.
 Optional, unset by default, and nothing is forced to use it.
@@ -186,30 +208,47 @@ event type can hold one at all, so a payload cannot travel mid-stream.
 each. A2A also does not import today, for reasons entirely of its own — that fix is a separate
 issue this one depends on.
 
+**5. One capability sets the label for A2UI**, behind `a2ui: {enabled, agents}`. Naming an agent
+there declares that it emits A2UI; a system post-hook then labels that agent's parsed replies with
+the media type. It is the only place in the framework that knows anything about A2UI — one string —
+it ships no catalog, and with the block absent nothing about it runs.
+
 The rule in items 2 to 4 is one rule: **a media type on the reply is the switch.** Without one, every
-surface behaves exactly as it does now.
+surface behaves exactly as it does now. Item 5 is one way of throwing that switch; an application can
+still throw it itself with its own post-hook, for A2UI or for any other format.
 
 That is the whole framework change. Everything else in this document explains why, or what happens
 around it.
 
 ### What we do not build
 
-The A2UI part. No component list, no parser, no validation rules, no config flag, no dependency on
-the A2UI SDK.
+**No component catalog, no validation rules, and no dependency on the A2UI SDK.** A catalog has to
+match the components a given frontend actually implements, so it stays with the application — Agent
+Kernel never ships one, never reads one, and never checks a payload against one.
 
-The application writes a short post-hook that decides which replies are UI and labels those — about
-fifteen lines, shown in §5. We ship one runnable example containing exactly that, so nobody starts
-from a blank file.
+What it *does* build is the labelling step, because that part is the same for everybody: A2UI's media
+type is one agreed string, so stamping it is not a per-application decision the way a catalog is.
+That is piece 5, and it is two config keys:
+
+```yaml
+a2ui:
+  enabled: true
+  agents: [expenses]      # omit for every agent
+```
+
+The application still teaches its agent the format, with its own catalog in its own instructions. It
+no longer writes a post-hook.
 
 ```mermaid
 graph LR
     subgraph APP["YOUR APPLICATION"]
-        A["Agent"] --> H["Your post-hook<br/>makes an object,<br/>adds a label"]
+        A["Agent<br/>your catalog,<br/>your instructions"]
     end
     subgraph AK["AGENT KERNEL"]
-        R["Reply<br/>object + label"] --> S["Response builder"]
+        H["A2UI post-hook<br/>recognises it,<br/>adds the label"] --> R["Reply<br/>object + label"]
+        R --> S["Response builder"]
     end
-    H --> R
+    A --> H
     S -->|"result is the object<br/>(labelled replies only)"| C["Your client<br/>renders it"]
 ```
 
@@ -218,9 +257,12 @@ graph LR
 **Pieces 1 and 2 stand on their own.** Anyone returning structured data over REST today is
 double-parsing it, and this fixes that whether or not A2UI ever appears.
 
-**How we will know the rule held.** After the work, search the framework for "a2ui". Every hit should
-be in the example or its tests, and none in `core/`, `api/` or `pipeline/`. A hit inside the
-framework means the format leaked into the plumbing, and the design failed on its own terms.
+**How we will know the rule held.** After the work, search the framework for "a2ui". It may appear in
+exactly four places: the `a2ui/` package, its config model in `core/config.py`, the one line
+registering its factory in `core/runtime.py`, and tests. **No surface may name it** — not
+`core/chat_service.py`, not `core/event.py`, not anything under `api/`, `pipeline/` or
+`integration/`. The capability is allowed to know the format; the carriage is not, and a hit in a
+surface means the format leaked into the plumbing.
 
 One more thing left out, which the table above does not cover: **buttons that call back into the
 agent**. That is the same problem #696's resume path solves — reuse it when it lands rather than
@@ -235,9 +277,9 @@ several designs out.
 
 > **User:** hi
 
-The model answers `Hello! How can I help?`. The hook sees prose rather than a UI payload — on the
-prompt route because nothing parsed, on the `output_type` route because the union's text member came
-back — and leaves it unlabelled. The client receives:
+The model answers `Hello! How can I help?`. Whichever hook is in play sees prose rather than a UI
+payload — piece 5's, because a greeting does not parse as JSON; or your own on the `output_type`
+route, because the union's text member came back — and leaves it unlabelled. The client receives:
 
 ```json
 {"result": "Hello! How can I help?"}
@@ -254,12 +296,13 @@ failure, and why the unlabelled path has to stay exactly as it is.
 The model emits an A2UI payload. The hook labels it. The client receives:
 
 ```json
-{"result": {"root": {"type": "Card", "children": [
-    {"type": "Select",     "label": "Cost centre", "options": ["ENG-4", "OPS-1"]},
-    {"type": "DatePicker", "label": "Date"},
-    {"type": "Number",     "label": "Amount"},
-    {"type": "Button",     "label": "Submit", "action": "submit"}]}},
- "media_type": "application/json+a2ui"}
+{"result": {"version": "v1.0", "createSurface": {"surfaceId": "expense_form", "components": [
+    {"id": "root",   "component": {"Card": {"children": ["cc", "dt", "amt", "go"]}}},
+    {"id": "cc",     "component": {"Select": {"label": "Cost centre", "options": ["ENG-4", "OPS-1"]}}},
+    {"id": "dt",     "component": {"DatePicker": {"label": "Date"}}},
+    {"id": "amt",    "component": {"Number": {"label": "Amount"}}},
+    {"id": "go",     "component": {"Button": {"label": "Submit"}}}]}},
+ "media_type": "application/a2ui+json"}
 ```
 
 `result` is an object this time — the media type is present, so the switch flipped. The client
@@ -290,23 +333,27 @@ Passed through untouched. An ordinary bubble again.
 
 ## 5. How the agent knows, and what an application writes
 
-This is the whole A2UI story on the application's side. Nothing here is an Agent Kernel feature —
-agent instructions, `output_type` and post-hooks are all existing extension points.
+Two things, and only the first is A2UI-specific: the application teaches its agent the format with
+its own catalog, and turns on the config block. The labelling in between is piece 5's job.
 
 ### How the agent learns the format
 
-There is no magic: the agent knows because the application told it. Two routes, and the choice
-changes how much the hook has to do.
+There is no magic: the agent knows because the application told it. Two routes, and the choice now
+decides whether the framework hook can do the labelling for you.
 
-| Route | How the agent knows | If the model misbehaves | The hook does |
+| Route | How the agent knows | If the model misbehaves | Who labels it |
 |---|---|---|---|
-| **Prompt** | The catalog is rendered into the agent's instructions. This is what the reference A2UI SDK produces — its agent-side job is essentially generating that prompt text. | It can drift or emit malformed JSON | Parse, validate, decide the failure policy, label |
-| **`output_type`** | The application hands the framework a schema and the model is constrained to fill it in | Cannot happen — the shape is enforced | Label only |
+| **Prompt** | The catalog is rendered into the agent's instructions. This is what the reference A2UI SDK produces — its agent-side job is essentially generating that prompt text. | Malformed JSON does not parse, so it arrives unlabelled; well-formed JSON that is not A2UI is labelled anyway — Open question 1 | **Piece 5's hook**, from config |
+| **`output_type`** | The application hands the framework a schema and the model is constrained to fill it in | It always parses, but `message: dict` is unconstrained, so the contents can still be wrong | **Your own hook** — the schema is yours, so only you can read it |
 
-`output_type` is already supported on all six adapters and is where `AgentReplyAny` comes from
-today. Constraining *every* reply to A2UI would force a greeting to come back as a Text component,
-so the practical form is a union — text or UI — which keeps the interleaving in §4 while still
-enforcing the shape:
+**Recommended with the config block: the prompt route.** It is the one piece 5 can serve, because
+what arrives is either prose or an A2UI document and nothing else — no application-specific wrapper
+in between. §4's Turn 1 works precisely because a greeting does not parse as JSON, so it never
+reaches the labelling step.
+
+`output_type` is already supported on all six adapters and is where `AgentReplyAny` comes from today.
+Constraining *every* reply to A2UI would force a greeting to come back as a Text component, so the
+practical form is a union — text or UI:
 
 ```python
 class TextReply(BaseModel):
@@ -315,19 +362,31 @@ class TextReply(BaseModel):
 
 class UIReply(BaseModel):
     kind: Literal["ui"] = "ui"
-    root: dict
+    message: dict        # one A2UI message, e.g. a createSurface
 
 agent = Agent(name="expenses", instructions=..., output_type=TextReply | UIReply)
 ```
 
-**Recommended: the union.** It removes malformed payloads as a category, which is the messiest thing
-the prompt route leaves the application to handle. The trade-off to know about: upstream A2UI
-tooling — its catalogs and few-shot examples — assumes prompt-shaped output, so the union route
-diverges from it.
+**The union removes *unparseable* replies**, which the prompt route cannot: the model cannot wrap
+the payload in prose or stop halfway through the object. Note what it does *not* remove —
+`message: dict` is unconstrained, so a surface naming a component the frontend has never heard of
+satisfies the schema exactly as a good one does. Both routes can hand a client JSON that its
+renderer rejects;
+only real A2UI component models would change that, and writing those means owning the protocol's
+schema in your own repo.
+
+The reason this route is yours to handle is narrower than the safety argument: `kind` is *your*
+discriminator and `UIReply` is *your* class — you could as easily have called them `type` and
+`Widget`, and neither word comes from A2UI. Agent Kernel cannot know either, so piece 5's hook
+cannot tell your prose member from your UI member. On this route you write the hook, and the config
+block stays off. Two other things to know: upstream A2UI tooling assumes prompt-shaped output, so
+the union diverges from it; and the hook must forward `content["message"]` alone, or `"kind": "ui"`
+ships inside a payload claiming to be A2UI.
 
 ### The code
 
-**Teach the model the format** — ordinary agent configuration:
+**Teach the model the format** — ordinary agent configuration, and the only A2UI-specific thing the
+application writes:
 
 ```python
 agent = Agent(
@@ -336,66 +395,36 @@ agent = Agent(
 )
 ```
 
-**Handle what comes back** — one post-hook. On the prompt route it parses the model's text and labels
-what parsed. On the `output_type` route the shape is already enforced, so the hook only has to tell
-the two union members apart:
+**Handle what comes back** — nothing. Turn on the config block and piece 5's hook does it:
 
-```python
-class A2UIPostHook(PostHook):
-    """Label a UI reply as A2UI; hand a prose reply back as ordinary text.
-
-    Entirely application code. On the union route *every* reply arrives as an
-    AgentReplyAny, so the discriminator — not the reply type — decides.
-    """
-
-    async def on_run(self, session, requests, agent, agent_reply):
-        if not isinstance(agent_reply, AgentReplyAny):
-            return agent_reply
-        content = agent_reply.content
-        if content.get("kind") != "ui":
-            return AgentReplyText(                       # prose: unlabelled, as today
-                response=content["text"], prompt=agent_reply.prompt
-            )
-        return AgentReplyAny(
-            content={"root": content["root"]},           # the payload alone, no "kind"
-            prompt=agent_reply.prompt,
-            media_type="application/json+a2ui",
-        )
-
-    def name(self) -> str:
-        return "a2ui"
-
-
-OpenAIModule([agent]).post_hook(agent, [A2UIPostHook()])
+```yaml
+a2ui:
+  enabled: true
+  agents: [expenses]
 ```
 
-**Why the prose branch is not optional.** `from_output` (`core/model.py:151`) turns **any** pydantic
-output into an `AgentReplyAny`, so under the union a greeting comes back as `TextReply` and then as
-`AgentReplyAny(content={"kind": "text", "text": "Hello! …"})`. A hook that tested
-`isinstance(agent_reply, AgentReplyAny)` alone would be true on every turn and would label prose as
-A2UI — §4's Turn 1 would arrive as an object with a media type instead of the plain string shown
-there. Converting the text member back is what keeps the two sections agreeing, and it is why the
-union's members need a discriminator field (`kind` above) the hook can read.
+The hook stamps `application/a2ui+json` on any reply from that agent whose body parses as JSON;
+prose, which does not parse, goes past untouched and unlabelled exactly as today. Piece 5 has the
+detection rule and the failure policy.
 
-**And why the UI branch builds a new reply rather than copying.** Two reasons, both of which bite
-whoever writes this hook. The discriminator is the application's scaffolding, not part of the
-format — leaving it in would put `"kind": "ui"` on the wire inside a payload claiming to be A2UI, so
-the hook forwards `content["root"]` alone (which is what §4's Turn 2 and the MCP example below both
-show). And `model_copy(update={"content": ...})` **bypasses field validation**, so it would skip
-piece 1's JSON-safe rule; constructing the reply runs it. Copying is fine when only `media_type`
-changes — the prompt route does exactly that — but not when `content` does.
+**If your format is not A2UI**, the extension point is still there and is what piece 5 itself uses —
+a post-hook that sets `media_type` to whatever you like, attached in one line beside the module you
+already build:
 
-That last line is the whole wiring. It sits beside the module the application already builds, so no
-framework config surface is needed to reach it.
+```python
+OpenAIModule([agent]).post_hook(agent, [MyFormatPostHook()])
+```
 
 **Why the catalog cannot live in Agent Kernel.** A catalog has to match the components the
 application's frontend actually implements. One listing components the frontend cannot draw is worse
 than useless — the model will emit them confidently and nothing will render. Agent Kernel does not
 know what a given frontend can draw, so any catalog it shipped would be wrong. Once the catalog is
-the application's, the prompt built from it and the hook checking against it follow.
+the application's, so is the prompt built from it — which is why piece 5 stops at the label and the
+config block stays two keys.
 
-Agent Kernel's contribution is the framework pieces below, plus **one runnable example** containing
-exactly the code above, showing the payload arriving over plain REST with no UI framework involved.
+Agent Kernel's contribution is the framework pieces below, plus **one runnable example**: an agent
+with its own catalog in its instructions, the `a2ui` block turned on, and the payload arriving over
+plain REST with no UI framework involved.
 
 ## 6. What changes in the framework
 
@@ -403,10 +432,18 @@ exactly the code above, showing the payload arriving over plain REST with no UI 
 
 - `AgentReplyAny` gains one optional field, defaulted to unset, naming the media type of `content`.
 - **Framework adapters never set it.** They keep constructing replies exactly as they do now, so
-  `from_output` needs no new parameter. The label is applied afterwards, by the application's
-  post-hook (§5) — which is what makes it an opt-in rather than something an adapter can trigger.
+  `from_output` needs no new parameter. The label is applied afterwards, by the hook (§5) — which is
+  what makes it an opt-in rather than something an adapter can trigger.
 - Only `AgentReplyAny` gains the field. `AgentReplyText` and `AgentReplyImage` do not: a text reply
   has no content whose format needs naming.
+- **`content` widens from `dict` to `dict | list`.** A JSON array is a legitimate structured reply
+  that the type has always excluded, and A2UI forces the question: on v0.9.1 a UI is a *sequence* of
+  messages, so a reply carrying one is an array (Decision 10). Not free — `result` becomes
+  `str | dict | list`, one shape more than Decision 3 originally weighed. Accepted because the
+  alternative is an Agent Kernel envelope around the list, which is the same wrapper this design
+  rejects for MCP: it would change the payload a client receives.
+  - `from_output`'s `isinstance(value, dict)` branch gains `list`; a pydantic model still dumps to a
+    dict, so that half is untouched. `__str__` is already `json.dumps`, which serialises either.
 
 **`content` becomes JSON-safe by construction.** Once `result` can carry the object rather than a
 string, *something* has to guarantee that object can be serialised — and today nothing does. This
@@ -420,16 +457,25 @@ same value, and one of them crashes:
 |---|---|---|---|---|
 | `datetime(2026, 9, 22, 14, 30)` | `"2026-09-22 14:30:00"` | `"2026-09-22T14:30:00"` | `"2026-09-22T14:30:00"` | **TypeError** |
 | `Decimal("250.00")` | `"250.00"` | `"250.00"` | `250.0` (a float) | **TypeError** |
-| `float("nan")` | `NaN` — invalid JSON | `null` | `NaN` | `NaN` |
+| `float("nan")` | `NaN` — invalid JSON | `null` — plausible but wrong | `NaN` | `NaN` |
 | an arbitrary object | `"<Foo object at 0x…>"` shipped as data | raises | `{}` — silent loss | **TypeError** |
 
 The rule, applied once where the value is born:
 
 > **`content` is replaced, on validation, by a single pydantic JSON round trip** — the same thing
 > `from_output` already does for pydantic inputs. A value with a canonical JSON form (datetime,
-> Decimal, UUID, Enum, set, bytes, a non-string key, NaN) coerces silently. A value with no JSON form
-> raises at construction. Every surface then serialises an already-safe dict, so all of them emit the
-> same bytes.
+> Decimal, UUID, Enum, set, bytes, a non-string key) coerces silently. A value with no JSON form
+> raises at construction — and **`NaN` and the infinities raise too**, rather than coercing to
+> `null`. Every surface then serialises an already-safe dict, so all of them emit the same bytes.
+
+**Why `NaN` raises rather than becoming `null`.** It is the one value with a *plausible* JSON form
+that we refuse anyway. `null` is not a faithful rendering of "not a number" — it is indistinguishable
+from a field the agent chose to omit, so a client cannot tell a missing average from a divide-by-zero.
+A `NaN` in a payload almost always means a defect upstream (an empty denominator, an unset
+accumulator), and failing at construction puts the error next to the code that produced it instead of
+shipping a plausible-looking gap to the user. This is the one place the design prefers a loud failure
+to a quiet one, and it is deliberate: it fires at *construction*, in the application's own reply, not
+somewhere down the pipeline.
 
 - It lives as a shared annotated type in a new `core/payload.py` — `AgentReplyAny` and the
   `DataMessage` of piece 3 both need it. No import cycle forces this: `core/model.py:8` imports
@@ -463,7 +509,6 @@ datetime, a Decimal, a set or a NaN now stringifies the way every other surface 
 it. That is a deliberate convergence and a changelog line, not an accident. §7's regression test is
 parameterised accordingly.
 
-
 ### Piece 2 — REST, WebSocket, async mode and threads
 
 One change to the shared response builder (`core/chat_service.py:317`), which all four already route
@@ -481,17 +526,12 @@ it is today.
 `str | dict` in one field is the price of not adding a second one. Everything below was traced
 rather than assumed; each is a defect that only fires for a **labelled** reply, so none of it
 affects an existing user, but all of it has to be fixed in the same change or the feature ships
-broken.
+broken. One consequence is deliberately *not* fixed — the messaging integrations — and it is in
+Non-goals with the reasoning.
 
-**Breaks silently — the dangerous ones:**
+**Breaks silently — the dangerous one:**
 
-- `pipeline/response_handler.py:192` builds `AgentReplyText(response=str(body.get("result", "")))`
-  for the messaging integrations. On a dict, `str()` yields a **Python repr** — `{'root': ...}`,
-  single quotes, `None` and `True` — and all seven outbound adapters render it verbatim
-  (`slack/adapter.py:264`, `whatsapp/adapter.py:281`, `telegram/adapter.py:303`,
-  `messenger/adapter.py:175`, `instagram/adapter.py:182`, `teams/adapter.py:504`,
-  `gmail/adapter.py:443`). A user sees a Python repr in Slack and nothing logs an error.
-- `pipeline/agent_runner.py:61` feeds the same value into thread recording, which stores
+- `pipeline/agent_runner.py:61` passes the response body into thread recording, which stores
   `str(result)` into `ThreadMessage.content` (`integration/thread/recorder.py:66`). The **direct**
   thread handler stores proper JSON for the same reply. So the same agent, in the same thread store,
   is recorded one way in single-process mode and another way through the queue — **permanently**,
@@ -540,13 +580,13 @@ framework change that is not a handful of lines.
 class DataMessage(StreamEventBase):
     """A complete structured payload emitted inside the assistant's message.
 
-    `content` is a plain JSON-compatible dict and `media_type` names its format, or is
-    unset when the producer did not say. Agent Kernel never interprets either.
+    `content` is JSON-compatible — an object or an array — and `media_type` names its
+    format, or is unset when the producer did not say. Agent Kernel never interprets either.
     """
 
     type: Literal["data_message"] = "data_message"
     message_id: str
-    content: dict
+    content: dict | list
     media_type: str | None = None
 ```
 
@@ -579,13 +619,20 @@ existed — `StreamChunk` crosses the queue transport in distributed topologies 
 it. (#696's `RunPaused` needs the same widening for its interruption list, so this is coming either
 way.)
 
-**Delivery needs no Runtime change.** `PostHook.on_stream_event` (`core/hooks.py:94`) already exists:
-the application's hook returns `None` for each `TextDelta` while accumulating, then at the closing
-boundary returns `[DataMessage(...), MessageEnd(...)]` — the list form that emits several events in
-place of one.
+**Delivery needs no Runtime change, and this is the application's hook, not piece 5's.**
+`PostHook.on_stream_event` (`core/hooks.py:94`) already exists: the hook returns `None` for each
+`TextDelta` while accumulating, then at the closing boundary returns `[DataMessage(...),
+MessageEnd(...)]` — the list form that emits several events in place of one.
 
-**And that costs incremental delivery, which is worth saying out loud.** The hook cannot know whether
-a message is UI or prose until the closing boundary, so it has to hold back *every* delta — and under
+**Piece 5 deliberately does not implement this.** Its hook is `on_run`, which `Runtime.stream` never
+calls — only `Runtime.run` does (`core/runtime.py:290`). So turning the config block on has **no
+effect on a streamed run**, and labelling a streamed payload means writing an `on_stream_event` hook
+yourself. That is the right split rather than a gap: the buffering cost below is real, and it should
+land only on someone who chose it, never on everyone who set `enabled: true`.
+
+**And that costs incremental delivery, which is worth saying out loud.** Such a hook cannot know
+whether a message is UI or prose until the closing boundary, so it has to hold back *every* delta —
+and under
 the recommended `output_type` union (§5) every message is JSON, so this applies to prose turns too.
 Net effect for an agent with a labelling hook: **nothing arrives incrementally over SSE or AG-UI**,
 and a prose turn is re-emitted as one delta at the end. That is a regression on the one surface whose
@@ -719,8 +766,8 @@ Verified against the pinned fastmcp (3.4.7) that a `ToolResult` carrying `meta` 
 client intact:
 
 ```
-structured_content: {"root": {"type": "Card", ...}}
-meta              : {'media_type': 'application/json+a2ui'}
+structured_content: {"version": "v1.0", "createSurface": {...}}
+meta              : {'media_type': 'application/a2ui+json'}
 content blocks    : ['TextContent']
 ```
 
@@ -747,21 +794,116 @@ argument from §2 does not apply here.
   app renders A2UI. It is included anyway because the inconsistency — one surface preserving
   structure while its neighbour silently flattens it — is worse than the missing feature.
 
+### Piece 5 — the `a2ui` capability
+
+The one place in the framework that knows anything about A2UI. Everything above carries a label; this
+sets it. It exists because the media type is **one agreed string** (Decision 11), so stamping it is
+the same job in every application — unlike a catalog, which is not.
+
+**Config — two keys**, following `_SandboxConfig` (`core/config.py:786`) and registered on `AKConfig`
+beside it (`core/config.py:919`):
+
+```yaml
+a2ui:
+  enabled: true
+  agents: [expenses]      # omit for every agent
+```
+
+`enabled` is an explicit opt-in because this changes what a client receives, which the house rules
+require a deliberate flag for. `agents` is the same filter every other capability has, and
+`SystemToolFactory.get_system_prompt_suffix` already threads an `agent_name` for exactly this
+purpose (`core/tool.py:224`).
+
+**The hook**, in a new top-level `a2ui/` package — a capability, not an integration, because it adds
+no surface of its own:
+
+```python
+class A2UIPostHook(PostHook):
+    """Label a parsed reply from an agent the config declares to be an A2UI agent.
+
+    The media type below is the only A2UI knowledge in the framework.
+    """
+
+    MEDIA_TYPE = "application/a2ui+json"
+
+    async def on_run(self, session, requests, agent, agent_reply):
+        if not isinstance(agent_reply, AgentReplyText):
+            return agent_reply              # already structured, or an image — not ours
+        try:
+            payload = json.loads(agent_reply.response)
+        except ValueError:
+            return agent_reply              # prose — untouched, unlabelled
+        return AgentReplyAny(content=payload, prompt=agent_reply.prompt,
+                             media_type=self.MEDIA_TYPE)
+```
+
+**The detection rule, stated so it can be argued with.** The config block is a declaration: naming
+an agent under `agents` says *this agent emits A2UI*. The hook takes that at its word and asks one
+question — **did the reply parse as JSON?**
+
+```
+AgentReplyText  ->  json.loads(response) succeeds?  label it.  fails?  leave it alone.
+AgentReplyAny   ->  leave it alone.
+AgentReplyImage ->  leave it alone.
+```
+
+Prose does not parse; an A2UI document does. That is the whole rule, and §4's Turn 1 works because
+"Hello! How can I help?" is not JSON.
+
+**`AgentReplyAny` is deliberately skipped, not labelled.** A reply that is *already* structured means
+the application set `output_type`, and on that route the schema is the application's — its union
+members, its discriminator, things Agent Kernel has never seen (§5). A hook that labelled every
+`AgentReplyAny` would stamp prose as A2UI on every turn. Skipping is what keeps the config block and
+the `output_type` route from colliding: one or the other owns the labelling, never both.
+
+**Agent Kernel learns exactly one thing about A2UI: the media type.** No message names, no `version`,
+no component types, no catalog — so nothing here has to be revised when A2UI moves from v0.9.1 to
+1.0, and a sequence of messages needs no special case because a JSON array parses like anything else.
+The earlier draft of this rule named A2UI's four message keys; it was dropped because it bought
+nothing the declaration does not already give, while coupling the framework to a pre-1.0 key set.
+
+**The failure policy: do nothing.** Anything that does not parse passes through untouched and
+unlabelled, so the client gets today's behaviour rather than an error. JSON that parses but is not
+valid A2UI gets labelled and forwarded — Agent Kernel does not validate, so a renderer rejecting it
+is the correct and visible outcome. No exception ever leaves this hook; the post-hook chain must not
+be able to fail a run.
+
+**Registration.** `A2UIPostHookFactory.get()` joins `_get_system_post_hooks` (`core/runtime.py:130`),
+today a one-element literal. Copy `SandboxPreHookFactory` (`sandbox/hooks.py:134-149`): the real hook
+when enabled, a no-op otherwise, and a no-op on any initialisation failure.
+
+**What it is not.** No catalog, no prompt injection, no validation, no `a2ui` extra, no dependency on
+the A2UI SDK. It does not reach a **streamed** run either — `on_run` fires only from `Runtime.run`
+(`core/runtime.py:290`) — nor the `output_type` union route, where the discriminator is the
+application's. Both are covered in §5 and piece 3, and both remain the application's own hook. The
+application still writes its own catalog into its own instructions (§5), which is
+why this stays two keys instead of growing a catalog format, a loader and a versioning story.
+
 ### And what Agent Kernel deliberately never does
 
-These are requirements, not reassurance. Each one is checkable.
+These are requirements, not reassurance. Each one is checkable. **The line is between the carriage
+and the capability:** piece 5 is allowed to hold the A2UI media type and act on a config declaration;
+nothing else in the framework knows the format exists.
 
-- **Never parses, validates or interprets a payload.** The media type is carried, not understood. No
-  registry, no schema check, no format-specific branch in any surface.
-- **Ships no component catalog, no format SDK dependency, and no format-specific config block.**
-- **Does not decide what happens when a payload is malformed.** That is the application's post-hook,
-  because it is the application's format.
+- **No surface ever parses, validates or interprets a payload.** For REST, WebSocket, threads,
+  streaming, A2A and MCP the media type is carried, not understood — no registry, no schema check,
+  no format-specific branch. Grepping `core/`, `api/` and `pipeline/` for "a2ui" returns nothing.
+- **The capability's knowledge of A2UI is one string.** The media type, `application/a2ui+json`.
+  It reads no message names, no `version`, no component types — so a catalog, a component or a
+  protocol version moving does not oblige Agent Kernel to chase it.
+- **Ships no component catalog and no format SDK dependency.** A catalog must match the components a
+  frontend implements, which Agent Kernel cannot know — so the application owns it, and the prompt
+  built from it.
+- **Never validates, and never fails a run.** An unrecognised payload passes through untouched; a
+  recognised-but-wrong one is labelled and forwarded for the renderer to reject. Agent Kernel does
+  not decide what "valid A2UI" means.
 - **An unset media type stays unset.** No surface invents a default; one that cannot express an
   absent label omits it rather than guessing.
 - **The media type is not a routing key and not a reply discriminator.** `type` says what kind of
   outcome a reply is; the media type says what format its content is in. Two different questions.
 - The payoff: an application shipping *its own* format — not A2UI at all — travels exactly the same
-  way, with no change to Agent Kernel and no awareness in any surface.
+  way, with no change to Agent Kernel and no awareness in any surface. Piece 5 is one user of that
+  extension point, not a privileged path through it.
 
 ## 7. Verification
 
@@ -776,15 +918,16 @@ These are requirements, not reassurance. Each one is checkable.
   structured reply produces a response dict byte-identical to today's. `test_api_http.py:400-421`
   already pins today's behaviour (`response["result"] == json.dumps(content)`); it becomes a matrix
   — labelled gives a dict, unlabelled keeps that exact assertion passing.
-- **The two silent failures, pinned:** a labelled reply through the pipeline records valid JSON in
-  the thread store (not a Python repr), and reaches the messaging adapters as JSON.
+- **The silent failure, pinned:** a labelled reply through the pipeline records valid JSON in the
+  thread store, not a Python repr.
 - **The DynamoDB float path, both directions:** a labelled payload carrying a float is stored without
   raising, **and reads back as a `float`, not a `Decimal`** — asserted by a `json.dumps` on the
   polled record, which is exactly what `rest_lambda.py:288` does and what would fail if only the
   write side were fixed. This fails today and no test covers it, because no body has ever held a
   number.
 - **Regression tests on `__str__`, parameterised.** Byte-identity holds only for JSON-safe content;
-  a second test pins the intended new output for a datetime, a Decimal, a set and a NaN.
+  a second test pins the intended new output for a datetime, a Decimal and a set, and pins that a
+  `NaN` or an infinity **raises** at construction.
 - **The test that would have caught the gap Copilot found:** build a response through
   `ResponseBuilder.build_response` for a reply whose content carried a datetime, then assert
   `json.dumps(response_body)` succeeds — reproducing `agent_runner._send_to_output`'s exact call.
@@ -794,7 +937,16 @@ These are requirements, not reassurance. Each one is checkable.
   **equal** `content`. That is the whole rule in one assertion.
 - **The bypasses, pinned as tested behaviour:** `model_copy(update={"content": ...})` does *not*
   normalise. Pin it so nobody builds on a guarantee that is not there.
-- Per-surface unit tests for pieces 2 to 4; the example's own test suite covers the A2UI hook.
+- **Piece 5, the capability:** a text reply whose body parses as JSON is labelled — an object and a
+  **list** alike, since a v0.9.1 UI is a sequence; a greeting is returned untouched and unlabelled;
+  an `AgentReplyAny` is returned untouched, which is the guard that stops the config block colliding
+  with an `output_type` agent; an `AgentReplyImage` likewise. The `agents` filter excludes an unnamed
+  agent; `enabled: false` and an absent block both yield the no-op hook; and a hook whose
+  construction fails degrades to the no-op rather than failing the run.
+- **The end-to-end claim, once:** config on, an agent returning an A2UI document, `result` arrives as
+  an object with `media_type` set — with no application post-hook anywhere in the test.
+- Per-surface unit tests for pieces 2 to 4; the example's own test suite covers the config-driven
+  path.
 
 ## 8. What this lands next to
 
@@ -815,8 +967,12 @@ here is a neighbour rather than a blocker.
 
 ## 9. Non-goals
 
-- **Shipping A2UI inside Agent Kernel.** No config block, no extra, no bundled catalog, no
-  validation. See Decision 1 for the trade-off this accepts.
+- **Shipping a component catalog, a validator, or an A2UI SDK dependency.** Piece 5 recognises and
+  labels; it never says what valid A2UI is. A catalog must match the components a given frontend
+  implements, so it stays with the application. See Decision 7.
+- **Prompt injection from config.** The config block does not render a catalog into the agent's
+  instructions — the application does that itself, because the catalog is the application's. Two
+  keys, no catalog format for Agent Kernel to own or version.
 - **A frontend or renderer of any kind.** The client owns its components; that is the protocol's own
   premise.
   - This is also the test for whether a surface is worth teaching to carry a payload at all: **only
@@ -825,12 +981,28 @@ here is a neighbour rather than a blocker.
     UI for a human, which is why the protocol names a data part as its canonical wrapping. MCP is
     borderline: the caller is a model, so it depends on the host app choosing to render. The CLI
     fails outright — Agent Kernel would have to be the renderer.
-- **Streaming a partial payload.** The structured event carries a whole payload; incremental
-  parse-and-heal is an application concern if anyone wants it.
-- **Incremental delivery for an agent that labels its replies.** A labelling `on_stream_event` hook
-  must hold every delta back until the closing boundary, so such an agent streams nothing
-  incrementally and its prose turns arrive as one delta — see piece 3. Fixing it means the
-  end-of-stream `on_run` the research proposed as option (a); deliberately not taken here.
+- **Streaming a partial payload, or a sequence of A2UI messages in one turn.** The structured event
+  carries the payload a reply arrived with — one message, or a list of them (Decision 10). What is
+  out is *progressive* delivery: emitting `createSurface` early and `updateComponents` as the model
+  produces them, so a client can start drawing. A reply is assembled first and carried whole.
+- **Incremental delivery for an agent that labels its streamed replies.** A labelling
+  `on_stream_event` hook must hold every delta back until the closing boundary, so such an agent
+  streams nothing incrementally and its prose turns arrive as one delta — see piece 3. This is
+  opt-in twice over: piece 5's config block does not touch streamed runs, so only an application
+  that writes the stream hook itself pays it. Fixing it means the end-of-stream `on_run` the
+  research proposed as option (a); deliberately not taken here.
+- **A sensible rendering of a labelled payload on the messaging integrations.** Slack, WhatsApp,
+  Telegram, Messenger, Instagram, Teams and Gmail are text surfaces with no A2UI renderer, so
+  pointing a labelled agent at one is the application's choice and its consequence. Worth knowing
+  exactly what that consequence is: `pipeline/response_handler.py:192` builds
+  `AgentReplyText(response=str(body.get("result", "")))`, and on a dict `str()` yields a **Python
+  repr** — `{'version': 'v1.0', 'createSurface': {...}}`, single quotes, `None` and `True` —
+  which all seven adapters render
+  verbatim (`slack/adapter.py:264`, `whatsapp/adapter.py:281`, `telegram/adapter.py:303`,
+  `messenger/adapter.py:175`, `instagram/adapter.py:182`, `teams/adapter.py:504`,
+  `gmail/adapter.py:443`). So the output is malformed rather than merely unrendered, and nothing
+  logs an error. Accepted deliberately: these integrations are for text, and an unlabelled reply —
+  every reply they carry today — is unaffected.
 - **Replaying a labelled payload out of thread history.** `ThreadMessage.content` is a `str`
   (`integration/thread/model.py:33`) and `ThreadRecorder.post_run` records `str(result)`
   (`integration/thread/recorder.py:66`), so the label is dropped on the way into the store. The live
@@ -850,34 +1022,40 @@ here is a neighbour rather than a blocker.
 
 | # | Decision | Trade-off accepted |
 |---|---|---|
-| 1 | **Agent Kernel delivers payloads; it never opens them.** The framework gains a media type and surfaces that pass the object through; A2UI itself lives in an application post-hook plus an example. | Someone hoping to flip a config flag and have A2UI work does not get that. In exchange the framework does not own a pre-1.0 protocol's version churn, catalog semantics or validation policy — and any other payload format is supported from day one, free. |
+| 1 | **The surfaces deliver payloads and never open them; one small capability recognises A2UI and labels it.** The framework gains a media type, surfaces that pass the object through, and an `a2ui` block of two keys that stamps the label. | Agent Kernel now knows one thing about one format — a media-type string — where before it knew nothing. What counts as A2UI is the operator's declaration in config, not a judgement the framework makes. Accepted because that string is the protocol's own, not any application's, so it cannot be wrong for somebody the way a catalog would be — with the caveat that v0.9.1 does not define it and the v1.0 RC does (Decision 11). The boundary moves from "no format knowledge anywhere" to "format knowledge in exactly one package, never in a surface", which is still checkable by grep. |
 | 2 | **The media type is carried, never interpreted.** | Agent Kernel cannot reject a mislabelled payload. That is the point; the alternative is the framework knowing formats. |
-| 3 | **`result` carries the object when the reply is labelled with a media type, and the string it carries today when it is not.** One field, switched by the label; no second field beside it. | `result` becomes polymorphic — `string \| object` — so a client must read `media_type` to know which it has. Accepted because the alternative shapes are both worse: replacing `result` unconditionally breaks every existing structured-output client for a bug they may not care about, and adding a second field duplicates the payload (size, and two encoders that disagree — §2). The gate means **nothing changes for anyone who has not opted in**: not a text agent, not an existing structured agent, not the deferred-schedule acknowledgement, not one of the six `result` examples in the published docs, not one of the example test suites. No changelog entry needed for `result`; the only behavioural change in this design is `__str__`'s output for non-JSON-safe content (piece 1). |
+| 3 | **`result` carries the object when the reply is labelled with a media type, and the string it carries today when it is not.** One field, switched by the label; no second field beside it. | `result` becomes polymorphic — `string \| object \| array` — so a client must read `media_type` to know which it has. Accepted because the alternative shapes are both worse: replacing `result` unconditionally breaks every existing structured-output client for a bug they may not care about, and adding a second field duplicates the payload (size, and two encoders that disagree — §2). The gate means **nothing changes for anyone who has not opted in**: not a text agent, not an existing structured agent, not the deferred-schedule acknowledgement, not one of the six `result` examples in the published docs, not one of the example test suites. No changelog entry needed for `result`; the only behavioural change in this design is `__str__`'s output for non-JSON-safe content (piece 1). |
 | 4 | **A paused reply (#696) carries no media type, so its `result` stays a string** — this contract does not touch it. It still inherits piece 1's JSON-safe rule, since that is ungated. | So #696 is unaffected by the `result` contract and needs no coordination on it. It does still inherit the JSON-safe rule, and three constraints go to #696 so the inheritance actually holds: (a) do not redeclare `content` — a bare `content: dict` on the subclass silently drops the annotated type; (b) build `content` in a `before` validator or `__init__`, **not** an after-validator, which runs after the parent's and bypasses field validation; (c) "a faithful view of the typed fields" means faithful *in JSON form* — a deadline becomes ISO 8601. If `interruptions` carries a raw dict anywhere, it needs the same type or the divergence returns one field over. |
 | 5 | **Ask #696 to state what `PausedInterruption.payload` means** while it is still design-only. | None — it is a comment on another issue. If that field acquires a meaning by accident, an agent-authored payload on a pause is closed off by convention rather than by design. |
 | 6 | **The `a2a-sdk` 1.x port is its own issue; this design's A2A branch depends on it — and the target pin is `>=1.1,<2`, not a cap at `<0.4`.** | #706's A2A surface cannot be demonstrated until that lands, which is real scheduling cost. Taken because the port is a live dependency bug — A2A does not import against the current SDK — with nothing to do with payload carriage, and it should not queue behind a design review. Pieces 1 to 3 do not wait on it, so splitting costs this issue nothing it was relying on. The pin is `>=1.1,<2` rather than a cap because 0.3 is a finished line and 1.x ships `new_data_message(data, media_type, …)` — precisely this design's payload; capping would mean hand-assembling parts against an API lacking that helper and discarding the work at the eventual port. |
-| 7 | **The payload layer #706 specified — an `a2ui` config block and extra, catalog prompt injection, a framework post-hook — is not built.** The framework carries payloads; the application owns formats. | A config flag is one line, but behind it sit a parser, a catalog concept, a definition of "valid", a failure policy, prompt-injection machinery in `core/`, and ownership of a pre-1.0 protocol's version churn — and they chain, since a parser needs a catalog, a catalog needs a config shape, that needs validation, which needs a failure policy. The deciding fact: **a catalog must match the components a given frontend implements**, which Agent Kernel cannot know, so any catalog it ships is wrong and the model will confidently emit things that render as nothing. Once the catalog is the application's, the prompt built from it and the parser checking it follow. **Cost:** nobody gets A2UI from a config flag; they write about fifteen lines. **Gain:** any other payload format — their own UI JSON, Adaptive Cards, a chart schema — works identically on day one with no framework change. |
-
+| 7 | **The payload layer #706 specified is built, minus the catalog.** An `a2ui` config block (`enabled`, `agents`) and a framework post-hook that labels A2UI payloads — yes. Catalog prompt injection, a bundled catalog, validation rules, an `a2ui` extra and an SDK dependency — no. | The split is drawn at one question: **is this the same for every application?** The media type is a protocol convention (Decision 11) and the detection rule is the operator's own declaration, so labelling is shared work and belongs in the framework — making an application write fifteen lines for it was the wrong call. A catalog is the opposite: it must match the components a given frontend implements, so any catalog Agent Kernel shipped would be wrong for somebody, and worse than wrong, because the model would confidently emit components that render as nothing. **Cost:** the framework owns a little A2UI knowledge and the config-driven path serves the prompt route only — on the `output_type` union the discriminator is the application's, so the application still writes the hook (§5). **Gain:** A2UI works from two config keys, and any other format still works through the same post-hook extension point with no framework change. |
+| 8 | **`NaN` and the infinities raise at construction rather than coercing to `null`.** | The one place this design prefers a loud failure. `null` is indistinguishable from an omitted field, so a client cannot tell a divide-by-zero from a value the agent chose not to send. A `NaN` almost always means a defect upstream, and raising puts the error next to the code that produced it. Cost: a reply that would previously have shipped a plausible-looking gap now fails at construction — accepted because it fails in the application's own code, not in the pipeline. |
+| 9 | **MCP carries the media type in `_meta`, and we assume a host reads it.** | `_meta` is optional in MCP, so a host may drop it and leave the client with a payload it cannot identify. Accepted: it is the protocol's own slot, it round-trips against the pinned fastmcp (3.4.7), and the alternative — an Agent Kernel envelope — changes the shape the client receives. A host that ignores `_meta` is a host integration problem, not a reason to invent a wrapper. |
+| 10 | **Carry A2UI version-agnostically: whatever parses, one message or a list of them.** | v0.9.1 is Current but needs a *sequence* to build a UI; v1.0 can do it in one `createSurface` but is a release candidate its own page tells you not to ship. The detection rule sidesteps the choice entirely by not reading message names at all, so neither version is privileged and nothing here needs revising when 1.0 lands. Cost: `content` widens to `dict | list` (piece 1) and `result` gains a third shape, and Agent Kernel carries a sequence it cannot verify is coherent — which it could not do anyway, since whether a surface exists is client state. |
+| 11 | **Use `application/a2ui+json` although v0.9.1 defines no media type.** | The string comes from the v1.0 release candidate ("standardizing on the `application/a2ui+json` MIME type"), so on the current version this is a convention Agent Kernel adopts rather than one the spec mandates — which weakens Decision 7's "the media type is a protocol constant" argument, and that is worth saying out loud rather than hiding. Taken because it is still the protocol's own direction, not an Agent Kernel invention, and a label everyone agrees on is worth more than no label. If 1.0 ships with a different string, this is a one-constant change. |
 This answers "can an Agent Kernel agent serve A2UI to a client" with yes, and "does Agent Kernel
-contain A2UI" with no. Issue #706 asks for the second; Decision 7 is the deliberate answer to that,
-not an oversight.
+contain A2UI" with *the label, and nothing else*. Issue #706 asked for a payload layer; Decision 7
+builds the part of it that is the same for every application and leaves out the part that is not.
 
 ## 11. Open questions
 
-Three calls this design makes but a reviewer may want to make differently. Each is a one-line change
-to take the other branch, and none blocks starting Stage 2.
+One call a reviewer may want to make differently. It does not block starting Stage 2. Everything else
+once listed here is now settled and recorded as a decision: `NaN` raises (8), MCP's label rides in
+`_meta` (9), A2UI is carried version-agnostically (10), the media type is adopted from the v1.0 RC
+(11), and thread history replay is out of scope (Non-goals).
 
-1. **`NaN` coerces to `null` rather than raising** (piece 1). The JSON-safe rule treats `NaN` and the
-   infinities as values with a canonical JSON form — `null` — because that is what every surface
-   already does downstream and it keeps `str()` and the object form agreeing. The alternative is to
-   treat them like a framework object and raise at construction, on the grounds that a silent `null`
-   where a number was expected is worse than a loud failure. Decided silently in the current draft;
-   surfacing it because it is a data-loss choice.
-2. **MCP carries the label in `_meta` rather than a wrapping envelope** (piece 4). `_meta` is the
-   protocol's own slot and was verified to round-trip against the pinned fastmcp (3.4.7); the
-   alternative — an Agent Kernel envelope around the payload — was rejected because it changes the
-   shape the client receives. That is a protocol-shape call a maintainer may want to confirm.
-3. **Thread history replay is out of scope** (see Non-goals). A conversation reloaded from the thread
-   store replays a labelled payload as an unlabelled text bubble. The fix is small and known
-   (`media_type` on `ThreadMessage`, a recorder that stops stringifying), so whether it belongs here
-   or in a follow-up is a scope decision rather than a technical one.
+1. **The config block is trusted, and anything that parses is labelled** (piece 5). Naming an agent
+   under `agents` declares that it emits A2UI, and the hook does no further checking — so a turn
+   where that agent legitimately answers with non-UI JSON ("here is the raw record you asked for")
+   is labelled A2UI and reaches the client as something its renderer will reject. The alternative is
+   to sniff the payload for A2UI's message names, which an earlier draft did; it was dropped because
+   it coupled the framework to a pre-1.0 key set to buy a check the declaration already implies. A
+   maintainer may prefer the sniff, and the trade is exactly that: a narrower false-positive window,
+   paid for with protocol knowledge the framework then has to maintain.
+
+   **Not on that list: whether a sequence hangs together.** Agent Kernel could not check this even if
+   it wanted to. Surfaces persist across turns, and the spec is explicit that "an agent may skip
+   [`createSurface`] if it knows the surface has already been created", while resending it is "an
+   error … for a `surfaceId` that already exists" — so a later turn sending `updateComponents` alone
+   is correct A2UI. Whether a surface exists is **client state**, which the framework has never seen.
+   That is a boundary rather than a shortcut.
