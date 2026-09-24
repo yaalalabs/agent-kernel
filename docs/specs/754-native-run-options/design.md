@@ -24,6 +24,10 @@ with AK-side entries first, because the Langfuse LangGraph runner injects its ow
 into the AK-built config (`trace/langfuse/langgraph.py:34`) and a caller's `callbacks` must not
 displace it.
 
+**Amendment (plan stage, 2026-09-24):** at the requester's direction the change also ships one CLI
+example per framework demonstrating run options, mirroring the existing per-framework
+`examples/cli/<framework>_context` demos (`### Examples` below).
+
 ## Motivation
 
 - **The native call is fixed in every adapter**, and the SDK options the user asked for sit on that
@@ -236,6 +240,24 @@ Each adapter states where options go and which keys are reserved. The lists are 
 - `.agents/skills/ak-dev-new-framework-integration/SKILL.md`: the adapter checklist gains four items:
   declare `RESERVED_RUN_OPTIONS`, implement `Module.run_options`, build native keyword arguments
   through the base helper, and the corresponding tests.
+
+### Examples
+
+- One CLI example per framework under `examples/cli/<framework>_run_options/` (`openai`, `langgraph`,
+  `adk`, `pydanticai`, `crewai`, `smolagents`), the shape of the existing
+  `examples/cli/<framework>_context` demos: `README.md`, `build.sh`, `demo.py`, `demo_test.py`,
+  `pyproject.toml`, `uv.lock`.
+- Each demo declares, through `Module.run_options`, that framework's **turn-limit option** and its
+  **progress-hook option** (smolagents: `max_steps` only, with `step_callbacks` shown on the native
+  constructor since it needs nothing from AK), and a `PostHook` that appends a deterministic
+  `Run stats:` line so the test asserts on it rather than on model wording, the `Current cart:`
+  pattern of `examples/cli/openai_context/demo_test.py`.
+- The progress hook stores its counters in the session's volatile cache via `Session.current()`,
+  which is what demonstrates that a native hook can read the AK session (Progress hooks and the AK
+  session, above); the post-hook reads them back before the cache is cleared.
+- Every example is listed in `docs/docs/examples/overview.md` (the CLI section, beside the
+  `_context` block at `:47-52`), linked from its framework page's "Example" section, and added to the
+  e2e matrix in `.github/test-config.yaml` (`type: cli`).
 
 ### Testing
 
