@@ -104,9 +104,10 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - ChromaDB for semantic/vector search
   - Neo4j for entity and relationship graph queries
   - Starburst Galaxy for SQL analytics over MongoDB, Google Sheets, PostgreSQL, and more
-  - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools
+  - Open Knowledge Format bundles - a directory of markdown documents, served from disk or S3, with no database to run
+  - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools, gated on what each backend declares it supports
   - `semantic_map` keeps agent prompts portable across deployments
-  - You can also build your own backend by implementing a `KnowledgeBase` adapter and registering it with `KnowledgeBuilder`
+  - You can also build your own backend by declaring its capabilities and implementing a `KnowledgeBase` adapter, then registering it with `KnowledgeBuilder`
   [Learn more about knowledge bases →](/docs/advanced/knowledge-bases)
 - **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching

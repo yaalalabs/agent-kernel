@@ -166,6 +166,20 @@ schedule:
       ttl: 0
   agents: []  # Agents the schedule tools attach to; omit for all agents
 
+# Open Knowledge Format knowledge bases (optional - the capability is enabled by the presence
+# of this block. Each database must name at least one agent, and each named agent is given the
+# matching tools and instructions automatically. See /docs/advanced/knowledge-bases)
+okf:
+  databases:
+    warehouse:  # the key is what agents pass as the `backend` argument to the KB tools
+      type: local  # local | s3, or a dotted path to a DocumentStore subclass
+      uri: ./bundle  # a filesystem path, an s3://bucket/prefix, or your store's own location
+      description: "Analytics warehouse concepts, one per table."  # surfaced to the agent
+      refresh_seconds: 300  # how stale the manifest may get before a re-walk; null disables it
+      consumer: [Support_Agent]  # read access
+      producer: [Ingest_Agent]   # read and write; instructed to add new knowledge
+      curator: [Steward_Agent]   # read and write; instructed to maintain existing knowledge
+
 # Secret resolution (always available - the default env provider costs nothing, so there is no
 # enabled flag. A set, non-empty environment variable named by the key always wins.
 # See /docs/advanced/secrets)

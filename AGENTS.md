@@ -172,5 +172,3 @@ safe to run to sanity-check a change.
   asked to always be told before a commit runs.
 - Don't push, force-push, or open PRs unless explicitly asked.
 - Never edit files under `docs/versioned_docs/` — those are frozen snapshots of past releases.
-- [CODEOWNERS](CODEOWNERS) exists — check it before assuming no one needs to review a change to a
-  given path.
