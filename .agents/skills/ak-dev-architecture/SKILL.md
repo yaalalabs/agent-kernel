@@ -682,7 +682,7 @@ Terraform side (`ak-deployment/ak-aws/{serverless,containerized}/`): `ssm_enable
 Serverless wires all four Lambdas (request, agent runner, response, WS connection handler);
 containerized wires the REST service and, in queue mode, the agent runner. Terraform never sets
 `secret.provider.type` (the app's `config.yaml` does, like `thread.type`) and never creates the
-parameters.
+parameters. To add a provider, use the `ak-dev-new-secret-provider` skill.
 
 ## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
 

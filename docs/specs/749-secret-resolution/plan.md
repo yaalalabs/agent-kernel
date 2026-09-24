@@ -118,29 +118,33 @@ make lint-check-all
 - **Verify:** `terraform init -backend=false && terraform validate` in `containerized/`; empty plan
   with the flag unset.
 
-## Iteration 7: Examples
+## Iteration 7: Examples and CI seeding
 
-- **Goal:** one serverless and one containerized example resolve their key from SSM when
-  `openai_api_key` is left empty, and behave exactly as today when it is set, as #749's acceptance
-  criteria require.
+- **Goal:** one serverless and one containerized example resolve their key from SSM on the deployed
+  tiers, with no key in Terraform, and CI exercises that path, as #749's acceptance criteria require.
 - **Files:** `examples/aws-serverless/openai/{config.yaml,lambda_agent_runner.py,README.md,deploy/main.tf,deploy/variables.tf}`;
-  `examples/aws-containerized/openai-dynamodb-scalable/{config.yaml,app_agent_runner.py,README.md,deploy/main.tf,deploy/variables.tf}`
+  `examples/aws-containerized/openai-dynamodb-scalable/{config.yaml,app_agent_runner.py,README.md,deploy/main.tf,deploy/variables.tf}`;
+  `.github/scripts/run_single_test.py`, `.github/workflows/integration-test.yaml`,
+  `.github/workflows/integration-test-weekly.yaml`, `.github/INTEGRATION_TESTS.md`
 - **Steps:**
-  1. Per example: `ssm_enabled = true`; **keep** the `OPENAI_API_KEY = var.openai_api_key` entries and
-     give `openai_api_key` `default = ""`; add the `secret:` block with `provider.type: aws_ssm`; and
-     call `set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))` at the top of the
-     agent-runner entrypoint, so an SSM-resolved key reaches the SDK in memory, never via
+  1. Per example: `ssm_enabled = true`; **remove** the `OPENAI_API_KEY = var.openai_api_key` entries and
+     the `openai_api_key` variable; add the `secret:` block with `provider.type: aws_ssm`; and call
+     `set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))` at the top of the
+     agent-runner entrypoint, so the SSM-resolved key reaches the SDK in memory, never via
      `os.environ` — spec.md § Examples and docs.
-  2. READMEs: make the `TF_VAR_openai_api_key` step optional and document both paths — set it
-     (environment wins) or leave it unset after `aws ssm put-parameter` — show the
-     `OPENAI_API_KEY` → `/ak/<prefix>/openai_api_key` correspondence, and document rotation.
-  3. No CI matrix edit: the integration workflows already export `TF_VAR_openai_api_key`, so both
-     examples stay green on the environment path.
+  2. READMEs: replace the `TF_VAR_openai_api_key` step with the `aws ssm put-parameter` prerequisite,
+     show the `OPENAI_API_KEY` → `/ak/<prefix>/openai_api_key` correspondence and the resolution
+     order, and document rotation.
+  3. CI: add the `seed-secrets` action to `run_single_test.py` (a no-op unless `config.yaml` selects
+     `aws_ssm`; writes `OPENAI_API_KEY` as a `SecureString` via a temp file, never argv) and run it
+     before the deploy in the nightly `deployment_base` job and both weekly jobs; document it in
+     `INTEGRATION_TESTS.md`. Matrix entries are unchanged. Merge prerequisite: the CI role holds
+     `ssm:PutParameter` on `parameter/ak/*` — spec.md § Examples and docs, CI.
 - **Verify:** `make lint-check-all`; both `deploy/main.tf` files `terraform validate` **after** the
   module version pin is bumped by the release flow (spec.md § Examples and docs — the examples pin
   published modules at `0.9.2`, so this step cannot be validated end to end before that release);
-  then deploy each example twice — variable set, variable empty — and confirm the agent answers both
-  times.
+  the CI seed and deploy steps succeed and the example tests pass; a manual deploy after
+  `aws ssm put-parameter` answers.
 
 ## Iteration 8: Cross-component tests and regression pass
 
@@ -170,7 +174,7 @@ below are what this change invalidates, verified against the branch.
 | `ak-dev-architecture/SKILL.md:899-907` | Add a `secret/` block to the Directory Structure, after `schedule/` and before `cli/` |
 | `ak-dev-architecture/SKILL.md` (new section) | A `## Secret Resolution (ak-py/src/agentkernel/secret/)` section beside `## Scheduling` (`:552`) and `## Sandbox` (`:643`) — key shape, fixed layer order, provider-owns-addressing, the `env`/`aws_ssm`/dotted-path provider types, config block |
 | `ak-dev-testing-conventions/SKILL.md:145` | Add `test_secret_manager.py`, `test_secret_providers.py`, `test_secret_factory.py` to the test-file table |
-| `.agents/skills/ak-dev-new-secret-provider/` (new) | A new dev skill, matching the eight existing `ak-dev-new-*` skills — every pluggable seam in this repo has one, and this change adds a seam |
+| `.agents/skills/ak-dev-new-secret-provider/` (new) | A new dev skill, matching the nine existing `ak-dev-new-*` skills — every pluggable seam in this repo has one, and this change adds a seam |
 
 **Dev skills — verified, no update needed**
 

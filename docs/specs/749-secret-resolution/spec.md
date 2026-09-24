@@ -590,7 +590,7 @@ explicit call the application makes in its own module before handing off (design
 
 ### Config changes
 
-**Reuse audit.** `grep "class _" ak-py/src/agentkernel/core/config.py` returns 70 models. None
+**Reuse audit.** `grep "class _" ak-py/src/agentkernel/core/config.py` returns 68 models on the base branch. None
 expresses a secret backend, a path prefix or a resolution cache: the connection models
 (`_RedisConfig:22`, `_ValkeyConfig:31`, `_DynamoDBConfig:40`, `_CosmosDBConfig:50`,
 `_FirestoreConfig:59`) describe a URL/table plus TTL and prefix for a *store*, and `_QueuesConfig:569`
@@ -808,19 +808,17 @@ Both root READMEs gain a row in their variables table (`serverless/README.md:471
 ### Examples and docs
 
 Two examples move to the SSM path, one per deployment mode, as #749's acceptance criteria require.
-Each **keeps** its existing `OPENAI_API_KEY` injection and makes it optional, so the same deployment
-demonstrates both paths (design.md, Examples and docs):
-
-- `openai_api_key` set → the variable is injected non-empty and wins (today's behavior).
-- `openai_api_key` left empty → `""` is injected, which is a miss, so the key resolves from
-  `/ak/<prefix>/openai_api_key` — and no secret value is in Terraform state.
+Each **drops** its `OPENAI_API_KEY` Terraform injection and the `openai_api_key` variable, so the key
+resolves from `/ak/<prefix>/openai_api_key` on the deployed tiers and no secret value is in Terraform
+state or the task/function environment (design.md, Examples and docs). The environment-first order
+still applies — a set, non-empty `OPENAI_API_KEY` wins on a local run — but the deployment never
+injects one.
 
 **`examples/aws-serverless/openai`** (queue mode; request handler + agent runner + response handler):
 
-- `deploy/main.tf`: add `ssm_enabled = true`. The `"OPENAI_API_KEY" = var.openai_api_key` entries in
-  the `request_handler` (`:53`) and `agent_runner` (`:67`) blocks are **kept unchanged**.
-- `deploy/variables.tf`: give `variable "openai_api_key"` (`:17`) `default = ""` and a description
-  saying that leaving it empty resolves the key from SSM.
+- `deploy/main.tf`: add `ssm_enabled = true`, and **remove** the `environment_variables` blocks that
+  carried `"OPENAI_API_KEY" = var.openai_api_key` from the `request_handler` and `agent_runner` blocks.
+- `deploy/variables.tf`: **remove** `variable "openai_api_key"`.
 - `config.yaml`: add
   ```yaml
   secret:
@@ -837,28 +835,25 @@ demonstrates both paths (design.md, Examples and docs):
   set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
   ```
   `set_default_openai_key` is the OpenAI Agents SDK's in-memory key setter, so a key resolved from
-  SSM reaches the SDK without passing through `os.environ`. When the variable is set, `get` returns
-  it from layer 1 and the call is a harmless re-set of the value the SDK would read anyway.
-- `README.md`: make the `export TF_VAR_openai_api_key=...` step (`:25`) optional and document the two
-  paths: set it (environment wins), or leave it unset and create the parameter first:
+  SSM reaches the SDK without passing through `os.environ`.
+- `README.md`: replace the `export TF_VAR_openai_api_key=...` step with the required prerequisite of
+  creating the parameter before deploying:
   ```bash
   aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
       --type SecureString --value "$OPENAI_API_KEY" --overwrite
   ```
-  plus the rotation story.
+  plus the resolution order, the key-to-path correspondence and the rotation story.
 
 **`examples/aws-containerized/openai-dynamodb-scalable`** (`queue_mode = true`; rest service + agent runner):
 
-- `deploy/main.tf`: add `ssm_enabled = true`. The `OPENAI_API_KEY = var.openai_api_key` entries in the
-  `rest_service` (`:29-31`) and `agent_runner` (`:79-81`) blocks are **kept unchanged**.
-- `deploy/variables.tf`: give the `openai_api_key` variable (`:17`) `default = ""`.
+- `deploy/main.tf`: add `ssm_enabled = true`, and **remove** the `environment_variables` blocks that
+  carried `OPENAI_API_KEY = var.openai_api_key` from the `rest_service` and `agent_runner` blocks.
+- `deploy/variables.tf`: **remove** the `openai_api_key` variable.
 - `config.yaml`: same `secret:` block.
 - `app_agent_runner.py`: the same `set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))`
   before the agents are built. `app_rest_service.py` is left unchanged — it never calls the model.
-- `README.md`: same two-path, prerequisite and rotation sections (`TF_VAR_openai_api_key` at `:59`).
-
-Each example is deployed and exercised on **both** paths — variable set, variable empty — before the
-change merges (design.md, Examples and docs).
+- `README.md`: same prerequisite, resolution-order and rotation sections, replacing
+  `TF_VAR_openai_api_key`.
 
 The key passed to `get` is the SDK's own variable name, and the parameter it resolves from is
 `/ak/<prefix>/openai_api_key` — the lowercase mapping `AWSSMSecretProvider` applies, which both
@@ -869,15 +864,31 @@ Both examples pin the **published** Terraform modules (`yaalalabs/ak-serverless/
 a release publishes the modules carrying it and `scripts/update_examples_version.py` bumps the pins —
 the same release sequencing every Terraform-side change in this repo follows.
 
-**CI matrix — no change.** The integration workflows already export
-`TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}` (`.github/workflows/integration-test.yaml:116`,
-`integration-test-weekly.yaml:128` and siblings), so in CI the variable is injected non-empty and
-wins; `examples/aws-serverless/openai` (`deployment_base`, `.github/integration-test-config.yaml:5-8`)
-and `examples/aws-containerized/openai-dynamodb-scalable` (`weekly.tests`, `:52-54`) both stay where
-they are and keep passing. With `ssm_enabled = true` the tiers also carry `AK_SECRET__PREFIX` and the
-`ssm:GetParameter` grant, so `AWSSMSecretProvider` constructs cleanly at `current()` even though it is
-never called. The SSM path itself is exercised by the manual variable-empty deployment above, not by
-CI.
+**CI — a seed step; matrix entries unchanged.** Since neither example injects the key any more, CI
+must create the parameter before it deploys. `.github/scripts/run_single_test.py` gains a
+`seed-secrets` action (`seed_ssm_secrets`):
+
+- It reads the example's `config.yaml`; unless `secret.provider.type` is `aws_ssm` it is a no-op, so
+  it can run unconditionally before any AWS deploy.
+- Otherwise it reads `prefix` and `region` from `deploy/terraform.tfvars` and writes each key in
+  `SSM_SEEDED_KEYS` (`OPENAI_API_KEY`) from the job environment to `/ak/<prefix>/<key-lower>` as a
+  `SecureString` with `Overwrite`, passing the value through a private temp file (`--cli-input-json`)
+  so it never appears in argv or logs. A missing environment value fails the step.
+
+The step runs before the deploy in `.github/workflows/integration-test.yaml:113` (nightly
+`deployment_base`, `examples/aws-serverless/openai`) and in both jobs of
+`integration-test-weekly.yaml` (`:125` deployment base, `:287` the weekly matrix, which carries
+`examples/aws-containerized/openai-dynamodb-scalable`). Both examples keep their places in
+`.github/integration-test-config.yaml`. `.github/INTEGRATION_TESTS.md` documents the action.
+
+- **Merge prerequisite:** the dev-account CI role needs `ssm:PutParameter` on
+  `arn:aws:ssm:<region>:<account>:parameter/ak/*`. Without it the seed step fails and, because it
+  precedes the base deployment, blocks every AWS example in that run, not only the two SSM ones.
+- The workflows still export `TF_VAR_openai_api_key` for the other AWS examples; for these two it is
+  now an undeclared variable, which Terraform ignores.
+- With the seed in place, CI exercises the SSM path end to end on both deployment modes: the tiers
+  carry `AK_SECRET__PREFIX` and the `ssm:GetParameter` grant, and the agent runner resolves the key
+  from the seeded parameter.
 
 The other example deployments stay on environment variables unchanged.
 
@@ -894,14 +905,14 @@ site under `docs/docs/`. The plan's final iteration names the exact files.
 
 Exhaustive; each intentional with its justification.
 
-1. **In `examples/aws-serverless/openai` and `examples/aws-containerized/openai-dynamodb-scalable`,
-   `openai_api_key` becomes optional** (`default = ""`), the tiers gain the SSM grant and
-   `AK_SECRET__PREFIX`, and the agent runner hands the resolved key to the SDK. With the variable set
-   — as CI and every existing deployer set it — behavior is unchanged; left empty, the key resolves
-   from the SSM parameter the operator creates. Intentional: it is the demonstration #749 asks for.
-   Documented in both READMEs.
+1. **`examples/aws-serverless/openai` and `examples/aws-containerized/openai-dynamodb-scalable` no
+   longer accept `openai_api_key`**: the variable and its `OPENAI_API_KEY` injection are removed, the
+   tiers gain the SSM grant and `AK_SECRET__PREFIX`, and the agent runner hands the resolved key to
+   the SDK. A deployer must create `/ak/<prefix>/openai_api_key` before deploying; an exported
+   `TF_VAR_openai_api_key` is now ignored. Intentional: it is the demonstration #749 asks for, and it
+   keeps the key out of Terraform state. Documented in both READMEs.
 
-No CI matrix entry changes.
+CI gains a `seed-secrets` step before each AWS deploy; matrix entries are unchanged.
 
 **Non-changes** — verified, and asserted where a test can:
 
@@ -1079,15 +1090,14 @@ diff.
 
 Taken by the requester while this spec was being written.
 
-1. **How the examples get their SSM parameter** — resolved by design.md's environment-first order:
-   each example **keeps** its `OPENAI_API_KEY` injection with `openai_api_key` defaulting to `""`, and
-   its README documents `aws ssm put-parameter` as the prerequisite for the variable-empty path.
-   Setting the variable keeps today's behavior; leaving it empty resolves from SSM. CI keeps setting
-   the variable, so neither example leaves its matrix and no deployed Lambda fails at init. The
-   trade, stated rather than hidden: **CI never exercises the SSM path** — it is covered by the
-   manual both-path deployment each example gets before merge. If unattended SSM coverage is wanted
-   later, the follow-up is an example `deploy.sh` that runs `aws ssm put-parameter` and deploys with
-   the variable empty.
+1. **How the examples get their SSM parameter** — each example **drops** its `OPENAI_API_KEY`
+   injection and the `openai_api_key` variable, and its README documents `aws ssm put-parameter` as a
+   prerequisite. CI seeds the parameter itself with `run_single_test.py --action seed-secrets` before
+   deploying (§ Examples and docs, CI), so neither example leaves its matrix, no deployed Lambda fails
+   at init, and **CI exercises the SSM path** on both deployment modes. The cost, stated rather than
+   hidden: the dev-account CI role needs `ssm:PutParameter` on `parameter/ak/*`, a merge prerequisite.
+   An earlier draft kept the injection with `default = ""` and covered SSM only manually; it was
+   dropped because CI never exercised the path the change exists to add.
 
 ## Changes from design.md
 
@@ -1163,8 +1173,9 @@ who read an earlier draft rather than an outstanding action.
 12. **The provider short name is `aws_ssm`**, module `providers/aws_ssm.py`, logger
     `ak.secret.provider.aws_ssm` — matching the repo's snake_case built-in names (`ec2_ssm`,
     `bedrock_agentcore`). The class stays `AWSSMSecretProvider`.
-13. **The examples keep their `OPENAI_API_KEY` injection**, with `openai_api_key` defaulting to `""`,
-    instead of dropping it. Consequence: no CI matrix change; the SSM path is exercised manually.
+13. **The examples drop their `OPENAI_API_KEY` injection** and the `openai_api_key` variable; CI seeds
+    `/ak/<prefix>/openai_api_key` via the `seed-secrets` action before deploying. Consequence: the SSM
+    path is exercised in CI, and the CI role needs `ssm:PutParameter` on `parameter/ak/*`.
 14. **`EnvSecretProvider` treats `""` as absent**, matching the layer-1 rule.
 
 One spec-level detail design.md does not restate:

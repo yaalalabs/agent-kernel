@@ -151,8 +151,9 @@ variable "ssm_enabled" {
 
 - **Two examples move to the SSM path, one AWS serverless and one AWS containerized**, as #749's acceptance criteria require.
   - Each sets `ssm_enabled = true` and selects `provider.type: aws_ssm` in `config.yaml`, and calls `set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))` at startup.
-  - Each **keeps** its existing `"OPENAI_API_KEY" = var.openai_api_key` injection, with `openai_api_key` given `default = ""`. Setting the variable keeps today's behavior (environment wins); leaving it empty injects `""`, which is a miss, so the key resolves from `/ak/<prefix>/openai_api_key` — and no secret value is in Terraform state.
-  - Each is deployed and exercised on both paths (variable set, variable empty).
+  - Each **drops** its `"OPENAI_API_KEY" = var.openai_api_key` injection and the `openai_api_key` variable, so on the deployed tiers the key always resolves from `/ak/<prefix>/openai_api_key` and no secret value is in Terraform state. The environment-first order still holds for local runs.
+  - Each README documents creating the parameter (`aws ssm put-parameter`) as a prerequisite of deploying.
+  - **CI seeds the parameter** before deploying, with a `seed-secrets` action in `.github/scripts/run_single_test.py` (a no-op for examples whose `config.yaml` does not select `aws_ssm`), so the SSM path is exercised in CI on both deployment modes. The dev-account CI role needs `ssm:PutParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/*` — a merge prerequisite, since the seed step precedes the base deployment.
 - The remaining examples stay on environment variables unchanged.
 - The deployment READMEs and the docs site document:
   - the resolution order (environment first, `""` is a miss) and the key convention (`OPENAI_API_KEY` → `/ak/{prefix}/openai_api_key`);
@@ -168,6 +169,7 @@ The first four are deliberate deviations from the issue body, **confirmed by the
 - **AWS Secrets Manager as a built-in.** Reachable in v1 as a dotted-path BYO provider; a built-in is a follow-up.
 - **JSON-blob secrets.** Values are flat strings.
 - Writing, creating, or rotating secrets from the runtime; Terraform creating the SSM parameters.
+- Demonstrating the environment path in the two SSM examples; every other example already does.
 - Azure Key Vault and GCP Secret Manager built-ins.
 - A shared or cross-process cache.
 - Writing resolved secrets into `os.environ`, automatic resolution at startup, and any sweep of `/ak/{prefix}/*`.
