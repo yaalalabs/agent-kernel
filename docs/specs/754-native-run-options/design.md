@@ -13,6 +13,17 @@ seam (#526) applied to call options instead of state.
 The supporting survey of each SDK's run signature, options object and hook mechanism is in
 `research/native-run-options-survey.md`; this document cites it rather than restating it.
 
+**Amendments (spec stage, 2026-09-24):** three refinements found while detailing `spec.md`, each
+edited into the requirement it affects below. (1) `Module.run_options` is **concrete** on the base
+`Module`, resolving the wrapped agent through an overridable `_native_agent_name(agent)`, because an
+abstract method would break the `SimpleModule` test double (`ak-py/tests/test_module.py:58`) and any
+bring-your-own module subclass. (2) `RESERVED_RUN_OPTIONS` maps each key to its one-line reason
+rather than being a `frozenset`, since the error was always meant to name the AK mechanism that owns
+the key. (3) The LangGraph `config` deep merge **concatenates** list-valued keys (`callbacks`, `tags`)
+with AK-side entries first, because the Langfuse LangGraph runner injects its own callback handler
+into the AK-built config (`trace/langfuse/langgraph.py:34`) and a caller's `callbacks` must not
+displace it.
+
 ## Motivation
 
 - **The native call is fixed in every adapter**, and the SDK options the user asked for sit on that
@@ -81,10 +92,12 @@ The supporting survey of each SDK's run signature, options object and hook mecha
     like hooks.
 - `Module` gains `run_options(agent, **options) -> Module`, chained like `pre_hook` / `post_hook`
   (`core/module.py:80-97`).
-  - Abstract on `Module`, implemented in each adapter's module with the same one-line body shape as
-    `pre_hook`, so each adapter's native-agent-to-name rule stays where it already is
-    (`agent.name` in five modules, `agent.role` in `crewai.py:604`, a `name` argument in
-    `smolagents.py:359`).
+  - Concrete on `Module`, implemented once: it resolves the wrapped agent through an overridable
+    `_native_agent_name(agent) -> str` (default `agent.name`), validates the options against the
+    agent's reserved keys, and merges them. Only the two adapters whose name rule differs override
+    the hook: `CrewAIModule` returns `agent.role` (the rule its `pre_hook` applies at
+    `crewai.py:604`) and `SmolagentsModule` returns `getattr(agent, "name", "smolagent")` (the rule
+    at `smolagents.py:358-359`). A bring-your-own `Module` subclass therefore keeps constructing.
   - Repeated calls merge with `dict.update`: a later call wins per key. This lets an application set
     shared options once and override one key for one agent.
   - Options are read on every run, so a call after load but before the first request takes effect;
@@ -98,9 +111,9 @@ The supporting survey of each SDK's run signature, options object and hook mecha
     the runner's AK-keys-written-last rule still holds, so a bypassed reserved key is overwritten,
     not honoured.
 - **Reserved keys fail at declaration, never per request.**
-  - Each adapter's `Agent` subclass declares `RESERVED_RUN_OPTIONS: ClassVar[frozenset[str]]`
-    (base default `frozenset()`), listing the keys its runner populates itself or depends on for
-    reply mapping (per-adapter lists below).
+  - Each adapter's `Agent` subclass declares `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]`
+    (base default empty), mapping each key its runner populates itself or depends on for reply
+    mapping to the one-line reason the error message carries (per-adapter lists below).
   - `Module.run_options` raises `ValueError` naming the adapter, the key, and the AK mechanism that
     owns it (e.g. "`context` is populated from the session's framework_context; seed it with
     `Session.set_framework_context()` instead").
@@ -123,9 +136,12 @@ The supporting survey of each SDK's run signature, options object and hook mecha
   shape the others adopt.
 - Merge depth is top-level only, with two documented exceptions where the caller and AK share one
   object rather than one key:
-  - LangGraph `config`: deep-merged. AK's `configurable.thread_id` wins; every other
-    `RunnableConfig` key (`callbacks`, `recursion_limit`, `tags`, `metadata`, `run_name`,
-    `max_concurrency`, `run_id`) and every other `configurable` entry comes from the caller.
+  - LangGraph `config`: deep-merged. Dict-valued keys merge with AK-side entries winning (so
+    `configurable.thread_id` is AK's while every other `configurable` entry is the caller's);
+    list-valued keys (`callbacks`, `tags`) concatenate with AK-side entries first, so the Langfuse
+    LangGraph runner's callback handler (`trace/langfuse/langgraph.py:34`) is kept beside a caller's
+    callbacks; every other `RunnableConfig` key (`recursion_limit`, `metadata`, `run_name`,
+    `max_concurrency`, `run_id`) comes from the caller because AK sets none of them.
   - ADK `run_config` in **stream** mode: the caller's `RunConfig` is copied with
     `streaming_mode=StreamingMode.SSE`, because the AK stream mapping at `adk.py:294-348` depends on
     partial events. If the caller's value differed, a warning is logged once per runner. In **run**
