@@ -40,9 +40,6 @@ export OPENAI_API_KEY="your-openai-api-key"
 export AK_LIVEKIT__LIVEKIT_URL="wss://your-project.livekit.cloud"
 export AK_LIVEKIT__API_KEY="your-livekit-api-key"
 export AK_LIVEKIT__API_SECRET="your-livekit-api-secret"
-
-# The legacy AK_LIVE_VOICE_URL / AK_LIVE_VOICE_API_KEY / AK_LIVE_VOICE_API_SECRET names are
-# still accepted as a fallback.
 ```
 
 Start the server:

@@ -253,28 +253,13 @@ class _LiveKitConfig(BaseModel):
     """LiveKit realtime voice gateway settings.
 
     Bound like every other block, from YAML or ``AK_LIVEKIT__<FIELD>`` env vars (e.g.
-    ``AK_LIVEKIT__LIVEKIT_URL``, ``AK_LIVEKIT__API_KEY``, ``AK_LIVEKIT__API_SECRET``). The
-    legacy ``AK_LIVE_VOICE_*`` names are still honored as a fallback for deployments that
-    predate the standard binding.
+    ``AK_LIVEKIT__LIVEKIT_URL``, ``AK_LIVEKIT__API_KEY``, ``AK_LIVEKIT__API_SECRET``).
     """
 
     agent: str = Field(default="", description="Default agent to use for LiveKit interactions")
     livekit_url: str = Field(default="", description="LiveKit server WebSocket URL")
     api_key: str = Field(default="", description="LiveKit API Key")
     api_secret: str = Field(default="", description="LiveKit API Secret")
-
-    @model_validator(mode="before")
-    @classmethod
-    def _legacy_env_aliases(cls, data: Any) -> Any:
-        """Fill any field the standard binding left unset from the legacy ``AK_LIVE_VOICE_*`` name."""
-        if isinstance(data, dict):
-            import os
-
-            aliases = {"livekit_url": "AK_LIVE_VOICE_URL", "api_key": "AK_LIVE_VOICE_API_KEY", "api_secret": "AK_LIVE_VOICE_API_SECRET"}
-            for field, env_name in aliases.items():
-                if not data.get(field):
-                    data[field] = os.environ.get(env_name, "")
-        return data
 
 
 class _MultimodalStorageRedisConfig(_RedisConfig):

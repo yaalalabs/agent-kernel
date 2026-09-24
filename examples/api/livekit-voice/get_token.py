@@ -2,11 +2,11 @@ import os
 
 from livekit import api
 
-api_key = os.environ.get("AK_LIVE_VOICE_API_KEY")
-api_secret = os.environ.get("AK_LIVE_VOICE_API_SECRET")
+api_key = os.environ.get("AK_LIVEKIT__API_KEY")
+api_secret = os.environ.get("AK_LIVEKIT__API_SECRET")
 
 if not api_key or not api_secret:
-    print("Error: AK_LIVE_VOICE_API_KEY or AK_LIVE_VOICE_API_SECRET is missing.")
+    print("Error: AK_LIVEKIT__API_KEY or AK_LIVEKIT__API_SECRET is missing.")
     exit(1)
 
 token = (
