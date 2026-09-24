@@ -364,42 +364,57 @@ class TestValidation:
         assert names(tools) == WRITE_TOOLS
 
 
-class TestCallingAgentResolution:
-    def test_the_closure_name_is_used_when_no_context_is_set(self, monkeypatch, tmp_path):
-        # ToolContext.get() raises outside a run and Agent.current() is None, so the closure's
-        # own name must carry the refusal -- it is correct, because the tool was attached to it.
+class TestWritePermissionFollowsTheToolsOwner:
+    """
+    write_kb checks the agent the tool was attached to, never the run context.
+
+    ToolContext is created once per run with the entry agent and a handoff does not reset it, so
+    after consumer_agent hands off to producer_agent both ToolContext and Agent.current() still
+    name the consumer. These tests reproduce that stale context and call the producer's own tool.
+    """
+
+    @pytest.fixture
+    def handoff(self, monkeypatch, tmp_path):
         configure(
             monkeypatch,
             {
-                "warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path, "warehouse"), producer=["agent"]),
-                "policies": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path, "policies"), consumer=["agent"]),
+                "warehouse": _OKFDatabaseConfig(
+                    type="local", uri=write_bundle(tmp_path, "warehouse"), producer=["producer_agent"], consumer=["consumer_agent"]
+                ),
+                "policies": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path, "policies"), consumer=["producer_agent"]),
             },
         )
 
-        assert OKFToolFactory._calling_agent() is None
-        assert "Agent 'agent'" in tool_named(OKFToolFactory.get_tools("agent"), "write_kb")("policies", text="x")
+    @pytest.fixture
+    def stale_entry_agent_context(self):
+        # What a handoff leaves behind: both sources still pointing at the agent that started the run.
+        from types import SimpleNamespace
 
-    def test_a_running_agent_wins_over_the_closure_name(self, monkeypatch, tmp_path):
-        # The case the re-resolution exists for: if a framework ever shares a tool object between
-        # agents, the refusal must name whoever is actually calling.
         from agentkernel.core.base import Agent
+        from agentkernel.core.tool import ToolContext
 
-        configure(
-            monkeypatch,
-            {
-                "warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path, "warehouse"), producer=["writer"]),
-                "policies": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path, "policies"), consumer=["reader"]),
-            },
-        )
-        write_kb = tool_named(OKFToolFactory.get_tools("writer"), "write_kb")
-
-        class FakeAgent:
-            name = "reader"
-
-        token = Agent.current_agent.set(FakeAgent())
+        entry_agent = SimpleNamespace(name="consumer_agent")
+        context_token = ToolContext._context.set(SimpleNamespace(agent=entry_agent))
+        agent_token = Agent.current_agent.set(entry_agent)
         try:
-            result = write_kb("policies", text="x")
+            yield
         finally:
-            Agent.current_agent.reset(token)
+            Agent.current_agent.reset(agent_token)
+            ToolContext._context.reset(context_token)
 
-        assert "Agent 'reader'" in result
+    def test_a_handed_off_producer_writes_despite_a_stale_consumer_context(self, handoff, stale_entry_agent_context):
+        write_kb = tool_named(OKFToolFactory.get_tools("producer_agent"), "write_kb")
+
+        assert "Stored successfully" in write_kb("warehouse", text="A fact the producer found.")
+
+    def test_a_refusal_names_the_tools_owner_not_the_running_agent(self, handoff, stale_entry_agent_context):
+        write_kb = tool_named(OKFToolFactory.get_tools("producer_agent"), "write_kb")
+
+        result = write_kb("policies", text="Should not land.")
+
+        assert result == "Agent 'producer_agent' has read-only access to 'policies'. Knowledge bases it may write to: ['warehouse']."
+
+    def test_the_owner_is_used_when_no_run_context_is_set(self, handoff):
+        write_kb = tool_named(OKFToolFactory.get_tools("producer_agent"), "write_kb")
+
+        assert "Agent 'producer_agent'" in write_kb("policies", text="x")

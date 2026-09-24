@@ -1135,18 +1135,18 @@ def read_kb(backend: str, query: str, limit: int = 3) -> str:
 def write_kb(backend: str, text: str = "", source: str = "agent",
              query: str = "", params_json: str = "{}") -> str:
     manager = OKFCapabilityManager.get()
-    caller = OKFToolFactory._calling_agent() or agent_name
-    if manager and not manager.roles.may_write(caller, backend):
-        writable = sorted(manager.roles.writable_databases_for(caller))
-        return (f"Agent '{caller}' has read-only access to '{backend}'. "
+    if manager and not manager.roles.may_write(agent_name, backend):
+        writable = sorted(manager.roles.writable_databases_for(agent_name))
+        return (f"Agent '{agent_name}' has read-only access to '{backend}'. "
                 f"Knowledge bases it may write to: {writable}.")
     return builder.write_kb(backend, text, source, query, params_json)
 ```
 
-- `_calling_agent()` reads `ToolContext.get().agent.name`, falling back to `Agent.current()`, then to
-  the `agent_name` the closure was built with. The fallbacks matter: `ToolContext.get()` **raises**
-  `RuntimeError` when no context is set (`core/tool.py:95-99`), and the closure's own name is correct
-  in every case the context is missing, because the tool was attached to that agent.
+- The permission check uses the `agent_name` the closure was built with: the agent the tool was
+  attached to. The run context (`ToolContext` / `Agent.current()`) is deliberately not consulted,
+  because `ToolContext` is created once per run with the *entry* agent and a handoff does not reset
+  it (`framework/openai/openai.py:200`, `:248`). After a consumer hands off to a producer, the
+  context would still name the consumer and the producer's own write would be refused (deviation L).
 - The refusal is a **string**, never an exception into the framework — the established tool-boundary
   behavior, and the same shape `_unsupported` already produces.
 - `func.__name__` equals `SystemTool.name` for all seven, per the `AnalyzeAttachmentsTool` regression
@@ -1768,7 +1768,7 @@ too narrowly. Flagged for design re-review per the staged process rather than ab
 | J | **[A2] A read-only store under a `producer`/`curator` role warns rather than raising** | Resolved as `design.md` decision 19. Recorded here because it is the one validation in the block that does not raise, and a reviewer applying the section's own rules mechanically will ask why: the other checks are on config text, this one is on the environment, and the same file is legitimately correct where the bundle happens to be read-only. The residual cost — a missed warning leaves an agent instructed to write and refused every time — is accepted, not overlooked |
 | K | **[A2] `type` duplicates what `uri`'s scheme already encodes** | Carrying `design.md` decision 15, and a stated departure from House Pattern 2 (reuse existing configuration; do not add a duplicate `type` selector). The redundancy is made safe by the agreement check rather than left as two sources of truth. Recorded here because a reviewer applying the house rules mechanically will flag it |
 | M | **[A2] Double-binding is detected and warned, not prevented** | Resolved as `design.md` decision 18. `OKFToolFactory.get_tools` warns on a name collision and attaches anyway, so a config-plus-manual agent still reaches its framework with duplicate tool names — an error on the frameworks that reject them. Recorded because it is a known-and-accepted failure mode rather than an oversight: preventing it would make a newly added `okf` block silently do nothing for that agent, which is the worse of the two. Switching to skip-and-warn is confined to this one method |
-| L | **[A2] `OKFToolFactory` closures capture the agent name; the calling agent is re-resolved at call time anyway** | Belt and braces, and not redundant: the closure's name is what decides *which* tools were attached, while `ToolContext` is what proves *who* is calling when the write refusal is issued. They agree in every normal case; the re-resolution is what keeps the refusal honest if a tool object is ever shared between agents by a future framework adapter |
+| L | **[A2] `OKFToolFactory` closures capture the agent name, and that name alone decides write permission** | The design said the calling agent resolves through `ToolContext` / `Agent.current()`. As built it does not: `ToolContext` is created once per run with the entry agent and a handoff does not reset it, so after a consumer hands off to a producer the context still names the consumer and the producer's own `write_kb` would be refused under the wrong name (PR #714 review). The closure's name is the agent the tool was attached to, so it is authoritative; `test_a_handed_off_producer_writes_despite_a_stale_consumer_context` pins it |
 
 ## Next stage
 

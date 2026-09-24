@@ -678,8 +678,8 @@ okf:
   `write_kb(backend, ...)` takes the backend as an *argument*, so one attached tool reaches every
   database in that agent's builder. The OKF layer therefore wraps the write tool and enforces the
   writable subset per call:
-  - the calling agent resolves through `ToolContext` / `Agent.current()`, both populated by all six
-    framework adapters (`framework/*/`, `core/base.py:415`);
+  - the calling agent is the one the tool was attached to, captured when the tool is bound. The run
+    context is not used: `ToolContext` keeps the entry agent across a handoff (spec deviation L);
   - `get_schemas` and `get_all_kb_descriptions` list only that agent's databases;
   - `write_kb` against a database where the agent is consumer-only returns the actionable capability
     string, never an exception into the framework — the established tool-boundary behavior.
@@ -999,8 +999,8 @@ Items 12-17 were resolved with the maintainer on 2026-09-18 and are the substanc
 13. **Write permission is per `(agent, database)`, enforced at call time.** An agent listed as
     `producer` or `curator` of a database may write to *that* database; being writable somewhere does
     not grant writing everywhere. The alternative — coarse "write somewhere means write everywhere" —
-    was rejected because it would contradict what the configuration plainly says. `write_kb` resolves
-    the calling agent through `ToolContext` and refuses a database where it is consumer-only.
+    was rejected because it would contradict what the configuration plainly says. `write_kb` checks the
+    agent the tool was attached to and refuses a database where it is consumer-only.
 14. **`producer` and `curator` differ by prompt, not by permission.** Both read and write; the
     producer's mandate is to add new knowledge, the curator's to review and maintain what exists.
     Giving them different tool sets was considered and rejected — the responsibilities differ, the

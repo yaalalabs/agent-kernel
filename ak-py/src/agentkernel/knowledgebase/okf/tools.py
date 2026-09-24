@@ -144,14 +144,13 @@ class OKFToolFactory:
             if manager is None:
                 return _NO_KB
 
-            # Re-resolved rather than taken from the closure: the closure's name decides which
-            # tools were attached, while this decides who is actually calling, which is what
-            # keeps the refusal honest if a framework ever shares a tool object between agents.
-            caller = OKFToolFactory._calling_agent() or agent_name
-            if not manager.roles.may_write(caller, backend):
-                writable_databases = sorted(manager.roles.writable_databases_for(caller))
-                return f"Agent '{caller}' has read-only access to '{backend}'. " f"Knowledge bases it may write to: {writable_databases}."
-            return OKFToolFactory._call(caller, "write_kb", backend, text, source, query, params_json)
+            # The closure's name is the agent this tool was attached to, so it is the caller. The
+            # run context is deliberately not consulted: ToolContext keeps the entry agent across a
+            # handoff, so it would check the handing-off agent's roles instead of this one's.
+            if not manager.roles.may_write(agent_name, backend):
+                writable_databases = sorted(manager.roles.writable_databases_for(agent_name))
+                return f"Agent '{agent_name}' has read-only access to '{backend}'. " f"Knowledge bases it may write to: {writable_databases}."
+            return OKFToolFactory._call(agent_name, "write_kb", backend, text, source, query, params_json)
 
         ordered = [get_schemas, read_kb, get_all_kb_descriptions, search_kb, fetch_kb, browse_kb]
         if writable:
@@ -184,26 +183,3 @@ class OKFToolFactory:
             # and this call; reported rather than raised, like every other tool-boundary failure.
             return f"'{tool_name}' is not available for this agent's knowledge bases."
         return tool(*args)
-
-    @staticmethod
-    def _calling_agent() -> Optional[str]:
-        """
-        Resolve the name of the agent currently executing, if it can be determined.
-
-        ``ToolContext.get()`` raises when no context is set, and ``Agent.current()`` is None
-        outside a run, so both are guarded. The caller falls back to the name the closure was
-        built with, which is correct whenever the context is missing -- the tool was attached
-        to that agent.
-
-        :return: The calling agent's name, or None when neither source is populated.
-        """
-        from ...core.base import Agent
-        from ...core.tool import ToolContext
-
-        try:
-            return ToolContext.get().agent.name
-        except (RuntimeError, AttributeError):
-            pass
-
-        current = Agent.current()
-        return current.name if current else None

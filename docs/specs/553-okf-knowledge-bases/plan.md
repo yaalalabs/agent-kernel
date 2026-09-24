@@ -277,7 +277,7 @@ then let iteration 9 supersede those two points, so each iteration stays indepen
   2. `prompts.py` — `OKFPromptComposer` with the per-role `MANDATES` and the navigation protocol
      lifted from `examples/.../okf/demo.py:45-72`.
   3. `tools.py` — `OKFToolFactory.get_tools`, the seven closures over the agent name, the write
-     wrapper with `_calling_agent()` and its two fallbacks, and the `func.__name__` discipline.
+     wrapper keyed to the closure's agent name, and the `func.__name__` discipline.
   4. The **double-binding warning** (design decision 18): compare the names about to be attached
      against those already on the native agent, log one WARNING on overlap, attach anyway. Reading the
      existing names is defensive — an adapter exposing no list-shaped `tools` yields no warning, never
