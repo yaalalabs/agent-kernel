@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -142,6 +143,52 @@ def _read_tfvar(deploy_path: Path, key: str) -> str | None:
         if match:
             return match.group(1).strip()
     return None
+
+
+# Env-var-style keys copied from the job env into SSM for examples whose config.yaml uses the aws_ssm
+# secret provider. Each lands at /ak/<prefix>/<key lowercased>, the path AWSSMSecretProvider reads.
+SSM_SEEDED_KEYS = ["OPENAI_API_KEY"]
+
+
+def seed_ssm_secrets(path: str, deploy_dir: str = 'deploy') -> bool:
+    """Write SSM_SEEDED_KEYS from the environment to SSM when the example resolves secrets from aws_ssm."""
+    import yaml
+
+    config = yaml.safe_load((Path(path) / 'config.yaml').read_text()) or {}
+    provider_type = ((config.get('secret') or {}).get('provider') or {}).get('type')
+    if provider_type != 'aws_ssm':
+        print(f"⏭️  Skipping SSM seeding - {path} does not use the aws_ssm secret provider")
+        return True
+
+    deploy_path = Path(path) / deploy_dir
+    prefix = _read_tfvar(deploy_path, 'prefix')
+    region = _read_tfvar(deploy_path, 'region')
+    if not (prefix and region):
+        print(f"❌ Could not resolve prefix/region from {deploy_path / 'terraform.tfvars'}")
+        return False
+
+    for key in SSM_SEEDED_KEYS:
+        value = os.environ.get(key)
+        if not value:
+            print(f"❌ {key} is not set in the environment; cannot seed it to SSM")
+            return False
+        name = f"/ak/{prefix}/{key.lower()}"
+        print(f"🔐 Seeding {name} (SecureString, region {region})")
+        # Value goes via a private temp file, never argv, so it cannot show up in logs or the process list
+        with tempfile.NamedTemporaryFile('w', suffix='.json') as request:
+            json.dump({'Name': name, 'Value': value, 'Type': 'SecureString', 'Overwrite': True}, request)
+            request.flush()
+            try:
+                subprocess.run(
+                    ['aws', 'ssm', 'put-parameter', '--region', region,
+                     '--cli-input-json', f'file://{request.name}'],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                )
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Failed to seed {name}: {e}")
+                return False
+    return True
 
 
 def sweep_gcp_error_connectors(deploy_path: Path) -> None:
@@ -773,7 +820,7 @@ def main():
                        help='Type of test to run')
     parser.add_argument('--path', required=True, help='Path to the test')
     parser.add_argument('--deploy-dir', default='deploy', help='Deploy directory for AWS tests')
-    parser.add_argument('--action', choices=['deploy', 'test', 'destroy'], default='test', help='Action to perform')
+    parser.add_argument('--action', choices=['deploy', 'test', 'destroy', 'seed-secrets'], default='test', help='Action to perform')
     parser.add_argument('--vpc-id', default=None, help='VPC ID from base deployment')
     parser.add_argument('--private-subnet-ids', default=None, help='Private subnet IDs (JSON array) from base deployment')
     parser.add_argument('--request-handler-security-group-id', default=None, help='Request handler security group ID from base deployment; sets TF_VAR_request_handler_security_group_id (used for aws-serverless jobs)')
@@ -786,7 +833,13 @@ def main():
 
     success = False
 
-    if args.action == 'deploy':
+    if args.action == 'seed-secrets':
+        if args.type in ['aws-containerized', 'aws-serverless']:
+            success = seed_ssm_secrets(args.path, args.deploy_dir)
+        else:
+            print(f"⚠️  Seed-secrets action not applicable for type: {args.type}")
+            success = True
+    elif args.action == 'deploy':
         if args.type in ['aws-containerized', 'aws-serverless']:
             success = deploy_aws_resources(args.path, args.deploy_dir, args.vpc_id, args.private_subnet_ids, args.request_handler_security_group_id, args.agent_runner_security_group_id, args.response_handler_security_group_id)
         elif args.type in ['azure-serverless', 'azure-containerized']:
