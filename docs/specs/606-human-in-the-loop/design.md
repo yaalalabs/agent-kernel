@@ -11,20 +11,21 @@ Supporting research: [`research/framework-hitl-survey.md`](research/framework-hi
 (native capability per framework), [`research/adapter-strategies.md`](research/adapter-strategies.md)
 (per-adapter mapping and blockers).
 
-## For the reviewer: two decisions that are ours, not the frameworks'
+## For the reviewer: where AK deliberately does not decide
 
-Everything else in this design follows what the frameworks do. These two do not — push back on
-either.
+This design ended up with **no limits of AK's own invention**. Every constraint an earlier draft
+carried — a staleness counter, one pause per session, refusing a partial resume, refusing a
+prompt beside a decision — was removed once the frameworks were measured rather than read about.
+What is left is: AK carries what the framework can carry, and fails loudly where it cannot.
 
-1. **One pause per session.** A second pause replaces the first. Three frameworks cannot hold two
-   anyway, but **OpenAI can** (tested: two snapshots, both resumed fine), so there we discard
-   something that would have worked. Naming a second pause needs a run id, and `core/` has none.
-   See *Core — the paused-run record*.
-2. **`prompt` + `resume` in one request returns `400`.** Not a framework limit — Pydantic AI
-   accepts both natively, LangGraph could with a mapping we would have to invent, only OpenAI
-   genuinely cannot. It is a scope call: "approve, and here is the value" is already `message` /
-   `payload`, so what is left is a second unrelated question, which can be a second request. See
-   *Non-goals*.
+The two places that leaves worth a reviewer's attention, both accepted on purpose:
+
+1. **Nothing detects a pause that is no longer resumable.** On OpenAI a stale resume returns a
+   confident wrong answer; and where an adapter appends a second pause its framework cannot hold,
+   the older one silently stops working. See *Core — the paused-run record*.
+2. **Three rejections still happen, at three different depths**, and the depth is load-bearing —
+   a framework-specific check one line too low is swallowed by the adapter's `except`. See
+   *Core — the decision / resume path*.
 
 ## Motivation
 
@@ -75,8 +76,8 @@ graph LR
     subgraph Turn1["Turn 1 — the pause"]
         R1["Runtime.run"] --> RUN["runner.run()"]
         RUN -->|framework signals pause| DET["adapter detects<br/>before extracting text"]
-        DET -->|opaque resume record| SESS[("nv_cache<br/>ak.paused_run<br/>→ SessionStore")]
-        DET -->|typed outcome| REPLY["AgentPausedReply"]
+        DET -->|opaque resume record| SESS[("nv_cache<br/>ak.paused_runs<br/>→ SessionStore")]
+        DET -->|typed outcome| REPLY["AgentPausedReplyAny"]
     end
 
     subgraph Turn2["Turn 2 — the decision"]
@@ -84,7 +85,7 @@ graph LR
         SESS -.->|read, to validate| R2
         R2 -->|validated record| RES["runner.resume()"]
         RES -.->|clear or replace| SESS
-        RES --> OUT["AgentReply<br/>(or AgentPausedReply again)"]
+        RES --> OUT["AgentReply<br/>(or AgentPausedReplyAny again)"]
     end
 
     REPLY -.->|client presents to human| REQ
@@ -94,9 +95,9 @@ graph LR
 
 | | |
 |---|---|
-| **New outcome** | `AgentPausedReply` — a subclass of `AgentReplyAny`, so the reply union and all seven `isinstance` sites are untouched |
-| **New request** | `AgentResumeRequest` — a union member, carrying `ResumeDecision`s: the human's text, a structured answer, and `approved` / `denied` / `cancelled` where there is something to approve |
-| **Where the framework state goes** | one new session key, `ak.paused_run`, in the existing non-volatile cache — already pickled and persisted by `SessionStore` |
+| **New outcome** | `AgentPausedReplyAny` — a subclass of `AgentReplyAny`, so the reply union and all seven `isinstance` sites are untouched. Carries a `run_id` |
+| **New request** | `AgentResumeRequestAny` — a union member naming a `run_id` and carrying `ResumeDecision`s: the human's text, a structured answer, and `approved` / `denied` / `cancelled` where there is something to approve |
+| **Where the framework state goes** | one new session key, `ak.paused_runs` — a list of `PausedRun` records in the existing non-volatile cache, already pickled and persisted by `SessionStore` |
 | **New `Runner` contract** | `supports_pause` (defaults **off**), `resume()`, `resume_stream()` |
 | **Who implements it** | OpenAI, LangGraph, Pydantic AI, Google ADK. CrewAI and smolagents need **no code** — they inherit the off default |
 | **How a client sees it** | HTTP **202** with `status: "PAUSED"`; over AG-UI, a terminal `RunFinishedEvent` interrupt outcome |
@@ -109,7 +110,7 @@ transports and the `Runner` interface are all unchanged.
 
 ### Core — the paused outcome
 
-- Add **`AgentPausedReply` as a subclass of `AgentReplyAny`** (`model.py:129`), *not* as a new
+- Add **`AgentPausedReplyAny` as a subclass of `AgentReplyAny`** (`model.py:129`), *not* as a new
   member of the `AgentReply` union. *(Decision: open question 1.)*
   - **The union is therefore unchanged** (`model.py:126`), and so is every `isinstance` tuple over
     it: `runtime.py:241`, `:279`, `:291`, `:329`, `chat_service.py:317`, `slack_chat.py:172`,
@@ -119,7 +120,8 @@ transports and the `Runner` interface are all unchanged.
     `TypeAdapter` over it anywhere in `src/`; `ResponseBuilder` stringifies replies and nothing
     parses them back. Were that not true, a subclass could not survive a serialisation round trip.
     Verified, not assumed.
-  - Typed fields on top of the inherited `content`: `session_id: str`, `agent: str`,
+  - Typed fields on top of the inherited `content`: `run_id: str` (which pause this is — the
+    client echoes it back), `session_id: str`, `agent: str`,
     `interruptions: list[PausedInterruption]`. *(Noted, not changed: `session_id` is also in the
     response dict `ResponseBuilder` builds, so on the REST path it is carried twice. It stays on
     the model because non-HTTP surfaces consume the reply object directly.)*
@@ -143,6 +145,11 @@ transports and the `Runner` interface are all unchanged.
   back: `id: str`, `kind: Literal["tool_call", "input_required", "confirmation"]`,
   `tool_name: str | None`, `arguments: str | None` (JSON-encoded), `message: str | None`,
   `payload: dict | None`.
+  - **`id` must be unique across every paused run a session holds**, not just within one record.
+    This is load-bearing rather than tidy: it is what lets `Runtime` resolve which run a decision
+    belongs to when no `run_id` is given, which is the only thing AG-UI can do. Frameworks supply
+    their own ids (tool-call ids, interrupt ids) and those are already unique per run; `spec.md`
+    states what the adapter does if one ever collides across runs.
   - **`kind` is AK's own vocabulary, named after what the four frameworks actually produce.**
     *(Decision.)* `tool_call` — the agent wants to invoke a tool and needs approval first (OpenAI's
     `needs_approval`, Pydantic AI's `requires_approval`, ADK's long-running call).
@@ -169,18 +176,20 @@ transports and the `Runner` interface are all unchanged.
 ### Core — the paused-run record
 
 - Store it in the **non-volatile cache** under a module-level key constant, following the AG-UI
-  precedent exactly (`integration/agui/state.py:11,34,56`): `AK_PAUSED_RUN_KEY = "ak.paused_run"`,
-  read and written through `session.get_non_volatile_cache()`. *(Decision.)*
+  precedent exactly (`integration/agui/state.py:11,34,56`): `AK_PAUSED_RUNS_KEY = "ak.paused_runs"`,
+  holding a **list** of records, read and written through `session.get_non_volatile_cache()`.
+  *(Decision.)*
   - **No `Session.Keys` entry and no new `Session` accessors.** The reserved-key-plus-accessors
     pattern (`framework_context`, `base.py:41-48,187-214`) costs an enum entry and three methods,
     and `nv_cache` is already the durable bucket `SessionStore.store()` persists.
   - **All access goes through one standalone helper, `PausedRunState`**, in `core/` and shaped
     like `AGUIState` (`state.py:27-56`) — static methods, **not** a `Runner` method, because
     `Runtime` must read the record to validate a resume and `Runtime` is not a `Runner`. Three
-    operations: `get(session)`, which validates the shape rather than trusting it (the value comes
-    back as `Any`); `set(session, record)`, which owns the picklability check and the `in_memory`
-    warn-once so both have exactly one implementation; and `clear(session)`. The key name is
-    therefore spelled once and no caller touches `get_non_volatile_cache()` directly.
+    operations: `list(session)` and `get(session, run_id)`, which validate the shape rather than
+    trusting it (the value comes back as `Any`); `add(session, record)`, which **assigns the run
+    id** and owns the picklability check and the `in_memory` warn-once, so all three have exactly
+    one implementation; and `clear(session, run_id)`. The key name is therefore spelled once and
+    no caller touches `get_non_volatile_cache()` directly.
   - **Named `…State`, not `…Store`, deliberately.** Every `*Store` in AK is a pluggable backend
     with an ABC, a factory and a config block — `SessionStore`, `ThreadStore`, `ScheduleStore`,
     `AttachmentStore`, `ResponseStore`. This is three one-line accessors over a dict that already
@@ -192,7 +201,12 @@ transports and the `Runner` interface are all unchanged.
     pending human decision**, silently. Two mitigations, both required: the `ak.` prefix marks the
     key as framework-owned, and the user-facing docs must state that clearing the non-volatile
     cache discards a pending pause.
-- The record is a **framework-agnostic envelope around an opaque payload**:
+- Each record — call the type **`PausedRun`** — is a **framework-agnostic envelope around an
+  opaque payload**:
+  - `id: str` — **the run identifier**, assigned by `PausedRunState.add`. New to `core/`, which
+    has no notion of an individual run today (its only identifiers are `Session.id`,
+    `base.py:60,66`, and `attachment_id`, `model.py:88`). It exists so a client can say *which*
+    pause it is answering, and it is carried on the paused reply and echoed back on the decision.
   - `agent: str` — the agent name. Required because OpenAI's
     `RunState.from_json(initial_agent=..., state_json=...)` needs the original starting agent, and
     AK resolves agents by name. **This is also what identifies the framework**, since the agent
@@ -206,39 +220,28 @@ transports and the `Runner` interface are all unchanged.
     can be validated **without deserialising the opaque payload**.
   - `payload: Any` — per-framework, opaque to core. **Must be picklable**; reuse the existing
     fail-fast check (`base.py:329-348`) rather than writing a second one.
-- **Many interruptions per pause; at most one paused run per session.** These are different
-  things and the distinction is load-bearing.
+- **Many interruptions per pause, and more than one paused run per session where a framework
+  allows it.** These are different things and the distinction is load-bearing.
   - **Multiple interruptions are fully supported and are the normal case**, which is why
     `interruptions` is a list. Every framework produces them that way: OpenAI's
     `RunResult.interruptions`, Pydantic AI's `DeferredToolRequests.approvals`, LangGraph's
     `{id: value}` resume map, and several outstanding ADK long-running calls. One pause can ask a
     human several questions at once.
-  - **AK allows exactly one paused run per session.** *(Decision.)* There is one key,
-    `ak.paused_run`, holding one record. A second pause on the same session **replaces** the
-    first, and the first is then gone — not merely stale, but unrecoverable.
-  - **For three adapters that matches the framework; for OpenAI it does not.** LangGraph has one
+  - **AK does not limit how many paused runs a session holds.** *(Decision — reversed. An
+    earlier draft stored one record and let a second pause replace it.)* The key holds a list, so
+    whether a session ever has more than one outstanding is **the framework's business, not
+    AK's**.
+  - **In practice only OpenAI will ever produce more than one.** LangGraph has a single
     checkpointer thread keyed on `session.id` (`langgraph.py:368-370`), Pydantic AI one message
-    history (`pydanticai.py:173-174`), ADK one event history (`adk.py:59-70`) — none can hold two
-    independently resumable runs, so nothing is lost by storing one. **OpenAI does tolerate two:**
-    two `RunState` snapshots from the same agent were serialised, restored and resumed
-    independently, returning different answers (`research/verification.md`). So on that adapter
-    AK is discarding something the SDK could have kept.
-  - **Why one anyway, when OpenAI could hold two.** *(Decision.)* Three reasons, heaviest first:
-    - **A second pause usually means the first is already dead.** The way you get two is that the
-      human left the first question unanswered and asked something else. On LangGraph, Pydantic AI
-      and ADK that new run has already moved the state the first pause would have resumed from, so
-      keeping both would preserve a record nobody can act on.
-    - **AK has nothing to name a run with.** To hold several you must be able to say *which* pause
-      a decision answers, and that needs an id per run. `core/` has no such thing: the only
-      identifiers it carries are `Session.id` (`base.py:60,66`) and `attachment_id`
-      (`model.py:88`) — nothing labels or counts the individual runs inside a session. So multiple
-      records means inventing that concept, generating it, persisting it, putting it on the reply,
-      and having the client send it back. A new identifier in `core/` is not a small change.
-    - **It would be one adapter's feature.** Two of six cannot pause at all and three of the four
-      that can cannot hold two, so the API would behave differently on OpenAI than everywhere
-      else — the divergence `supports_pause` exists to keep out of the contract.
-    - Lifting it later therefore costs exactly those three things. Recorded in Non-goals, and this
-      is the one place the limit could be relaxed without fighting an SDK.
+    history (`pydanticai.py:173-174`), ADK one event history (`adk.py:59-70`); on those a second
+    concurrent run cannot even start (Pydantic AI refuses, LangGraph re-enters the paused node).
+    OpenAI's `RunState` is a self-contained snapshot and **two were resumed independently**
+    (`research/verification.md`), so there the list can genuinely grow.
+  - **Whether a new pause appends or replaces is the adapter's call**, because only the adapter
+    knows whether its framework can still resume the earlier one. `spec.md` fixes it per adapter.
+    The honest consequence on the single-thread frameworks: if an adapter appends where its
+    framework cannot hold two, the older entry is no longer resumable and **AK will not detect
+    that** — the same trade as dropping the staleness counter.
 - **AK does not track whether a pause has been overtaken.** *(Decision.)* An earlier draft
   carried a `Runtime`-owned run counter at `ak.run_seq` and refused a resume once an ordinary run
   had advanced past the pause. That is removed: no framework has such a counter, and inventing one
@@ -256,10 +259,8 @@ transports and the `Runner` interface are all unchanged.
   - **The residual risk is OpenAI, and it is real:** a stale resume there produces a confident
     answer computed as though the intervening turns never happened. AK does not detect it. The
     docs must say so under the OpenAI adapter specifically, rather than as a general caveat.
-  - **If a later run itself pauses, its record replaces the pending one.** On LangGraph, Pydantic
-    AI and ADK nothing is lost — the earlier pause stopped being resumable the moment the later
-    run advanced the state. On OpenAI it is a genuine discard, for the storage reason above rather
-    than a framework one.
+  - **A later pause does not evict an earlier one by policy.** The list simply grows; see the
+    adapter's append-or-replace call above.
 - The record is written **inside the adapter's successful path**, before the reply is returned —
   never in a `finally` — so a crashed run leaves no phantom pause. Same placement rule #526 set
   for `framework_context` write-back.
@@ -268,8 +269,16 @@ transports and the `Runner` interface are all unchanged.
 
 ### Core — the decision / resume path
 
-- Add **`AgentResumeRequest`** to the `AgentRequest` union (`model.py:125`):
-  `type: Literal["resume"]`, `decisions: list[ResumeDecision]`.
+- Add **`AgentResumeRequestAny`** to the `AgentRequest` union (`model.py:125`):
+  `type: Literal["resume"]`, `run_id: str`, `decisions: list[ResumeDecision]`.
+  - **`run_id` names which paused run is being answered**, since a session may hold more than
+    one. It comes straight off the paused reply.
+  - **It is optional, because it must be.** `PausedInterruption.id`s are unique across a
+    session's records, so `Runtime` can resolve the run from the decisions alone. That is not a
+    convenience: **AG-UI has no field for it** — `ResumeEntry` is `{interrupt_id, status,
+    payload}` — so a resume arriving over that surface can only ever identify its run by
+    interruption id. When `run_id` *is* given it must agree with the run those decisions belong
+    to; a disagreement is a failure, not an override.
 - `ResumeDecision` is `id: str` (matching a `PausedInterruption.id`) plus **one verb and two
   answer fields**:
 
@@ -288,8 +297,8 @@ transports and the `Runner` interface are all unchanged.
     the matching interruption's `kind` is `tool_call` or `confirmation`, and ignores it for
     `input_required`.
 - Add `resume: Optional[ResumeSpec]` to `BaseChatRequest` (`model.py:243-261`), following
-  `ScheduleSpec`'s precedent exactly. `ResumeSpec` is the public request shape; `RequestBuilder`
-  turns it into the `AgentResumeRequest` the union carries.
+  `ScheduleSpec`'s precedent exactly. `ResumeSpec` carries the optional `run_id` and the
+  `decisions`; `RequestBuilder` turns it into the `AgentResumeRequestAny` the union carries.
   - **Why a union member here, when the paused reply is a subclass.** The asymmetry is
     deliberate. A paused reply *should* inherit existing `AgentReplyAny` handling — guardrails,
     `AgentService.run`, the stringify sites — and joining the reply union would cost **seven**
@@ -331,7 +340,7 @@ multiple-choice example").
 
 #### Dispatch
 
-`Runtime.run` dispatches on the request list: an `AgentResumeRequest` present ⇒
+`Runtime.run` dispatches on the request list: an `AgentResumeRequestAny` present ⇒
 `agent.runner.resume(agent, session, requests, decisions, record)` instead of `run(...)`
 (`runtime.py:286`), and `Runtime.stream` does the same around `runner.stream` (`runtime.py:341`),
 dispatching to `resume_stream`.
@@ -350,7 +359,7 @@ belong to the dispatch and are tabled here; the third is on the streaming path.
 so none depends on where AK's own hooks sit in the chain. `Runtime` owns every call site: it holds
 the request list, calls `_prepare_requests` (`runtime.py:278`, and `:328` for the stream), and receives either a new list or a
 halting reply. So it can record one boolean beforehand — *did the incoming list carry an
-`AgentResumeRequest`?* — and compare with what comes back. Same for the stream: the post-hook loop
+`AgentResumeRequestAny`?* — and compare with what comes back. Same for the stream: the post-hook loop
 is `Runtime`'s own (`runtime.py:342-345`), so it sees an event go in and `None` come out.
 
 This is an observation, not the old extract-before-hooks rule — the dispatch still acts on the
@@ -364,7 +373,7 @@ turn. The boolean exists only so the loss is said out loud.
   (`post_hooks = self._get_system_post_hooks() + agent.post_hooks`, `runtime.py:288`, and `:337`
   for the stream).
 - **A consequence worth stating:** because the input guardrail is a *system* pre-hook, it runs
-  after any user pre-hook. If a user hook strips the `AgentResumeRequest`, the guardrail never
+  after any user pre-hook. If a user hook strips the `AgentResumeRequestAny`, the guardrail never
   sees the human's text — but the text never reaches the model either, so this is a lost decision,
   not an unguarded one. The warning is what makes it visible.
 - **The stream warning can name the offending hook**, since `hook.name()` is in scope where the
@@ -374,7 +383,7 @@ turn. The boolean exists only so the loss is said out loud.
 
 | Situation | How it is detected | What is logged |
 |---|---|---|
-| a pre-hook removes the `AgentResumeRequest` | the before-flag is set, the post-hook list has no marker | `WARNING`: a resume decision was dropped by the pre-hook chain and this run is proceeding as a new turn; the pause is still open. Names the session and agent |
+| a pre-hook removes the `AgentResumeRequestAny` | the before-flag is set, the post-hook list has no marker | `WARNING`: a resume decision was dropped by the pre-hook chain and this run is proceeding as a new turn; the pause is still open. Names the session and agent |
 | a pre-hook halts on a resume | the before-flag is set and `Runtime.run` returns a hook reply at `runtime.py:241-242`, never reaching the runner | `WARNING`: a decision was accepted but never delivered, and the pause is still open. **This is the only halt with a durable consequence** — every other one costs a turn and leaves nothing behind, whereas this leaves a record in the store while the client receives a reply that reads like completion |
 
 Both are per-occurrence `WARNING`s on the existing `ak.runtime` logger (`runtime.py:139`),
@@ -392,7 +401,7 @@ open pause is *named*, in a log an operator actually reads.
   about it.** *(Decision — an earlier draft made this a fourth warning. An adapter forgetting to
   clear is an AK bug, which is a test's job, not an operator's.)* The narrowing that makes this
   safe: "a resume can pause again" only puts a *new* record in play when the reply **is** an
-  `AgentPausedReply`. When it is not, no new pause was created, so a record still present can
+  `AgentPausedReplyAny`. When it is not, no new pause was created, so a record still present can
   only be the stale one and clearing it is unambiguous. Scoped that tightly, `Runtime` removes the
   failure mode instead of reporting it — and the next turn cannot inherit a phantom pause.
   - It stays out of the ordinary-run path: a non-resume turn leaving a pending pause in place is
@@ -443,59 +452,39 @@ Around that dispatch:
     (`guardrail/guardrail.py:100-102`), so as the code stands today the human's `message` would
     reach the model **without any guardrail seeing it** — the exact hole running the chain was
     meant to close. *(Decision.)* Extend the extraction to pull `message` and string `payload`
-    values out of `AgentResumeRequest`. This is a `guardrail/` change belonging to **PR 2**, not
+    values out of `AgentResumeRequestAny`. This is a `guardrail/` change belonging to **PR 2**, not
     an adapter PR: without it, PRs 1–2 ship a stated security property they do not deliver.
 - **Post-hooks, session store and volatile-cache clearing are unchanged** (`runtime.py:288-298`).
 - **`schedule` + `resume` is rejected with `ValueError` → 400.** A decision cannot be deferred to
   a cron slot and still be a decision.
-- **`prompt` + `resume` is rejected by AK, in `ChatService`, with `ValueError` → 400 — before
-  `Runtime`, before the adapter, before any framework is reached.**
-  - **Both guards run ahead of `_maybe_schedule`, and that placement is a requirement, not a
-    detail.** `_maybe_schedule` is the **first statement** of every entry point — `execute`
-    (`chat_service.py:390`), `execute_sync` (`:407`), `execute_stream` (`:428`) and
-    `execute_stream_sync` (`:455`) — while `_validate` is not reached until `:564`/`:575`. A guard
-    placed in `_validate` therefore never fires on a `schedule` + `resume` request: the scheduled
-    `202` has already been returned. So the check belongs in **all four** entry points ahead of
-    that call, or in a shared step they all enter first. `spec.md` picks which, and must assert
-    the `schedule` + `resume` case specifically, since it is the one that catches a guard placed
-    too late. *(Decision — corrected. An
-  earlier draft justified this by saying the frameworks cannot take new content alongside a
-  decision. Measured, that is false for three of the four, so **nothing downstream is asking for
-  this rule**.)*
+- **`prompt` + `resume` is not blocked by AK.** *(Decision — reversed. An earlier draft returned
+  `400` from `ChatService` for the combination, justified first as a framework limit and then as
+  uniformity. Neither held: measured, three of the four accept new content beside a decision.)*
+  - **Forward it wherever the framework takes it, and reject only where it cannot** — the same
+    shape already used for a structured `payload`.
+  - **Pydantic AI is native**: `run(prompt, message_history=..., deferred_tool_results=...)`
+    returns a normal answer, and the guard that otherwise blocks a new prompt is lifted precisely
+    by supplying the results.
+  - **LangGraph works, but through a mapping AK defines**: `Command(resume=..., update={...})`.
+    `update` means *update the graph state*, not *here is a prompt*, so AK writes the prompt into
+    the `messages` channel its adapter already feeds (`langgraph.py:412`). `spec.md` states that
+    this is AK's encoding, not a LangGraph feature.
+  - **ADK is unverified** — a `Content` can carry a text part beside the `function_response`, so
+    it is structurally possible. Established by test in PR 4, not assumed.
+  - **OpenAI rejects it in the adapter, above the `try`.** `Runner.run`'s `input` is
+    `str | list[TResponseInputItem] | RunState`, mutually exclusive, so there is nowhere for the
+    prompt to go. Failing is the only honest option; silently dropping it is what this design
+    exists to prevent.
+  - Per-framework evidence is in [`research/verification.md`](research/verification.md) ("two
+    more claims that asserted a framework limit"), including — per framework — whether it
+    *intends* this or whether AK is inventing the mapping.
 
-  Measured in [`research/verification.md`](research/verification.md) ("two more claims that
-  asserted a framework limit"), including — per framework — whether it *intends* this or whether
-  AK would be inventing the mapping.
-
-  - **So "three of four support it" overstates it.** *(Corrected again.)* Exactly **one** framework has a parameter that means "a new user prompt" and accepts
-    it beside a decision. On LangGraph AK would be inventing the mapping; on ADK it is a guess.
-    Supporting it is therefore not "stop blocking a capability" but "build a behaviour", and on
-    two adapters AK would own the semantics rather than the framework.
-  - The honest statement is therefore: **AK imposes this, and the reason is scope, not
-    uniformity.** Silently dropping the prompt on OpenAI would be worse; building an
-    AK-defined meaning for it on two others is work this issue does not need, because the
-    realistic case — "approve, and here is the value" — is already carried by `message` and
-    `payload`. What remains is a second, unrelated question, which a client can send as a second
-    request.
-  - **Three rules now reject at the edge, and they are not the same kind of rule.** `spec.md`
-    should keep them distinct rather than treating them as one policy:
-    - `payload` on OpenAI, and a partial resume on Pydantic AI — **AK pre-empting a framework
-      that cannot comply**. Without the guard the first silently discards the human's answer and
-      the second raises an error the adapter's `except` turns into *"Sorry, something went
-      wrong"*. AK fails where the framework would fail, only legibly.
-    - `prompt` + `resume` — **AK adding a limit three of the four do not have.** The only adapter
-      that genuinely cannot is OpenAI, and its incapability is being generalised to all of them.
-      That is the one of the three a reviewer should push on.
-  - **The alternative, if that trade looks wrong:** accept both, forward the prompt where the
-    framework takes it, and reject only on OpenAI — the same shape already used for `payload`.
-    The asymmetry with `payload` is the reason it is not taken: there the channel already exists
-    in every adapter, so allowing it costs only *not adding a check*, whereas here two adapters
-    need new forwarding code and one needs AK to decide what the prompt means. **Recorded in
-    Non-goals**, and `spec.md` is the last point at which it could change cheaply.
 
 **Failure modes** — errors with actionable messages, never silent fallbacks:
 
-1. no paused run in the session;
+1. no paused run matching the request — the given `run_id` is unknown, or the decisions resolve
+   to no record. A `run_id` disagreeing with the run its decisions belong to, and decisions that
+   resolve to **two different runs**, are the same failure: one resume addresses one run;
 2. a `ResumeDecision.id` matching no `PausedInterruption.id`;
 3. an opaque payload that no longer deserialises — an SDK upgrade (OpenAI's `RunState` carries a
    `_schema_version`), or an agent whose framework changed while the pause was outstanding;
@@ -537,7 +526,7 @@ explicit, or an ordinary turn will delete the pending pause.
     *"Sorry, something went wrong"* — it must instead surface as a clear error saying a decision
     is outstanding.
   - **LangGraph pauses again.** The new input merges into graph state but the interrupted node
-    re-interrupts, so the caller receives another `AgentPausedReply` rather than an answer to
+    re-interrupts, so the caller receives another `AgentPausedReplyAny` rather than an answer to
     their question. Correct behaviour, but surprising, and the docs must say it.
   - **OpenAI answers normally**, and the pending pause stays resumable — with the staleness risk
     recorded above.
@@ -582,7 +571,9 @@ explicit, or an ordinary turn will delete the pending pause.
 
 ### Streaming
 
-- Add a **`RunPaused`** member to the `StreamEvent` union (`event.py:131-147`).
+- Add a **`RunPaused`** member to the `StreamEvent` union (`event.py:131-147`), carrying the same
+  `run_id` and `interruptions` the paused reply does — a streaming client needs to know *which*
+  run stopped, not only that one did.
   - **The union's invariant is reworded, not quietly departed from.** `event.py:16-17` reads
     "Every field is a `str`, `int` or `bool`", and `test_stream_events.py` pins it — a
     `list[PausedInterruption]` breaks that letter even though it stays JSON- and pickle-safe.
@@ -729,7 +720,9 @@ cases distinguishable to the model**:
     later.
   - **The protocol requires state to be emitted first**: any `StateSnapshot` / `MessagesSnapshot`
     needed for resume must precede the `RunFinished` carrying the interrupt.
-  - Resume arrives as `RunAgentInput.resume` and becomes an ordinary `AgentResumeRequest`.
+  - Resume arrives as `RunAgentInput.resume` and becomes an ordinary `AgentResumeRequestAny`
+    **with no `run_id`** — the protocol has no field for one, so the run is resolved from the
+    `interrupt_id`s, which is exactly why that field is optional.
     `ResumeEntry.status` maps onto `ResumeDecision.status` **without flattening**: `cancelled`
     stays `cancelled`, `resolved` becomes `approved` or `denied` by the entry's payload.
     *(Corrected: an earlier draft said AG-UI requires every open interrupt to be addressed in one
@@ -772,7 +765,7 @@ interruptions in one pause** resolve together — the list case, not the single-
 
 Tests that exist to defend a specific decision:
 
-- **The three diagnostic warnings fire.** A pre-hook that drops the `AgentResumeRequest`, one
+- **The three diagnostic warnings fire.** A pre-hook that drops the `AgentResumeRequestAny`, one
   that halts on a resume, and a post-hook dropping `RunPaused` from a stream. These are the only
   signal the behaviour is deliberately unconstrained.
 - **A leftover record is cleared, not warned about.** Drive a `resume()` that returns an ordinary
@@ -796,12 +789,22 @@ Tests that exist to defend a specific decision:
 - **`schedule` + `resume` is rejected**, specifically — a guard placed in `_validate` runs after
   `_maybe_schedule` has already returned a scheduled 202, so only this assertion catches a guard
   placed too late.
+- **`prompt` + `resume` is carried, not blocked.** The prompt reaches the model on Pydantic AI and
+  LangGraph, ADK's behaviour is established by test rather than predicted, and on OpenAI it
+  **raises from above the adapter's `try`** so the error reaches the caller rather than the
+  generic one.
+- **More than one paused run in a session** — on OpenAI, pause twice, resume each by its `run_id`,
+  and assert both complete independently and each clears only its own record. On the
+  single-thread adapters, assert whatever append-or-replace `spec.md` settles on, since that is
+  the behaviour a user will hit.
+- **A resume with no `run_id` resolves by interruption id** — the AG-UI path. With two runs
+  outstanding, assert it reaches the right one, and that decisions spanning both are refused.
 - **Agent mismatch raises**, including where both agents share a runner — which a `runner` check
   alone would let through.
 - **An ordinary turn while a pause is pending, per adapter** — the record survives in every case
   and the record-still-present warning does **not** fire, but the reply differs and each is
   pinned: Pydantic AI surfaces a clear "a decision is outstanding" error rather than the adapter's
-  generic one, LangGraph returns a second `AgentPausedReply`, OpenAI returns an ordinary answer.
+  generic one, LangGraph returns a second `AgentPausedReplyAny`, OpenAI returns an ordinary answer.
   ADK establishes the behaviour rather than asserting a predicted one.
 - **A stale resume on OpenAI is the one case AK does not catch.** Pin it as accepted behaviour:
   pause, run an ordinary turn, resume the old snapshot, and assert it returns an answer with no
@@ -812,7 +815,7 @@ Tests that exist to defend a specific decision:
 - **202 + `"PAUSED"` is distinguishable from 202 + `"SCHEDULED"`**, both surviving the queue round
   trip via `ATTR_STATUS_CODE`.
 - **Answering one interruption at a time**, per adapter — the remaining ones come back as a
-  second `AgentPausedReply` with a fresh record, and answering those completes the run. On
+  second `AgentPausedReplyAny` with a fresh record, and answering those completes the run. On
   Pydantic AI, assert instead that AK refuses **before** the framework is called, naming the
   missing ids, rather than surfacing the adapter's generic error.
 - Plus the routine core cases: the new types round-trip; the **four** resume failure modes each
@@ -841,10 +844,10 @@ that no PR needs a later one to be correct.
 
 | # | Branch | Scope | Proves it works |
 |---|---|---|---|
-| 1 | `feature/606-hitl-1-core` | The contract, purely additive. `core/model.py` types, `core/event.py`'s `RunPaused` **plus the reworded union invariant** (docstring + `test_stream_events.py`), `PausedRunState` (the `ak.paused_run` nv_cache record and its get/set/clear), `Runner.supports_pause` plus the `resume()` / `resume_stream()` raising defaults, generalised picklability helper. CrewAI + smolagents need no change — they inherit the `False` default. | New types round-trip; the record survives a session-store round trip; `resume()` and `resume_stream()` raise by default; **no existing test changes** |
-| 2 | `feature/606-hitl-2-runtime` | The wiring, still with nothing that pauses. `Runtime.run`/`stream` dispatch **plus its three diagnostic warnings and the leftover-record cleanup**, the `status`-required-for-approval-kinds validation, **the paused-stream terminal sequence (boundary drain, and the warning when a post-hook drops `RunPaused`)**, `RequestBuilder` (`known_fields` += `resume`), `ChatService` validation, the ambiguous-combination guard (`prompt`+`resume`, `schedule`+`resume`) run **before** `_maybe_schedule` at **all four** entry points, **the `guardrail/` text-extraction change so a resume's free text is actually guarded**, `ResponseBuilder`'s `status: PAUSED`, new-prompt-keeps-pause, the `in_memory` warning. | Driven end-to-end by a `DummyRunner` that pauses — the existing test-double pattern |
-| 3 | `feature/606-hitl-3-openai-langgraph` | First two adapters, non-streaming and streaming. Chosen together because they exercise the **two different persistence models**: OpenAI writes an opaque `RunState` blob, LangGraph writes almost nothing because AK's checkpointer already holds the state. Carries the **first framework-specific rejection — a `payload` on an OpenAI decision — placed above the adapter's `try`**, since OpenAI has no channel for a structured answer. | Pause → record → resume on both, including resume after a session-store round trip; the OpenAI `payload` rejection **reaches the caller** rather than being swallowed by the adapter's `except` |
-| 4 | `feature/606-hitl-4-pydanticai-adk` | Remaining two adapters. Carries the **ADK `App` + `ResumabilityConfig` change** and its documented routing/session-size effects, which is why it is last among the adapters and not bundled with a lighter one. Also the **partial-resume rejection on Pydantic AI, above the adapter's `try`**, and the mapping of its `CallDeferred` requests to `kind: "input_required"` — the path the answer channel depends on there. | Same per-adapter matrix; plus an explicit test that ADK session state survives pickling, and that the Pydantic AI partial-resume error names the missing ids rather than surfacing as the generic one |
+| 1 | `feature/606-hitl-1-core` | The contract, purely additive. `core/model.py` types, `core/event.py`'s `RunPaused` **plus the reworded union invariant** (docstring + `test_stream_events.py`), `PausedRunState` (the `ak.paused_runs` list, the `PausedRun` record with its generated `id`, and list/get/add/clear), `Runner.supports_pause` plus the `resume()` / `resume_stream()` raising defaults, generalised picklability helper. CrewAI + smolagents need no change — they inherit the `False` default. | New types round-trip; the record survives a session-store round trip; `resume()` and `resume_stream()` raise by default; **no existing test changes** |
+| 2 | `feature/606-hitl-2-runtime` | The wiring, still with nothing that pauses. `Runtime.run`/`stream` dispatch **plus its three diagnostic warnings and the leftover-record cleanup**, the `status`-required-for-approval-kinds validation, **the paused-stream terminal sequence (boundary drain, and the warning when a post-hook drops `RunPaused`)**, `RequestBuilder` (`known_fields` += `resume`), `ChatService` validation, the `schedule`+`resume` guard run **before** `_maybe_schedule` at **all four** entry points, **the `guardrail/` text-extraction change so a resume's free text is actually guarded**, `ResponseBuilder`'s `status: PAUSED`, new-prompt-keeps-pause, the `in_memory` warning. | Driven end-to-end by a `DummyRunner` that pauses — the existing test-double pattern |
+| 3 | `feature/606-hitl-3-openai-langgraph` | First two adapters, non-streaming and streaming. Chosen together because they exercise the **two different persistence models**: OpenAI writes an opaque `RunState` blob, LangGraph writes almost nothing because AK's checkpointer already holds the state. Carries the **first framework-specific rejections — a `payload`, and a `prompt` beside a decision, on OpenAI — placed above the adapter's `try`**, since OpenAI has a channel for neither. LangGraph gains the opposite: AK's encoding of a prompt into `Command(update=...)`. | Pause → record → resume on both, including resume after a session-store round trip; the OpenAI `payload` rejection **reaches the caller** rather than being swallowed by the adapter's `except` |
+| 4 | `feature/606-hitl-4-pydanticai-adk` | Remaining two adapters. Carries the **ADK `App` + `ResumabilityConfig` change** and its documented routing/session-size effects, which is why it is last among the adapters and not bundled with a lighter one. Also the **partial-resume rejection on Pydantic AI, above the adapter's `try`**, the mapping of its `CallDeferred` requests to `kind: "input_required"` — the path the answer channel depends on there — and **ADK's prompt-beside-a-decision behaviour, established by test rather than assumed**. | Same per-adapter matrix; plus an explicit test that ADK session state survives pickling, and that the Pydantic AI partial-resume error names the missing ids rather than surfacing as the generic one |
 | 5 | `feature/606-hitl-5-agui-docs` | The AG-UI terminal-outcome surface (`AGUIRequestHandler._events`, `RunAgentInput.resume`), the runnable example, docs, and the skills/docs sync. The docs carry the per-adapter caveats this design accumulated: **on OpenAI a stale resume is undetected**, and **"I need a value" must be modelled as a question rather than a gated tool**; on ADK the **sub-agent routing change**; plus "answer it soon or lose it", and that clearing the non-volatile cache discards a pending pause. | Example runs pause → decision → resume; `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` clean |
 
 Rules for the stack:
@@ -868,25 +871,10 @@ Rules for the stack:
   tool-definition time, which is `ToolBuilder`'s territory (`core/tool.py`). Until that exists,
   HITL works for users who hand AK framework-native gated tools, and for LangGraph users whose
   nodes call `interrupt()`. Worth its own issue.
-- **Sending a new prompt in the same request as a decision.** *(Decision.)* `prompt` + `resume`
-  returns `400`, and this is recorded as a **scope** choice rather than a capability limit,
-  because the evidence does not support calling it one: **Pydantic AI accepts it natively**,
-  LangGraph could be made to through a mapping AK would have to invent (`Command(update=...)`
-  means *update the graph state*, not *here is a prompt*), and ADK is unverified. So allowing it
-  would mean building a behaviour on two adapters and owning its meaning on one of them, not
-  lifting a block.
-  - Deferred because the realistic case is already covered: "approve, and here is the value" is
-    `ResumeDecision.message` and `payload`. What is left out is a **second, unrelated question**
-    arriving with a decision, which a client can send as a second request.
-  - Per-framework evidence and the alternative shape are under *Core — the decision / resume
-    path*. Worth revisiting if a caller actually asks for it.
 - CrewAI Flow support (the only route to CrewAI HITL — see `research/adapter-strategies.md`), and
   any AK-invented pause for smolagents.
 - A HITL UI, an approval inbox, notification delivery, or approver identity/authorisation.
 - Timeouts or auto-decisions on an unanswered pause.
-- **More than one pause outstanding per session.** One record, one key; a second pause replaces
-  the first. Three adapters cannot do better anyway; OpenAI could, and lifting the limit there is
-  costed under the paused-run record.
 - **Recording pauses and decisions in conversation threads.** *(Decision.)* `ThreadRecorder` is
   untouched, so a paused reply is appended like any other assistant message
   (`integration/thread/recorder.py:59-65`) and a resume-only request records an **empty user
@@ -903,7 +891,7 @@ Rules for the stack:
 **All seven are resolved.** Each is kept as one line with a pointer, so the conclusion is visible
 here and the reasoning stays where it is used.
 
-1. ~~How is a paused reply typed?~~ **A subclass, `AgentPausedReply(AgentReplyAny)`** — *Core — the
+1. ~~How is a paused reply typed?~~ **A subclass, `AgentPausedReplyAny(AgentReplyAny)`** — *Core — the
    paused outcome*. Weighed against a magic key on plain `AgentReplyAny` (nothing downstream could
    tell a pause from a genuine structured reply) and a new union member (seven `isinstance` sites).
 2. ~~What HTTP status does a paused response carry?~~ **`202`**, with the body's `status` key as the
