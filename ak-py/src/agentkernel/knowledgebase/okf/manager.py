@@ -680,8 +680,10 @@ class OKFManager(DocumentKnowledgeBase):
             return []
 
         directory_count, concept_count = self._apportion(len(subdirectories), len(concepts), limit)
+        # Debug, not warning: an over-limit listing is routine (a 60-concept directory under the
+        # default limit=50 hits it on every call), not a fault anyone needs to act on.
         if directory_count < len(subdirectories) or concept_count < len(concepts):
-            log.warning(
+            log.debug(
                 "[%s.browse] %r holds %d subdirector(ies) and %d concept(s); listing %d and %d at limit=%d",
                 self.backend_name,
                 directory or "<root>",

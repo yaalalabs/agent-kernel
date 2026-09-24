@@ -210,6 +210,14 @@ class TestLaziness:
         assert "write_kb" in manager.tools_for("writer")
         assert manager.tools_for("nobody") == {}
 
+    def test_a_read_only_agents_builder_is_built_without_write_kb(self, monkeypatch, tmp_path):
+        # The builder behind the attached tools is built writable=<holds a writable role>, so it
+        # matches what OKFToolFactory attached rather than holding a write_kb nobody was given.
+        configure(monkeypatch, {"warehouse": _OKFDatabaseConfig(type="local", uri=write_bundle(tmp_path), consumer=["reader"])})
+        manager = OKFCapabilityManager.get()
+
+        assert sorted(manager.tools_for("reader")) == sorted(READ_TOOLS)
+
 
 class TestReadScoping:
     @pytest.fixture

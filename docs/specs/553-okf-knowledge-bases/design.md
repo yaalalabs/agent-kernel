@@ -556,6 +556,11 @@ classDiagram
     told it may not use is prompt surface spent on a dead end. `build(writable=False)` omits it.
   - Filtering the returned list by function name in the OKF layer was rejected: it couples the caller
     to the tool functions' `__name__`s, which `ToolBuilder.bind()` already treats as load-bearing.
+  - As built, the config path calls `build(writable=<agent holds a writable role>)`
+    (`OKFCapabilityManager.tools_for`), so the builder decides whether `write_kb` exists. The result is
+    then keyed by name, but as a lookup rather than a filter: the agent's attached tools are created
+    before any bundle is opened (agent construction walks no store), and each one finds its builder
+    counterpart by name on first use. Nothing is removed from the list by name.
 - **[A2], withdrawn.** `KnowledgeBuilder.__init__` was to accept a **per-backend** semantic map
   alongside the flat one, for a per-database `okf.databases.<name>.semantic_map`. **Withdrawn 2026-09-24.** OKF no longer takes a `semantic_map`, so the per-backend form had no caller and was removed; `KnowledgeBuilder` keeps only its original flat `semantic_map`.
   The original reasoning, kept for the trail:

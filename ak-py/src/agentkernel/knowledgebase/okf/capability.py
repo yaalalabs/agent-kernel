@@ -169,10 +169,16 @@ class OKFCapabilityManager:
         """
         Return this agent's KnowledgeBuilder tools, keyed by name and built once.
 
-        ``KnowledgeBuilder.build()`` constructs a fresh set of closures on every call, and the
-        tool surface reaches for one by name on every invocation — so building per call meant
-        rebuilding all seven to use one. Caching them costs nothing in laziness: the builder
-        behind them was already cached per agent, so this resolves no earlier than before.
+        Built with ``writable`` set to whether the agent holds a writable role anywhere, so a
+        read-only agent's set has no ``write_kb`` at all, the same decision ``OKFToolFactory``
+        makes when choosing what to attach.
+
+        Keyed by name because the tools the agent was given are not these: they are attached
+        before any bundle is opened, and each one looks its real counterpart up here on first
+        use. That is a lookup of a tool the agent already holds, not a filter over what to give
+        it. ``KnowledgeBuilder.build()`` constructs fresh closures on every call, so they are
+        cached rather than rebuilt per invocation; this resolves no earlier than the builder
+        behind them, which was already cached per agent.
 
         :param agent_name: Agent to resolve for.
         :return: The agent's tools by name; empty when it holds no role.
@@ -181,7 +187,8 @@ class OKFCapabilityManager:
             tools = self._agent_tools.get(agent_name)
             if tools is None:
                 builder = self.builder_for(agent_name)
-                tools = {tool.__name__: tool for tool in builder.build(writable=True)} if builder else {}
+                writable = bool(self._roles.writable_databases_for(agent_name))
+                tools = {tool.__name__: tool for tool in builder.build(writable=writable)} if builder else {}
                 self._agent_tools[agent_name] = tools
             return tools
 
