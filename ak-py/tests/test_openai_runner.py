@@ -25,7 +25,7 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
-from agentkernel.framework.openai.openai import OpenAIRunner
+from agentkernel.framework.openai.openai import OpenAIRunner, OpenAISession
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
@@ -717,3 +717,43 @@ class TestOpenAIRunnerSessionMemory:
     def test_streaming_remembers_the_turn(self):
         requests = [AgentRequestImage(image_data="https://example.com/cat.png", name="cat.png", mime_type="image/png")]
         assert self._captured_stream_session(requests) is not None
+
+
+class TestOpenAISessionGetItems:
+    """get_items(limit) must return the most recent items, in chronological order."""
+
+    @pytest.mark.asyncio
+    async def test_limit_returns_latest_items_in_chronological_order(self):
+        session = OpenAISession()
+        await session.add_items([{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}])
+
+        items = await session.get_items(limit=2)
+
+        assert items == [{"id": 3}, {"id": 4}]
+
+    @pytest.mark.asyncio
+    async def test_limit_greater_than_item_count_returns_all_items(self):
+        session = OpenAISession()
+        await session.add_items([{"id": 1}, {"id": 2}])
+
+        items = await session.get_items(limit=10)
+
+        assert items == [{"id": 1}, {"id": 2}]
+
+    @pytest.mark.asyncio
+    async def test_zero_limit_returns_no_items(self):
+        session = OpenAISession()
+        await session.add_items([{"id": 1}, {"id": 2}])
+
+        items = await session.get_items(limit=0)
+
+        assert items == []
+
+    @pytest.mark.asyncio
+    async def test_no_limit_returns_all_items_in_chronological_order(self):
+        session = OpenAISession()
+        await session.add_items([{"id": 1}, {"id": 2}, {"id": 3}])
+
+        items = await session.get_items()
+
+        assert items == [{"id": 1}, {"id": 2}, {"id": 3}]

@@ -5,7 +5,7 @@ import copy
 import logging
 import pickle
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Iterator, Mapping
+from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
 from enum import Enum
 from typing import Any, Callable, ClassVar, Self, cast
 
@@ -590,8 +590,75 @@ class Agent(ABC):
         """
         from agentkernel.core.tool import SystemToolFactory
 
-        for tool in SystemToolFactory.get_all(self.name):
+        system_tools = SystemToolFactory.get_all(self.name)
+        self._warn_on_tool_name_collisions(system_tools)
+
+        for tool in system_tools:
             self.attach_tool(tool.func)
+
+    def _warn_on_tool_name_collisions(self, system_tools: list[Any]) -> None:
+        """
+        Warn when a system tool is about to shadow one the application already bound by hand.
+
+        Runs after the framework adapter has taken the built native agent, so tools the
+        application bound itself are already present and visible here. The collision is warned
+        about and then allowed: skipping would make newly enabling a capability silently do
+        nothing for this agent, which is the worse of the two failures. The cost is that both
+        tools reach the framework -- tolerated by some, rejected at bind time by others, with
+        this warning explaining why.
+
+        Entirely defensive: an adapter exposing no `tools` collection yields no warning, never
+        a raise.
+
+        :param system_tools: The SystemTool instances about to be attached.
+        :return: None.
+        """
+        native = getattr(self, "agent", None)
+        existing = {name for name in (self._native_tool_name(tool) for tool in self._native_tools(native)) if name}
+        colliding = sorted(existing.intersection(tool.name for tool in system_tools))
+        if colliding:
+            _log.warning(
+                "Agent '%s' already has tools named %s; Agent Kernel is attaching system tools with the same names. "
+                "The agent will carry both. If this agent was wired by hand, remove the manual binding or the configuration that enables it.",
+                self.name,
+                colliding,
+            )
+
+    @staticmethod
+    def _native_tools(native: Any) -> Iterable[Any]:
+        """
+        Return whatever the native agent holds its tools in, as something iterable.
+
+        Smolagents keys its tools by name -- `SmolagentsAgent._append_tools` writes
+        `agent.tools[name] = tool` -- so iterating the attribute directly yields names, not
+        tools. The keys are the names this warning is looking for, so the mapping is taken
+        through `keys()` and :meth:`_native_tool_name` accepts a bare string.
+
+        Anything that is neither a mapping nor a sequence yields nothing rather than raising,
+        which is what makes this method's caller safe against an adapter that means something
+        else entirely by `tools`.
+
+        :param native: The framework's own agent object, or None.
+        :return: The tools or tool names to inspect; empty when there are none to read.
+        """
+        tools = getattr(native, "tools", None)
+        if isinstance(tools, Mapping):
+            return tools.keys()
+        if isinstance(tools, (list, tuple, set, frozenset)):
+            return tools
+        return ()
+
+    @staticmethod
+    def _native_tool_name(tool: Any) -> str | None:
+        """
+        Name one tool the framework already holds.
+
+        :param tool: A tool object, or the name a mapping-shaped collection keyed it by.
+        :return: The tool's name, or None when it cannot be named.
+        """
+        if isinstance(tool, str):
+            return tool
+        return getattr(tool, "name", None) or getattr(tool, "__name__", None)
 
     @staticmethod
     def _append_tools(agent: Any, wrapped: list[Any]) -> None:

@@ -1,0 +1,1037 @@
+"""The OKF backend over a document store (#553 iteration 6).
+
+This is where the two axes meet, so the guarantees pinned here are mostly about the seam. The
+manifest is the reason a browse over an S3 bundle is not one GET per object per tool call, so
+its refresh policy — one walk under concurrent callers, a stale answer in preference to a
+failed one, a clock that resets on failure — is asserted rather than described. Write-through
+is asserted with refresh_seconds=None, which is what proves a written concept is visible
+because the write inserted it and not because a refresh happened to fire.
+
+Ranking is pinned because a lexical ranker that reorders between processes would make an
+agent's behaviour irreproducible: scoring is field-weighted presence and ties break on path.
+
+Nothing is ever filtered on trust or staleness — the OKF conformance rules make those advisory
+signals, and a bundle of entirely stale, unverified concepts must still answer every operation.
+
+No test touches a live bucket or a network: every store here is a LocalDocumentStore over
+tmp_path, sometimes subclassed to count or to fail.
+"""
+
+import re
+import sys
+import threading
+import time
+from datetime import datetime, timedelta, timezone
+
+import pytest
+import yaml
+
+from agentkernel.knowledgebase.errors import KnowledgeCapabilityError, KnowledgePathError
+from agentkernel.knowledgebase.okf import manager as manager_module
+from agentkernel.knowledgebase.okf.manager import _DEFAULT_CONCEPT_TYPE, OKFManager
+from agentkernel.knowledgebase.okf.model import DiagnosticCode, TrustTier
+from agentkernel.knowledgebase.okf.parser import BODY_INDEX_MAX_BYTES, FRONTMATTER_MAX_BYTES
+from agentkernel.knowledgebase.store import LocalDocumentStore
+
+ORDERS = """---
+type: BigQuery Table
+title: Orders
+description: One row per completed purchase.
+tags: [sales, revenue]
+verified: [{by: "human:jsmith"}]
+---
+# Schema
+FK to [customers](/tables/customers.md).
+"""
+
+CUSTOMERS = """---
+type: BigQuery Table
+title: Customers
+description: One row per customer.
+tags: [sales]
+---
+# Schema
+customer rows
+"""
+
+ORDERS_DB = """---
+type: Dataset
+title: Orders DB
+---
+# Overview
+the warehouse
+"""
+
+ATTESTED = """---
+type: Attested Computation
+title: Revenue check
+description: the check
+resource: bq://p/d/t
+tags: [sales]
+status: stable
+stale_after: '2030-01-01T00:00:00+00:00'
+sources: [{by: etl}]
+runtime: python:3.12
+owner: analytics
+---
+
+# Body
+rows
+"""
+
+BUNDLE = {
+    "index.md": '---\nokf_version: "0.2"\n---\n# Root listing\n- orders\n',
+    "log.md": "# Log\n- created\n",
+    "tables/index.md": "# Curated tables\n- orders\n",
+    "tables/orders.md": ORDERS,
+    "tables/customers.md": CUSTOMERS,
+    "datasets/orders_db.md": ORDERS_DB,
+    "broken.md": "no frontmatter at all\n",
+}
+
+
+def write_bundle(root, files) -> str:
+    """Materialise a bundle on disk and return its root as a string."""
+    for path, text in files.items():
+        target = root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    return str(root)
+
+
+def make_manager(root, files=None, **kwargs) -> OKFManager:
+    """Build a manager over a freshly written bundle."""
+    return OKFManager(LocalDocumentStore(write_bundle(root, files if files is not None else BUNDLE), writable=True), **kwargs)
+
+
+def ids(records) -> list[str]:
+    """Reduce records to their ids, which is what most assertions are about."""
+    return [record["metadata"]["id"] for record in records]
+
+
+class CountingStore(LocalDocumentStore):
+    """A store that counts walks, and can be told to fail every walk after the first."""
+
+    def __init__(self, root: str, fail_after_first: bool = False, walk_delay: float = 0.0) -> None:
+        super().__init__(root, writable=True)
+        self.list_calls = 0
+        self.fail_after_first = fail_after_first
+        self.walk_delay = walk_delay
+
+    def list(self, prefix: str = "") -> list[str]:
+        self.list_calls += 1
+        if self.fail_after_first and self.list_calls > 1:
+            raise OSError("store is unavailable")
+        if self.walk_delay:
+            time.sleep(self.walk_delay)
+        return super().list(prefix)
+
+
+class WholeReadCountingStore(LocalDocumentStore):
+    """A store recording every whole-document read, which is the cost the bounded walk avoids."""
+
+    def __init__(self, root: str) -> None:
+        super().__init__(root, writable=True)
+        self.whole_reads: list[str] = []
+
+    def read_bytes(self, path: str) -> bytes:
+        self.whole_reads.append(path)
+        return super().read_bytes(path)
+
+
+class RefreshingStore(LocalDocumentStore):
+    """A store that refreshes the manifest just before each write lands, which is the race the
+    write-through has to survive: the manifest a write started with is no longer the live one."""
+
+    def __init__(self, root: str) -> None:
+        super().__init__(root, writable=True)
+        self.manager = None
+
+    def write_bytes(self, path: str, data: bytes) -> None:
+        if self.manager is not None:
+            self.manager.reload()
+        super().write_bytes(path, data)
+
+
+class FakeClock:
+    """Stands in for the manager module's ``time``, so refresh timing is not wall-clock bound."""
+
+    def __init__(self, now: float = 1000.0) -> None:
+        self.now = now
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class SteppingCalendar:
+    """Stands in for the manager module's ``datetime``, so the ``generated.at`` stamp is not
+    wall-clock bound. Each call to ``now()`` returns the next instant and then holds the last."""
+
+    def __init__(self, *instants) -> None:
+        self._instants = list(instants)
+
+    def now(self, tz=None):
+        return self._instants.pop(0) if len(self._instants) > 1 else self._instants[0]
+
+
+def without_stamp(document: str) -> str:
+    """Blank the one line a re-write is allowed to change, so the rest can be compared."""
+    return re.sub(r"^  at: .*$", "  at: <stamp>", document, flags=re.MULTILINE)
+
+
+class TestCapabilities:
+    def test_capabilities_are_built_from_the_store_it_was_handed(self, tmp_path):
+        capabilities = make_manager(tmp_path).capabilities
+        assert capabilities.kinds == ["document"]
+        assert (capabilities.search, capabilities.search_mode) == (True, "lexical")
+        assert (capabilities.fetch, capabilities.browse, capabilities.derives_schema) == (True, True, True)
+        assert capabilities.writable is True
+
+    def test_a_read_only_store_makes_the_backend_read_only(self, tmp_path):
+        store = LocalDocumentStore(write_bundle(tmp_path, BUNDLE), writable=False)
+        assert OKFManager(store).capabilities.writable is False
+
+    def test_relevance_is_the_only_read_shaped_operation_declared(self, tmp_path):
+        # OKF ranks; it has no query language. read_kb therefore routes to search() here,
+        # which is asserted where that routing lives, in test_knowledgebase_builder.py.
+        manager = make_manager(tmp_path)
+        assert manager.capabilities.search is True
+        assert manager.capabilities.query is False
+        assert manager.capabilities.query_language is None
+
+    def test_the_backend_name_falls_back_to_okf(self, tmp_path):
+        assert make_manager(tmp_path).backend_name == "okf"
+        assert make_manager(tmp_path, name="sales-kb").backend_name == "sales-kb"
+
+
+class TestSchema:
+    def test_schema_works_without_any_add_schema_call(self, tmp_path):
+        # The whole point of derives_schema: a bundle already states its own shape.
+        schema = make_manager(tmp_path).schema()
+        assert schema["backend"] == "okf"
+        assert schema["capabilities"]["search_mode"] == "lexical"
+
+    def test_the_derived_schema_describes_the_bundle(self, tmp_path):
+        derived = make_manager(tmp_path)._derived_schema()
+        assert derived["okf_version"] == "0.2"
+        assert derived["concept_count"] == 3
+        assert derived["types"] == ["BigQuery Table", "Dataset"]
+        assert derived["top_level_directories"] == ["datasets", "tables"]
+        assert derived["reserved_files"] == {"index": ["index.md", "tables/index.md"], "log": ["log.md"]}
+        assert derived["truncated"] is False
+        assert derived["diagnostics"] >= 1
+
+    def test_the_schema_names_every_directory_the_root_listing_can_reach(self, tmp_path):
+        # The schema is the first thing the agent reads and browse is the second; a directory
+        # curated by nothing but an index.md is reachable from the root, so it has to be in both.
+        files = {path: text for path, text in BUNDLE.items() if path != "index.md"}
+        files["notes/index.md"] = "# Notes\n- curated by hand, no concepts\n"
+        manager = make_manager(tmp_path, files)
+
+        listed = {record["metadata"]["id"].rstrip("/") for record in manager.browse() if record["metadata"]["kind"] == "directory"}
+        assert "notes" in listed
+        assert listed == set(manager._derived_schema()["top_level_directories"])
+
+    def test_capabilities_cannot_be_overridden_by_add_schema(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.add_schema({"capabilities": {"writable": "yes"}, "note": "kept"})
+        schema = manager.schema()
+        assert schema["capabilities"] == manager.capabilities.model_dump()
+        assert schema["note"] == "kept"
+
+
+class TestSearch:
+    def test_frontmatter_outranks_body_text_by_presence_not_frequency(self, tmp_path):
+        files = {
+            "titled.md": "---\ntype: Note\ntitle: Widget\n---\nunrelated prose\n",
+            "bodied.md": "---\ntype: Note\ntitle: Something Else\n---\n" + ("widget " * 40),
+        }
+        # The body mentions it forty times and still loses: title weight 4 beats body weight 1.
+        assert ids(make_manager(tmp_path, files).search("widget")) == ["titled.md", "bodied.md"]
+
+    def test_ties_break_lexicographically_on_path(self, tmp_path):
+        # Both score 4 on a title hit alone, so only the path ordering can decide.
+        assert ids(make_manager(tmp_path).search("orders")) == ["datasets/orders_db.md", "tables/orders.md"]
+
+    def test_ranking_is_identical_across_two_independently_built_managers(self, tmp_path):
+        first, second = make_manager(tmp_path), make_manager(tmp_path)
+        assert ids(first.search("sales orders customer", limit=10)) == ids(second.search("sales orders customer", limit=10))
+
+    def test_a_concept_matching_nothing_is_excluded_rather_than_ranked_last(self, tmp_path):
+        assert ids(make_manager(tmp_path).search("revenue", limit=10)) == ["tables/orders.md"]
+
+    def test_an_unmatched_query_returns_nothing(self, tmp_path):
+        assert make_manager(tmp_path).search("zebra") == []
+
+    def test_limit_truncates_the_ranking(self, tmp_path):
+        assert len(make_manager(tmp_path).search("sales", limit=1)) == 1
+
+    def test_search_records_carry_the_advisory_signals_but_no_links(self, tmp_path):
+        metadata = make_manager(tmp_path).search("revenue")[0]["metadata"]
+        assert metadata["id"] == "tables/orders.md"
+        assert metadata["kind"] == "BigQuery Table"
+        assert metadata["trust"] == TrustTier.HUMAN_REVIEWED.value
+        assert metadata["stale"] is False
+        assert "links" not in metadata
+
+
+class TestFetch:
+    def test_records_come_back_in_the_order_requested(self, tmp_path):
+        requested = ["tables/orders.md", "datasets/orders_db.md", "tables/customers.md"]
+        assert ids(make_manager(tmp_path).fetch(requested)) == requested
+
+    def test_a_duplicate_id_yields_one_record(self, tmp_path):
+        assert ids(make_manager(tmp_path).fetch(["tables/orders.md", "tables/orders.md"])) == ["tables/orders.md"]
+
+    def test_an_unknown_id_is_omitted_rather_than_raised_or_stubbed(self, tmp_path):
+        assert ids(make_manager(tmp_path).fetch(["nope.md", "tables/orders.md"])) == ["tables/orders.md"]
+
+    def test_an_escaping_id_is_dropped_not_raised(self, tmp_path):
+        assert make_manager(tmp_path).fetch(["../../etc/passwd"]) == []
+
+    def test_a_directory_id_from_browse_is_dropped_rather_than_aborting_the_batch(self, tmp_path):
+        # browse hands the agent directory records and the fetch tool invites it to browse
+        # first, so a directory id is a routine mistake. Reading one is an OSError that is not
+        # a FileNotFoundError, which is what used to take every other id in the call with it.
+        manager = make_manager(tmp_path, {"tables/orders.md": ORDERS, "top.md": ORDERS_DB})
+
+        assert ids(manager.browse("")) == ["tables/", "top.md"]
+        assert ids(manager.fetch(["tables/", "top.md"])) == ["top.md"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
+    def test_an_id_escaping_through_a_symlink_is_dropped_rather_than_aborting_the_batch(self, tmp_path):
+        # The store enforces containment twice, and the second check — the one that resolves
+        # symlinks — raises from inside the read rather than from `normalise_relative`. Only the
+        # first refusal used to be caught, so one planted symlink took every other id with it.
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.md").write_text(ORDERS_DB, encoding="utf-8")
+        root = write_bundle(tmp_path / "bundle", {"tables/orders.md": ORDERS})
+        (tmp_path / "bundle" / "link.md").symlink_to(outside / "secret.md")
+        manager = OKFManager(LocalDocumentStore(root, writable=True))
+
+        assert ids(manager.fetch(["link.md", "tables/orders.md"])) == ["tables/orders.md"]
+
+    def test_fetch_is_the_only_operation_carrying_the_full_body_and_links(self, tmp_path):
+        manager = make_manager(tmp_path)
+        record = manager.fetch(["tables/orders.md"])[0]
+        assert record["metadata"]["links"] == ["tables/customers.md"]
+        assert "# Schema" in record["text"]
+        assert "links" not in manager.browse("datasets")[0]["metadata"]
+
+
+class TestBrowse:
+    def test_the_root_index_supplies_the_listing(self, tmp_path):
+        records = make_manager(tmp_path).browse("")
+        assert ids(records) == ["index.md"]
+        assert records[0]["metadata"]["kind"] == "index"
+        assert "# Root listing" in records[0]["text"]
+
+    def test_a_nested_index_is_honoured_exactly_as_the_root_one_is(self, tmp_path):
+        records = make_manager(tmp_path).browse("tables")
+        assert ids(records) == ["tables/index.md"]
+        assert "# Curated tables" in records[0]["text"]
+
+    def test_a_directory_with_no_index_gets_a_derived_listing(self, tmp_path):
+        assert ids(make_manager(tmp_path).browse("datasets")) == ["datasets/orders_db.md"]
+
+    def test_a_derived_listing_carries_subdirectories_before_concepts(self, tmp_path):
+        files = {"top.md": ORDERS_DB, "tables/orders.md": ORDERS, "datasets/orders_db.md": ORDERS_DB}
+        records = make_manager(tmp_path, files).browse("")
+        assert ids(records) == ["datasets/", "tables/", "top.md"]
+        assert records[0]["metadata"]["kind"] == "directory"
+
+    def test_limit_truncates_a_derived_listing(self, tmp_path):
+        files = {"tables/orders.md": ORDERS, "tables/customers.md": CUSTOMERS}
+        assert ids(make_manager(tmp_path, files).browse("tables", limit=1)) == ["tables/customers.md"]
+
+    def test_a_curated_listing_is_never_truncated_by_limit(self, tmp_path):
+        assert len(make_manager(tmp_path).browse("tables", limit=0)) == 1
+
+    def test_concepts_survive_a_directory_holding_more_subdirectories_than_the_limit(self, tmp_path):
+        # Subdirectories are listed first, so a flat truncation hid every concept here and told
+        # the agent the namespace held nothing it could read.
+        files = {f"d{n:02d}/x.md": ORDERS_DB for n in range(10)}
+        files["note.md"] = ORDERS_DB
+        records = ids(make_manager(tmp_path, files).browse("", limit=4))
+
+        assert "note.md" in records
+        assert len(records) == 4
+
+    def test_each_kind_is_guaranteed_half_the_budget_when_neither_fits(self, tmp_path):
+        files = {f"d{n:02d}/x.md": ORDERS_DB for n in range(10)}
+        files.update({f"n{n:02d}.md": ORDERS_DB for n in range(10)})
+        records = ids(make_manager(tmp_path, files).browse("", limit=6))
+
+        assert sum(1 for path in records if path.endswith("/")) == 3
+        assert sum(1 for path in records if path.endswith(".md")) == 3
+
+    def test_the_kind_that_fits_entirely_keeps_all_of_it(self, tmp_path):
+        # Halving unconditionally would waste budget: two subdirectories and many concepts
+        # should list both subdirectories and spend everything left on concepts.
+        files = {"d0/x.md": ORDERS_DB, "d1/x.md": ORDERS_DB}
+        files.update({f"n{n:02d}.md": ORDERS_DB for n in range(10)})
+        records = ids(make_manager(tmp_path, files).browse("", limit=6))
+
+        assert sum(1 for path in records if path.endswith("/")) == 2
+        assert sum(1 for path in records if path.endswith(".md")) == 4
+
+    def test_a_directory_holding_only_an_index_is_still_listed(self, tmp_path):
+        # The manifest infers subdirectories from the paths it holds, and this one contributes
+        # no concept path — so without its index.md counting, `notes` could not be reached from
+        # the root and its curated listing was unservable.
+        manager = make_manager(tmp_path, {"a.md": ORDERS_DB, "notes/index.md": "# Notes\n- soon\n"})
+
+        assert ids(manager.browse("")) == ["notes/", "a.md"]
+        assert ids(manager.browse("notes")) == ["notes/index.md"]
+
+    def test_a_directory_holding_only_a_log_is_still_listed(self, tmp_path):
+        manager = make_manager(tmp_path, {"a.md": ORDERS_DB, "audit/log.md": "# Log\n- created\n"})
+
+        assert ids(manager.browse("")) == ["audit/", "a.md"]
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlink creation needs privileges on Windows")
+    def test_an_index_escaping_after_the_walk_is_empty_rather_than_raised(self, tmp_path):
+        # The walk skips an escaping entry, so a curated index reaches the manifest only while it
+        # is contained — and is then replaced. The refusal has to be caught where the manifest is
+        # read, or a browse the agent asked for by directory raises instead of listing nothing.
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.md").write_text("# Elsewhere\n", encoding="utf-8")
+        root = write_bundle(tmp_path / "bundle", {"index.md": "# Root listing\n", "a.md": ORDERS_DB})
+        manager = OKFManager(LocalDocumentStore(root, writable=True), refresh_seconds=None)
+
+        (tmp_path / "bundle" / "index.md").unlink()
+        (tmp_path / "bundle" / "index.md").symlink_to(outside / "secret.md")
+
+        assert manager.browse("") == []
+
+    def test_an_unknown_directory_is_empty_rather_than_an_error(self, tmp_path):
+        assert make_manager(tmp_path).browse("nowhere") == []
+
+    def test_an_escaping_path_is_empty_rather_than_raised(self, tmp_path):
+        assert make_manager(tmp_path).browse("../..") == []
+
+
+class TestWrite:
+    def test_a_supplied_id_is_honoured(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "body", "metadata": {"id": "tables/new.md", "type": "Note", "title": "New"}}])
+        assert ids(manager.fetch(["tables/new.md"])) == ["tables/new.md"]
+
+    def test_an_id_is_synthesised_when_the_tool_surface_cannot_supply_one(self, tmp_path):
+        # write_kb's signature carries no id, so without synthesis this path is unreachable.
+        manager = make_manager(tmp_path, write_prefix="drafts")
+        manager.write([{"text": "body", "metadata": {"title": "Auto Named!"}}])
+        written = ids(manager.browse("drafts"))
+        assert len(written) == 1
+        assert written[0].startswith("drafts/auto-named-")
+        assert written[0].endswith(".md")
+
+    def test_synthesis_falls_back_through_title_then_type_then_a_constant(self, tmp_path):
+        # A body-less write is what reaches the lower rungs now: a concept the backend authors
+        # takes its title, and so its slug, from its own text whenever it has any.
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "", "metadata": {"type": "Attested Computation"}}, {"text": "", "metadata": {}}])
+        written = ids(manager.browse("generated"))
+        assert any(path.startswith("generated/attested-computation-") for path in written)
+        assert any(path.startswith("generated/concept-") for path in written)
+
+
+class TestAuthoredConceptTitles:
+    """A concept the backend authors is titled from its own text.
+
+    `write_kb`'s signature carries no title, so every agent-authored concept was an untitled
+    `Note` at `generated/concept-<hex>.md`. Browse and search return summaries rather than
+    bodies, so such a concept rendered as its own path twice and none of the knowledge — the
+    agent that wrote it, and every later reader, had to fetch each generated file to find out
+    what any of them said.
+    """
+
+    def test_an_authored_concept_shows_its_knowledge_in_a_listing(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "The orders table is rebuilt nightly at 02:00 UTC.", "metadata": {"source": "agent"}}])
+
+        listing = manager.format_results(manager.browse("generated"))
+        assert "The orders table is rebuilt nightly at 02:00 UTC." in listing
+
+    def test_the_derived_title_also_gives_the_synthesised_path_a_meaningful_slug(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "Refunds are processed weekly.", "metadata": {}}])
+
+        assert ids(manager.browse("generated"))[0].startswith("generated/refunds-are-processed-weekly-")
+
+    def test_a_caller_supplied_title_is_never_overwritten(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "a long body that is not the title", "metadata": {"title": "Chosen"}}])
+
+        assert manager.fetch(ids(manager.browse("generated")))[0]["metadata"]["title"] == "Chosen"
+
+    def test_a_record_naming_an_id_gains_no_title(self, tmp_path):
+        # The round-trip invariant: a fetched concept written back must gain no frontmatter its
+        # curator did not write, so titling is scoped to the concepts this backend authors.
+        manager = make_manager(tmp_path, {"u.md": "---\ntype: Note\n---\n\nbody\n"}, refresh_seconds=None)
+        manager.write([manager.fetch(["u.md"])[0]])
+
+        assert "title" not in yaml.safe_load((tmp_path / "u.md").read_text(encoding="utf-8").split("---\n")[1])
+
+    def test_a_long_first_line_is_clipped_at_a_word_boundary(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "The warehouse rebuild pipeline reruns every upstream extraction job before it loads anything", "metadata": {}}])
+
+        title = manager.fetch(ids(manager.browse("generated")))[0]["metadata"]["title"]
+        assert title.endswith("…") and len(title) <= 73 and " " not in title[-2:]
+
+    def test_markdown_markers_and_blank_lines_are_not_taken_for_the_title(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "\n\n## Nightly rebuild\n\nbody\n", "metadata": {}}])
+
+        assert manager.fetch(ids(manager.browse("generated")))[0]["metadata"]["title"] == "Nightly rebuild"
+
+    def test_a_body_with_no_words_leaves_the_concept_untitled(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "   \n\n", "metadata": {}}])
+
+        assert "title" not in manager.fetch(ids(manager.browse("generated")))[0]["metadata"]
+
+
+class TestToolTransportKeysAreNotFrontmatter:
+    """`write_kb` carries a backend-specific write statement in `query`/`params`. An OKF bundle
+    has no query language and ignores both, so they are the tool's transport rather than the
+    concept's content — left unreserved they were written into the document as frontmatter,
+    contradicting the tool's own docstring."""
+
+    def test_query_and_params_do_not_reach_the_document(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "a fact", "metadata": {"source": "agent", "query": "MATCH (n) RETURN n", "params": {"a": 1}}}])
+
+        written = ids(manager.browse("generated"))[0]
+        frontmatter = yaml.safe_load((tmp_path / written).read_text(encoding="utf-8").split("---\n")[1])
+        assert not {"query", "params"} & set(frontmatter)
+
+    def test_unknown_metadata_is_still_carried(self, tmp_path):
+        # The reservation is specific: it must not become a general filter on caller extras.
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "a fact", "metadata": {"row_count": 0, "owner": "data-eng"}}])
+
+        written = ids(manager.browse("generated"))[0]
+        frontmatter = yaml.safe_load((tmp_path / written).read_text(encoding="utf-8").split("---\n")[1])
+        assert frontmatter["row_count"] == 0 and frontmatter["owner"] == "data-eng"
+
+    def test_a_supplied_id_without_the_markdown_suffix_still_survives_the_next_walk(self, tmp_path):
+        # The write-through makes any path visible immediately, so only a rewalk proves the
+        # document is really in the bundle rather than an orphan the walk declines to read.
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "body", "metadata": {"id": "notes/decision", "type": "Note"}}])
+
+        assert ids(manager.fetch(["notes/decision.md"])) == ["notes/decision.md"]
+        assert "notes/decision.md" in manager.reload().concepts
+
+    def test_a_supplied_id_naming_a_reserved_file_is_refused(self, tmp_path):
+        # index.md is a directory's curated listing, not a concept slot.
+        manager = make_manager(tmp_path)
+        with pytest.raises(KnowledgePathError, match="reserved OKF file"):
+            manager.write([{"text": "x", "metadata": {"id": "tables/index.md"}}])
+
+    def test_a_comma_in_a_supplied_id_is_refused(self, tmp_path):
+        manager = make_manager(tmp_path)
+        with pytest.raises(KnowledgePathError, match="may not contain"):
+            manager.write([{"text": "x", "metadata": {"id": "tables/a,b.md"}}])
+
+    def test_a_comma_bearing_path_already_in_the_bundle_is_skipped_by_the_walk(self, tmp_path):
+        # The other end of the same rule: every id this backend hands out must round-trip
+        # through the fetch tool's comma-separated list.
+        manager = make_manager(tmp_path, {"a,b.md": ORDERS_DB, "fine.md": ORDERS_DB})
+        assert ids(manager.browse("")) == ["fine.md"]
+        assert any(d.code == DiagnosticCode.COMMA_IN_PATH.value for d in manager._ensure_manifest().diagnostics)
+
+    def test_an_escaping_id_is_refused(self, tmp_path):
+        with pytest.raises(KnowledgePathError, match="escapes the store namespace"):
+            make_manager(tmp_path).write([{"text": "x", "metadata": {"id": "../escape.md"}}])
+
+    def test_a_read_only_backend_refuses_before_any_io(self, tmp_path):
+        store = LocalDocumentStore(write_bundle(tmp_path, BUNDLE), writable=False)
+        with pytest.raises(KnowledgeCapabilityError, match="does not support capability: write"):
+            OKFManager(store).write([{"text": "x", "metadata": {"id": "a.md"}}])
+
+    def test_the_emitted_document_is_conformant_with_a_fixed_key_order(self, tmp_path):
+        root = write_bundle(tmp_path, BUNDLE)
+        manager = OKFManager(LocalDocumentStore(root, writable=True), write_actor="process:demo")
+        metadata = {"id": "n.md", "type": "Note", "title": "T", "description": "D", "tags": ["x"], "status": "stable", "owner": "me"}
+        manager.write([{"text": "Body.", "metadata": metadata}])
+
+        document = (tmp_path / "n.md").read_text(encoding="utf-8")
+        frontmatter = yaml.safe_load(document.split("---\n")[1])
+        assert list(frontmatter) == ["type", "title", "description", "tags", "status", "generated", "owner"]
+        assert document.endswith("---\n\nBody.")
+
+    def test_a_missing_type_falls_back_to_note_because_type_is_the_conformance_bar(self, tmp_path):
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "b", "metadata": {"id": "n.md", "title": "T"}}])
+        assert manager.fetch(["n.md"])[0]["metadata"]["kind"] == "Note"
+
+    def test_the_producer_is_stamped_and_defaults_to_the_installed_package(self, tmp_path):
+        default = make_manager(tmp_path)
+        default.write([{"text": "b", "metadata": {"id": "a.md"}}])
+        stamped = yaml.safe_load((tmp_path / "a.md").read_text(encoding="utf-8").split("---\n")[1])
+        assert stamped["generated"]["by"].startswith("agentkernel/")
+        assert stamped["generated"]["at"].endswith("+00:00")
+
+    def test_the_provenance_stamp_is_the_backends_to_make_not_the_callers(self, tmp_path):
+        root = write_bundle(tmp_path, BUNDLE)
+        manager = OKFManager(LocalDocumentStore(root, writable=True), write_actor="process:demo")
+        manager.write([{"text": "x", "metadata": {"id": "g.md", "generated": {"by": "someone-else", "at": "1999-01-01"}}}])
+
+        stamped = yaml.safe_load((tmp_path / "g.md").read_text(encoding="utf-8").split("---\n")[1])
+        assert stamped["generated"]["by"] == "process:demo"
+        assert stamped["generated"]["at"] != "1999-01-01"
+
+    def test_a_caller_cannot_mint_its_own_trust_tier(self, tmp_path):
+        # derive_trust reads `verified` and nothing else, so a writer able to supply it could
+        # promote its own output to the tier a human reviewer is supposed to confer.
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "x", "metadata": {"id": "v.md", "verified": [{"by": "human:nobody"}]}}])
+
+        assert manager.fetch(["v.md"])[0]["metadata"]["trust"] == TrustTier.UNVERIFIED.value
+        assert "verified" not in (tmp_path / "v.md").read_text(encoding="utf-8")
+
+    def test_two_writes_of_the_same_content_differ_only_in_the_generated_stamp(self, tmp_path):
+        manager = make_manager(tmp_path, write_actor="process:demo")
+        record = {"text": "Body.", "metadata": {"id": "n.md", "type": "Note", "title": "T"}}
+        manager.write([record])
+        first = (tmp_path / "n.md").read_text(encoding="utf-8")
+        manager.write([record])
+        second = (tmp_path / "n.md").read_text(encoding="utf-8")
+
+        def without_stamp(text: str) -> str:
+            return "\n".join(line for line in text.splitlines() if "at:" not in line)
+
+        assert without_stamp(first) == without_stamp(second)
+
+
+class TestFetchWriteRoundTrip:
+    """Enriching a concept means fetching it and writing it back, and `_write_path` honours the
+    id, so that write lands on the file it came from. Anything the round-trip fails to carry is
+    not merely absent from the new record — it is deleted from the bundle."""
+
+    def test_a_fetched_concept_written_back_keeps_its_type(self, tmp_path):
+        # The read side emits the type as `kind`; reading only `type` on the way back out
+        # retyped the document to the default and overwrote the original with it.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([manager.fetch(["tables/orders.md"])[0]])
+
+        assert manager.fetch(["tables/orders.md"])[0]["metadata"]["kind"] == "BigQuery Table"
+
+    def test_a_round_trip_preserves_every_frontmatter_family(self, tmp_path):
+        # The conformance rules forbid dropping an unrecognised key, and a round-trip that
+        # overwrites the file it read is exactly where dropping one deletes it from the bundle.
+        manager = make_manager(tmp_path, {"t.md": ATTESTED}, refresh_seconds=None)
+        manager.write([manager.fetch(["t.md"])[0]])
+
+        frontmatter = yaml.safe_load((tmp_path / "t.md").read_text(encoding="utf-8").split("---\n")[1])
+        assert frontmatter["type"] == "Attested Computation"
+        assert frontmatter["title"] == "Revenue check"
+        assert frontmatter["description"] == "the check"
+        assert frontmatter["resource"] == "bq://p/d/t"
+        assert frontmatter["tags"] == ["sales"]
+        assert frontmatter["status"] == "stable"
+        assert frontmatter["stale_after"] == "2030-01-01T00:00:00+00:00"
+        assert frontmatter["sources"] == [{"by": "etl"}]
+        assert frontmatter["runtime"] == "python:3.12"  # the computation family
+        assert frontmatter["owner"] == "analytics"  # an unrecognised key, carried through `extra`
+
+    def test_a_round_trip_preserves_a_false_or_zero_frontmatter_value(self, tmp_path):
+        # Carrying only truthy values dropped `deprecated: false` and `row_count: 0` from the
+        # fetched record, and writing that record back then deleted both keys from the document.
+        # An empty value is still left out, so a concept that had none gains no empty key.
+        source = "---\ntype: Note\ntitle: Counts\ndeprecated: false\nrow_count: 0\nnote: ''\n---\n\nbody\n"
+        manager = make_manager(tmp_path, {"t.md": source}, refresh_seconds=None)
+        manager.write([manager.fetch(["t.md"])[0]])
+
+        frontmatter = yaml.safe_load((tmp_path / "t.md").read_text(encoding="utf-8").split("---\n")[1])
+        assert frontmatter["deprecated"] is False
+        assert frontmatter["row_count"] == 0
+        assert "note" not in frontmatter
+
+    def test_a_round_trip_is_byte_identical_apart_from_the_generated_stamp(self, tmp_path, monkeypatch):
+        # The stamp has one-second resolution and is the one field a re-write is allowed to
+        # move, so comparing raw documents passed only while both writes happened to land inside
+        # the same wall-clock second. The clock is stepped across a second boundary here, which
+        # is what the assertion is meant to tolerate and everything else is meant to survive.
+        first_at = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        monkeypatch.setattr(manager_module, "datetime", SteppingCalendar(first_at, first_at + timedelta(seconds=1)))
+
+        manager = make_manager(tmp_path, {"t.md": ATTESTED}, refresh_seconds=None, write_actor="process:demo")
+        manager.write([manager.fetch(["t.md"])[0]])
+        first = (tmp_path / "t.md").read_text(encoding="utf-8")
+        manager.write([manager.fetch(["t.md"])[0]])
+        second = (tmp_path / "t.md").read_text(encoding="utf-8")
+
+        assert without_stamp(second) == without_stamp(first)
+        assert "at: '2024-01-01T00:00:00+00:00'" in first
+        assert "at: '2024-01-01T00:00:01+00:00'" in second
+
+    def test_an_untitled_concept_does_not_gain_its_own_path_as_a_title(self, tmp_path):
+        # The record's display title used to fall back to the path, which write() then persisted.
+        manager = make_manager(tmp_path, {"u.md": "---\ntype: Note\n---\n\nbody\n"}, refresh_seconds=None)
+        manager.write([manager.fetch(["u.md"])[0]])
+
+        assert "title" not in yaml.safe_load((tmp_path / "u.md").read_text(encoding="utf-8").split("---\n")[1])
+
+    def test_a_round_trip_persists_no_derived_signal_as_frontmatter(self, tmp_path):
+        # trust and stale are advisory answers this backend computes, and `source`/`kind`/`links`
+        # are record shape. Writing any of them back would forge state a curator never wrote.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([manager.fetch(["tables/orders.md"])[0]])
+
+        frontmatter = yaml.safe_load((tmp_path / "tables" / "orders.md").read_text(encoding="utf-8").split("---\n")[1])
+        assert not {"source", "kind", "trust", "stale", "links"} & set(frontmatter)
+
+    def test_repeated_round_trips_do_not_grow_the_body(self, tmp_path):
+        # The parsed body already carries the blank line after the frontmatter, so re-adding one
+        # per write appended a line to the document on every cycle.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([manager.fetch(["tables/orders.md"])[0]])
+        first = (tmp_path / "tables" / "orders.md").read_text(encoding="utf-8")
+        manager.write([manager.fetch(["tables/orders.md"])[0]])
+
+        assert (tmp_path / "tables" / "orders.md").read_text(encoding="utf-8").count("\n") == first.count("\n")
+
+    def test_a_structural_record_kind_is_never_read_as_a_concept_type(self, tmp_path):
+        # browse hands the agent index and directory records whose `kind` is the bundle's own
+        # structure, not an OKF type; writing one back must fall to the default.
+        manager = make_manager(tmp_path)
+        manager.write([{"text": "b", "metadata": {"id": "n.md", "kind": "directory"}}])
+
+        assert manager.fetch(["n.md"])[0]["metadata"]["kind"] == _DEFAULT_CONCEPT_TYPE
+
+
+class TestWriteThrough:
+    def test_a_written_concept_is_visible_immediately_with_refresh_disabled(self, tmp_path):
+        # refresh_seconds=None is the point: visibility can only come from the write itself.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([{"text": "Body.", "metadata": {"id": "tables/new.md", "type": "Note", "title": "New"}}])
+
+        assert ids(manager.fetch(["tables/new.md"])) == ["tables/new.md"]
+        assert "tables/new.md" in ids(manager.browse("datasets") + manager.search("New", limit=10))
+        assert manager._derived_schema()["concept_count"] == 4
+
+    def test_the_write_through_retains_no_body_in_the_manifest(self, tmp_path):
+        # The manifest bounds its memory at a body-token index per concept. A write-through
+        # parsed with a complete body escaped that bound, permanently with refresh_seconds=None.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([{"text": "zebra " * 4000, "metadata": {"id": "n.md", "type": "Note", "title": "Zebra"}}])
+
+        assert manager._manifest.concepts["n.md"].body is None
+        assert ids(manager.search("zebra")) == ["n.md"]
+        assert "zebra" in manager.fetch(["n.md"])[0]["text"]
+
+    def test_a_write_replaces_the_manifest_entry_at_that_path(self, tmp_path):
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        manager.write([{"text": "b", "metadata": {"id": "tables/orders.md", "type": "Note", "title": "Replaced"}}])
+        assert manager.fetch(["tables/orders.md"])[0]["metadata"]["title"] == "Replaced"
+
+
+class TestWriteBatching:
+    def test_a_bad_id_fails_the_batch_before_any_of_it_is_written(self, tmp_path):
+        # Paths used to be resolved inside the write loop, so the records ahead of a bad id were
+        # already durable when it raised — and write_kb reports the whole call as failed.
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        records = [
+            {"text": "a", "metadata": {"id": "first.md", "type": "Note", "title": "First"}},
+            {"text": "b", "metadata": {"id": "../escape.md"}},
+        ]
+
+        with pytest.raises(KnowledgePathError):
+            manager.write(records)
+        assert not (tmp_path / "first.md").exists()
+
+    def test_a_refresh_landing_mid_write_does_not_discard_the_write_through(self, tmp_path):
+        # The write-through used to be applied to the manifest captured when write() began, so a
+        # refresh replacing it meanwhile threw the new concept away until the next walk.
+        store = RefreshingStore(write_bundle(tmp_path, BUNDLE))
+        manager = OKFManager(store, refresh_seconds=None)
+        store.manager = manager
+
+        manager.write([{"text": "Body.", "metadata": {"id": "n.md", "type": "Note", "title": "Zebra"}}])
+
+        assert ids(manager.search("Zebra")) == ["n.md"]
+
+
+class TestBoundedWalkReads:
+    """The walk reads one bounded prefix per concept, so a second unbounded read is a real
+    cost — over S3, another GET per object on every refresh."""
+
+    def test_a_document_that_opened_no_frontmatter_block_is_not_re_read_in_full(self, tmp_path):
+        # `split_frontmatter` finds no block for frontmatter past the window and for a document
+        # that never opened one. Re-reading on the second cost a full read of every plain note.
+        store = WholeReadCountingStore(write_bundle(tmp_path, BUNDLE))
+        OKFManager(store)
+
+        # Only the curated indexes earn a whole read; log.md is recorded without being parsed.
+        assert store.whole_reads == ["index.md", "tables/index.md"]
+
+    def test_frontmatter_running_past_the_window_is_still_re_read_in_full(self, tmp_path):
+        padding = "x" * (FRONTMATTER_MAX_BYTES + BODY_INDEX_MAX_BYTES)
+        padded = f"---\ntype: Note\ntitle: Padded\npadding: '{padding}'\n---\n\nbody\n"
+        store = WholeReadCountingStore(write_bundle(tmp_path, {"big.md": padded}))
+        manager = OKFManager(store)
+
+        assert store.whole_reads == ["big.md"]
+        assert ids(manager.search("Padded")) == ["big.md"]
+
+
+class TestUnreadableDocuments:
+    """One file the store refuses costs that file, never the bundle. The walk runs from
+    __init__, so an exception escaping it takes the whole capability down at construction —
+    and the two refusals that matter in production are not related by type: a local file mode
+    raises PermissionError, while an S3 key the pod's role cannot get raises a botocore
+    ClientError, which is no OSError at all."""
+
+    @pytest.mark.parametrize(
+        "error",
+        [PermissionError(13, "Permission denied"), RuntimeError("AccessDenied")],
+        ids=["oserror", "non-oserror"],
+    )
+    def test_an_unreadable_concept_is_a_diagnostic_and_the_rest_of_the_bundle_loads(self, tmp_path, error):
+        class RefusingStore(LocalDocumentStore):
+            def read_prefix_bytes(self, path: str, max_bytes: int) -> bytes:
+                if path == "bad.md":
+                    raise error
+                return super().read_prefix_bytes(path, max_bytes)
+
+        files = {"good.md": "---\ntype: Note\ntitle: Good\n---\n\nbody\n", "bad.md": "---\ntype: Note\n---\n\nbody\n"}
+        manager = OKFManager(RefusingStore(write_bundle(tmp_path, files)))
+
+        assert ids(manager.browse()) == ["good.md"]
+        assert [(d.path, d.code) for d in manager.reload().diagnostics] == [("bad.md", DiagnosticCode.UNREADABLE.value)]
+
+    def test_an_unreadable_index_leaves_the_directory_listable(self, tmp_path):
+        # The whole-read branch of the same guard: a curated listing that cannot be read falls
+        # back to the derived one rather than aborting the walk.
+        class RefusingStore(LocalDocumentStore):
+            def read_bytes(self, path: str) -> bytes:
+                if path == "index.md":
+                    raise PermissionError(13, "Permission denied")
+                return super().read_bytes(path)
+
+        files = {"index.md": "curated listing\n", "a.md": "---\ntype: Note\ntitle: A\n---\n\nbody\n"}
+        manager = OKFManager(RefusingStore(write_bundle(tmp_path, files)))
+
+        assert ids(manager.browse()) == ["a.md"]
+
+
+class TestConcurrentReadsAndWrites:
+    def test_a_write_landing_during_a_search_does_not_break_the_iteration(self, tmp_path):
+        # The write-through took the refresh lock, but `search` and `_derived_schema` iterate the
+        # manifest without one — and the tools KnowledgeBuilder emits are sync callables a
+        # framework runs on a thread pool. Growing that dict in place under a live iterator
+        # raises RuntimeError("dictionary changed size during iteration").
+        manager = make_manager(tmp_path, refresh_seconds=None)
+        failures: list[Exception] = []
+        stop = threading.Event()
+
+        def read_until_stopped() -> None:
+            while not stop.is_set():
+                try:
+                    manager.search("orders sales")
+                    manager.schema()
+                except Exception as error:
+                    failures.append(error)
+                    stop.set()
+
+        readers = [threading.Thread(target=read_until_stopped) for _ in range(2)]
+        for reader in readers:
+            reader.start()
+        try:
+            for index in range(200):
+                manager.write([{"text": "body", "metadata": {"id": f"w{index}.md", "type": "Note", "title": "Orders"}}])
+        finally:
+            stop.set()
+            for reader in readers:
+                reader.join()
+
+        assert failures == []
+
+
+class TestRefreshAndConcurrency:
+    def test_the_manifest_is_not_rewalked_inside_the_interval(self, tmp_path, monkeypatch):
+        clock = FakeClock()
+        monkeypatch.setattr(manager_module, "time", clock)
+        store = CountingStore(write_bundle(tmp_path, BUNDLE))
+        manager = OKFManager(store, refresh_seconds=300)
+
+        clock.advance(299)
+        manager.search("orders")
+        assert store.list_calls == 1
+
+    def test_the_first_call_past_the_interval_pays_the_walk(self, tmp_path, monkeypatch):
+        clock = FakeClock()
+        monkeypatch.setattr(manager_module, "time", clock)
+        store = CountingStore(write_bundle(tmp_path, BUNDLE))
+        manager = OKFManager(store, refresh_seconds=300)
+
+        clock.advance(301)
+        manager.search("orders")
+        assert store.list_calls == 2
+
+    def test_refresh_none_never_rewalks(self, tmp_path, monkeypatch):
+        clock = FakeClock()
+        monkeypatch.setattr(manager_module, "time", clock)
+        store = CountingStore(write_bundle(tmp_path, BUNDLE))
+        manager = OKFManager(store, refresh_seconds=None)
+
+        clock.advance(100_000)
+        manager.search("orders")
+        assert store.list_calls == 1
+
+    def test_a_failed_refresh_serves_the_previous_manifest_and_resets_the_clock(self, tmp_path, monkeypatch):
+        clock = FakeClock()
+        monkeypatch.setattr(manager_module, "time", clock)
+        store = CountingStore(write_bundle(tmp_path, BUNDLE), fail_after_first=True)
+        manager = OKFManager(store, refresh_seconds=300)
+
+        clock.advance(301)
+        assert ids(manager.search("revenue")) == ["tables/orders.md"]
+        assert store.list_calls == 2
+
+        # The clock reset means an outage costs one attempt per interval, not one per call.
+        manager.search("revenue")
+        assert store.list_calls == 2
+
+    def test_an_initial_load_failure_propagates_rather_than_serving_an_empty_bundle(self, tmp_path):
+        store = CountingStore(write_bundle(tmp_path, BUNDLE), fail_after_first=True)
+        store.list_calls = 1  # the next call is the "second" and therefore fails
+        with pytest.raises(OSError, match="store is unavailable"):
+            OKFManager(store)
+
+    def test_reload_forces_a_walk_regardless_of_the_interval(self, tmp_path):
+        store = CountingStore(write_bundle(tmp_path, BUNDLE))
+        manager = OKFManager(store, refresh_seconds=None)
+        manager.reload()
+        assert store.list_calls == 2
+
+    def test_two_concurrent_callers_crossing_the_boundary_produce_one_walk(self, tmp_path, monkeypatch):
+        clock = FakeClock()
+        monkeypatch.setattr(manager_module, "time", clock)
+        store = CountingStore(write_bundle(tmp_path, BUNDLE), walk_delay=0.3)
+        manager = OKFManager(store, refresh_seconds=300)
+        clock.advance(301)
+
+        barrier = threading.Barrier(2)
+
+        def call() -> None:
+            barrier.wait(timeout=5)
+            manager.search("orders")
+
+        threads = [threading.Thread(target=call) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        # The loser is served the current manifest rather than blocking on the winner's walk.
+        assert store.list_calls == 2
+
+
+class TestTruncation:
+    def test_max_concepts_keeps_a_lexicographic_prefix_and_says_so(self, tmp_path):
+        files = {f"c{index:02d}.md": ORDERS_DB for index in range(6)}
+        manager = make_manager(tmp_path, files, max_concepts=3)
+        manifest = manager._ensure_manifest()
+
+        assert sorted(manifest.concepts) == ["c00.md", "c01.md", "c02.md"]
+        assert manifest.truncated is True
+        assert any(d.code == DiagnosticCode.TRUNCATED.value for d in manifest.diagnostics)
+        assert manager._derived_schema()["truncated"] is True
+
+    def test_truncation_drops_concepts_without_abandoning_later_reserved_files(self, tmp_path):
+        # store.list() is globally lexicographic, so a bundle whose concepts live under `aaa/`
+        # hits the cap before the root index.md, which a `break` would never read.
+        files = {"aaa/c00.md": ORDERS_DB, "aaa/c01.md": CUSTOMERS, "index.md": BUNDLE["index.md"]}
+        manager = make_manager(tmp_path, files, max_concepts=1)
+        manifest = manager._ensure_manifest()
+
+        assert manifest.truncated is True
+        assert manifest.okf_version == "0.2"
+        assert manifest.index_files == {"": "index.md"}
+        assert ids(manager.browse("")) == ["index.md"]
+        # One diagnostic for the bundle, not one per concept past the cap.
+        assert len([d for d in manifest.diagnostics if d.code == DiagnosticCode.TRUNCATED.value]) == 1
+
+    def test_a_skipped_file_does_not_consume_the_budget(self, tmp_path):
+        files = {"a.md": "no frontmatter\n", "b.md": ORDERS_DB, "c.md": CUSTOMERS}
+        manifest = make_manager(tmp_path, files, max_concepts=2)._ensure_manifest()
+        assert sorted(manifest.concepts) == ["b.md", "c.md"]
+        assert manifest.truncated is False
+
+
+class TestTrustAndStaleness:
+    STALE_BUNDLE = {
+        "one.md": "---\ntype: Note\ntitle: Alpha\nstale_after: 2000-01-01T00:00:00Z\n---\nalpha body\n",
+        "two.md": "---\ntype: Note\ntitle: Alpha Two\nstale_after: 2000-01-01T00:00:00Z\n---\nalpha body\n",
+    }
+
+    def test_a_wholly_stale_unverified_bundle_still_answers_every_operation(self, tmp_path):
+        manager = make_manager(tmp_path, self.STALE_BUNDLE)
+        assert ids(manager.search("alpha", limit=10)) == ["one.md", "two.md"]
+        assert ids(manager.browse("")) == ["one.md", "two.md"]
+        assert ids(manager.fetch(["one.md", "two.md"])) == ["one.md", "two.md"]
+
+    def test_the_signals_ride_on_the_records_instead(self, tmp_path):
+        metadata = make_manager(tmp_path, self.STALE_BUNDLE).search("alpha")[0]["metadata"]
+        assert metadata["stale"] is True
+        assert metadata["trust"] == TrustTier.UNVERIFIED.value
+
+
+class TestDescriptionAndFormatting:
+    def test_diagnostics_are_surfaced_in_the_description_not_swallowed(self, tmp_path):
+        description = make_manager(tmp_path).get_description()
+        assert description.startswith("okf: Open Knowledge Format bundle")
+        assert "bundle diagnostic(s); first:" in description
+
+    def test_a_clean_bundle_describes_itself_plainly(self, tmp_path):
+        assert make_manager(tmp_path, {"a.md": ORDERS_DB}).get_description() == "okf: Open Knowledge Format bundle"
+
+    def test_format_results_carries_the_text_and_the_routing_signals(self, tmp_path):
+        manager = make_manager(tmp_path)
+        rendered = manager.format_results(manager.search("revenue"))
+        assert rendered == "- [tables/orders.md] Orders — BigQuery Table · trust=human-reviewed: One row per completed purchase."
+
+    def test_a_fetched_body_reaches_the_prompt_verbatim(self, tmp_path):
+        manager = make_manager(tmp_path)
+        rendered = manager.format_results(manager.fetch(["tables/orders.md"]))
+        header, _, body = rendered.partition("\n")
+        assert header == "- [tables/orders.md] Orders — BigQuery Table · trust=human-reviewed"
+        assert body == "# Schema\nFK to [customers](/tables/customers.md)."
+
+    def test_a_record_with_no_type_or_tier_renders_no_empty_signals(self, tmp_path):
+        manager = make_manager(tmp_path)
+        rendered = manager.format_results(manager.browse("datasets"))
+        assert rendered == "- [datasets/orders_db.md] Orders DB — Dataset · trust=unverified"
+
+    def test_a_stale_record_is_marked(self, tmp_path):
+        manager = make_manager(tmp_path, TestTrustAndStaleness.STALE_BUNDLE)
+        assert manager.format_results(manager.search("alpha", limit=1)).endswith("· STALE")
+
+    def test_an_empty_result_says_so(self, tmp_path):
+        assert make_manager(tmp_path).format_results([]) == "No relevant knowledge found."
+
+
+class TestStoreComposition:
+    def test_close_delegates_to_the_store_and_tolerates_repeat_calls(self, tmp_path):
+        closed = []
+        store = LocalDocumentStore(write_bundle(tmp_path, BUNDLE), writable=True)
+        store.close = lambda: closed.append(1)
+
+        manager = OKFManager(store)
+        manager.close()
+        manager.close()
+        assert closed == [1, 1]
+
+    def test_the_store_is_reachable_for_a_caller_that_needs_it(self, tmp_path):
+        manager = make_manager(tmp_path)
+        assert manager.store.exists("tables/orders.md") is True
