@@ -27,3 +27,8 @@ execution:
     dynamodb:
       table_name: ""   # injected by Terraform via AK_EXECUTION__RESPONSE_STORE__DYNAMODB__TABLE_NAME
       ttl: 300
+
+secret:
+  provider:
+    type: aws_ssm
+  # prefix is injected by Terraform as AK_SECRET__PREFIX

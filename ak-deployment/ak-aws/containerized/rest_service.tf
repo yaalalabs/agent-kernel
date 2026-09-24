@@ -28,6 +28,8 @@ module "rest_service" {
   dynamodb_thread_table_arn      = local.dynamodb_thread_table_arn
   dynamodb_thread_table_name     = local.dynamodb_thread_table_name
   enable_scheduling              = var.enable_scheduling
+  ssm_enabled                    = var.ssm_enabled
+  account_id                     = data.aws_caller_identity.current.account_id
   schedule_group_name            = local.schedule_group_name
   scheduler_execution_role_arn   = local.scheduler_execution_role_arn
   create_dynamodb_schedule_table = var.create_dynamodb_schedule_table

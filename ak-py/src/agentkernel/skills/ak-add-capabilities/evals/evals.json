@@ -1,6 +1,6 @@
 {
   "skill": "ak-add-capabilities",
-  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, scheduled tasks, sandbox) skill",
+  "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, scheduled tasks, sandbox, secret resolution) skill",
   "version": "0.9.2",
   "evals": [
     {
@@ -453,6 +453,20 @@
       ],
       "must_not_contain": [
         "type: local"
+      ]
+    },
+    {
+      "id": "cap-secret-aws-ssm",
+      "name": "Resolve secrets from AWS SSM Parameter Store",
+      "input": "Read my OPENAI_API_KEY from AWS SSM Parameter Store instead of an environment variable",
+      "expected_outputs": [
+        "secret:",
+        "type: aws_ssm",
+        "prefix",
+        "SecretManager",
+        "OPENAI_API_KEY",
+        "agentkernel[",
+        "aws"
       ]
     }
   ]

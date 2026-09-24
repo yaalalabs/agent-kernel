@@ -1244,6 +1244,45 @@ Relevant outputs: `schedule_group_name`, `schedule_group_arn`, `scheduler_execut
 
 For the application side see the [Scheduling guide](../advanced/scheduling.md).
 
+### Secret Resolution (SSM Parameter Store)
+
+Application secrets such as `OPENAI_API_KEY` can be read from AWS SSM Parameter Store instead of being
+passed through Terraform as environment variables. One variable, `false` by default and fully
+`count`-gated, turns on the infrastructure:
+
+| Variable | Description | Type | Default |
+|---|---|---|---|
+| `ssm_enabled` | Grant every Lambda role (request handler, agent runner, response handler, WebSocket connection handler) `ssm:GetParameter` (and nothing else) on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>` | `bool` | `false` |
+
+```hcl
+ssm_enabled = true
+```
+
+**Terraform is only half of it.** The module never injects `secret.provider.type`; the application's
+`config.yaml` must declare the backend:
+
+```yaml
+secret:
+  provider:
+    type: aws_ssm
+```
+
+Terraform does not create the parameters either, so the key never passes through Terraform state. Create
+each one yourself as a `SecureString` (AWS-managed `alias/aws/ssm` key), named after the key lowercased
+under the prefix:
+
+```bash
+aws ssm put-parameter --name "/ak/<prefix>/openai_api_key" \
+    --type SecureString --value "$OPENAI_API_KEY" --overwrite
+```
+
+Do not also inject the key as an environment variable: a set, non-empty environment variable always wins
+over SSM.
+
+For the full example see [examples/aws-serverless/openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai),
+and for the application side (resolution order, caching, rotation) see the
+[Secret Resolution guide](../advanced/secrets.md).
+
 ## Cost Optimization
 
 ### Lambda Configuration
@@ -1480,7 +1519,7 @@ CloudWatch metrics automatically available:
 | [scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) | `rest_sync` / `rest_async` | Yes | REST API with SQS-backed queue processing |
 | [websocket-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai) | `async` | Yes | Full-response WebSocket delivery |
 | [streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) | `stream` | Yes | Event streaming over WebSocket with `ServerlessStreamAgentRunner` |
-| [openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai) | `rest_sync` | Yes | REST API with SQS-backed queue processing; also the base deployment the weekly integration test pipeline's other `aws-serverless` examples reuse the VPC/subnets/security groups of |
+| [openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai) | `rest_sync` | Yes | REST API with SQS-backed queue processing, with the OpenAI key read from SSM Parameter Store (`ssm_enabled`); also the base deployment the weekly integration test pipeline's other `aws-serverless` examples reuse the VPC/subnets/security groups of |
 | [schedule-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai) | `rest_sync` | Yes | Deferred and recurring chats on EventBridge Scheduler with a DynamoDB schedule store |
 
 See [examples/aws-serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless) for all available examples.

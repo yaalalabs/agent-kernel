@@ -111,6 +111,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 - **Pre/Post Execution Hooks** — Inject policy checks, RAG context, redaction, or moderation around every agent call.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
 - **Observability** — LangFuse, OpenLLMetry, and Pydantic Logfire tracing with a single config line.
+- **Secret Resolution** — Resolve API keys from the environment locally and from AWS SSM Parameter Store in production via `SecretManager`, with only `config.yaml` changing.
 - **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.
 
 ### 📦 Sandboxed Code Execution

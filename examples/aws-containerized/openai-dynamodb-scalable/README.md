@@ -56,11 +56,16 @@ Both modes use the same 2-image architecture (REST Service + Agent Runner) with 
 
 1. Configure environment variables:
     ```bash
-    export TF_VAR_openai_api_key=<OPENAI_API_KEY>
     export TF_VAR_vpc_id=<VPC_ID>
     export TF_VAR_private_subnet_ids='["subnet-xxx","subnet-yyy"]'
     export TF_VAR_prefix="ak-oai-scl-ecs-dev-scalable"
     export TF_VAR_region="us-east-1"
+    ```
+    Then store the OpenAI API key in SSM Parameter Store (see [Secrets from SSM Parameter Store](#secrets-from-ssm-parameter-store)).
+    The key never passes through Terraform:
+    ```bash
+    aws ssm put-parameter --name "/ak/$TF_VAR_prefix/openai_api_key" \
+        --type SecureString --value "$OPENAI_API_KEY" --overwrite
     ```
 
 2. Build the deployment packages:
@@ -72,6 +77,29 @@ Both modes use the same 2-image architecture (REST Service + Agent Runner) with 
     ```bash
     cd deploy && ./deploy.sh
     ```
+
+## Secrets from SSM Parameter Store
+
+The deployment sets `ssm_enabled = true`, which grants both ECS task roles (REST service and agent
+runner) `ssm:GetParameter` (and nothing else) on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX`.
+`config.yaml` declares `secret.provider.type: aws_ssm`, and `app_agent_runner.py` resolves the key
+at startup (`app_rest_service.py` never calls the model, so it needs no key):
+
+```python
+set_default_openai_key(SecretManager.current().get("OPENAI_API_KEY"))
+```
+
+- **Resolution order:** a set, non-empty `OPENAI_API_KEY` environment variable still wins (handy
+  for local runs); the deployment does not inject one, so on ECS the key comes from SSM.
+- **Naming:** the key is the SDK's own variable name, lowercased under the deployment prefix —
+  `OPENAI_API_KEY` → `/ak/<prefix>/openai_api_key`.
+- **Terraform does not create the parameter.** Create it as a `SecureString` with the AWS-managed
+  `alias/aws/ssm` key, as shown above.
+- **Rotation:** overwrite the parameter with `aws ssm put-parameter ... --overwrite`. The key is
+  handed to the SDK once, when an agent runner task starts, so roll the service to pick it up:
+  ```bash
+  aws ecs update-service --cluster <prefix> --service <prefix>-agent-runner --force-new-deployment
+  ```
 
 ## Testing the Deployment
 

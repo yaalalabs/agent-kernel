@@ -539,6 +539,8 @@ module "ws_connection_handler" {
     )
   })
   websocket_connection_table_arn = local.websocket_connection_table_arn
+  account_id                     = data.aws_caller_identity.current.account_id
+  ssm_enabled                    = var.ssm_enabled
 }
 
 module "request_handler" {
@@ -604,6 +606,7 @@ module "request_handler" {
   # requires queue_mode anyway.
   account_id                     = data.aws_caller_identity.current.account_id
   enable_scheduling              = var.enable_scheduling
+  ssm_enabled                    = var.ssm_enabled
   schedule_group_name            = local.schedule_group_name
   scheduler_execution_role_arn   = local.scheduler_execution_role_arn
   create_dynamodb_schedule_table = var.create_dynamodb_schedule_table
@@ -666,6 +669,7 @@ module "agent_runner" {
   dynamodb_thread_table_name              = local.dynamodb_thread_table_name
   account_id                              = data.aws_caller_identity.current.account_id
   enable_scheduling                       = var.enable_scheduling
+  ssm_enabled                             = var.ssm_enabled
   schedule_group_name                     = local.schedule_group_name
   scheduler_execution_role_arn            = local.scheduler_execution_role_arn
   create_dynamodb_schedule_table          = var.create_dynamodb_schedule_table
@@ -697,6 +701,8 @@ module "response_handler" {
 
   region                     = var.region
   prefix                     = var.prefix
+  account_id                 = data.aws_caller_identity.current.account_id
+  ssm_enabled                = var.ssm_enabled
   is_production              = var.is_production
   lambda_signer_profile_name = local.lambda_signer_profile_name
   lambda_signing_config_arn  = local.lambda_signing_config_arn

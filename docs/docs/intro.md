@@ -138,6 +138,7 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
 - **Multimodal Attachments**: Image and file support with pluggable attachment storage and on-demand vision analysis
 - **Sandbox**: Execute agent-generated code and shell commands in an isolated, permission-bounded environment, with pluggable providers (`local_subprocess`, `docker`, `e2b`, `daytona`, `ec2_ssm`), workload profiles, policy enforcement, and per-user identity. [Learn more →](/docs/advanced/sandbox)
 - **Conversation Threads**: Persistent, named threads with auto-naming and REST read APIs
+- **Secret Resolution**: Resolve API keys and passwords through `SecretManager` — environment first, then a managed store (`env` or AWS SSM Parameter Store, or your own provider) — with only `config.yaml` changing between laptop and production. [Learn more →](./advanced/secrets.md)
 - **Structured Output**: Typed/JSON agent replies (`AgentReplyAny`) across OpenAI, LangGraph, ADK, CrewAI, Smolagents, and Pydantic AI
 - **Agent Testing Capability**: Built in Agent test framework so that you can write automated tests easily
 - **Governance**: Input/output guardrails with OpenAI Guardrails, AWS Bedrock Guardrails, and Walled AI (including PII redaction)

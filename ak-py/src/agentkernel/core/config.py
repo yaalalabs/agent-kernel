@@ -899,6 +899,38 @@ class _SandboxConfig(BaseModel):
         return self
 
 
+class _SecretProviderConfig(BaseModel):
+    type: str = Field(
+        default="env",
+        description="Secret backend: a built-in short name (env, aws_ssm) or a dotted path to a SecretProvider subclass. "
+        "'env' reads the environment variable named by the key. 'aws_ssm' is AWS SSM Parameter Store and requires "
+        "secret.prefix. Whatever the provider, a set, non-empty environment variable named by the key always wins; "
+        "the provider is consulted only when that variable is unset or empty.",
+    )
+
+
+class _SecretConfig(BaseModel):
+    """Configuration for secret resolution (deployment scope, backend, cache).
+
+    Always available and free at its defaults, so there is no `enabled` flag: selecting a provider
+    other than `env` is the only opt-in, and `provider.type` already expresses it. The resolution
+    order is fixed, so there is no manager selector."""
+
+    prefix: str = Field(
+        default="",
+        description="Deployment scope a provider uses to namespace its secrets, e.g. 'myproduct-dev-agents'. The aws_ssm "
+        "provider reads OPENAI_API_KEY from the SSM parameter /ak/{prefix}/openai_api_key. Injected by the AWS Terraform "
+        "modules as AK_SECRET__PREFIX from their own resource-naming prefix. Required by aws_ssm; ignored by env",
+    )
+    provider: _SecretProviderConfig = Field(default_factory=_SecretProviderConfig, description="Backend the secret values are read from")
+    cache_ttl: int = Field(
+        default=300,
+        ge=0,
+        description="Seconds a resolved secret is served from the process cache before it is re-resolved. "
+        "0 disables caching so every read re-resolves; this is the rotation-pickup window",
+    )
+
+
 class _AGUIStateConfig(BaseModel):
     """Opt-in for the AG-UI shared-state tools (`get_agui_state` / `update_agui_state`)."""
 
@@ -968,6 +1000,7 @@ class AKConfig(YamlBaseSettingsModified):
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)
     guardrail: _GuardrailConfig = Field(description="Guardrail related configurations", default_factory=_GuardrailConfig)
     sandbox: _SandboxConfig = Field(description="Sandbox capability configurations", default_factory=_SandboxConfig)
+    secret: _SecretConfig = Field(description="Secret resolution configurations", default_factory=_SecretConfig)
     execution: _ExecutionConfig = Field(description="Execution mode and queue related configurations", default_factory=_ExecutionConfig)
     logging: _LoggingConfig = Field(description="Logging related configurations", default_factory=_LoggingConfig)
     library_version: str = Field(default=_get_ak_version(), description="Library version")

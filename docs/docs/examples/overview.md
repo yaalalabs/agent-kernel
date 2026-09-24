@@ -40,6 +40,7 @@ Command-line interface examples for local development and testing:
 - **`openai/`** - OpenAI Agent SDK integration examples
 - **`openai-dynamic/`** - OpenAI Agent SDK agents registered dynamically at runtime
 - **`openai_structured/`** - OpenAI Agent SDK agent returning structured (Pydantic) output
+- **`openai_secret/`** - Secrets resolved through `SecretManager` with the default `env` provider: a required model key read at startup and an optional tool key that degrades gracefully (see the [Secret Resolution](../advanced/secrets.md) guide)
 - **`pydanticai/`** - Pydantic AI framework integration examples
 - **`smolagents/`** - HuggingFace smolagents `CodeAgent` integration examples
 - **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, `okf/` (Open Knowledge Format markdown bundle), and `multi/`
@@ -78,7 +79,7 @@ AWS ECS/Fargate deployment examples:
 
 - **`adk/`** - Google ADK agents deployed on AWS container services
 - **`crewai/`** - CrewAI agents deployed on AWS container services
-- **`openai-dynamodb-scalable/`** - OpenAI agents on AWS ECS with SQS queue mode for scalable, asynchronous request processing and DynamoDB response storage
+- **`openai-dynamodb-scalable/`** - OpenAI agents on AWS ECS with SQS queue mode for scalable, asynchronous request processing and DynamoDB response storage; the OpenAI key is read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`openai-websocket/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue) mode: one service authenticates `$connect`, runs the agent inline, and pushes the reply back over the same connection
 - **`openai-websocket-scalable/`** - OpenAI agents on AWS ECS over a WebSocket API in queue mode: the REST/IO service enqueues chat frames and pushes responses, while a separately-scalable Agent Runner service processes them from SQS
 - **`openai-stream/`** - OpenAI agents on AWS ECS over a WebSocket API in direct (non-queue), STREAM execution mode: the reply is delivered token-by-token as `STREAM_CHUNK` messages instead of one final `CHAT_RESPONSE`
@@ -92,7 +93,7 @@ AWS Lambda serverless deployment examples:
 - **`adk/`** - Google ADK agents running on AWS Lambda
 - **`crewai/`** - CrewAI agents running on AWS Lambda
 - **`langgraph/`** - LangGraph agents running on AWS Lambda
-- **`openai/`** - OpenAI agents running on AWS Lambda
+- **`openai/`** - OpenAI agents running on AWS Lambda, with the OpenAI key read from SSM Parameter Store (`ssm_enabled`, `secret.provider.type: aws_ssm`)
 - **`websocket-openai/`** - OpenAI agents with WebSocket API for real-time bidirectional communication
 - **`streaming-openai/`** - OpenAI agents with WebSocket event streaming (`execution.mode: stream`)
 - **`schedule-openai/`** - Deferred and recurring chats on AWS Lambda: EventBridge Scheduler delivers each occurrence into the Input Queue for the agent-runner Lambda, backed by a DynamoDB schedule store
