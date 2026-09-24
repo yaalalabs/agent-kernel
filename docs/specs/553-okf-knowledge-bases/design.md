@@ -663,8 +663,10 @@ okf:
   `SystemToolFactory.get_all(agent_name)` (`core/tool.py:179`) and
   `get_system_prompt_suffix(agent_name)` (`core/tool.py:224`), reaching agents through
   `Agent._attach_system_tools()` and `Agent._setup_system_prompt()` (`core/base.py:530,520`). The
-  capability's prompt section rides the first `SystemTool.description`, the sandbox pattern
-  (`sandbox/tools.py:309-340`).
+  capability's prompt section is collected by a new core seam,
+  `SystemToolFactory.get_prompt_sections(agent_name)`, which `get_system_prompt_suffix` appends after
+  the tool descriptions. (First designed to ride the first `SystemTool.description`, the sandbox
+  pattern; changed as built because tool descriptions are not what the frameworks read.)
   - `SystemTool.name` and its `func.__name__` must stay identical, per the `AnalyzeAttachmentsTool`
     regression (`ak-dev-architecture`, Tools).
 - **Agent Kernel constructs everything on the config path**: the `DocumentStore`s, the `OKFManager`s,
@@ -1009,8 +1011,11 @@ Items 12-17 were resolved with the maintainer on 2026-09-18 and are the substanc
     redundant field, with the redundancy converted into a startup check. This is a stated departure
     from the house rule against selectors that existing configuration can derive.
 16. **The example prescribes nothing about where writes land.** The bundle is writable and the agent
-    chooses its target from the configured databases. No git-ignore rule, no temp-copy step: the
-    example demonstrates the capability rather than working around the fact that it is checked in.
+    chooses its target from the configured databases. No temp-copy step: the example demonstrates the
+    capability rather than working around the fact that it is checked in.
+    - *Amended as built:* the example does git-ignore `bundle/generated/`. The e2e job writes there on
+      every CI run, and the rule keeps those writes out of `git status` without changing where the
+      agent writes.
 17. **`max_concepts` and `write_prefix` stay out of the config.** They are implementation defaults the
     OKF layer owns, not per-deployment properties.
 
@@ -1019,8 +1024,11 @@ Items 18-19 were the amendment's open questions, resolved with the maintainer on
 18. **Double-binding warns; it does not skip or fail.** An application may add the `okf` block *and*
     keep a hand-built `KnowledgeBuilder` bound to the same agent, producing two sets of identically
     named tools — `Agent._append_tools` dedups by object identity only (`core/base.py:540`), so it
-    does not catch this. The OKF layer logs a `WARNING` naming the agent and the duplicated tool
-    names, and **attaches anyway**.
+    does not catch this. Core logs a `WARNING` naming the agent and the duplicated tool names,
+    and **attaches anyway**.
+    - *Amended as built:* the check lives in core (`Agent._warn_on_tool_name_collisions`, called from
+      `_attach_system_tools`) rather than in the OKF layer, so it covers every system tool, not only
+      OKF's.
     - Detection is possible because the framework adapters hand the already-built native agent to the
       AK wrapper, which only then calls `_attach_system_tools()`
       (`framework/openai/openai.py:366-376`) — so the manually bound tools are visible at attach time.

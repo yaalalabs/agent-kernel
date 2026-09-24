@@ -333,7 +333,7 @@ Each surface below was checked against the branch; line numbers are where the st
     `KnowledgeBaseContract` requirement to step 9 (`:149`) and the checklist (`:174`).
   - `.agents/skills/ak-dev-architecture/SKILL.md:520-521` — the `KnowledgeBase` member list and the
     four-tool `KnowledgeBuilder` line; `:714-716` — the directory tree gains `model.py`, `errors.py`,
-    `document.py`, `store/`, `okf/` (not `testing.py` — the contracts live under `ak-py/tests/`).
+    `document.py`, `store/`, `okf/` and `testing.py` (the contract suites, next to the ABC).
   - `ak-py/src/agentkernel/skills/ak-add-capabilities/SKILL.md:353-419` — the knowledge-base capability
     section: the new tools, and OKF as a backend option. Its custom-backend pointer at `:418-419` stays
     valid.

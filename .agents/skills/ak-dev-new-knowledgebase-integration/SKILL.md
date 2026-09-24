@@ -323,11 +323,8 @@ Every assertion is gated on your own declaration, so the contract adapts to what
 than demanding a shape you did not claim. Override the input hooks (`search_query`, `query_statement`,
 `browse_path`, `write_probe`, `declared_ids`) when the defaults do not suit the backend.
 
-The contract lives under `tests/` rather than in the package **on purpose** — it is a suite this repo
-holds its own backends to, not a published helper for out-of-tree authors. There is no
-`agentkernel.knowledgebase.testing` module; do not tell users to import one. Note also that the
-contract classes are deliberately not named `Test*` and the module is not named `test_*`, so pytest
-collects neither on its own — keep that convention if you add one.
+The contract classes are deliberately not named `Test*` and the module is not named `test_*`, so
+pytest collects neither on its own — keep that convention if you add one.
 
 **2. Add a `DocumentStoreContract` subclass** if you added a store, as
 `ak-py/tests/test_knowledgebase_stores.py` does for the local and S3 stores.

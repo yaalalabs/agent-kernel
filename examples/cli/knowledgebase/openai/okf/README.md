@@ -61,9 +61,9 @@ okf:
       uri: ./bundle
       description: "Analytics warehouse concepts, one markdown concept per table..."
       refresh_seconds: 300
-      consumer: [KB_Consumer_Agent]
-      producer: [KB_Producer_Agent]
-      curator: [KB_Curator_Agent]
+      consumer: [kb_consumer_agent]
+      producer: [kb_producer_agent]
+      curator: [kb_curator_agent]
 ```
 
 The block's presence is what enables the capability — there is no `enabled` flag. Each declared
@@ -84,13 +84,13 @@ python demo.py
 The demo defines three agents. Switch between them in the CLI with `!select`:
 
 ```
-!select KB_Consumer_Agent
+!select kb_consumer_agent
 What counts as revenue?
 
-!select KB_Producer_Agent
+!select kb_producer_agent
 Record this: the orders table is rebuilt nightly at 02:00 UTC.
 
-!select KB_Curator_Agent
+!select kb_curator_agent
 Review tables/customers.md and correct anything out of date.
 ```
 
@@ -157,9 +157,9 @@ so a concept's complete text and its `links` are available only after a fetch.
 
 | Agent | Role | Tools | What its prompt tells it |
 |---|---|---|---|
-| `KB_Consumer_Agent` | `consumer` | 6 (read only) | Navigate the bundle and answer from it |
-| `KB_Producer_Agent` | `producer` | 7 | Add new knowledge as you learn it |
-| `KB_Curator_Agent` | `curator` | 7 | Review, correct and maintain what is there |
+| `kb_consumer_agent` | `consumer` | 6 (read only) | Navigate the bundle and answer from it |
+| `kb_producer_agent` | `producer` | 7 | Add new knowledge as you learn it |
+| `kb_curator_agent` | `curator` | 7 | Review, correct and maintain what is there |
 
 **Producer and curator have identical permissions.** They differ only in the sentence Agent
 Kernel appends to their instructions. The distinction is responsibility, not capability.
@@ -277,7 +277,7 @@ okf:
     warehouse:
       type: s3
       uri: s3://my-bucket/bundles/warehouse
-      consumer: [KB_Consumer_Agent]
+      consumer: [kb_consumer_agent]
 ```
 
 `type` and `uri` must agree — `type: local` with an `s3://` uri is refused at startup naming the

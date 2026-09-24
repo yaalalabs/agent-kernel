@@ -197,7 +197,7 @@ OKFManager(
     description=None,
     refresh_seconds=300.0,   # None disables automatic refresh entirely
     max_concepts=10_000,
-    producer=None,           # stamped into generated.by on write
+    write_actor=None,        # stamped into generated.by on write
     write_prefix="generated",
 )
 ```
@@ -232,7 +232,7 @@ default, that is 10,000 ranged GETs every five minutes in every pod. Raise `refr
 bundle, or set it to `None` for one known to be immutable and call `reload()` when it changes.
 
 Writes are write-through. A written concept lands under `write_prefix` (`generated/` by default) as an
-ordinary OKF document stamped with a `generated:` block naming the producer, and is visible to `browse`,
+ordinary OKF document stamped with a `generated:` block naming the write actor, and is visible to `browse`,
 `fetch` and `read` on the very next call, because the write updates the manifest directly rather than
 waiting for a refresh.
 

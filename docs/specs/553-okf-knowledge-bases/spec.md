@@ -18,9 +18,10 @@ Nothing in `ak-py/src` outside `agentkernel/knowledgebase/` imports the package 
 here: `KnowledgeBase.read()` is **removed** and its routing moves into `read_kb`; `search_kb`'s gate
 relaxes to any `search`-declaring backend; and OKF gains a **configuration-driven role layer** — an
 `okf` block naming `consumer` / `producer` / `curator` agents per database, with Agent Kernel
-constructing the backends and binding the tools and prompt. The blast radius grows by exactly two
-files outside `knowledgebase/`: `core/config.py` (the new block) and `core/tool.py` (one factory
-branch). Amended and new sections are marked **[A2]**; superseded text is kept under
+constructing the backends and binding the tools and prompt. As built, the blast radius outside
+`knowledgebase/` is four files: `core/config.py` (the new block), `core/tool.py` (one factory branch
+and the `get_prompt_sections` seam), `core/base.py` (the double-binding warning) and `cli/cli.py`
+(`!select` keeps the agent name's case). Amended and new sections are marked **[A2]**; superseded text is kept under
 **Superseded by [A2]**.
 
 ## Verification gate — decision 8, closed
@@ -763,7 +764,11 @@ full body as `text` and the complete `links` list. A duplicate id yields one rec
   `metadata["kind"] = "index"`, `metadata["id"]` = the index path. `limit` does not truncate a curated
   listing. This holds at **any** level, not just the root — `index.md` is reserved everywhere.
 - Otherwise derive the listing from the manifest: the immediate children of that directory, both
-  concepts and subdirectories, in lexicographic order, truncated to `limit`. A subdirectory record has
+  concepts and subdirectories, in lexicographic order, directories first. When the two together
+  exceed `limit`, the budget is **apportioned** (`OKFManager._apportion`): whichever kind fits entirely
+  gets all of it and the other takes the rest; when neither fits, each is guaranteed half. A flat
+  truncation would hide every concept in a directory holding more subdirectories than `limit`
+  (behavioural change 26). A subdirectory record has
   `metadata["kind"] = "directory"` and an `id` ending in `/`; a concept record is shaped like a
   `search` record.
 - An unknown directory returns `[]` with a logged warning.
@@ -1096,8 +1101,13 @@ How to use them:
 - The **per-role mandate** is one sentence per assignment, from `MANDATES`, rendered under the database
   it applies to. An agent holding different roles in different databases gets both mandates, each
   scoped to its own bundle — which is why the mandate is rendered per line rather than once per agent.
-- The whole section rides the **first** `SystemTool.description`; the rest carry `""`, filtered out by
-  `get_system_prompt_suffix`'s `if tool.description`. The sandbox pattern.
+- As built, the section does **not** ride a `SystemTool.description` (the sandbox pattern this spec
+  first named). Tool descriptions are not what the frameworks read into the prompt, so a new core seam,
+  `SystemToolFactory.get_prompt_sections(agent_name)` (`core/tool.py`), collects sections that describe
+  a capability rather than one of its tools. `get_system_prompt_suffix` appends them after the tool
+  descriptions. Its OKF branch calls `OKFPromptComposer.for_agent(agent_name)` behind the same
+  `okf`-block check as the tools branch, so every OKF `SystemTool.description` is `""`
+  (`test_no_tool_carries_the_section`).
 
 ### [A2] `knowledgebase/okf/tools.py` — the agent surface
 
@@ -1161,18 +1171,21 @@ tools.
   already-built native agent — `OpenAIAgent.__init__` constructs, then attaches
   (`framework/openai/openai.py:366-376`) — so the manually bound tools are on the agent and visible
   when OKF attaches its own.
-- `OKFToolFactory.get_tools` therefore compares the names it is about to attach against the names
-  already present, and logs one `WARNING` naming the agent and the colliding tools when they overlap.
-  It then **attaches anyway**.
+- As built, the check lives in core, not in `OKFToolFactory.get_tools`:
+  `Agent._warn_on_tool_name_collisions` (`core/base.py`), called from `_attach_system_tools`, compares
+  the names of *every* system tool about to be attached against the names already present, and logs
+  one `WARNING` naming the agent and the colliding tools when they overlap. It then **attaches
+  anyway**. Core is the better home: the same collision can happen with any system tool (a hand-bound
+  `analyze_attachments` now warns too), not only OKF's.
 - Attaching anyway is what keeps behavioural change 23's promise that no existing application changes:
   skipping would silently make a newly added `okf` block a no-op for that agent.
 - The accepted cost: `Agent._append_tools` dedups by object identity only (`core/base.py:540`), so the
   duplicates reach the framework. Frameworks that tolerate duplicate names show the model the same
   tool twice; frameworks that reject them fail at bind time, with the warning explaining why rather
   than preventing it.
-- Reading the existing names is done defensively (`getattr(native_agent, "tools", None) or []`), since
-  not every adapter exposes a list-shaped `tools` attribute — a missing one means no warning, never a
-  raise.
+- Reading the existing names is done defensively (`Agent._native_tools`), since not every adapter
+  exposes a list-shaped `tools` attribute — Smolagents keys its tools by name, and a missing attribute
+  means no warning, never a raise.
 
 ### Consumer changes
 
@@ -1197,13 +1210,16 @@ tools.
 
 ```python
 class _OKFDatabaseConfig(BaseModel):
+    # The role lists default to None, not [], so an omitted role ("not declared") stays
+    # distinguishable from a declared-empty one. At least one must name an agent; that rule is
+    # enforced in OKFRoleRegistry.from_config, which can name the database in the error.
     type: str = Field(description="Document store for this bundle: 'local', 's3', or a dotted path to a DocumentStore subclass")
     uri: str = Field(description="Bundle location passed to the resolved store: a filesystem path, an s3://bucket/prefix URI, or the store's own location string")
     description: Optional[str] = Field(default=None, description="Human-readable description of this bundle, surfaced to the agent in its instructions and through get_schemas")
     refresh_seconds: Optional[float] = Field(default=300.0, description="How stale the bundle manifest may get before the next operation re-walks the store; null disables automatic refresh")
-    consumer: list[str] = Field(default_factory=list, description="Agent names granted read access to this bundle")
-    producer: list[str] = Field(default_factory=list, description="Agent names granted read and write access, instructed to add new knowledge to this bundle")
-    curator: list[str] = Field(default_factory=list, description="Agent names granted read and write access, instructed to review and maintain existing knowledge in this bundle")
+    consumer: Optional[list[str]] = Field(default=None, description="Agent names granted read access to this bundle")
+    producer: Optional[list[str]] = Field(default=None, description="Agent names granted read and write access, instructed to add new knowledge to this bundle")
+    curator: Optional[list[str]] = Field(default=None, description="Agent names granted read and write access, instructed to review and maintain existing knowledge in this bundle")
 
 
 class _OKFConfig(BaseModel):
@@ -1349,8 +1365,9 @@ real types:
 This fixes the import documented at `docs/docs/core-concepts/overview.md:353` without making
 `chromadb`/`neo4j`/`trino`/`boto3` eager. `ChromaManager`, `Neo4jManager`, and `StarburstManager` are
 **deliberately not exported** — each pulls an optional SDK at module import, and the existing examples
-import them from their concrete modules. The contract suites are not exported (they import `pytest`,
-and as built they live under `ak-py/tests/` rather than in the package).
+import them from their concrete modules. The contract suites are not exported from `__init__` (they import `pytest`); they
+live in `agentkernel.knowledgebase.testing`, next to the ABC, so an out-of-tree backend can subclass
+them.
 
 Asserted by test: every name in `__all__` resolves; importing `agentkernel.knowledgebase` and touching
 `KnowledgeBase`/`OKFManager` leaves `chromadb`, `neo4j`, `trino`, and `boto3` out of `sys.modules`.
@@ -1398,9 +1415,9 @@ okf:
       uri: ./bundle
       description: "Analytics warehouse concepts, one per table, in browsable namespaces."
       refresh_seconds: 300
-      consumer: [KB_Consumer_Agent]
-      producer: [KB_Producer_Agent]
-      curator:  [KB_Curator_Agent]
+      consumer: [kb_consumer_agent]
+      producer: [kb_producer_agent]
+      curator:  [kb_curator_agent]
 ```
 
 - `demo.py` drops `LocalDocumentStore`, `OKFManager`, `KnowledgeBuilder`, `OpenAIToolBuilder`, and the
@@ -1414,8 +1431,9 @@ okf:
   path; the producer writes a new concept and reads it back; the curator amends an existing one. A
   fourth case pins the refusal — the consumer attempting a write is told it is read-only.
 - The bundle stays checked in and the store is writable, so the producer and curator write into
-  `bundle/generated/`. Per `design.md` decision 16 the example prescribes no git-ignore or temp-copy
-  handling; the generated directory is left for the developer to clear, and the README says so.
+  `bundle/generated/`. As built, the example git-ignores `bundle/generated/` (amended `design.md`
+  decision 16): the e2e job writes there on every CI run, so without the rule every run would leave
+  untracked files. There is still no temp-copy step, and the README says the directory is ignored.
 - The **programmatic** path keeps a home: the README's second section shows the original
   `LocalDocumentStore` -> `OKFManager` -> `KnowledgeBuilder` wiring for applications that want it, so
   the amendment adds a path rather than deleting the documented one.
@@ -1609,6 +1627,15 @@ flagged for design review. Each needs a test.
 25. **`get_schemas` and `get_all_kb_descriptions` list only the calling agent's databases** on the
     config path, because its builder holds only those. On the programmatic path they list every
     registered backend, exactly as today.
+26. **An over-limit derived `browse` listing is apportioned, not truncated flat.** Directories and
+    concepts each get a share of `limit` (see `browse` above), so a listing past `limit` may show fewer
+    subdirectories than before in exchange for showing concepts at all.
+27. **A concept written without an id is titled from its own text.** `OKFManager.write` gives a record
+    naming no id and no `title` a title from `_title_new_concept`: the body's first line with words,
+    heading/list markers stripped, clipped at a word boundary. This covers every `write_kb` write, whose
+    signature carries no title. The title appears in `search_kb`/`browse_kb` summaries and in the
+    synthesised `generated/` slug. A record carrying an id, or a caller-supplied title, is left alone,
+    so a fetched concept written back gains no frontmatter its curator did not write.
 
 **[A2] Non-changes, amended.** Three entries of the original list above no longer hold and are
 superseded by items 18, 21 and 23 respectively: the `read` signature, `KnowledgeBuilder.__init__`'s
@@ -1657,7 +1684,11 @@ unchanged, only its implementation moved. Everything else in the original list s
 
 Exception scope, stated because the design does not: the only broad `except Exception` handlers are the
 pre-existing ones in the tool bodies (which must return strings) and the manifest-refresh guard (which
-must not let a transient store failure kill a serving pod). Everywhere else the caught types are
+must not let a transient store failure kill a serving pod), plus one added as built: the catch-all
+in `OKFManager._read_walk_document`, after its `FileNotFoundError` and `KnowledgePathError` branches,
+which turns any other store failure on one file into an `UNREADABLE` diagnostic. The conformance rules
+require one unreadable file never to abort a bundle load, and the store's failure types are open-ended
+(a custom `DocumentStore` may raise anything). Everywhere else the caught types are
 enumerated: `FileNotFoundError`, `yaml.YAMLError`, `ClientError`, `KnowledgePathError`.
 
 ## Testing
@@ -1767,7 +1798,7 @@ too narrowly. Flagged for design re-review per the staged process rather than ab
 | H | **`Neo4jManager.write` raises `KnowledgeError` after a batch that skipped records** (item 17), rather than only logging the skip | The design has the skip keep the rest of the batch running but leaves the agent-facing result unstated. Logging alone would report a write that stored nothing as a success — strictly worse than pre-#553, where `_run(None, {})` at least errored. Raising after the loop keeps both intents: the writable records land, and the tool layer reports the truth |
 | J | **[A2] A read-only store under a `producer`/`curator` role warns rather than raising** | Resolved as `design.md` decision 19. Recorded here because it is the one validation in the block that does not raise, and a reviewer applying the section's own rules mechanically will ask why: the other checks are on config text, this one is on the environment, and the same file is legitimately correct where the bundle happens to be read-only. The residual cost — a missed warning leaves an agent instructed to write and refused every time — is accepted, not overlooked |
 | K | **[A2] `type` duplicates what `uri`'s scheme already encodes** | Carrying `design.md` decision 15, and a stated departure from House Pattern 2 (reuse existing configuration; do not add a duplicate `type` selector). The redundancy is made safe by the agreement check rather than left as two sources of truth. Recorded here because a reviewer applying the house rules mechanically will flag it |
-| M | **[A2] Double-binding is detected and warned, not prevented** | Resolved as `design.md` decision 18. `OKFToolFactory.get_tools` warns on a name collision and attaches anyway, so a config-plus-manual agent still reaches its framework with duplicate tool names — an error on the frameworks that reject them. Recorded because it is a known-and-accepted failure mode rather than an oversight: preventing it would make a newly added `okf` block silently do nothing for that agent, which is the worse of the two. Switching to skip-and-warn is confined to this one method |
+| M | **[A2] Double-binding is detected and warned, not prevented** | Resolved as `design.md` decision 18. `Agent._warn_on_tool_name_collisions` (`core/base.py`, for every system tool, not only OKF's) warns on a name collision and attaches anyway, so a config-plus-manual agent still reaches its framework with duplicate tool names — an error on the frameworks that reject them. Recorded because it is a known-and-accepted failure mode rather than an oversight: preventing it would make a newly added `okf` block silently do nothing for that agent, which is the worse of the two. Switching to skip-and-warn is confined to this one method |
 | L | **[A2] `OKFToolFactory` closures capture the agent name, and that name alone decides write permission** | The design said the calling agent resolves through `ToolContext` / `Agent.current()`. As built it does not: `ToolContext` is created once per run with the entry agent and a handoff does not reset it, so after a consumer hands off to a producer the context still names the consumer and the producer's own `write_kb` would be refused under the wrong name (PR #714 review). The closure's name is the agent the tool was attached to, so it is authoritative; `test_a_handed_off_producer_writes_despite_a_stale_consumer_context` pins it |
 
 ## Next stage
