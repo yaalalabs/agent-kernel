@@ -44,12 +44,12 @@ fixture.
 
 | Test File | Tests |
 |-----------|-------|
-| `test_base.py` | Session, Agent, Runner abstractions |
+| `test_base.py` | Session, Agent, Runner abstractions; `Agent.run_options` / `RESERVED_RUN_OPTIONS` / `validate_run_options` and `Runner._native_kwargs` (#754) |
 | `test_runtime.py` | Runtime registration, execution, hooks |
 | `test_stream_events.py` | `core/event.py`'s `StreamEvent` discriminated union: every member round-trips through JSON (`type` discriminator), rejects an unknown `type`, and stays JSON/pickle-safe (no framework-native fields) |
 | `test_runtime_stream_events.py` | `Runtime.stream()`'s streaming contract (specs `docs/specs/523-ag-ui-support/` and `docs/specs/670-streaming-post-hooks/`): a bare `str` from an unmigrated runner fails loudly as a pydantic `ValidationError`, **every** event reaches `PostHook.on_stream_event()`, a returned list emits N chunks and ends the chain, a single return of a different `type` raises `TypeError`, a hook returning `None` drops the whole chunk, `delta` is populated only for `TextDelta` and taken from the emitted event, `StreamHalt` closes open boundaries then yields one error chunk and stores no session, any other exception propagates, and the final chunk is a bare `StreamChunk(done=True)` |
 | `test_stream_boundaries.py` | `StreamBoundaryTracker` (`core/stream.py`) directly: open/close pairing per kind, innermost-first drain order, `drain()` clearing, and the two malformed-sequence cases it tolerates (closing an id never opened, opening one twice) |
-| `test_module.py` | Module load/unload, wrapping |
+| `test_module.py` | Module load/unload, wrapping; `Module.run_options` merge, chaining, reserved-key and unloaded-agent errors, `_native_agent_name` override, and the guard that a subclass implementing only the hook methods still constructs (#754) |
 | `test_session.py` | Session state, caches, context vars |
 | `test_session_cache.py` | LRU SessionCache |
 | `test_sessions_in_memory.py` | InMemorySessionStore |
@@ -70,7 +70,7 @@ fixture.
 | `test_tool_adk.py` | Google ADK ToolBuilder |
 | `test_tool_smolagents.py` | Smolagents ToolBuilder |
 | `test_tool_pydanticai.py` | Pydantic AI ToolBuilder |
-| `test_openai_runner.py` | OpenAIRunner execution, error handling |
+| `test_openai_runner.py` | OpenAIRunner execution, error handling; run options forwarded to `Runner.run` / `run_streamed`, and a real `RunHooks` resolving `Session.current()` / `Agent.current()` through `Runtime.run` and `Runtime.stream` (#754) |
 | `test_crewai_runner.py` | CrewAIRunner execution (mocked Crew kickoff) |
 | `test_smolagents_runner.py` | SmolagentsRunner execution, multimodal requests, error handling |
 | `test_pydanticai_runner.py` | PydanticAIRunner execution, structured output, BinarySerde session round-trip, multimodal wiring |

@@ -238,6 +238,17 @@
       ]
     },
     {
+      "id": "cap-run-options",
+      "name": "Pass framework-native run options",
+      "input": "Raise the OpenAI Agents SDK turn limit for my agent and report progress from the SDK's RunHooks",
+      "expected_outputs": [
+        "RunHooks",
+        "module.run_options(",
+        "max_turns=",
+        "hooks="
+      ]
+    },
+    {
       "id": "cap-hooks-framework-context",
       "name": "Seed and read per-run framework context via hooks",
       "input": "I want to carry some per-run state through to my agent's native framework call using a hook",

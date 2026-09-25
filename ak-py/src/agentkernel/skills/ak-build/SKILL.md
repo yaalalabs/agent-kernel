@@ -393,6 +393,20 @@ module = OpenAIModule([triage_agent, math_agent, general_agent, support_agent])
 module.pre_hook(support_agent, [RAGPreHook()])
 ```
 
+**Framework-native run options (optional):** to pass the framework's own run arguments for one agent
+(OpenAI `max_turns`, `hooks=RunHooks()` and `run_config=RunConfig(...)`; LangGraph `config`; ADK
+`plugins` and `run_config`; Pydantic AI `usage_limits`; CrewAI `step_callback`; smolagents
+`max_steps`), declare them with `run_options` on the same module, in the framework's own types:
+
+```python
+from agents import RunConfig
+
+module.run_options(support_agent, max_turns=25, hooks=ProgressHooks(), run_config=RunConfig(...))
+```
+
+Keys the adapter populates itself (`session`, `context`, `input`, ...) raise `ValueError` at
+declaration. See the `ak-add-capabilities` skill for the per-framework destinations.
+
 ---
 
 ### Step 7: Update Dependencies (If Needed)

@@ -634,6 +634,42 @@ module.pre_hook(agent, [RAGPreHook()])
 module.post_hook(agent, [DisclaimerPostHook()])
 ```
 
+**Framework-native run options:** Agent Kernel hooks wrap the whole run. For the framework's own
+per-run arguments and lifecycle hooks, declare them per agent with `module.run_options(agent,
+**options)`, chained like `pre_hook` / `post_hook`; repeated calls merge, the later call winning per
+key. Every keyword is one of the framework's native run arguments and Agent Kernel merges it into the
+call with the keys it owns written last. A native hook's callbacks run inside the Agent Kernel run,
+so `Session.current()` resolves in them (keep per-run state in the session's volatile cache, not on
+the hook instance, which is shared by concurrent runs). This works in any execution mode, including
+`rest_sync`; the streaming hook below is the framework-agnostic path for `stream` mode only.
+
+```python
+from agents import RunConfig, RunHooks
+
+class ProgressHooks(RunHooks):
+    async def on_tool_start(self, context, agent, tool) -> None:
+        cache = Session.current().get_volatile_cache()
+        cache.set("tool_calls", (cache.get("tool_calls") or 0) + 1)
+
+module.run_options(
+    agent,
+    max_turns=25,                                            # the SDK default is 10
+    hooks=ProgressHooks(),
+    run_config=RunConfig(call_model_input_filter=trim_history),
+)
+```
+
+| Framework | `run_options` keywords go to | Turn limit | Progress hook | Reserved (raise at declaration) |
+|-----------|------------------------------|------------|---------------|---------------------------------|
+| OpenAI Agents SDK | `Runner.run` / `run_streamed` | `max_turns` | `hooks=RunHooks()` | `starting_agent`, `input`, `session`, `context` |
+| LangGraph | `ainvoke` / `astream_events` (`config` is deep-merged: `configurable.thread_id` stays the session id, `callbacks` lists concatenate) | `config["recursion_limit"]` | `config["callbacks"]` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id` |
+| Google ADK | the per-run `Runner(...)` constructor (`plugins`, services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` in stream mode) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
+| Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped in stream mode with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
+| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`) | `max_rpm` | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
+| smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
+
+Worked demos: `examples/cli/<framework>-run-options` for each of the six frameworks.
+
 **Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.mode: stream` is active. Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
 
 ```python

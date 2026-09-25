@@ -242,6 +242,68 @@ context is set, a runner:
 Because of this divergence, tool authors who want a context write to be portable across every
 framework should **pre-seed every key they intend to write** before the run.
 
+### Per-agent native run options {#native-run-options}
+
+Each framework's run API takes options of its own: a turn cap, lifecycle hooks, a run config. Agent
+Kernel does not abstract over them. Instead, an application declares them **per agent** through the
+module, in the framework's own types, and the runner merges them into its native call:
+
+```python
+from agents import RunConfig
+
+OpenAIModule([agent]).run_options(
+    agent,
+    max_turns=25,
+    hooks=ProgressHooks(),                                   # an SDK RunHooks subclass
+    run_config=RunConfig(call_model_input_filter=trim),      # any RunConfig field
+)
+```
+
+`Module.run_options(agent, **options)` is chained like `pre_hook` / `post_hook`; repeated calls merge,
+the later call winning per key. The declared dict lives on `Agent.run_options`, is read on every run,
+and is never persisted.
+
+**The merge rule.** The runner copies the declared options and writes the keys it owns **last**, so a
+declared option can never displace a value the adapter populates (the session, the framework
+context, the input). The same keys are also rejected at declaration: each adapter names them in
+`RESERVED_RUN_OPTIONS`, and `run_options` raises `ValueError` naming the key and the reason. Unknown
+keys are not validated; they reach the SDK, whose own error surfaces on the first run.
+
+Two adapters share an object with the caller rather than a key, and merge deeper:
+
+- **LangGraph `config`** is deep-merged with the config the runner builds: dict-valued keys merge with
+  the runner's entries winning (`configurable.thread_id` stays the session id), list-valued keys
+  (`callbacks`, `tags`) concatenate with the runner's entries first (a tracing runner's handler is
+  kept), everything else is the caller's.
+- **ADK `run_config`** in stream mode is copied with `streaming_mode=SSE`, because the stream mapping
+  depends on partial events; one warning is logged per runner when the caller's value differed.
+
+| Framework | Options go to | Reserved keys | Turn limit | Progress hook |
+|-----------|---------------|---------------|------------|---------------|
+| OpenAI | `Runner.run` / `run_streamed` | `starting_agent`, `input`, `session`, `context` | `max_turns` | `hooks=RunHooks()` |
+| LangGraph | `ainvoke` / `astream_events` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id` | `config["recursion_limit"]` | `config["callbacks"]` |
+| Google ADK | the per-run `Runner(...)` constructor (`plugins`, `memory_service`, `artifact_service`, `credential_service`, `plugin_close_timeout`) and `run_async` (`run_config`) | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` |
+| Pydantic AI | `agent.run` / `run_stream_events` | `user_prompt`, `message_history`, `deps` | `UsageLimits(request_limit=...)` | `event_stream_handler` (run mode; dropped with one warning in stream mode) |
+| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default) | `agents`, `tasks`, `memory` | `max_rpm` | `step_callback` / `task_callback` |
+| Smolagents | `agent.run` | `task`, `reset`, `additional_args`, `stream`, `return_full_result` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) |
+
+**Progress: two paths.** In `execution.mode: stream`, [`PostHook.on_stream_event`](../integrations/hooks.md#streaming-hooks-on_stream_event)
+sees Agent Kernel's framework-agnostic `StreamEvent`s for whatever the adapter maps. Native hooks
+through run options work in **any** mode, including `rest_sync`, and expose the framework's full
+lifecycle (LLM start, agent start, handoffs). A native hook's callbacks run inside the Agent Kernel
+run, so `Session.current()` and `Agent.current()` resolve in them; a hook instance declared once at
+load time therefore needs no per-request plumbing. It is shared by every concurrent run of that
+agent, so keep per-run state in the session (its volatile cache is cleared after each run), never on
+the hook.
+
+Run options compose with tracing: the Langfuse, Logfire and OpenLLMetry runners delegate to the base
+runner, so a declared `hooks=` still reaches the SDK when `trace.enabled` is on. The
+[custom-runner path](../advanced/traceability.md#how-to-add-your-own-platform) remains for behaviour
+that is not a keyword argument of the native call.
+
+See the per-framework demos: `examples/cli/openai-run-options`, `langgraph-run-options`,
+`adk-run-options`, `pydanticai-run-options`, `crewai-run-options` and `smolagents-run-options`.
+
 ## Best Practices
 
 ### Async Execution
