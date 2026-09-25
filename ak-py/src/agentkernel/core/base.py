@@ -442,6 +442,7 @@ class RealtimeRunner(Runner):
         """Sends a tool execution result back to the model."""
         raise NotImplementedError()
 
+    @abstractmethod
     async def execute_tool(self, name: str, arguments: str, context: "ToolContext", call_id: str) -> str:
         """Executes the named tool with JSON ``arguments`` and returns its string result.
 
@@ -457,7 +458,7 @@ class RealtimeRunner(Runner):
         :param call_id: The model's function-call id (frameworks correlate the response by it).
         :return: The tool result as a string.
         """
-        raise NotImplementedError(f"{type(self).__name__} does not implement realtime tool execution")
+        raise NotImplementedError()
 
     @abstractmethod
     async def disconnect(self) -> None:
