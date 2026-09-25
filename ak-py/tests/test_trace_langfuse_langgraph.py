@@ -28,6 +28,8 @@ def _mock_agent(result):
     agent = MagicMock()
     agent._system_prompt = ""
     agent.agent = MagicMock()
+    agent.run_options = {}
+    agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))
     agent.agent.ainvoke = AsyncMock(return_value=result)
     return agent
 

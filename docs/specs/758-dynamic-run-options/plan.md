@@ -29,16 +29,16 @@ committed before any code so reviewers read them first.
   awaitable `resolve_run_options`, so the adapters can start awaiting it without a red suite.
 - **Files:** `ak-py/tests/test_openai_runner.py`, `test_langgraph_runner.py`, `test_adk_runner.py`,
   `test_pydanticai_runner.py`, `test_crewai_runner.py`, `test_smolagents_runner.py`,
-  `test_trace_langfuse_langgraph.py`.
+  `test_trace_langfuse_langgraph.py`, `test_tool_adk.py`.
 - **Steps:**
   1. Add the two attributes to the eight existing helpers (`_mock_agent` in five files,
      `_mock_stream_agent`, `_capturing_stream_agent`, `_mock_stream_events_agent`), with
      `resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))`
      so later `run_options = {...}` assignments are honoured (spec § Consumer changes).
-  2. Introduce `_mock_agent()` in `test_openai_runner.py` and `test_smolagents_runner.py` and
-     replace the 56 inline `MagicMock()` agents there with it; replace the remaining inline ones in
-     the other files with their existing helpers where the shape allows, otherwise add the two
-     attributes inline.
+  2. Introduce `_mock_agent()` in `test_openai_runner.py`, `test_smolagents_runner.py` and
+     `test_tool_adk.py` and replace the 43 inline `MagicMock()` agents there with it; give
+     `test_pydanticai_runner.py` a `_bare_agent()` helper shared by its three helpers and five inline
+     mocks; route the one inline ADK mock through `_mock_agent()`.
   3. Add `"resolve_run_options"` to the CrewAI spec-restricted mock's spec list.
 - **Verify:** `uv run pytest tests/test_*_runner.py tests/test_trace_langfuse_langgraph.py` is green
   with the adapters still untouched (the attributes are unused until Iteration 3), and the CrewAI

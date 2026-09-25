@@ -35,6 +35,15 @@ from agentkernel.framework.openai.openai import OpenAIAgent, OpenAIModule, OpenA
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
 
+def _mock_agent():
+    """A mock AK agent over a mock native agent, carrying the members the runner reads before its native call."""
+    mock_agent = MagicMock()
+    mock_agent.agent = MagicMock()
+    mock_agent.run_options = {}
+    mock_agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(mock_agent.run_options))
+    return mock_agent
+
+
 class CalendarEvent(BaseModel):
     name: str
     date: str
@@ -72,8 +81,7 @@ class TestOpenAIRunnerFrameworkContext:
             result = MagicMock()
             result.final_output = "done"
             MockRunner.run = AsyncMock(return_value=result)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             await runner.run(mock_agent, session, requests)
 
@@ -97,8 +105,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run = fake_run
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             await runner.run(mock_agent, session, requests)
 
@@ -113,8 +120,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run = AsyncMock(side_effect=Exception("boom"))
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -131,8 +137,7 @@ class TestOpenAIRunnerFrameworkContext:
             result = MagicMock()
             result.final_output = "done"
             MockRunner.run = AsyncMock(return_value=result)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             await runner.run(mock_agent, session, requests)
 
@@ -162,8 +167,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             _ = [delta async for delta in runner.stream(mock_agent, session, requests)]
 
@@ -190,8 +194,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             agen = runner.stream(mock_agent, session, requests)
             first = await agen.__anext__()
@@ -221,8 +224,7 @@ class TestOpenAIRunnerFrameworkContext:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             with caplog.at_level(logging.ERROR, logger="ak.core.runner"):
                 events = [event async for event in runner.stream(mock_agent, session, requests)]
@@ -328,8 +330,7 @@ async def _collect(runner, events):
 
     with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
         MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
-        mock_agent = MagicMock()
-        mock_agent.agent = MagicMock()
+        mock_agent = _mock_agent()
         return [event async for event in runner.stream(mock_agent, session, requests)]
 
 
@@ -458,8 +459,7 @@ class TestOpenAIRunnerErrorHandling:
         runner = OpenAIRunner()
         session = Session("test-session")
         requests = [AgentRequestImage(name="empty.png", image_data="")]  # raises inside _process_requests
-        mock_agent = MagicMock()
-        mock_agent.agent = MagicMock()
+        mock_agent = _mock_agent()
 
         reply = await runner.run(mock_agent, session, requests)
 
@@ -483,8 +483,7 @@ class TestOpenAIRunnerErrorHandling:
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
             # Mock the agent
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -507,8 +506,7 @@ class TestOpenAIRunnerErrorHandling:
 
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -527,8 +525,7 @@ class TestOpenAIRunnerErrorHandling:
             error = Exception("Something went wrong")
             MockRunner.run = AsyncMock(side_effect=error)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -552,8 +549,7 @@ class TestOpenAIRunnerErrorHandling:
             error = ServiceUnavailableError()
             MockRunner.run = AsyncMock(side_effect=error)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -577,8 +573,7 @@ class TestOpenAIRunnerErrorHandling:
             error = RateLimitError()
             MockRunner.run = AsyncMock(side_effect=error)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -599,8 +594,7 @@ class TestOpenAIRunnerErrorHandling:
 
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -623,8 +617,7 @@ class TestOpenAIRunnerStructuredOutput:
             mock_run_result.final_output = CalendarEvent(name="Launch", date="2026-07-08")
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -643,8 +636,7 @@ class TestOpenAIRunnerStructuredOutput:
             mock_run_result.final_output = {"name": "Launch", "date": "2026-07-08"}
             MockRunner.run = AsyncMock(return_value=mock_run_result)
 
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
 
             reply = await runner.run(mock_agent, session, requests)
 
@@ -675,8 +667,7 @@ class TestOpenAIRunnerSessionMemory:
         runner = OpenAIRunner()
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run = fake_run
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
             asyncio.run(runner.run(mock_agent, Session("s"), requests))
         return captured["session"]
 
@@ -702,8 +693,7 @@ class TestOpenAIRunnerSessionMemory:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run_streamed = fake_run_streamed
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
             asyncio.run(drain())
         return captured["session"]
 
@@ -781,8 +771,7 @@ class TestOpenAIRunnerRunOptions:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run = AsyncMock(return_value=_run_result())
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
             mock_agent.run_options = {"max_turns": 25, "hooks": hooks, "run_config": run_config}
 
             await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
@@ -814,8 +803,7 @@ class TestOpenAIRunnerRunOptions:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
             mock_agent.run_options = {"max_turns": 25, "hooks": hooks}
 
             _ = [e async for e in runner.stream(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])]
@@ -832,8 +820,7 @@ class TestOpenAIRunnerRunOptions:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run = AsyncMock(return_value=_run_result())
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
             mock_agent.run_options = {"context": "caller"}  # only reachable by bypassing Module.run_options
 
             await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
@@ -847,8 +834,7 @@ class TestOpenAIRunnerRunOptions:
 
         with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
             MockRunner.run = AsyncMock(return_value=_run_result())
-            mock_agent = MagicMock()
-            mock_agent.agent = MagicMock()
+            mock_agent = _mock_agent()
             mock_agent.run_options = declared
 
             await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])

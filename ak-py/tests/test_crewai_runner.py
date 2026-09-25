@@ -31,11 +31,12 @@ def _crew_output(pydantic=None, json_dict=None, raw=""):
 
 
 def _mock_agent(output_pydantic=None, output_json=None):
-    agent = MagicMock(spec=["agent", "crew", "name", "output_pydantic", "output_json", "run_options"])
+    agent = MagicMock(spec=["agent", "crew", "name", "output_pydantic", "output_json", "run_options", "resolve_run_options"])
     agent.name = "Researcher"
     agent.agent = MagicMock()
     agent.crew = [agent.agent]
     agent.run_options = {}
+    agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))
     agent.output_pydantic = output_pydantic
     agent.output_json = output_json
     return agent

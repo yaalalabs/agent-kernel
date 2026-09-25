@@ -42,6 +42,14 @@ class CalendarEvent(BaseModel):
     date: str
 
 
+def _bare_agent():
+    """A mock AK agent carrying the members every runner reads before its native call (spec #758)."""
+    mock_agent = MagicMock()
+    mock_agent.run_options = {}
+    mock_agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(mock_agent.run_options))
+    return mock_agent
+
+
 def _mock_agent(output, messages=None):
     """
     Build a mock wrapping a native Pydantic AI agent whose ``run()`` returns a result with ``.output``.
@@ -51,7 +59,7 @@ def _mock_agent(output, messages=None):
     mock_run_result.output = output
     mock_run_result.all_messages = MagicMock(return_value=messages or [])
 
-    mock_agent = MagicMock()
+    mock_agent = _bare_agent()
     mock_agent.agent = MagicMock()
     mock_agent.agent.run = AsyncMock(return_value=mock_run_result)
     return mock_agent
@@ -67,7 +75,7 @@ def _mock_stream_events_agent(events, on_stream=None, messages=None):
     The events themselves are real SDK objects (see the ``_text_*`` helpers), so these tests pin the
     wire shape rather than a mock's.
     """
-    mock_agent = MagicMock()
+    mock_agent = _bare_agent()
     mock_agent.captured_deps = None
 
     @asynccontextmanager
@@ -191,7 +199,7 @@ class TestPydanticAIRunnerFrameworkContext:
             deps["cart"].append("apple")
             return mock_result
 
-        mock_agent = MagicMock()
+        mock_agent = _bare_agent()
         mock_agent.agent = MagicMock()
         mock_agent.agent.run = fake_run
 
@@ -205,7 +213,7 @@ class TestPydanticAIRunnerFrameworkContext:
         session = Session("s")
         session.set_framework_context({"cart": []})
 
-        mock_agent = MagicMock()
+        mock_agent = _bare_agent()
         mock_agent.agent = MagicMock()
         mock_agent.agent.run = AsyncMock(side_effect=Exception("boom"))
 
@@ -332,7 +340,7 @@ class TestPydanticAIRunnerErrorHandling:
         session = Session("test-session")
         requests = [AgentRequestText(prompt="test")]
 
-        mock_agent = MagicMock()
+        mock_agent = _bare_agent()
         mock_agent.agent = MagicMock()
         mock_agent.agent.run = AsyncMock(side_effect=Exception("Something went wrong"))
 
@@ -354,7 +362,7 @@ class TestPydanticAIRunnerErrorHandling:
                 super().__init__("Service temporarily unavailable")
                 self.status_code = 503
 
-        mock_agent = MagicMock()
+        mock_agent = _bare_agent()
         mock_agent.agent = MagicMock()
         mock_agent.agent.run = AsyncMock(side_effect=ServiceUnavailableError())
 
@@ -375,7 +383,7 @@ class TestPydanticAIRunnerErrorHandling:
                 super().__init__("Rate limit exceeded")
                 self.status_code = 429
 
-        mock_agent = MagicMock()
+        mock_agent = _bare_agent()
         mock_agent.agent = MagicMock()
         mock_agent.agent.run = AsyncMock(side_effect=RateLimitError())
 
@@ -836,7 +844,7 @@ class TestPydanticAIAgentDescription:
 
 def _capturing_stream_agent(captured: dict):
     """A mock agent whose run_stream_events records its keywords and yields only the terminal result event."""
-    mock_agent = MagicMock()
+    mock_agent = _bare_agent()
 
     @asynccontextmanager
     async def run_stream_events(content, **kwargs):

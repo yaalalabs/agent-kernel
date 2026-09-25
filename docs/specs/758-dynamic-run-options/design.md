@@ -149,11 +149,9 @@ what is added is one resolution step per run.
   constructor; `resolve_run_options` is invoked exactly once per `run` and per `stream`.
 - **Consumer change the tests must absorb**: the adapters now call
   `await agent.resolve_run_options(session, requests)`, and a bare `MagicMock()` agent returns a
-  non-awaitable `MagicMock` from that call. The runner tests build 83 such agents inline (46 in
-  `test_openai_runner.py`, 16 in `test_pydanticai_runner.py`, 10 in `test_smolagents_runner.py`, 6
-  in `test_langgraph_runner.py`, 2 each in `test_adk_runner.py` and
-  `test_trace_langfuse_langgraph.py`, 1 in `test_crewai_runner.py`) plus a handful of helper
-  functions. The plan replaces the inline ones with a per-file `_mock_agent()` helper that sets
+  non-awaitable `MagicMock` from that call. The runner tests build 49 such agents inline (23 in
+  `test_openai_runner.py`, 10 each in `test_smolagents_runner.py` and `test_tool_adk.py`, 5 in
+  `test_pydanticai_runner.py`, 1 in `test_adk_runner.py`) plus eight helper functions. The plan replaces the inline ones with a per-file `_mock_agent()` helper that sets
   `run_options = {}` and an `AsyncMock` `resolve_run_options` returning it, which is a test cleanup
   the #754 spec already noted as fragile (Runner rule 5).
 

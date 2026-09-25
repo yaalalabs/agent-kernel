@@ -35,6 +35,8 @@ def _mock_agent(result):
     agent = MagicMock()
     agent._system_prompt = ""
     agent.agent = MagicMock()
+    agent.run_options = {}
+    agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))
     agent.agent.ainvoke = AsyncMock(return_value=result)
     return agent
 
@@ -44,6 +46,8 @@ def _mock_stream_agent(events, state_values):
     agent = MagicMock()
     agent._system_prompt = ""
     agent.agent = MagicMock()
+    agent.run_options = {}
+    agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))
 
     async def astream_events(input, config, version):
         for event in events:
@@ -532,6 +536,8 @@ def _capturing_stream_agent(captured: dict):
     agent = MagicMock()
     agent._system_prompt = ""
     agent.agent = MagicMock()
+    agent.run_options = {}
+    agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))
 
     async def astream_events(**kwargs):
         captured.update(kwargs)

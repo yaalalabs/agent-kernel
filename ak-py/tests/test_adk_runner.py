@@ -23,6 +23,8 @@ def _mock_agent(output_schema=None):
     agent.name = "test-agent"
     agent.agent = MagicMock(spec=["output_schema"])
     agent.agent.output_schema = output_schema
+    agent.run_options = {}
+    agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))
     return agent
 
 
@@ -749,7 +751,7 @@ class TestGoogleADKRunnerStructuredOutput:
         runner = GoogleADKRunner()
         session = Session("test-session")
         requests = [AgentRequestText(prompt="hello")]
-        agent = MagicMock()
+        agent = _mock_agent()
         agent.name = "workflow-agent"
         agent.agent = MagicMock(spec=[])  # no output_schema attribute
 

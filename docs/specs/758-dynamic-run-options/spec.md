@@ -133,17 +133,16 @@ factory) and **before the framework-context load**, then reads `options` whereve
 - **Tests, one real consequence**: the adapters now await `agent.resolve_run_options(...)`, and a
   bare `MagicMock()` returns a non-awaitable `MagicMock` for that call, so every runner test that
   hands a bare mock to a runner would fail with `TypeError: object MagicMock can't be used in 'await'
-  expression`. The runner tests build such agents inline 83 times (46 in `test_openai_runner.py`,
-  16 in `test_pydanticai_runner.py`, 10 in `test_smolagents_runner.py`, 6 in
-  `test_langgraph_runner.py`, 2 each in `test_adk_runner.py` and
-  `test_trace_langfuse_langgraph.py`, 1 in `test_crewai_runner.py`) and through eight helper
-  functions (`_mock_agent` in the LangGraph, ADK, Pydantic AI, CrewAI and trace files;
+  expression`. The runner tests build such agents inline 39 times (23 in `test_openai_runner.py`, 10 in
+  `test_smolagents_runner.py`, 5 in `test_pydanticai_runner.py`, 1 in `test_adk_runner.py`), ten
+  more times in `test_tool_adk.py`, and through eight helper functions (`_mock_agent` in the LangGraph, ADK, Pydantic AI, CrewAI and trace files;
   `_mock_stream_agent`, `_capturing_stream_agent`, `_mock_stream_events_agent`). Every mock agent
   handed to a runner must expose two things: `run_options`, a real dict, and
   `resolve_run_options`, an `AsyncMock` whose `side_effect` returns `dict(agent.run_options)` so a
   test that assigns `mock_agent.run_options = {...}` after construction still gets it. The existing
-  helpers gain those two lines; the inline mocks in the OpenAI and smolagents files are replaced by a
-  per-file `_mock_agent()` helper with the same contract. The CrewAI spec-restricted mock adds
+  helpers gain those two lines; the inline mocks in the OpenAI, smolagents and ADK tool files are replaced
+  by a per-file `_mock_agent()` helper with the same contract, and the Pydantic AI file's three helpers and
+  five inline mocks share one `_bare_agent()` helper. The CrewAI spec-restricted mock adds
   `"resolve_run_options"` to its spec list. Tests that use real agents (`OpenAIAgent` in the
   `RunHooks` tests, the module-level tests) need nothing.
 
