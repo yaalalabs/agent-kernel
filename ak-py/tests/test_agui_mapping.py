@@ -28,6 +28,7 @@ from ag_ui.core import (
 
 from agentkernel.core.event import (
     AudioDelta,
+    Interrupt,
     MessageEnd,
     MessageStart,
     ReasoningDelta,
@@ -62,7 +63,7 @@ EXPECTED_MAPPING = [
     (ReasoningEnd(message_id="r1"), ReasoningMessageEndEvent),
 ]
 
-DELIBERATELY_UNMAPPED: list[type] = [AudioDelta]
+DELIBERATELY_UNMAPPED: list[type] = [AudioDelta, Interrupt]
 
 
 def test_every_union_member_has_an_explicit_decision():

@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from ...core.model import AgentReply, AgentRequestUnion
+from ...core.model import AgentReply, AgentRequestUnion, StreamChunk
 
 ATTACHMENTS_DISABLED_ERROR = (
     "Attachments from messaging integrations require multimodal support — " "set multimodal.enabled: true in config.yaml to accept images and files"
@@ -185,13 +185,15 @@ class OutboundAdapter(ABC):
         :param reply_context: The delivery coordinates resolved at the edge.
         """
 
-    async def deliver_chunk(self, chunk: dict, reply_context: Dict[str, str]) -> None:
+    async def deliver_chunk(self, chunk: StreamChunk, reply_context: Dict[str, str]) -> None:
         """Send a real-time streaming chunk to the platform.
 
-        This is called when the runner emits StreamEvents. Platforms that support streaming
-        (e.g., LiveKit for voice) can override this to play chunks in real-time.
+        A realtime run emits the same typed chunks as text streaming: audio as an ``AudioDelta``
+        event, transcript as ``TextDelta``, barge-in as ``Interrupt``, and a final ``done``
+        chunk. Platforms that support streaming (e.g., LiveKit for voice) override this to play
+        chunks in real-time; the default is a no-op.
 
-        :param chunk: The StreamEvent chunk dictionary.
+        :param chunk: The streamed chunk, carrying a ``StreamEvent`` (or ``done``).
         :param reply_context: The delivery coordinates resolved at the edge.
         """
         pass

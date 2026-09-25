@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Optional
 
 from ..core.base import Agent as BaseAgent
 from ..core.base import Session
+from ..core.event import AudioDelta, Interrupt, TextDelta
+from ..core.model import StreamChunk
 from ..core.runtime import Runtime
 from ..core.tool import ToolContext
 from .envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
@@ -60,15 +62,22 @@ class RealtimeConnection:
         await self.adapter.connect(self.session, self.agent, self.handle_framework_event)
 
     async def handle_framework_event(self, event_type: str, data: dict) -> None:
-        """Called by the framework adapter (e.g. OpenAI) when an event occurs over the socket."""
+        """Translate one adapter event into a typed ``StreamChunk`` and emit it.
+
+        The same chunk contract the text streaming path uses: audio is an ``AudioDelta``
+        event, the transcript streams as ``TextDelta``, barge-in is an ``Interrupt`` event,
+        and the turn ends with a ``done`` chunk.
+        """
         if event_type == "audio_delta":
-            await self._emit({"event": {"type": "audio_delta", "content": data["delta"]}, "done": False})
+            message_id = data.get("message_id") or ""
+            await self._emit(StreamChunk(event=AudioDelta(message_id=message_id, content=data["delta"])))
         elif event_type == "transcript_delta":
-            pass  # Phase 2: feed into RealtimeGuardrailHook on transcript text
+            message_id = data.get("message_id") or ""
+            await self._emit(StreamChunk(event=TextDelta(message_id=message_id, content=data["delta"]), delta=data["delta"]))
         elif event_type == "interrupt":
-            await self._emit({"event": {"type": "interrupt"}, "done": False})
+            await self._emit(StreamChunk(event=Interrupt()))
         elif event_type == "done":
-            await self._emit({"event": {"type": "done", "status": data.get("status"), "transcript": data.get("transcript")}, "done": True})
+            await self._emit(StreamChunk(done=True))
         elif event_type == "tool_call":
             self.loop.create_task(self._execute_tool_and_reply(data["call_id"], data["name"], data["arguments"]))
 
@@ -93,7 +102,7 @@ class RealtimeConnection:
         _log.info(f"Tool {name} result: {result_str[:200]}")
         await self.adapter.send_tool_result(call_id, result_str)
 
-    async def _emit(self, chunk: dict) -> None:
+    async def _emit(self, chunk: StreamChunk) -> None:
         """Send a realtime output chunk to the output queue with the current delivery context."""
         attributes = {ATTR_REQUEST_ID: self.request_id or "unknown", ATTR_REALTIME: "true"}
         if self.user_id:
@@ -103,7 +112,8 @@ class RealtimeConnection:
         for key, value in (self.reply_context or {}).items():
             attributes[f"{REPLY_CONTEXT_PREFIX}{key}"] = value
 
-        message = QueueMessage(body=json.dumps(chunk), attributes=attributes, group_id=self.session_id, dedup_id=str(uuid.uuid4()))
+        body = json.dumps(chunk.model_dump(exclude_none=True, mode="json"))
+        message = QueueMessage(body=body, attributes=attributes, group_id=self.session_id, dedup_id=str(uuid.uuid4()))
         await asyncio.to_thread(self._transport.send, QueueName.OUTPUT, message)
 
     def append_audio(self, audio_data: str) -> None:

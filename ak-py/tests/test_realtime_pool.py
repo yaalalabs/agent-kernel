@@ -116,7 +116,10 @@ class TestRealtimeConnection:
         assert message.attributes["user_id"] == "u1"
         assert message.attributes["reply_session_id"] == "s1"
         assert message.group_id == "s1"
-        assert json.loads(message.body) == {"event": {"type": "audio_delta", "content": "QUFB"}, "done": False}
+        body = json.loads(message.body)
+        assert body["event"]["type"] == "audio_delta"
+        assert body["event"]["content"] == "QUFB"
+        assert body["done"] is False
 
     @pytest.mark.asyncio
     async def test_tool_call_delegates_to_adapter(self, monkeypatch):
@@ -282,4 +285,8 @@ class TestOpenAIPacing:
         adapter._pacing_task.cancel()
         adapter._listen_task.cancel()
 
-        assert seen == ["audio_delta", "audio_delta", "audio_delta", "done"]
+        # All three audio deltas are emitted, the transcript streams as text, and the terminal
+        # event is always the done chunk (it never overtakes its audio).
+        assert seen.count("audio_delta") == 3
+        assert "transcript_delta" in seen
+        assert seen[-1] == "done"

@@ -5,7 +5,7 @@ import logging
 import uuid
 from typing import Dict, Optional
 
-from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, BaseRunRequest
+from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, BaseRunRequest, StreamChunk
 from ...core.util.factory import AKConfigError
 from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
 from ...pipeline.producer import RequestProducer
@@ -79,6 +79,9 @@ class LiveKitEdgeGateway(OutboundAdapter):
         self.producer: Optional[RequestProducer] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._connected = False
+        # Accumulated from TextDelta chunks; published as one chat message when the turn ends.
+        self._transcript: list[str] = []
+        self._interrupted = False
 
         # A stateful edge is the one case the config-driven factory cannot build: replies must
         # reach this live room, so the gateway registers itself as the `livekit` outbound adapter
@@ -197,35 +200,42 @@ class LiveKitEdgeGateway(OutboundAdapter):
 
     # -- outbound: queue -> room -------------------------------------------------------------
 
-    async def deliver_chunk(self, chunk: dict, reply_context: Dict[str, str]) -> None:
-        """Play one streamed chunk (audio delta or transcript delta) back to the room."""
-        event = chunk.get("event") or {}
-        event_type = event.get("type")
-        if event_type == "audio_delta":
-            content = event.get("content")
-            if not content:
-                return
-            audio_bytes = base64.b64decode(content)
-            frame = rtc.AudioFrame(
-                data=audio_bytes,
-                sample_rate=AUDIO_SAMPLE_RATE,
-                num_channels=1,
-                samples_per_channel=len(audio_bytes) // 2,
-            )
-            await self._run_on_room(self.audio_source.capture_frame(frame))
-        elif event_type == "interrupt":
-            # Barge-in: stop the already-buffered AI audio immediately and drop the partial reply.
-            _log.info("Barge-in detected: clearing buffered AI audio")
-            self._clear_playback()
-        elif event_type == "done":
-            status = event.get("status")
-            text = (event.get("transcript") or "").strip()
-            if status == "cancelled":
-                # The user interrupted: don't publish a half-said sentence as a complete message.
+    async def deliver_chunk(self, chunk: StreamChunk, reply_context: Dict[str, str]) -> None:
+        """Play one streamed ``StreamChunk`` back to the room.
+
+        Audio deltas play immediately; transcript deltas are accumulated and published as one
+        chat message when the turn's ``done`` chunk arrives; a barge-in ``Interrupt`` clears
+        playback and drops the partial transcript.
+        """
+        event = chunk.event
+        if event is not None:
+            if event.type == "audio_delta":
+                audio_bytes = base64.b64decode(event.content)
+                if audio_bytes:
+                    frame = rtc.AudioFrame(
+                        data=audio_bytes,
+                        sample_rate=AUDIO_SAMPLE_RATE,
+                        num_channels=1,
+                        samples_per_channel=len(audio_bytes) // 2,
+                    )
+                    await self._run_on_room(self.audio_source.capture_frame(frame))
+            elif event.type == "text_delta":
+                self._transcript.append(event.content)
+            elif event.type == "interrupt":
+                # Barge-in: stop buffered AI audio and don't publish a half-said sentence.
+                _log.info("Barge-in detected: clearing buffered AI audio")
+                self._interrupted = True
                 self._clear_playback()
-            elif text:
-                _log.info(f"AI response: {text}")
-                await self._publish_text(text)
+
+        if chunk.done:
+            transcript = "".join(self._transcript).strip()
+            self._transcript.clear()
+            if self._interrupted:
+                self._interrupted = False
+                self._clear_playback()
+            elif transcript:
+                _log.info(f"AI response: {transcript}")
+                await self._publish_text(transcript)
 
     async def deliver(self, reply: AgentReply, reply_context: Dict[str, str]) -> None:
         """Publish a completed reply as chat text (used for the non-streamed fallback path)."""

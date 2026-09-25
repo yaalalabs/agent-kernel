@@ -206,14 +206,17 @@ class ResponseHandler:
         """Deliver one realtime stream chunk on this thread's persistent event loop.
 
         The message is marked with ``ATTR_REALTIME`` by the realtime pool, so routing is explicit
-        rather than inferred from the body shape. The loop is reused across chunks because
-        ``run_async_sync`` would create and destroy one per chunk at realtime rates.
+        rather than inferred from the body shape. The body is the serialised ``StreamChunk`` the
+        pool emitted; it is re-parsed here so the adapter receives the typed chunk. The loop is
+        reused across chunks because ``run_async_sync`` would create and destroy one per chunk at
+        realtime rates.
         """
+        chunk = StreamChunk.model_validate(body)
         loop = getattr(self._delivery_local, "loop", None)
         if loop is None or loop.is_closed():
             loop = asyncio.new_event_loop()
             self._delivery_local.loop = loop
-        loop.run_until_complete(adapter.deliver_chunk(body, reply_context))
+        loop.run_until_complete(adapter.deliver_chunk(chunk, reply_context))
         self._log.debug(f"[OUTPUT DONE] Delivered chunk to {integration}: session_id={message.group_id}")
 
     def _store_response(self, message: QueueMessage) -> None:

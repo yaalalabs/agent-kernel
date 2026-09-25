@@ -136,6 +136,12 @@ class AudioDelta(StreamEventBase):
     content: str
 
 
+class Interrupt(StreamEventBase):
+    """The user interrupted the model's in-progress turn (barge-in)."""
+
+    type: Literal["interrupt"] = "interrupt"
+
+
 type StreamEvent = Annotated[
     Union[
         MessageStart,
@@ -151,6 +157,7 @@ type StreamEvent = Annotated[
         ReasoningDelta,
         ReasoningEnd,
         AudioDelta,
+        Interrupt,
     ],
     Field(discriminator="type"),
 ]

@@ -400,9 +400,6 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         self._agent = None
         self._cm = None
         self._listen_task = None
-        # The edge publishes one transcript per turn (on done), so deltas are accumulated here
-        # rather than sent one-per-token, which would flood the output queue.
-        self._transcript: list[str] = []
 
     @staticmethod
     def _realtime_model(agent: BaseAgent) -> str:
@@ -471,9 +468,8 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
 
         while True:
             try:
-                item = await self._audio_queue.get()
-                if not isinstance(item, str):
-                    event_type, data = item
+                event_type, data = await self._audio_queue.get()
+                if event_type != "audio_delta":
                     await self._callback(event_type, data)
                     if event_type in ("done", "interrupt"):
                         audio_played_ms = 0.0
@@ -482,15 +478,14 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
                 if audio_played_ms == 0.0:
                     item_start_time = time.time()
 
-                await self._callback("audio_delta", {"delta": item})
+                await self._callback("audio_delta", data)
 
-                audio_bytes = base64.b64decode(item)
+                audio_bytes = base64.b64decode(data["delta"])
                 duration_ms = (len(audio_bytes) / 2) / 24.0
                 audio_played_ms += duration_ms
 
                 elapsed_ms = (time.time() - item_start_time) * 1000.0
-                target_elapsed_ms = audio_played_ms - 50.0
-                sleep_ms = target_elapsed_ms - elapsed_ms
+                sleep_ms = (audio_played_ms - 50.0) - elapsed_ms
                 if sleep_ms > 0:
                     await asyncio.sleep(sleep_ms / 1000.0)
 
@@ -504,9 +499,9 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
             async for event in self._connection:
                 event_type = event.type
                 if event_type == "response.output_audio.delta":
-                    self._audio_queue.put_nowait(event.delta)
+                    self._audio_queue.put_nowait(("audio_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")}))
                 elif event_type == "response.output_audio_transcript.delta":
-                    self._transcript.append(event.delta)
+                    await self._callback("transcript_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
                 elif event_type == "input_audio_buffer.speech_started":
                     # Barge-in: drop audio not yet played, then queue the interrupt behind it so
                     # it cannot overtake audio already in flight to the edge.
@@ -516,9 +511,7 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
                 elif event_type == "response.done":
                     response = getattr(event, "response", None)
                     status = getattr(response, "status", None)
-                    transcript = "".join(self._transcript).strip() if status == "completed" else ""
-                    self._transcript.clear()
-                    self._audio_queue.put_nowait(("done", {"status": status, "transcript": transcript}))
+                    self._audio_queue.put_nowait(("done", {"status": status}))
                 elif event_type == "response.function_call_arguments.done":
                     await self._callback(
                         "tool_call",

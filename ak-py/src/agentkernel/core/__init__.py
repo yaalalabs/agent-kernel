@@ -34,6 +34,7 @@ from .model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    AgentRequestVoice,
     AgentReply,
     AgentReplyAny,
     AgentReplyText,

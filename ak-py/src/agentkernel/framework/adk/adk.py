@@ -702,9 +702,6 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._connection = None
         self._cm = None
         self._listen_task: asyncio.Task | None = None
-        # Gemini reports output transcription separately from the audio turn, so a turn's
-        # transcript is accumulated here and published once on turn_complete.
-        self._transcript: list[str] = []
         # call_id -> function name, needed to build the FunctionResponse Gemini expects.
         self._tool_names: dict[str, str] = {}
 
@@ -776,18 +773,16 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                 await self._callback("interrupt", {})
             transcription = getattr(server_content, "output_transcription", None)
             if transcription is not None and transcription.text:
-                self._transcript.append(transcription.text)
+                await self._callback("transcript_delta", {"delta": transcription.text, "message_id": ""})
             model_turn = getattr(server_content, "model_turn", None)
             if model_turn and model_turn.parts:
                 for part in model_turn.parts:
                     inline = getattr(part, "inline_data", None)
                     if inline is not None and inline.data:
                         audio_b64 = base64.b64encode(inline.data).decode("utf-8")
-                        await self._callback("audio_delta", {"delta": audio_b64})
+                        await self._callback("audio_delta", {"delta": audio_b64, "message_id": ""})
             if getattr(server_content, "turn_complete", False):
-                transcript = "".join(self._transcript).strip()
-                self._transcript.clear()
-                await self._callback("done", {"status": "completed", "transcript": transcript})
+                await self._callback("done", {"status": "completed"})
 
         tool_call = getattr(message, "tool_call", None)
         if tool_call and tool_call.function_calls:
