@@ -1,0 +1,22 @@
+# Sarasavi Power — local development config.
+# Production overrides (session -> dynamodb, logging level) are applied by the
+# `deploy/` Terraform via the yaalalabs/ak-serverless/aws module.
+
+session:
+  type: in_memory        # prod: dynamodb (create_dynamodb_memory_table = true)
+  cache:
+    size: 256
+
+logging:
+  ak:
+    level: INFO
+
+# WhatsApp channel. Inbound messages are delivered to the named agent, which then
+# hands off to specialists. Secrets come from AK_WHATSAPP__* environment variables.
+whatsapp:
+  agent: "orchestrator"
+  # Empty: Agent Kernel would otherwise send this before EVERY reply, so a normal
+  # text answer arrived as two messages. Voice notes and photos genuinely take
+  # longer, so those paths send their own acknowledgement (whatsapp_ext/handler.py).
+  agent_acknowledgement: ""
+  api_version: "v24.0"

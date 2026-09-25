@@ -1,0 +1,33 @@
+# Secrets — never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Local vector store / knowledge base data
+chroma/
+.chroma/
+*.chroma
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+# Local audio scratch
+loopback_reply.wav
+
+# Voice SDP debug dumps
+voice_sdp_debug.log
