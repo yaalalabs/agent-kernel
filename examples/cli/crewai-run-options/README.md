@@ -17,7 +17,8 @@ CrewAIModule([weather_agent]).run_options(
 1. **Declaration.** The keywords are the `Crew(...)` constructor's own arguments (`step_callback`,
    `task_callback`, `max_rpm`, `planning`, ...). Agent Kernel copies them into the constructor and
    writes the keys it owns (`agents`, `tasks`, `memory`) last. `verbose=False` is a default you may
-   override.
+   override. `max_rpm` is a requests-per-minute rate limit, not a loop cap: the cap on iterations is
+   `max_iter` on the native `Agent`, which you already own (shown on the constructor in `demo.py`).
 2. **Resolution by role.** CrewAI agents are registered under their `role`, so `run_options` resolves
    the wrapped agent by `role` too.
 3. **Reserved keys.** `agents`, `tasks` and `memory` raise `ValueError` at declaration. Task-level

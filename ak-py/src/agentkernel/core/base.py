@@ -495,7 +495,9 @@ class Agent(ABC):
         """
         Returns the framework-native keyword arguments merged into every native run call for this agent.
         A live, mutable dict (the same contract as `pre_hooks`), declared through `Module.run_options` and never
-        persisted. Mutating it directly bypasses the reservation check; the runner still writes its own keys last.
+        persisted. Mutating it directly skips the reservation check entirely: a reserved key the runner writes itself
+        is overwritten, but one the adapter passes positionally raises the SDK's duplicate-argument error, and one
+        reserved only because it breaks the reply mapping is forwarded as given.
         """
         return self._run_options
 

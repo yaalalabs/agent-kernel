@@ -60,7 +60,7 @@ class AppendRunStatsPostHook(PostHook):
             [
                 f"llm_calls={cache.get('llm_calls') or 0}",
                 f"tool_calls={cache.get('tool_calls') or 0}",
-                f"max_llm_calls={MAX_LLM_CALLS}",
+                f"max_llm_calls={agent.run_options['run_config'].max_llm_calls}",  # read back from the agent
             ]
         )
         agent_reply.response = f"{agent_reply.response}\n\n{STATS_PREFIX} {stats}"

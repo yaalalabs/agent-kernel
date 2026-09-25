@@ -142,7 +142,8 @@ GoogleADKModule([agent]).run_options(
 ```
 
 In `execution.mode: stream` the `RunConfig` is copied with `streaming_mode=SSE`, because the stream
-mapping depends on partial events; one warning is logged per runner when your value differed, and
+mapping depends on partial events; one warning is logged per runner when you explicitly set a
+different `streaming_mode`, and
 your object is never mutated. In run mode it is passed as is.
 
 Reserved (raise `ValueError` at declaration): `agent`, `app`, `app_name`, `node`, `session_service`,

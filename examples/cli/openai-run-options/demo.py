@@ -45,10 +45,22 @@ class ProgressHooks(RunHooks):
 
 # The RunConfig option: a call_model_input_filter that trims the model input on every call. It also
 # counts how often it ran, so the stats line shows it is really being invoked.
+def _field(item, name: str):
+    """Read one field off an input item, which is a dict on some paths and a Pydantic model on others."""
+    return item.get(name) if isinstance(item, dict) else getattr(item, name, None)
+
+
 def trim_history(data: CallModelData) -> ModelInputData:
     _bump("filter_runs")
     model_data = data.model_data
-    return ModelInputData(input=list(model_data.input)[-KEEP_LAST_ITEMS:], instructions=model_data.instructions)
+    kept = list(model_data.input)[-KEEP_LAST_ITEMS:]
+    # A window that starts between a function_call and its function_call_output would be rejected by the
+    # Responses API ("No tool call found for function call output"), so drop leading outputs whose call fell
+    # outside the window. A real filter would more likely trim at message boundaries.
+    call_ids = {_field(item, "call_id") for item in kept if _field(item, "type") == "function_call"}
+    while kept and _field(kept[0], "type") == "function_call_output" and _field(kept[0], "call_id") not in call_ids:
+        kept.pop(0)
+    return ModelInputData(input=kept, instructions=model_data.instructions)
 
 
 class AppendRunStatsPostHook(PostHook):
@@ -63,7 +75,7 @@ class AppendRunStatsPostHook(PostHook):
                 f"llm_calls={cache.get('llm_calls') or 0}",
                 f"tool_calls={cache.get('tool_calls') or 0}",
                 f"filter_runs={cache.get('filter_runs') or 0}",
-                f"max_turns={MAX_TURNS}",
+                f"max_turns={agent.run_options['max_turns']}",  # read back from the agent, not the constant
             ]
         )
         agent_reply.response = f"{agent_reply.response}\n\n{STATS_PREFIX} {stats}"

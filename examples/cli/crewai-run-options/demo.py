@@ -8,7 +8,8 @@ from crewai import Agent
 logger = logging.getLogger("ak.example.crewai_run_options")
 
 STATS_PREFIX = "Run stats:"
-MAX_RPM = 30  # CrewAI's requests-per-minute throttle for the crew
+MAX_RPM = 30  # CrewAI's requests-per-minute throttle for the crew (a rate limit, not a loop cap)
+MAX_ITER = 5  # the loop cap lives on the native Agent, which you own; it needs nothing from Agent Kernel
 
 
 def _bump(key: str) -> None:
@@ -44,7 +45,9 @@ class AppendRunStatsPostHook(PostHook):
         if session is None or not isinstance(agent_reply, AgentReplyText):
             return agent_reply
         cache = session.get_volatile_cache()
-        stats = ", ".join([f"steps={cache.get('steps') or 0}", f"max_rpm={MAX_RPM}"])
+        stats = ", ".join(
+            [f"steps={cache.get('steps') or 0}", f"max_rpm={agent.run_options['max_rpm']}"]
+        )  # read back from the agent
         agent_reply.response = f"{agent_reply.response}\n\n{STATS_PREFIX} {stats}"
         return agent_reply
 
@@ -58,6 +61,7 @@ weather_agent = Agent(
     backstory="You provide weather information upon request. Use the get_weather tool for every weather question. "
     "Give short and direct answers.",
     tools=CrewAIToolBuilder.bind([get_weather]),
+    max_iter=MAX_ITER,
     verbose=False,
     llm="openai/gpt-4.1-mini",
 )

@@ -50,24 +50,37 @@ class Agent(ABC):
 
 ```python
 class Module(ABC):
-    def run_options(self, agent: Any, **options: Any) -> "Module":        # new, concrete
+    def pre_hook(self, agent: Any, hooks: list[PreHook]) -> Self:        # concrete (follow-up lift)
+        self._wrapped(agent).pre_hooks.extend(hooks)
+        return self
+
+    def post_hook(self, agent: Any, hooks: list[PostHook]) -> Self:      # concrete (follow-up lift)
+        self._wrapped(agent).post_hooks.extend(hooks)
+        return self
+
+    def run_options(self, agent: Any, **options: Any) -> Self:            # new, concrete
         """Declares framework-native run options for one loaded agent; chained like pre_hook."""
+        wrapped = self._wrapped(agent)
+        wrapped.validate_run_options(options)
+        wrapped.run_options.update(options)
+        return self
+
+    def _wrapped(self, agent: Any) -> Agent:                               # shared resolver
         name = self._native_agent_name(agent)
         wrapped = self.get_agent(name)                                      # existing, :39-48
         if wrapped is None:
             raise ValueError(f"Agent '{name}' is not loaded in this module")
-        wrapped.validate_run_options(options)
-        wrapped.run_options.update(options)
-        return self
+        return wrapped
 
     def _native_agent_name(self, agent: Any) -> str:                       # new, concrete
         """The AK agent name a native agent is registered under. Adapters override the rule."""
         return agent.name
 ```
 
-1. `run_options` is concrete (design amendment 1). It sits after `post_hook` (`:89-97`), is not
-   abstract, and the two abstract hook methods are unchanged, so `SimpleModule`
-   (`ak-py/tests/test_module.py:58`) and any out-of-tree module keep constructing.
+1. `run_options` is concrete (design amendment 1), and since the follow-up lift so are `pre_hook` and
+   `post_hook`: all three return `Self` and share `_wrapped`, so `SimpleModule`
+   (`ak-py/tests/test_module.py:58`) and any out-of-tree module implementing only `_wrap` and `load`
+   keep constructing.
 2. `dict.update` gives the merge semantics the design requires: repeated calls merge, later call
    wins per key.
 3. Only two adapters override `_native_agent_name`: `CrewAIModule` returns `agent.role`
@@ -98,9 +111,14 @@ Rules, numbered so the adapter sections can cite them:
    passes a fixed keyword set directly any more. `options` is `agent.run_options` (or an adapter's
    filtered view of it, see ADK and Pydantic AI); `ak_owned` are the keys the adapter populates.
 2. **AK-owned keys are written last.** This is the runtime invariant; declaration-time reservation
-   (`validate_run_options`) is the redundancy. A caller that bypasses `Module.run_options` by
-   mutating `agent.run_options` directly and inserts a reserved key has it overwritten, not
-   honoured, and the run proceeds.
+   (`validate_run_options`) is the guard. Mutating `agent.run_options` directly skips that guard
+   entirely, and what then happens depends on the key: one the runner passes as a keyword
+   (`session`, `context`, `config`, `run_config`, `reset`, ...) is overwritten; one the adapter passes
+   positionally (OpenAI `starting_agent` / `input`, Pydantic AI `user_prompt`, smolagents `task`)
+   raises the SDK's duplicate-argument `TypeError`; one reserved only because it breaks the reply
+   mapping (LangGraph `stream_mode` / `output_keys` / `print_mode`, ADK `state_delta` /
+   `invocation_id` / `yield_user_message`, smolagents `stream` / `return_full_result`) is forwarded
+   as given. Direct mutation is the caller's responsibility and is documented as such.
 3. **The copy is shallow and per call.** An adapter that adjusts a value for one run (ADK forcing
    SSE) does so on the copy or on a copied value, never on `agent.run_options` or on an object held
    in it.
@@ -122,8 +140,15 @@ Rules, numbered so the adapter sections can cite them:
       "input": "built from the AgentRequest list by the runner",
       "session": "the OpenAISession stored on the Agent Kernel session",
       "context": "populated from the session's framework_context; seed it with Session.set_framework_context()",
+      "conversation_id": "conversation state is the OpenAISession passed as session=; the SDK rejects combining them",
+      "previous_response_id": "conversation state is the OpenAISession passed as session=; the SDK rejects combining them",
+      "auto_previous_response_id": "conversation state is the OpenAISession passed as session=; the SDK rejects combining them",
   }
   ```
+
+  The last three are reserved because openai-agents 0.20.0 raises `UserError` when any of them is
+  combined with `session=`, which the runner always passes; a declaration would succeed and every
+  request fail, the case reservation exists for.
 
 - `run` (`:213`) becomes:
 
@@ -134,7 +159,7 @@ Rules, numbered so the adapter sections can cite them:
 
 - `stream` (`:259`) becomes `Runner.run_streamed(agent.agent, input_data, **kwargs)` with the same
   `kwargs` construction. Both SDK methods accept `max_turns`, `hooks`, `run_config`,
-  `error_handlers`, `previous_response_id`, `auto_previous_response_id`, `conversation_id` (survey).
+  `error_handlers` (survey).
 - No mode-specific handling. `OpenAIModule` (`:423`) inherits `run_options` and the default name rule.
 
 ### LangGraph adapter (`ak-py/src/agentkernel/framework/langgraph/langgraph.py`)
@@ -151,8 +176,13 @@ Rules, numbered so the adapter sections can cite them:
   }
   ```
 
-  and overrides `validate_run_options` to add the nested check: when `options.get("config")` is a
-  `Mapping` and `"thread_id" in (config.get("configurable") or {})`, raise
+  and overrides `validate_run_options` for two more checks. A `RunnableConfig` key declared at the
+  top level (`RUNNABLE_CONFIG_KEYS`: `callbacks`, `tags`, `metadata`, `run_name`, `max_concurrency`,
+  `recursion_limit`, `configurable`, `run_id`) raises `ValueError` pointing to `config={...}`,
+  because `ainvoke` / `astream_events` accept `**kwargs` and silently drop an unknown keyword
+  (verified against langgraph 1.2.11), so the limit or handler would just never apply. And when
+  `options.get("config")` is a `Mapping` and `"thread_id" in (config.get("configurable") or {})`,
+  raise
   `ValueError("Run option 'config.configurable.thread_id' is reserved by the 'langgraph' adapter for agent '<name>': the thread id is the Agent Kernel session id")`.
 - `LangGraphRunner` gains one static method:
 
@@ -189,7 +219,10 @@ Rules, numbered so the adapter sections can cite them:
   ```
 
   `config` is thereby AK-owned at the top level (rule 2) while carrying the caller's entries through
-  the merge. `stream` (`:469-473`) does the same and adds `version="v2"` to `ak_owned`.
+  the merge. `stream` (`:469-473`) does the same and adds `version="v2"` to `ak_owned`, keeping the
+  merged config in a local that the post-stream `aget_state` call reuses, so the stream and the
+  framework-context read-back address the same checkpoint when a caller's `configurable` carries
+  more than the thread id.
 - `interrupt_before`, `interrupt_after`, `durability`, `context` and any other keyword pass through
   untouched. `astream_events` forwards unknown keywords via `**kwargs` (survey), so the SDK, not the
   adapter, decides what it accepts.
@@ -249,7 +282,9 @@ Rules, numbered so the adapter sections can cite them:
   `run_config = self._stream_run_config(run_options.get("run_config"))` and calls
   `runner.run_async(**self._native_kwargs(run_options, user_id=..., session_id=..., new_message=..., run_config=run_config))`.
   `_stream_run_config`: `None` returns `RunConfig(streaming_mode=StreamingMode.SSE)` (today's
-  value); otherwise, if `caller.streaming_mode is not StreamingMode.SSE` and the flag is unset, log
+  value); otherwise, if `"streaming_mode" in caller.model_fields_set`, `caller.streaming_mode is not
+  StreamingMode.SSE` and the flag is unset (a `RunConfig` that never set the field is not a choice
+  being overridden), log
   `self._log.warning("ADK RunConfig streaming_mode %s overridden to SSE for Agent Kernel stream mode; the stream mapping depends on partial events", caller.streaming_mode)`
   and set the flag; return `caller.model_copy(update={"streaming_mode": StreamingMode.SSE})`
   (`RunConfig` is a Pydantic model; `model_copy` verified against google-adk 2.8.0). The caller's
@@ -336,8 +371,9 @@ Rules, numbered so the adapter sections can cite them:
   reply = await asyncio.to_thread(agent.agent.run, prompt, **run_kwargs)
   ```
 
-  `additional_args` is assigned after the helper, so it is written last like the other AK-owned
-  keys, and only when a framework context exists (today's behaviour).
+  `additional_args` is AK-owned in both branches: assigned after the helper when a framework
+  context exists, and removed from the copy otherwise (`run_kwargs.pop("additional_args", None)`),
+  so the no-context call shape is today's.
 - `stream` is unchanged (it raises `NotImplementedError`).
 
 ### Trace runners (`ak-py/src/agentkernel/trace/{langfuse,logfire,openllmetry}/*.py`)
@@ -437,7 +473,7 @@ Per framework (the declared call is the whole point of each demo):
 | `langgraph-run-options` | `config={"callbacks": [ProgressCallbackHandler()], "recursion_limit": 50}` | `BaseCallbackHandler` counting `on_chat_model_start` / `on_tool_start` | how `callbacks` concatenates with a trace runner's handler; `thread_id` is reserved |
 | `adk-run-options` | `plugins=[ProgressPlugin()], run_config=RunConfig(max_llm_calls=20)` | `BasePlugin` with `before_model_callback` / `before_tool_callback` | `plugins` goes to the per-run `Runner` constructor; stream mode forces SSE |
 | `pydanticai-run-options` | `usage_limits=UsageLimits(request_limit=10), event_stream_handler=count_events` | async `event_stream_handler` counting model-request and tool-call events | `event_stream_handler` is dropped in stream mode with one warning |
-| `crewai-run-options` | `step_callback=record_step, max_rpm=30` | `step_callback` counting steps | `Crew`-constructor destination; `verbose` overridable; `Task` options stay on the module maps |
+| `crewai-run-options` | `step_callback=record_step, max_rpm=30` (`max_rpm` is a rate limit; the loop cap is `max_iter` on the native `Agent`, shown on the constructor) | `step_callback` counting steps | `Crew`-constructor destination; `verbose` overridable; `Task` options stay on the module maps |
 | `smolagents-run-options` | `max_steps=6` | native `step_callbacks=[record_step]` on the `CodeAgent` constructor | nothing is needed from AK for progress; `reset` / `additional_args` reserved |
 
 Indexes: each example is added to the CLI section of `docs/docs/examples/overview.md` as a block
@@ -463,13 +499,18 @@ All intentional.
 5. **CrewAI `verbose` becomes overridable.** Today it is fixed `False`; it is now a default under
    the caller's options. No caller could set it before, so no existing behaviour changes.
 6. **ADK stream mode honours a caller's `RunConfig` except `streaming_mode`**, which is forced to
-   `SSE` with one warning per runner when the caller's value differed. Today no caller `RunConfig`
+   `SSE` with one warning per runner when the caller explicitly set a different mode. Today no caller `RunConfig`
    reaches the stream call at all.
 7. **Pydantic AI stream mode drops a caller's `event_stream_handler`** with one warning per runner.
    Today no caller options reach the call at all.
 8. **Declaration-time `ValueError`s** for a reserved key and for an agent not loaded in the module.
    Both are new paths; nothing raised there before because the method did not exist.
 9. **Test-only**: the CrewAI spec-restricted mock agent gains `run_options`.
+10. **`pre_hook` / `post_hook` are concrete on `Module`** (the follow-up lift): they are no longer
+    abstract, the twelve adapter copies are deleted, and an agent not loaded in the module raises
+    `ValueError` naming it instead of `AttributeError` on `None`.
+11. **OpenAI reserves `conversation_id`, `previous_response_id` and `auto_previous_response_id`**,
+    and **LangGraph rejects a `RunnableConfig` key declared at the top level** (review findings).
 
 **Non-changes.** `Runtime.run` / `Runtime.stream` / `AgentService` / `ChatService` signatures;
 `Session` contents and serialisation (no new key, stores read old sessions identically); `AKConfig`;
@@ -485,11 +526,15 @@ ADK, Pydantic AI stream-event mapping.
   its reason. Nothing is written to `run_options` when the call raises (validate runs before
   `update`).
 - **Nested LangGraph `thread_id`**: same `ValueError` shape from `LangGraphAgent.validate_run_options`.
-- **Agent not loaded**: `Module.run_options` raises `ValueError("Agent '<name>' is not loaded in this
-  module")`. This is a deliberate improvement over `pre_hook`, which raises `AttributeError` on
-  `None` today; `pre_hook` itself is not changed.
-- **Unknown option** (a key the SDK rejects): not validated by AK (design, Resolved questions). In
-  `run`, the SDK's `TypeError` is caught by each adapter's existing `except Exception` and returned
+- **Agent not loaded**: `Module._wrapped` raises `ValueError("Agent '<name>' is not loaded in this
+  module")` from `pre_hook`, `post_hook` and `run_options` alike (Behavioural change 10).
+- **Unknown option**: not validated by AK (design, Resolved questions), and what happens then is
+  per SDK. OpenAI, ADK, Pydantic AI and smolagents raise `TypeError` for an unknown keyword.
+  LangGraph and CrewAI drop one silently: `ainvoke` / `astream_events` take `**kwargs` and read only
+  deprecated names, and `Crew` is a Pydantic model with extra fields ignored (verified with crewai
+  1.15.22), so a misspelt key there never applies and the docs say to check the spelling. The
+  known `RunnableConfig` keys are the one LangGraph case guarded at declaration. Where the SDK does
+  raise: in `run`, the `TypeError` is caught by each adapter's existing `except Exception` and returned
   as an `AgentReplyText` via `user_facing_error_message`, exactly like any other framework error
   (`openai.py:223-224` and its siblings). In `stream`, the adapters have no `except` around the
   native call (OpenAI opens a `try` at `:249` closed only by the `finally` at `:275`; the inner

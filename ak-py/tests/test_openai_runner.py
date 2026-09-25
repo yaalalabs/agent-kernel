@@ -863,7 +863,7 @@ class TestOpenAIRunnerRunOptions:
         with Runtime(SessionStoreBuilder.build()):
             module = OpenAIModule([native])
 
-            for key in ("starting_agent", "input", "session", "context"):
+            for key in ("starting_agent", "input", "session", "context", "conversation_id", "previous_response_id", "auto_previous_response_id"):
                 with pytest.raises(ValueError) as exc:
                     module.run_options(native, **{key: object()})
                 assert f"'{key}'" in str(exc.value)

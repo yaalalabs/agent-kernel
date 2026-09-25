@@ -136,13 +136,15 @@ class GoogleADKRunner(BaseRunner):
     def _stream_run_config(self, caller: RunConfig | None) -> RunConfig:
         """
         The RunConfig for a streamed run: the caller's, copied with streaming_mode forced to SSE, because the
-        stream mapping depends on partial events. Logged once per runner when the caller's value differed.
+        stream mapping depends on partial events. Logged once per runner when the caller explicitly set a different mode;
+        a RunConfig that never set streaming_mode is not a choice being overridden.
         :param caller: The declared `run_config` run option, or None.
         :return: A RunConfig with streaming_mode=SSE; the caller's object is never mutated.
         """
         if caller is None:
             return RunConfig(streaming_mode=StreamingMode.SSE)
-        if caller.streaming_mode is not StreamingMode.SSE and not self._streaming_mode_warned:
+        explicitly_set = "streaming_mode" in caller.model_fields_set
+        if explicitly_set and caller.streaming_mode is not StreamingMode.SSE and not self._streaming_mode_warned:
             self._log.warning(
                 f"ADK RunConfig streaming_mode {caller.streaming_mode} overridden to SSE for Agent Kernel stream mode; "
                 "the stream mapping depends on partial events"

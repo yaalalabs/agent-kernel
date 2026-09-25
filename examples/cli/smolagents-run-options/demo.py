@@ -48,7 +48,9 @@ class AppendRunStatsPostHook(PostHook):
         if session is None or not isinstance(agent_reply, AgentReplyText):
             return agent_reply
         cache = session.get_volatile_cache()
-        stats = ", ".join([f"steps={cache.get('steps') or 0}", f"max_steps={MAX_STEPS}"])
+        stats = ", ".join(
+            [f"steps={cache.get('steps') or 0}", f"max_steps={agent.run_options['max_steps']}"]
+        )  # read back from the agent
         agent_reply.response = f"{agent_reply.response}\n\n{STATS_PREFIX} {stats}"
         return agent_reply
 

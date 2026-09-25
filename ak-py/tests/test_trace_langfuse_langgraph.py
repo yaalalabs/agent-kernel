@@ -101,7 +101,7 @@ class TestLangFuseLangGraphRunOptions:
         runner = LangFuseLangGraph(client=MagicMock())
         mine = object()
         agent = _mock_agent({"messages": [_message("hello")]})
-        agent.run_options = {"config": {"callbacks": [mine]}, "max_concurrency": 2}
+        agent.run_options = {"config": {"callbacks": [mine]}, "interrupt_before": ["tools"]}
 
         with patch("agentkernel.trace.langfuse.langgraph.propagate_attributes", _noop_cm):
             await runner.run(agent, Session("s"), [AgentRequestText(prompt="hi")])
@@ -109,4 +109,4 @@ class TestLangFuseLangGraphRunOptions:
         kwargs = agent.agent.ainvoke.call_args.kwargs
         assert kwargs["config"]["callbacks"] == [runner._callback_handler, mine]
         assert kwargs["config"]["configurable"] == {"thread_id": "s"}
-        assert kwargs["max_concurrency"] == 2
+        assert kwargs["interrupt_before"] == ["tools"]

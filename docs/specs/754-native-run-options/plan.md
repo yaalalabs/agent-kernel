@@ -152,8 +152,13 @@ spec set first.
     the checklist at `:421`; step 3 gains the `_native_kwargs` rule.
   - `.agents/skills/ak-dev-testing-conventions/SKILL.md`: the `test_base.py` / `test_module.py` rows
     of the test-file table mention run options.
+  - Root `README.md`: a "Framework-Native Run Options" bullet beside the hooks entry under
+    Compliance; `docs/docs/intro.md`: a What's New line.
+  - User skills: `ak-py/src/agentkernel/skills/ak-build/SKILL.md` (step 6) and
+    `ak-add-capabilities/SKILL.md` (a run-options block with the per-framework table), plus the
+    `cap-run-options` entry in `ak-add-capabilities/evals/evals.json`.
   - **No update needed** (verified by grep for `runner=`, `pre_hook`, `framework_context` in the
-    remaining surfaces): `ak-py/README.md`, the root `README.md`, `docs/docs/core-concepts/session.md`
+    remaining surfaces): `ak-py/README.md`, `docs/docs/core-concepts/session.md`
     (run options are not session state), the deployment READMEs, and the docs-site React pages
     (`docs/src/pages/*.tsx` enumerate frameworks, not module APIs).
 - **Steps:**

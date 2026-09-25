@@ -187,18 +187,6 @@ class ReservingModule(SimpleModule):
         return ReservingWrappedAgent(agent.name, agent)
 
 
-class FluentModule(SimpleModule):
-    """pre_hook/post_hook return self so the fluent chain can be asserted across all three methods."""
-
-    def pre_hook(self, agent: Any, hooks: list[PreHook]) -> "Module":
-        self.get_agent(agent.name).pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent: Any, hooks: list[PostHook]) -> "Module":
-        self.get_agent(agent.name).post_hooks.extend(hooks)
-        return self
-
-
 class RoleNamedFrameworkAgent:
     def __init__(self, role: str):
         self.role = role
@@ -230,7 +218,7 @@ class TestModuleRunOptions:
     def test_chains_with_the_hook_methods_and_returns_the_module(self):
         with Runtime(SessionStoreBuilder.build()):
             a1 = FrameworkAgent("agent1")
-            mod = FluentModule([a1])
+            mod = BareModule([a1])  # the base-class hook methods return the module, so the chain needs no override
 
             result = mod.pre_hook(a1, []).run_options(a1, max_turns=25).post_hook(a1, []).run_options(a1, hooks="h")
 
@@ -268,8 +256,8 @@ class TestModuleRunOptions:
             assert mod.get_agent("researcher").run_options == {"max_rpm": 30}
 
     def test_simple_module_still_constructs_without_implementing_run_options(self):
-        # run_options is concrete on Module (design amendment 1): a subclass implementing only the
-        # abstract hook methods must keep constructing.
+        # run_options is concrete on Module (design amendment 1): a subclass that overrides the hook
+        # methods but never mentions run_options must keep constructing.
         with Runtime(SessionStoreBuilder.build()):
             assert isinstance(SimpleModule([FrameworkAgent("agent1")]), Module)
 

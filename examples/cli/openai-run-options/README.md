@@ -51,8 +51,11 @@ Run stats: llm_calls=2, tool_calls=1, filter_runs=2, max_turns=25
 
 - A hook instance in `run_options` is shared by every concurrent run of that agent. Keep per-run state
   in the session (as this demo does), not on the hook.
-- Trimming input items can cut between a tool call and its output on very long conversations; a real
-  filter should trim at message boundaries. The demo keeps the filter short to show the mechanism.
+- `trim_history` drops a leading `function_call_output` whose call fell outside the kept window, so a
+  tool call and its output are never split (the Responses API rejects an orphan output). A real filter
+  would more likely trim at message boundaries; the demo keeps it short to show the mechanism.
+- The `Run stats:` line reads the limit back from `agent.run_options`, so it reflects what was
+  declared rather than echoing a constant; the counters are what prove the options reached the SDK.
 - Options compose with tracing: the Langfuse, Logfire and OpenLLMetry runners delegate to the base
   runner, so a declared `hooks=` still reaches the SDK when tracing is enabled.
 

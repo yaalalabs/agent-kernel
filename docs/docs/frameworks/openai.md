@@ -116,8 +116,8 @@ OpenAI has **full round-trip** fidelity for the reserved [`framework_context`](.
 
 ## Native run options
 
-The OpenAI Agents SDK's own run arguments (`max_turns`, `hooks`, `run_config`, `error_handlers`,
-`previous_response_id`, `conversation_id`, ...) are declared per agent with
+The OpenAI Agents SDK's own run arguments (`max_turns`, `hooks`, `run_config`, `error_handlers`)
+are declared per agent with
 [`Module.run_options`](../core-concepts/runner.md#native-run-options) and merged into `Runner.run` /
 `Runner.run_streamed`, identical in both modes:
 
@@ -137,7 +137,9 @@ OpenAIModule([agent]).run_options(
 ```
 
 Reserved (raise `ValueError` at declaration): `starting_agent`, `input`, `session` (the
-`OpenAISession` on the Agent Kernel session) and `context` (the framework context above).
+`OpenAISession` on the Agent Kernel session), `context` (the framework context above), and
+`conversation_id`, `previous_response_id`, `auto_previous_response_id`, which the SDK rejects
+alongside the session the runner always passes.
 
 ## Features
 

@@ -644,3 +644,49 @@ class TestLangGraphReservedRunOptions:
 
             module.run_options(graph, config={"configurable": {"other": 1}, "recursion_limit": 3})  # accepted
             assert module.get_agent("nested-thread-id").run_options == {"config": {"configurable": {"other": 1}, "recursion_limit": 3}}
+
+
+class TestLangGraphTopLevelRunnableConfigKeys:
+    """A RunnableConfig key declared at the top level is silently dropped by LangGraph, so it is rejected instead."""
+
+    @pytest.mark.parametrize("key", ["callbacks", "tags", "metadata", "run_name", "max_concurrency", "recursion_limit", "configurable", "run_id"])
+    def test_a_runnable_config_key_at_the_top_level_is_rejected_pointing_to_config(self, key):
+        graph = MagicMock()
+        graph.name = f"top-level-{key}"
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = LangGraphModule([graph])
+
+            with pytest.raises(ValueError) as exc:
+                module.run_options(graph, **{key: object()})
+            assert f"'{key}'" in str(exc.value)
+            assert "config=" in str(exc.value)
+            assert module.get_agent(f"top-level-{key}").run_options == {}
+
+    def test_a_real_ainvoke_keyword_is_still_accepted(self):
+        graph = MagicMock()
+        graph.name = "interrupts"
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = LangGraphModule([graph])
+            module.run_options(graph, interrupt_before=["tools"], config={"recursion_limit": 7})
+            assert module.get_agent("interrupts").run_options == {"interrupt_before": ["tools"], "config": {"recursion_limit": 7}}
+
+
+class TestLangGraphStreamStateReadBack:
+    """The post-stream aget_state must use the same merged config the stream ran with."""
+
+    @pytest.mark.asyncio
+    async def test_aget_state_receives_the_merged_config(self):
+        runner = LangGraphRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"cart": []})
+        captured: dict = {}
+        agent = _capturing_stream_agent(captured)
+        agent.run_options = {"config": {"configurable": {"checkpoint_ns": "x"}}}
+
+        _ = [e async for e in runner.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        expected = {"configurable": {"checkpoint_ns": "x", "thread_id": "s"}}
+        assert captured["config"] == expected
+        assert agent.agent.aget_state.call_args.args[0] == expected

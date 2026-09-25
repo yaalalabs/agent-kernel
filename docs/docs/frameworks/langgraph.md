@@ -154,6 +154,10 @@ runner's entries winning (`configurable.thread_id` stays the session id), list-v
 (`callbacks`, `tags`) concatenate with the runner's entries first (so a Langfuse callback handler is
 kept beside yours), and every other key is yours.
 
+A `RunnableConfig` key declared at the top level (`recursion_limit=50`, `callbacks=[...]`) is rejected
+with a message pointing to `config={...}`: LangGraph silently drops unknown keywords, so it would
+otherwise never apply.
+
 Reserved (raise `ValueError` at declaration): `input`, `version`, `stream_mode`, `output_keys`,
 `print_mode` (the runner reads `result["messages"]` and `structured_response`, so a changed result
 shape breaks the reply mapping) and the nested `config.configurable.thread_id`.

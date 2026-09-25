@@ -32,6 +32,11 @@ example per framework demonstrating run options, mirroring the existing per-fram
 the same branch: both hook methods are concrete on the base `Module`, resolving through
 `_native_agent_name` like `run_options`, and the adapters no longer implement them.
 
+**Amendment (post-review, 2026-09-25):** review of PR #756 added three OpenAI reserved keys
+(`conversation_id`, `previous_response_id`, `auto_previous_response_id`), a LangGraph guard rejecting
+`RunnableConfig` keys at the top level, an ADK warning only for an explicitly set `streaming_mode`,
+and corrected the unknown-key and direct-mutation statements to what each SDK actually does.
+
 ## Motivation
 
 - **The native call is fixed in every adapter**, and the SDK options the user asked for sit on that
@@ -115,9 +120,10 @@ the same branch: both hook methods are concrete on the base `Module`, resolving 
     `crewai.py:548-549`) are Task-level structured-output settings, not run options, and stay as
     they are.
   - `Agent.run_options` is a mutable dict, the same contract as the `pre_hooks` list. Direct
-    mutation bypasses the declaration-time reservation check and is the caller's responsibility;
-    the runner's AK-keys-written-last rule still holds, so a bypassed reserved key is overwritten,
-    not honoured.
+    mutation skips the declaration-time reservation check entirely and is the caller's
+    responsibility. A reserved key the runner writes itself is then overwritten; one the adapter
+    passes positionally raises the SDK's duplicate-argument error; one reserved only for the reply
+    mapping is forwarded as given.
 - **Reserved keys fail at declaration, never per request.**
   - Each adapter's `Agent` subclass declares `RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]]`
     (base default empty), mapping each key its runner populates itself or depends on for reply
@@ -125,10 +131,12 @@ the same branch: both hook methods are concrete on the base `Module`, resolving 
   - `Module.run_options` raises `ValueError` naming the adapter, the key, and the AK mechanism that
     owns it (e.g. "`context` is populated from the session's framework_context; seed it with
     `Session.set_framework_context()` instead").
-  - Unknown keys are **not** validated. They are forwarded, and the SDK's own `TypeError` surfaces
-    through the existing `user_facing_error_message` path on the first run. Rationale: the adapters
-    wrap the SDK call as-is and do not duplicate its signature, and SDK versions add arguments faster
-    than AK releases (see Resolved questions).
+  - Unknown keys are **not** validated. They are forwarded; OpenAI, ADK, Pydantic AI and smolagents
+    then raise `TypeError` on the first run (surfacing through the existing
+    `user_facing_error_message` path), while LangGraph and CrewAI drop an unknown keyword silently
+    and the docs say so. Rationale: the adapters wrap the SDK call as-is and do not duplicate its
+    signature, and SDK versions add arguments faster than AK releases (see Resolved questions). The
+    one guarded case is LangGraph's known `RunnableConfig` keys at the top level, a fixed set.
 
 ### Merge rule: `Runner` (`core/base.py`)
 
@@ -152,7 +160,7 @@ the same branch: both hook methods are concrete on the base `Module`, resolving 
     `max_concurrency`, `run_id`) comes from the caller because AK sets none of them.
   - ADK `run_config` in **stream** mode: the caller's `RunConfig` is copied with
     `streaming_mode=StreamingMode.SSE`, because the AK stream mapping at `adk.py:294-348` depends on
-    partial events. If the caller's value differed, a warning is logged once per runner. In **run**
+    partial events. If the caller explicitly set a different mode, a warning is logged once per runner. In **run**
     mode the caller's `RunConfig` is passed untouched (the SDK default `streaming_mode` is `NONE`).
 
 ### Per-adapter routing and reserved keys
@@ -162,12 +170,14 @@ Each adapter states where options go and which keys are reserved. The lists are 
 
 - **OpenAI** (`openai.py:213`, `:259`): options are keyword arguments of `Runner.run` and
   `Runner.run_streamed`, identical in both modes.
-  - Reserved: `starting_agent`, `input`, `session`, `context`.
-  - Forwarded examples: `max_turns`, `hooks`, `run_config`, `error_handlers`,
-    `previous_response_id`, `auto_previous_response_id`, `conversation_id`.
+  - Reserved: `starting_agent`, `input`, `session`, `context`, and `conversation_id`,
+    `previous_response_id`, `auto_previous_response_id` (the SDK rejects them alongside the
+    `session=` the runner always passes).
+  - Forwarded examples: `max_turns`, `hooks`, `run_config`, `error_handlers`.
 - **LangGraph** (`langgraph.py:414`, `:469`): options are keyword arguments of `ainvoke` and
   `astream_events`; `config` follows the deep-merge rule above.
-  - Reserved: `input`, `version` (the stream path fixes `v2`), and the result-shape arguments the
+  - Reserved: `input`, `version` (the stream path fixes `v2`), any `RunnableConfig` key declared at
+    the top level (LangGraph would drop it silently; the error points to `config={...}`), and the result-shape arguments the
     reply mapping at `:424-427` depends on: `stream_mode`, `output_keys`, `print_mode`. The nested
     `config.configurable.thread_id` is also reserved and checked at declaration.
   - Forwarded examples: `config` (callbacks, recursion_limit, tags, metadata), `context`,
@@ -242,7 +252,7 @@ Each adapter states where options go and which keys are reserved. The lists are 
   and a sentence redirecting keyword-argument needs to run options.
 - `.agents/skills/ak-dev-architecture/SKILL.md`: the Agent, Module and Runner entries.
 - `.agents/skills/ak-dev-new-framework-integration/SKILL.md`: the adapter checklist gains four items:
-  declare `RESERVED_RUN_OPTIONS`, implement `Module.run_options`, build native keyword arguments
+  declare `RESERVED_RUN_OPTIONS`, override `_native_agent_name` when the name rule differs, build native keyword arguments
   through the base helper, and the corresponding tests.
 
 ### Examples

@@ -850,7 +850,7 @@ class TestGoogleADKRunOptions:
     async def test_stream_mode_forces_sse_on_a_copy_and_warns_once_per_runner(self, caplog):
         runner = GoogleADKRunner()
         captured: dict = {}
-        run_config = RunConfig(max_llm_calls=3)
+        run_config = RunConfig(max_llm_calls=3, streaming_mode=StreamingMode.NONE)  # explicitly chosen, so the override is worth a warning
         agent = _mock_agent()
         agent.run_options = {"run_config": run_config}
 
@@ -865,6 +865,21 @@ class TestGoogleADKRunOptions:
         assert agent.run_options["run_config"] is run_config
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "SSE" in r.getMessage()]
         assert len(warnings) == 1
+
+    @pytest.mark.asyncio
+    async def test_stream_does_not_warn_for_a_run_config_that_never_set_streaming_mode(self, caplog):
+        runner = GoogleADKRunner()
+        captured: dict = {}
+        run_config = RunConfig(max_llm_calls=3)  # streaming_mode left at its default, not a caller choice
+        agent = _mock_agent()
+        agent.run_options = {"run_config": run_config}
+
+        with _capturing_setup(captured), caplog.at_level(logging.WARNING, logger="ak.adk.runner"):
+            _ = [e async for e in runner.stream(agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+        assert captured["run_config"].streaming_mode is StreamingMode.SSE
+        assert captured["run_config"].max_llm_calls == 3
+        assert not [r for r in caplog.records if r.levelno == logging.WARNING]
 
     @pytest.mark.asyncio
     async def test_stream_without_a_declared_run_config_uses_sse_and_does_not_warn(self, caplog):

@@ -373,6 +373,9 @@ class OpenAIAgent(BaseAgent):
         "input": "built from the AgentRequest list by the runner",
         "session": "the OpenAISession stored on the Agent Kernel session",
         "context": "populated from the session's framework_context; seed it with Session.set_framework_context()",
+        "conversation_id": "conversation state is the OpenAISession passed as session=; the SDK rejects combining them",
+        "previous_response_id": "conversation state is the OpenAISession passed as session=; the SDK rejects combining them",
+        "auto_previous_response_id": "conversation state is the OpenAISession passed as session=; the SDK rejects combining them",
     }
 
     def __init__(self, name: str, runner: OpenAIRunner, agent: Agent):

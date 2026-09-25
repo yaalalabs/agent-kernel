@@ -298,6 +298,22 @@ class TestSmolagentsRunOptions:
 
         assert mock_agent.run_options == {"max_steps": 4, "reset": True, "additional_args": {"bypass": 1}}
 
+    @pytest.mark.asyncio
+    async def test_bypassed_additional_args_is_dropped_when_there_is_no_framework_context(self):
+        runner = SmolagentsRunner()
+        mock_agent = MagicMock()
+        mock_agent.run_options = {"max_steps": 4, "additional_args": {"bypass": 1}}
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.return_value = "ok"
+            await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])
+
+            mock_to_thread.assert_called_once_with(mock_agent.agent.run, "hi", max_steps=4, reset=False)
+
     def test_module_resolves_the_agent_by_its_native_name_and_rejects_reserved_keys(self):
         from smolagents import ToolCallingAgent
 

@@ -49,7 +49,7 @@ class AppendRunStatsPostHook(PostHook):
             [
                 f"llm_calls={cache.get('llm_calls') or 0}",
                 f"tool_calls={cache.get('tool_calls') or 0}",
-                f"request_limit={REQUEST_LIMIT}",
+                f"request_limit={agent.run_options['usage_limits'].request_limit}",  # read back from the agent
             ]
         )
         agent_reply.response = f"{agent_reply.response}\n\n{STATS_PREFIX} {stats}"

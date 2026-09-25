@@ -50,7 +50,7 @@ class AppendRunStatsPostHook(PostHook):
             [
                 f"llm_calls={cache.get('llm_calls') or 0}",
                 f"tool_calls={cache.get('tool_calls') or 0}",
-                f"recursion_limit={RECURSION_LIMIT}",
+                f"recursion_limit={agent.run_options['config']['recursion_limit']}",  # read back from the agent
             ]
         )
         agent_reply.response = f"{agent_reply.response}\n\n{STATS_PREFIX} {stats}"

@@ -160,6 +160,8 @@ class SmolagentsRunner(Runner):
             run_kwargs: dict[str, Any] = self._native_kwargs(agent.run_options, reset=False)
             if incoming is not None:
                 run_kwargs["additional_args"] = incoming
+            else:
+                run_kwargs.pop("additional_args", None)  # AK owns the key in both branches; the no-context call shape is unchanged
 
             # Preserve conversational continuity across requests without blocking the async event loop.
             reply = await asyncio.to_thread(agent.agent.run, prompt, **run_kwargs)

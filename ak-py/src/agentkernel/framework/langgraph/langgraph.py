@@ -213,13 +213,27 @@ class LangGraphAgent(BaseAgent):
         "print_mode": "the runner reads result['messages'] and result.get('structured_response'); a changed result shape breaks the reply mapping",
     }
 
+    RUNNABLE_CONFIG_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"callbacks", "tags", "metadata", "run_name", "max_concurrency", "recursion_limit", "configurable", "run_id"}
+    )
+    """RunnableConfig keys; declared at the top level LangGraph drops them silently, so they are rejected there."""
+
     def validate_run_options(self, options: Mapping[str, Any]) -> None:
         """
-        Rejects reserved keys, plus the nested `config.configurable.thread_id`, which is the Agent Kernel session id.
+        Rejects reserved keys, a RunnableConfig key declared at the top level (ainvoke / astream_events ignore unknown
+        keywords, so it would silently never apply), and the nested `config.configurable.thread_id`, which is the
+        Agent Kernel session id.
         :param options: The run options about to be declared for this agent.
-        :raises ValueError: Naming the reserved key.
+        :raises ValueError: Naming the offending key.
         """
         super().validate_run_options(options)
+        misplaced = sorted(set(options) & self.RUNNABLE_CONFIG_KEYS)
+        if misplaced:
+            details = ", ".join(f"'{key}'" for key in misplaced)
+            raise ValueError(
+                f"Run option(s) {details} for agent '{self.name}' are RunnableConfig keys and belong inside config={{...}}; "
+                f"the '{self.runner.name}' adapter rejects them at the top level because LangGraph would silently drop them"
+            )
         config = options.get("config")
         if isinstance(config, Mapping) and "thread_id" in (config.get("configurable") or {}):
             raise ValueError(
@@ -513,12 +527,9 @@ class LangGraphRunner(BaseRunner):
                 input_state.update(incoming)
             input_state["messages"] = messages
 
-            kwargs = self._native_kwargs(
-                agent.run_options,
-                input=input_state,
-                config=self._merge_run_config(config, agent.run_options.get("config")),
-                version="v2",
-            )
+            # One merged config for the stream call and the state read-back below, so both address the same checkpoint.
+            merged_config = self._merge_run_config(config, agent.run_options.get("config"))
+            kwargs = self._native_kwargs(agent.run_options, input=input_state, config=merged_config, version="v2")
             async for event in agent.agent.astream_events(**kwargs):
                 for stream_event in self._map_event(event, started, reasoning):
                     yield stream_event
@@ -527,7 +538,7 @@ class LangGraphRunner(BaseRunner):
             # normally. A disconnect or mid-stream error unwinds first, leaving the stored context intact.
             if incoming is not None:
                 try:
-                    state = await agent.agent.aget_state(config)
+                    state = await agent.agent.aget_state(merged_config)
                     produced = {k: state.values[k] for k in incoming if k in state.values}
                     self._store_framework_context(session, incoming, produced)
                 except Exception as e:

@@ -267,7 +267,11 @@ and is never persisted.
 declared option can never displace a value the adapter populates (the session, the framework
 context, the input). The same keys are also rejected at declaration: each adapter names them in
 `RESERVED_RUN_OPTIONS`, and `run_options` raises `ValueError` naming the key and the reason. Unknown
-keys are not validated; they reach the SDK, whose own error surfaces on the first run.
+keys are not validated and reach the SDK. OpenAI, ADK, Pydantic AI and smolagents raise `TypeError` for
+an unknown keyword on the first run; LangGraph and CrewAI drop one silently (`ainvoke` ignores unknown
+keywords, and `Crew` is a Pydantic model that ignores extra fields), so check the spelling there. The
+one guarded case is LangGraph: a `RunnableConfig` key declared at the top level (`recursion_limit`,
+`callbacks`, ...) is rejected with a message pointing to `config={...}`.
 
 Two adapters share an object with the caller rather than a key, and merge deeper:
 
@@ -276,15 +280,16 @@ Two adapters share an object with the caller rather than a key, and merge deeper
   (`callbacks`, `tags`) concatenate with the runner's entries first (a tracing runner's handler is
   kept), everything else is the caller's.
 - **ADK `run_config`** in stream mode is copied with `streaming_mode=SSE`, because the stream mapping
-  depends on partial events; one warning is logged per runner when the caller's value differed.
+  depends on partial events; one warning is logged per runner when the caller explicitly set a
+  different `streaming_mode`.
 
 | Framework | Options go to | Reserved keys | Turn limit | Progress hook |
 |-----------|---------------|---------------|------------|---------------|
-| OpenAI | `Runner.run` / `run_streamed` | `starting_agent`, `input`, `session`, `context` | `max_turns` | `hooks=RunHooks()` |
-| LangGraph | `ainvoke` / `astream_events` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id` | `config["recursion_limit"]` | `config["callbacks"]` |
+| OpenAI | `Runner.run` / `run_streamed` | `starting_agent`, `input`, `session`, `context`, `conversation_id`, `previous_response_id`, `auto_previous_response_id` (the SDK rejects the last three alongside the session the runner passes) | `max_turns` | `hooks=RunHooks()` |
+| LangGraph | `ainvoke` / `astream_events` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id`, and any `RunnableConfig` key at the top level | `config["recursion_limit"]` | `config["callbacks"]` |
 | Google ADK | the per-run `Runner(...)` constructor (`plugins`, `memory_service`, `artifact_service`, `credential_service`, `plugin_close_timeout`) and `run_async` (`run_config`) | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` |
 | Pydantic AI | `agent.run` / `run_stream_events` | `user_prompt`, `message_history`, `deps` | `UsageLimits(request_limit=...)` | `event_stream_handler` (run mode; dropped with one warning in stream mode) |
-| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default) | `agents`, `tasks`, `memory` | `max_rpm` | `step_callback` / `task_callback` |
+| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; `max_rpm` is a forwarded rate limit) | `agents`, `tasks`, `memory` | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` |
 | Smolagents | `agent.run` | `task`, `reset`, `additional_args`, `stream`, `return_full_result` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) |
 
 **Progress: two paths.** In `execution.mode: stream`, [`PostHook.on_stream_event`](../integrations/hooks.md#streaming-hooks-on_stream_event)
