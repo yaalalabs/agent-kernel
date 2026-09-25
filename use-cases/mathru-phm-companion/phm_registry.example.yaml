@@ -1,0 +1,7 @@
+# Copy to phm_registry.yaml and add independently verified PHM numbers and MOH areas.
+# Keep phone numbers quoted. The operator controls this file; never populate it from chat.
+phms: []
+# For the local CLI demo only, replace the empty list with:
+# phms:
+#   - phone: "94112223344"
+#     moh_areas: [Colombo]
