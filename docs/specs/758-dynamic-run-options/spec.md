@@ -17,7 +17,7 @@ import inspect                                                              # ne
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Iterator, Mapping   # + Awaitable, Callable
 
 RunOptionsFactory = Callable[["Agent", Session, list[AgentRequest]], Mapping[str, Any] | Awaitable[Mapping[str, Any]]]
-"""A per-run options factory: (agent, session, requests) -> mapping, sync or async. Defined after Agent."""
+"""A per-run options factory: (agent, session, requests) -> mapping, sync or async. Defined just before Agent."""
 
 
 class Agent(ABC):
@@ -69,7 +69,8 @@ Rules:
 6. `RunOptionsFactory` is added to the `from .base import Agent, Runner, Session` line in
    `core/__init__.py:14`, which the top-level package re-exports through `from .core import *`
    (`agentkernel/__init__.py:21`), so applications annotate factories as `agentkernel.RunOptionsFactory`.
-   The alias lives after the `Agent` class in `base.py` because it names it.
+   The alias lives just before the `Agent` class in `base.py`, naming it through a forward reference, so the
+   `Agent` annotations that use it resolve without quoting.
 
 ### `Module` (`ak-py/src/agentkernel/core/module.py`)
 
@@ -79,11 +80,11 @@ from .base import Agent, RunOptionsFactory                                   # +
 class Module(ABC):
     def run_options(self, agent: Any, factory: RunOptionsFactory | None = None, /, **options: Any) -> Self:   # signature change
         wrapped = self._wrapped(agent)                                        # existing, :117-128
-        if factory is not None:
-            if not callable(factory):
-                raise TypeError(f"Run options factory for agent '{wrapped.name}' must be callable, got {type(factory).__name__}")
-            wrapped.run_options_factory = factory
+        if factory is not None and not callable(factory):
+            raise TypeError(f"Run options factory for agent '{wrapped.name}' must be callable, got {type(factory).__name__}")
         wrapped.validate_run_options(options)                                 # existing
+        if factory is not None:
+            wrapped.run_options_factory = factory
         wrapped.run_options.update(options)                                   # existing, :114
         return self
 ```
@@ -92,8 +93,9 @@ class Module(ABC):
    routes a keyword matching a positional-only name into `**kwargs`), so no existing keyword usage
    changes meaning and no native option name is shadowed.
 2. A later factory replaces the earlier one (one per agent); keywords keep merging per key.
-3. A non-callable factory raises `TypeError` at declaration, before anything is stored. A call with
-   neither a factory nor keywords stores nothing and returns the module.
+3. A non-callable factory raises `TypeError` at declaration, before anything is stored, and a reserved
+   keyword raises the existing `ValueError` before the factory is stored either. A call with neither a
+   factory nor keywords stores nothing and returns the module.
 4. `pre_hook`, `post_hook`, `_wrapped` and `_native_agent_name` are unchanged.
 
 ### Resolution in the adapters

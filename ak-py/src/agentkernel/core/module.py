@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, List, Self
 
 from ..core.hooks import PostHook, PreHook
-from .base import Agent
+from .base import Agent, RunOptionsFactory
 from .runtime import Runtime
 
 
@@ -98,19 +98,31 @@ class Module(ABC):
         self._wrapped(agent).post_hooks.extend(hooks)
         return self
 
-    def run_options(self, agent: Any, **options: Any) -> Self:
+    def run_options(self, agent: Any, factory: RunOptionsFactory | None = None, /, **options: Any) -> Self:
         """
         Declares framework-native run options for one loaded agent, merged into every native run call the
         adapter makes for it (keyword arguments of the framework's own run API, such as OpenAI's `hooks`,
         `run_config` and `max_turns`). Repeated calls merge, the later call winning per key. Chained like
         `pre_hook` / `post_hook`.
+
+        An optional factory, given positionally before the keywords, computes options per run: it is called as
+        `factory(agent, session, requests)` on every run (sync or async) and its result is merged over the static
+        keywords for that run. One factory per agent, a later call replacing the earlier one; keywords keep merging.
+        The parameter is positional-only, so a keyword named `factory` is an ordinary run option.
         :param agent: The native framework agent the options are for.
+        :param factory: A callable computing run options per run, or None to declare static options only.
         :param options: The framework-native keyword arguments to declare.
         :return: This module, for chaining.
-        :raises ValueError: If the agent is not loaded in this module, or an option names a key the adapter reserves.
+        :raises TypeError: If the factory is not callable; nothing is stored.
+        :raises ValueError: If the agent is not loaded in this module, or an option names a key the adapter reserves;
+            nothing is stored.
         """
         wrapped = self._wrapped(agent)
+        if factory is not None and not callable(factory):
+            raise TypeError(f"Run options factory for agent '{wrapped.name}' must be callable, got {type(factory).__name__}")
         wrapped.validate_run_options(options)
+        if factory is not None:
+            wrapped.run_options_factory = factory
         wrapped.run_options.update(options)
         return self
 
