@@ -1,7 +1,7 @@
 import logging
 from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import Any, Callable, List
+from typing import Any, Callable, ClassVar, List, Mapping
 
 from crewai import Agent, Crew, Memory, Task
 from crewai.memory import MemoryRecord, ScopeInfo
@@ -372,12 +372,8 @@ class CrewAIRunner(Runner):
                 output_pydantic=output_pydantic,
                 output_json=output_json,
             )
-            crew = Crew(
-                agents=agent.crew,
-                tasks=[task],
-                verbose=False,
-                memory=memory,
-            )
+            # `verbose=False` is a default the declared options may override; agents/tasks/memory are written last.
+            crew = Crew(**self._native_kwargs({"verbose": False, **agent.run_options}, agents=agent.crew, tasks=[task], memory=memory))
             # CrewAI's kickoff(inputs=...) are template-interpolation variables, not a context/state object, so
             # there is no per-run caller-state slot. Warn once, and leave the stored context untouched.
             if not self._context_warned and session is not None and session.get_framework_context():
@@ -428,6 +424,12 @@ class CrewAIAgent(BaseAgent):
     """
     CrewAIAgent class provides an agent wrapping for CrewAI based agents.
     """
+
+    RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]] = {
+        "agents": "the crew is the module's agent list",
+        "tasks": "the runner builds one Task per run from the prompt",
+        "memory": "the CrewAISession memory stored on the Agent Kernel session",
+    }
 
     def __init__(
         self,
@@ -593,6 +595,14 @@ class CrewAIModule(Module):
         """
         super().load(agents)
         return self
+
+    def _native_agent_name(self, agent: Agent) -> str:
+        """
+        CrewAI agents are registered under their `role`.
+        :param agent: The native CrewAI agent.
+        :return: The registered agent name.
+        """
+        return agent.role
 
     def pre_hook(self, agent: Agent, hooks: list[PreHook]) -> "CrewAIModule":
         """

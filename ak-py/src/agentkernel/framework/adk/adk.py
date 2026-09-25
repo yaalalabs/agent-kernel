@@ -8,7 +8,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncGenerator
-from typing import Any, Callable, List
+from typing import Any, Callable, ClassVar, List, Mapping
 from uuid import uuid4
 
 from google.adk.agents import BaseAgent
@@ -108,12 +108,47 @@ class GoogleADKSession:
 
 
 class GoogleADKRunner(BaseRunner):
+    RUNNER_CONSTRUCTOR_OPTIONS: ClassVar[frozenset[str]] = frozenset(
+        {"plugins", "memory_service", "artifact_service", "credential_service", "plugin_close_timeout"}
+    )
+    """Run options routed to the per-run google.adk Runner(...) constructor; everything else goes to run_async."""
+
     def __init__(self):
         """
         Initializes a GoogleADKRunner instance.
         """
         super().__init__(FRAMEWORK)
         self._log = logging.getLogger("ak.adk.runner")
+        self._streaming_mode_warned = False
+        """Whether the stream-mode streaming_mode override was already logged for this runner."""
+
+    @classmethod
+    def _split_run_options(cls, agent: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+        """
+        Splits an agent's declared run options by destination.
+        :param agent: The Agent Kernel agent whose run options to split.
+        :return: (options for the per-run Runner constructor, options for run_async).
+        """
+        ctor = {k: v for k, v in agent.run_options.items() if k in cls.RUNNER_CONSTRUCTOR_OPTIONS}
+        run = {k: v for k, v in agent.run_options.items() if k not in cls.RUNNER_CONSTRUCTOR_OPTIONS}
+        return ctor, run
+
+    def _stream_run_config(self, caller: RunConfig | None) -> RunConfig:
+        """
+        The RunConfig for a streamed run: the caller's, copied with streaming_mode forced to SSE, because the
+        stream mapping depends on partial events. Logged once per runner when the caller's value differed.
+        :param caller: The declared `run_config` run option, or None.
+        :return: A RunConfig with streaming_mode=SSE; the caller's object is never mutated.
+        """
+        if caller is None:
+            return RunConfig(streaming_mode=StreamingMode.SSE)
+        if caller.streaming_mode is not StreamingMode.SSE and not self._streaming_mode_warned:
+            self._log.warning(
+                f"ADK RunConfig streaming_mode {caller.streaming_mode} overridden to SSE for Agent Kernel stream mode; "
+                "the stream mapping depends on partial events"
+            )
+            self._streaming_mode_warned = True
+        return caller.model_copy(update={"streaming_mode": StreamingMode.SSE})
 
     @staticmethod
     def _session(session: Session) -> GoogleADKSession | None:
@@ -198,31 +233,37 @@ class GoogleADKRunner(BaseRunner):
         state["ak_tool_context"] = ctx.id
         await adk_session.update_session_state(ctx.id, agent.name, state)
 
-        runner = Runner(agent=agent.agent, app_name=app_name, session_service=adk_session.session_service)
+        # Declared constructor options (plugins, services) first; the keys AK owns are written last.
+        ctor_options, _ = self._split_run_options(agent)
+        runner = Runner(**self._native_kwargs(ctor_options, agent=agent.agent, app_name=app_name, session_service=adk_session.session_service))
         return user_id, runner, ctx, adk_session
 
     @staticmethod
-    async def get_response(runner: Runner, user_id: str, session_id: str, parts: list[types.Part]) -> str:
+    async def get_response(
+        runner: Runner, user_id: str, session_id: str, parts: list[types.Part], run_options: Mapping[str, Any] | None = None
+    ) -> str:
         """
         Send a message to the agent and return the final response text asynchronously.
         :param runner: The Google ADK Runner to use for the agent.
         :param user_id: The user ID to use for the agent.
         :param session_id: The session ID to use for the agent.
         :param parts: The message parts to send to the agent.
+        :param run_options: Declared run options for run_async (e.g. `run_config`); the keys AK owns are written last.
         :return: The final response text from the agent.
         """
         new_message = types.Content(role="user", parts=parts)
         response_text = ""
+        kwargs = BaseRunner._native_kwargs(run_options or {}, user_id=user_id, session_id=session_id, new_message=new_message)
 
         if hasattr(runner, "run_async"):
             # Drain the stream instead of breaking early: stopping early cancels ADK's still-running root agent
             # task, and with sub-agents the last final response is the one to return.
-            async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=new_message):
+            async for event in runner.run_async(**kwargs):
                 if event.is_final_response() and event.content and event.content.parts:
                     text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
                     response_text = " ".join(text_parts) if text_parts else ""
         else:
-            for event in runner.run(user_id=user_id, session_id=session_id, new_message=new_message):
+            for event in runner.run(**kwargs):
                 if event.is_final_response() and event.content and event.content.parts:
                     text_parts = [p.text for p in event.content.parts if hasattr(p, "text") and p.text]
                     response_text = " ".join(text_parts) if text_parts else ""
@@ -246,8 +287,9 @@ class GoogleADKRunner(BaseRunner):
 
             incoming = self._load_framework_context(session)
             user_id, runner, ctx, adk_session = await self._setup_session_context(agent, session, requests, incoming)
+            _, run_options = self._split_run_options(agent)
             with ctx:
-                reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id)
+                reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id, run_options=run_options)
 
             # Write back the full ADK state, so keys a tool added during the run also round-trip. Done after
             # the run, so a framework error leaves the stored context intact.
@@ -289,19 +331,21 @@ class GoogleADKRunner(BaseRunner):
         incoming = self._load_framework_context(session)
         user_id, runner, ctx, adk_session = await self._setup_session_context(agent, session, requests, incoming)
         new_message = types.Content(role="user", parts=parts)
-        run_config = RunConfig(streaming_mode=StreamingMode.SSE)
+        _, run_options = self._split_run_options(agent)
+        kwargs = self._native_kwargs(
+            run_options,
+            user_id=user_id,
+            session_id=session.id,
+            new_message=new_message,
+            run_config=self._stream_run_config(run_options.get("run_config")),
+        )
 
         if hasattr(runner, "run_async"):
             with ctx:
                 message_id: str | None = None  # open message id; local, never on self
                 reasoning_id: str | None = None
                 reasoning_streamed = False
-                async for event in runner.run_async(
-                    user_id=user_id,
-                    session_id=session.id,
-                    new_message=new_message,
-                    run_config=run_config,
-                ):
+                async for event in runner.run_async(**kwargs):
                     chunk, thinking = self._event_text(event)
 
                     if getattr(event, "partial", False) and thinking:
@@ -429,6 +473,21 @@ class GoogleADKAgent(AKBaseAgent):
     """
     GoogleADKAgent class provides an agent wrapping for Google ADK Agent SDK based agents.
     """
+
+    RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]] = {
+        "agent": "the native agent is the one this GoogleADKAgent wraps",
+        "app": "the runner constructs the ADK Runner from the agent, not an App",
+        "app_name": "fixed to 'AgentKernel' by the runner",
+        "node": "the runner constructs the ADK Runner from the agent",
+        "session_service": "the GoogleADKSession stored on the Agent Kernel session",
+        "auto_create_session": "the runner creates the ADK session itself",
+        "user_id": "fixed to 'AgentKernel' by the runner",
+        "session_id": "the Agent Kernel session id",
+        "new_message": "built from the AgentRequest list by the runner",
+        "state_delta": "state is seeded from the session's framework_context; seed it with Session.set_framework_context()",
+        "invocation_id": "assigned by ADK per run",
+        "yield_user_message": "the stream mapping expects model events only",
+    }
 
     def __init__(self, name: str, runner: GoogleADKRunner, agent: BaseAgent):
         """
