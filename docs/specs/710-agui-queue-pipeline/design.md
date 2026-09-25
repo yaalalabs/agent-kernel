@@ -22,9 +22,8 @@ pieces and the second caller-waits one.
 - **AG-UI is the only surface still in this position.** #524 moved the seven platforms and #524 §14
   moved conversation threads; `deployment/` runners inherit the seam separately. AG-UI touches no
   pipeline component today.
-- **The #524 adapter seam does not fit.** It is for surfaces whose reply leaves out-of-band over a
-  platform API; AG-UI is caller-waits, and its reply is *n* events down a socket the caller still
-  holds. The table below compares the two contract by contract.
+- **The #524 adapter seam does not fit.** Its contracts assume a reply pushed out-of-band to an
+  address that fits in a string; see the comparison below.
 - **No shared store can serve an event stream.** `ResponseStore` already declares
   `supports_chunk_streaming`/`add_chunk`/`stream`/`close_stream`, defaulting the check to `False`
   (`pipeline/response_store/base.py:54-73`). Exactly one store answers `True`
@@ -45,6 +44,9 @@ API, and AG-UI is caller-waits:
 This is the same conclusion #524 §14 reached for threads (Decision Q12), with one row different —
 and that row is the work threads did not need. A thread's reply was a single record travelling the
 response store's existing mailbox; AG-UI's is a stream.
+
+The two delivery shapes side by side, and what each component change follows from, are in
+`research/delivery-shapes.md`.
 
 ## Design shape
 
@@ -108,18 +110,22 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
   unchanged.
 - `on_permanent_failure` writes one terminal error chunk (`done=True`) so the edge can close the run
   with exactly one `RunError` — the protocol's terminal event, so no client hangs.
-- **Chunk order is the transport's per-group FIFO guarantee**, unchanged from today's STREAM path:
-  the output queue defaults to two consumer threads (`core/config.py:483`), so ordering rests on
-  every transport keeping one group's messages in order to `add_chunk`. AG-UI makes a reordering
-  visible where plain text deltas did not — the events are typed and bracketed. Confirm the
-  guarantee holds on kafka and nats partitioning before relying on it.
+- **Chunk order holds on every built-in transport**, which matters more here than on today's STREAM
+  path because AG-UI's events are typed and bracketed, so a reorder breaks the protocol rather than
+  scrambling text. `_send_to_output` stamps the source message's `group_id`, falling back to
+  `session_id` (`pipeline/agent_runner.py:192-194`), and all four transports serialise a group:
+  `in_memory` holds one deque per group with at most one message in flight (`in_memory.py:21-23`),
+  `sqs` sends FIFO with `MessageGroupId` (`sqs.py:45`), and `kafka` and `nats` hash sessions to
+  partitions served one record at a time (`kafka.py:13-20`, `nats.py:17-19`). The output queue's two
+  default consumer threads (`core/config.py:483`) therefore cannot hold two chunks of one run at
+  once.
 
 ### 4. Response store chunk streaming
 
 - **This implements an existing optional capability; it introduces no new interface.** Consumers
   already check `supports_chunk_streaming()` rather than a store type (`request_handler.py:288`), and
-  the base class already defines the three methods as `NotImplementedError` defaults
-  (`response_store/base.py:54-73`).
+  the base class already declares all four — the capability check defaulting to `False`, the three
+  operations raising `NotImplementedError` (`response_store/base.py:54-73`).
 - `redis` and `valkey` implement `add_chunk`/`stream`/`close_stream` and return `True`.
 - One blocking-pop method joins the shared driver (`core/util/driver/redis_like.py`, which already
   carries `rpush`/`lpop`/`llen` at `232-262`); both backends inherit it, since the `valkey` client is
@@ -151,7 +157,16 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
   today the same object is used by the run, so nothing is stored. Over the queue the runner loads the
   session in another process, so the edge calls `sessions().store(session)` first — otherwise the
   client's inbound state silently never reaches the tools.
-- It keeps the socket, enqueues with `group_id = thread_id` (per-conversation FIFO), drains
+- **Attachments are offloaded at the edge and never ride the queue.** `AGUIRunInput.to_requests`
+  builds `AgentRequestImage`/`AgentRequestFile` carrying inline base64 (`run_input.py:144-145`),
+  which a broker message cannot hold (SQS caps at 256 KB). The edge calls
+  `AttachmentStorageManager.offload` (`core/multimodal/storage/storage_manager.py:155`) and the
+  rebuilt `requests` list travels instead — the same shared helper the seven messaging adapters and
+  `ConversationThreadManager` already use, so AG-UI adds no mechanism of its own. This is #524 §8's
+  rule, and it carries #524 §8's consequence: an attachment-bearing run needs
+  `multimodal.enabled: true` and rejects `storage_type: session_cache`.
+- It keeps the socket, enqueues with `group_id = thread_id` — AG-UI's `threadId` *is* AK's
+  `session_id`, so this is the per-conversation FIFO group §3 relies on — drains
   `store.stream(request_id)`, maps each chunk through `AGUIMapper`, and releases the stream state in
   a `finally` — the shape `RequestHandler._sse_stream` already uses (`request_handler.py:306-334`).
 - The state chunk maps to `StateSnapshotEvent`; the edge needs no `state_before` on this path.
@@ -178,6 +193,11 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
     The check catches the accidental default — which is the case that actually happens, since
     `session.type` defaults to `in_memory` (`core/config.py:94`) — and leaves a deliberate choice
     to the deployer.
+- **Not a precondition, recorded here because it is the other way a run can fail on configuration:**
+  the per-chunk wait keeps the response store's existing `retry_count x delay` budget
+  (`core/config.py:455-456`) rather than introducing an AG-UI-specific timeout. It is the one knob a
+  deployer already tunes for how long a queue-backed reply may take, and it bounds the gap *between*
+  chunks, not the whole run, so a long run never trips it.
 
 ### 7. Configuration
 
@@ -225,6 +245,8 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
 - The two dispatch changes get their own cases: a marked message streams under `rest_sync`, and an
   unmarked message is untouched by either the runner or the Response Handler change.
 - A permanent failure yields exactly one `RunError` and closes the stream.
+- An attachment-bearing run enqueues no inline bytes: the body's `requests` carry
+  `AgentRequestAttachmentRef` and the original base64 is gone (§5).
 - Both preconditions raise at construction (§6): a response store that cannot stream chunks, and
   `session.type: in_memory` on a broker transport. A dotted-path session store is left alone by the
   second check, which is asserted so the accepted blind spot stays deliberate.
@@ -248,7 +270,7 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
   - **The deployment consequence, plainly:** an SQS plus DynamoDB application needs redis or valkey
     added for the response store before it can run AG-UI in queue mode. The **session** store is
     unaffected and can stay on DynamoDB.
-  - **Adding it later is purely additive:** `dynamodb.py` implements the four methods and nothing
+  - **Adding it later is purely additive:** `dynamodb.py` implements those same four methods and nothing
     else in the pipeline or in AG-UI changes, because every check names the capability rather than
     the store (§4).
 - **AG-UI thread recording.** It stays out by construction, because `ATTR_AGUI` is not `ATTR_THREAD`.
