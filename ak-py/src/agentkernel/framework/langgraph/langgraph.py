@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any, AsyncIterator, Callable, Iterator, List, Optional, Sequence
+from typing import Any, AsyncIterator, Callable, ClassVar, Iterator, List, Mapping, Optional, Sequence
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -21,7 +21,6 @@ from pydantic import BaseModel
 
 from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
-from ...core import PostHook, PreHook
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
@@ -206,6 +205,42 @@ class LangGraphAgent(BaseAgent):
     LangGraphAgent class provides an agent wrapping for LangGraph Agents SDK based agents.
     """
 
+    RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]] = {
+        "input": "the graph input state is built from the messages and framework_context by the runner",
+        "version": "the stream path fixes astream_events(version='v2')",
+        "stream_mode": "the runner reads result['messages'] and result.get('structured_response'); a changed result shape breaks the reply mapping",
+        "output_keys": "the runner reads result['messages'] and result.get('structured_response'); a changed result shape breaks the reply mapping",
+        "print_mode": "the runner reads result['messages'] and result.get('structured_response'); a changed result shape breaks the reply mapping",
+    }
+
+    RUNNABLE_CONFIG_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"callbacks", "tags", "metadata", "run_name", "max_concurrency", "recursion_limit", "configurable", "run_id"}
+    )
+    """RunnableConfig keys; declared at the top level LangGraph drops them silently, so they are rejected there."""
+
+    def validate_run_options(self, options: Mapping[str, Any]) -> None:
+        """
+        Rejects reserved keys, a RunnableConfig key declared at the top level (ainvoke / astream_events ignore unknown
+        keywords, so it would silently never apply), and the nested `config.configurable.thread_id`, which is the
+        Agent Kernel session id.
+        :param options: The run options about to be declared for this agent.
+        :raises ValueError: Naming the offending key.
+        """
+        super().validate_run_options(options)
+        misplaced = sorted(set(options) & self.RUNNABLE_CONFIG_KEYS)
+        if misplaced:
+            details = ", ".join(f"'{key}'" for key in misplaced)
+            raise ValueError(
+                f"Run option(s) {details} for agent '{self.name}' are RunnableConfig keys and belong inside config={{...}}; "
+                f"the '{self.runner.name}' adapter rejects them at the top level because LangGraph would silently drop them"
+            )
+        config = options.get("config")
+        if isinstance(config, Mapping) and "thread_id" in (config.get("configurable") or {}):
+            raise ValueError(
+                f"Run option 'config.configurable.thread_id' is reserved by the '{self.runner.name}' adapter for agent "
+                f"'{self.name}': the thread id is the Agent Kernel session id"
+            )
+
     def __init__(self, name: str, runner: "LangGraphRunner", agent: CompiledStateGraph):
         """
         Initializes a LangGraphAgent instance.
@@ -378,6 +413,29 @@ class LangGraphRunner(BaseRunner):
 
         return session_config.model_dump(), messages
 
+    @staticmethod
+    def _merge_run_config(base: dict, caller: Mapping[str, Any] | None) -> dict:
+        """
+        Deep-merges a caller's declared `config` under the RunnableConfig the runner built.
+        Dict-valued keys merge with the runner's entries winning (so `configurable.thread_id` stays the session id
+        while every other `configurable` entry is the caller's); list-valued keys concatenate with the runner's
+        entries first (so a trace runner's callback handler is kept beside the caller's callbacks); any other key
+        the runner set wins. Neither input is mutated.
+        :param base: The config the runner built (possibly decorated by a trace runner).
+        :param caller: The caller's declared `config` run option, or None.
+        :return: A new merged config dict.
+        """
+        merged: dict[str, Any] = dict(caller or {})
+        for key, value in base.items():
+            current = merged.get(key)
+            if isinstance(value, Mapping) and isinstance(current, Mapping):
+                merged[key] = {**current, **value}
+            elif isinstance(value, list) and isinstance(current, list):
+                merged[key] = [*value, *(item for item in current if item not in value)]
+            else:
+                merged[key] = value
+        return merged
+
     async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
         """
         Runs the LangGraph agent with provided multi modal inputs.
@@ -411,10 +469,13 @@ class LangGraphRunner(BaseRunner):
                 input_state.update(incoming)
             input_state["messages"] = messages
 
-            result = await agent.agent.ainvoke(
+            # Declared run options first; `input` and the merged `config` are written last.
+            kwargs = self._native_kwargs(
+                agent.run_options,
                 input=input_state,
-                config=config,
+                config=self._merge_run_config(config, agent.run_options.get("config")),
             )
+            result = await agent.agent.ainvoke(**kwargs)
 
             # Only keys the graph declares as state channels come back on `result`; the rest keep their value.
             if incoming is not None:
@@ -466,11 +527,10 @@ class LangGraphRunner(BaseRunner):
                 input_state.update(incoming)
             input_state["messages"] = messages
 
-            async for event in agent.agent.astream_events(
-                input=input_state,
-                config=config,
-                version="v2",
-            ):
+            # One merged config for the stream call and the state read-back below, so both address the same checkpoint.
+            merged_config = self._merge_run_config(config, agent.run_options.get("config"))
+            kwargs = self._native_kwargs(agent.run_options, input=input_state, config=merged_config, version="v2")
+            async for event in agent.agent.astream_events(**kwargs):
                 for stream_event in self._map_event(event, started, reasoning):
                     yield stream_event
 
@@ -478,7 +538,7 @@ class LangGraphRunner(BaseRunner):
             # normally. A disconnect or mid-stream error unwinds first, leaving the stored context intact.
             if incoming is not None:
                 try:
-                    state = await agent.agent.aget_state(config)
+                    state = await agent.agent.aget_state(merged_config)
                     produced = {k: state.values[k] for k in incoming if k in state.values}
                     self._store_framework_context(session, incoming, produced)
                 except Exception as e:
@@ -664,26 +724,6 @@ class LangGraphModule(BaseModule):
         :return: LangGraphModule instance.
         """
         super().load(agents)
-        return self
-
-    def pre_hook(self, agent: CompiledStateGraph, hooks: list[PreHook]) -> "LangGraphModule":
-        """
-        Attaches pre-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of pre-execution hooks to attach.
-        :return: LangGraphModule instance.
-        """
-        super().get_agent(agent.name).pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent: CompiledStateGraph, hooks: list[PostHook]) -> "LangGraphModule":
-        """
-        Attaches post-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of post-execution hooks to attach.
-        :return: LangGraphModule instance.
-        """
-        super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
 
 

@@ -122,6 +122,34 @@ Two consequences of reading the state back wholesale:
 - **The state is accumulate-only.** ADK keeps every key written to a session for that session's lifetime, so removing a key from `framework_context` does not remove it from ADK — it reappears on the next write-back. To clear a value on ADK, overwrite it (e.g. set it to `None` or `[]`) rather than deleting the key.
 - **Agent-written state round-trips too.** A value an agent writes itself — most commonly `LlmAgent(output_key="...")`, which stores the agent's response in the state — is indistinguishable from a key a tool wrote, so it also lands in `framework_context`. Expect the stored context on ADK to hold more than what your tools put there.
 
+## Native run options
+
+Google ADK's own per-run options are declared per agent with
+[`Module.run_options`](../core-concepts/runner.md#native-run-options). Agent Kernel constructs the
+ADK `Runner` per run, so the options have two destinations: `plugins`, `memory_service`,
+`artifact_service`, `credential_service` and `plugin_close_timeout` go to the `Runner(...)`
+constructor, and `run_config` goes to `run_async`:
+
+```python
+from google.adk.agents.run_config import RunConfig
+from google.adk.plugins.base_plugin import BasePlugin
+
+GoogleADKModule([agent]).run_options(
+    agent,
+    plugins=[ProgressPlugin()],                   # a BasePlugin subclass
+    run_config=RunConfig(max_llm_calls=20),
+)
+```
+
+In `execution.mode: stream` the `RunConfig` is copied with `streaming_mode=SSE`, because the stream
+mapping depends on partial events; one warning is logged per runner when you explicitly set a
+different `streaming_mode`, and
+your object is never mutated. In run mode it is passed as is.
+
+Reserved (raise `ValueError` at declaration): `agent`, `app`, `app_name`, `node`, `session_service`,
+`auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta` (state seeding belongs
+to the framework context above), `invocation_id`, `yield_user_message`.
+
 ## Features
 
 - ✅ Gemini models
@@ -136,3 +164,5 @@ Two consequences of reading the state back wholesale:
 See [examples/cli/adk](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/adk) for complete examples.
 
 For per-run context/state carried across turns, see [examples/cli/adk_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/adk_context) (a cart kept in `framework_context`, written through `tool_context.state`, with a tool-added key demonstrating ADK's full read-back).
+
+For per-agent native run options, see [examples/cli/adk-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/adk-run-options) (`plugins` and a `RunConfig` with `max_llm_calls`, with a deterministic `Run stats:` line on every reply).

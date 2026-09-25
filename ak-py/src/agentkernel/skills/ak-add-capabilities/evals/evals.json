@@ -1,7 +1,7 @@
 {
   "skill": "ak-add-capabilities",
   "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, scheduled tasks, sandbox) skill",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "evals": [
     {
       "id": "cap-guardrail-openai",
@@ -235,6 +235,17 @@
         "async def on_run(",
         "agent_reply: AgentReply",
         "module.post_hook("
+      ]
+    },
+    {
+      "id": "cap-run-options",
+      "name": "Pass framework-native run options",
+      "input": "Raise the OpenAI Agents SDK turn limit for my agent and report progress from the SDK's RunHooks",
+      "expected_outputs": [
+        "RunHooks",
+        "module.run_options(",
+        "max_turns=",
+        "hooks="
       ]
     },
     {

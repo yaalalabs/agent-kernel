@@ -22,7 +22,7 @@ set -euo pipefail
 
 CHART_REF="oci://ghcr.io/yaalalabs/charts/agent-kernel"
 # The published chart version; scripts/update_chart_versions.py pins it to each release.
-CHART_VERSION="0.9.2"
+CHART_VERSION="0.9.3"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOCAL_CHART="$SCRIPT_DIR/../../../../ak-deployment/ak-k8s/chart"

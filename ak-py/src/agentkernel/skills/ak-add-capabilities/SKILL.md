@@ -12,7 +12,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.9.2"
+  version: "0.9.3"
   category: user
 ---
 
@@ -58,7 +58,7 @@ Which capability would you like to add?
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.9.2",
+    "agentkernel[openai,api]>=0.9.3",
     # OpenAI guardrails use the openai extra — already included if using OpenAI framework
 ]
 ```
@@ -112,7 +112,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.9.2",
+    "agentkernel[openai,api,aws]>=0.9.3",
 ]
 ```
 
@@ -138,7 +138,7 @@ guardrail:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,walledai]>=0.9.2",
+    "agentkernel[openai,api,walledai]>=0.9.3",
 ]
 ```
 
@@ -175,7 +175,7 @@ export WALLED_API_KEY="your-walledai-api-key"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,langfuse]>=0.9.2",
+    "agentkernel[openai,api,langfuse]>=0.9.3",
 ]
 ```
 
@@ -200,7 +200,7 @@ export LANGFUSE_HOST="https://cloud.langfuse.com"   # or self-hosted URL
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,openllmetry]>=0.9.2",
+    "agentkernel[openai,api,openllmetry]>=0.9.3",
 ]
 ```
 
@@ -218,7 +218,7 @@ trace:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,logfire]>=0.9.2",
+    "agentkernel[openai,api,logfire]>=0.9.3",
 ]
 ```
 
@@ -247,7 +247,7 @@ export LOGFIRE_TOKEN="your-write-token"
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis]>=0.9.2",
+    "agentkernel[openai,api,redis]>=0.9.3",
 ]
 ```
 
@@ -267,7 +267,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws]>=0.9.2",
+    "agentkernel[openai,api,aws]>=0.9.3",
 ]
 ```
 
@@ -289,7 +289,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,azure]>=0.9.2",
+    "agentkernel[openai,api,azure]>=0.9.3",
 ]
 ```
 
@@ -311,7 +311,7 @@ session:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gcp]>=0.9.2",
+    "agentkernel[openai,api,gcp]>=0.9.3",
 ]
 ```
 
@@ -345,13 +345,13 @@ Add durable knowledge tools that your agents can query and update across session
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,chromadb]>=0.9.2",  # for Chroma
-  # or "agentkernel[openai,api,neo4j]>=0.9.2"
-  # or "agentkernel[openai,api,trino]>=0.9.2"
+  "agentkernel[openai,api,chromadb]>=0.9.3",  # for Chroma
+  # or "agentkernel[openai,api,neo4j]>=0.9.3"
+  # or "agentkernel[openai,api,trino]>=0.9.3"
   # OKF needs NO extra - pyyaml is a core dependency:
-  #    "agentkernel[openai,api]>=0.9.2"
+  #    "agentkernel[openai,api]>=0.9.3"
   # ...unless the bundle is served from S3, which uses the aws extra:
-  #    "agentkernel[openai,api,aws]>=0.9.2"
+  #    "agentkernel[openai,api,aws]>=0.9.3"
 ]
 ```
 
@@ -476,7 +476,7 @@ Expose your agents as MCP (Model Context Protocol) tools so other AI systems can
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,mcp]>=0.9.2",
+    "agentkernel[openai,api,mcp]>=0.9.3",
 ]
 ```
 
@@ -502,7 +502,7 @@ Enable Agent-to-Agent communication via Google's A2A protocol.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,a2a]>=0.9.2",
+    "agentkernel[openai,api,a2a]>=0.9.3",
 ]
 ```
 
@@ -528,7 +528,7 @@ text, tool calls, reasoning, and an optional shared JSON state, all as one typed
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,agui]>=0.9.2",
+    "agentkernel[openai,api,agui]>=0.9.3",
 ]
 ```
 
@@ -634,6 +634,42 @@ module.pre_hook(agent, [RAGPreHook()])
 module.post_hook(agent, [DisclaimerPostHook()])
 ```
 
+**Framework-native run options:** Agent Kernel hooks wrap the whole run. For the framework's own
+per-run arguments and lifecycle hooks, declare them per agent with `module.run_options(agent,
+**options)`, chained like `pre_hook` / `post_hook`; repeated calls merge, the later call winning per
+key. Every keyword is one of the framework's native run arguments and Agent Kernel merges it into the
+call with the keys it owns written last. A native hook's callbacks run inside the Agent Kernel run,
+so `Session.current()` resolves in them (keep per-run state in the session's volatile cache, not on
+the hook instance, which is shared by concurrent runs). This works in any execution mode, including
+`rest_sync`; the streaming hook below is the framework-agnostic path for `stream` mode only.
+
+```python
+from agents import RunConfig, RunHooks
+
+class ProgressHooks(RunHooks):
+    async def on_tool_start(self, context, agent, tool) -> None:
+        cache = Session.current().get_volatile_cache()
+        cache.set("tool_calls", (cache.get("tool_calls") or 0) + 1)
+
+module.run_options(
+    agent,
+    max_turns=25,                                            # the SDK default is 10
+    hooks=ProgressHooks(),
+    run_config=RunConfig(call_model_input_filter=trim_history),
+)
+```
+
+| Framework | `run_options` keywords go to | Turn limit | Progress hook | Reserved (raise at declaration) |
+|-----------|------------------------------|------------|---------------|---------------------------------|
+| OpenAI Agents SDK | `Runner.run` / `run_streamed` | `max_turns` | `hooks=RunHooks()` | `starting_agent`, `input`, `session`, `context`, `conversation_id`, `previous_response_id`, `auto_previous_response_id` |
+| LangGraph | `ainvoke` / `astream_events` (`config` is deep-merged: `configurable.thread_id` stays the session id, `callbacks` lists concatenate) | `config["recursion_limit"]` | `config["callbacks"]` | `input`, `version`, `stream_mode`, `output_keys`, `print_mode`, `config.configurable.thread_id`, and any `RunnableConfig` key at the top level |
+| Google ADK | the per-run `Runner(...)` constructor (`plugins`, services) and `run_async` (`run_config`; copied with `streaming_mode=SSE` in stream mode) | `RunConfig(max_llm_calls=...)` | `plugins=[BasePlugin()]` | `agent`, `app`, `app_name`, `node`, `session_service`, `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta`, `invocation_id`, `yield_user_message` |
+| Pydantic AI | `agent.run` / `run_stream_events` (`event_stream_handler` is dropped in stream mode with one warning) | `UsageLimits(request_limit=...)` | `event_stream_handler` | `user_prompt`, `message_history`, `deps` |
+| CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
+| smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
+
+Worked demos: `examples/cli/<framework>-run-options` for each of the six frameworks.
+
 **Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.mode: stream` is active. Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
 
 ```python
@@ -719,7 +755,7 @@ Enable image and file processing in your agents.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,multimodal]>=0.9.2",
+    "agentkernel[openai,api,multimodal]>=0.9.3",
 ]
 ```
 
@@ -744,7 +780,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,multimodal]>=0.9.2",
+    "agentkernel[openai,api,redis,multimodal]>=0.9.3",
 ]
 ```
 
@@ -767,7 +803,7 @@ multimodal:
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,multimodal]>=0.9.2",
+    "agentkernel[openai,api,aws,multimodal]>=0.9.3",
 ]
 ```
 
@@ -851,7 +887,7 @@ Enable persistent, named conversation threads keyed by `session_id`.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api]>=0.9.2",
+    "agentkernel[openai,api]>=0.9.3",
 ]
 ```
 
@@ -881,7 +917,7 @@ thread:
 **For LLM-based thread naming**, add the `thread` extra:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,thread]>=0.9.2",
+    "agentkernel[openai,api,thread]>=0.9.3",
 ]
 ```
 ```yaml
@@ -896,7 +932,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,thread]>=0.9.2",
+    "agentkernel[openai,api,redis,thread]>=0.9.3",
 ]
 ```
 ```yaml
@@ -912,7 +948,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,valkey,thread]>=0.9.2",
+    "agentkernel[openai,api,valkey,thread]>=0.9.3",
 ]
 ```
 ```yaml
@@ -928,7 +964,7 @@ thread:
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,thread]>=0.9.2",
+    "agentkernel[openai,api,aws,thread]>=0.9.3",
 ]
 ```
 ```yaml
@@ -1017,7 +1053,7 @@ means deploying in queue mode.
 1. Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,cron]>=0.9.2",
+    "agentkernel[openai,api,cron]>=0.9.3",
 ]
 ```
 The `cron` extra brings `croniter`, needed for cron parsing.
@@ -1096,7 +1132,7 @@ curl -X DELETE http://localhost:8000/api/v1/schedules/{task_id}
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,aws,cron]>=0.9.2",
+    "agentkernel[openai,api,aws,cron]>=0.9.3",
 ]
 ```
 ```yaml
@@ -1118,7 +1154,7 @@ them. See the `ak-cloud-deploy` skill.
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,redis,cron]>=0.9.2",   # or valkey
+    "agentkernel[openai,api,redis,cron]>=0.9.3",   # or valkey
 ]
 ```
 ```yaml

@@ -109,6 +109,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 
 - **Guardrails** — OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, content moderation.
 - **Pre/Post Execution Hooks** — Inject policy checks, RAG context, redaction, or moderation around every agent call.
+- **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits) per agent through `Module.run_options`, with the keys Agent Kernel owns kept safe.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
 - **Observability** — LangFuse, OpenLLMetry, and Pydantic Logfire tracing with a single config line.
 - **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.
@@ -186,8 +187,8 @@ The chart is published as an OCI artifact at
 Install it with Helm (the `docker pull` command GitHub shows on the package page does not apply to charts):
 
 ```bash
-helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.2 --untar   # unpacks the flavor values files
-helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.2 \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 \
   -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag>

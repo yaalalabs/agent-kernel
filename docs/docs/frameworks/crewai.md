@@ -122,6 +122,25 @@ implement `Runner.stream()` yet (CrewAI itself supports streaming).
 
 CrewAI **does not support** per-run caller context/state. Its `kickoff(inputs=...)` are `.format()` template-interpolation variables, not a state object, so there is no safe slot for a caller dict. If the reserved [`framework_context`](../core-concepts/session.md#framework-context--per-run-state) session key is set to a non-empty value, the CrewAI runner logs a single warning and **ignores it** (no injection, no write-back); the stored key is left untouched. A tool that still needs the dict can reach it directly via `ToolContext.get().session`.
 
+## Native run options
+
+The `Crew(...)` constructor's own arguments (`step_callback`, `task_callback`, `max_rpm`, `planning`,
+...) are declared per agent with [`Module.run_options`](../core-concepts/runner.md#native-run-options).
+Agent Kernel builds one `Crew` per run and writes the keys it owns (`agents`, `tasks`, `memory`)
+last; `verbose=False` is a default you may override. CrewAI agents are registered by `role`, so that
+is what resolves the agent:
+
+```python
+CrewAIModule([agent]).run_options(
+    agent,
+    step_callback=record_step,
+    max_rpm=30,
+)
+```
+
+Reserved (raise `ValueError` at declaration): `agents`, `tasks`, `memory`. Task-level options stay on
+the module constructor (`output_pydantic`, `output_json`).
+
 ## Features
 
 - ✅ Role-based agents
@@ -134,3 +153,5 @@ CrewAI **does not support** per-run caller context/state. Its `kickoff(inputs=..
 ## Example
 
 See [examples/cli/crewai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/crewai) for complete examples.
+
+For per-agent native run options, see [examples/cli/crewai-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/crewai-run-options) (a `Crew` `step_callback` and `max_rpm`, with a deterministic `Run stats:` line on every reply).
