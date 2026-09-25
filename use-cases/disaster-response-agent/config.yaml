@@ -1,0 +1,18 @@
+# Agent Kernel local development configuration.
+# Session memory here is per-chat-session (conversation history / non-volatile cache).
+# The disaster-response "region memory" (open requests/offers) lives in tool.py's in-memory
+# _STATE store instead, since it must be shared across sessions and users for the whole
+# duration of the disaster. Swap `type: in_memory` below for redis/dynamodb/cosmos to persist
+# conversation sessions too - see agent-kernel/examples/memory for real backends.
+session:
+  type: in_memory
+  cache:
+    size: 256
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+
+logging:
+  ak:
+    level: INFO
