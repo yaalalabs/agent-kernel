@@ -108,9 +108,9 @@ spec set first.
 
 - **Goal:** six runnable CLI demos declaring that framework's turn-limit and progress-hook options,
   each with a deterministic `Run stats:` assertion (spec § Examples).
-- **Files:** `examples/cli/openai_run_options/`, `examples/cli/langgraph_run_options/`,
-  `examples/cli/adk_run_options/`, `examples/cli/pydanticai_run_options/`,
-  `examples/cli/crewai_run_options/`, `examples/cli/smolagents_run_options/` (each: `README.md`,
+- **Files:** `examples/cli/openai-run-options/`, `examples/cli/langgraph-run-options/`,
+  `examples/cli/adk-run-options/`, `examples/cli/pydanticai-run-options/`,
+  `examples/cli/crewai-run-options/`, `examples/cli/smolagents-run-options/` (each: `README.md`,
   `build.sh`, `demo.py`, `demo_test.py`, `pyproject.toml`, `uv.lock`); `.github/test-config.yaml`;
   `docs/docs/examples/overview.md`.
 - **Steps:**

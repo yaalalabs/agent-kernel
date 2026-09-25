@@ -43,6 +43,18 @@ e2e:
     - type: cli
       path: examples/cli/pydanticai_context
     - type: cli
+      path: examples/cli/openai-run-options
+    - type: cli
+      path: examples/cli/langgraph-run-options
+    - type: cli
+      path: examples/cli/adk-run-options
+    - type: cli
+      path: examples/cli/pydanticai-run-options
+    - type: cli
+      path: examples/cli/crewai-run-options
+    - type: cli
+      path: examples/cli/smolagents-run-options
+    - type: cli
       path: examples/cli/custom-evaluator
     - type: cli
       path: examples/cli/opik-evaluator

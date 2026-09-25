@@ -51,6 +51,15 @@ Per-run framework context/state demos — a grocery assistant that carries a car
 - **`adk_context/`** - Google ADK, via `ToolContext.state`
 - **`pydanticai_context/`** - Pydantic AI, via `RunContext.deps`
 
+Per-agent native run options demos, one per framework: each declares that framework's turn-limit option and progress-hook option through `Module.run_options` and appends a deterministic `Run stats:` line to every reply (see the [Runner](../core-concepts/runner.md#native-run-options) guide):
+
+- **`openai-run-options/`** - OpenAI Agents SDK, `max_turns`, `RunHooks` and a `RunConfig` with `call_model_input_filter`
+- **`langgraph-run-options/`** - LangGraph, a `RunnableConfig` with `callbacks` and `recursion_limit`
+- **`adk-run-options/`** - Google ADK, `plugins` and a `RunConfig` with `max_llm_calls`
+- **`pydanticai-run-options/`** - Pydantic AI, `UsageLimits` and an `event_stream_handler`
+- **`crewai-run-options/`** - CrewAI, a `Crew` `step_callback` and `max_rpm`
+- **`smolagents-run-options/`** - smolagents, `max_steps` (progress via the native `step_callbacks` constructor argument)
+
 ### 📁 Sandbox Examples (`/examples/sandbox`)
 
 Sandbox capability examples (execute code/commands in an isolated, permission-bounded environment). See the [Sandbox](../advanced/sandbox.md) guide:

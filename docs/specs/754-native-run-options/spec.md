@@ -400,7 +400,7 @@ one correction.
   (`:305`) adds "override `_native_agent_name` only when the name rule is not `agent.name`"; the
   checklist (`:421`) gains the corresponding items and a test item.
 
-### Examples (`examples/cli/<framework>_run_options/`)
+### Examples (`examples/cli/<framework>-run-options/`)
 
 Six new CLI examples, one per adapter, shaped like `examples/cli/openai_context/` (design, Examples).
 Shared shape:
@@ -414,12 +414,14 @@ Shared shape:
   in the framework's native form that increments `llm_calls` / `tool_calls` counters in
   `Session.current().get_volatile_cache()`; the framework's **turn-limit option**; and
   `AppendRunStatsPostHook(PostHook)` appending
-  `Run stats: llm_calls=<n>, tool_calls=<n>, limit=<value>` to every `AgentReplyText`. Post-hooks run
+  `Run stats: llm_calls=<n>, tool_calls=<n>, <limit name>=<value>` to every `AgentReplyText`, where the
+  limit name is the framework's own (`max_turns`, `recursion_limit`, `max_llm_calls`, `request_limit`,
+  `max_rpm`, `max_steps`); CrewAI and smolagents count `steps` instead of the two call counters. Post-hooks run
   before `Runtime.run` clears the volatile cache in its `finally` (`core/runtime.py:288-298`), so the
   counters are readable there.
 - `demo_test.py`: the `Test("demo.py")` harness (which drives the CLI, i.e. `AgentService.run`, the
   non-stream path, `cli/cli.py:119`), two ordered turns, asserting the `Run stats:` line is present,
-  `limit=` carries the declared static value exactly, and both counters are at least 1 on a
+  the limit carries the declared static value exactly, and the counters are at least 1 on a
   tool-using turn. Model wording is never asserted.
 - `README.md`: what is declared and why, the per-framework destination and reserved keys, the two
   progress paths (AK stream events vs native hooks), and the run instructions block the siblings use.
@@ -429,12 +431,12 @@ Per framework (the declared call is the whole point of each demo):
 
 | Example | `run_options(...)` call | Progress hook form | Notes in README |
 |---|---|---|---|
-| `openai_run_options` | `max_turns=25, hooks=ProgressHooks(), run_config=RunConfig(call_model_input_filter=trim_history)` | `RunHooks` subclass counting `on_llm_start` / `on_tool_start` | `trim_history` keeps the last 20 input items and bumps a `filter_runs` counter shown in the stats line |
-| `langgraph_run_options` | `config={"callbacks": [ProgressCallbackHandler()], "recursion_limit": 50}` | `BaseCallbackHandler` counting `on_chat_model_start` / `on_tool_start` | how `callbacks` concatenates with a trace runner's handler; `thread_id` is reserved |
-| `adk_run_options` | `plugins=[ProgressPlugin()], run_config=RunConfig(max_llm_calls=20)` | `BasePlugin` with `before_model_callback` / `before_tool_callback` | `plugins` goes to the per-run `Runner` constructor; stream mode forces SSE |
-| `pydanticai_run_options` | `usage_limits=UsageLimits(request_limit=10), event_stream_handler=count_events` | async `event_stream_handler` counting model-request and tool-call events | `event_stream_handler` is dropped in stream mode with one warning |
-| `crewai_run_options` | `step_callback=record_step, max_rpm=30` | `step_callback` counting steps | `Crew`-constructor destination; `verbose` overridable; `Task` options stay on the module maps |
-| `smolagents_run_options` | `max_steps=6` | native `step_callbacks=[record_step]` on the `CodeAgent` constructor | nothing is needed from AK for progress; `reset` / `additional_args` reserved |
+| `openai-run-options` | `max_turns=25, hooks=ProgressHooks(), run_config=RunConfig(call_model_input_filter=trim_history)` | `RunHooks` subclass counting `on_llm_start` / `on_tool_start` | `trim_history` keeps the last 20 input items and bumps a `filter_runs` counter shown in the stats line |
+| `langgraph-run-options` | `config={"callbacks": [ProgressCallbackHandler()], "recursion_limit": 50}` | `BaseCallbackHandler` counting `on_chat_model_start` / `on_tool_start` | how `callbacks` concatenates with a trace runner's handler; `thread_id` is reserved |
+| `adk-run-options` | `plugins=[ProgressPlugin()], run_config=RunConfig(max_llm_calls=20)` | `BasePlugin` with `before_model_callback` / `before_tool_callback` | `plugins` goes to the per-run `Runner` constructor; stream mode forces SSE |
+| `pydanticai-run-options` | `usage_limits=UsageLimits(request_limit=10), event_stream_handler=count_events` | async `event_stream_handler` counting model-request and tool-call events | `event_stream_handler` is dropped in stream mode with one warning |
+| `crewai-run-options` | `step_callback=record_step, max_rpm=30` | `step_callback` counting steps | `Crew`-constructor destination; `verbose` overridable; `Task` options stay on the module maps |
+| `smolagents-run-options` | `max_steps=6` | native `step_callbacks=[record_step]` on the `CodeAgent` constructor | nothing is needed from AK for progress; `reset` / `additional_args` reserved |
 
 Indexes: each example is added to the CLI section of `docs/docs/examples/overview.md` as a block
 beside the `_context` one (`:47-52`), linked from its framework page's "Example" section (the

@@ -243,7 +243,7 @@ Each adapter states where options go and which keys are reserved. The lists are 
 
 ### Examples
 
-- One CLI example per framework under `examples/cli/<framework>_run_options/` (`openai`, `langgraph`,
+- One CLI example per framework under `examples/cli/<framework>-run-options/` (`openai`, `langgraph`,
   `adk`, `pydanticai`, `crewai`, `smolagents`), the shape of the existing
   `examples/cli/<framework>_context` demos: `README.md`, `build.sh`, `demo.py`, `demo_test.py`,
   `pyproject.toml`, `uv.lock`.
