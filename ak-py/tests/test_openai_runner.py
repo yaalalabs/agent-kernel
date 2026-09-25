@@ -4,9 +4,13 @@ from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from agents import Agent as SDKAgent
+from agents import RunHooks
 from pydantic import BaseModel
 
 from agentkernel.core import Session
+from agentkernel.core.base import Agent as AKAgent
+from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.event import (
     MessageEnd,
     MessageStart,
@@ -25,7 +29,8 @@ from agentkernel.core.model import (
     AgentRequestImage,
     AgentRequestText,
 )
-from agentkernel.framework.openai.openai import OpenAIRunner, OpenAISession
+from agentkernel.core.runtime import Runtime
+from agentkernel.framework.openai.openai import OpenAIAgent, OpenAIModule, OpenAIRunner, OpenAISession
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
@@ -757,3 +762,182 @@ class TestOpenAISessionGetItems:
         items = await session.get_items()
 
         assert items == [{"id": 1}, {"id": 2}, {"id": 3}]
+
+
+def _run_result(output="done"):
+    result = MagicMock()
+    result.final_output = output
+    return result
+
+
+class TestOpenAIRunnerRunOptions:
+    """Declared run options reach the SDK call; AK-owned keys win; the declared dict is never mutated (spec #754)."""
+
+    @pytest.mark.asyncio
+    async def test_options_are_forwarded_to_runner_run_beside_the_ak_owned_keys(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        hooks, run_config = object(), object()
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_run_result())
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+            mock_agent.run_options = {"max_turns": 25, "hooks": hooks, "run_config": run_config}
+
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+            args, kwargs = MockRunner.run.call_args
+            assert args == (mock_agent.agent, "hi")
+            assert kwargs["max_turns"] == 25
+            assert kwargs["hooks"] is hooks
+            assert kwargs["run_config"] is run_config
+            assert isinstance(kwargs["session"], OpenAISession)
+            assert set(kwargs) == {"max_turns", "hooks", "run_config", "session", "context"}
+
+    @pytest.mark.asyncio
+    async def test_options_are_forwarded_to_runner_run_streamed(self):
+        runner = OpenAIRunner()
+        hooks = object()
+        captured: dict = {}
+
+        def fake_run_streamed(agent, input_data, **kwargs):
+            captured.update(kwargs)
+            result = MagicMock()
+
+            async def stream_events():
+                for event in ():
+                    yield event
+
+            result.stream_events = stream_events
+            return result
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+            mock_agent.run_options = {"max_turns": 25, "hooks": hooks}
+
+            _ = [e async for e in runner.stream(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+        assert captured["max_turns"] == 25
+        assert captured["hooks"] is hooks
+        assert set(captured) == {"max_turns", "hooks", "session", "context"}
+
+    @pytest.mark.asyncio
+    async def test_the_ak_owned_context_wins_over_a_declared_one(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"user_id": "42"})
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_run_result())
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+            mock_agent.run_options = {"context": "caller"}  # only reachable by bypassing Module.run_options
+
+            await runner.run(mock_agent, session, [AgentRequestText(prompt="hi")])
+
+            assert MockRunner.run.call_args.kwargs["context"] == {"user_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_the_declared_dict_is_the_same_unmutated_object_after_two_runs(self):
+        runner = OpenAIRunner()
+        declared = {"max_turns": 25}
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_run_result())
+            mock_agent = MagicMock()
+            mock_agent.agent = MagicMock()
+            mock_agent.run_options = declared
+
+            await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])
+            await runner.run(mock_agent, Session("t"), [AgentRequestText(prompt="hi")])
+
+        assert mock_agent.run_options is declared
+        assert declared == {"max_turns": 25}
+
+    def test_the_reserved_keys_are_rejected_at_declaration_through_the_module(self):
+        native = SDKAgent(name="reserved-keys-agent", instructions="x")
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = OpenAIModule([native])
+
+            for key in ("starting_agent", "input", "session", "context"):
+                with pytest.raises(ValueError) as exc:
+                    module.run_options(native, **{key: object()})
+                assert f"'{key}'" in str(exc.value)
+                assert "'openai'" in str(exc.value)
+
+            module.run_options(native, max_turns=25)  # an unreserved key is accepted
+            assert module.get_agent("reserved-keys-agent").run_options == {"max_turns": 25}
+
+
+class RecordingHooks(RunHooks):
+    """A real SDK RunHooks that records what Session.current() / Agent.current() resolve to inside a callback."""
+
+    def __init__(self):
+        self.seen: list[tuple] = []
+
+    async def on_tool_start(self, context, agent, tool) -> None:
+        self.seen.append((Session.current(), AKAgent.current()))
+
+
+class TestOpenAIHooksSeeTheAKSession:
+    """A native hook declared once at load time can read the AK session and agent in both execution modes."""
+
+    @pytest.fixture(autouse=True)
+    def reset_system_hook_caches(self):
+        Runtime._system_pre_hooks = None
+        Runtime._system_post_hooks = None
+        yield
+        Runtime._system_pre_hooks = None
+        Runtime._system_post_hooks = None
+
+    @staticmethod
+    def _agent_with_hooks(hooks: RunHooks) -> OpenAIAgent:
+        agent = OpenAIAgent("hooked", OpenAIRunner(), SDKAgent(name="hooked", instructions="x"))
+        agent.run_options["hooks"] = hooks
+        return agent
+
+    @pytest.mark.asyncio
+    async def test_session_and_agent_resolve_inside_a_hook_during_run(self):
+        hooks = RecordingHooks()
+        agent = self._agent_with_hooks(hooks)
+        runtime = Runtime(SessionStoreBuilder.build())
+        session = runtime.sessions().new("hook-run")
+
+        async def fake_run(native_agent, input_data, **kwargs):
+            await kwargs["hooks"].on_tool_start(MagicMock(), native_agent, MagicMock())
+            return _run_result()
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(side_effect=fake_run)
+            await runtime.run(agent, session, [AgentRequestText(prompt="hi")])
+
+        assert hooks.seen == [(session, agent)]
+
+    @pytest.mark.asyncio
+    async def test_session_and_agent_resolve_inside_a_hook_fired_from_a_spawned_task_during_stream(self):
+        hooks = RecordingHooks()
+        agent = self._agent_with_hooks(hooks)
+        runtime = Runtime(SessionStoreBuilder.build())
+        session = runtime.sessions().new("hook-stream")
+
+        def fake_run_streamed(native_agent, input_data, **kwargs):
+            result = MagicMock()
+
+            async def stream_events():
+                # run_streamed drives the SDK loop from tasks it creates; a task inherits a copy of the contextvars.
+                await asyncio.create_task(kwargs["hooks"].on_tool_start(MagicMock(), native_agent, MagicMock()))
+                for event in ():
+                    yield event
+
+            result.stream_events = stream_events
+            return result
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
+            _ = [chunk async for chunk in runtime.stream(agent, session, [AgentRequestText(prompt="hi")])]
+
+        assert hooks.seen == [(session, agent)]

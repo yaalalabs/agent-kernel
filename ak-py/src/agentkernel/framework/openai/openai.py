@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any, Callable, List
+from typing import Any, Callable, ClassVar, List, Mapping
 
 from agents import Agent, Runner, function_tool
 from openai.types.responses.response_output_item_added_event import ResponseOutputItemAddedEvent
@@ -210,7 +210,9 @@ class OpenAIRunner(BaseRunner):
             # A deep copy is passed in so tools mutating it in place don't also mutate `incoming`.
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
-            reply = (await Runner.run(agent.agent, input_data, session=self._session(session), context=produced)).final_output
+            # Declared run options (max_turns, hooks, run_config, ...) first; the keys AK owns are written last.
+            kwargs = self._native_kwargs(agent.run_options, session=self._session(session), context=produced)
+            reply = (await Runner.run(agent.agent, input_data, **kwargs)).final_output
 
             self._store_framework_context(session, incoming, produced)
 
@@ -256,7 +258,8 @@ class OpenAIRunner(BaseRunner):
             input_data = self._get_run_input(prompt, message_content)
             incoming = self._load_framework_context(session)
             produced = copy.deepcopy(incoming)
-            result = Runner.run_streamed(agent.agent, input_data, session=self._session(session), context=produced)
+            kwargs = self._native_kwargs(agent.run_options, session=self._session(session), context=produced)
+            result = Runner.run_streamed(agent.agent, input_data, **kwargs)
 
             async for event in result.stream_events():
                 if event.type == "raw_response_event":
@@ -364,6 +367,13 @@ class OpenAIAgent(BaseAgent):
     """
     OpenAIAgent class provides an agent wrapping for OpenAI Agent SDK-based agents.
     """
+
+    RESERVED_RUN_OPTIONS: ClassVar[Mapping[str, str]] = {
+        "starting_agent": "the native agent is the one this OpenAIAgent wraps",
+        "input": "built from the AgentRequest list by the runner",
+        "session": "the OpenAISession stored on the Agent Kernel session",
+        "context": "populated from the session's framework_context; seed it with Session.set_framework_context()",
+    }
 
     def __init__(self, name: str, runner: OpenAIRunner, agent: Agent):
         """
