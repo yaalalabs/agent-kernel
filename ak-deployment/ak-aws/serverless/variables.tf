@@ -3,14 +3,14 @@ variable "region" {
   description = "Region"
 }
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias"
-}
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 
-variable "env_alias" {
-  type        = string
-  description = "Environment alias"
+  validation {
+    condition     = var.prefix != ""
+    error_message = "prefix must be set to a non-empty value."
+  }
 }
 
 variable "product_display_name" {
@@ -23,16 +23,6 @@ variable "module_type" {
   type        = string
   description = "Module type"
   default     = "python"
-}
-
-variable "module_name" {
-  type        = string
-  description = "Module name (used for resource naming). NOTE: must be non-empty when enable_api_gateway is true."
-  default     = ""
-  validation {
-    condition     = !var.enable_api_gateway || var.module_name != ""
-    error_message = "module_name must be set to a non-empty value when enable_api_gateway is true."
-  }
 }
 
 variable "is_production" {
@@ -68,11 +58,11 @@ variable "execution_mode" {
   description = "Execution mode for the deployment. Allowed values: rest_sync, async, stream (always allowed), rest_async (only when queue_mode is true). Use 'stream' for WebSocket streaming where each chunk is sent individually via SQS."
   default     = "rest_sync"
   validation {
-    condition = contains(["rest_sync", "rest_async", "async", "stream"], var.execution_mode)
+    condition     = contains(["rest_sync", "rest_async", "async", "stream"], var.execution_mode)
     error_message = "execution_mode must be one of: rest_sync, rest_async, async, stream."
   }
   validation {
-    condition = var.queue_mode || contains(["rest_sync", "async", "stream"], var.execution_mode)
+    condition     = var.queue_mode || contains(["rest_sync", "async", "stream"], var.execution_mode)
     error_message = "execution_mode must be rest_sync, async, or stream when queue_mode is false."
   }
 }
@@ -307,7 +297,6 @@ variable "authorizer" {
     handler_path          = string
     package_path          = string
     package_type          = string
-    module_name           = string
     result_ttl_in_seconds = optional(number, 150)
     timeout               = optional(number, 30)
     memory_size           = optional(number, 128)
@@ -329,7 +318,6 @@ variable "ws_connection_handler" {
     timeout                           = optional(number, 30)
     memory_size                       = optional(number, 256)
     handler_path                      = optional(string, "ws_connection_handler.handler")
-    module_name                       = optional(string, "ws-connection-handler")
     package_path                      = optional(string, null)
     layers                            = optional(list(string), [])
     cloudwatch_logs_retention_in_days = optional(number, 90)
@@ -350,7 +338,6 @@ variable "request_handler" {
     timeout                           = optional(number, 45)
     memory_size                       = optional(number, 128)
     handler_path                      = optional(string, "request_handler.handler")
-    module_name                       = optional(string, "request-handler")
     package_path                      = optional(string, null)
     package_type                      = optional(string, "LocalZip")
     layers                            = optional(list(string), [])
@@ -359,6 +346,7 @@ variable "request_handler" {
     event_source_mapping              = optional(any, [])
     lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
+    security_group_id                 = optional(string, null) # Request handler security group ID, also shared by the authorizer and WebSocket connection handler Lambdas. If not provided, a new one will be created
   })
   default = {}
   validation {
@@ -387,7 +375,6 @@ variable "agent_runner" {
     timeout                           = optional(number, 45)
     memory_size                       = optional(number, 512)
     handler_path                      = optional(string, "agent_runner.handler")
-    module_name                       = optional(string, "agent-runner")
     package_path                      = optional(string, null)
     package_type                      = optional(string, "LocalZip")
     layers                            = optional(list(string), [])
@@ -395,6 +382,7 @@ variable "agent_runner" {
     environment_variables             = optional(map(string), {})
     lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
+    security_group_id                 = optional(string, null) # Agent runner security group ID (queue mode only). If not provided, a new one will be created
   })
   default = {}
   validation {
@@ -423,7 +411,6 @@ variable "response_handler" {
     timeout                           = optional(number, 45)
     memory_size                       = optional(number, 256)
     handler_path                      = optional(string, "response_handler.handler")
-    module_name                       = optional(string, "response-handler")
     package_path                      = optional(string, null)
     package_type                      = optional(string, "LocalZip")
     layers                            = optional(list(string), [])
@@ -431,6 +418,7 @@ variable "response_handler" {
     environment_variables             = optional(map(string), {})
     lambda_package_s3                 = optional(object({ bucket = string, key = string, version_id = optional(string) }), null)
     ecr_image_uri                     = optional(string, null)
+    security_group_id                 = optional(string, null) # Response handler security group ID (queue mode only). If not provided, a new one will be created
   })
   default = {}
   validation {

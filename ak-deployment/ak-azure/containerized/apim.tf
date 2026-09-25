@@ -1,6 +1,6 @@
 # API Management Service
 resource "azurerm_api_management" "apim" {
-  name                = "${var.product_alias}-${var.env_alias}-apim"
+  name                = "${var.prefix}-apim"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.rg.name
   publisher_name      = var.publisher_name
@@ -32,7 +32,7 @@ resource "azurerm_private_dns_zone" "containerapp" {
 
 # Link the Private DNS zone to the VNet where APIM resides
 resource "azurerm_private_dns_zone_virtual_network_link" "apim_to_containerapp" {
-  name                  = "${var.product_alias}-${var.env_alias}-apim-containerapp-dns-link"
+  name                  = "${var.prefix}-apim-containerapp-dns-link"
   resource_group_name   = data.azurerm_resource_group.rg.name
   private_dns_zone_name = azurerm_private_dns_zone.containerapp.name
   virtual_network_id    = local.vnet_id
@@ -78,7 +78,7 @@ resource "azurerm_private_dns_a_record" "containerapp_wildcard" {
 
 # Update the backend dependency
 resource "azurerm_api_management_backend" "container_backend" {
-  name                = "${var.product_alias}-${var.env_alias}-container-backend"
+  name                = "${var.prefix}-container-backend"
   resource_group_name = data.azurerm_resource_group.rg.name
   api_management_name = azurerm_api_management.apim.name
   protocol            = "http"
@@ -95,11 +95,11 @@ resource "azurerm_api_management_backend" "container_backend" {
 
 # API within API Management
 resource "azurerm_api_management_api" "rest_api" {
-  name                = "${var.product_alias}-${var.env_alias}-rest-api"
+  name                = "${var.prefix}-rest-api"
   resource_group_name = data.azurerm_resource_group.rg.name
   api_management_name = azurerm_api_management.apim.name
   revision            = "1"
-  display_name        = "[${var.env_alias}] ${var.product_display_name} REST API"
+  display_name        = "[${var.prefix}] ${var.product_display_name} REST API"
   path                = var.api_base_path != null && var.api_base_path != "" ? var.api_base_path : ""
   protocols           = ["https"]
 
@@ -109,7 +109,7 @@ resource "azurerm_api_management_api" "rest_api" {
 
 # API Version Set
 resource "azurerm_api_management_api_version_set" "version_set" {
-  name                = "${var.product_alias}-${var.env_alias}-version-set"
+  name                = "${var.prefix}-version-set"
   resource_group_name = data.azurerm_resource_group.rg.name
   api_management_name = azurerm_api_management.apim.name
   display_name        = "API Versions"
@@ -233,7 +233,7 @@ XML
 
 # Diagnostic settings for API Management
 resource "azurerm_api_management_logger" "apim_logger" {
-  name                = "${var.product_alias}-${var.env_alias}-apim-logger"
+  name                = "${var.prefix}-apim-logger"
   api_management_name = azurerm_api_management.apim.name
   resource_group_name = data.azurerm_resource_group.rg.name
   resource_id         = azurerm_application_insights.container_insights.id
@@ -294,7 +294,7 @@ resource "azurerm_api_management_api_diagnostic" "api_diagnostic" {
 }
 
 resource "azurerm_network_security_group" "shared_nsg" {
-  name                = "${var.product_alias}-${var.env_alias}-nsg"
+  name                = "${var.prefix}-nsg"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.rg.name
 

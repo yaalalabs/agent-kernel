@@ -1,13 +1,11 @@
 # OpenAI Agents over WebSocket, queue-based token streaming — see ../README.md
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.1"
+  version = "0.9.3"
 
   providers = { aws = aws, docker = docker }
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   container_type       = "ecs"
   region               = var.region
   vpc_id               = var.vpc_id
@@ -65,7 +63,7 @@ module "containerized_agents" {
   }
 
   tags = {
-    Example     = "openai-stream-queue-mode"
-    Environment = var.env_alias
+    Example    = "openai-stream-queue-mode"
+    Deployment = var.prefix
   }
 }

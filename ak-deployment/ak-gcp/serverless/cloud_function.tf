@@ -2,7 +2,7 @@
 resource "google_service_account" "function_sa" {
   project      = var.project_id
   account_id   = local.sa_id
-  display_name = "Cloud Run SA for ${var.product_alias}-${var.env_alias}"
+  display_name = "Cloud Run SA for ${var.prefix}"
 }
 
 # Let the service write logs to Cloud Logging
@@ -112,7 +112,7 @@ resource "google_cloud_run_v2_service" "service" {
     }
 
     containers {
-      name  = local.prefix
+      name  = var.prefix
       image = module.docker_image.image_url
 
       ports {

@@ -161,8 +161,7 @@ the full agent reply as one `CHAT_RESPONSE` message instead — see [`openai-web
     export TF_VAR_private_subnet_ids='["subnet-xxx","subnet-yyy"]'
     ```
 
-2. Update `deploy/terraform.tfvars` if you want different naming (`product_alias`, `env_alias`,
-   `module_name`, `region`).
+2. Update `deploy/terraform.tfvars` if you want different naming (`prefix`, `region`).
 
 3. Run the deployment script from the `deploy/` directory:
     ```bash

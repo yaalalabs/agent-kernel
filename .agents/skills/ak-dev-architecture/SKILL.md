@@ -89,6 +89,7 @@ Wraps a framework-specific agent. Key properties:
 - **`name`**: Derived from the native agent (e.g., OpenAI `agent.name`, CrewAI `agent.role`)
 - **`runner`**: The `Runner` instance that executes this agent
 - **`pre_hooks` / `post_hooks`**: Lists of `PreHook` / `PostHook` instances applied during execution
+- **`run_options`**: a live dict of framework-native per-run options declared through `Module.run_options` (#754), merged by the adapter into every native run call with the keys it owns written last; never persisted. **`RESERVED_RUN_OPTIONS`** (`ClassVar[Mapping[str, str]]`, key to reason) names the keys the adapter populates itself or depends on for reply mapping, and **`validate_run_options(options)`** raises `ValueError` naming the runner, the agent and every reserved key present (LangGraph overrides it to add the nested `config.configurable.thread_id`)
 - **`get_description()`**: Abstract method: returns the agent's description/instructions
 - **`get_a2a_card()`**: Abstract method: returns an A2A agent card for inter-agent communication
 - **`Agent.current()`**: Class method returning whichever `Agent` is currently executing in this async context (or `None`). Backed by a `contextvars.ContextVar` (`current_agent`) set via the private `_activate()` context manager, which `Runtime.run()`/`Runtime.stream()` wrap the whole hook+runner+hook span in (token-based set/reset, so nested activations: e.g. a future agent-as-tool/handoff calling back into the Runtime: restore rather than clobber). This is how `Session.get_framework_session()` resolves which runner key to read
@@ -102,6 +103,7 @@ Encapsulates framework-specific execution logic:
 - Each framework implements its own Runner (e.g., `OpenAIRunner`, `LangGraphRunner`, `CrewAIRunner`, `GoogleADKRunner`, `SmolagentsRunner`, `PydanticAIRunner`)
 - Runners handle: creating `ToolContext`, converting request models to framework-native formats, invoking the framework's execution API, converting responses back to `AgentReply`
 - **Per-run framework context**: the base `Runner` provides `_load_framework_context(session)` (returns a **deep copy** of the reserved `framework_context` key, or `None` when absent) and `_store_framework_context(session, incoming, produced)` (shallow-merges `produced` over `incoming`: framework-touched top-level keys win, untouched caller keys preserved: with a fail-fast picklability check). Each adapter's `run`/`stream` calls load before the native call, injects `incoming` via its native mechanism, and calls store **only after a successful native call** (inside the `try`, before the `except`; after the `async for` loop for streams, never in `finally`) so a crash/disconnect leaves the stored context intact. Both helpers go through the `Session` accessors, so the raw key name stays inside `Session`. Round-trip fidelity is per-framework (OpenAI and Pydantic AI full: injected as `context=` / `deps=`, mutated in place by tools; ADK all-but-internal-and-scope-prefixed keys, accumulate-only; smolagents pre-seeded keys only, and the context is also appended to the task prompt; LangGraph declared channels only; CrewAI unsupported: warns once per runner and skips). When an adapter seeds caller keys into a native state dict, write AK-internal keys **last** so a caller key cannot displace them (`ak_tool_context` in ADK, `messages` in LangGraph)
+- **Per-agent native run options** (#754): the base `Runner` provides the static `_native_kwargs(options, **ak_owned)`: a shallow copy of the agent's declared `run_options` (or an adapter's filtered view of it) with the AK-owned keys written last. Every native call site in all six adapters builds its keyword arguments through it, so with `{}` options the call is keyword-for-keyword what it was. Two adapters merge deeper because they share an object with the caller: `LangGraphRunner._merge_run_config` deep-merges the caller's `config` under the runner-built one (dict-valued keys merge with AK entries winning, list-valued keys such as `callbacks` concatenate AK-first so the Langfuse handler survives), and `GoogleADKRunner._stream_run_config` copies a caller `RunConfig` with `streaming_mode=SSE` in stream mode (one warning per runner). ADK splits options by destination (`RUNNER_CONSTRUCTOR_OPTIONS` to the per-run `Runner(...)`, the rest to `run_async`; `get_response` gained a trailing optional `run_options`); Pydantic AI's `_stream_run_options` drops `event_stream_handler` in stream mode (one warning per runner); CrewAI feeds `{"verbose": False, **run_options}` to the per-run `Crew(...)`; smolagents merges into its `run_kwargs`. Unknown keys are forwarded unvalidated: OpenAI, ADK, Pydantic AI and smolagents raise `TypeError` on the first run (a `user_facing_error_message` reply in `run`, propagated in `stream`), while LangGraph and CrewAI drop an unknown keyword silently; `LangGraphAgent.validate_run_options` therefore also rejects the known `RunnableConfig` keys (`RUNNABLE_CONFIG_KEYS`) at the top level, pointing to `config={...}`. OpenAI additionally reserves `conversation_id` / `previous_response_id` / `auto_previous_response_id`, which the SDK rejects alongside the `session=` the runner always passes. Direct mutation of `agent.run_options` skips the reservation check: keys the runner writes are overwritten, positional ones raise the SDK's duplicate-argument error, reply-mapping-only ones are forwarded. Trace runners need nothing: they delegate to `super().run`
 
 ### Module (`ak-py/src/agentkernel/core/module.py`)
 
@@ -109,7 +111,8 @@ Container that wraps framework agents and registers them with Runtime:
 
 - **`load(agents)`**: Takes a list of native framework agents, wraps each via `_wrap()`, registers with `Runtime.current()`
 - **`_wrap(agent, agents) -> Agent`**: Abstract method: framework adapters implement this to create their `Agent` subclass
-- **`pre_hook(agent, hooks)` / `post_hook(agent, hooks)`**: Attach hooks to a specific agent
+- **`pre_hook(agent, hooks)` / `post_hook(agent, hooks)`**: Attach hooks to a specific agent. Concrete on the base class since #754's follow-up: both resolve the wrapped agent through `Module._wrapped(agent)` (`_native_agent_name` + `get_agent`, `ValueError` when the agent is not loaded), so no adapter implements them any more
+- **`run_options(agent, **options)`** (#754): concrete on the base class; resolves the wrapped agent through `_wrapped(agent)` and the overridable `_native_agent_name(agent)` (default `agent.name`; `CrewAIModule` returns `agent.role`, `SmolagentsModule` `getattr(agent, "name", "smolagent")`), runs `validate_run_options`, then `dict.update`s (later call wins per key). All three fluent methods return `Self`. A bring-your-own `Module` subclass now implements only `_wrap` and `load`
 - **`unload()`**: Deregisters all agents from the Runtime
 - Constructed with native framework agents: e.g., `OpenAIModule([triage_agent, math_agent])`
 
@@ -263,8 +266,8 @@ Pydantic-based configuration:
 - **Auto-initialized** at import time via `AKConfig._set()`
 - **Config sources** (priority order): environment variables (`AK_` prefix) → config file (YAML/JSON, default `config.yaml`) → defaults
 - **Override path**: Set `AK_CONFIG_PATH_OVERRIDE` env var
-- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`, `multimodal`, `thread`, `schedule`, `trace`, `guardrail`, `sandbox`, `execution`, `logging`. Every messaging block carries an `outbound_adapter` dotted-path override (#524)
-- **Optional (capability-gating) sections**: `thread` and `schedule` are `Optional` — the presence of the block is the enabled-check, so they have no default value
+- **Key sections**: `session`, `api`, `websocket_api`, `a2a`, `mcp`, `slack`, `whatsapp`, `messenger`, `instagram`, `telegram`, `teams`, `gmail`, `multimodal`, `thread`, `schedule`, `okf`, `trace`, `guardrail`, `sandbox`, `execution`, `logging`. Every messaging block carries an `outbound_adapter` dotted-path override (#524)
+- **Optional (capability-gating) sections**: `thread`, `schedule` and `okf` are `Optional` — the presence of the block is the enabled-check, so they have no default value
 
 ## Request/Reply Model (`ak-py/src/agentkernel/core/model.py`)
 
@@ -634,11 +637,66 @@ flag, unlike the thread wiring which is nulled in queue mode: an app can mount
 
 ## Knowledge Bases (`ak-py/src/agentkernel/knowledgebase/`)
 
-Pluggable storage backends agents can read from and write to as tools:
+Pluggable storage backends agents retrieve from and persist to as tools. Each backend declares what
+it honestly supports, and both the ABC and the agent's tool set route on that declaration. To add a
+backend, use the `ak-dev-new-knowledgebase-integration` skill.
 
-- **`KnowledgeBase`** (`base.py`): ABC: backends implement `connect()`, `write()`, `read()`, `backend_name`, `get_description()`; `schema()`, `add_schema()`, `format_results()`, `close()` are provided by the base
-- **`KnowledgeBuilder`** (`knowledgebuilder.py`): Wraps one or more `KnowledgeBase` instances and `build()`s plain-function tools (`get_schemas`, `read_kb`, `write_kb`, `get_all_kb_descriptions`) for binding via a framework's `ToolBuilder`
-- **Backends**: `ChromaManager` (vector, `chroma.py`), `Neo4jManager` (graph, `neo4j.py`), `StarburstManager` (read-only SQL via Trino, `starburst.py`): each behind an optional dependency extra (`chromadb`, `neo4j`, `trino`)
+- **`KnowledgeBase`** (`base.py`): the ABC. Only three members are abstract: `backend_name`,
+  `connect()`, `get_description()`. Five operations are optional and each raises
+  `KnowledgeCapabilityError` unless the backend declares it: `search(query, limit)`,
+  `query(statement, limit)`, `fetch(ids)`, `browse(path, limit)`, `write(records)`. There is **no
+  `read()`**: every member is a declared capability, never a router over the others, and the rule that
+  lets one agent tool serve every backend lives in `KnowledgeBuilder.read_kb`. `schema()`,
+  `add_schema()`, `_derived_schema()`,
+  `format_results()`, `close()` and the static `validate_capabilities()` come from the base;
+  `schema()` writes `capabilities` last and unoverridably.
+- **`KnowledgeCapabilities`** (`model.py`): the per-instance declaration — `kinds` (open taxonomy),
+  `search`/`search_mode`, `query`/`query_language`, `fetch`, `browse`, `writable`, `derives_schema`.
+  `__init__` rejects a declaration that reaches nothing, or `query` without a `query_language` (and the
+  reverse). `KnowledgeMetadata`/`KnowledgeRecord` document the record shape and are never validated —
+  `Record = Mapping[str, Any]` stays the annotation.
+- **Errors** (`errors.py`): `KnowledgeError` base; `KnowledgeCapabilityError` (an undeclared operation,
+  deliberately *not* a `NotImplementedError`); `KnowledgePathError` (a path escaping a store namespace).
+- **`KnowledgeBuilder`** (`knowledgebuilder.py`): wraps one or more `KnowledgeBase` instances and
+  `build(writable=True)`s plain-function tools for binding via a framework's `ToolBuilder`. Three are
+  always emitted (`get_schemas`, `read_kb`, `get_all_kb_descriptions`), `write_kb` joins them at index 2
+  unless `writable=False`, and up to three more are appended on their gates: `fetch_kb` (any backend
+  declares `fetch`), `browse_kb` (any declares `browse`), `search_kb` (any declares `search`).
+  `write_kb` is the exception to *capability* gating: the original four are a compatibility promise, so
+  a registered backend declaring `writable=False` is refused per call rather than hiding the tool —
+  `writable=False` answers the different question of whether this agent may write at all. `read_kb`
+  owns the routing rule (`query()` when `query` is declared, `search()` otherwise). It also resolves
+  `semantic_map` placeholders in queries, browse paths and each comma-separated `fetch` id segment.
+- **Config-driven OKF** (`okf/roles.py`, `okf/capability.py`, `okf/prompts.py`, `okf/tools.py`): an
+  optional `okf` block names bundles and, per bundle, the agents that `consumer`/`producer`/`curator`
+  them. `OKFCapabilityManager` (`get()`/`reset()` singleton, None when the block is absent) is the
+  **only** reader of that block and resolves it to stores, one shared `OKFManager` per database, and a
+  per-agent `KnowledgeBuilder` holding only that agent's databases — which makes read scoping
+  structural rather than checked. `OKFToolFactory.get_tools(agent_name)` is reached from one branch in
+  `SystemToolFactory.get_all`, deliberately **not** through `_agent_allowed` (OKF's scoping is per
+  `(agent, database)`, and the block has no `agents` field). Write permission is the one thing checked
+  at call time, in a `write_kb` wrapper. The role vocabulary never leaves `okf/`: this introduces no
+  generic role or permission framework. Construction is lazy — `get_tools` walks no store.
+- **Storage axis** (`store/`): `DocumentStore` (`store/base.py`) is bytes at paths, owning path
+  containment for every caller; `LocalDocumentStore` (`local.py`, probes writability) and
+  `S3DocumentStore` (`s3.py`, declares it, needs `boto3`). `DocumentStore.from_uri()` resolves a bare
+  path, `file://`, `s3://bucket/prefix`, or `python:pkg.mod.Class`.
+- **`DocumentKnowledgeBase`** (`document.py`): the abstract middle tier for backends addressed by
+  document path. Holds the store, folds `store.writable` into the declaration with `and` so the more
+  restrictive side wins, and maps a missing document to `None` rather than an exception.
+- **Backends**: `ChromaManager` (vector, `chroma.py`, declares `search`+`writable`), `Neo4jManager`
+  (graph, `neo4j.py`, declares `query`/`cypher`+`writable`), `StarburstManager` (read-only SQL via
+  Trino, `starburst.py`, declares `query`/`sql` and `writable=False`; its Trino schema attribute is
+  `db_schema`, not `schema`, which would shadow the method) — each behind an optional extra
+  (`chromadb`, `neo4j`, `trino`) and deliberately **not** exported from `knowledgebase/__init__.py`,
+  because each imports its SDK at module import. `OKFManager` (`okf/`) is the document backend: an Open
+  Knowledge Format bundle over any `DocumentStore`, declaring `search` (lexical), `fetch`, `browse`,
+  `writable` and `derives_schema`, with `OKFParserUtil`/`OKFConcept` in `okf/parser.py`/`okf/model.py`.
+  It needs no extra — `pyyaml` is core.
+- **Exports** (`__init__.py`): PEP 562 `_LAZY_EXPORTS` with a `TYPE_CHECKING` mirror, so importing the
+  package pulls no optional SDK. The reusable `KnowledgeBaseContract` / `DocumentStoreContract` live in
+  `knowledgebase/testing.py` — next to the ABC they constrain, like `sandbox/testing.py` and
+  `pipeline/testing.py`, and kept out of the lazy export map because they import `pytest`.
 
 ## Sandbox (`ak-py/src/agentkernel/sandbox/`)
 
@@ -757,7 +815,10 @@ Rules that govern the package:
 
 The Session, Multimodal attachment, Response Store, and Thread backends share one set of
 connection drivers: `RedisDriver`, `ValkeyDriver` (both subclassing `_RedisLikeDriver`),
-`DynamoDBDriver`, `CosmosDBDriver`, and `FirestoreDriver`. Three rules govern the package:
+`DynamoDBDriver`, `CosmosDBDriver`, `FirestoreDriver`, and `S3Driver` (object storage, backing
+`S3DocumentStore`; unlike `DynamoDBDriver` it runs no probe on connect, because a bucket-level
+probe would demand permissions a read-only bundle prefix does not need). Three rules govern the
+package:
 
 1. **Drivers never read `AKConfig`**: all connection parameters are explicit constructor
    arguments; config reading and validation stay in the stores and factories
@@ -869,8 +930,23 @@ ak-py/src/agentkernel/
 │   ├── teams/
 │   └── gmail/               # the only PollingInboundAdapter
 ├── knowledgebase/           # Knowledge base backends
-│   ├── base.py              # KnowledgeBase ABC
-│   ├── knowledgebuilder.py  # KnowledgeBuilder (exposes KB tools to agents)
+│   ├── base.py              # KnowledgeBase ABC (3 abstract members, 5 gated operations)
+│   ├── model.py             # KnowledgeCapabilities + record TypedDicts
+│   ├── errors.py            # KnowledgeError / KnowledgeCapabilityError / KnowledgePathError
+│   ├── knowledgebuilder.py  # KnowledgeBuilder (exposes capability-gated KB tools to agents)
+│   ├── document.py          # DocumentKnowledgeBase (store composition, writability folding)
+│   ├── store/               # Storage axis: bytes at paths
+│   │   ├── base.py          # DocumentStore ABC + from_uri()
+│   │   ├── local.py         # LocalDocumentStore
+│   │   └── s3.py            # S3DocumentStore (boto3)
+│   ├── okf/                 # Representation axis: Open Knowledge Format
+│   │   ├── manager.py       # OKFManager (search/fetch/browse/write over a store)
+│   │   ├── model.py         # OKFConcept / OKFBundle / TrustTier / DiagnosticCode
+│   │   ├── parser.py        # OKFParserUtil (pure text -> concepts)
+│   │   ├── roles.py         # OKFRole / OKFAssignment / OKFRoleRegistry (config -> permissions)
+│   │   ├── capability.py    # OKFCapabilityManager (the only reader of the `okf` config block)
+│   │   ├── prompts.py       # OKFPromptComposer (per-role mandates + the navigation protocol)
+│   │   └── tools.py         # OKFToolFactory (the per-agent SystemTool closures)
 │   ├── chroma.py            # ChromaDB (vector)
 │   ├── neo4j.py             # Neo4j (graph)
 │   └── starburst.py         # Starburst/Trino (read-only SQL)

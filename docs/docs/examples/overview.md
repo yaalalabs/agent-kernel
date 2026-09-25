@@ -42,7 +42,7 @@ Command-line interface examples for local development and testing:
 - **`openai_structured/`** - OpenAI Agent SDK agent returning structured (Pydantic) output
 - **`pydanticai/`** - Pydantic AI framework integration examples
 - **`smolagents/`** - HuggingFace smolagents `CodeAgent` integration examples
-- **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, and `multi/`
+- **`knowledgebase/openai/`** - OpenAI Agents knowledge base demos split into `chromadb/`, `neo4j/`, `starburst/`, `okf/` (Open Knowledge Format markdown bundle), and `multi/`
 
 Per-run framework context/state demos — a grocery assistant that carries a cart across turns through the reserved `framework_context` session key, one per framework, using each framework's native context mechanism (see the [Session](../core-concepts/session.md) guide):
 
@@ -50,6 +50,15 @@ Per-run framework context/state demos — a grocery assistant that carries a car
 - **`langgraph_context/`** - LangGraph, via a declared state channel on a custom graph
 - **`adk_context/`** - Google ADK, via `ToolContext.state`
 - **`pydanticai_context/`** - Pydantic AI, via `RunContext.deps`
+
+Per-agent native run options demos, one per framework: each declares that framework's turn-limit option and progress-hook option through `Module.run_options` and appends a deterministic `Run stats:` line to every reply (see the [Runner](../core-concepts/runner.md#native-run-options) guide):
+
+- **`openai-run-options/`** - OpenAI Agents SDK, `max_turns`, `RunHooks` and a `RunConfig` with `call_model_input_filter`
+- **`langgraph-run-options/`** - LangGraph, a `RunnableConfig` with `callbacks` and `recursion_limit`
+- **`adk-run-options/`** - Google ADK, `plugins` and a `RunConfig` with `max_llm_calls`
+- **`pydanticai-run-options/`** - Pydantic AI, `UsageLimits` and an `event_stream_handler`
+- **`crewai-run-options/`** - CrewAI, a `Crew` `step_callback` and `max_rpm`
+- **`smolagents-run-options/`** - smolagents, `max_steps` (progress via the native `step_callbacks` constructor argument)
 
 ### 📁 Sandbox Examples (`/examples/sandbox`)
 

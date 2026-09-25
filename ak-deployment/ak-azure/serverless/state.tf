@@ -38,11 +38,10 @@ locals {
 module "vnet" {
   count                = var.vnet_id == null ? 1 : 0
   source               = "yaalalabs/ak-common/azurerm//modules/vnet"
-  version              = "0.9.1"
+  version              = "0.9.3"
   resource_group_name  = var.vnet_resource_group_name == null ? var.resource_group_name : var.vnet_resource_group_name
   location             = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
+  prefix               = var.prefix
   private_subnet_cidrs = var.private_subnet_cidrs
   public_subnet_cidrs  = var.public_subnet_cidrs
   vnet_cidr            = var.vnet_cidr
@@ -52,11 +51,9 @@ module "vnet" {
 module "redis" {
   source                   = "yaalalabs/ak-common/azurerm//modules/redis"
   region                         = var.region
-  version                  = "0.9.1"
+  version                  = "0.9.3"
   count                    = var.create_redis_cluster == true ? 1 : 0
-  product_alias            = var.product_alias
-  env_alias                = var.env_alias
-  module_name              = var.module_name
+  prefix                   = var.prefix
   vnet_resource_group_name = var.vnet_resource_group_name
   resource_group_name      = var.resource_group_name
   tags                     = var.tags
@@ -71,11 +68,9 @@ module "redis" {
 module "cosmos" {
   source                         = "yaalalabs/ak-common/azurerm//modules/cosmos"
   region                         = var.region
-  version                        = "0.9.1"
+  version                        = "0.9.3"
   count                          = var.create_cosmosdb_cluster == true ? 1 : 0
-  product_alias                  = var.product_alias
-  env_alias                      = var.env_alias
-  module_name                    = var.module_name
+  prefix                         = var.prefix
   tags                           = var.tags
   vnet_name                      = local.vnet_name
   subnet_id                      = local.subnet_ids

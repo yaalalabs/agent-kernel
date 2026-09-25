@@ -210,6 +210,30 @@ Two caveats:
 Agent Kernel owns the `deps` slot: it exposes no way for application code to pass its own `deps`, so
 this injection cannot displace a caller-supplied value.
 
+## Native run options
+
+Pydantic AI's own run arguments (`usage_limits`, `model_settings`, `retries`, `metadata`, `toolsets`,
+`event_stream_handler`, ...) are declared per agent with
+[`Module.run_options`](../core-concepts/runner.md#native-run-options) and merged into `agent.run` /
+`agent.run_stream_events`:
+
+```python
+from pydantic_ai.usage import UsageLimits
+
+PydanticAIModule([agent]).run_options(
+    agent,
+    usage_limits=UsageLimits(request_limit=10),
+    event_stream_handler=count_events,
+)
+```
+
+`run_stream_events` does not accept `event_stream_handler` (it is itself the event stream), so in
+`execution.mode: stream` the handler is dropped with one warning per runner and the adapter's own
+stream events carry the same information; `usage_limits` applies in both modes.
+
+Reserved (raise `ValueError` at declaration): `user_prompt`, `message_history` (the
+`PydanticAISession`) and `deps` (the framework context above).
+
 ## Features
 
 - ✅ Function calling
@@ -230,3 +254,5 @@ For per-run context/state carried across turns, see
 [examples/cli/pydanticai_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/pydanticai_context)
 — a cart kept in the framework context, mutated by native `RunContext` tools alongside an Agent Kernel
 tool that uses `ToolContext`, so the two tool styles are shown side by side.
+
+For per-agent native run options, see [examples/cli/pydanticai-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/pydanticai-run-options) (`UsageLimits` and an `event_stream_handler`, with a deterministic `Run stats:` line on every reply).

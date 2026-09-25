@@ -6,7 +6,6 @@ locals {
   agent_runner_package_path             = var.agent_runner.package_path
   agent_runner_package_type             = var.agent_runner.package_type
   agent_runner_handler_path             = var.agent_runner.handler_path
-  agent_runner_module_name              = var.agent_runner.module_name
   agent_runner_layers                   = var.agent_runner.layers
   agent_runner_env_vars                 = var.agent_runner.environment_variables
 
@@ -20,7 +19,7 @@ locals {
 
 resource "aws_iam_policy" "agent_runner_dynamodb_memory_policy" {
   count = var.create_dynamodb_memory_table == true ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-dynamodb"
+  name  = "${var.prefix}-${local.agent_runner_function_name}-dynamodb"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -50,7 +49,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_memory_attachme
 
 resource "aws_iam_policy" "agent_runner_dynamodb_multimodal_policy" {
   count = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-ddb-mm"
+  name  = "${var.prefix}-${local.agent_runner_function_name}-ddb-mm"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -83,7 +82,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_dynamodb_multimodal_atta
 
 resource "aws_iam_policy" "agent_runner_dynamodb_thread_policy" {
   count = var.create_dynamodb_thread_table == true ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-ddb-thread"
+  name  = "${var.prefix}-${local.agent_runner_function_name}-ddb-thread"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -145,7 +144,7 @@ data "aws_s3_object" "signed_component_code" {
 }
 
 resource "aws_iam_role" "agent_runner_lambda_role" {
-  name = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-lambda-role"
+  name = "${var.prefix}-${local.agent_runner_function_name}-lambda-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -172,7 +171,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_vpc_execution" {
 }
 
 resource "aws_iam_policy" "agent_runner_sqs_policy" {
-  name = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-sqs"
+  name = "${var.prefix}-${local.agent_runner_function_name}-sqs"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -207,7 +206,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_sqs_attachment" {
 # Scheduling permissions (the create_schedule/update_schedule/delete_schedule agent tools)
 resource "aws_iam_policy" "agent_runner_scheduler_policy" {
   count = var.enable_scheduling ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-scheduler"
+  name  = "${var.prefix}-${local.agent_runner_function_name}-scheduler"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -242,7 +241,7 @@ resource "aws_iam_role_policy_attachment" "agent_runner_scheduler_attachment" {
 
 resource "aws_iam_policy" "agent_runner_schedule_store_policy" {
   count = var.create_dynamodb_schedule_table ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}-schedule-store"
+  name  = "${var.prefix}-${local.agent_runner_function_name}-schedule-store"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -273,7 +272,7 @@ module "agent_runner_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name          = "${var.product_alias}-${var.env_alias}-${local.agent_runner_module_name}-${local.agent_runner_function_name}"
+  function_name          = "${var.prefix}-${local.agent_runner_function_name}"
   description            = local.agent_runner_function_description
   handler                = local.agent_runner_handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"

@@ -5,13 +5,11 @@
 # /api/v1/app_info - Custom endpoint created by a custom handler
 module "containered_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.1"
+  version = "0.9.3"
 
   providers = { aws = aws, docker = docker }
   # Basic ECS configuration
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   container_type       = "ecs"
   region               = var.region
   vpc_id               = var.vpc_id

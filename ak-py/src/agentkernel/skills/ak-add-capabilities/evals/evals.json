@@ -1,7 +1,7 @@
 {
   "skill": "ak-add-capabilities",
   "description": "Evaluations for the ak-add-capabilities (guardrails, tracing, sessions, knowledge base, MCP, A2A, AG-UI, hooks, multimodal, conversation threads, scheduled tasks, sandbox) skill",
-  "version": "0.9.1",
+  "version": "0.9.3",
   "evals": [
     {
       "id": "cap-guardrail-openai",
@@ -142,6 +142,21 @@
       ]
     },
     {
+      "id": "cap-knowledgebase-okf",
+      "name": "Add an Open Knowledge Format knowledge base",
+      "input": "Add a knowledge base backed by a folder of markdown files",
+      "expected_outputs": [
+        "OKFManager",
+        "LocalDocumentStore",
+        "KnowledgeBuilder",
+        "browse_kb",
+        "fetch_kb"
+      ],
+      "must_not_contain": [
+        "add_schema"
+      ]
+    },
+    {
       "id": "cap-knowledgebase-starburst",
       "name": "Add Starburst knowledge base",
       "input": "Use Starburst as a knowledge base backend",
@@ -149,6 +164,7 @@
         "StarburstManager",
         "semantic_map",
         "read-only",
+        "writable=False",
         "agentkernel[",
         "trino"
       ],
@@ -219,6 +235,17 @@
         "async def on_run(",
         "agent_reply: AgentReply",
         "module.post_hook("
+      ]
+    },
+    {
+      "id": "cap-run-options",
+      "name": "Pass framework-native run options",
+      "input": "Raise the OpenAI Agents SDK turn limit for my agent and report progress from the SDK's RunHooks",
+      "expected_outputs": [
+        "RunHooks",
+        "module.run_options(",
+        "max_turns=",
+        "hooks="
       ]
     },
     {

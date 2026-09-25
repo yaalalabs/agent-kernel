@@ -4,8 +4,8 @@ module "websocket_api" {
   version = "6.1.0"
 
   # API
-  name        = "${var.product_alias}-${var.env_alias}-websocket-api-${var.region}"
-  description = "[${var.env_alias}] ${var.product_display_name} WebSocket API"
+  name        = "${var.prefix}-websocket-api-${var.region}"
+  description = "[${var.prefix}] ${var.product_display_name} WebSocket API"
 
   # Custom Domain
   create_domain_name = false
@@ -101,7 +101,7 @@ resource "aws_lambda_permission" "websocket_connection_handler" {
 # IAM policy for route handler Lambda to call PostToConnection on WebSocket API
 resource "aws_iam_policy" "route_handler_websocket_api_policy" {
   count = var.route_handler_lambda_role_name != null ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-route-handler-websocket-api"
+  name  = "${var.prefix}-route-handler-websocket-api"
 
   policy = jsonencode({
     Version = "2012-10-17"

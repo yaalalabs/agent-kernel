@@ -1,7 +1,6 @@
 .terraform
 requirements.txt
-dist
-dist.zip
+dist*
 *.tfstate
 *.tfstate.backup
 

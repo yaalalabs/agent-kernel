@@ -1,12 +1,10 @@
 module "FlexFunction" {
   source                  = "yaalalabs/ak-serverless/azurerm"
-  version                 = "0.9.1"
+  version                 = "0.9.3"
   providers               = { azurerm = azurerm }
-  product_alias           = var.product_alias
-  env_alias               = var.env_alias
+  prefix                  = var.prefix
   function_description    = "Agent Kernel OpenAI Sample Azure Function"
   function_name           = "openai-agents"
-  module_name             = var.module_name
   module_type             = "python"
   region                  = var.region
   publisher_email         = var.publisher_email

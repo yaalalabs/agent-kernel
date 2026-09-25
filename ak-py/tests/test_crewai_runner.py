@@ -12,7 +12,7 @@ from agentkernel.core import Session
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
 from agentkernel.core.runtime import Runtime
-from agentkernel.framework.crewai.crewai import CrewAIModule, CrewAIRunner
+from agentkernel.framework.crewai.crewai import CrewAIAgent, CrewAIModule, CrewAIRunner
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
 
@@ -31,10 +31,11 @@ def _crew_output(pydantic=None, json_dict=None, raw=""):
 
 
 def _mock_agent(output_pydantic=None, output_json=None):
-    agent = MagicMock(spec=["agent", "crew", "name", "output_pydantic", "output_json"])
+    agent = MagicMock(spec=["agent", "crew", "name", "output_pydantic", "output_json", "run_options"])
     agent.name = "Researcher"
     agent.agent = MagicMock()
     agent.crew = [agent.agent]
+    agent.run_options = {}
     agent.output_pydantic = output_pydantic
     agent.output_json = output_json
     return agent
@@ -363,3 +364,61 @@ class TestCrewAIRunnerRun:
             await runner.run(mock_agent, session, [AgentRequestText(prompt="hello")])
 
         assert session.get(CrewAIRunner.TRANSCRIPT_KEY) == []
+
+
+class TestCrewAIRunOptions:
+    """Declared run options reach the per-run Crew(...) constructor; agents/tasks/memory stay AK-owned (spec #754)."""
+
+    def test_reserved_keys(self):
+        assert set(CrewAIAgent.RESERVED_RUN_OPTIONS) == {"agents", "tasks", "memory"}
+
+    @pytest.mark.asyncio
+    async def test_options_reach_crew_and_verbose_is_overridable(self):
+        runner = CrewAIRunner()
+        agent = _mock_agent()
+        callback = object()
+        agent.run_options = {"step_callback": callback, "verbose": True, "max_rpm": 30, "agents": "bypassed"}
+
+        memory_patch, task_patch, crew_patch = _patches(runner, _crew_output(raw="answer"))
+        with memory_patch, task_patch, crew_patch as crew_cls:
+            await runner.run(agent, Session("s"), [AgentRequestText(prompt="research AI")])
+
+        kwargs = crew_cls.call_args.kwargs
+        assert kwargs["step_callback"] is callback
+        assert kwargs["verbose"] is True
+        assert kwargs["max_rpm"] == 30
+        assert kwargs["agents"] == agent.crew  # the bypassed 'agents' value is overwritten, not honoured
+        assert kwargs["memory"] is None
+        assert "tasks" in kwargs
+
+    @pytest.mark.asyncio
+    async def test_empty_options_reproduce_todays_crew_kwargs(self):
+        runner = CrewAIRunner()
+        agent = _mock_agent()
+
+        memory_patch, task_patch, crew_patch = _patches(runner, _crew_output(raw="answer"))
+        with memory_patch, task_patch, crew_patch as crew_cls:
+            await runner.run(agent, Session("s"), [AgentRequestText(prompt="research AI")])
+
+        kwargs = crew_cls.call_args.kwargs
+        assert set(kwargs) == {"agents", "tasks", "verbose", "memory"}
+        assert kwargs["verbose"] is False
+
+    def test_module_resolves_the_agent_by_role_and_rejects_reserved_keys(self):
+        native = CrewAgent(role="Researcher", goal="Research topics", backstory="A researcher", verbose=False)
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = CrewAIModule([native])
+
+            with pytest.raises(ValueError) as exc:
+                module.run_options(native, tasks=[])
+            assert "'tasks'" in str(exc.value)
+            assert "'crewai'" in str(exc.value)
+
+            module.run_options(native, max_rpm=30)
+            assert module.get_agent("Researcher").run_options == {"max_rpm": 30}
+
+            hook = object()
+            module.pre_hook(native, [hook]).post_hook(native, [hook])  # resolved by role through the base class
+            assert module.get_agent("Researcher").pre_hooks == [hook]
+            assert module.get_agent("Researcher").post_hooks == [hook]

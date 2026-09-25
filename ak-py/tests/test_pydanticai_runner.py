@@ -28,11 +28,13 @@ from pydantic_ai.run import AgentRunResultEvent
 from pydantic_core import to_jsonable_python
 
 from agentkernel.core import Session
+from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
+from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.serde import BinarySerde
 from agentkernel.core.tool import SystemToolFactory
-from agentkernel.framework.pydanticai.pydanticai import FRAMEWORK, PydanticAIAgent, PydanticAIRunner, PydanticAISession
+from agentkernel.framework.pydanticai.pydanticai import FRAMEWORK, PydanticAIAgent, PydanticAIModule, PydanticAIRunner, PydanticAISession
 
 
 class CalendarEvent(BaseModel):
@@ -830,3 +832,80 @@ class TestPydanticAIAgentDescription:
     def test_empty_when_neither_set(self):
         native = Agent(model=TestModel(), name="n")
         assert PydanticAIAgent("n", PydanticAIRunner(), native).get_description() == ""
+
+
+def _capturing_stream_agent(captured: dict):
+    """A mock agent whose run_stream_events records its keywords and yields only the terminal result event."""
+    mock_agent = MagicMock()
+
+    @asynccontextmanager
+    async def run_stream_events(content, **kwargs):
+        captured.clear()
+        captured.update(kwargs)
+
+        async def stream():
+            result = MagicMock()
+            result.all_messages = MagicMock(return_value=[])
+            yield AgentRunResultEvent(result=result)
+
+        yield stream()
+
+    mock_agent.agent = MagicMock()
+    mock_agent.agent.run_stream_events = run_stream_events
+    return mock_agent
+
+
+class TestPydanticAIRunOptions:
+    """Declared run options reach agent.run; stream drops event_stream_handler with one warning (spec #754)."""
+
+    def test_reserved_keys(self):
+        assert set(PydanticAIAgent.RESERVED_RUN_OPTIONS) == {"user_prompt", "message_history", "deps"}
+
+    @pytest.mark.asyncio
+    async def test_options_are_forwarded_to_run_beside_the_ak_owned_keys(self):
+        runner = PydanticAIRunner()
+        usage_limits, handler = object(), object()
+        mock_agent = _mock_agent("ok")
+        mock_agent.run_options = {"usage_limits": usage_limits, "event_stream_handler": handler}
+
+        await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])
+
+        kwargs = mock_agent.agent.run.call_args.kwargs
+        assert kwargs["usage_limits"] is usage_limits
+        assert kwargs["event_stream_handler"] is handler
+        assert set(kwargs) == {"usage_limits", "event_stream_handler", "message_history", "deps"}
+
+    @pytest.mark.asyncio
+    async def test_stream_drops_the_handler_with_one_warning_and_keeps_the_declared_dict(self, caplog):
+        runner = PydanticAIRunner()
+        usage_limits, handler = object(), object()
+        captured: dict = {}
+        mock_agent = _capturing_stream_agent(captured)
+        mock_agent.run_options = {"usage_limits": usage_limits, "event_stream_handler": handler}
+
+        with caplog.at_level(logging.WARNING, logger="ak.pydanticai.runner"):
+            _ = [e async for e in runner.stream(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])]
+            first = dict(captured)
+            _ = [e async for e in runner.stream(mock_agent, Session("t"), [AgentRequestText(prompt="hi")])]
+
+        assert first["usage_limits"] is usage_limits
+        assert "event_stream_handler" not in first
+        assert set(first) == {"usage_limits", "message_history", "deps"}
+        assert mock_agent.run_options["event_stream_handler"] is handler
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "event_stream_handler" in r.getMessage()]
+        assert len(warnings) == 1
+
+    def test_reserved_keys_are_rejected_at_declaration_through_the_module(self):
+        native = Agent(TestModel(), name="reserved-keys-agent")
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = PydanticAIModule([native])
+
+            for key in ("user_prompt", "message_history", "deps"):
+                with pytest.raises(ValueError) as exc:
+                    module.run_options(native, **{key: object()})
+                assert f"'{key}'" in str(exc.value)
+                assert "'pydanticai'" in str(exc.value)
+
+            module.run_options(native, retries=2)
+            assert module.get_agent("reserved-keys-agent").run_options == {"retries": 2}

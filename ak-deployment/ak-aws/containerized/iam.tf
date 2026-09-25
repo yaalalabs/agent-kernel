@@ -3,7 +3,7 @@
 resource "aws_iam_policy" "rest_service_sqs_policy" {
   count = var.queue_mode ? 1 : 0
 
-  name        = "${local.prefix}-rest-svc-sqs"
+  name        = "${var.prefix}-rest-svc-sqs"
   description = "Allow REST Service ECS task to send to Input Queue and consume from Output Queue"
 
   policy = jsonencode({
@@ -40,7 +40,7 @@ resource "aws_iam_policy" "rest_service_sqs_policy" {
 resource "aws_iam_policy" "rest_service_response_store_policy" {
   count = var.queue_mode && !local.is_websocket_mode ? 1 : 0
 
-  name        = "${local.prefix}-rest-svc-response-store"
+  name        = "${var.prefix}-rest-svc-response-store"
   description = "Allow REST Service ECS task to read/write the DynamoDB response store"
 
   policy = jsonencode({
@@ -73,7 +73,7 @@ resource "aws_iam_policy" "rest_service_response_store_policy" {
 resource "aws_iam_policy" "rest_service_scheduler_policy" {
   count = var.enable_scheduling ? 1 : 0
 
-  name        = "${local.prefix}-rest-svc-scheduler"
+  name        = "${var.prefix}-rest-svc-scheduler"
   description = "Allow REST Service ECS task to manage EventBridge schedules in the AK schedule group"
 
   policy = jsonencode({
@@ -131,7 +131,7 @@ resource "aws_iam_role_policy_attachment" "rest_service_scheduler_attachment" {
 resource "aws_iam_policy" "rest_service_websocket_api_policy" {
   count = local.is_websocket_mode ? 1 : 0
 
-  name        = "${local.prefix}-rest-svc-websocket-api"
+  name        = "${var.prefix}-rest-svc-websocket-api"
   description = "Allow REST Service ECS task to manage WebSocket connections (PostToConnection)"
 
   policy = jsonencode({
@@ -152,7 +152,7 @@ resource "aws_iam_policy" "rest_service_websocket_api_policy" {
 resource "aws_iam_policy" "rest_service_websocket_connections_policy" {
   count = local.is_websocket_mode ? 1 : 0
 
-  name        = "${local.prefix}-rest-svc-websocket-connections"
+  name        = "${var.prefix}-rest-svc-websocket-connections"
   description = "Allow REST Service ECS task to read/write the WebSocket connections table"
 
   policy = jsonencode({

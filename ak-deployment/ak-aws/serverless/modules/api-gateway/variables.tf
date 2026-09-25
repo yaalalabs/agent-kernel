@@ -5,14 +5,9 @@ variable "region" {
   description = "AWS region"
 }
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias for resource naming"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias for resource naming"
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 }
 
 variable "product_display_name" {
@@ -68,7 +63,6 @@ variable "authorizer" {
     handler_path          = string
     package_type          = string
     package_path          = string
-    module_name           = string
     result_ttl_in_seconds = optional(number, 300)
   })
   default = null

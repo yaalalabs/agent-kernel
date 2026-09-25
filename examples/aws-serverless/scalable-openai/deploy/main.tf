@@ -1,13 +1,11 @@
 # Scalable OpenAI Agent deployment using the updated serverless module
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.1"
+  version = "0.9.3"
 
   providers = { aws = aws, docker = docker }
   # Basic configuration
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK OpenAI Scalable Serverless Example"
   region               = var.region
   is_production        = var.is_production
@@ -43,7 +41,6 @@ module "serverless_agents" {
 
   # Request handler configuration
   request_handler = {
-    module_name          = "rqst-hdlr"
     function_name        = "rqh-func"
     function_description = "Agent Kernel OpenAI Scalable Sample Lambda"
     handler_path         = "lambda_request_handler.handler"
@@ -51,6 +48,7 @@ module "serverless_agents" {
     lambda_package_s3    = var.request_handler_lambda_package_s3
     memory_size          = 256
     timeout              = 45
+    security_group_id    = var.request_handler_security_group_id
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }
@@ -58,7 +56,6 @@ module "serverless_agents" {
 
   # Agent runner configuration
   agent_runner = {
-    module_name          = "agent-runner"
     function_name        = "ar-func"
     function_description = "Agent runner for processing OpenAI requests"
     timeout              = 45
@@ -66,6 +63,7 @@ module "serverless_agents" {
     handler_path         = "lambda_agent_runner.handler"
     package_type         = "Image"
     ecr_image_uri        = var.agent_runner_ecr_image_uri
+    security_group_id    = var.agent_runner_security_group_id
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }
@@ -74,13 +72,13 @@ module "serverless_agents" {
   # Response handler configuration
   response_handler = {
     function_name        = "rsh-func"
-    module_name          = "rspns-hdlr"
     function_description = "Response handler for processing completed requests"
     timeout              = 45
     memory_size          = 256
     handler_path         = "lambda_response_handler.handler"
     lambda_package_s3    = var.response_handler_lambda_package_s3
     package_type         = "S3Zip"
+    security_group_id    = var.response_handler_security_group_id
   }
 
   # Queue configuration for scalable processing

@@ -18,9 +18,8 @@ locals {
   schedule_group_name          = var.enable_scheduling ? aws_scheduler_schedule_group.schedules[0].name : null
   schedule_group_arn           = var.enable_scheduling ? aws_scheduler_schedule_group.schedules[0].arn : null
   scheduler_execution_role_arn = var.enable_scheduling ? aws_iam_role.scheduler_execution[0].arn : null
-  prefix                       = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-  service_name                 = "${local.prefix}-service"
-  container_name               = "${local.prefix}-app"
+  service_name                 = "${var.prefix}-service"
+  container_name               = "${var.prefix}-app"
 
   # True for both WebSocket modes: "async" (full-response) and "stream" (chunk-per-message).
   is_websocket_mode = contains(["async", "stream"], var.execution_mode)
@@ -69,64 +68,55 @@ locals {
 
 module "vpc" {
   source               = "yaalalabs/ak-common/aws//modules/vpc"
-  version              = "0.9.1"
+  version              = "0.9.3"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
+  prefix               = var.prefix
   tags                 = var.tags
 }
 
 module "redis" {
-  source        = "yaalalabs/ak-common/aws//modules/redis"
-  version       = "0.9.1"
-  count         = var.create_redis_cluster == true ? 1 : 0
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  product_alias = var.product_alias
-  vpc_cidr      = local.vpc_cidr
-  vpc_id        = local.vpc_id
-  subnet_ids    = local.subnet_ids
+  source     = "yaalalabs/ak-common/aws//modules/redis"
+  version    = "0.9.3"
+  count      = var.create_redis_cluster == true ? 1 : 0
+  prefix     = var.prefix
+  vpc_cidr   = local.vpc_cidr
+  vpc_id     = local.vpc_id
+  subnet_ids = local.subnet_ids
 }
 
 module "valkey" {
-  source        = "yaalalabs/ak-common/aws//modules/valkey"
-  version       = "0.9.1"
-  count         = var.create_valkey_cluster == true ? 1 : 0
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  product_alias = var.product_alias
-  vpc_cidr      = local.vpc_cidr
-  vpc_id        = local.vpc_id
-  subnet_ids    = local.subnet_ids
+  source     = "yaalalabs/ak-common/aws//modules/valkey"
+  version    = "0.9.3"
+  count      = var.create_valkey_cluster == true ? 1 : 0
+  prefix     = var.prefix
+  vpc_cidr   = local.vpc_cidr
+  vpc_id     = local.vpc_id
+  subnet_ids = local.subnet_ids
 }
 
 module "docker_image" {
-  count         = 1
-  source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.9.1"
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  product_alias = var.product_alias
-  source_path   = var.rest_service.package_path
+  count       = 1
+  source      = "yaalalabs/ak-common/aws//modules/ecr"
+  version     = "0.9.3"
+  prefix      = var.prefix
+  source_path = var.rest_service.package_path
 }
 
 # Agent Runner Docker Image (optional - only if package_path is provided)
 module "agent_runner_docker_image" {
-  count         = var.queue_mode && var.agent_runner.package_path != null ? 1 : 0
-  source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.9.1"
-  env_alias     = var.env_alias
-  module_name   = "${var.module_name}-runner"
-  product_alias = var.product_alias
-  source_path   = var.agent_runner.package_path
+  count       = var.queue_mode && var.agent_runner.package_path != null ? 1 : 0
+  source      = "yaalalabs/ak-common/aws//modules/ecr"
+  version     = "0.9.3"
+  prefix      = "${var.prefix}-runner"
+  source_path = var.agent_runner.package_path
 }
 
 module "dynamodb_memory" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.1"
+  version = "0.9.3"
   count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
@@ -135,16 +125,14 @@ module "dynamodb_memory" {
   hash_key           = "session_id"
   range_key          = "key"
   ttl_enabled        = true
-  env_alias          = var.env_alias
-  module_name        = var.module_name
-  product_alias      = var.product_alias
+  prefix             = var.prefix
   table_name         = "session_store"
   ttl_attribute_name = "expiry_time"
 }
 
 module "dynamodb_thread" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.1"
+  version = "0.9.3"
   count   = var.create_dynamodb_thread_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
@@ -153,9 +141,7 @@ module "dynamodb_thread" {
   hash_key           = "session_id"
   range_key          = "sk"
   ttl_enabled        = true
-  env_alias          = var.env_alias
-  module_name        = var.module_name
-  product_alias      = var.product_alias
+  prefix             = var.prefix
   table_name         = "thread_store"
   ttl_attribute_name = "expiry_time"
 }

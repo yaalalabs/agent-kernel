@@ -4,15 +4,15 @@
 module "rest_service" {
   source = "./modules/rest-service"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  region        = var.region
-  prefix        = local.prefix
+  prefix = var.prefix
+  region = var.region
 
   vpc_id     = local.vpc_id
   vpc_cidr   = local.vpc_cidr
   subnet_ids = local.subnet_ids
+
+  alb_security_group_id         = var.rest_service.alb_security_group_id
+  ecs_service_security_group_id = var.rest_service.ecs_service_security_group_id
 
   ecs_cluster_arn = module.ecs.cluster_arn
 
@@ -70,7 +70,7 @@ module "ecs" {
   source  = "terraform-aws-modules/ecs/aws"
   version = "6.10.0"
 
-  cluster_name = "${var.product_alias}-${var.env_alias}-${var.module_name}"
+  cluster_name = var.prefix
 
   tags = var.tags
 }

@@ -66,8 +66,7 @@ module "python_api" {
   providers = { aws = aws, docker = docker }
 
   region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod"
   product_display_name = "My Application API"
 
   module_type          = "python"
@@ -76,7 +75,6 @@ module "python_api" {
     function_name        = "handler"
     function_description = "Main API handler"
     handler_path         = "app.lambda_handler"
-    module_name           = "api"
     package_type         = "LocalZip"
     package_path         = "${path.module}/dist/function.zip"
     timeout              = 30
@@ -128,8 +126,7 @@ module "nodejs_api" {
   source = "yaalalabs/ak-serverless/aws"
 
   region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod"
   product_display_name = "Node.js API"
 
   module_type          = "nodejs"
@@ -138,7 +135,6 @@ module "nodejs_api" {
     function_name        = "handler"
     function_description = "Chat API endpoint"
     handler_path         = "index.handler"
-    module_name           = "chat"
     package_type         = "LocalZip"
     package_path         = "${path.module}/dist/function.zip"
     layers               = [aws_lambda_layer_version.dependencies.arn]
@@ -161,11 +157,9 @@ module "websocket_api" {
   source = "yaalalabs/ak-serverless/aws"
 
   region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod-chat"
   product_display_name = "WebSocket API with Custom Routes"
   
-  module_name          = "chat"
   function_name        = "handler"
   function_description = "WebSocket API handler"
   handler_path         = "app.lambda_handler"
@@ -226,9 +220,7 @@ module "container_image" {
   source = "yaalalabs/ak-common/aws//modules/ecr"
 
   region        = "us-west-2"
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "api"
+  prefix        = "myapp-prod-api"
   source_path   = "${path.module}/src"
 }
 
@@ -237,8 +229,7 @@ module "container_api" {
   source = "yaalalabs/ak-serverless/aws"
 
   region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod"
   product_display_name = "Container API"
 
   module_type          = "python"
@@ -247,7 +238,6 @@ module "container_api" {
     function_name        = "processor"
     function_description = "Containerized API handler"
     handler_path         = "app.handler"  # Used for metadata only
-    module_name           = "api"
     package_type         = "Image"
     package_path         = "${path.module}/src"
     timeout              = 120
@@ -271,11 +261,9 @@ module "scalable_agents" {
   source = "yaalalabs/ak-serverless/aws"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-scalable"
   product_display_name = "Scalable Agent API"
 
-  module_name    = "scalable"
   queue_mode     = true
   execution_mode = "rest_sync"
 
@@ -287,7 +275,6 @@ module "scalable_agents" {
   agent_endpoint = "chat"
 
   request_handler = {
-    module_name          = "rqst-hdlr"
     function_name        = "rqh-func"
     handler_path         = "lambda_request_handler.handler"
     package_type         = "S3Zip"
@@ -304,7 +291,6 @@ module "scalable_agents" {
   }
 
   agent_runner = {
-    module_name          = "agent-runner"
     function_name        = "ar-func"
     handler_path         = "lambda_agent_runner.handler"
     package_type         = "Image"
@@ -317,7 +303,6 @@ module "scalable_agents" {
   }
 
   response_handler = {
-    module_name          = "rspns-hdlr"
     function_name        = "rsh-func"
     handler_path         = "lambda_response_handler.handler"
     lambda_package_s3 = {
@@ -342,9 +327,7 @@ module "lambda_package" {
   source = "yaalalabs/ak-common/aws//modules/lambda-package"
 
   region           = "us-west-2"
-  product_alias    = "myapp"
-  env_alias        = "prod"
-  module_name      = "api"
+  prefix           = "myapp-prod-api"
   package_dir_path = "${path.module}/dist/function.zip"
   s3_bucket        = module.storage.source_storage_s3_bucket
 }
@@ -354,8 +337,7 @@ module "secure_api" {
   source = "yaalalabs/ak-serverless/aws"
 
   region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod"
   product_display_name = "Secure API"
 
   module_type          = "python"
@@ -365,7 +347,6 @@ module "secure_api" {
     function_name        = "handler"
     function_description = "Production API with code signing"
     handler_path         = "app.handler"
-    module_name           = "api"
     package_type         = "S3Zip"
     package_path         = "s3://${module.lambda_package.s3_bucket}/${module.lambda_package.s3_key}"
     timeout              = 30
@@ -384,8 +365,7 @@ module "serverless_api_dynamodb" {
   source = "yaalalabs/ak-serverless/aws"
 
   region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod"
   product_display_name = "Serverless API with DynamoDB"
 
   module_type          = "python"
@@ -394,7 +374,6 @@ module "serverless_api_dynamodb" {
     function_name        = "handler"
     function_description = "Chat API with DynamoDB session storage"
     handler_path         = "app.lambda_handler"
-    module_name           = "chat"
     package_type         = "LocalZip"
     package_path         = "${path.module}/dist/function.zip"
     timeout              = 30
@@ -420,8 +399,7 @@ module "serverless_api_auth" {
   source = "yaalalabs/ak-serverless/aws"
 
   region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod"
   product_display_name = "Serverless API with Authorizer"
 
   module_type          = "python"
@@ -430,7 +408,6 @@ module "serverless_api_auth" {
     function_name        = "handler"
     function_description = "Main API handler"
     handler_path         = "app.lambda_handler"
-    module_name           = "api"
     package_type         = "LocalZip"
     package_path         = "${path.module}/dist/function.zip"
     timeout              = 30
@@ -448,7 +425,6 @@ module "serverless_api_auth" {
     handler_path          = "auth.handler"
     package_path          = "${path.module}/dist/auth.zip"
     package_type          = "LocalZip"
-    module_name           = "auth"
     result_ttl_in_seconds = 300
     environment_variables = {
       JWT_SECRET = "your-secret-key"
@@ -466,11 +442,9 @@ module "serverless_api_auth" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `region` | AWS region for deployment | `string` | n/a | yes |
-| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
-| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name for tagging | `string` | `"An Agent Kernel deployment"` | no |
 | `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
-| `module_name` | Module name for resource naming (used for other resources, not request handler). Note: when `enable_api_gateway` is `true`, this top-level `module_name` must be set to a non-empty value to support resource naming and API routing. | `string` | `""` | no |
 | `is_production` | Enable production features (code signing) | `bool` | `false` | no |
 | `enable_api_gateway` | Enable API Gateway and request handler Lambda (can only be false when queue_mode is true) | `bool` | `true` | no |
 | `queue_mode` | Enable SQS-driven processing with agent runner and response handler Lambdas | `bool` | `false` | no |
@@ -522,7 +496,6 @@ module "serverless_api_auth" {
 | `handler_path` | Authorizer Lambda handler path | `string` | n/a | yes |
 | `package_path` | Authorizer package path | `string` | n/a | yes |
 | `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
-| `module_name` | Authorizer module name | `string` | n/a | yes |
 | `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
 | `timeout` | Authorizer Lambda timeout in seconds | `number` | `30` | no |
 | `memory_size` | Authorizer Lambda memory size in MB | `number` | `128` | no |
@@ -538,7 +511,6 @@ module "serverless_api_auth" {
 | `timeout` | Request handler Lambda timeout in seconds | `number` | `45` | no |
 | `memory_size` | Request handler Lambda memory size in MB | `number` | `128` | no |
 | `handler_path` | Request handler Lambda handler path | `string` | `"request_handler.handler"` | no |
-| `module_name` | Request handler module name | `string` | `"request-handler"` | no |
 | `package_path` | Request handler deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Request handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
 | `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function | `object({ bucket = string, key = string, version_id = optional(string) })` | `null` | no |
@@ -547,6 +519,7 @@ module "serverless_api_auth" {
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the request handler | `map(string)` | `{}` | no |
 | `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
+| `security_group_id` | Request handler security group ID, also shared by the authorizer and WebSocket connection handler Lambdas. If not provided, a new one will be created | `string` | `null` | no |
 
 ### WebSocket Connection Handler Object Structure
 
@@ -557,7 +530,6 @@ module "serverless_api_auth" {
 | `timeout` | WebSocket connection handler Lambda timeout in seconds | `number` | `30` | no |
 | `memory_size` | WebSocket connection handler Lambda memory size in MB | `number` | `256` | no |
 | `handler_path` | WebSocket connection handler Lambda handler path | `string` | `"ws_connection_handler.handler"` | no |
-| `module_name` | WebSocket connection handler module name | `string` | `"ws-connection-handler"` | no |
 | `package_path` | WebSocket connection handler deployment package path (only LocalZip supported) | `string` | n/a | **yes** (when `execution_mode` is `async` or `stream`) |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
@@ -609,7 +581,6 @@ This configuration creates WebSocket routes accessible via:
 | `timeout` | Response handler Lambda timeout in seconds | `number` | `45` | no |
 | `memory_size` | Response handler Lambda memory size in MB | `number` | `256` | no |
 | `handler_path` | Response handler Lambda handler path | `string` | `"response_handler.handler"` | no |
-| `module_name` | Response handler module name | `string` | `"response-handler"` | no |
 | `package_path` | Response handler deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Response handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
 | `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function |
@@ -617,6 +588,7 @@ This configuration creates WebSocket routes accessible via:
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the response handler | `map(string)` | `{}` | no |
+| `security_group_id` | Response handler security group ID (queue mode only). If not provided, a new one will be created | `string` | `null` | no |
 
 ### Agent Runner Object Structure
 
@@ -627,7 +599,6 @@ This configuration creates WebSocket routes accessible via:
 | `timeout` | Agent runner Lambda timeout in seconds | `number` | `45` | no |
 | `memory_size` | Agent runner Lambda memory size in MB | `number` | `512` | no |
 | `handler_path` | Agent runner Lambda handler path | `string` | `"agent_runner.handler"` | no |
-| `module_name` | Agent runner module name | `string` | `"agent-runner"` | no |
 | `package_path` | Agent runner deployment package path (local ZIP or directory). Mutually exclusive with `lambda_package_s3` and `ecr_image_uri` | `string` | `null` | no |
 | `package_type` | Agent runner deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
 | `lambda_package_s3` | S3 object reference for the Lambda ZIP (`{ bucket, key, version_id? }`). Used when `package_type = "S3Zip"`. Set `version_id` (from a versioned bucket) so re-uploading changed code redeploys the function  |
@@ -635,6 +606,7 @@ This configuration creates WebSocket routes accessible via:
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |
 | `cloudwatch_logs_retention_in_days` | CloudWatch log retention period in days | `number` | `90` | no |
 | `environment_variables` | Environment variables for the agent runner | `map(string)` | `{}` | no |
+| `security_group_id` | Agent runner security group ID (queue mode only). If not provided, a new one will be created | `string` | `null` | no |
 
 ### Queue Configuration
 
@@ -676,12 +648,61 @@ The root `queue_config` object drives the SQS queues created for queue mode. All
 
 **Note**: When `queue_mode = true`, the response handler and agent runner package paths must be provided. The queue configuration defaults can be used as-is, or you can override only the queue names and sizing values you need.
 
+### Security Groups
+
+These three fields live on the `request_handler`, `agent_runner`, and `response_handler` config objects
+(see the object-structure tables above) alongside that Lambda's other settings, rather than as
+standalone top-level variables — one security group per pipeline stage, mirroring the containerized
+module's per-service SG split.
+
+| Field | Object | Description | Type | Default | Required |
+|---|---|---|---|---|---|
+| `security_group_id` | `request_handler` | Request handler security group ID, also shared by the authorizer and WebSocket connection handler Lambdas. If not provided, a new one will be created | `string` | `null` | no |
+| `security_group_id` | `agent_runner` | Agent runner security group ID (queue mode only). If not provided, a new one will be created | `string` | `null` | no |
+| `security_group_id` | `response_handler` | Response handler security group ID (queue mode only). If not provided, a new one will be created | `string` | `null` | no |
+
+```hcl
+request_handler = {
+  package_path      = "./dist/request-handler"
+  security_group_id = "sg-0123456789abcdef0"
+}
+
+agent_runner = {
+  package_path      = "./dist/agent-runner"
+  security_group_id = "sg-0123456789abcdef1"
+}
+
+response_handler = {
+  package_path      = "./dist/response-handler"
+  security_group_id = "sg-0123456789abcdef2"
+}
+```
+
+Each of the three is independent — you may provide any subset of them and let the module create the
+rest. Useful when the deploying pipeline can't create security groups (no `ec2:CreateSecurityGroup`),
+when org policy disallows the default `0.0.0.0/0` egress these modules create, or when a downstream
+resource (e.g. RDS, ElastiCache) already has ingress rules referencing a specific, pre-approved
+security group. `agent_runner.security_group_id` and `response_handler.security_group_id` only have an
+effect when `queue_mode = true`.
+
+A provided security group must permit the egress its Lambda needs (ElastiCache/Redis, DynamoDB, SQS,
+model APIs), since traffic fails at runtime (not at plan/apply) if it doesn't — the module-created SGs
+are egress-all:
+
+- `request_handler.security_group_id`: also used by the authorizer and WebSocket connection handler
+  Lambdas, since both are part of the same request-handling front door as the request handler.
+- `agent_runner.security_group_id`: used by the agent runner Lambda only.
+- `response_handler.security_group_id`: used by the response handler Lambda only.
+
 ## 📤 Outputs
 
 | Name | Description |
 |------|-------------|
 | `agent_invoke_url` | Invoke URL for the agent chat endpoint |
 | `authorizer_status` | Status message indicating whether the authorizer Lambda will be created |
+| `request_handler_security_group_id` | Security group ID used for the request handler Lambda (also used by the authorizer and WebSocket connection handler Lambdas; created or provided) |
+| `agent_runner_security_group_id` | Security group ID used for the agent runner Lambda (created or provided; returns null when `queue_mode = false`) |
+| `response_handler_security_group_id` | Security group ID used for the response handler Lambda (created or provided; returns null when `queue_mode = false`) |
 | `request_handler_lambda_function_arn` | ARN of the request-handler Lambda function |
 | `request_handler_lambda_function_name` | Name of the request-handler Lambda function |
 | `request_handler_lambda_function_invoke_arn` | Invoke ARN for API Gateway integration |
@@ -863,9 +884,9 @@ The module supports the current Agent Kernel storage wiring for both session sta
 ### 🏷️ Naming Conventions
 
 Resources follow consistent naming:
-- Lambda Function: `{product_alias}-{env_alias}-{module_name}-{function_name}`
-- Authorizer Lambda: `{product_alias}-{env_alias}-{authorizer.module_name}-{authorizer.function_name}`
-- API Gateway: `{product_alias}-{env_alias}-{module_name}-api`
+- Lambda Function: `{prefix}-{function_name}`
+- Authorizer Lambda: `{prefix}-{authorizer.function_name}`
+- API Gateway: `{prefix}-api`
 - CloudWatch Logs: `/aws/lambda/{function_name}`
 
 ## 🎯 Best Practices
@@ -918,7 +939,7 @@ locals {
       is_production = true
     }
   }
-  env_config = local.config[var.env_alias]
+  env_config = local.config[var.environment]
 }
 
 module "api" {
@@ -970,7 +991,7 @@ module "api" {
 module "chat_api" {
   source = "yaalalabs/ak-serverless/aws"
   
-  module_name    = "chat"
+  prefix         = "chat"
   function_name  = "handler"
   agent_endpoint = "chat"
   api_version    = "v1"
@@ -981,7 +1002,7 @@ module "chat_api" {
 module "process_api" {
   source = "yaalalabs/ak-serverless/aws"
   
-  module_name    = "process"
+  prefix         = "process"
   function_name  = "handler"
   agent_endpoint = "process"
   api_version    = "v1"
@@ -1016,7 +1037,7 @@ module "event_processor" {
 # V1 API
 module "api_v1" {
   source      = "yaalalabs/ak-serverless/aws"
-  module_name = "api"
+  prefix      = "api"
   api_version = "v1"
   # ... config
 }
@@ -1024,7 +1045,7 @@ module "api_v1" {
 # V2 API (backward compatible)
 module "api_v2" {
   source      = "yaalalabs/ak-serverless/aws"
-  module_name = "api"
+  prefix      = "api"
   api_version = "v2"
   # ... config with new features
 }
@@ -1037,8 +1058,7 @@ module "async_api" {
   source = "yaalalabs/ak-serverless/aws"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
   product_display_name  = "Async API"
 
   module_type          = "python"
@@ -1047,7 +1067,6 @@ module "async_api" {
     function_name        = "handler"
     function_description = "Main API handler"
     handler_path         = "app.lambda_handler"
-    module_name           = "chat"
     package_type         = "LocalZip"
     package_path         = "${path.module}/dist/function.zip"
     environment_variables = {
@@ -1099,7 +1118,6 @@ authorizer = {
   handler_path          = "auth.handler"                   # Required
   package_path          = "./dist/auth.zip"                # Required
   package_type          = "LocalZip"                       # Required
-  module_name           = "auth"                           # Required
   result_ttl_in_seconds = 0                                # Optional, defaults to 150
   environment_variables = {                                # Optional, defaults to {}
     JWT_SECRET = "your-secret-key"
@@ -1113,7 +1131,6 @@ authorizer = {
 - `handler_path` - Path to the authorizer Lambda handler (e.g., `auth.handler`)
 - `package_type` - Deployment type (`Image`, `LocalZip`, or `S3Zip`)
 - `package_path` - Path to authorizer deployment package
-- `module_name` - Authorizer module name
 
 **Optional Authorizer Fields:**
 - `description` - Description for authorizer Lambda function (default: "API Gateway Lambda Authorizer")

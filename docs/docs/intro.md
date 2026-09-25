@@ -8,6 +8,8 @@ slug: /
 **The Operating System for Scalable & Compliant Enterprise AI Agents.**
 
 :::tip What's New
+🎛️ **Per-agent native run options** - Pass each framework's own run arguments (OpenAI `RunHooks`, `RunConfig` and `max_turns`, LangGraph `config`, ADK `plugins`, Pydantic AI `usage_limits`, CrewAI `step_callback`, smolagents `max_steps`) through `Module.run_options`, with the keys Agent Kernel owns kept safe. [Learn more →](./core-concepts/runner.md#native-run-options)
+
 ☸️ **On-Prem Kubernetes** - Official Helm chart that runs the queue pipeline on any cluster (bare metal, EKS, or a laptop k3d), with NATS, Kafka, or SQS as the broker, KEDA autoscaling, a sandbox worker tier, and air-gapped installs. [Learn more →](/docs/deployment/onprem-kubernetes)
 
 ⏰ **Scheduling** - Defer chat execution to a later moment or a recurring cadence (`at`/`cron`), with a management REST API and agent-facing scheduling tools. [Learn more →](./advanced/scheduling.md)
@@ -104,9 +106,10 @@ Easily extend Agent Kernel with custom framework adapters, memory back-ends, and
   - ChromaDB for semantic/vector search
   - Neo4j for entity and relationship graph queries
   - Starburst Galaxy for SQL analytics over MongoDB, Google Sheets, PostgreSQL, and more
-  - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools
+  - Open Knowledge Format bundles - a directory of markdown documents, served from disk or S3, with no database to run
+  - `KnowledgeBuilder` composes multiple backends with framework-agnostic tools, gated on what each backend declares it supports
   - `semantic_map` keeps agent prompts portable across deployments
-  - You can also build your own backend by implementing a `KnowledgeBase` adapter and registering it with `KnowledgeBuilder`
+  - You can also build your own backend by declaring its capabilities and implementing a `KnowledgeBase` adapter, then registering it with `KnowledgeBuilder`
   [Learn more about knowledge bases →](/docs/advanced/knowledge-bases)
 - **Session Management**: Built-in conversational state tracking across multiple backends
 - **Memory Management**: Pluggable memory with smart caching

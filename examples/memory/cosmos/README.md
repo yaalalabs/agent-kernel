@@ -58,9 +58,7 @@ publisher_email = "your-email@domain.com"
 region = "eastus"
 
 # Naming configuration
-product_alias = "demo"          # Used in resource names
-env_alias = "memory"            # Environment identifier
-module_name = "cosmos"          # Module identifier
+prefix        = "demo-memory-cosmos"          # Used in resource names
 ```
 
 ### Gateway Endpoints Configuration

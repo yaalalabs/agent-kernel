@@ -15,7 +15,7 @@ data "azurerm_subnet" "function_subnet" {
 }
 # Cosmos DB Account (Table API)
 resource "azurerm_cosmosdb_account" "account" {
-  name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-cosmos"
+  name                = "${var.prefix}-cosmos"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.current_group.name
   offer_type          = "Standard"
@@ -61,7 +61,7 @@ resource "azurerm_cosmosdb_account" "account" {
 }
 
 resource "azurerm_cosmosdb_table" "table" {
-  name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.table_name}"
+  name                = "${var.prefix}-${var.table_name}"
   resource_group_name = data.azurerm_resource_group.current_group.name
   account_name        = azurerm_cosmosdb_account.account.name
 
@@ -88,7 +88,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "cosmos_dns_link" {
 }
 
 resource "azurerm_private_endpoint" "cosmos_table" {
-  name                = "${var.product_alias}-${var.env_alias}-cosmos-table-pe"
+  name                = "${var.prefix}-cosmos-table-pe"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.current_group.name
   subnet_id           = var.subnet_id 
@@ -108,7 +108,7 @@ resource "azurerm_private_endpoint" "cosmos_table" {
 
 resource "azurerm_network_security_group" "cosmos_nsg" {
   count               = var.create_NSG ? 1 : 0
-  name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-cosmos-nsg"
+  name                = "${var.prefix}-cosmos-nsg"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.current_group.name
   tags                = var.tags

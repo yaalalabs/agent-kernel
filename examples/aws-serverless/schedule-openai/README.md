@@ -232,7 +232,7 @@ another user's schedules.
 **Watch an occurrence fire.** Schedule something a couple of minutes out and tail the runner:
 
 ```bash
-aws logs tail "/aws/lambda/<product_alias>-<env_alias>-agent-runner-ar-func" --follow
+aws logs tail "/aws/lambda/<prefix>-ar-func" --follow
 ```
 
 A fired occurrence arrives as a plain chat request carrying `scheduled_task_id`, `request_id` and

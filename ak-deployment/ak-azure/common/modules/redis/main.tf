@@ -44,7 +44,7 @@ resource "azurerm_subnet_network_security_group_association" "redis_subnet_nsg_a
 }
 
 resource "azurerm_managed_redis" "redis" {
-  name                      = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-enterprise"
+  name                      = "${var.prefix}-redis-enterprise"
   location                  = var.region
   resource_group_name       = data.azurerm_resource_group.current_group.name
   sku_name                  = var.is_production ? "Balanced_B5" : "Balanced_B0"
@@ -64,7 +64,7 @@ resource "azurerm_managed_redis" "redis" {
 
 resource "azurerm_network_security_group" "redis_nsg" {
   count               = var.create_NSG ? 1 : 0
-  name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-nsg"
+  name                = "${var.prefix}-redis-nsg"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.current_group.name
 
@@ -74,13 +74,13 @@ resource "azurerm_network_security_group" "redis_nsg" {
 
 # Private Endpoint for Redis(need this when we are not binding the redis to a subnet)
 resource "azurerm_private_endpoint" "redis" {
-  name                = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-pe"
+  name                = "${var.prefix}-redis-pe"
   location            = var.region
   resource_group_name = data.azurerm_resource_group.current_group.name
   subnet_id           = data.azurerm_subnet.redis_subnet.id
 
   private_service_connection {
-    name                           = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-psc"
+    name                           = "${var.prefix}-redis-psc"
     private_connection_resource_id = azurerm_managed_redis.redis.id
     subresource_names              = ["redisEnterprise"]
     is_manual_connection           = false
@@ -102,7 +102,7 @@ resource "azurerm_private_dns_zone" "redis" {
 
 # Link DNS Zone to VNet
 resource "azurerm_private_dns_zone_virtual_network_link" "redis" {
-  name                  = "${var.product_alias}-${var.env_alias}-${var.module_name}-redis-dns-link"
+  name                  = "${var.prefix}-redis-dns-link"
   resource_group_name   = data.azurerm_resource_group.current_group.name
   private_dns_zone_name = azurerm_private_dns_zone.redis.name
   virtual_network_id    = data.azurerm_virtual_network.vnet.id

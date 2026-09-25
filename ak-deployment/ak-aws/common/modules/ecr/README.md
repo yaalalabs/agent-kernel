@@ -31,9 +31,7 @@ module "api_container" {
   source = "yaalalabs/ak-common/aws//modules/ecr"
 
   region        = "us-west-2"
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "api"
+  prefix        = "myapp-prod-api"
   source_path   = "${path.module}/src/api"
 }
 
@@ -54,9 +52,7 @@ module "dev_container" {
   source = "yaalalabs/ak-common/aws//modules/ecr"
 
   region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "dev"
-  module_name         = "worker"
+  prefix              = "myapp-dev-worker"
   source_path         = "${path.module}/src/worker"
   is_production       = false
 }
@@ -66,9 +62,7 @@ module "prod_container" {
   source = "yaalalabs/ak-common/aws//modules/ecr"
 
   region              = "us-west-2"
-  product_alias       = "myapp"
-  env_alias           = "prod"
-  module_name         = "worker"
+  prefix              = "myapp-prod-worker"
   source_path         = "${path.module}/src/worker"
   is_production       = true
   product_display_name = "My Application"
@@ -81,11 +75,9 @@ module "prod_container" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `region` | AWS region for ECR repository deployment | `string` | `"ap-southeast-2"` | no |
-| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
-| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name for tagging | `string` | `null` | no |
 | `is_production` | Production flag for additional safeguards | `bool` | `false` | no |
-| `module_name` | Module/service name for resource identification | `string` | n/a | yes |
 | `source_path` | Path to directory containing Dockerfile and source code | `string` | n/a | yes |
 
 ## 📤 Outputs
@@ -107,7 +99,7 @@ module "prod_container" {
 
 ### 📦 Repository Management
 
-- **Naming Convention**: Creates repositories with pattern `{product_alias}-{env_alias}-{module_name}`
+- **Naming Convention**: Creates repositories with pattern `{prefix}`
 - **Lifecycle Policies**: Automatically retains only the 30 most recent images
 - **Image Scanning**: Optional vulnerability scanning on push
 - **Immutable Tags**: Configurable tag immutability for production environments

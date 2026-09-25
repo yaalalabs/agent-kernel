@@ -416,6 +416,27 @@ OpenAIModule([agent]).pre_hook(agent, [
 
 The `pre_hook()` and `post_hook()` methods can be chained for convenience, and work with any Agent Kernel module (OpenAI, LangGraph, CrewAI, etc.).
 
+### Framework-native hooks {#framework-native-hooks}
+
+Agent Kernel hooks wrap the whole run. For the framework's **own** lifecycle hooks (the OpenAI Agents
+SDK's `RunHooks`, LangChain callbacks, ADK plugins, Pydantic AI's `event_stream_handler`, CrewAI's
+`step_callback`), declare them through the same fluent API with
+[`run_options`](../core-concepts/module.md#native-run-options); they compose with `pre_hook` /
+`post_hook` in one chain:
+
+```python
+OpenAIModule([agent]).run_options(agent, hooks=ProgressHooks(), max_turns=25).post_hook(agent, [DisclaimerHook()])
+```
+
+A native hook's callbacks run inside the Agent Kernel run, so `Session.current()` resolves in them and
+a post-hook can read what they recorded in the session's volatile cache before it is cleared. Two
+paths report progress:
+
+| Path | Mode | What you see |
+|------|------|--------------|
+| `PostHook.on_stream_event` (below) | `execution.mode: stream` only | framework-agnostic `StreamEvent`s for what the adapter maps |
+| native hooks through `run_options` | any mode, including `rest_sync` | the framework's full lifecycle, in its own types |
+
 ### Hook Execution Order
 
 Hooks execute in the order they are registered:

@@ -43,9 +43,7 @@ Note: this example repository currently contains a concrete Redis URL in `config
 Terraform variables are declared in `deploy/variables.tf`:
 
 - `region`
-- `product_alias`
-- `env_alias`
-- `module_name`
+- `prefix`
 - `is_production`
 - `openai_api_key`
 

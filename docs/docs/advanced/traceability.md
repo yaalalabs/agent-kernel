@@ -479,18 +479,24 @@ class MyCustomOpenAIRunner(OpenAIRunner):
         super().__init__()
         self._client = client
     
-    async def run(self, agent, session: Session, prompt):
+    async def run(self, agent, session: Session, requests):
         # Start a trace span
         with self._client.start_span("agent-execution") as span:
             span.set_attribute("session_id", session.id)
-            span.set_attribute("prompt", prompt)
-            
+
             # Run the agent
-            result = await super().run(agent=agent, prompt=prompt, session=session)
-            
-            span.set_attribute("result", result)
+            result = await super().run(agent, session, requests)
+
+            span.set_attribute("prompt", result.prompt)
+            span.set_attribute("result", str(result))
             return result
 ```
+
+A custom runner is for behaviour that wraps the native call. To pass the framework's own run
+arguments (OpenAI's `hooks`, `run_config` and `max_turns`, LangGraph's `config`, ADK's `plugins`, ...)
+declare them per agent with [`Module.run_options`](../core-concepts/runner.md#native-run-options)
+instead; the base runner merges them into the call, so they also reach the SDK through the traced
+runners above without a subclass.
 
 2. **Initialize the module with the custom runner**
 

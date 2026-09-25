@@ -5,14 +5,12 @@
 # /api/v1/app_info - Custom endpoint created by a custom handler
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.9.1"
+  version = "0.9.3"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
   # Basic Cloud Run configuration
   project_id           = var.project_id
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   package_path         = "../dist"
   region               = var.region
   product_display_name = "AK OpenAI Containerized Example"

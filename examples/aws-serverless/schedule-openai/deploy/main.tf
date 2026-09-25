@@ -3,12 +3,10 @@
 # ---------------------------------------------------------------------------
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.1"
+  version = "0.9.3"
 
   providers            = { aws = aws, docker = docker }
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK OpenAI Scheduled Chats Serverless Example"
   region               = var.region
   is_production        = var.is_production
@@ -69,7 +67,6 @@ module "serverless_agents" {
   # ---- Request handler ----
   # Chat ingress plus the custom schedule management routes.
   request_handler = {
-    module_name          = "rqst-hdlr"
     function_name        = "rqh-func"
     function_description = "Chat ingress and scheduled-task management routes"
     handler_path         = "lambda_request_handler.handler"
@@ -77,6 +74,7 @@ module "serverless_agents" {
     package_path         = "../dist_request_handler.zip"
     memory_size          = 256
     timeout              = 45
+    security_group_id    = var.request_handler_security_group_id
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }
@@ -88,7 +86,6 @@ module "serverless_agents" {
   # inside Lambda's 250 MB unzipped zip limit. Terraform builds ../dist_agent_runner (deps under
   # data/ plus the Dockerfile deploy.sh copies in) and pushes it to an ECR repository it creates.
   agent_runner = {
-    module_name          = "agent-runner"
     function_name        = "ar-func"
     function_description = "Runs scheduled occurrences and registers new tasks"
     timeout              = 45
@@ -96,6 +93,7 @@ module "serverless_agents" {
     handler_path         = "lambda_agent_runner.handler"
     package_type         = "Image"
     package_path         = "../dist_agent_runner"
+    security_group_id    = var.agent_runner_security_group_id
     environment_variables = {
       "OPENAI_API_KEY" = var.openai_api_key
     }
@@ -104,13 +102,13 @@ module "serverless_agents" {
   # ---- Response handler ----
   response_handler = {
     function_name        = "rsh-func"
-    module_name          = "rspns-hdlr"
     function_description = "Writes completed responses to the response store"
     timeout              = 45
     memory_size          = 256
     handler_path         = "lambda_response_handler.handler"
     package_type         = "LocalZip"
     package_path         = "../dist_response_handler.zip"
+    security_group_id    = var.response_handler_security_group_id
   }
 
   # ---- Queue configuration ----

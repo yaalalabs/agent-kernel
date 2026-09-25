@@ -4,7 +4,7 @@
 resource "aws_dynamodb_table" "response_store" {
   count = var.queue_mode && !local.is_websocket_mode ? 1 : 0
 
-  name         = "${local.prefix}-response-store"
+  name         = "${var.prefix}-response-store"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "request_id"
 
@@ -28,7 +28,7 @@ resource "aws_dynamodb_table" "response_store" {
 resource "aws_dynamodb_table" "schedule_store" {
   count = var.create_dynamodb_schedule_table ? 1 : 0
 
-  name         = "${local.prefix}-schedule-store"
+  name         = "${var.prefix}-schedule-store"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "task_id"
 
@@ -51,7 +51,7 @@ resource "aws_dynamodb_table" "schedule_store" {
 
 module "websocket_connections" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.1"
+  version = "0.9.3"
   count   = local.is_websocket_mode ? 1 : 0
 
   attributes = [
@@ -70,9 +70,7 @@ module "websocket_connections" {
   ]
   ttl_enabled        = true
   ttl_attribute_name = "expiry_time"
-  env_alias          = var.env_alias
-  module_name        = var.module_name
-  product_alias      = var.product_alias
+  prefix             = var.prefix
   table_name         = "websocket-connections"
   tags               = merge(var.tags, { Type = "WebSocketConnections" })
 }

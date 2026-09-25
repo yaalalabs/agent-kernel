@@ -38,8 +38,7 @@ module "vnet" {
   vnet_cidr           = "10.0.0.0/16"
   public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
   private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod"
   
   tags = {
     Environment = "production"
@@ -59,8 +58,7 @@ module "vnet" {
   vnet_cidr           = "10.0.0.0/16"
   public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
   private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
-  product_alias       = var.product_alias
-  env_alias           = var.env_alias
+  prefix              = var.prefix
   tags               = var.tags
 }
 
@@ -80,9 +78,7 @@ resource "azurerm_linux_function_app" "api" {
 module "redis" {
   source = "yaalalabs/ak-common/azurerm//modules/redis"
 
-  product_alias       = var.product_alias
-  env_alias          = var.env_alias
-  module_name        = "cache"
+  prefix              = "${var.prefix}-cache"
   resource_group_name = var.resource_group_name
   vnet_name          = module.vnet.vnet_name
   subnet_name        = module.vnet.private_subnet_name  # subnet 1
@@ -99,8 +95,7 @@ module "redis" {
 | `vnet_cidr` | CIDR block for the Virtual Network | `string` | `"10.0.0.0/16"` | no |
 | `public_subnet_cidrs` | List of CIDR blocks for public subnets | `list(string)` | `["10.0.1.0/24", "10.0.2.0/24"]` | no |
 | `private_subnet_cidrs` | List of CIDR blocks for private subnets | `list(string)` | `["10.0.3.0/24", "10.0.4.0/24"]` | no |
-| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
-| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `tags` | Additional tags to apply to all resources | `map(string)` | `{}` | no |
 
 ## 📤 Outputs
@@ -235,8 +230,7 @@ module "vnet" {
 module "vnet" {
   source = "yaalalabs/ak-common/azurerm//modules/vnet"
   
-  product_alias       = "myapp"
-  env_alias          = "prod"
+  prefix              = "myapp-prod"
   resource_group_name = var.resource_group_name
 }
 

@@ -4,15 +4,19 @@ data "aws_vpc" "provided" {
 }
 
 locals {
-  lambda_kms_key_arn                    = null
-  cloudwatch_kms_key_arn                = null
-  lambda_signer_profile_name            = "sample_profile"
-  lambda_signing_config_arn             = null
-  vpc_id                                = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
-  vpc_cidr                              = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
-  subnet_ids                            = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
-  security_group_id                     = aws_security_group.lambda.id
-  security_group_name                   = "${var.product_alias}-${var.env_alias}-lambda-sg"
+  lambda_kms_key_arn         = null
+  cloudwatch_kms_key_arn     = null
+  lambda_signer_profile_name = "sample_profile"
+  lambda_signing_config_arn  = null
+  vpc_id                     = var.vpc_id != null ? var.vpc_id : module.vpc[0].vpc_id
+  vpc_cidr                   = var.vpc_id != null ? data.aws_vpc.provided[0].cidr_block : var.vpc_cidr
+  subnet_ids                 = var.vpc_id != null ? var.private_subnet_ids : module.vpc[0].private_subnet_ids
+  # Three logical security groups, one per Lambda tier (mirrors the containerized module's
+  # per-service SG split). The authorizer and WebSocket connection handler Lambdas — both part of
+  # the request-handling front door — share the request handler's security group.
+  request_handler_security_group_id     = var.request_handler.security_group_id != null ? var.request_handler.security_group_id : aws_security_group.request_handler[0].id
+  agent_runner_security_group_id        = var.agent_runner.security_group_id != null ? var.agent_runner.security_group_id : aws_security_group.agent_runner[0].id
+  response_handler_security_group_id    = var.response_handler.security_group_id != null ? var.response_handler.security_group_id : aws_security_group.response_handler[0].id
   redis_url                             = (var.create_redis_cluster == true || var.create_redis_response_store) ? module.redis[0].url : null
   valkey_url                            = (var.create_valkey_cluster == true || var.create_valkey_response_store) ? module.valkey[0].url : null
   dynamodb_memory_table_arn             = var.create_dynamodb_memory_table == true ? module.dynamodb_memory[0].table_arn : null
@@ -36,9 +40,9 @@ locals {
   websocket_api_enabled = var.enable_api_gateway && local.is_websocket_mode
   rest_api_enabled      = var.enable_api_gateway && !local.is_websocket_mode
 
-  create_authorizer = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null && var.authorizer.module_name != null) : false
+  create_authorizer = var.enable_api_gateway && var.authorizer != null ? (var.authorizer.function_name != null && var.authorizer.handler_path != null && var.authorizer.package_type != null && var.authorizer.package_path != null) : false
   # Authorizer status message for logging
-  authorizer_required_vars_text = join(", ", compact(["function_name", "handler_path", "package_type", "package_path", "module_name"]))
+  authorizer_required_vars_text = join(", ", compact(["function_name", "handler_path", "package_type", "package_path"]))
   authorizer_status_message     = !var.enable_api_gateway ? "Did NOT create Authorizer Lambda: enable_api_gateway is false." : (local.create_authorizer ? format("Created Authorizer Lambda: All required variables are present (%s)", local.authorizer_required_vars_text) : format("Did NOT create Authorizer Lambda: Missing one or more required variables (%s)", local.authorizer_required_vars_text))
 
   # Effective response store creation flags (disabled for websocket modes — endpoint_url in SQS message is used instead)
@@ -89,9 +93,10 @@ locals {
   shared_source_bucket = local.any_s3zip ? module.lambda_source_storage[0].source_storage_s3_bucket : null
 }
 
-resource "aws_security_group" "lambda" {
-  name        = local.security_group_name
-  description = "Security group for Lambda functions"
+resource "aws_security_group" "request_handler" {
+  count       = var.request_handler.security_group_id == null ? 1 : 0
+  name        = "${var.prefix}-request-handler-sg"
+  description = "Security group for the request handler Lambda (also used by the authorizer and WebSocket connection handler Lambdas)"
   vpc_id      = local.vpc_id
 
   egress {
@@ -101,18 +106,49 @@ resource "aws_security_group" "lambda" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = { Name = local.security_group_name }
+  tags = { Name = "${var.prefix}-request-handler-sg" }
+}
+
+resource "aws_security_group" "agent_runner" {
+  count       = var.agent_runner.security_group_id == null ? 1 : 0
+  name        = "${var.prefix}-agent-runner-sg"
+  description = "Security group for the agent runner Lambda"
+  vpc_id      = local.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "${var.prefix}-agent-runner-sg" }
+}
+
+resource "aws_security_group" "response_handler" {
+  count       = var.response_handler.security_group_id == null ? 1 : 0
+  name        = "${var.prefix}-response-handler-sg"
+  description = "Security group for the response handler Lambda"
+  vpc_id      = local.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "${var.prefix}-response-handler-sg" }
 }
 
 # Single shared S3 bucket for all lambda source packages
 module "lambda_source_storage" {
   count                = local.any_s3zip ? 1 : 0
   source               = "yaalalabs/ak-common/aws//modules/s3"
-  version              = "0.9.1"
+  version              = "0.9.3"
   region               = var.region
-  env_alias            = var.env_alias
+  prefix               = var.prefix
   is_production        = var.is_production
-  product_alias        = var.product_alias
   product_display_name = var.product_display_name
   s3_kms_key_id        = ""
 }
@@ -120,12 +156,10 @@ module "lambda_source_storage" {
 module "request_handler_source_package" {
   count            = local.request_handler_enabled ? ((var.request_handler.package_type == "S3Zip" && try(var.request_handler.lambda_package_s3, null) == null) ? 1 : 0) : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
-  version          = "0.9.1"
-  env_alias        = var.env_alias
+  version          = "0.9.3"
+  prefix           = "${var.prefix}-${var.request_handler.function_name}"
   region           = var.region
-  module_name      = var.request_handler.module_name
   package_dir_path = var.request_handler.package_path
-  product_alias    = var.product_alias
   s3_bucket        = local.shared_source_bucket
   depends_on       = [module.lambda_source_storage]
 }
@@ -133,12 +167,10 @@ module "request_handler_source_package" {
 module "agent_runner_source_package" {
   count            = (var.agent_runner.package_type == "S3Zip" && try(var.agent_runner.lambda_package_s3, null) == null) ? 1 : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
-  version          = "0.9.1"
-  env_alias        = var.env_alias
+  version          = "0.9.3"
+  prefix           = "${var.prefix}-${var.agent_runner.function_name}"
   region           = var.region
-  module_name      = var.agent_runner.module_name
   package_dir_path = var.agent_runner.package_path
-  product_alias    = var.product_alias
   s3_bucket        = local.shared_source_bucket
   depends_on       = [module.lambda_source_storage]
 }
@@ -146,41 +178,37 @@ module "agent_runner_source_package" {
 module "response_handler_source_package" {
   count            = (var.queue_mode && var.response_handler.package_type == "S3Zip" && try(var.response_handler.lambda_package_s3, null) == null) ? 1 : 0
   source           = "yaalalabs/ak-common/aws//modules/lambda-package"
-  version          = "0.9.1"
-  env_alias        = var.env_alias
+  version          = "0.9.3"
+  prefix           = "${var.prefix}-${var.response_handler.function_name}"
   region           = var.region
-  module_name      = var.response_handler.module_name
   package_dir_path = var.response_handler.package_path
-  product_alias    = var.product_alias
   s3_bucket        = local.shared_source_bucket
   depends_on       = [module.lambda_source_storage]
 }
 
 module "vpc" {
   source               = "yaalalabs/ak-common/aws//modules/vpc"
-  version              = "0.9.1"
+  version              = "0.9.3"
   count                = var.vpc_id == null ? 1 : 0
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
+  prefix               = var.prefix
   tags                 = var.tags
 }
 
 module "authorizer" {
   count                      = local.create_authorizer ? 1 : 0
   source                     = "yaalalabs/ak-common/aws//modules/authorizer"
-  version                    = "0.9.1"
+  version                    = "0.9.3"
   region                     = var.region
-  product_alias              = var.product_alias
-  env_alias                  = var.env_alias
+  prefix                     = var.prefix
   authorizer_info            = var.authorizer
   module_type                = var.module_type
   tags                       = var.tags
   vpc_id                     = local.vpc_id
   subnet_ids                 = local.subnet_ids
-  security_group_ids         = [local.security_group_id]
+  security_group_ids         = [local.request_handler_security_group_id]
   is_production              = var.is_production
   lambda_kms_key_arn         = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn     = local.cloudwatch_kms_key_arn
@@ -189,11 +217,10 @@ module "authorizer" {
 }
 
 module "shared_api_gateway_resources" {
-  count         = var.enable_api_gateway_logs ? 1 : 0
-  source        = "./modules/shared-api-gateway-resources"
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  tags          = var.tags
+  count  = var.enable_api_gateway_logs ? 1 : 0
+  source = "./modules/shared-api-gateway-resources"
+  prefix = var.prefix
+  tags   = var.tags
 }
 
 module "api_gateway" {
@@ -201,8 +228,7 @@ module "api_gateway" {
   source = "./modules/api-gateway"
 
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
+  prefix               = var.prefix
   product_display_name = var.product_display_name
   api_base_path        = var.api_base_path
   api_version          = var.api_version
@@ -228,8 +254,7 @@ module "websocket_api_gateway" {
   source = "./modules/websocket-api-gateway"
 
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
+  prefix               = var.prefix
   product_display_name = var.product_display_name
   tags                 = var.tags
   chat_route           = var.ws_chat_route
@@ -247,62 +272,52 @@ module "websocket_api_gateway" {
 }
 
 module "docker_image" {
-  count         = local.request_handler_enabled ? ((var.request_handler.package_type == "Image" && try(var.request_handler.ecr_image_uri, null) == null) ? 1 : 0) : 0
-  source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.9.1"
-  env_alias     = var.env_alias
-  module_name   = var.request_handler.module_name
-  product_alias = var.product_alias
-  source_path   = var.request_handler.package_path
+  count       = local.request_handler_enabled ? ((var.request_handler.package_type == "Image" && try(var.request_handler.ecr_image_uri, null) == null) ? 1 : 0) : 0
+  source      = "yaalalabs/ak-common/aws//modules/ecr"
+  version     = "0.9.3"
+  prefix      = "${var.prefix}-${var.request_handler.function_name}"
+  source_path = var.request_handler.package_path
 }
 
 module "agent_runner_docker_image" {
-  count         = (var.agent_runner.package_type == "Image" && try(var.agent_runner.ecr_image_uri, null) == null) ? 1 : 0
-  source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.9.1"
-  env_alias     = var.env_alias
-  module_name   = var.agent_runner.module_name
-  product_alias = var.product_alias
-  source_path   = var.agent_runner.package_path
+  count       = (var.agent_runner.package_type == "Image" && try(var.agent_runner.ecr_image_uri, null) == null) ? 1 : 0
+  source      = "yaalalabs/ak-common/aws//modules/ecr"
+  version     = "0.9.3"
+  prefix      = "${var.prefix}-${var.agent_runner.function_name}"
+  source_path = var.agent_runner.package_path
 }
 
 module "response_handler_docker_image" {
-  count         = var.queue_mode && var.response_handler.package_type == "Image" && try(var.response_handler.ecr_image_uri, null) == null ? 1 : 0
-  source        = "yaalalabs/ak-common/aws//modules/ecr"
-  version       = "0.9.1"
-  env_alias     = var.env_alias
-  module_name   = var.response_handler.module_name
-  product_alias = var.product_alias
-  source_path   = var.response_handler.package_path
+  count       = var.queue_mode && var.response_handler.package_type == "Image" && try(var.response_handler.ecr_image_uri, null) == null ? 1 : 0
+  source      = "yaalalabs/ak-common/aws//modules/ecr"
+  version     = "0.9.3"
+  prefix      = "${var.prefix}-${var.response_handler.function_name}"
+  source_path = var.response_handler.package_path
 }
 
 module "redis" {
-  source        = "yaalalabs/ak-common/aws//modules/redis"
-  version       = "0.9.1"
-  count         = (var.create_redis_cluster == true || local.create_redis_response_store_effective) ? 1 : 0
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  product_alias = var.product_alias
-  vpc_cidr      = local.vpc_cidr
-  vpc_id        = local.vpc_id
-  subnet_ids    = local.subnet_ids
+  source     = "yaalalabs/ak-common/aws//modules/redis"
+  version    = "0.9.3"
+  count      = (var.create_redis_cluster == true || local.create_redis_response_store_effective) ? 1 : 0
+  prefix     = var.prefix
+  vpc_cidr   = local.vpc_cidr
+  vpc_id     = local.vpc_id
+  subnet_ids = local.subnet_ids
 }
 
 module "valkey" {
-  source        = "yaalalabs/ak-common/aws//modules/valkey"
-  version       = "0.9.1"
-  count         = (var.create_valkey_cluster == true || local.create_valkey_response_store_effective) ? 1 : 0
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  product_alias = var.product_alias
-  vpc_cidr      = local.vpc_cidr
-  vpc_id        = local.vpc_id
-  subnet_ids    = local.subnet_ids
+  source     = "yaalalabs/ak-common/aws//modules/valkey"
+  version    = "0.9.3"
+  count      = (var.create_valkey_cluster == true || local.create_valkey_response_store_effective) ? 1 : 0
+  prefix     = var.prefix
+  vpc_cidr   = local.vpc_cidr
+  vpc_id     = local.vpc_id
+  subnet_ids = local.subnet_ids
 }
 
 module "dynamodb_memory" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.1"
+  version = "0.9.3"
   count   = var.create_dynamodb_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
@@ -311,16 +326,14 @@ module "dynamodb_memory" {
   hash_key           = "session_id"
   range_key          = "key"
   ttl_enabled        = true
-  env_alias          = var.env_alias
-  module_name        = var.module_name
-  product_alias      = var.product_alias
+  prefix             = var.prefix
   table_name         = "session_store"
   ttl_attribute_name = "expiry_time"
 }
 
 module "dynamodb_multimodal_memory" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.1"
+  version = "0.9.3"
   count   = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
@@ -330,15 +343,13 @@ module "dynamodb_multimodal_memory" {
   range_key          = "attachment_id"
   ttl_enabled        = true
   ttl_attribute_name = "expiry_time"
-  env_alias          = var.env_alias
-  module_name        = var.module_name
-  product_alias      = var.product_alias
+  prefix             = var.prefix
   table_name         = "mm-attachments"
 }
 
 module "dynamodb_thread" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.1"
+  version = "0.9.3"
   count   = var.create_dynamodb_thread_table == true ? 1 : 0
   attributes = [
     { name = "session_id", type = "S" },
@@ -348,15 +359,13 @@ module "dynamodb_thread" {
   range_key          = "sk"
   ttl_enabled        = true
   ttl_attribute_name = "expiry_time"
-  env_alias          = var.env_alias
-  module_name        = var.module_name
-  product_alias      = var.product_alias
+  prefix             = var.prefix
   table_name         = "thread_store"
 }
 
 module "dynamodb_schedule" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.1"
+  version = "0.9.3"
   count   = var.create_dynamodb_schedule_table == true ? 1 : 0
   attributes = [
     { name = "task_id", type = "S" },
@@ -366,9 +375,7 @@ module "dynamodb_schedule" {
   # TTL defaults to 0, in which case items carry no `expiry_time` and never expire.
   ttl_enabled        = true
   ttl_attribute_name = "expiry_time"
-  env_alias          = var.env_alias
-  module_name        = var.module_name
-  product_alias      = var.product_alias
+  prefix             = var.prefix
   table_name         = "schedule_store"
 }
 
@@ -389,7 +396,7 @@ check "scheduling_requires_queue_mode" {
 resource "aws_scheduler_schedule_group" "schedules" {
   count = var.enable_scheduling ? 1 : 0
 
-  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-schedules"
+  name = "${var.prefix}-schedules"
 
   tags = merge(var.tags, { Type = "ScheduleGroup" })
 }
@@ -397,7 +404,7 @@ resource "aws_scheduler_schedule_group" "schedules" {
 resource "aws_iam_role" "scheduler_execution" {
   count = var.enable_scheduling ? 1 : 0
 
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-scheduler-exec-role"
+  name        = "${var.prefix}-scheduler-exec-role"
   description = "Role EventBridge Scheduler assumes to deliver scheduled triggers to the Input Queue"
 
   assume_role_policy = jsonencode({
@@ -420,7 +427,7 @@ resource "aws_iam_role" "scheduler_execution" {
 resource "aws_iam_role_policy" "scheduler_send_to_input_queue" {
   count = var.enable_scheduling ? 1 : 0
 
-  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-scheduler-send-to-input-queue"
+  name = "${var.prefix}-scheduler-send-to-input-queue"
   role = aws_iam_role.scheduler_execution[0].id
 
   # No KMS statement: the queues use SQS-managed SSE unless a customer key is configured.
@@ -438,10 +445,8 @@ module "queues" {
   count  = var.queue_mode ? 1 : 0
   source = "./modules/queues"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  tags          = var.tags
+  prefix = var.prefix
+  tags   = var.tags
 
   # EventBridge Scheduler cannot set a MessageDeduplicationId on the triggers it delivers, so
   # scheduling forces content-based deduplication on the Input Queue.
@@ -469,7 +474,7 @@ check "queue_visibility_timeouts" {
 module "websocket_connections" {
   count   = local.websocket_api_enabled ? 1 : 0
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.1"
+  version = "0.9.3"
   attributes = [
     { name = "user_id", type = "S" },
     { name = "connection_id", type = "S" }
@@ -484,9 +489,7 @@ module "websocket_connections" {
   ]
   hash_key           = "user_id"
   range_key          = "connection_id"
-  env_alias          = var.env_alias
-  module_name        = "${var.module_name}-websocket-connections"
-  product_alias      = var.product_alias
+  prefix             = "${var.prefix}-websocket-connections"
   table_name         = "websocket-connections"
   ttl_enabled        = true
   ttl_attribute_name = "expiry_time"
@@ -494,7 +497,7 @@ module "websocket_connections" {
 
 module "dynamodb_response_store" {
   source  = "yaalalabs/ak-common/aws//modules/dynamodb"
-  version = "0.9.1"
+  version = "0.9.3"
   count   = local.create_dynamodb_response_store_effective ? 1 : 0
   attributes = [
     { name = "request_id", type = "S" },
@@ -510,9 +513,7 @@ module "dynamodb_response_store" {
   ]
   hash_key           = "request_id"
   ttl_enabled        = true
-  env_alias          = var.env_alias
-  module_name        = "${var.module_name}-response-store"
-  product_alias      = var.product_alias
+  prefix             = "${var.prefix}-response-store"
   table_name         = "ak-responses"
   ttl_attribute_name = "expiry_time"
 }
@@ -522,13 +523,12 @@ module "ws_connection_handler" {
   source = "./modules/ws-connection-handler"
 
   region                 = var.region
-  product_alias          = var.product_alias
-  env_alias              = var.env_alias
+  prefix                 = var.prefix
   module_type            = var.module_type
   is_production          = var.is_production
   vpc_id                 = local.vpc_id
   subnet_ids             = local.subnet_ids
-  security_group_id      = local.security_group_id
+  security_group_id      = local.request_handler_security_group_id
   lambda_kms_key_arn     = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
   ws_connection_handler = merge(var.ws_connection_handler, {
@@ -546,17 +546,15 @@ module "request_handler" {
   source = "./modules/request-handler"
 
   region                            = var.region
-  product_alias                     = var.product_alias
+  prefix                            = var.prefix
   product_display_name              = var.product_display_name
-  env_alias                         = var.env_alias
   module_type                       = var.module_type
-  module_name                       = var.request_handler.module_name
   api_version                       = var.api_version
   agent_endpoint                    = var.agent_endpoint
   api_base_path                     = var.api_base_path
   vpc_id                            = local.vpc_id
   subnet_ids                        = local.subnet_ids
-  security_group_id                 = local.security_group_id
+  security_group_id                 = local.request_handler_security_group_id
   lambda_signer_profile_name        = local.lambda_signer_profile_name
   lambda_signing_config_arn         = local.lambda_signing_config_arn
   lambda_kms_key_arn                = local.lambda_kms_key_arn
@@ -631,10 +629,9 @@ module "agent_runner" {
   count  = var.queue_mode ? 1 : 0
   source = "./modules/agent-runner"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  region        = var.region
-  module_type   = var.module_type
+  prefix      = var.prefix
+  region      = var.region
+  module_type = var.module_type
 
   agent_runner = merge(var.agent_runner, {
     environment_variables = merge(var.agent_runner.environment_variables, var.execution_mode != null ? { AK_EXECUTION__MODE = var.execution_mode } : {})
@@ -687,7 +684,7 @@ module "agent_runner" {
   }
 
   subnet_ids             = local.subnet_ids
-  security_group_id      = local.security_group_id
+  security_group_id      = local.agent_runner_security_group_id
   lambda_kms_key_arn     = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn = local.cloudwatch_kms_key_arn
 
@@ -699,13 +696,12 @@ module "response_handler" {
   source = "./modules/response-handler"
 
   region                     = var.region
-  product_alias              = var.product_alias
-  env_alias                  = var.env_alias
+  prefix                     = var.prefix
   is_production              = var.is_production
   lambda_signer_profile_name = local.lambda_signer_profile_name
   lambda_signing_config_arn  = local.lambda_signing_config_arn
   subnet_ids                 = local.subnet_ids
-  security_group_id          = local.security_group_id
+  security_group_id          = local.response_handler_security_group_id
   lambda_kms_key_arn         = local.lambda_kms_key_arn
   cloudwatch_kms_key_arn     = local.cloudwatch_kms_key_arn
   source_bucket              = local.shared_source_bucket

@@ -377,7 +377,7 @@ module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
   version = "0.8.1"
 
-  # ... product_alias / env_alias / module_name / region / vpc_id / private_subnet_ids ...
+  # ... prefix / region / vpc_id / private_subnet_ids ...
 
   rest_service = {
     package_path   = "../dist"
