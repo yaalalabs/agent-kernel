@@ -112,3 +112,19 @@ class TestLangFuseLangGraphRunOptions:
         assert kwargs["config"]["callbacks"] == [runner._callback_handler, mine]
         assert kwargs["config"]["configurable"] == {"thread_id": "s"}
         assert kwargs["interrupt_before"] == ["tools"]
+
+    @pytest.mark.asyncio
+    async def test_a_resolved_config_reaches_ainvoke_through_the_traced_runner(self):
+        runner = LangFuseLangGraph(client=MagicMock())
+        mine = object()
+        agent = _mock_agent({"messages": [_message("hello")]})
+        agent.run_options = {"config": {"recursion_limit": 7}}
+        agent.resolve_run_options = AsyncMock(return_value={"config": {"callbacks": [mine], "recursion_limit": 9}})  # the factory-merged mapping
+
+        with patch("agentkernel.trace.langfuse.langgraph.propagate_attributes", _noop_cm):
+            await runner.run(agent, Session("s"), [AgentRequestText(prompt="hi")])
+
+        agent.resolve_run_options.assert_awaited_once()
+        kwargs = agent.agent.ainvoke.call_args.kwargs
+        assert kwargs["config"]["callbacks"] == [runner._callback_handler, mine]
+        assert kwargs["config"]["recursion_limit"] == 9

@@ -151,13 +151,16 @@ class SmolagentsRunner(Runner):
             if not prompt.strip():
                 return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
 
+            # Resolved once per run: the static options with a declared factory's result merged over them.
+            options = await agent.resolve_run_options(session, requests)
+
             # Rehydrate framework memory from the AgentKernel session before execution.
             self._hydrate_memory(agent, session)
 
             # Injected as smolagents additional_args, only when a context is present.
             incoming = self._load_framework_context(session)
-            # Declared run options (max_steps, ...) first; reset and additional_args are AK-owned and written last.
-            run_kwargs: dict[str, Any] = self._native_kwargs(agent.run_options, reset=False)
+            # Resolved run options (max_steps, ...) first; reset and additional_args are AK-owned and written last.
+            run_kwargs: dict[str, Any] = self._native_kwargs(options, reset=False)
             if incoming is not None:
                 run_kwargs["additional_args"] = incoming
             else:

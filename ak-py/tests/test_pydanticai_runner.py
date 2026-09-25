@@ -903,6 +903,64 @@ class TestPydanticAIRunOptions:
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "event_stream_handler" in r.getMessage()]
         assert len(warnings) == 1
 
+    @pytest.mark.asyncio
+    async def test_run_uses_the_resolved_options_and_resolves_once_per_run(self):
+        runner = PydanticAIRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+        static_limits, run_limits = object(), object()
+        mock_agent = _mock_agent("ok")
+        mock_agent.run_options = {"usage_limits": static_limits}
+        mock_agent.resolve_run_options = AsyncMock(return_value={"usage_limits": run_limits})  # the factory-merged mapping
+
+        await runner.run(mock_agent, session, requests)
+
+        mock_agent.resolve_run_options.assert_awaited_once_with(session, requests)
+        kwargs = mock_agent.agent.run.call_args.kwargs
+        assert kwargs["usage_limits"] is run_limits
+        assert set(kwargs) == {"usage_limits", "message_history", "deps"}
+
+    @pytest.mark.asyncio
+    async def test_stream_filters_the_resolved_options_and_resolves_once_per_stream(self, caplog):
+        runner = PydanticAIRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+        run_limits, handler = object(), object()
+        captured: dict = {}
+        mock_agent = _capturing_stream_agent(captured)
+        mock_agent.run_options = {}
+        mock_agent.resolve_run_options = AsyncMock(return_value={"usage_limits": run_limits, "event_stream_handler": handler})
+
+        with caplog.at_level(logging.WARNING, logger="ak.pydanticai.runner"):
+            _ = [e async for e in runner.stream(mock_agent, session, requests)]
+
+        mock_agent.resolve_run_options.assert_awaited_once_with(session, requests)
+        assert captured["usage_limits"] is run_limits
+        assert "event_stream_handler" not in captured
+        assert set(captured) == {"usage_limits", "message_history", "deps"}
+        assert len([r for r in caplog.records if r.levelno == logging.WARNING and "event_stream_handler" in r.getMessage()]) == 1
+
+    def test_stream_run_options_takes_a_mapping_and_returns_a_filtered_copy(self):
+        runner = PydanticAIRunner()
+        handler = object()
+        options = {"usage_limits": 1, "event_stream_handler": handler}
+
+        filtered = runner._stream_run_options(options)
+
+        assert filtered == {"usage_limits": 1}
+        assert options == {"usage_limits": 1, "event_stream_handler": handler}  # the input mapping is untouched
+
+    @pytest.mark.asyncio
+    async def test_a_request_without_content_returns_before_resolving_in_both_modes(self):
+        runner = PydanticAIRunner()
+        mock_agent = _mock_agent("ok")
+
+        reply = await runner.run(mock_agent, Session("s"), [])
+        _ = [e async for e in runner.stream(mock_agent, Session("s"), [])]
+
+        assert "No valid content" in reply.response
+        mock_agent.resolve_run_options.assert_not_awaited()
+
     def test_reserved_keys_are_rejected_at_declaration_through_the_module(self):
         native = Agent(TestModel(), name="reserved-keys-agent")
 

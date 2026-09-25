@@ -322,6 +322,36 @@ class TestSmolagentsRunOptions:
 
             mock_to_thread.assert_called_once_with(mock_agent.agent.run, "hi", max_steps=4, reset=False)
 
+    @pytest.mark.asyncio
+    async def test_run_uses_the_resolved_options_and_resolves_once_per_run(self):
+        runner = SmolagentsRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+        mock_agent = _mock_agent()
+        mock_agent.run_options = {"max_steps": 4}
+        mock_agent.resolve_run_options = AsyncMock(return_value={"max_steps": 2, "images": None})  # the factory-merged mapping
+
+        with (
+            patch.object(runner, "_hydrate_memory"),
+            patch.object(runner, "_sync_memory"),
+            patch("agentkernel.framework.smolagents.smolagents.asyncio.to_thread") as mock_to_thread,
+        ):
+            mock_to_thread.return_value = "ok"
+            await runner.run(mock_agent, session, requests)
+
+            mock_agent.resolve_run_options.assert_awaited_once_with(session, requests)
+            mock_to_thread.assert_called_once_with(mock_agent.agent.run, "hi", max_steps=2, images=None, reset=False)
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_request_returns_before_resolving(self):
+        runner = SmolagentsRunner()
+        mock_agent = _mock_agent()
+
+        reply = await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="   ")])
+
+        assert "No valid text prompt" in reply.response
+        mock_agent.resolve_run_options.assert_not_awaited()
+
     def test_module_resolves_the_agent_by_its_native_name_and_rejects_reserved_keys(self):
         from smolagents import ToolCallingAgent
 

@@ -30,6 +30,7 @@ from agentkernel.core.model import (
     AgentRequestText,
 )
 from agentkernel.core.runtime import Runtime
+from agentkernel.core.util.error_util import user_facing_error_message
 from agentkernel.framework.openai.openai import OpenAIAgent, OpenAIModule, OpenAIRunner, OpenAISession
 
 FRAMEWORK_CONTEXT = Session.Keys.FRAMEWORK_CONTEXT.value
@@ -862,6 +863,123 @@ class TestOpenAIRunnerRunOptions:
             assert module.pre_hook(native, [hook]).post_hook(native, [hook]) is module  # base-class hook methods
             assert module.get_agent("reserved-keys-agent").pre_hooks == [hook]
             assert module.get_agent("reserved-keys-agent").post_hooks == [hook]
+
+    @pytest.mark.asyncio
+    async def test_run_uses_the_resolved_options_and_resolves_once_per_run(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_run_result())
+            mock_agent = _mock_agent()
+            mock_agent.run_options = {"max_turns": 25}
+            mock_agent.resolve_run_options = AsyncMock(return_value={"max_turns": 3, "hooks": "per-run"})  # the factory-merged mapping
+
+            await runner.run(mock_agent, session, requests)
+
+            mock_agent.resolve_run_options.assert_awaited_once_with(session, requests)
+            kwargs = MockRunner.run.call_args.kwargs
+            assert kwargs["max_turns"] == 3
+            assert kwargs["hooks"] == "per-run"
+            assert set(kwargs) == {"max_turns", "hooks", "session", "context"}
+
+    @pytest.mark.asyncio
+    async def test_stream_uses_the_resolved_options_and_resolves_once_per_stream(self):
+        runner = OpenAIRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+        captured: dict = {}
+
+        def fake_run_streamed(agent, input_data, **kwargs):
+            captured.update(kwargs)
+            result = MagicMock()
+
+            async def stream_events():
+                for event in ():
+                    yield event
+
+            result.stream_events = stream_events
+            return result
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run_streamed = MagicMock(side_effect=fake_run_streamed)
+            mock_agent = _mock_agent()
+            mock_agent.run_options = {"max_turns": 25}
+            mock_agent.resolve_run_options = AsyncMock(return_value={"max_turns": 3})
+
+            _ = [e async for e in runner.stream(mock_agent, session, requests)]
+
+        mock_agent.resolve_run_options.assert_awaited_once_with(session, requests)
+        assert captured["max_turns"] == 3
+        assert set(captured) == {"max_turns", "session", "context"}
+
+    @pytest.mark.asyncio
+    async def test_a_request_without_content_returns_before_resolving_in_both_modes(self):
+        runner = OpenAIRunner()
+        mock_agent = _mock_agent()
+
+        reply = await runner.run(mock_agent, Session("s"), [])
+        _ = [e async for e in runner.stream(mock_agent, Session("s"), [])]
+
+        assert "No valid content" in reply.response
+        mock_agent.resolve_run_options.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_failing_resolution_surfaces_as_the_user_facing_error_reply_in_run(self):
+        runner = OpenAIRunner()
+        error = RuntimeError("factory boom")
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            MockRunner.run = AsyncMock(return_value=_run_result())
+            mock_agent = _mock_agent()
+            mock_agent.resolve_run_options = AsyncMock(side_effect=error)
+
+            reply = await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])
+
+            MockRunner.run.assert_not_called()
+
+        assert isinstance(reply, AgentReplyText)
+        assert reply.response == user_facing_error_message(error)
+        assert reply.prompt == "hi"
+
+    @pytest.mark.asyncio
+    async def test_a_failing_resolution_propagates_out_of_stream(self):
+        runner = OpenAIRunner()
+
+        with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+            mock_agent = _mock_agent()
+            mock_agent.resolve_run_options = AsyncMock(side_effect=RuntimeError("factory boom"))
+
+            with pytest.raises(RuntimeError, match="factory boom"):
+                _ = [e async for e in runner.stream(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])]
+
+            MockRunner.run_streamed.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_factory_declared_through_the_module_runs_per_call_on_a_real_agent(self):
+        seen: list[tuple] = []
+
+        def options_for(agent, session, requests):
+            seen.append((agent, session, requests))
+            return {"max_turns": 3}
+
+        with Runtime(SessionStoreBuilder.build()):
+            native = SDKAgent(name="factory-agent", instructions="x")
+            module = OpenAIModule([native]).run_options(native, options_for, max_turns=25, hooks="static")
+            agent = module.get_agent("factory-agent")
+            session = Session("s")
+            requests = [AgentRequestText(prompt="hi")]
+
+            with patch("agentkernel.framework.openai.openai.Runner") as MockRunner:
+                MockRunner.run = AsyncMock(return_value=_run_result())
+                await OpenAIRunner().run(agent, session, requests)
+                kwargs = MockRunner.run.call_args.kwargs
+
+        assert kwargs["max_turns"] == 3  # the factory's value, over the static 25
+        assert kwargs["hooks"] == "static"  # the static key the factory did not name
+        assert seen == [(agent, session, requests)]
+        assert agent.run_options == {"max_turns": 25, "hooks": "static"}  # the static dict is untouched
 
 
 class RecordingHooks(RunHooks):

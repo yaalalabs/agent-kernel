@@ -459,6 +459,8 @@ class LangGraphRunner(BaseRunner):
             if prompt.strip() == "":
                 return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
 
+            # Resolved once per run: the static options with a declared factory's result merged over them.
+            options = await agent.resolve_run_options(session, requests)
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
             # Spread the context's top-level keys into the input state so they map onto the graph's state
@@ -469,11 +471,11 @@ class LangGraphRunner(BaseRunner):
                 input_state.update(incoming)
             input_state["messages"] = messages
 
-            # Declared run options first; `input` and the merged `config` are written last.
+            # Resolved run options first; `input` and the merged `config` are written last.
             kwargs = self._native_kwargs(
-                agent.run_options,
+                options,
                 input=input_state,
-                config=self._merge_run_config(config, agent.run_options.get("config")),
+                config=self._merge_run_config(config, options.get("config")),
             )
             result = await agent.agent.ainvoke(**kwargs)
 
@@ -517,6 +519,8 @@ class LangGraphRunner(BaseRunner):
             if prompt.strip() == "":
                 return
 
+            # Resolved once per run: the static options with a declared factory's result merged over them.
+            options = await agent.resolve_run_options(session, requests)
             config, messages = self._prepare_session_and_messages(agent, session, prompt)
 
             incoming = self._load_framework_context(session)
@@ -528,8 +532,8 @@ class LangGraphRunner(BaseRunner):
             input_state["messages"] = messages
 
             # One merged config for the stream call and the state read-back below, so both address the same checkpoint.
-            merged_config = self._merge_run_config(config, agent.run_options.get("config"))
-            kwargs = self._native_kwargs(agent.run_options, input=input_state, config=merged_config, version="v2")
+            merged_config = self._merge_run_config(config, options.get("config"))
+            kwargs = self._native_kwargs(options, input=input_state, config=merged_config, version="v2")
             async for event in agent.agent.astream_events(**kwargs):
                 for stream_event in self._map_event(event, started, reasoning):
                     yield stream_event

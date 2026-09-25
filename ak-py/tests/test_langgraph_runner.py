@@ -626,6 +626,55 @@ class TestLangGraphRunnerRunOptions:
 
         assert declared == {"config": {"callbacks": [], "configurable": {"x": 1}}}
 
+    @pytest.mark.asyncio
+    async def test_run_merges_the_resolved_config_and_resolves_once_per_run(self):
+        runner = LangGraphRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+        agent = _mock_agent({"messages": [_message("hello")]})
+        agent.run_options = {"config": {"recursion_limit": 7}}
+        agent.resolve_run_options = AsyncMock(
+            return_value={"config": {"recursion_limit": 9}, "interrupt_before": ["tools"]}
+        )  # the factory-merged mapping
+
+        await runner.run(agent, session, requests)
+
+        agent.resolve_run_options.assert_awaited_once_with(session, requests)
+        kwargs = agent.agent.ainvoke.call_args.kwargs
+        assert kwargs["config"] == {"recursion_limit": 9, "configurable": {"thread_id": "s"}}
+        assert kwargs["interrupt_before"] == ["tools"]
+        assert set(kwargs) == {"input", "config", "interrupt_before"}
+
+    @pytest.mark.asyncio
+    async def test_stream_merges_the_resolved_config_and_reads_state_back_with_it(self):
+        runner = LangGraphRunner()
+        session = Session("s")
+        session.set(FRAMEWORK_CONTEXT, {"cart": []})
+        requests = [AgentRequestText(prompt="hi")]
+        captured: dict = {}
+        agent = _capturing_stream_agent(captured)
+        agent.run_options = {"config": {"recursion_limit": 7}}
+        agent.resolve_run_options = AsyncMock(return_value={"config": {"recursion_limit": 9}})
+
+        _ = [e async for e in runner.stream(agent, session, requests)]
+
+        agent.resolve_run_options.assert_awaited_once_with(session, requests)
+        expected = {"recursion_limit": 9, "configurable": {"thread_id": "s"}}
+        assert captured["config"] == expected
+        assert captured["version"] == "v2"
+        assert agent.agent.aget_state.call_args.args[0] == expected
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_request_returns_before_resolving_in_both_modes(self):
+        runner = LangGraphRunner()
+        agent = _mock_agent({"messages": [_message("hello")]})
+
+        reply = await runner.run(agent, Session("s"), [AgentRequestText(prompt="   ")])
+        _ = [e async for e in runner.stream(agent, Session("s"), [AgentRequestText(prompt="   ")])]
+
+        assert "No valid text prompt" in reply.response
+        agent.resolve_run_options.assert_not_awaited()
+
 
 class TestLangGraphReservedRunOptions:
     """LangGraphAgent reserves the result-shape arguments and the nested thread id."""
