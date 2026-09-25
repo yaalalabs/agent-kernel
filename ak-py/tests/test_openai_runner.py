@@ -872,6 +872,11 @@ class TestOpenAIRunnerRunOptions:
             module.run_options(native, max_turns=25)  # an unreserved key is accepted
             assert module.get_agent("reserved-keys-agent").run_options == {"max_turns": 25}
 
+            hook = object()
+            assert module.pre_hook(native, [hook]).post_hook(native, [hook]) is module  # base-class hook methods
+            assert module.get_agent("reserved-keys-agent").pre_hooks == [hook]
+            assert module.get_agent("reserved-keys-agent").post_hooks == [hook]
+
 
 class RecordingHooks(RunHooks):
     """A real SDK RunHooks that records what Session.current() / Agent.current() resolve to inside a callback."""

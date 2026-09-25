@@ -21,7 +21,6 @@ from pydantic import BaseModel
 
 from ...core import Agent as BaseAgent
 from ...core import Module as BaseModule
-from ...core import PostHook, PreHook
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
@@ -714,26 +713,6 @@ class LangGraphModule(BaseModule):
         :return: LangGraphModule instance.
         """
         super().load(agents)
-        return self
-
-    def pre_hook(self, agent: CompiledStateGraph, hooks: list[PreHook]) -> "LangGraphModule":
-        """
-        Attaches pre-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of pre-execution hooks to attach.
-        :return: LangGraphModule instance.
-        """
-        super().get_agent(agent.name).pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent: CompiledStateGraph, hooks: list[PostHook]) -> "LangGraphModule":
-        """
-        Attaches post-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of post-execution hooks to attach.
-        :return: LangGraphModule instance.
-        """
-        super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
 
 

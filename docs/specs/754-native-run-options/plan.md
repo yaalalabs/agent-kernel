@@ -165,9 +165,9 @@ spec set first.
   flag and the enlarged heap noted in the repo's docs-site build guidance); the two sync skills
   report no remaining drift.
 
-## Follow-ups outside this change (recorded, not planned)
+## Follow-ups
 
-- Rewriting the six `pre_hook` / `post_hook` implementations to use `Module._native_agent_name`
-  (spec § `Module`, item 4): a behaviour-preserving cleanup.
+- **Done on this branch:** the six `pre_hook` / `post_hook` implementations were lifted onto the base
+  `Module` (spec § `Module`, item 4), and `examples/cli/smolagents` joined the e2e matrix beside the
+  new smolagents example.
 - A callable form of `run_options` for per-session variation (design, Non-goals).
-- Whether `examples/cli/smolagents` itself should join the e2e matrix (Iteration 8, step 4).

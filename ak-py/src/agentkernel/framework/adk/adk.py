@@ -32,7 +32,7 @@ from agentkernel.core.model import (
 )
 
 from ...core import Agent as AKBaseAgent
-from ...core import Module, PostHook, PreHook
+from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
@@ -575,26 +575,6 @@ class GoogleADKModule(Module):
         :return: GoogleADKModule instance.
         """
         super().load(agents)
-        return self
-
-    def pre_hook(self, agent: BaseAgent, hooks: list[PreHook]) -> "GoogleADKModule":
-        """
-        Attaches pre-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of pre-execution hooks to attach.
-        :return: GoogleADKModule instance.
-        """
-        super().get_agent(agent.name).pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent: BaseAgent, hooks: list[PostHook]) -> "GoogleADKModule":
-        """
-        Attaches post-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of post-execution hooks to attach.
-        :return: GoogleADKModule instance.
-        """
-        super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
 
 

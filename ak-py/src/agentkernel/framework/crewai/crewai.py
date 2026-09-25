@@ -10,7 +10,7 @@ from crewai.tools import tool as crewai_tool
 from pydantic import BaseModel
 
 from ...core import Agent as BaseAgent
-from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBuilder, ToolContext
+from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import StreamEvent
@@ -603,26 +603,6 @@ class CrewAIModule(Module):
         :return: The registered agent name.
         """
         return agent.role
-
-    def pre_hook(self, agent: Agent, hooks: list[PreHook]) -> "CrewAIModule":
-        """
-        Attaches pre-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of pre-execution hooks to attach.
-        :return: CrewAIModule instance.
-        """
-        super().get_agent(agent.role).pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent: Agent, hooks: list[PostHook]) -> "CrewAIModule":
-        """
-        Attaches post-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of post-execution hooks to attach.
-        :return: CrewAIModule instance.
-        """
-        super().get_agent(agent.role).post_hooks.extend(hooks)
-        return self
 
 
 class CrewAIToolBuilder(ToolBuilder):

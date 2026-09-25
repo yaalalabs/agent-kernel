@@ -272,3 +272,65 @@ class TestModuleRunOptions:
         # abstract hook methods must keep constructing.
         with Runtime(SessionStoreBuilder.build()):
             assert isinstance(SimpleModule([FrameworkAgent("agent1")]), Module)
+
+
+class BareModule(Module):
+    """A module implementing only the abstract wrapping members: the hook methods come from the base class."""
+
+    def __init__(self, agents: list[Any]):
+        super().__init__()
+        self.load(agents)
+
+    def _wrap(self, agent: Any, agents: List[Any]) -> Agent:
+        return KernelWrappedAgent(self._native_agent_name(agent), agent)
+
+    def load(self, agents: list[Any]):
+        super().load(agents)
+
+
+class RoleNamedBareModule(BareModule):
+    def _native_agent_name(self, agent: Any) -> str:
+        return agent.role
+
+
+class TestModuleHooksResolveThroughNativeAgentName:
+    """pre_hook / post_hook are concrete on Module and resolve the agent the same way run_options does."""
+
+    def test_a_module_implementing_only_wrap_and_load_constructs(self):
+        with Runtime(SessionStoreBuilder.build()):
+            assert isinstance(BareModule([FrameworkAgent("agent1")]), Module)
+
+    def test_hooks_attach_to_the_wrapped_agent_and_chain_with_run_options(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = BareModule([a1])
+            pre, post = object(), object()
+
+            result = mod.pre_hook(a1, [pre]).run_options(a1, max_turns=3).post_hook(a1, [post])
+
+            assert result is mod
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.pre_hooks == [pre]
+            assert wrapped.post_hooks == [post]
+            assert wrapped.run_options == {"max_turns": 3}
+
+    def test_hooks_resolve_through_the_native_agent_name_override(self):
+        with Runtime(SessionStoreBuilder.build()):
+            native = RoleNamedFrameworkAgent("researcher")
+            mod = RoleNamedBareModule([native])
+            hook = object()
+
+            mod.pre_hook(native, [hook]).post_hook(native, [hook])
+
+            assert mod.get_agent("researcher").pre_hooks == [hook]
+            assert mod.get_agent("researcher").post_hooks == [hook]
+
+    def test_an_agent_not_loaded_in_the_module_raises_naming_it(self):
+        with Runtime(SessionStoreBuilder.build()):
+            mod = BareModule([FrameworkAgent("agent1")])
+
+            with pytest.raises(ValueError) as exc:
+                mod.pre_hook(FrameworkAgent("ghost"), [])
+            assert "ghost" in str(exc.value)
+            with pytest.raises(ValueError):
+                mod.post_hook(FrameworkAgent("ghost"), [])

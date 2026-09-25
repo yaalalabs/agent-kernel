@@ -75,8 +75,10 @@ class Module(ABC):
    `getattr(agent, "name", "smolagent")` (`framework/smolagents/smolagents.py:337`, `:358`). The
    other four modules resolve by `agent.name` already (`openai.py:468`, `langgraph.py:676`,
    `adk.py:528`, `pydanticai.py:577`), which is the base default.
-4. `pre_hook` / `post_hook` are not rewritten to use `_native_agent_name`. That would be a
-   behaviour-preserving cleanup outside this change's scope; the plan may note it as a follow-up.
+4. `pre_hook` / `post_hook` were lifted onto the base `Module` as a follow-up executed in the same
+   branch: both are concrete, share `Module._wrapped(agent)` with `run_options`, return `Self`, and
+   the twelve adapter copies are deleted. The one behavioural difference is that an agent not loaded
+   in the module now raises `ValueError` naming it instead of `AttributeError` on `None`.
 
 ### `Runner` (`ak-py/src/agentkernel/core/base.py`)
 
@@ -471,7 +473,7 @@ All intentional.
 
 **Non-changes.** `Runtime.run` / `Runtime.stream` / `AgentService` / `ChatService` signatures;
 `Session` contents and serialisation (no new key, stores read old sessions identically); `AKConfig`;
-the six `pre_hook` / `post_hook` implementations; the trace runners; public exports (`agentkernel`,
+the trace runners; public exports (`agentkernel`,
 `agentkernel.core`, the framework aliases); the `runner=` constructor argument on every module; the
 smolagents `stream()` and CrewAI `stream()` stubs; `Task` construction in CrewAI; the OpenAI, LangGraph,
 ADK, Pydantic AI stream-event mapping.

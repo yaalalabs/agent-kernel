@@ -53,6 +53,8 @@ e2e:
     - type: cli
       path: examples/cli/crewai-run-options
     - type: cli
+      path: examples/cli/smolagents
+    - type: cli
       path: examples/cli/smolagents-run-options
     - type: cli
       path: examples/cli/custom-evaluator

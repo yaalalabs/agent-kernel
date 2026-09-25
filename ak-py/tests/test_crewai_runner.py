@@ -417,3 +417,8 @@ class TestCrewAIRunOptions:
 
             module.run_options(native, max_rpm=30)
             assert module.get_agent("Researcher").run_options == {"max_rpm": 30}
+
+            hook = object()
+            module.pre_hook(native, [hook]).post_hook(native, [hook])  # resolved by role through the base class
+            assert module.get_agent("Researcher").pre_hooks == [hook]
+            assert module.get_agent("Researcher").post_hooks == [hook]

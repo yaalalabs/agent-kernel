@@ -111,8 +111,8 @@ Container that wraps framework agents and registers them with Runtime:
 
 - **`load(agents)`**: Takes a list of native framework agents, wraps each via `_wrap()`, registers with `Runtime.current()`
 - **`_wrap(agent, agents) -> Agent`**: Abstract method: framework adapters implement this to create their `Agent` subclass
-- **`pre_hook(agent, hooks)` / `post_hook(agent, hooks)`**: Attach hooks to a specific agent
-- **`run_options(agent, **options)`** (#754): concrete on the base class; resolves the wrapped agent through the overridable `_native_agent_name(agent)` (default `agent.name`; `CrewAIModule` returns `agent.role`, `SmolagentsModule` `getattr(agent, "name", "smolagent")`), raises `ValueError` for an agent not loaded in the module, runs `validate_run_options`, then `dict.update`s (later call wins per key). Chained like `pre_hook`. Being concrete, a bring-your-own `Module` subclass keeps constructing
+- **`pre_hook(agent, hooks)` / `post_hook(agent, hooks)`**: Attach hooks to a specific agent. Concrete on the base class since #754's follow-up: both resolve the wrapped agent through `Module._wrapped(agent)` (`_native_agent_name` + `get_agent`, `ValueError` when the agent is not loaded), so no adapter implements them any more
+- **`run_options(agent, **options)`** (#754): concrete on the base class; resolves the wrapped agent through `_wrapped(agent)` and the overridable `_native_agent_name(agent)` (default `agent.name`; `CrewAIModule` returns `agent.role`, `SmolagentsModule` `getattr(agent, "name", "smolagent")`), runs `validate_run_options`, then `dict.update`s (later call wins per key). All three fluent methods return `Self`. A bring-your-own `Module` subclass now implements only `_wrap` and `load`
 - **`unload()`**: Deregisters all agents from the Runtime
 - Constructed with native framework agents: e.g., `OpenAIModule([triage_agent, math_agent])`
 

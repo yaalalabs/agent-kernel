@@ -310,7 +310,6 @@ Subclass `Module` from `agentkernel.core.module`:
 
 ```python
 from agentkernel.core.module import Module
-from agentkernel.core.hooks import PreHook, PostHook
 from agentkernel.trace.trace import Trace
 
 class <Name>Module(Module):
@@ -327,24 +326,16 @@ class <Name>Module(Module):
     def load(self, agents: list) -> "Module":
         return super().load(agents)
 
-    def pre_hook(self, agent, hooks: list[PreHook]) -> "Module":
-        wrapped = self.get_agent(agent.name)
-        if wrapped:
-            wrapped.pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent, hooks: list[PostHook]) -> "Module":
-        wrapped = self.get_agent(agent.name)
-        if wrapped:
-            wrapped.post_hooks.extend(hooks)
-        return self
+    # pre_hook / post_hook / run_options are inherited from Module: they resolve the wrapped agent
+    # through _native_agent_name(agent), which defaults to agent.name. Override that hook only when
+    # your framework registers agents under something else (CrewAI: role).
 ```
 
 **Key requirements:**
 - Constructor takes native framework agents, creates a Runner, calls `self.load(agents)`
 - `_wrap()` creates the Agent wrapper — the agent `name` must come from the native agent
 - Support trace runners via `Trace.get().<name>()`
-- `run_options` is inherited and concrete; override `_native_agent_name(agent)` only when the native agent is not registered under `agent.name` (CrewAI uses `role`, smolagents a fallback name)
+- `pre_hook`, `post_hook` and `run_options` are inherited and concrete (they share `Module._wrapped`, which raises `ValueError` for an agent not loaded in the module); override `_native_agent_name(agent)` only when the native agent is not registered under `agent.name` (CrewAI uses `role`, smolagents a fallback name)
 
 ### 7. Create the `__init__.py`
 

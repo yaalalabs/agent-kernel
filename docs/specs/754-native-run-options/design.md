@@ -28,6 +28,10 @@ displace it.
 example per framework demonstrating run options, mirroring the existing per-framework
 `examples/cli/<framework>_context` demos (`### Examples` below).
 
+**Amendment (post-plan, 2026-09-25):** the recorded `pre_hook` / `post_hook` follow-up was executed on
+the same branch: both hook methods are concrete on the base `Module`, resolving through
+`_native_agent_name` like `run_options`, and the adapters no longer implement them.
+
 ## Motivation
 
 - **The native call is fixed in every adapter**, and the SDK options the user asked for sit on that

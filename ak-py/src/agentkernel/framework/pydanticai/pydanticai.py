@@ -14,7 +14,7 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter, UserContent
 from pydantic_core import to_jsonable_python
 
 from ...core import Agent as BaseAgent
-from ...core import Module, PostHook, PreHook
+from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
@@ -593,26 +593,6 @@ class PydanticAIModule(Module):
         :return: PydanticAIModule instance.
         """
         super().load(agents)
-        return self
-
-    def pre_hook(self, agent: PydanticAgent, hooks: list[PreHook]) -> "PydanticAIModule":
-        """
-        Attaches pre-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of pre-execution hooks to attach.
-        :return: PydanticAIModule instance.
-        """
-        super().get_agent(agent.name).pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent: PydanticAgent, hooks: list[PostHook]) -> "PydanticAIModule":
-        """
-        Attaches post-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of post-execution hooks to attach.
-        :return: PydanticAIModule instance.
-        """
-        super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
 
 

@@ -12,7 +12,7 @@ from openai.types.responses.response_reasoning_summary_text_delta_event import R
 from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
 from ...core import Agent as BaseAgent
-from ...core import Module, PostHook, PreHook
+from ...core import Module
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
@@ -466,26 +466,6 @@ class OpenAIModule(Module):
         :return: OpenAIModule instance.
         """
         super().load(agents)
-        return self
-
-    def pre_hook(self, agent: Agent, hooks: list[PreHook]) -> "OpenAIModule":
-        """
-        Attaches pre-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of pre-execution hooks to attach.
-        :return: OpenAIModule instance.
-        """
-        super().get_agent(agent.name).pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent: Agent, hooks: list[PostHook]) -> "OpenAIModule":
-        """
-        Attaches post-execution hooks to the agent.
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of post-execution hooks to attach.
-        :return: OpenAIModule instance.
-        """
-        super().get_agent(agent.name).post_hooks.extend(hooks)
         return self
 
 

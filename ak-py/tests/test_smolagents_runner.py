@@ -313,3 +313,8 @@ class TestSmolagentsRunOptions:
 
             module.run_options(native, max_steps=6)
             assert module.get_agent("smol_reserved").run_options == {"max_steps": 6}
+
+            hook = object()
+            module.pre_hook(native, [hook]).post_hook(native, [hook])  # resolved by the smolagents name rule
+            assert module.get_agent("smol_reserved").pre_hooks == [hook]
+            assert module.get_agent("smol_reserved").post_hooks == [hook]

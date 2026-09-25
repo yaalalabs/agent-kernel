@@ -8,7 +8,7 @@ from smolagents import CodeAgent, MultiStepAgent, ToolCallingAgent
 from smolagents import tool as smol_tool
 
 from ...core import Agent as BaseAgent
-from ...core import Module, PostHook, PreHook, Runner, Runtime, Session, ToolBuilder, ToolContext
+from ...core import Module, Runner, Runtime, Session, ToolBuilder, ToolContext
 from ...core.builder import A2ACardBuilder
 from ...core.config import AKConfig
 from ...core.event import StreamEvent
@@ -363,30 +363,6 @@ class SmolagentsModule(Module):
         :return: The registered agent name.
         """
         return getattr(agent, "name", "smolagent")
-
-    def pre_hook(self, agent: SmolagentsSupportedAgent, hooks: list[PreHook]) -> "SmolagentsModule":
-        """
-        Attaches pre-execution hooks to the agent.
-
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of pre-execution hooks to attach.
-        :return: SmolagentsModule instance.
-        """
-        name = getattr(agent, "name", "smolagent")
-        super().get_agent(name).pre_hooks.extend(hooks)
-        return self
-
-    def post_hook(self, agent: SmolagentsSupportedAgent, hooks: list[PostHook]) -> "SmolagentsModule":
-        """
-        Attaches post-execution hooks to the agent.
-
-        :param agent: The agent to attach hooks to.
-        :param hooks: List of post-execution hooks to attach.
-        :return: SmolagentsModule instance.
-        """
-        name = getattr(agent, "name", "smolagent")
-        super().get_agent(name).post_hooks.extend(hooks)
-        return self
 
 
 class SmolagentsToolBuilder(ToolBuilder):
