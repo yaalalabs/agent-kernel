@@ -659,6 +659,24 @@ module.run_options(
 )
 ```
 
+**Options computed per run:** pass a callable before the keywords, `module.run_options(agent,
+options_for, **static)`. It is called as `options_for(agent, session, requests)` on every run (sync or
+async), after the pre-hooks and inside the run, so `Session.current()` and `ToolContext.get()` resolve
+in it (except on Google ADK, where the tool context does not exist yet), and its mapping is merged over
+the static keywords, a factory key winning. A reserved key in the result is rejected on the run, and a
+factory that raises fails that run like a framework error. One factory per agent, shared by concurrent
+runs: keep per-run state in the session.
+
+```python
+def options_for(agent, session, requests):
+    options = {"run_config": RunConfig(trace_metadata={"session_id": session.id})}
+    if session.id.startswith("guest"):
+        options["max_turns"] = 10  # over the static 25 below
+    return options
+
+module.run_options(agent, options_for, max_turns=25, hooks=ProgressHooks())
+```
+
 | Framework | `run_options` keywords go to | Turn limit | Progress hook | Reserved (raise at declaration) |
 |-----------|------------------------------|------------|---------------|---------------------------------|
 | OpenAI Agents SDK | `Runner.run` / `run_streamed` | `max_turns` | `hooks=RunHooks()` | `starting_agent`, `input`, `session`, `context`, `conversation_id`, `previous_response_id`, `auto_previous_response_id` |
@@ -668,7 +686,8 @@ module.run_options(
 | CrewAI | the per-run `Crew(...)` constructor (`verbose=False` is an overridable default; agents resolve by `role`; `max_rpm` is a forwarded rate limit) | `max_iter` on the native `Agent` (needs nothing from Agent Kernel) | `step_callback` / `task_callback` | `agents`, `tasks`, `memory` |
 | smolagents | `agent.run` | `max_steps` | `step_callbacks` on the agent constructor (needs nothing from Agent Kernel) | `task`, `reset`, `additional_args`, `stream`, `return_full_result` |
 
-Worked demos: `examples/cli/<framework>-run-options` for each of the six frameworks.
+Worked demos: `examples/cli/<framework>-run-options` for each of the six frameworks, and
+`examples/cli/openai-dynamic-run-options` for options computed per run.
 
 **Streaming event hook (optional):** override `on_stream_event` on a `PostHook` to inspect or modify every event a streamed run produces while `execution.mode: stream` is active. Unlike `on_run` it sees the whole stream — message and reasoning text, tool call names, arguments and results, and the boundaries that pair them. Return the event to pass it on, a modified event of the same `type` to rewrite it, `None` to drop it, or a list to emit several events in its place (a list is emitted as-is and ends the chain for that event, so `return event` and `return [event]` differ). Raise `StreamHalt` to end the run: Agent Kernel closes any open boundary, emits one error chunk, and does not store the session. Only called when streaming; regular `on_run()` still handles the non-streaming path.
 

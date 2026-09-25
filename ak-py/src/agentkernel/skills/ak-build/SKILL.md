@@ -407,6 +407,16 @@ module.run_options(support_agent, max_turns=25, hooks=ProgressHooks(), run_confi
 Keys the adapter populates itself (`session`, `context`, `input`, ...) raise `ValueError` at
 declaration. See the `ak-add-capabilities` skill for the per-framework destinations.
 
+To compute options per run, give `run_options` a callable before the keywords; it is called with
+`(agent, session, requests)` on every run and its mapping is merged over the static keywords:
+
+```python
+def options_for(agent, session, requests):
+    return {"max_turns": 10} if session.id.startswith("guest") else {}
+
+module.run_options(support_agent, options_for, max_turns=25, hooks=ProgressHooks())
+```
+
 ---
 
 ### Step 7: Update Dependencies (If Needed)

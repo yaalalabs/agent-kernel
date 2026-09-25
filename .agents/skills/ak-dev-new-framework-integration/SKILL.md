@@ -119,7 +119,7 @@ class <Name>Runner(Runner):
 - Always reset `ToolContext` in a `finally` block
 - Handle all `AgentRequest` subtypes (`AgentRequestText`, `AgentRequestImage`, `AgentRequestFile`)
 - Return an `AgentReply` (`AgentReplyText` or `AgentReplyImage`)
-- Build the native call's keyword arguments with `self._native_kwargs(agent.run_options, <ak_owned>=...)` (#754), never a fixed keyword set: the declared per-agent run options are copied first and the keys your adapter populates (the session, the framework context, the input) are written last. If the framework's options object and yours are one object (LangGraph's `config`) or must be adjusted per mode (ADK's `RunConfig` in stream mode), merge or copy it before passing it as an AK-owned key, and do the same in `stream()`
+- Resolve the run options once per `run()` and once per `stream()` with `options = await agent.resolve_run_options(session, requests)` (#758), after the request-shape early returns and before the framework-context load, then build the native call's keyword arguments with `self._native_kwargs(options, <ak_owned>=...)` (#754), never a fixed keyword set: the resolved per-agent run options (the static declaration with a per-run factory's result merged over it) are copied first and the keys your adapter populates (the session, the framework context, the input) are written last. Pass the same mapping to any helper of yours that reads options; never read `agent.run_options` at a call site. If the framework's options object and yours are one object (LangGraph's `config`) or must be adjusted per mode (ADK's `RunConfig` in stream mode), merge or copy it before passing it as an AK-owned key, and do the same in `stream()`
 
 ### 3b. Implement `stream()` with AK Stream Events
 
@@ -423,9 +423,9 @@ Create at minimum:
 - [ ] Optional dependency group in `ak-py/pyproject.toml`
 - [ ] Trace runners in `ak-py/src/agentkernel/trace/langfuse/<name>.py` and `ak-py/src/agentkernel/trace/openllmetry/<name>.py` (optional)
 - [ ] Updates to `trace/base.py` and `trace/trace.py` (if adding tracing)
-- [ ] `<Name>Agent.RESERVED_RUN_OPTIONS` declared, and every native call site built with `_native_kwargs` (#754)
+- [ ] `<Name>Agent.RESERVED_RUN_OPTIONS` declared; `run()` and `stream()` each resolve once with `await agent.resolve_run_options(session, requests)` after the early returns and pass the mapping to `_native_kwargs` and your helpers (#754, #758)
 - [ ] `_native_agent_name` overridden if the registered name is not `agent.name`
-- [ ] Unit tests in `ak-py/tests/`, including: declared run options reach the native call, an AK-owned key wins over a bypassed declaration, the declared dict is not mutated across runs, and the reserved keys are rejected through the module
+- [ ] Unit tests in `ak-py/tests/`, including: declared run options reach the native call, an AK-owned key wins over a bypassed declaration, the declared dict is not mutated across runs, and the reserved keys are rejected through the module; a factory-merged mapping (a mock whose `resolve_run_options` returns it) wins over the static key at the native call, and `resolve_run_options` is awaited exactly once per `run` and per `stream` (#758)
 - [ ] CLI example in `examples/cli/<name>/`
 - [ ] Documentation in `docs/docs/frameworks/<name>.md`
 - [ ] Framework inventories on the docs-site pages (`docs/src/pages/index.tsx` `FrameworksStrip`, `docs/src/pages/features.tsx` `integrations` and SDK count) and in `docs/docs/intro.md`

@@ -249,6 +249,16 @@
       ]
     },
     {
+      "id": "cap-run-options-factory",
+      "name": "Compute framework-native run options per run",
+      "input": "I want my OpenAI agent's max_turns and RunConfig to depend on the session at run time, not be fixed at load time",
+      "expected_outputs": [
+        "def options_for(",
+        "module.run_options(agent, options_for",
+        "max_turns"
+      ]
+    },
+    {
       "id": "cap-hooks-framework-context",
       "name": "Seed and read per-run framework context via hooks",
       "input": "I want to carry some per-run state through to my agent's native framework call using a hook",
