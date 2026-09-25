@@ -350,6 +350,8 @@ class CrewAIRunner(Runner):
             if prompt.strip() == "":
                 return AgentReplyText(response="Sorry. No valid text prompt found in the requests")
 
+            # Resolved once per run: the static options with a declared factory's result merged over them.
+            options = await agent.resolve_run_options(session, requests)
             memory = self._memory(session)
             if memory:
                 try:
@@ -372,8 +374,8 @@ class CrewAIRunner(Runner):
                 output_pydantic=output_pydantic,
                 output_json=output_json,
             )
-            # `verbose=False` is a default the declared options may override; agents/tasks/memory are written last.
-            crew = Crew(**self._native_kwargs({"verbose": False, **agent.run_options}, agents=agent.crew, tasks=[task], memory=memory))
+            # `verbose=False` is a default the resolved options may override; agents/tasks/memory are written last.
+            crew = Crew(**self._native_kwargs({"verbose": False, **options}, agents=agent.crew, tasks=[task], memory=memory))
             # CrewAI's kickoff(inputs=...) are template-interpolation variables, not a context/state object, so
             # there is no per-run caller-state slot. Warn once, and leave the stored context untouched.
             if not self._context_warned and session is not None and session.get_framework_context():

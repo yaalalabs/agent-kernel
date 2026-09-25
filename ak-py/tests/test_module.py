@@ -262,6 +262,136 @@ class TestModuleRunOptions:
             assert isinstance(SimpleModule([FrameworkAgent("agent1")]), Module)
 
 
+def _factory(agent, session, requests):
+    return {"max_turns": 3}
+
+
+def _other_factory(agent, session, requests):
+    return {"max_turns": 4}
+
+
+class TestModuleRunOptionsFactory:
+    """The positional-only factory parameter of Module.run_options (spec #758, Module section)."""
+
+    def test_a_positional_factory_is_stored_on_the_agent_and_returns_the_module(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = SimpleModule([a1])
+
+            result = mod.run_options(a1, _factory)
+
+            assert result is mod
+            assert mod.get_agent("agent1").run_options_factory is _factory
+            assert mod.get_agent("agent1").run_options == {}
+
+    def test_a_factory_and_keywords_in_one_call_store_both(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = SimpleModule([a1])
+
+            mod.run_options(a1, _factory, max_turns=3)
+
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.run_options_factory is _factory
+            assert wrapped.run_options == {"max_turns": 3}
+
+    def test_a_later_factory_replaces_the_earlier_one_while_keywords_keep_merging(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = SimpleModule([a1])
+
+            mod.run_options(a1, _factory, max_turns=3)
+            mod.run_options(a1, _other_factory, hooks="h")
+
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.run_options_factory is _other_factory
+            assert wrapped.run_options == {"max_turns": 3, "hooks": "h"}
+
+    def test_keywords_alone_leave_an_earlier_factory_in_place(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = SimpleModule([a1])
+
+            mod.run_options(a1, _factory)
+            mod.run_options(a1, max_turns=3)
+
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.run_options_factory is _factory
+            assert wrapped.run_options == {"max_turns": 3}
+
+    def test_a_non_callable_factory_raises_type_error_and_stores_nothing(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = SimpleModule([a1])
+
+            with pytest.raises(TypeError) as exc:
+                mod.run_options(a1, {"max_turns": 3}, other=2)
+
+            assert "agent1" in str(exc.value)
+            assert "dict" in str(exc.value)
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.run_options_factory is None
+            assert wrapped.run_options == {}  # not even 'other' was written
+
+    def test_a_reserved_keyword_beside_a_factory_raises_and_stores_neither(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = ReservingModule([a1])
+
+            with pytest.raises(ValueError) as exc:
+                mod.run_options(a1, _factory, session="mine")
+
+            assert "'session'" in str(exc.value)
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.run_options_factory is None
+            assert wrapped.run_options == {}
+
+    def test_a_call_with_neither_factory_nor_keywords_is_a_no_op_returning_the_module(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = SimpleModule([a1])
+
+            result = mod.run_options(a1)
+
+            assert result is mod
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.run_options_factory is None
+            assert wrapped.run_options == {}
+
+    def test_a_keyword_named_factory_is_a_run_option_not_the_factory(self):
+        # The parameter is positional-only, so `factory=` lands in **options and shadows no native option name.
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = SimpleModule([a1])
+
+            mod.run_options(a1, factory="a-native-option-value")
+
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.run_options == {"factory": "a-native-option-value"}
+            assert wrapped.run_options_factory is None
+
+    def test_an_agent_not_loaded_in_the_module_raises_naming_it(self):
+        with Runtime(SessionStoreBuilder.build()):
+            mod = SimpleModule([FrameworkAgent("agent1")])
+
+            with pytest.raises(ValueError) as exc:
+                mod.run_options(FrameworkAgent("ghost"), _factory)
+
+            assert "ghost" in str(exc.value)
+
+    def test_chains_with_the_hook_methods_and_returns_the_module(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = BareModule([a1])
+
+            result = mod.pre_hook(a1, []).run_options(a1, _factory, max_turns=25).post_hook(a1, []).run_options(a1, hooks="h")
+
+            assert result is mod
+            wrapped = mod.get_agent("agent1")
+            assert wrapped.run_options_factory is _factory
+            assert wrapped.run_options == {"max_turns": 25, "hooks": "h"}
+
+
 class BareModule(Module):
     """A module implementing only the abstract wrapping members: the hook methods come from the base class."""
 

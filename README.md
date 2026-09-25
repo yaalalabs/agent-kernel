@@ -109,7 +109,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 
 - **Guardrails** — OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, content moderation.
 - **Pre/Post Execution Hooks** — Inject policy checks, RAG context, redaction, or moderation around every agent call.
-- **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits) per agent through `Module.run_options`, with the keys Agent Kernel owns kept safe.
+- **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
 - **Observability** — LangFuse, OpenLLMetry, and Pydantic Logfire tracing with a single config line.
 - **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.

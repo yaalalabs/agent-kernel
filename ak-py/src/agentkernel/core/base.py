@@ -2,10 +2,11 @@ import asyncio
 import contextlib
 import contextvars
 import copy
+import inspect
 import logging
 import pickle
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Iterator, Mapping
 from enum import Enum
 from typing import Any, ClassVar, Self, cast
 
@@ -415,6 +416,15 @@ class Runner(ABC):
         yield  # makes this an async generator, so overrides match the shape rather than a coroutine
 
 
+RunOptionsFactory = Callable[["Agent", Session, list[AgentRequest]], Mapping[str, Any] | Awaitable[Mapping[str, Any]]]
+"""
+A per-run options factory declared through `Module.run_options`: called as `factory(agent, session, requests)` on
+every run of the agent, before the adapter builds its native call, and returning the framework-native keyword
+arguments for that run (sync, or async when the factory is a coroutine function). The result is validated against
+the adapter's reserved keys and merged over the agent's static `run_options`, factory keys winning per top-level key.
+"""
+
+
 class Agent(ABC):
     """
     Agent is the base class for all agents.
@@ -454,6 +464,7 @@ class Agent(ABC):
         self._pre_hooks: list[PreHook] = []
         self._post_hooks: list[PostHook] = []
         self._run_options: dict[str, Any] = {}
+        self._run_options_factory: RunOptionsFactory | None = None
 
     def __repr__(self) -> str:
         """
@@ -500,6 +511,44 @@ class Agent(ABC):
         reserved only because it breaks the reply mapping is forwarded as given.
         """
         return self._run_options
+
+    @property
+    def run_options_factory(self) -> RunOptionsFactory | None:
+        """
+        Returns the per-run options factory declared for this agent through `Module.run_options`, or None when the
+        agent resolves to its static `run_options` alone. Settable, with the same contract as mutating `run_options`
+        directly: assigning here skips the callable check `Module.run_options` performs at declaration.
+        """
+        return self._run_options_factory
+
+    @run_options_factory.setter
+    def run_options_factory(self, factory: RunOptionsFactory | None) -> None:
+        self._run_options_factory = factory
+
+    async def resolve_run_options(self, session: Session, requests: list[AgentRequest]) -> dict[str, Any]:
+        """
+        Returns the run options for one run: a copy of the static `run_options` with the factory's result, when a
+        factory is declared, validated and merged over it (factory keys win per top-level key). The factory is called
+        exactly once, with this agent, the session and the request list the runner received; a coroutine result is
+        awaited. The static dict is never mutated, so the caller may adjust the returned dict freely.
+        :param session: The session the run belongs to.
+        :param requests: The requests the runner received for this run.
+        :return: A new dict holding the options for this run.
+        :raises TypeError: If the factory returns something other than a mapping.
+        :raises ValueError: If the factory's result names a key this adapter reserves.
+        """
+        options = dict(self._run_options)
+        factory = self._run_options_factory
+        if factory is None:
+            return options
+        produced = factory(self, session, requests)
+        if inspect.isawaitable(produced):
+            produced = await produced
+        if not isinstance(produced, Mapping):
+            raise TypeError(f"Run options factory for agent '{self.name}' returned {type(produced).__name__}, expected a mapping")
+        self.validate_run_options(produced)
+        options.update(produced)
+        return options
 
     def validate_run_options(self, options: Mapping[str, Any]) -> None:
         """

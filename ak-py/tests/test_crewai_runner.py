@@ -31,11 +31,12 @@ def _crew_output(pydantic=None, json_dict=None, raw=""):
 
 
 def _mock_agent(output_pydantic=None, output_json=None):
-    agent = MagicMock(spec=["agent", "crew", "name", "output_pydantic", "output_json", "run_options"])
+    agent = MagicMock(spec=["agent", "crew", "name", "output_pydantic", "output_json", "run_options", "resolve_run_options"])
     agent.name = "Researcher"
     agent.agent = MagicMock()
     agent.crew = [agent.agent]
     agent.run_options = {}
+    agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(agent.run_options))
     agent.output_pydantic = output_pydantic
     agent.output_json = output_json
     return agent
@@ -403,6 +404,36 @@ class TestCrewAIRunOptions:
         kwargs = crew_cls.call_args.kwargs
         assert set(kwargs) == {"agents", "tasks", "verbose", "memory"}
         assert kwargs["verbose"] is False
+
+    @pytest.mark.asyncio
+    async def test_run_uses_the_resolved_options_and_resolves_once_per_run(self):
+        runner = CrewAIRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="research AI")]
+        agent = _mock_agent()
+        agent.run_options = {"max_rpm": 30}
+        agent.resolve_run_options = AsyncMock(return_value={"max_rpm": 5, "verbose": True})  # the factory-merged mapping
+
+        memory_patch, task_patch, crew_patch = _patches(runner, _crew_output(raw="answer"))
+        with memory_patch, task_patch, crew_patch as crew_cls:
+            await runner.run(agent, session, requests)
+
+        agent.resolve_run_options.assert_awaited_once_with(session, requests)
+        kwargs = crew_cls.call_args.kwargs
+        assert kwargs["max_rpm"] == 5
+        assert kwargs["verbose"] is True
+        assert kwargs["agents"] == agent.crew
+        assert set(kwargs) == {"agents", "tasks", "verbose", "memory", "max_rpm"}
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_request_returns_before_resolving(self):
+        runner = CrewAIRunner()
+        agent = _mock_agent()
+
+        reply = await runner.run(agent, Session("s"), [AgentRequestText(prompt="   ")])
+
+        assert "No valid text prompt" in reply.response
+        agent.resolve_run_options.assert_not_awaited()
 
     def test_module_resolves_the_agent_by_role_and_rejects_reserved_keys(self):
         native = CrewAgent(role="Researcher", goal="Research topics", backstory="A researcher", verbose=False)

@@ -159,3 +159,5 @@ For structured output, see [examples/cli/openai_structured](https://github.com/y
 For per-run context/state carried across turns, see [examples/cli/openai_context](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai_context) (a cart kept in `framework_context`, seeded by a pre-hook and round-tripped by the runner).
 
 For per-agent native run options, see [examples/cli/openai-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai-run-options) (`max_turns`, a `RunHooks` progress hook and a `RunConfig` with `call_model_input_filter`, with a deterministic `Run stats:` line on every reply).
+
+For run options computed per run, see [examples/cli/openai-dynamic-run-options](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai-dynamic-run-options) (a `Module.run_options` factory that stamps the session id onto a `RunConfig` and tightens `max_turns` for guest sessions, declared beside static keywords).

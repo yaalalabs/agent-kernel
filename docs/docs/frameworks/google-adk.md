@@ -146,6 +146,10 @@ mapping depends on partial events; one warning is logged per runner when you exp
 different `streaming_mode`, and
 your object is never mutated. In run mode it is passed as is.
 
+A [run-options factory](../core-concepts/runner.md#native-run-options) runs before the ADK tool
+context for the run exists, so `ToolContext.get()` returns `None` inside it on this adapter; use the
+`session` and `requests` the factory receives instead.
+
 Reserved (raise `ValueError` at declaration): `agent`, `app`, `app_name`, `node`, `session_service`,
 `auto_create_session`, `user_id`, `session_id`, `new_message`, `state_delta` (state seeding belongs
 to the framework context above), `invocation_id`, `yield_user_message`.

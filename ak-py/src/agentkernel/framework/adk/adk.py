@@ -123,14 +123,14 @@ class GoogleADKRunner(BaseRunner):
         """Whether the stream-mode streaming_mode override was already logged for this runner."""
 
     @classmethod
-    def _split_run_options(cls, agent: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _split_run_options(cls, options: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         """
-        Splits an agent's declared run options by destination.
-        :param agent: The Agent Kernel agent whose run options to split.
+        Splits the run options resolved for one run by destination.
+        :param options: The run options resolved for this run.
         :return: (options for the per-run Runner constructor, options for run_async).
         """
-        ctor = {k: v for k, v in agent.run_options.items() if k in cls.RUNNER_CONSTRUCTOR_OPTIONS}
-        run = {k: v for k, v in agent.run_options.items() if k not in cls.RUNNER_CONSTRUCTOR_OPTIONS}
+        ctor = {k: v for k, v in options.items() if k in cls.RUNNER_CONSTRUCTOR_OPTIONS}
+        run = {k: v for k, v in options.items() if k not in cls.RUNNER_CONSTRUCTOR_OPTIONS}
         return ctor, run
 
     def _stream_run_config(self, caller: RunConfig | None) -> RunConfig:
@@ -211,7 +211,12 @@ class GoogleADKRunner(BaseRunner):
         return prompt, parts
 
     async def _setup_session_context(
-        self, agent: Any, session: Session, requests: list[AgentRequest], injected: dict | None = None
+        self,
+        agent: Any,
+        session: Session,
+        requests: list[AgentRequest],
+        injected: dict | None = None,
+        options: Mapping[str, Any] | None = None,
     ) -> tuple[str, Runner, AKToolContext, GoogleADKSession]:
         """
         Setup ADK session and tool context.
@@ -219,6 +224,7 @@ class GoogleADKRunner(BaseRunner):
         :param session: The AgentKernel session.
         :param requests: The requests.
         :param injected: The per-run framework context to seed into the ADK session state, or None.
+        :param options: The run options resolved for this run; its constructor keys reach the per-run Runner.
         :return: Tuple of (user_id, runner, tool_context, adk_session). The caller is responsible for
                  entering/exiting the returned tool_context around the runner's actual execution, since
                  tools invoked by the agent look up this context by id from the cache while the agent is
@@ -235,8 +241,8 @@ class GoogleADKRunner(BaseRunner):
         state["ak_tool_context"] = ctx.id
         await adk_session.update_session_state(ctx.id, agent.name, state)
 
-        # Declared constructor options (plugins, services) first; the keys AK owns are written last.
-        ctor_options, _ = self._split_run_options(agent)
+        # Resolved constructor options (plugins, services) first; the keys AK owns are written last.
+        ctor_options, _ = self._split_run_options(options or {})
         runner = Runner(**self._native_kwargs(ctor_options, agent=agent.agent, app_name=app_name, session_service=adk_session.session_service))
         return user_id, runner, ctx, adk_session
 
@@ -287,9 +293,11 @@ class GoogleADKRunner(BaseRunner):
             if not parts:
                 return AgentReplyText(response="Sorry. No valid content found in the requests")
 
+            # Resolved once per run: the static options with a declared factory's result merged over them.
+            options = await agent.resolve_run_options(session, requests)
             incoming = self._load_framework_context(session)
-            user_id, runner, ctx, adk_session = await self._setup_session_context(agent, session, requests, incoming)
-            _, run_options = self._split_run_options(agent)
+            user_id, runner, ctx, adk_session = await self._setup_session_context(agent, session, requests, incoming, options)
+            _, run_options = self._split_run_options(options)
             with ctx:
                 reply = await self.get_response(runner=runner, session_id=session.id, parts=parts, user_id=user_id, run_options=run_options)
 
@@ -330,10 +338,12 @@ class GoogleADKRunner(BaseRunner):
         if not parts:
             return
 
+        # Resolved once per run: the static options with a declared factory's result merged over them.
+        options = await agent.resolve_run_options(session, requests)
         incoming = self._load_framework_context(session)
-        user_id, runner, ctx, adk_session = await self._setup_session_context(agent, session, requests, incoming)
+        user_id, runner, ctx, adk_session = await self._setup_session_context(agent, session, requests, incoming, options)
         new_message = types.Content(role="user", parts=parts)
-        _, run_options = self._split_run_options(agent)
+        _, run_options = self._split_run_options(options)
         kwargs = self._native_kwargs(
             run_options,
             user_id=user_id,
