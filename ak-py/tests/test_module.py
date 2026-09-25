@@ -1,5 +1,7 @@
 from typing import Any, List
 
+import pytest
+
 from agentkernel import Agent, PostHook, PreHook, Runner
 from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.model import AgentReplyText, AgentRequestText
@@ -174,3 +176,99 @@ def test_load_modules_with_duplicate_agent_names_across_runtimes():
         mod2 = SimpleModule([a1x, a2])
         assert len(runtime2.agents()) == 2
         assert runtime2.agents() == {"agent1": mod2.agents[0], "agent2": mod2.agents[1]}
+
+
+class ReservingWrappedAgent(KernelWrappedAgent):
+    RESERVED_RUN_OPTIONS = {"session": "the Agent Kernel session is passed by the runner"}
+
+
+class ReservingModule(SimpleModule):
+    def _wrap(self, agent: FrameworkAgent, agents: List[FrameworkAgent]) -> Agent:
+        return ReservingWrappedAgent(agent.name, agent)
+
+
+class FluentModule(SimpleModule):
+    """pre_hook/post_hook return self so the fluent chain can be asserted across all three methods."""
+
+    def pre_hook(self, agent: Any, hooks: list[PreHook]) -> "Module":
+        self.get_agent(agent.name).pre_hooks.extend(hooks)
+        return self
+
+    def post_hook(self, agent: Any, hooks: list[PostHook]) -> "Module":
+        self.get_agent(agent.name).post_hooks.extend(hooks)
+        return self
+
+
+class RoleNamedFrameworkAgent:
+    def __init__(self, role: str):
+        self.role = role
+
+
+class RoleNamedModule(SimpleModule):
+    """A module whose native agents are named by `role`, the CrewAI shape."""
+
+    def _wrap(self, agent: RoleNamedFrameworkAgent, agents: List[RoleNamedFrameworkAgent]) -> Agent:
+        return KernelWrappedAgent(agent.role, agent)
+
+    def _native_agent_name(self, agent: Any) -> str:
+        return agent.role
+
+
+class TestModuleRunOptions:
+    """Module.run_options (spec #754, Module section)."""
+
+    def test_repeated_calls_merge_with_the_later_call_winning_per_key(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = SimpleModule([a1])
+
+            mod.run_options(a1, a=1, keep="yes")
+            mod.run_options(a1, a=2, b=3)
+
+            assert mod.get_agent("agent1").run_options == {"a": 2, "b": 3, "keep": "yes"}
+
+    def test_chains_with_the_hook_methods_and_returns_the_module(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = FluentModule([a1])
+
+            result = mod.pre_hook(a1, []).run_options(a1, max_turns=25).post_hook(a1, []).run_options(a1, hooks="h")
+
+            assert result is mod
+            assert mod.get_agent("agent1").run_options == {"max_turns": 25, "hooks": "h"}
+
+    def test_a_reserved_key_raises_and_writes_nothing(self):
+        with Runtime(SessionStoreBuilder.build()):
+            a1 = FrameworkAgent("agent1")
+            mod = ReservingModule([a1])
+
+            with pytest.raises(ValueError) as exc:
+                mod.run_options(a1, session="mine", other=2)
+
+            assert "'session'" in str(exc.value)
+            assert "the Agent Kernel session is passed by the runner" in str(exc.value)
+            assert mod.get_agent("agent1").run_options == {}  # not even 'other' was written
+
+    def test_an_agent_not_loaded_in_the_module_raises_naming_it(self):
+        with Runtime(SessionStoreBuilder.build()):
+            mod = SimpleModule([FrameworkAgent("agent1")])
+
+            with pytest.raises(ValueError) as exc:
+                mod.run_options(FrameworkAgent("ghost"), a=1)
+
+            assert "ghost" in str(exc.value)
+
+    def test_resolves_the_agent_through_the_native_agent_name_override(self):
+        with Runtime(SessionStoreBuilder.build()):
+            native = RoleNamedFrameworkAgent("researcher")
+            mod = RoleNamedModule([native])
+
+            mod.run_options(native, max_rpm=30)
+
+            assert mod.get_agent("researcher").run_options == {"max_rpm": 30}
+
+    def test_simple_module_still_constructs_without_implementing_run_options(self):
+        # run_options is concrete on Module (design amendment 1): a subclass implementing only the
+        # abstract hook methods must keep constructing.
+        with Runtime(SessionStoreBuilder.build()):
+            assert isinstance(SimpleModule([FrameworkAgent("agent1")]), Module)

@@ -93,3 +93,32 @@ class Module(ABC):
         :param hooks: List of post-execution hooks to attach.
         """
         raise NotImplementedError
+
+    def run_options(self, agent: Any, **options: Any) -> "Module":
+        """
+        Declares framework-native run options for one loaded agent, merged into every native run call the
+        adapter makes for it (keyword arguments of the framework's own run API, such as OpenAI's `hooks`,
+        `run_config` and `max_turns`). Repeated calls merge, the later call winning per key. Chained like
+        `pre_hook` / `post_hook`.
+        :param agent: The native framework agent the options are for.
+        :param options: The framework-native keyword arguments to declare.
+        :return: This module, for chaining.
+        :raises ValueError: If the agent is not loaded in this module, or an option names a key the adapter reserves.
+        """
+        name = self._native_agent_name(agent)
+        wrapped = self.get_agent(name)
+        if wrapped is None:
+            raise ValueError(f"Agent '{name}' is not loaded in this module")
+        wrapped.validate_run_options(options)
+        wrapped.run_options.update(options)
+        return self
+
+    def _native_agent_name(self, agent: Any) -> str:
+        """
+        Returns the Agent Kernel agent name a native framework agent was registered under.
+        The default is the native agent's `name`; adapters whose rule differs override it (CrewAI names agents
+        by `role`, smolagents falls back to a fixed name).
+        :param agent: The native framework agent.
+        :return: The registered agent name.
+        """
+        return agent.name
