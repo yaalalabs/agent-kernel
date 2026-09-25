@@ -45,6 +45,8 @@ e2e:
     - type: cli
       path: examples/cli/openai-run-options
     - type: cli
+      path: examples/cli/openai-dynamic-run-options
+    - type: cli
       path: examples/cli/langgraph-run-options
     - type: cli
       path: examples/cli/adk-run-options
