@@ -79,6 +79,10 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
   the shape of `ATTR_INTEGRATION` (#524 §3) and `ATTR_THREAD` (#524 §14.1).
 - It carries two separable facts no existing marker carries: stream this run, and deliver its chunks
   to the response store.
+- **It must survive the runner hop.** The second fact is read by the Response Handler off the
+  *output* message (§3), so unlike `ATTR_THREAD` — which the runner consumes itself
+  (`pipeline/agent_runner.py:137`) and deliberately does not forward — `ATTR_AGUI` has to be carried
+  onto every chunk the runner emits. See §2.
 - No other producer stamps it, so no other traffic changes behaviour.
 
 ### 2. Agent Runner
@@ -89,6 +93,11 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
   one non-streamed reply. `AgentRunner.process` routes a marked message to the streaming
   implementation — the mirror of `StreamAgentRunner.process` already routing an `ATTR_INTEGRATION`
   message down to the non-streaming one (`pipeline/agent_runner.py:212-213`).
+- **`ATTR_AGUI` joins `_FORWARDED_ATTRIBUTES`** (`pipeline/agent_runner.py:27`). That tuple is a
+  strict allowlist applied in `_send_to_output` (`:184`), so an unlisted attribute is dropped on the
+  hop and §3's dispatch would never fire — every AG-UI chunk would take the ordinary
+  `execution.mode` path instead. #524 met the same wall and recorded it as a motivation
+  (`524/design.md:33-35`), extending the same tuple for `ATTR_INTEGRATION` in its §5.
 - **The `ATTR_USER_ID` requirement in the streaming path must not apply.** `agent_runner.py:218`
   requires it on broker transports because it is the WebSocket-entered marker; AG-UI chunks go to the
   store, never to a socket the gateway owns. AG-UI stamps no `ATTR_USER_ID`, for the same reason
@@ -99,6 +108,22 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
   and always conclude nothing changed. The runner holds one session lifecycle in one process, takes
   its own before/after around the run, and emits one extra chunk carrying the snapshot only when they
   differ.
+- **The runner applies the inbound AG-UI values onto the session it loads.** They arrive on the body
+  (§5), not through the session store, and the runner writes them back into the caches AG-UI chose —
+  `state` non-volatile, `forwardedProps` and `context` volatile — through the `AGUIState` accessors,
+  which stay the only place that knows which cache each field lives in
+  (`integration/agui/state.py:22-23`). Order is fixed and mirrors the direct handler
+  (`integration/agui/handler.py:206-217`): resolve the handler, apply the values, snapshot
+  `state_before`, then run — so inbound state is the baseline and a turn that changes nothing emits
+  no snapshot.
+  - **`forwardedProps` and `context` are never written non-volatile**, at either end. `Runtime`
+    stores the session and then clears the volatile cache (`core/runtime.py:364`, `:372`), which is
+    exactly what gives them their one-run lifetime; persisting them to survive the hop would leak
+    the previous turn's client context into the next run.
+- **The AG-UI branch runs through `prepare_agent_handler` + `run_stream_sync`**, not
+  `process_stream_chat_sync`: it needs the session object between load and run, which is the
+  documented reason `prepare_agent_handler` exists (`core/chat_service.py:362-370`, whose docstring
+  names AG-UI).
 - The AG-UI state helper is imported **lazily inside the runner method** — the rule
   `AgentRunner._record_thread_reply` and `ResponseHandler._outbound_adapter` already follow, so a
   runner process never pays for an `integration` extra it may not have.
@@ -134,6 +159,21 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
   no blocking read — see Non-goals). **A store that implements the capability takes part in AG-UI
   queue mode with no further change** — which is why every precondition below names the capability,
   never a list of store names.
+- **`ResponseStore.shared` joins the ABC**, because chunk streaming and cross-process visibility are
+  two different facts and AG-UI needs both. `supports_chunk_streaming()` says the store *can* carry a
+  stream; `shared` says a second process can *read* it. `InMemoryResponseStore` answers `True` to the
+  first (`response_store/in_memory.py:29`) while holding `ClassVar` state (`:23-25`), and
+  `ResponseStoreFactory` returns it on **any** transport when the type is explicitly `in_memory` —
+  the `or` short-circuit at `response_store/factory.py:50-58` never consults the transport, which is
+  deliberate and asserted (`tests/test_pipeline_factory_seams.py:102`). Without the second predicate
+  the edge and the Response Handler can hold different stores and the run hangs to the per-chunk
+  timeout.
+  - Shape and polarity mirror `WSConnectionStore.shared` (`core/session/base.py:22`): default
+    `True`, with `in_memory` overriding to `False` (`core/session/in_memory.py:23` is the model). So
+    `redis`, `valkey` and `dynamodb` need no edit — one base method and one override.
+  - A dotted-path store inherits `True`. Same accepted blind spot §6 records for session stores, and
+    the factory already lets a bring-your-own store past every transport check
+    (`factory.py:47-48`), so the topology already trusts the deployer there.
 - Independently useful: this lifts `RequestHandler`'s existing STREAM SSE route onto broker
   transports, where it answers HTTP 400 today.
 
@@ -152,11 +192,39 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
   boot rather than enqueueing into a queue no runner drains.
 - It mounts through `IOHandler.run(handlers=[...])`, **not** `request_handler=`: AG-UI owns
   `agui.prefix` and collides with no pipeline route, so no `IOHandler` change is needed.
-- **The edge persists the session before enqueueing.** `set_agui_session_keys` writes `state`,
-  `forwardedProps` and `context` onto the session object (`integration/agui/run_input.py:61-76`);
-  today the same object is used by the run, so nothing is stored. Over the queue the runner loads the
-  session in another process, so the edge calls `sessions().store(session)` first — otherwise the
-  client's inbound state silently never reaches the tools.
+- **The client's inbound values ride the queue body, not the session store.** `state`,
+  `forwardedProps` and `context` travel in a typed `agui` envelope on an
+  `AGUIRunRequest(BaseRunRequest)` subclass, and the edge neither creates, writes nor stores a
+  session. Two independent reasons, either sufficient:
+  - **The session store cannot carry two of the three.** `forwardedProps` and `context` live in the
+    **volatile** cache by design (`integration/agui/state.py:22-23`, `:83`, `:92`) because `Runtime`
+    clears it after every run so a stale copy can never be read; every store persists
+    `session.get_all(volatile=False)` (`core/session/redis.py:100`). A session hop therefore drops
+    them by construction, silently — the readers fall back to `{}` / `[]` (`state.py:65`, `:74`)
+    rather than raising, so the agent simply behaves as though the client sent nothing.
+  - **It cannot reliably carry the third either.** With `session.cache` configured, the runner's
+    `load` returns its own process-local copy and never reads what the edge wrote
+    (`core/session/redis.py:39-42`) — the very fact §2 relies on for the state comparison. A design
+    that depended on the hop would contradict §2.
+  - The envelope is **typed, not an extra**, for the reason `BaseRunRequest` already gives
+    (`core/model.py:275-289`): an extra reaches the agent as `AgentRequestAny` context. It lives in
+    `integration/agui/` rather than on `BaseRunRequest`, so core grows no field for an optional
+    extra, and `RequestBuilder.known_fields` (`core/chat_service.py`) gains the envelope's name so
+    that guarantee does not rest on the AG-UI branch always passing a prebuilt `requests` list.
+  - **The envelope is size-budgeted at the edge.** Once attachments are offloaded it is the only
+    unbounded client-controlled payload left on the message, and the body must fit the smallest
+    built-in transport (SQS, 256 KB). The edge rejects an oversized envelope with a status naming the
+    field and the budget — the shape `IntegrationProducer._reply_attributes` uses for reply context
+    (`integration/adapter/producer.py:94-101`), at a larger figure, since `forwardedProps`
+    legitimately carries a selected record where a reply context carries a channel id.
+  - `set_agui_session_keys` splits into an edge half (validate, keep the 400s and the type warnings
+    where an HTTP status still exists, produce the envelope) and a runner half (apply it to a
+    session, §2), so the direct and queue paths cannot drift on the cache choice.
+- **The edge half of `_run` therefore stops before the session.** Authorise, resolve the agent,
+  parse, `to_requests`, offload attachments, `_warn_if_unreadable` — and enqueue. It drops the
+  `prepare_agent_handler` / `set_agui_session_keys` / `snapshot_state` block
+  (`integration/agui/handler.py:206-217`); a runner-side selection failure surfaces as `RunError`,
+  which is the only channel left once the stream is open.
 - **Attachments are offloaded at the edge and never ride the queue.** `AGUIRunInput.to_requests`
   builds `AgentRequestImage`/`AgentRequestFile` carrying inline base64 (`run_input.py:144-145`),
   which a broker message cannot hold (SQS caps at 256 KB). The edge calls
@@ -173,20 +241,26 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
 
 ### 6. Preconditions — fail fast when the surface cannot work
 
-- **Raise `AKConfigError` in `__init__`** when the resolved response store returns `False` from
-  `supports_chunk_streaming()`, naming the configured store. This is provable, and it is the same
-  fact `_reject_unroutable` already checks per request (#524 §7/Q2 fail-fast posture).
+- **Raise `AKConfigError` in `__init__`** when the resolved response store fails *either* predicate
+  (§4), with a distinct message for each, both naming the configured store and the configured
+  transport:
+  - `supports_chunk_streaming()` is `False` — the store cannot carry a stream at all. This is the
+    same fact `_reject_unroutable` already checks per request (#524 §7/Q2 fail-fast posture).
+  - `shared` is `False` while the transport is not `in_memory` — the store can stream, but only
+    within one process, so the edge would park on a queue the runner never writes to. Capability
+    alone does not catch this: `in_memory` answers `True` to the first predicate.
 - **Raise `AKConfigError` in `__init__`** when `session.type` is the literal `in_memory` on a broker
-  transport. A shared session store is as necessary as a chunk-streaming response store: without one
-  the client's inbound `state`/`forwardedProps` never reach the agent (§5), silently. The message
-  names the configured transport and the stores that work, the shape
-  `ScheduleManager._validate_store_topology` uses (`schedule/manager.py:392-395`).
+  transport. Not because the client's inbound values depend on it — after §5 those ride the body —
+  but because the **conversation** does: a process-local session store means the runner cannot read
+  the history of a thread another process served, so every turn starts blank and the AG-UI state a
+  previous turn wrote is invisible. The message names the configured transport and the stores that
+  work, the shape `ScheduleManager._validate_store_topology` uses (`schedule/manager.py:392-395`).
   - **The rule the codebase already follows is broken versus degraded, not provable versus not.**
     The schedule store and the WebSocket connection store raise, because the feature cannot work
     without a shared backend (`schedule/manager.py:392`, `pipeline/io_handler.py:83`,
     `pipeline/ws/gateway.py:52`). Kafka's retry bookkeeping only warns, because it still works and
     merely loses delivery counts across a restart (`pipeline/transport/bookkeeping.py:151`). AG-UI
-    is on the first side: the state simply does not arrive.
+    is on the first side: the conversation is simply not there.
   - **A dotted-path store is not classified, and that is accepted precedent.**
     `_validate_store_topology` compares against the literal `in_memory` too
     (`schedule/manager.py:387`), so a bring-your-own store falls through unchecked there as well.
@@ -215,7 +289,26 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
 - The new store methods implement a capability the base class already declares, so a bring-your-own
   store is unaffected.
 - The one visible change outside AG-UI is that the STREAM SSE route now serves redis/valkey instead
-  of answering HTTP 400 — strictly more working than before.
+  of answering HTTP 400 — strictly more working than before. A CR that turns a route on owns the
+  conditions under which it is on, so `RequestHandler._reject_unroutable`'s STREAM branch
+  (`pipeline/request_handler.py:288-297`) gains the `shared` predicate alongside the capability
+  check. Today that branch lets a broker plus an explicitly configured `in_memory` store through,
+  and the request hangs for the full `retry_count x delay` budget before returning
+  `{"error": "Stream timed out"}` — strictly worse than the 400 it gives on redis.
+- **Duplicate events on redelivery, accepted.** The queue is at-least-once and nothing in the chunk
+  path is idempotent: `add_chunk` is an unconditional append (`response_store/in_memory.py:65-69`)
+  and `StreamChunk` carries no sequence or id (`core/model.py:180-194`). Three deliveries produce a
+  duplicate — an ack that fails after a successful run (`ConsumerLoop` acks inside the same `try` as
+  `_process`, `pipeline/consumer.py:144`), a runner that dies mid-run, and a visibility timeout that
+  expires while a slow model is still running. An output redelivery appends one duplicate chunk; an
+  input redelivery re-runs the turn and re-emits the whole sequence, which the dedup suffix
+  deliberately lets through (`agent_runner.py:233`, so a legitimate retry is not swallowed). Under
+  AG-UI a duplicate is protocol-breaking rather than cosmetic. **Not closed here:** the exposure is
+  pre-existing on the STREAM/SSE route, and any fix repairs that route too, so it is a follow-up
+  filed with this CR — the same reasoning the `dynamodb` implementation is deferred on. A reviewer
+  who disagrees has a cheap lever: the runner already computes the attempt and chunk numbers
+  (`agent_runner.py:233`) and currently discards them, so an edge-side filter is available without
+  new state or configuration.
 - **A loss window, accepted.** If the API replica dies mid-run its socket dies with it and the
   remaining chunks sit in the store until TTL; AG-UI has no resume token, so the client starts a new
   run. The direct handler loses the run on the same failure, so this is not a regression — but it is
@@ -247,14 +340,58 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
 - A permanent failure yields exactly one `RunError` and closes the stream.
 - An attachment-bearing run enqueues no inline bytes: the body's `requests` carry
   `AgentRequestAttachmentRef` and the original base64 is gone (§5).
-- Both preconditions raise at construction (§6): a response store that cannot stream chunks, and
-  `session.type: in_memory` on a broker transport. A dotted-path session store is left alone by the
-  second check, which is asserted so the accepted blind spot stays deliberate.
+- **The decisive precondition case:** a broker transport plus an explicit
+  `execution.response_store.type: in_memory`. Assert in one test that the factory returns an
+  `InMemoryResponseStore`, that `supports_chunk_streaming()` is `True`, that `shared` is `False`, and
+  that construction raises. The third assertion is the point — it pins that the capability check
+  alone would have let this through.
+- The other preconditions raise at construction too (§6): a store that cannot stream chunks, and
+  `session.type: in_memory` on a broker transport. A dotted-path store — session or response — is
+  left alone by both checks, asserted so the accepted blind spot stays deliberate.
+- **The marker survives the runner hop:** an AG-UI input message produces output messages still
+  carrying `ATTR_AGUI`, mirroring the existing assertion for `ATTR_INTEGRATION`
+  (`tests/test_pipeline_agent_runner.py:192`).
+- **The AG-UI branch precedes the mode branch**, with and without `ATTR_USER_ID` present and in every
+  execution mode — the shape `test_the_integration_branch_precedes_the_mode_branch` already uses
+  (`tests/test_pipeline_response_handler.py:227`). This pins the routing invariant that currently
+  holds only implicitly.
+- **The inbound envelope reaches the tools:** a run carrying `forwardedProps` and `context` with a
+  stubbed agent that reads both during the run asserts both are non-empty. Against a session-hop
+  design this fails with `{}` / `[]`.
+- **And keeps its lifetime:** after that run, the persisted session record carries neither key, and a
+  second run on the same `threadId` sending no `forwardedProps` reads `{}`. Proves they crossed the
+  queue without becoming non-volatile.
+- **The envelope never becomes agent context:** building the enqueued body and running
+  `RequestBuilder` over it produces no `AgentRequestAny` named for the envelope field.
+- **State baseline ordering:** a run carrying inbound `state` whose agent never calls
+  `update_agui_state` emits no `StateSnapshotEvent` — proving `state_before` is snapshotted after the
+  envelope is applied (§2), not before.
 
 ## Non-goals
 
 - **Migrating `AGUIRequestHandler`.** It stays the direct-execution handler and the documented
-  default; this change adds a sibling.
+  default; this change adds a sibling. Considered and rejected for this CR:
+  - **It would remove AG-UI from the ECS containerized deployment.** `AGUIRequestHandler` inherits
+    `requires_pipeline = False` (`api/handler.py:17`), so it mounts today through
+    `ECSIOHandler.run(handlers=[...])`. `AGUIPipelineRequestHandler` declares it `True`, and
+    `ECSIOHandler` routes through `AWSRestAPI.run` to `RESTAPI.run`, which rejects such a handler
+    (`api/http.py:109`, `:117-131`). ECS runs a queue, but not *this* pipeline — its runners are the
+    `deployment/aws` classes, which do not dispatch `ATTR_AGUI` either. Deleting the direct handler
+    would therefore cut a working surface with nothing to replace it.
+  - **Direct and queue siblings are the house pattern**, not a transitional state: chat has
+    `AgentRESTRequestHandler`/`RequestHandler`, threads have
+    `AgentThreadRequestHandler`/`ThreadRequestHandler` (#524 §14), and neither pair has been
+    collapsed.
+  - **#524's deletion of seven handlers does not transfer.** Those were near-identical copies of one
+    thing (two `split_reply` chunkers, seven inline `session_id` rules); these are two execution
+    models. The duplication that does exist between them is removed by extracting the shared edge
+    half (§5), not by deleting a handler.
+  - **Cost:** every existing AG-UI app changes its mounting call, and a broker deployment would need
+    a response store for what is currently a zero-infrastructure demo.
+  - **Sequencing:** revisit once #495's recorded "ECS runtime classes become pipeline instantiations"
+    follow-up lands (`docs/specs/495-onprem-kubernetes/plan.md:318`). Only then does queue mode reach
+    everywhere the direct handler already does, making removal a migration rather than a capability
+    cut.
 - **A `dynamodb` chunk-streaming implementation.** Deferred on balance, not ruled out — this is a
   fidelity and scope choice rather than a technical wall.
   - **The difference is the wait.** A streaming reader has to wait for a chunk that has not been
@@ -276,6 +413,20 @@ the socket. `request_id` is a string, so it fits a queue attribute where a socke
 - **AG-UI thread recording.** It stays out by construction, because `ATTR_AGUI` is not `ATTR_THREAD`.
 - **Resumable runs.** AG-UI has no resume token; the loss window above is accepted, not closed.
 - **Touching `deployment/aws/*` runners.** This targets `agentkernel.pipeline` only.
+- **Three adjacent repairs the `shared` predicate (§4) makes mechanical, all deferred to their own
+  issues so this CR stays additive:**
+  - `ResponseStoreFactory` consulting the transport for an explicitly configured `in_memory` store
+    (`response_store/factory.py:50-58`). The short-circuit is documented and asserted
+    (`tests/test_pipeline_factory_seams.py:102`), and its blast radius includes the sandbox broker's
+    own `sandbox.broker.response_store` resolution.
+  - `IOHandler._validate_topology`'s shared-store guard (`pipeline/io_handler.py:207-216`), which is
+    a config-string compare and covers REST modes only, on the premise that "WebSocket modes never
+    touch the response store" — false for STREAM, which routes to `_store_chunk` when no
+    `ATTR_USER_ID` is present (`response_handler.py:60-68`).
+  - `SessionStore.shared`, which would convert §6's second precondition from a literal comparison to
+    a predicate and retire its recorded blind spot. Six backends plus a bring-your-own contract.
+- **Idempotent chunk delivery.** See §8: the exposure is pre-existing on the STREAM/SSE route and any
+  fix repairs that route too.
 
 ## Open questions
 
