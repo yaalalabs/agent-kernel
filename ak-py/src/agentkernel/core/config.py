@@ -1,8 +1,8 @@
 import importlib.metadata
 from threading import RLock
-from typing import Any, ClassVar, Dict, List, Optional, Union
+from typing import Any, ClassVar, Dict, List, Optional
 
-from pydantic import AliasChoices, BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from .model import ExecutionMode
 from .util.config_yaml_util import YamlBaseSettingsModified

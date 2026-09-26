@@ -4,6 +4,7 @@ from agents import Agent as OpenAIAgent
 
 from agentkernel.core.config import AKConfig
 from agentkernel.framework.openai import OpenAIModule, OpenAIRealtimeAdapter, OpenAIToolBuilder
+from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
 
@@ -30,4 +31,4 @@ gateway = LiveKitEdgeGateway(session_id="room_01")
 
 
 if __name__ == "__main__":
-    IOHandler.run(gateways=[gateway])
+    IOHandler.run(gateways=[GatewayRunner(gateway)])

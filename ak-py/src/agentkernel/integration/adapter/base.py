@@ -36,10 +36,11 @@ SESSION_CACHE_ERROR = (
 
 
 class Source(StrEnum):
-    """How an inbound adapter is hosted."""
+    """How an adapter that feeds the input queue is hosted."""
 
     WEBHOOK = "webhook"
     POLLER = "poller"
+    REALTIME = "realtime"
 
 
 class InboundRequest(BaseModel):
@@ -229,3 +230,21 @@ class OutboundAdapter(ABC):
         if self.MAX_CHUNKS is not None and len(chunks) > self.MAX_CHUNKS:
             chunks = chunks[: self.MAX_CHUNKS] + [self.TRUNCATION_NOTICE]
         return chunks
+
+
+class GatewayAdapter(OutboundAdapter):
+    """A stateful edge that both feeds the input queue and delivers replies (spec #524).
+
+    Unlike the stateless inbound/outbound pair, a gateway owns a long-lived connection to a
+    platform — a LiveKit WebRTC room, for instance — because only it can read the live input
+    *and* play the live output. It is therefore one object, not two halves, and it is hosted by
+    :class:`~agentkernel.integration.adapter.gateway.GatewayRunner`, which registers it as the
+    outbound adapter for its ``name``.
+    """
+
+    source: Source = Source.REALTIME
+
+    @abstractmethod
+    async def start(self) -> None:
+        """Connect and run the edge's loop until the process shuts down."""
+        raise NotImplementedError()

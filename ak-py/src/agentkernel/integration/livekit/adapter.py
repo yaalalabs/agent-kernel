@@ -9,8 +9,7 @@ from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, BaseR
 from ...core.util.factory import AKConfigError
 from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
 from ...pipeline.producer import RequestProducer
-from ..adapter.base import OutboundAdapter
-from ..adapter.factory import IntegrationAdapterFactory
+from ..adapter.base import GatewayAdapter
 
 _log = logging.getLogger("ak.integration.livekit")
 
@@ -25,13 +24,14 @@ except ImportError:
     rtc = None  # type: ignore
 
 
-class LiveKitEdgeGateway(OutboundAdapter):
+class LiveKitEdgeGateway(GatewayAdapter):
     """Bridges a LiveKit WebRTC room with the Agent Kernel queue.
 
     Unlike standard messaging webhook adapters which are stateless and split into Inbound/Outbound
     halves, WebRTC requires a stateful, persistent connection to a room. This gateway owns that
     connection: it pushes user audio and chat text to the input queue, and — as the ``livekit``
-    outbound adapter — plays the agent's streamed audio and transcript back to the room.
+    outbound adapter — plays the agent's streamed audio and transcript back to the room. It is
+    hosted by ``GatewayRunner``, which registers it as the ``livekit`` outbound adapter on start.
     """
 
     name = INTEGRATION_NAME
@@ -82,12 +82,6 @@ class LiveKitEdgeGateway(OutboundAdapter):
         # Accumulated from TextDelta chunks; published as one chat message when the turn ends.
         self._transcript: list[str] = []
         self._interrupted = False
-
-        # A stateful edge is the one case the config-driven factory cannot build: replies must
-        # reach this live room, so the gateway registers itself as the `livekit` outbound adapter
-        # (the same name stamped on every output message). One gateway per integration name —
-        # multi-room would need a per-session resolution instead of the shared cache.
-        IntegrationAdapterFactory.register_outbound(INTEGRATION_NAME, self)
 
     async def start(self) -> None:
         """Connect to the LiveKit room and bridge audio until the pipeline shuts down."""

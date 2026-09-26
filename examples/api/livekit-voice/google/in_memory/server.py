@@ -3,6 +3,7 @@ import logging
 from google.adk.agents import Agent as GoogleAgent
 
 from agentkernel.framework.adk import ADKToolBuilder, GoogleADKModule
+from agentkernel.integration.adapter import GatewayRunner
 from agentkernel.integration.livekit import LiveKitEdgeGateway
 from agentkernel.pipeline import IOHandler
 
@@ -29,4 +30,4 @@ gateway = LiveKitEdgeGateway(session_id="room_01")
 
 
 if __name__ == "__main__":
-    IOHandler.run(gateways=[gateway])
+    IOHandler.run(gateways=[GatewayRunner(gateway)])
