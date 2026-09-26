@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import array
 import asyncio
 import base64
 import functools
 import inspect
 import json
 import logging
+import sys
 import time
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, ClassVar, List, Mapping
@@ -29,10 +31,12 @@ from agentkernel.core.model import (
     AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
+    AgentRequestVoice,
 )
 
 from ...core import Agent as AKBaseAgent
-from ...core import Module
+from ...core import Module, PostHook, PreHook
+from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder
 from ...core import ToolContext as AKToolContext
@@ -54,6 +58,8 @@ from ...core.util.error_util import user_facing_error_message
 from ...trace import Trace
 
 FRAMEWORK = "adk"
+
+_log = logging.getLogger("ak.adk")
 
 
 class GoogleADKSession:
@@ -206,6 +212,25 @@ class GoogleADKRunner(BaseRunner):
                     mime_type = req.mime_type
 
                 raw_data = base64.b64decode(base64_data.split(",")[-1]) if base64_data.startswith("data:") else base64.b64decode(base64_data)
+                parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
+
+            if isinstance(req, AgentRequestVoice):
+                if not req.audio_data:
+                    raise ValueError("no audio input provided")
+
+                audio_data = req.audio_data
+                if audio_data.startswith(("http://", "https://", "s3://")):
+                    parts.append(types.Part(file_data=types.FileData(file_uri=audio_data)))
+                    continue
+
+                if audio_data.startswith("data:"):
+                    mime_type = audio_data.split(";")[0][5:]
+                else:
+                    if not req.mime_type:
+                        raise ValueError("mime_type is missing for voice input, either in the base64 or explicitly")
+                    mime_type = req.mime_type
+
+                raw_data = base64.b64decode(audio_data.split(",")[-1]) if audio_data.startswith("data:") else base64.b64decode(audio_data)
                 parts.append(types.Part(inline_data=types.Blob(mime_type=mime_type, data=raw_data)))
 
         return prompt, parts
@@ -491,14 +516,15 @@ class GoogleADKAgent(AKBaseAgent):
         "yield_user_message": "the stream mapping expects model events only",
     }
 
-    def __init__(self, name: str, runner: GoogleADKRunner, agent: BaseAgent):
+    def __init__(self, name: str, runner: GoogleADKRunner, agent: BaseAgent, realtime_runner_cls: type[BaseRealtimeRunner] | None = None):
         """
         Initializes a GoogleADKAgent instance.
         :param name: Name of the agent.
         :param runner: BaseRunner associated with the agent.
         :param agent: The Google ADK agent instance.
+        :param realtime_runner_cls: Optional realtime adapter class for this agent.
         """
-        super().__init__(name, runner)
+        super().__init__(name, runner, realtime_runner_cls=realtime_runner_cls)
         self._agent = agent
         self._attach_system_tools()
         self._setup_system_prompt()
@@ -546,13 +572,15 @@ class GoogleADKModule(Module):
     GoogleADKModule class provides a module for Google ADK-based agents.
     """
 
-    def __init__(self, agents: list[BaseAgent], runner: GoogleADKRunner = None):
+    def __init__(self, agents: list[BaseAgent], runner: GoogleADKRunner = None, realtime_runner_cls: type[BaseRealtimeRunner] | None = None):
         """
         Initializes a Google ADK Module instance.
         :param agents: List of agents in the module.
         :param runner: Custom runner associated with the module.
+        :param realtime_runner_cls: Optional realtime runner class for WebSocket connections.
         """
         super().__init__()
+        self.realtime_runner_cls = realtime_runner_cls or GoogleADKRealtimeRunner
         if runner is not None:
             self.runner = runner
         elif AKConfig.get().trace.enabled:
@@ -564,11 +592,13 @@ class GoogleADKModule(Module):
     def _wrap(self, agent: BaseAgent, agents: List[BaseAgent]) -> AKBaseAgent:
         """
         Wraps the provided agent in a GoogleADKAgent instance.
-        :param agent: Agent to wrap.
+        :param agent: The agent to wrap.
         :param agents: List of agents in the module.
         :return: GoogleADKAgent instance.
         """
-        return GoogleADKAgent(agent.name, self.runner, agent)
+        # The realtime adapter class is attached unconditionally: only the pipeline (in REALTIME
+        # mode) ever instantiates it, so the framework need not know the execution mode.
+        return GoogleADKAgent(agent.name, self.runner, agent, realtime_runner_cls=self.realtime_runner_cls)
 
     def load(self, agents: list[BaseAgent]) -> "GoogleADKModule":
         """
@@ -686,3 +716,200 @@ class GoogleADKToolBuilder(ToolBuilder):
 
         wrapper.__signature__ = signature.replace(parameters=parameters)
         return wrapper
+
+
+# Gemini Live takes 16 kHz PCM16 input but returns 24 kHz output, while the LiveKit edge speaks a
+# single 24 kHz rate in both directions. Inbound audio is resampled here so the shared edge needs
+# no per-provider rate plumbing.
+GEMINI_INPUT_SAMPLE_RATE = 16000
+EDGE_SAMPLE_RATE = 24000
+
+
+class GoogleADKRealtimeRunner(BaseRealtimeRunner):
+    """Drives a persistent Gemini Live (BidiGenerateContent) socket behind the realtime pool.
+
+    Mirrors ``OpenAIRealtimeAdapter``: the pool calls :meth:`connect` once per session and then
+    pushes audio/text through :meth:`append_audio` / :meth:`send_text`. Model events are reported
+    back through the callback the pool supplied, so the pool keeps owning queue emission and this
+    class never imports pipeline types.
+    """
+
+    def __init__(self):
+        super().__init__(FRAMEWORK)
+        self._log = logging.getLogger("ak.adk.realtime")
+        self._callback: Callable | None = None
+        self._agent = None
+        self._session = None
+        self._connection = None
+        self._cm = None
+        self._listen_task: asyncio.Task | None = None
+        # call_id -> function name, needed to build the FunctionResponse Gemini expects.
+        self._tool_names: dict[str, str] = {}
+
+    @staticmethod
+    def _realtime_model(agent: Any) -> str:
+        """The Gemini Live model named by the agent definition.
+
+        Deliberately no adapter-level default: the model is the agent's choice, and a silent
+        fallback would run a different model than the one the caller declared.
+        """
+        model = getattr(getattr(agent, "agent", None), "model", None)
+        name = model if isinstance(model, str) else getattr(model, "model", None)
+        if not isinstance(name, str) or not name:
+            raise ValueError(f"Agent '{getattr(agent, 'name', '?')}' must define a Gemini Live model to run in REALTIME mode")
+        return name
+
+    def _connect_config(self, agent: Any) -> types.LiveConnectConfig:
+        """Build the Live session config from the ADK agent's instruction and tools."""
+        sdk_agent = getattr(agent, "agent", None)
+        instructions = getattr(sdk_agent, "instruction", None) or getattr(sdk_agent, "description", None)
+
+        declarations = []
+        for tool in getattr(sdk_agent, "tools", None) or []:
+            try:
+                declaration = tool._get_declaration()
+            except Exception as e:
+                self._log.warning(f"Could not build a Live declaration for tool {getattr(tool, 'name', '?')}: {e!r}")
+                declaration = None
+            if declaration is not None:
+                declarations.append(declaration)
+
+        return types.LiveConnectConfig(
+            response_modalities=[types.Modality.AUDIO],
+            system_instruction=types.Content(parts=[types.Part(text=instructions)]) if instructions else None,
+            tools=[types.Tool(function_declarations=declarations)] if declarations else None,
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+        )
+
+    async def connect(self, session: Session, agent: AKBaseAgent, callback: Callable) -> None:
+        from google import genai
+
+        self._callback = callback
+        self._agent = agent
+        self._session = session
+        client = genai.Client()
+        model = self._realtime_model(agent)
+        self._log.info(f"Connecting to Gemini Live (model={model})")
+
+        self._cm = client.aio.live.connect(model=model, config=self._connect_config(agent))
+        self._connection = await self._cm.__aenter__()
+        self._listen_task = asyncio.create_task(self._listen())
+
+    async def _listen(self) -> None:
+        try:
+            # receive() ends each turn at turn_complete, so the persistent socket is drained one
+            # turn at a time; the outer loop re-enters it for the next turn.
+            while True:
+                async for message in self._connection.receive():
+                    await self._handle_message(message)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            self._log.error(f"Gemini Live socket error: {e}")
+
+    async def _handle_message(self, message: types.LiveServerMessage) -> None:
+        server_content = getattr(message, "server_content", None)
+        if server_content is not None:
+            if getattr(server_content, "interrupted", False):
+                await self._callback("interrupt", {})
+            transcription = getattr(server_content, "output_transcription", None)
+            if transcription is not None and transcription.text:
+                await self._callback("transcript_delta", {"delta": transcription.text, "message_id": ""})
+            model_turn = getattr(server_content, "model_turn", None)
+            if model_turn and model_turn.parts:
+                for part in model_turn.parts:
+                    inline = getattr(part, "inline_data", None)
+                    if inline is not None and inline.data:
+                        audio_b64 = base64.b64encode(inline.data).decode("utf-8")
+                        await self._callback("audio_delta", {"delta": audio_b64, "message_id": ""})
+            if getattr(server_content, "turn_complete", False):
+                await self._callback("done", {"status": "completed"})
+
+        tool_call = getattr(message, "tool_call", None)
+        if tool_call and tool_call.function_calls:
+            for call in tool_call.function_calls:
+                self._tool_names[call.id] = call.name
+                await self._callback("tool_call", {"call_id": call.id, "name": call.name, "arguments": json.dumps(call.args or {})})
+
+    async def append_audio(self, base64_audio: str) -> None:
+        if self._connection:
+            pcm16 = self._resample_pcm16(base64.b64decode(base64_audio), EDGE_SAMPLE_RATE, GEMINI_INPUT_SAMPLE_RATE)
+            await self._connection.send_realtime_input(audio=types.Blob(data=pcm16, mime_type=f"audio/pcm;rate={GEMINI_INPUT_SAMPLE_RATE}"))
+
+    async def send_text(self, text: str) -> None:
+        if self._connection:
+            await self._connection.send_client_content(turns=types.Content(role="user", parts=[types.Part(text=text)]), turn_complete=True)
+
+    async def send_tool_result(self, call_id: str, result: str) -> None:
+        if self._connection:
+            name = self._tool_names.pop(call_id, call_id)
+            await self._connection.send_tool_response(function_responses=types.FunctionResponse(id=call_id, name=name, response={"output": result}))
+
+    async def execute_tool(self, name: str, arguments: str, context: AKToolContext, call_id: str) -> str:
+        """Invoke an ADK tool through ADK's own ``run_async`` with a real ToolContext.
+
+        ADK *injects* a ``ToolContext`` (session state, actions, artifacts) into any tool that
+        declares one, so calling the wrapped function directly would hand those tools ``None``
+        and any ``tool_context.state`` access would fail. A fresh ``InvocationContext`` /
+        ``ToolContext`` is built here instead, carrying the active Agent Kernel context id in
+        the ADK session state the same way a normal ADK run does.
+        """
+        from google.adk.agents.invocation_context import InvocationContext
+        from google.adk.tools import ToolContext as ADKToolContext
+
+        sdk_agent = getattr(self._agent, "agent", None)
+        tool = next((t for t in getattr(sdk_agent, "tools", None) or [] if getattr(t, "name", None) == name), None)
+        if tool is None:
+            return f"Error: Tool {name} not found"
+
+        adk_session = GoogleADKRunner._session(self._session)
+        session = await adk_session.create_session(app_name="AgentKernel", user_id="AgentKernel", session_id=self._session.id)
+        invocation_context = InvocationContext(
+            session_service=adk_session.session_service,
+            invocation_id=str(uuid4()),
+            session=session,
+            agent=sdk_agent,
+        )
+        tool_context = ADKToolContext(invocation_context=invocation_context, function_call_id=call_id)
+
+        # Entering the context populates the cache the ADK tool wrapper fetches the Agent
+        # Kernel context from; the wrapper then sets/resets the contextvar itself.
+        with context:
+            tool_context.state["ak_tool_context"] = context.id
+            args = json.loads(arguments) if arguments else {}
+            result = await tool.run_async(args=args, tool_context=tool_context)
+        return str(result) if result is not None else ""
+
+    async def disconnect(self) -> None:
+        if self._listen_task:
+            self._listen_task.cancel()
+        if self._connection and self._cm is not None:
+            await self._cm.__aexit__(None, None, None)
+            self._connection = None
+            self._cm = None
+
+    @staticmethod
+    def _resample_pcm16(data: bytes, source_rate: int, target_rate: int) -> bytes:
+        """Linearly resample little-endian mono PCM16 audio from ``source_rate`` to ``target_rate``."""
+        if not data or source_rate == target_rate:
+            return data
+        samples = array.array("h")
+        samples.frombytes(data[: len(data) - (len(data) % 2)])
+        if not samples:
+            return b""
+        if sys.byteorder == "big":
+            samples.byteswap()
+
+        ratio = source_rate / target_rate
+        out_count = int(len(samples) / ratio)
+        out = array.array("h", bytes(out_count * 2))
+        for i in range(out_count):
+            position = i * ratio
+            left = int(position)
+            right = min(left + 1, len(samples) - 1)
+            fraction = position - left
+            out[i] = int(samples[left] + (samples[right] - samples[left]) * fraction)
+
+        if sys.byteorder == "big":
+            out.byteswap()
+        return out.tobytes()

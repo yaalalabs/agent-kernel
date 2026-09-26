@@ -7,12 +7,15 @@ import pickle
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Iterable, Iterator, Mapping
 from enum import Enum
-from typing import Any, ClassVar, Self, cast
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Self, cast
 
 from .event import StreamEvent
 from .hooks import PostHook, PreHook
 from .model import AgentReply, AgentRequest
 from .util.key_value_cache import KeyValueCache
+
+if TYPE_CHECKING:  # pragma: no cover: typing only; .tool imports .base, so this avoids a cycle
+    from .tool import ToolContext
 
 _log = logging.getLogger("ak.core.runner")
 
@@ -415,6 +418,72 @@ class Runner(ABC):
         yield  # makes this an async generator, so overrides match the shape rather than a coroutine
 
 
+class RealtimeRunner(Runner):
+    """
+    RealtimeRunner is the base class for framework adapters handling realtime streaming
+    via persistent WebSocket/WebRTC connections (e.g. OpenAI Realtime API).
+    """
+
+    async def run(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AgentReply:
+        """Not supported for realtime runners."""
+        raise NotImplementedError("Realtime runners do not support unary run().")
+
+    async def stream(self, agent: Any, session: Session, requests: list[AgentRequest]) -> AsyncGenerator[StreamEvent, None]:
+        """Not supported for realtime runners."""
+        raise NotImplementedError("Realtime runners do not support unary stream().")
+        yield
+
+    @abstractmethod
+    async def connect(self, session: Session, agent: "Agent", callback: Callable) -> None:
+        """
+        Establishes a persistent socket connection to the framework's Realtime API backend.
+        :param session: The session to bind this connection to.
+        :param agent: The agent instance.
+        :param callback: The event callback from the pool.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def append_audio(self, base64_audio: str) -> None:
+        """Appends audio to the model's input buffer."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def send_text(self, text: str) -> None:
+        """Sends a text message and requests a response."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def send_tool_result(self, call_id: str, result: str) -> None:
+        """Sends a tool execution result back to the model."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def execute_tool(self, name: str, arguments: str, context: "ToolContext", call_id: str) -> str:
+        """Executes the named tool with JSON ``arguments`` and returns its string result.
+
+        Owned by the adapter because both the tool object and the context it needs are
+        framework-native: the OpenAI SDK expects its own ``ToolContext`` built around the run
+        context, and ADK injects a ``ToolContext`` (session state, actions) into tools that
+        declare one. The adapter activates ``context`` the way its framework expects; the
+        caller only constructs it.
+
+        :param name: Tool name, matching the model's function call.
+        :param arguments: Raw JSON argument string the model emitted.
+        :param context: The Agent Kernel tool context for this call.
+        :param call_id: The model's function-call id (frameworks correlate the response by it).
+        :return: The tool result as a string.
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    async def disconnect(self) -> None:
+        """
+        Closes the active persistent socket connection.
+        """
+        raise NotImplementedError()
+
+
 class Agent(ABC):
     """
     Agent is the base class for all agents.
@@ -443,14 +512,16 @@ class Agent(ABC):
         """
         return cls.current_agent.get()
 
-    def __init__(self, name: str, runner: Runner):
+    def __init__(self, name: str, runner: Runner, realtime_runner_cls: "Type[RealtimeRunner] | None" = None):
         """
         Initializes an Agent instance.
         :param name: Name of the agent.
         :param runner: Runner associated with the agent.
+        :param realtime_runner_cls: Optional realtime runner class for WebSocket connections.
         """
         self._name: str = name
         self._runner: Runner = runner
+        self._realtime_runner_cls: "Type[RealtimeRunner] | None" = realtime_runner_cls
         self._pre_hooks: list[PreHook] = []
         self._post_hooks: list[PostHook] = []
         self._run_options: dict[str, Any] = {}
@@ -475,6 +546,13 @@ class Agent(ABC):
         Returns the runner associated with the agent.
         """
         return self._runner
+
+    @property
+    def realtime_runner_cls(self) -> "Type[RealtimeRunner] | None":
+        """
+        Returns the realtime runner class associated with the agent, if any.
+        """
+        return self._realtime_runner_cls
 
     @property
     def pre_hooks(self) -> list[PreHook]:

@@ -15,6 +15,7 @@ from .thread_runner import ThreadRunner
 from .transport.base import QueueTransportFactory
 
 if TYPE_CHECKING:  # pragma: no cover: typing only, so pipeline keeps importing core and api only
+    from ..integration.adapter.gateway import GatewayRunner
     from ..integration.adapter.poller import PollerRunner
 
 
@@ -41,6 +42,7 @@ class IOHandler:
         auth_validator: Optional[AuthValidator] = None,
         handlers: Optional[list[RESTRequestHandler]] = None,
         pollers: Optional[list["PollerRunner"]] = None,
+        gateways: Optional[list["GatewayRunner"]] = None,
         request_handler: Optional[RequestHandler] = None,
     ) -> None:
         """Boot the pipeline topology this configuration implies and serve until shutdown.
@@ -58,6 +60,10 @@ class IOHandler:
             threads on the ``in_memory`` transport only. On a broker transport they are their own
             containers (``PollerRunner.run(adapter)``), so poller count never tracks the replica
             count of this request-bound tier; passing them there logs a warning and starts none.
+        :param gateways: Optional stateful edge gateways (``GatewayRunner``), co-hosted as peer
+            threads. Unlike a poller, a gateway must run in this process: it registers itself as
+            the platform's outbound adapter when it starts, so replies route back to its live
+            connection.
         :param request_handler: Replaces the pipeline's own ``RequestHandler`` on the chat route
             — it does not join it, because both own ``POST /api/v1/chat`` and FastAPI would serve
             whichever registered first, silently. This is the seam a capability that has to act on
@@ -73,7 +79,7 @@ class IOHandler:
         cls._validate_topology(mode, transport_type, config, auth_validator)
 
         single_process = transport_type == "in_memory"
-        if not single_process and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
+        if not single_process and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME):
             from .ws.push import default_connection_store
 
             # Raises on session backends without a connection store; a process-local store
@@ -82,7 +88,7 @@ class IOHandler:
                 raise AKConfigError(
                     "WebSocket delivery over a broker transport needs a shared connection store: " "configure session.type redis, valkey or dynamodb"
                 )
-        ws_cohosted = single_process and auth_validator is not None and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM)
+        ws_cohosted = single_process and auth_validator is not None and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME)
         cls._log.info(
             f"IOHandler starting: mode={mode}, transport={transport_type}, "
             f"topology={'single-process' if single_process else 'multi-process'}, websocket={'co-hosted' if ws_cohosted else 'off'}"
@@ -129,12 +135,23 @@ class IOHandler:
             ),
         ]
         if single_process:
-            runner = StreamAgentRunner() if mode == ExecutionMode.STREAM else AgentRunner()
+            runner = StreamAgentRunner() if mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME) else AgentRunner()
             tasks.append(
                 ThreadRunner.Task(
                     execution_function=lambda: runner.start(exit_on_shutdown=False), thread_name="agent-runner", stop_all_on_failure=True
                 )
             )
+            if mode == ExecutionMode.REALTIME:
+                from .realtime_pool import RealtimeConnectionPool
+
+                pool = RealtimeConnectionPool.initialize()
+                tasks.append(
+                    ThreadRunner.Task(
+                        execution_function=pool.start,
+                        thread_name="realtime-pool",
+                        stop_all_on_failure=True,
+                    )
+                )
             for poller in pollers or []:
                 tasks.append(
                     ThreadRunner.Task(
@@ -147,6 +164,15 @@ class IOHandler:
             cls._log.warning(
                 f"pollers ignored: they are co-hosted here only on the in_memory transport "
                 f"(transport={transport_type}); on broker transports start PollerRunner.run(adapter) as its own container"
+            )
+
+        for gateway in gateways or []:
+            tasks.append(
+                ThreadRunner.Task(
+                    execution_function=lambda g=gateway: g.start(),
+                    thread_name=f"gateway-{gateway.adapter.name}",
+                    stop_all_on_failure=True,
+                )
             )
 
         ThreadRunner.run(tasks=tasks, max_workers=len(tasks))
@@ -196,6 +222,8 @@ class IOHandler:
                 "ASYNC (WebSocket) mode on the in_memory transport co-hosts the gateway here: call "
                 "IOHandler.run(auth_validator=...) with a validator whose claims include a 'userId'"
             )
+        # REALTIME is deliberately absent: its replies go through the integration adapter, not
+        # the WebSocket push endpoint, so it needs no push token.
         if mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM) and transport_type != "in_memory":
             # This process's Response Handler pushes replies to the gateway pods: it needs the
             # shared secret (and, checked at delivery setup, the shared connection store).
@@ -204,7 +232,7 @@ class IOHandler:
                     "WebSocket delivery over a broker transport needs websocket_api.push_auth_token: "
                     "the Response Handler authenticates its pushes to the gateway pods with it"
                 )
-        if transport_type != "in_memory" and mode not in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
+        if transport_type != "in_memory" and mode not in (ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME):
             # REST modes only (spec §10): the enqueueing or polling pod and the consuming pod
             # can differ, so replies must travel through a shared store. WebSocket modes never
             # touch the response store: replies push to the gateway pods instead.

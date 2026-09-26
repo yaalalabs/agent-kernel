@@ -1,0 +1,9 @@
+execution:
+  mode: realtime
+  queues:
+    type: nats
+    nats:
+      servers: ["nats://localhost:4222"]
+      stream_name: "ak-stream"
+      input_subject: "ak.input"
+      output_subject: "ak.output"

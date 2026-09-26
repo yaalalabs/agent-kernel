@@ -100,11 +100,26 @@ class AgentRunner:
         if QueueTransportFactory.resolve_type() == "in_memory":
             raise AKConfigError("the in_memory transport runs in-process: start IOHandler (single-process topology) instead of AgentRunner")
         # cls check avoids redirect loops when StreamAgentRunner.run() is reached via inheritance.
-        if cls is AgentRunner and AKConfig.get().execution.mode == ExecutionMode.STREAM:
+        if cls is AgentRunner and AKConfig.get().execution.mode in (ExecutionMode.STREAM, ExecutionMode.REALTIME):
             return StreamAgentRunner.run()
         # A standalone runner container is usually PID 1: without these handlers SIGTERM never
         # arrives and pod/task stop hangs until SIGKILL instead of draining in-flight runs.
         ThreadRunner.install_shutdown_signal_handlers(cls._log)
+
+        if AKConfig.get().execution.mode == ExecutionMode.REALTIME:
+            from .realtime_pool import RealtimeConnectionPool
+
+            pool = RealtimeConnectionPool.initialize()
+            runner_instance = cls()
+            tasks = [
+                ThreadRunner.Task(execution_function=pool.start, thread_name="realtime-pool", stop_all_on_failure=True),
+                ThreadRunner.Task(
+                    execution_function=lambda: runner_instance.start(exit_on_shutdown=False), thread_name="agent-runner", stop_all_on_failure=True
+                ),
+            ]
+            ThreadRunner.run(tasks=tasks, max_workers=len(tasks))
+            return
+
         cls().start()
 
     # -- shared plumbing --------------------------------------------------------------------
@@ -210,15 +225,55 @@ class StreamAgentRunner(AgentRunner):
     _log = logging.getLogger("ak.pipeline.stream_agent_runner")
 
     def process(self, message: QueueMessage) -> None:
-        if message.attributes.get(ATTR_INTEGRATION):
+        body = BaseRunRequest.model_validate(json.loads(message.body))
+        # The execution mode is a process-level config value (as everywhere else in the
+        # pipeline); the body never carries it.
+        mode = AKConfig.get().execution.mode
+
+        if message.attributes.get(ATTR_INTEGRATION) and mode != ExecutionMode.REALTIME:
             return super().process(message)
 
-        body = BaseRunRequest.model_validate(json.loads(message.body))
         request_id = self._resolve_request_metadata(message, body)
         if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
             raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
 
-        self._log.info(f"[STREAM AGENT START] request_id={request_id} (receive_count={message.receive_count})")
+        realtime = mode == ExecutionMode.REALTIME
+        # A realtime turn arrives as one message per ~100 ms of audio, so the per-turn INFO lines
+        # below would flood the log; only the non-realtime streaming path logs them.
+        if not realtime:
+            self._log.info(f"[STREAM AGENT START] request_id={request_id} (receive_count={message.receive_count})")
+
+        if realtime:
+            from .realtime_pool import RealtimeConnectionPool
+
+            pool = RealtimeConnectionPool.get()
+            if not pool:
+                raise RuntimeError("RealtimeConnectionPool not initialized")
+
+            # Resolve the agent/session only when the session's connection is first created;
+            # every later audio chunk reuses it (resolving here would load the session and log
+            # the selection on each chunk).
+            conn = pool.get_connection(body.session_id)
+            if conn is None:
+                handler = self._chat_service.prepare_agent_handler(body.session_id, body.agent)
+                conn = pool.get_or_create(body.session_id, handler.service.agent, handler.service.runtime, handler.service.session)
+                conn.session = handler.service.session
+
+            conn.update_delivery_context(
+                request_id=request_id,
+                user_id=message.attributes.get(ATTR_USER_ID),
+                integration=message.attributes.get(ATTR_INTEGRATION),
+                reply_context={k[len(REPLY_CONTEXT_PREFIX) :]: v for k, v in message.attributes.items() if k.startswith(REPLY_CONTEXT_PREFIX)},
+            )
+
+            for request in body.requests:
+                if getattr(request, "type", None) == "voice":
+                    conn.append_audio(request.audio_data)
+                elif getattr(request, "type", None) == "text":
+                    conn.send_text(request.prompt)
+
+            self._log.debug(f"[REALTIME CHUNK] request_id={request_id} (receive_count={message.receive_count})")
+            return
 
         chunk_count = 0
         deltas: list[str] = []
@@ -239,7 +294,9 @@ class StreamAgentRunner(AgentRunner):
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
-        if message.attributes.get(ATTR_INTEGRATION):
+        mode = AKConfig.get().execution.mode
+
+        if message.attributes.get(ATTR_INTEGRATION) and mode != ExecutionMode.REALTIME:
             return super().on_permanent_failure(message)
 
         self._log.error(f"Permanent failure for message {message.message_id}")

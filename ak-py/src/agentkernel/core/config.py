@@ -249,6 +249,19 @@ class _GmailConfig(BaseModel):
     )
 
 
+class _LiveKitConfig(BaseModel):
+    """LiveKit realtime voice gateway settings.
+
+    Bound like every other block, from YAML or ``AK_LIVEKIT__<FIELD>`` env vars (e.g.
+    ``AK_LIVEKIT__LIVEKIT_URL``, ``AK_LIVEKIT__API_KEY``, ``AK_LIVEKIT__API_SECRET``).
+    """
+
+    agent: str = Field(default="", description="Default agent to use for LiveKit interactions")
+    livekit_url: str = Field(default="", description="LiveKit server WebSocket URL")
+    api_key: str = Field(default="", description="LiveKit API Key")
+    api_secret: str = Field(default="", description="LiveKit API Secret")
+
+
 class _MultimodalStorageRedisConfig(_RedisConfig):
     ttl: int = Field(default=604800, description="Attachment TTL in seconds")
     prefix: str = Field(default="ak:attachments:", description="Key prefix for attachment keys")
@@ -655,7 +668,11 @@ class _LoggingConfig(BaseModel):
 class _ExecutionConfig(BaseModel):
     mode: Optional[ExecutionMode] = Field(
         default=None,
-        description="Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, stream for token streaming (WebSocket serverless or containerized direct streaming)",
+        description=(
+            "Execution mode: rest_sync for synchronous REST, rest_async for asynchronous REST, "
+            "stream for token streaming over WebSocket, async for whole-reply WebSocket delivery, "
+            "realtime for persistent realtime sockets (e.g. the LiveKit voice gateway)"
+        ),
     )
     # The default carries the transport type explicitly: `type` is mandatory inside a declared
     # queues block, and a config that declares no block at all still runs single-process on the
@@ -942,6 +959,7 @@ class AKConfig(YamlBaseSettingsModified):
         default_factory=_MCPConfig,
     )
     slack: _SlackConfig = Field(description="Slack related configurations", default_factory=_SlackConfig)
+    livekit: _LiveKitConfig = Field(description="LiveKit related configurations", default_factory=_LiveKitConfig)
     whatsapp: _WhatsAppConfig = Field(description="WhatsApp related configurations", default_factory=_WhatsAppConfig)
     messenger: _MessengerConfig = Field(description="Facebook Messenger related configurations", default_factory=_MessengerConfig)
     instagram: _InstagramConfig = Field(description="Instagram Business API related configurations", default_factory=_InstagramConfig)

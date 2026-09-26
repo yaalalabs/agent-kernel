@@ -1,5 +1,7 @@
+import asyncio
 import json
 import logging
+import threading
 from typing import Optional
 
 from ..core.config import AKConfig
@@ -7,7 +9,7 @@ from ..core.model import AgentReplyText, ExecutionMode, StreamChunk
 from ..core.util.async_bridge import run_async_sync
 from ..core.util.factory import AKConfigError
 from .consumer import ConsumerLoop
-from .envelope import ATTR_INTEGRATION, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
+from .envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_STATUS_CODE, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
 from .response_store.base import ResponseStore
 from .response_store.factory import ResponseStoreFactory
 from .transport.base import QueueTransport, QueueTransportFactory
@@ -36,6 +38,9 @@ class ResponseHandler:
         self._transport = transport or QueueTransportFactory.create()
         self._response_store = response_store
         self._ws_handler = ws_handler
+        # Per-thread event loop reused for realtime chunk delivery: a turn delivers tens of
+        # chunks a second, and run_async_sync would build and tear one down per chunk.
+        self._delivery_local = threading.local()
 
     def _get_store(self) -> ResponseStore:
         if self._response_store is None:
@@ -189,8 +194,30 @@ class ResponseHandler:
             )
             run_async_sync(adapter.deliver_error(adapter.ERROR_MESSAGE, reply_context))
             return
+
+        if message.attributes.get(ATTR_REALTIME):
+            self._deliver_realtime_chunk(adapter, message, body, reply_context, integration)
+            return
+
         run_async_sync(adapter.deliver(AgentReplyText(response=str(body.get("result", ""))), reply_context))
         self._log.info(f"[OUTPUT DONE] Delivered to {integration}: session_id={message.group_id}, request_id={request_id}")
+
+    def _deliver_realtime_chunk(self, adapter, message: QueueMessage, body: dict, reply_context: dict, integration: str) -> None:
+        """Deliver one realtime stream chunk on this thread's persistent event loop.
+
+        The message is marked with ``ATTR_REALTIME`` by the realtime pool, so routing is explicit
+        rather than inferred from the body shape. The body is the serialised ``StreamChunk`` the
+        pool emitted; it is re-parsed here so the adapter receives the typed chunk. The loop is
+        reused across chunks because ``run_async_sync`` would create and destroy one per chunk at
+        realtime rates.
+        """
+        chunk = StreamChunk.model_validate(body)
+        loop = getattr(self._delivery_local, "loop", None)
+        if loop is None or loop.is_closed():
+            loop = asyncio.new_event_loop()
+            self._delivery_local.loop = loop
+        loop.run_until_complete(adapter.deliver_chunk(chunk, reply_context))
+        self._log.debug(f"[OUTPUT DONE] Delivered chunk to {integration}: session_id={message.group_id}")
 
     def _store_response(self, message: QueueMessage) -> None:
         request_id = message.attributes.get(ATTR_REQUEST_ID)
