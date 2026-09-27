@@ -1,7 +1,9 @@
 import asyncio
+import base64
 import json
 import logging
 import threading
+import time
 import uuid
 from typing import TYPE_CHECKING, Optional
 
@@ -44,6 +46,9 @@ class RealtimeConnection:
         # One transport for the connection's lifetime: a realtime turn emits tens of chunks a
         # second, and building a transport (and its client) per chunk is pure overhead.
         self._transport = QueueTransportFactory.create()
+        # Audio + terminal/control events are paced here, once for every framework adapter.
+        self._audio_queue: asyncio.Queue = asyncio.Queue()
+        self._pacing_task: Optional[asyncio.Task] = None
 
         if not getattr(self.agent, "realtime_runner_cls", None):
             raise ValueError(f"Agent {self.agent.name} has no realtime_runner_cls configured")
@@ -58,28 +63,75 @@ class RealtimeConnection:
         self.reply_context = reply_context
 
     async def connect(self) -> None:
-        """Connect the framework adapter and bind its event callback."""
+        """Connect the framework adapter, bind its callback, and start pacing its output."""
         await self.adapter.connect(self.session, self.agent, self.handle_framework_event)
+        self._pacing_task = asyncio.create_task(self._pacing_loop())
 
     async def handle_framework_event(self, event_type: str, data: dict) -> None:
-        """Translate one adapter event into a typed ``StreamChunk`` and emit it.
+        """Queue one adapter event for emission.
 
-        The same chunk contract the text streaming path uses: audio is an ``AudioDelta``
-        event, the transcript streams as ``TextDelta``, barge-in is an ``Interrupt`` event,
-        and the turn ends with a ``done`` chunk.
+        Audio deltas and the terminal/control events (``done``, ``interrupt``) go through
+        ``_audio_queue`` so the pacing loop emits them in order at playback rate. The transcript
+        streams immediately; a tool call runs on the loop. The adapters only report events in
+        order — pacing is shared here for every framework.
         """
         if event_type == "audio_delta":
-            message_id = data.get("message_id") or ""
-            await self._emit(StreamChunk(event=AudioDelta(message_id=message_id, content=data["delta"])))
+            self._audio_queue.put_nowait(("audio_delta", data))
+        elif event_type == "interrupt":
+            # Drop audio not yet emitted, then queue the interrupt behind it so it cannot
+            # overtake audio already in flight to the edge.
+            while not self._audio_queue.empty():
+                self._audio_queue.get_nowait()
+            self._audio_queue.put_nowait(("interrupt", data))
+        elif event_type == "done":
+            self._audio_queue.put_nowait(("done", data))
         elif event_type == "transcript_delta":
             message_id = data.get("message_id") or ""
             await self._emit(StreamChunk(event=TextDelta(message_id=message_id, content=data["delta"]), delta=data["delta"]))
-        elif event_type == "interrupt":
-            await self._emit(StreamChunk(event=Interrupt()))
-        elif event_type == "done":
-            await self._emit(StreamChunk(done=True))
         elif event_type == "tool_call":
             self.loop.create_task(self._execute_tool_and_reply(data["call_id"], data["name"], data["arguments"]))
+
+    async def _pacing_loop(self) -> None:
+        """Emit model audio at playback rate, with control events behind their own audio.
+
+        The model generates audio faster than it is spoken, so emitting every delta immediately
+        would grow the edge's playback queue without bound. This drains ``_audio_queue`` on a
+        real-time schedule; ``done``/``interrupt`` ride the same queue so they cannot overtake the
+        audio they belong to (the output queue is FIFO per session).
+        """
+        item_start_time = 0.0
+        audio_played_ms = 0.0
+        while True:
+            try:
+                event_type, data = await self._audio_queue.get()
+                if event_type != "audio_delta":
+                    if event_type == "done":
+                        await self._emit(StreamChunk(done=True))
+                    elif event_type == "interrupt":
+                        await self._emit(StreamChunk(event=Interrupt()))
+                    if event_type in ("done", "interrupt"):
+                        audio_played_ms = 0.0
+                    continue
+
+                if audio_played_ms == 0.0:
+                    item_start_time = time.time()
+
+                message_id = data.get("message_id") or ""
+                await self._emit(StreamChunk(event=AudioDelta(message_id=message_id, content=data["delta"])))
+
+                audio_bytes = base64.b64decode(data["delta"])
+                duration_ms = (len(audio_bytes) / 2) / 24.0
+                audio_played_ms += duration_ms
+
+                elapsed_ms = (time.time() - item_start_time) * 1000.0
+                sleep_ms = (audio_played_ms - 50.0) - elapsed_ms
+                if sleep_ms > 0:
+                    await asyncio.sleep(sleep_ms / 1000.0)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                _log.error(f"Error in realtime pacing loop: {e}")
 
     async def _execute_tool_and_reply(self, call_id: str, name: str, arguments: str) -> None:
         """Execute a tool through the adapter and send the result back to the model.
@@ -125,6 +177,8 @@ class RealtimeConnection:
         asyncio.run_coroutine_threadsafe(self.adapter.send_text(text), self.loop)
 
     async def close(self) -> None:
+        if self._pacing_task:
+            self._pacing_task.cancel()
         await self.adapter.disconnect()
 
 

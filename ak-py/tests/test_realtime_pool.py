@@ -107,7 +107,8 @@ class TestRealtimeConnection:
 
         conn = _connection(loop=asyncio.get_running_loop())
         conn.update_delivery_context(request_id="r1", user_id="u1", integration="livekit", reply_context={"session_id": "s1"})
-        await conn.handle_framework_event("audio_delta", {"delta": "QUFB"})
+        # The transcript streams immediately (audio is paced), so it exercises _emit directly.
+        await conn.handle_framework_event("transcript_delta", {"delta": "QUFB", "message_id": "m1"})
 
         [message] = transport.create_consumer(QueueName.OUTPUT).fetch(10, 0.5)
         assert message.attributes[ATTR_REALTIME] == "true"
@@ -117,9 +118,9 @@ class TestRealtimeConnection:
         assert message.attributes["reply_session_id"] == "s1"
         assert message.group_id == "s1"
         body = json.loads(message.body)
-        assert body["event"]["type"] == "audio_delta"
+        assert body["event"]["type"] == "text_delta"
         assert body["event"]["content"] == "QUFB"
-        assert body["done"] is False
+        assert body["delta"] == "QUFB"
 
     @pytest.mark.asyncio
     async def test_tool_call_delegates_to_adapter(self, monkeypatch):
@@ -243,50 +244,37 @@ class TestFrameworkToolExecution:
         assert result == "Paris:s1"
 
 
-class TestOpenAIPacing:
-    """The pacing loop must emit a turn's audio before its terminal ``done`` event."""
-
-    class _Event:
-        def __init__(self, type, **fields):
-            self.type = type
-            for key, value in fields.items():
-                setattr(self, key, value)
-
-    class _Connection:
-        def __init__(self, events):
-            self._events = events
-
-        async def __aiter__(self):
-            for event in self._events:
-                yield event
-                await asyncio.sleep(0)
+class TestRealtimePacing:
+    """The connection paces a turn's audio and emits its terminal ``done`` behind it."""
 
     @pytest.mark.asyncio
-    async def test_done_follows_its_audio(self):
-        from agentkernel.framework.openai.openai import OpenAIRealtimeAdapter
+    async def test_done_follows_its_audio(self, monkeypatch):
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
 
-        adapter = OpenAIRealtimeAdapter()
-        delta = "QUFB"  # 4 bytes -> 2 samples -> 2/24 ms
-        events = [self._Event("response.output_audio.delta", delta=delta) for _ in range(3)]
-        events.append(self._Event("response.output_audio_transcript.delta", delta="hi"))
-        events.append(self._Event("response.done", response=type("R", (), {"status": "completed"})()))
+        conn = _connection(loop=asyncio.get_running_loop())
+        await conn.connect()  # starts the connection's shared pacing loop
 
-        adapter._connection = self._Connection(events)
-        adapter._audio_queue = asyncio.Queue()
-        seen = []
+        delta = "QUFB"  # 4 bytes -> 2 samples -> a tiny duration, so pacing does not sleep
+        for _ in range(3):
+            await conn.handle_framework_event("audio_delta", {"delta": delta, "message_id": "m1"})
+        await conn.handle_framework_event("done", {"status": "completed"})
+        await asyncio.sleep(0.2)
+        conn._pacing_task.cancel()
 
-        async def callback(event_type, data):
-            seen.append(event_type)
+        # The in-memory queue delivers one message per group until it is acked, so drain with acks.
+        consumer = transport.create_consumer(QueueName.OUTPUT)
+        kinds = []
+        while True:
+            messages = consumer.fetch(10, 0.2)
+            if not messages:
+                break
+            for message in messages:
+                body = json.loads(message.body)
+                kinds.append("done" if body.get("done") else body["event"]["type"])
+                consumer.ack(message)
 
-        adapter._callback = callback
-        adapter._pacing_task = asyncio.create_task(adapter._pacing_loop())
-        adapter._listen_task = asyncio.create_task(adapter._listen())
-        await asyncio.sleep(0.1)
-        adapter._pacing_task.cancel()
-        adapter._listen_task.cancel()
-
-        # All three audio deltas are emitted, the transcript streams as text, and the terminal
-        # event is always the done chunk (it never overtakes its audio).
-        assert seen.count("audio_delta") == 3
-        assert "transcript_delta" in seen
-        assert seen[-1] == "done"
+        # All three audio deltas are emitted, and the terminal event is always the done chunk
+        # (it never overtakes its audio).
+        assert kinds.count("audio_delta") == 3
+        assert kinds[-1] == "done"

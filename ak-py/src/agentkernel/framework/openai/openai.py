@@ -13,7 +13,7 @@ from openai.types.responses.response_reasoning_summary_text_delta_event import R
 from openai.types.responses.response_text_delta_event import ResponseTextDeltaEvent
 
 from ...core import Agent as BaseAgent
-from ...core import Module, PostHook, PreHook
+from ...core import Module
 from ...core import RealtimeRunner as BaseRealtimeRunner
 from ...core import Runner as BaseRunner
 from ...core import Runtime, Session, ToolBuilder, ToolContext
@@ -424,7 +424,6 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         client = AsyncOpenAI()
         model = self._realtime_model(agent)
 
-        self._audio_queue = asyncio.Queue()
         self._cm = client.realtime.connect(model=model)
         self._connection = await self._cm.__aenter__()
 
@@ -451,70 +450,23 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
             }
         )
 
-        self._pacing_task = asyncio.create_task(self._pacing_loop())
         self._listen_task = asyncio.create_task(self._listen())
 
-    async def _pacing_loop(self) -> None:
-        """Emit model audio at playback rate, with control events behind their own audio.
-
-        ``_audio_queue`` carries a base64 audio string for a delta, or an ``(event_type, data)``
-        tuple for a terminal/control event. Routing ``done``/``interrupt`` through this queue
-        (rather than calling back from ``_listen`` directly) keeps them from overtaking the
-        audio that is still being paced out — the output queue is FIFO per session, so an event
-        emitted early would reach the edge before the audio it belongs to.
-        """
-        import base64
-        import time
-
-        item_start_time = 0.0
-        audio_played_ms = 0.0
-
-        while True:
-            try:
-                event_type, data = await self._audio_queue.get()
-                if event_type != "audio_delta":
-                    await self._callback(event_type, data)
-                    if event_type in ("done", "interrupt"):
-                        audio_played_ms = 0.0
-                    continue
-
-                if audio_played_ms == 0.0:
-                    item_start_time = time.time()
-
-                await self._callback("audio_delta", data)
-
-                audio_bytes = base64.b64decode(data["delta"])
-                duration_ms = (len(audio_bytes) / 2) / 24.0
-                audio_played_ms += duration_ms
-
-                elapsed_ms = (time.time() - item_start_time) * 1000.0
-                sleep_ms = (audio_played_ms - 50.0) - elapsed_ms
-                if sleep_ms > 0:
-                    await asyncio.sleep(sleep_ms / 1000.0)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                _log.error(f"Error in pacing loop: {e}")
-
     async def _listen(self) -> None:
+        """Report model events to the pool, in order. The pool paces audio and emits chunks."""
         try:
             async for event in self._connection:
                 event_type = event.type
                 if event_type == "response.output_audio.delta":
-                    self._audio_queue.put_nowait(("audio_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")}))
+                    await self._callback("audio_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
                 elif event_type == "response.output_audio_transcript.delta":
                     await self._callback("transcript_delta", {"delta": event.delta, "message_id": getattr(event, "item_id", "")})
                 elif event_type == "input_audio_buffer.speech_started":
-                    # Barge-in: drop audio not yet played, then queue the interrupt behind it so
-                    # it cannot overtake audio already in flight to the edge.
-                    while not self._audio_queue.empty():
-                        self._audio_queue.get_nowait()
-                    self._audio_queue.put_nowait(("interrupt", {}))
+                    await self._callback("interrupt", {})
                 elif event_type == "response.done":
                     response = getattr(event, "response", None)
                     status = getattr(response, "status", None)
-                    self._audio_queue.put_nowait(("done", {"status": status}))
+                    await self._callback("done", {"status": status})
                 elif event_type == "response.function_call_arguments.done":
                     await self._callback(
                         "tool_call",
@@ -571,8 +523,6 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         return f"Error: Tool {name} not found"
 
     async def disconnect(self) -> None:
-        if hasattr(self, "_pacing_task") and self._pacing_task:
-            self._pacing_task.cancel()
         if self._listen_task:
             self._listen_task.cancel()
         if self._connection:
