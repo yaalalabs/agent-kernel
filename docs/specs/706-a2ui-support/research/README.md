@@ -46,6 +46,11 @@ inherited from the #523 survey and were **not** re-verified; A2UI was v0.9.1 the
 
 The file-by-file change list that follows from this is in [`changes.md`](changes.md).
 
+Also in this folder: [`a2a-datapart.md`](a2a-datapart.md) — what an A2A `DataPart` is, what Agent
+Kernel sends today versus after, and how A2UI's A2A binding labels one. Written later than this
+file and **executed against real SDK installs** (0.3.6 and 1.1.2) rather than inherited, so where it
+and this file disagree on protocol facts, it is the newer evidence.
+
 ## 1. The framing that keeps this unopinionated
 
 A2UI is a payload, not a transport. If AK builds "A2UI transport support", it ends up with A2UI
