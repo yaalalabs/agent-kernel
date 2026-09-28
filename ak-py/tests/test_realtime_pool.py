@@ -6,8 +6,8 @@ import types
 import pytest
 
 from agentkernel import Agent, Runner, Session
-from agentkernel.core.base import RealtimeRunner
 from agentkernel.core.model import AgentReplyText, ExecutionMode
+from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
 from agentkernel.core.tool import ToolContext
@@ -242,6 +242,27 @@ class TestFrameworkToolExecution:
 
         result = await adapter.execute_tool("get_weather", '{"location": "Paris"}', ToolContext(runtime, agent, session, []), "call-1")
         assert result == "Paris:s1"
+
+
+class TestRealtimeResampling:
+    @pytest.mark.asyncio
+    async def test_append_audio_resamples_edge_rate_to_model_rate(self, monkeypatch):
+        import base64
+
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+        conn = _connection(loop=asyncio.get_running_loop())
+        conn.adapter.input_sample_rate = 16000  # e.g. Gemini's input rate
+
+        # 100 ms of edge-rate (24 kHz) audio; the pool must hand the adapter 16 kHz audio.
+        conn.append_audio(base64.b64encode(b"\x00\x00" * 2400).decode())
+        for _ in range(50):  # the append is scheduled on the loop; let it run
+            if conn.adapter.audio:
+                break
+            await asyncio.sleep(0.01)
+
+        [converted] = conn.adapter.audio
+        assert len(base64.b64decode(converted)) == 1600 * 2  # 100 ms at 16 kHz
 
 
 class TestRealtimePacing:

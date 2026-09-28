@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import array
 import asyncio
 import base64
 import functools
 import inspect
 import json
 import logging
-import sys
 import time
 from collections.abc import AsyncGenerator
 from typing import Any, Callable, ClassVar, List, Mapping
@@ -718,11 +716,9 @@ class GoogleADKToolBuilder(ToolBuilder):
         return wrapper
 
 
-# Gemini Live takes 16 kHz PCM16 input but returns 24 kHz output, while the LiveKit edge speaks a
-# single 24 kHz rate in both directions. Inbound audio is resampled here so the shared edge needs
-# no per-provider rate plumbing.
+# Gemini Live takes 16 kHz PCM16 input (and returns 24 kHz, the edge's rate). The pool converts
+# edge-rate audio down to this rate before append_audio, so this adapter never resamples.
 GEMINI_INPUT_SAMPLE_RATE = 16000
-EDGE_SAMPLE_RATE = 24000
 
 
 class GoogleADKRealtimeRunner(BaseRealtimeRunner):
@@ -733,6 +729,8 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
     back through the callback the pool supplied, so the pool keeps owning queue emission and this
     class never imports pipeline types.
     """
+
+    input_sample_rate = GEMINI_INPUT_SAMPLE_RATE
 
     def __init__(self):
         super().__init__(FRAMEWORK)
@@ -832,9 +830,11 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
                 await self._callback("tool_call", {"call_id": call.id, "name": call.name, "arguments": json.dumps(call.args or {})})
 
     async def append_audio(self, base64_audio: str) -> None:
+        """Send audio the pool already converted to :attr:`input_sample_rate`."""
         if self._connection:
-            pcm16 = self._resample_pcm16(base64.b64decode(base64_audio), EDGE_SAMPLE_RATE, GEMINI_INPUT_SAMPLE_RATE)
-            await self._connection.send_realtime_input(audio=types.Blob(data=pcm16, mime_type=f"audio/pcm;rate={GEMINI_INPUT_SAMPLE_RATE}"))
+            await self._connection.send_realtime_input(
+                audio=types.Blob(data=base64.b64decode(base64_audio), mime_type=f"audio/pcm;rate={self.input_sample_rate}")
+            )
 
     async def send_text(self, text: str) -> None:
         if self._connection:
@@ -887,29 +887,3 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             await self._cm.__aexit__(None, None, None)
             self._connection = None
             self._cm = None
-
-    @staticmethod
-    def _resample_pcm16(data: bytes, source_rate: int, target_rate: int) -> bytes:
-        """Linearly resample little-endian mono PCM16 audio from ``source_rate`` to ``target_rate``."""
-        if not data or source_rate == target_rate:
-            return data
-        samples = array.array("h")
-        samples.frombytes(data[: len(data) - (len(data) % 2)])
-        if not samples:
-            return b""
-        if sys.byteorder == "big":
-            samples.byteswap()
-
-        ratio = source_rate / target_rate
-        out_count = int(len(samples) / ratio)
-        out = array.array("h", bytes(out_count * 2))
-        for i in range(out_count):
-            position = i * ratio
-            left = int(position)
-            right = min(left + 1, len(samples) - 1)
-            fraction = position - left
-            out[i] = int(samples[left] + (samples[right] - samples[left]) * fraction)
-
-        if sys.byteorder == "big":
-            out.byteswap()
-        return out.tobytes()

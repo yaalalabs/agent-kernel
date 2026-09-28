@@ -5,20 +5,20 @@ import logging
 import threading
 import time
 import uuid
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 from ..core.base import Agent as BaseAgent
 from ..core.base import Session
 from ..core.event import AudioDelta, Interrupt, TextDelta
 from ..core.model import StreamChunk
+from ..core.realtime import EDGE_SAMPLE_RATE
+from ..core.realtime import RealtimeRunner as BaseRealtimeRunner
+from ..core.realtime import resample_pcm16
 from ..core.runtime import Runtime
 from ..core.tool import ToolContext
 from .envelope import ATTR_INTEGRATION, ATTR_REALTIME, ATTR_REQUEST_ID, ATTR_USER_ID, REPLY_CONTEXT_PREFIX, QueueMessage, QueueName
 from .thread_runner import ThreadRunner
 from .transport.base import QueueTransportFactory
-
-if TYPE_CHECKING:
-    from ..core.base import RealtimeRunner as BaseRealtimeRunner
 
 _log = logging.getLogger("ak.pipeline.realtime_pool")
 
@@ -116,11 +116,13 @@ class RealtimeConnection:
                 if audio_played_ms == 0.0:
                     item_start_time = time.time()
 
+                # The model may output a different rate than the edge; convert once, here, so the
+                # edge always receives EDGE_SAMPLE_RATE audio and no adapter resamples.
+                pcm16 = resample_pcm16(base64.b64decode(data["delta"]), self.adapter.output_sample_rate, EDGE_SAMPLE_RATE)
                 message_id = data.get("message_id") or ""
-                await self._emit(StreamChunk(event=AudioDelta(message_id=message_id, content=data["delta"])))
+                await self._emit(StreamChunk(event=AudioDelta(message_id=message_id, content=base64.b64encode(pcm16).decode("utf-8"))))
 
-                audio_bytes = base64.b64decode(data["delta"])
-                duration_ms = (len(audio_bytes) / 2) / 24.0
+                duration_ms = (len(pcm16) / 2) / (EDGE_SAMPLE_RATE / 1000.0)
                 audio_played_ms += duration_ms
 
                 elapsed_ms = (time.time() - item_start_time) * 1000.0
@@ -169,8 +171,10 @@ class RealtimeConnection:
         await asyncio.to_thread(self._transport.send, QueueName.OUTPUT, message)
 
     def append_audio(self, audio_data: str) -> None:
-        """Thread-safe: schedule audio append on the pool's event loop."""
-        asyncio.run_coroutine_threadsafe(self.adapter.append_audio(audio_data), self.loop)
+        """Thread-safe: convert edge-rate audio to the model's input rate, then schedule the append."""
+        pcm16 = resample_pcm16(base64.b64decode(audio_data), EDGE_SAMPLE_RATE, self.adapter.input_sample_rate)
+        converted = base64.b64encode(pcm16).decode("utf-8")
+        asyncio.run_coroutine_threadsafe(self.adapter.append_audio(converted), self.loop)
 
     def send_text(self, text: str) -> None:
         """Thread-safe: schedule text send on the pool's event loop."""

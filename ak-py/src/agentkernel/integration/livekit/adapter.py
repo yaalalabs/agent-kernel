@@ -6,6 +6,7 @@ import uuid
 from typing import Dict, Optional
 
 from ...core.model import AgentReply, AgentRequestText, AgentRequestVoice, BaseRunRequest, StreamChunk
+from ...core.realtime import EDGE_SAMPLE_RATE
 from ...core.util.factory import AKConfigError
 from ...pipeline.envelope import ATTR_INTEGRATION, REPLY_CONTEXT_PREFIX
 from ...pipeline.producer import RequestProducer
@@ -14,8 +15,8 @@ from ..adapter.base import GatewayAdapter
 _log = logging.getLogger("ak.integration.livekit")
 
 INTEGRATION_NAME = "livekit"
-# OpenAI Realtime speaks PCM16 at 24 kHz mono in both directions.
-AUDIO_SAMPLE_RATE = 24000
+# Enqueue mic audio in ~100 ms batches of PCM16 mono at the edge's rate.
+_BATCH_BYTES = int(EDGE_SAMPLE_RATE * 2 * 0.1)
 
 
 try:
@@ -108,7 +109,7 @@ class LiveKitEdgeGateway(GatewayAdapter):
         _log.info("LiveKit WebRTC connection established.")
 
         _log.info("Publishing AI audio track to LiveKit...")
-        source = rtc.AudioSource(sample_rate=AUDIO_SAMPLE_RATE, num_channels=1)
+        source = rtc.AudioSource(sample_rate=EDGE_SAMPLE_RATE, num_channels=1)
         track = rtc.LocalAudioTrack.create_audio_track("ai-voice", source)
         options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
         try:
@@ -157,7 +158,7 @@ class LiveKitEdgeGateway(GatewayAdapter):
 
     async def _process_incoming_audio(self, track: "rtc.Track") -> None:
         """Pass continuous mic audio to the queue, batching frames to prevent thread starvation."""
-        audio_stream = rtc.AudioStream(track, sample_rate=AUDIO_SAMPLE_RATE, num_channels=1)
+        audio_stream = rtc.AudioStream(track, sample_rate=EDGE_SAMPLE_RATE, num_channels=1)
         _log.info("Listening for audio stream (with 100ms batching)...")
 
         buffer = bytearray()
@@ -168,9 +169,8 @@ class LiveKitEdgeGateway(GatewayAdapter):
                 if raw_bytes:
                     buffer.extend(raw_bytes)
 
-                    # Flush to the queue when buffer reaches ~100ms of audio
-                    # 24000 samples/sec * 2 bytes/sample * 1 channel * 0.1s = 4800 bytes
-                    if len(buffer) >= 4800:
+                    # Flush to the queue once a ~100 ms batch has accumulated.
+                    if len(buffer) >= _BATCH_BYTES:
                         b64_audio = base64.b64encode(buffer).decode("utf-8")
                         self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
                         buffer.clear()
@@ -208,7 +208,7 @@ class LiveKitEdgeGateway(GatewayAdapter):
                 if audio_bytes:
                     frame = rtc.AudioFrame(
                         data=audio_bytes,
-                        sample_rate=AUDIO_SAMPLE_RATE,
+                        sample_rate=EDGE_SAMPLE_RATE,
                         num_channels=1,
                         samples_per_channel=len(audio_bytes) // 2,
                     )
