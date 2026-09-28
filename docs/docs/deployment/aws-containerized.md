@@ -305,7 +305,7 @@ passed through Terraform as environment variables. One variable, `false` by defa
 
 | Variable | Description | Type | Default |
 |---|---|---|---|
-| `ssm_enabled` | Grant every ECS task role (the REST service, and the agent runner when `queue_mode = true`) `ssm:GetParameter` (and nothing else) on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>` | `bool` | `false` |
+| `ssm_enabled` | Grant the ECS task role that runs the agent (the agent runner when `queue_mode = true`, otherwise the REST service) `ssm:GetParameter` (and nothing else) on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and inject `AK_SECRET__PREFIX = <prefix>` | `bool` | `false` |
 
 ```hcl
 ssm_enabled = true

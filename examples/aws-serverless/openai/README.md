@@ -35,8 +35,9 @@ This demo deploys the following AWS resources:
 
 ## Secrets from SSM Parameter Store
 
-The deployment sets `ssm_enabled = true`, which grants every Lambda role `ssm:GetParameter` (and
-nothing else) on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX`. `config.yaml` declares
+The deployment sets `ssm_enabled = true`, which grants the agent runner Lambda — the only one that
+builds the agent — `ssm:GetParameter` (and nothing else) on `/ak/<prefix>/*` and injects
+`AK_SECRET__PREFIX` into it. The request and response handlers get no SSM access. `config.yaml` declares
 `secret.provider.type: aws_ssm`, and `lambda_agent_runner.py` resolves the key at startup:
 
 ```python

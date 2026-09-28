@@ -137,12 +137,12 @@ All classes, one responsibility each, in `agentkernel/secret/` — a top-level c
 variable "ssm_enabled" {
   type        = bool
   default     = false
-  description = "Grant the application roles read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX, so the application's `secret.provider.type: aws_ssm` can resolve secrets."
+  description = "Grant the tier that runs the agent read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX, so the application's `secret.provider.type: aws_ssm` can resolve secrets."
 }
 ```
 
   - **Additive only.** Every resource this change adds is `count`-gated on `var.ssm_enabled`; no existing resource is modified, so `terraform plan` at the default is empty.
-  - Propagated as a same-named `bool` into the submodules that run application code: `request_handler`, `agent_runner`, `response_handler`, `ws_connection_handler` in `serverless` (`serverless/state.tf:544`, `:628`, `:694`, `:521`); `rest_service`, `agent_runner` in `containerized` (`containerized/rest_service.tf:4`, `containerized/queue_mode.tf:23`).
+  - Propagated as a same-named `bool` only into the submodule that runs the agent (least privilege): `agent_runner` in queue mode, otherwise `request_handler` (`serverless/state.tf:628`, `:544`) / `rest_service` (`containerized/queue_mode.tf:23`, `containerized/rest_service.tf:4`), which receive `var.ssm_enabled && !var.queue_mode`. The response handler and WebSocket connection handler never get the grant.
   - When `true`, each submodule injects `AK_SECRET__PREFIX = var.prefix` (the existing resource-naming prefix, so path and grant cannot drift) and attaches to **its own** execution role one statement: `Action = ["ssm:GetParameter"]`, `Resource = "arn:aws:ssm:${region}:${account}:parameter/ak/${prefix}/*"`. Nothing broader.
   - **No KMS wiring.** `SecureString` parameters are expected to use the AWS-managed `alias/aws/ssm` key, whose key policy already permits decryption via SSM for account principals. A customer-managed key is the deployment's own `kms:Decrypt` grant (see Non-goals).
 - Terraform does **not** create the parameters and does not set `AK_SECRET__PROVIDER__TYPE`.

@@ -680,10 +680,11 @@ secret:
 ```
 
 Terraform side (`ak-deployment/ak-aws/{serverless,containerized}/`): `ssm_enabled` (default `false`,
-`count`-gated) grants each application role `ssm:GetParameter` only, on
-`arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*`, and injects `AK_SECRET__PREFIX = var.prefix`.
-Serverless wires all four Lambdas (request, agent runner, response, WS connection handler);
-containerized wires the REST service and, in queue mode, the agent runner. Terraform never sets
+`count`-gated) grants `ssm:GetParameter` only, on
+`arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*`, and injects `AK_SECRET__PREFIX = var.prefix`,
+to the one tier that runs the agent: the agent runner in queue mode, otherwise the request handler
+Lambda (serverless) / REST service (containerized) — the root passes `var.ssm_enabled && !var.queue_mode`
+to the latter. The response handler and WS connection handler never get it. Terraform never sets
 `secret.provider.type` (the app's `config.yaml` does, like `thread.type`) and never creates the
 parameters. To add a provider, use the `ak-dev-new-secret-provider` skill.
 

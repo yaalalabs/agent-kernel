@@ -186,7 +186,7 @@ variable "enable_scheduling" {
 
 variable "ssm_enabled" {
   type        = bool
-  description = "Grant the application roles read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX, so the application's `secret.provider.type: aws_ssm` can resolve secrets. Terraform does not create the parameters."
+  description = "Grant the agent runner Lambda (or the request handler Lambda when `queue_mode = false`, since it then runs the agent) read access to /ak/<prefix>/* in SSM Parameter Store and inject AK_SECRET__PREFIX there, so the application's `secret.provider.type: aws_ssm` can resolve secrets. Terraform does not create the parameters."
   default     = false
 }
 

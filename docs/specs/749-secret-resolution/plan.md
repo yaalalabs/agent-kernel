@@ -83,32 +83,31 @@ make lint-check-all
 
 ## Iteration 5: Terraform — AWS serverless
 
-- **Goal:** `ssm_enabled = true` injects `AK_SECRET__PREFIX` and grants `ssm:GetParameter` on all
-  four Lambda tiers; `false` produces a byte-for-byte unchanged plan.
+- **Goal:** `ssm_enabled = true` injects `AK_SECRET__PREFIX` and grants `ssm:GetParameter` on the
+  Lambda that runs the agent (agent runner in queue mode, request handler otherwise) — never the
+  response or WebSocket connection handler; `false` produces a byte-for-byte unchanged plan.
 - **Files:** `ak-deployment/ak-aws/serverless/{variables.tf,state.tf,README.md}` and, under
-  `serverless/modules/`, `request-handler`, `agent-runner`, `response-handler`,
-  `ws-connection-handler` (`main.tf` + `variables.tf` each)
+  `serverless/modules/`, `request-handler`, `agent-runner` (`main.tf` + `variables.tf` each)
 - **Steps:**
-  1. Root `ssm_enabled` variable (`variables.tf`, beside `enable_scheduling` at `:181`); pass it into
-     the four module blocks (`state.tf:521`, `:544`, `:628`, `:694`).
-  2. Add the `account_id` variable to `response-handler` and `ws-connection-handler` and pass
-     `data.aws_caller_identity.current.account_id` to both.
-  3. Per module: `ssm_enabled` variable, the `AK_SECRET__PREFIX` conditional in the env merge, and
-     the `count`-gated policy + attachment — spec.md § Deployment changes. `ws-connection-handler`
-     additionally needs its `main.tf:9` assignment turned into a `merge(...)`.
-  4. README variables-table row (mirroring `README.md:471`).
+  1. Root `ssm_enabled` variable (`variables.tf`, beside `enable_scheduling` at `:181`); pass
+     `var.ssm_enabled` to `agent_runner` (`state.tf:628`) and `var.ssm_enabled && !var.queue_mode`
+     to `request_handler` (`state.tf:544`).
+  2. Per module: `ssm_enabled` variable, the `AK_SECRET__PREFIX` conditional in the env merge, and
+     the `count`-gated policy + attachment — spec.md § Deployment changes.
+  3. README variables-table row (mirroring `README.md:471`).
 - **Verify:** `terraform init -backend=false && terraform validate` in `serverless/`; `terraform plan`
   on an existing deployment with `ssm_enabled` unset shows no diff.
 
 ## Iteration 6: Terraform — AWS containerized
 
-- **Goal:** the same, for the two ECS tiers. Separate from Iteration 5 because the submodule set and
+- **Goal:** the same, for the two ECS tiers (agent runner in queue mode, REST service otherwise). Separate from Iteration 5 because the submodule set and
   the IAM attachment mechanism differ.
 - **Files:** `ak-deployment/ak-aws/containerized/{variables.tf,rest_service.tf,queue_mode.tf,README.md}`
   and, under `containerized/modules/`, `rest-service`, `agent-runner` (`main.tf` + `variables.tf` each)
 - **Steps:**
-  1. Root `ssm_enabled` variable (beside `enable_scheduling` at `variables.tf:137`); pass it into
-     `rest_service.tf:4` and `queue_mode.tf:23`.
+  1. Root `ssm_enabled` variable (beside `enable_scheduling` at `variables.tf:137`); pass
+     `var.ssm_enabled && !var.queue_mode` into `rest_service.tf:4` and `var.ssm_enabled` into
+     `queue_mode.tf:23`.
   2. Add the `account_id` variable to `rest-service` and pass it from the root.
   3. `rest-service`: `AK_SECRET__PREFIX` in `locals.rest_service_environment`, policy resource, and an
      `SSMSecret` entry in the `tasks_iam_role_policies` map (`main.tf:328-338`).

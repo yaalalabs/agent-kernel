@@ -698,25 +698,25 @@ wiring already shows):
 |---|---|---|---|---|
 | serverless | `state.tf:544` `module "request_handler"` | `modules/request-handler` | `aws_iam_role.lambda_role` (`main.tf:1`) | `locals.environment_variables` (`main.tf:348`) |
 | serverless | `state.tf:628` `module "agent_runner"` | `modules/agent-runner` | `aws_iam_role.agent_runner_lambda_role` (`main.tf:146`) | `locals.environment_variables` (`main.tf:303`) |
-| serverless | `state.tf:694` `module "response_handler"` | `modules/response-handler` | `aws_iam_role.response_handler_lambda_role` (`main.tf:64`) | `locals.environment_variables` (`main.tf:242`) |
-| serverless | `state.tf:521` `module "ws_connection_handler"` | `modules/ws-connection-handler` | `aws_iam_role.ws_connection_handler_lambda_role` (`main.tf:14`) | `locals.environment_variables` (`main.tf:9`) |
 | containerized | `rest_service.tf:4` `module "rest_service"` | `modules/rest-service` | `tasks_iam_role_policies` map (`main.tf:328-338`) | `locals.rest_service_environment` (`main.tf:2-43`) |
 | containerized | `queue_mode.tf:23` `module "agent_runner"` | `modules/agent-runner` | `aws_iam_role.agent_runner_task_role` (`main.tf:62`) | `locals.agent_runner_environment` (`main.tf:6`) |
 
-Each of those six submodules gains a same-named `variable "ssm_enabled" { type = bool, default = false }`.
-Three of them also need an `account_id` they do not have today, to build the parameter ARN:
+Only the tiers that can run the agent are wired — the response handler and the WebSocket connection
+handler never build an agent, so they get neither the variable nor the grant. The request handler
+(serverless) and REST service (containerized) run the agent only when `queue_mode = false`, so the
+root passes them `ssm_enabled = var.ssm_enabled && !var.queue_mode`; the agent runners (which exist
+only in queue mode) receive `var.ssm_enabled` unchanged.
 
-- `serverless/modules/response-handler` — **new** `account_id` variable; the root passes
-  `data.aws_caller_identity.current.account_id`, as it already does for `request_handler`
-  (`state.tf:605`) and `agent_runner` (`state.tf:667`).
-- `serverless/modules/ws-connection-handler` — **new** `account_id` variable, same source.
+Each of those four submodules gains a same-named `variable "ssm_enabled" { type = bool, default = false }`.
+One of them also needs an `account_id` it does not have today, to build the parameter ARN:
+
 - `containerized/modules/rest-service` — **new** `account_id` variable; the root passes
   `data.aws_caller_identity.current.account_id`, as it already does for the containerized
   `agent_runner` (`queue_mode.tf:73`).
 
 `serverless/modules/request-handler` (`variables.tf:207`), `serverless/modules/agent-runner`
 (`variables.tf:105`) and `containerized/modules/agent-runner` (`variables.tf:187`) already have it.
-All six already have `region` and `prefix`.
+All four already have `region` and `prefix`.
 
 **Environment injection**, added to each module's existing merge, beside the scheduling block it
 mirrors (`serverless/modules/request-handler/main.tf:371-375`,
@@ -729,10 +729,6 @@ mirrors (`serverless/modules/request-handler/main.tf:371-375`,
       AK_SECRET__PREFIX = var.prefix
     } : {},
 ```
-
-`serverless/modules/ws-connection-handler/main.tf:9` is currently a plain assignment
-(`environment_variables = var.ws_connection_handler.environment_variables`) and becomes a `merge(...)`
-with the same conditional — the only structural edit among the six.
 
 **IAM**, one policy plus one attachment per tier, `count`-gated:
 
@@ -775,11 +771,12 @@ is added there instead:
 
 Decisions this pins down:
 
-1. **Every tier that receives the variable receives the grant**, including the response handler and
-   the WebSocket connection handler. Any of these processes may be the one whose startup calls
-   `get()`; scoping the grant to a subset would make the capability work in one entrypoint and
-   fail with an authorization error in another. Note that `ssm_enabled` and the grant are per-tier
-   *state*, not a claim that every tier resolves a secret.
+1. **Only the tier that runs the agent receives the grant** — least privilege. That is the agent
+   runner in queue mode, and the request handler / REST service otherwise. The response handler and
+   the WebSocket connection handler never build an agent, so they never get SSM access or
+   `AK_SECRET__PREFIX`. `SecretManager.current()` is lazy and nothing in the framework calls it, so
+   those tiers can share a `config.yaml` declaring `aws_ssm` without failing; application code that
+   resolves secrets belongs in the agent-running entrypoint.
 2. **The grant lives in the submodule, attached to that submodule's own role**, even though the
    containerized root attaches the *scheduler* policy at root level
    (`containerized/iam.tf:122-126`). The submodule placement is the one both roots can share and is

@@ -80,8 +80,8 @@ Both modes use the same 2-image architecture (REST Service + Agent Runner) with 
 
 ## Secrets from SSM Parameter Store
 
-The deployment sets `ssm_enabled = true`, which grants both ECS task roles (REST service and agent
-runner) `ssm:GetParameter` (and nothing else) on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX`.
+The deployment sets `ssm_enabled = true`, which, because this is queue mode, grants only the agent
+runner task role `ssm:GetParameter` (and nothing else) on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX`.
 `config.yaml` declares `secret.provider.type: aws_ssm`, and `app_agent_runner.py` resolves the key
 at startup (`app_rest_service.py` never calls the model, so it needs no key):
 

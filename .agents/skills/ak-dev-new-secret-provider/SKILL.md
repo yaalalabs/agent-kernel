@@ -148,8 +148,9 @@ carries `boto3` for any AWS backend). Match the extra name to the `require_extra
 If the backend is a cloud store the Terraform modules can grant, mirror `ssm_enabled` in
 `ak-deployment/ak-aws/{serverless,containerized}` (`variables.tf`, `state.tf`,
 `modules/*/main.tf`). Use one `bool` defaulting to `false`, keep every resource `count`-gated so
-the default plan is empty, and attach a read-only grant scoped to the prefix to each application
-role. Keep injecting `AK_SECRET__PREFIX` from the module's own `prefix` so the path and the grant
+the default plan is empty, and attach a read-only grant scoped to the prefix only to the tier that
+runs the agent (agent runner in queue mode, request handler / REST service otherwise — never the
+response or WS connection handler). Keep injecting `AK_SECRET__PREFIX` from the module's own `prefix` so the path and the grant
 can't drift. Never create secret values in Terraform.
 
 ### 7. Documentation

@@ -305,11 +305,11 @@ Secret resolution (`ak-add-capabilities`) follows the same split: the app declar
 `SecretManager.current().get("OPENAI_API_KEY")`; Terraform grants read access and injects only the
 deployment scope. Terraform never sets `AK_SECRET__PROVIDER__TYPE`.
 
-- **AWS (serverless + containerized)**: `ssm_enabled = true` grants every application role (serverless:
-  request handler, agent runner, response handler, WebSocket connection handler; containerized: the
-  REST service, plus the agent runner when `queue_mode = true`) `ssm:GetParameter` on
-  `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and injects `AK_SECRET__PREFIX = <prefix>`
-  (the module's own `prefix`). Works with or without queue mode.
+- **AWS (serverless + containerized)**: `ssm_enabled = true` grants only the tier that runs the agent
+  (the agent runner when `queue_mode = true`; otherwise the serverless request handler / containerized
+  REST service) `ssm:GetParameter` on `arn:aws:ssm:<region>:<account>:parameter/ak/<prefix>/*` and
+  injects `AK_SECRET__PREFIX = <prefix>` (the module's own `prefix`). The response handler and
+  WebSocket connection handler never get SSM access, so resolve secrets in agent-runner code only.
 - **Terraform does not create the parameters** — create each one yourself as a `SecureString`
   (AWS-managed `alias/aws/ssm` key) at `/ak/<prefix>/<key lowercased>`, e.g.
   `aws ssm put-parameter --name /ak/<prefix>/openai_api_key --type SecureString --value sk-...`.

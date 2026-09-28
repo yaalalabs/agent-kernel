@@ -142,8 +142,10 @@ implementations.
 ## Deploying on AWS
 
 Both the serverless and containerized Terraform modules take an `ssm_enabled` flag (default `false`). When
-set, it grants every Lambda or ECS task role `ssm:GetParameter` on `/ak/<prefix>/*` and injects
-`AK_SECRET__PREFIX = <prefix>`.
+set, it grants `ssm:GetParameter` on `/ak/<prefix>/*` and injects `AK_SECRET__PREFIX = <prefix>` only
+for the tier that runs the agent: the agent runner when `queue_mode = true`, otherwise the request
+handler Lambda (serverless) or REST service (containerized). The response handler and WebSocket
+connection handler never receive SSM access.
 
 ```hcl
 ssm_enabled = true
