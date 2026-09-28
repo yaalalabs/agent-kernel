@@ -1,10 +1,8 @@
-from openai import AsyncOpenAI
-from agents import Agent, OpenAIResponsesModel
-
 from agentkernel.cli import CLI
 from agentkernel.openai import OpenAIModule, OpenAIToolBuilder
 from agentkernel.secret import SecretManager
-
+from agents import Agent, OpenAIResponsesModel
+from openai import AsyncOpenAI
 
 openai_api_key = SecretManager.current().get("OPENAI_API_KEY")
 
