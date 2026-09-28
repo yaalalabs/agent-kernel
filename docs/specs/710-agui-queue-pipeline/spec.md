@@ -67,10 +67,12 @@ pipeline/response_store/
 
 Chunk state is one list per request, separate from the record key:
 
-| Key | Holds |
-|---|---|
-| `{prefix}{request_id}` | the existing single record (unchanged) |
-| `{prefix}chunks:{request_id}` | the chunk list, TTL from the driver |
+
+| Key                           | Holds                                  |
+| ----------------------------- | -------------------------------------- |
+| `{prefix}{request_id}`        | the existing single record (unchanged) |
+| `{prefix}chunks:{request_id}` | the chunk list, TTL from the driver    |
+
 
 ```python
 def supports_chunk_streaming(self) -> bool:
@@ -108,11 +110,13 @@ Three rules this encodes, each matching `InMemoryResponseStore`'s existing seman
 (`in_memory.py:65-110`) so the contract suite passes unchanged against all three:
 
 1. **The terminal chunk ends the stream.** A chunk with `done` returns after being yielded.
-2. **`close_stream` unblocks a parked reader** rather than closing the generator, because the reader
-   may be mid-`blpop` on a worker thread. The in-memory store uses a sentinel object; the redis-like
+2. `close_stream` **unblocks a parked reader** rather than closing the generator, because the reader
+  may be mid-`blpop` on a worker thread. The in-memory store uses a sentinel object; the redis-like
    body uses a reserved string constant, since the list holds JSON.
-3. **`chunk_timeout` defaults to the store's `retry_count x delay` budget**, the same fallback
-   `in_memory.py:77-83` computes, lifted to a `_chunk_timeout` helper on the ABC so all three share it.
+3. `chunk_timeout` **defaults to the store's** `retry_count x delay` **budget**, the same fallback
+  `in_memory.py:77-83` computes, lifted to a `_chunk_timeout` helper on the ABC so all three share it.
+
+
 
 #### The driver addition — `core/util/driver/redis_like.py`
 
@@ -185,14 +189,14 @@ def _process_agui(self, message: QueueMessage) -> None:
 
 Four things it deliberately does **not** do:
 
-- **No `ATTR_USER_ID` check.** The guard at `:218` is the WebSocket-entered marker and applies to
-  `StreamAgentRunner.process`, which this branch returns before reaching.
-- **No `process_stream_chat_sync`.** That wrapper hides the `AgentHandler`, and this path needs the
-  session between load and run — the documented reason `prepare_agent_handler` exists
-  (`core/chat_service.py:362-370`).
+- **No** `ATTR_USER_ID` **check.** The guard at `:218` is the WebSocket-entered marker and applies to
+`StreamAgentRunner.process`, which this branch returns before reaching.
+- **No** `process_stream_chat_sync`**.** That wrapper hides the `AgentHandler`, and this path needs the
+session between load and run — the documented reason `prepare_agent_handler` exists
+(`core/chat_service.py:362-370`).
 - **No thread recording.** `_record_thread_reply` is not called; `ATTR_AGUI` is not `ATTR_THREAD`.
 - **No session write at the end.** `Runtime.stream` already stores the session and clears the
-  volatile cache in its `finally` (`core/runtime.py:364`, `:372`).
+volatile cache in its `finally` (`core/runtime.py:364`, `:372`).
 
 Both imports are lazy inside the method, the rule `_record_thread_reply` (`:125-150`) and
 `ResponseHandler._outbound_adapter` already follow: a runner process without the `agui` extra must
@@ -337,6 +341,10 @@ def _validate_topology(self) -> None:
             f"response store '{type(store).__name__}' is process-local but the queue transport is "
             f"'{transport}', so the agent runs in another process; configure redis or valkey"
         )
+    # The session holds the conversation. A broker means a fleet of runners, so turn 2 can land on a
+    # different one than turn 1 and read an empty dict; a restart empties it too. The agent then
+    # answers with no history and no error. A single replica happens to work, until it is scaled or
+    # redeployed — which is why the check reads the transport rather than a replica count.
     if transport != "in_memory" and AKConfig.get().session.type.lower() == "in_memory":
         raise AKConfigError(
             f"session store 'in_memory' is single-process only, but the queue transport is "
@@ -351,12 +359,16 @@ what is wrong, name the transport, name the way out. The third check compares th
 
 ### Consumer changes
 
-| File | Change | Verified unchanged |
-|---|---|---|
-| `pipeline/request_handler.py` | `_reject_unroutable`'s STREAM branch (`:288-296`) also requires `store.shared` on a broker transport | every other route; the `rest_sync`/`rest_async` paths |
+
+| File                          | Change                                                                                                  | Verified unchanged                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `pipeline/request_handler.py` | `_reject_unroutable`'s STREAM branch (`:288-296`) also requires `store.shared` on a broker transport    | every other route; the `rest_sync`/`rest_async` paths                   |
 | `integration/agui/handler.py` | `_run` splits; `_prepare` extracted; `set_agui_session_keys` becomes `AGUIRunEnvelope.build` + `.apply` | routes, `_resolve_agent`, `_warn_if_unreadable`, `_events`, the bracket |
-| `integration/agui/state.py` | none — it stays the only module that knows the cache per field | all accessors |
-| `pipeline/io_handler.py` | **none.** Its REST-only shared-store guard is left alone; recorded as a follow-up | all fail-fasts |
+| `integration/agui/state.py`   | none — it stays the only module that knows the cache per field                                          | all accessors                                                           |
+| `pipeline/io_handler.py`      | **none.** Its REST-only shared-store guard is left alone; recorded as a follow-up                       | all fail-fasts                                                          |
+
+
+
 
 ### Config changes
 
@@ -367,18 +379,18 @@ variables keep working unchanged, and mounting the sibling is what selects the q
 
 ### Behavioural changes
 
-1. **`_FORWARDED_ATTRIBUTES` gains a member.** Output messages from an `ATTR_AGUI` input now carry the
-   attribute. No existing consumer branches on it, so no other traffic changes. *Intentional: §1.*
-2. **`ResponseStore` gains a `shared` property.** Default `True`, so every existing store — including
-   a bring-your-own one — answers as it did implicitly. *Intentional: §2.*
-3. **`redis`/`valkey` response stores answer `True` to `supports_chunk_streaming()`.** They previously
-   raised `NotImplementedError` from the three methods. *Intentional: §3.*
-4. **`RequestHandler`'s STREAM SSE route now serves redis/valkey**, where it answered HTTP 400. On a
-   broker with an explicitly configured `in_memory` store it now returns 400 where it previously
+1. `_FORWARDED_ATTRIBUTES` **gains a member.** Output messages from an `ATTR_AGUI` input now carry the
+  attribute. No existing consumer branches on it, so no other traffic changes. *Intentional: §1.*
+2. `ResponseStore` **gains a** `shared` **property.** Default `True`, so every existing store — including
+  a bring-your-own one — answers as it did implicitly. *Intentional: §2.*
+3. `redis`**/**`valkey` **response stores answer** `True` **to** `supports_chunk_streaming()`**.** They previously
+  raised `NotImplementedError` from the three methods. *Intentional: §3.*
+4. `RequestHandler`**'s STREAM SSE route now serves redis/valkey**, where it answered HTTP 400. On a
+  broker with an explicitly configured `in_memory` store it now returns 400 where it previously
    accepted the request and hung to the timeout. *Intentional: §8 of the design — strictly more
    working in the first case, strictly clearer in the second.*
-5. **`RedisResponseStore`/`ValkeyResponseStore` become subclasses of a shared body.** Same public
-   surface, same key layout, same constructor signature. *Intentional: house rule against duplication.*
+5. `RedisResponseStore`**/**`ValkeyResponseStore` **become subclasses of a shared body.** Same public
+  surface, same key layout, same constructor signature. *Intentional: house rule against duplication.*
 
 **Non-changes.** `AGUIRequestHandler`'s routes, gates and event bracket; the `agui` config block; the
 record key layout and `add_message`/`get_record` semantics of every store; `StreamChunk`
@@ -387,19 +399,21 @@ record key layout and `add_message`/`get_record` semantics of every store; `Stre
 
 ## Error handling
 
-| Failure | Surfaces as |
-|---|---|
-| Response store cannot stream chunks | `AKConfigError` at handler construction, naming the store |
-| Response store is process-local on a broker | `AKConfigError` at construction, naming store and transport |
-| `session.type: in_memory` on a broker | `AKConfigError` at construction, naming the transport |
-| Handler mounted on a bare `RESTAPI.run` | `AKConfigError` from `_reject_pipeline_only_handlers` (`api/http.py:117-131`), via `requires_pipeline` |
-| Oversized envelope | HTTP 400 at the edge, before enqueue, naming the field and the budget |
-| Audio/video content | HTTP 400 from `AGUIRunInput._to_request` (`run_input.py:122-129`), unchanged |
-| Attachment with multimodal disabled or `session_cache` | The caller-facing message `AttachmentStorageManager.offload` already produces |
-| Runner exhausts retries | One terminal error chunk → exactly one `RunError`, fixed text |
-| No chunk within the budget | `TimeoutError` → one error chunk on the socket, fixed text (`request_handler.py:314-320`'s rule) |
-| Client disconnects mid-stream | `finally: close_stream(request_id)`; the runner completes and its chunks expire by TTL |
-| `agui` extra missing | `ValueError` naming the extra, inherited from `AGUIRequestHandler.__init__` |
+
+| Failure                                                | Surfaces as                                                                                            |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| Response store cannot stream chunks                    | `AKConfigError` at handler construction, naming the store                                              |
+| Response store is process-local on a broker            | `AKConfigError` at construction, naming store and transport                                            |
+| `session.type: in_memory` on a broker                  | `AKConfigError` at construction, naming the transport                                                  |
+| Handler mounted on a bare `RESTAPI.run`                | `AKConfigError` from `_reject_pipeline_only_handlers` (`api/http.py:117-131`), via `requires_pipeline` |
+| Oversized envelope                                     | HTTP 400 at the edge, before enqueue, naming the field and the budget                                  |
+| Audio/video content                                    | HTTP 400 from `AGUIRunInput._to_request` (`run_input.py:122-129`), unchanged                           |
+| Attachment with multimodal disabled or `session_cache` | The caller-facing message `AttachmentStorageManager.offload` already produces                          |
+| Runner exhausts retries                                | One terminal error chunk → exactly one `RunError`, fixed text                                          |
+| No chunk within the budget                             | `TimeoutError` → one error chunk on the socket, fixed text (`request_handler.py:314-320`'s rule)       |
+| Client disconnects mid-stream                          | `finally: close_stream(request_id)`; the runner completes and its chunks expire by TTL                 |
+| `agui` extra missing                                   | `ValueError` naming the extra, inherited from `AGUIRequestHandler.__init__`                            |
+
 
 The two failures with no error path by design are recorded in the design's §8: duplicate events on
 redelivery, and the loss window when the API replica dies mid-run.
@@ -410,23 +424,31 @@ Run: `cd ak-py && uv run pytest`.
 
 ### New files
 
-| File | Asserts |
-|---|---|
-| `pipeline/response_store/testing.py` | `ResponseStoreContract` — the reusable suite. Subclass, implement `make_store()`. Pins chunk order, the terminal `done` chunk ending the stream, `close_stream` unblocking a reader parked mid-wait, a reader that attaches after the writer finished, the per-chunk timeout, and that `shared` is declared. Docstring states that `add_chunk` is **not** required to be idempotent — duplicate delivery is a reader concern (design §8), so no BYO store inherits that obligation by accident. |
-| `tests/test_response_store_contract.py` | The contract against `in_memory`, and against `redis`/`valkey` through a fake redis-like client injected as `store._driver._client`, the shape `test_schedule_store.py` already uses. |
-| `tests/test_response_store_redis.py` | Key layout, TTL refresh on `add_chunk`, the `blpop` sentinel path. There is no redis response-store test today — only valkey. |
-| `tests/test_agui_pipeline.py` | The handler end to end over `in_memory`: the bracket holds; both preconditions raise; the marker survives; attachments are offloaded; the envelope reaches the tools. |
+
+| File                                    | Asserts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pipeline/response_store/testing.py`    | `ResponseStoreContract` — the reusable suite. Subclass, implement `make_store()`. Pins chunk order, the terminal `done` chunk ending the stream, `close_stream` unblocking a reader parked mid-wait, a reader that attaches after the writer finished, the per-chunk timeout, and that `shared` is declared. Docstring states that `add_chunk` is **not** required to be idempotent — duplicate delivery is a reader concern (design §8), so no BYO store inherits that obligation by accident. |
+| `tests/test_response_store_contract.py` | The contract against `in_memory`, and against `redis`/`valkey` through a fake redis-like client injected as `store._driver._client`, the shape `test_schedule_store.py` already uses.                                                                                                                                                                                                                                                                                                           |
+| `tests/test_response_store_redis.py`    | Key layout, TTL refresh on `add_chunk`, the `blpop` sentinel path. There is no redis response-store test today — only valkey.                                                                                                                                                                                                                                                                                                                                                                   |
+| `tests/test_agui_pipeline.py`           | The handler end to end over `in_memory`: the bracket holds; both preconditions raise; the marker survives; attachments are offloaded; the envelope reaches the tools.                                                                                                                                                                                                                                                                                                                           |
+
+
+
 
 ### Changed files
 
-| File | Change |
-|---|---|
-| `tests/test_pipeline_agent_runner.py` | New: an `ATTR_AGUI` message routes to the streaming path under `rest_sync`, and its output messages still carry the marker — mirroring the `ATTR_INTEGRATION` assertion at `:192`. |
+
+| File                                      | Change                                                                                                                                                                                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tests/test_pipeline_agent_runner.py`     | New: an `ATTR_AGUI` message routes to the streaming path under `rest_sync`, and its output messages still carry the marker — mirroring the `ATTR_INTEGRATION` assertion at `:192`.                                                               |
 | `tests/test_pipeline_response_handler.py` | New: the AG-UI branch precedes the mode branch, **with and without** `ATTR_USER_ID`, parametrised over all four modes — the shape of `test_the_integration_branch_precedes_the_mode_branch` (`:227`). Plus the permanent-failure terminal chunk. |
-| `tests/test_response_store_in_memory.py` | Subclass the contract; assert `shared is False`. |
-| `tests/test_response_store_valkey.py` | Subclass the contract; assert `shared is True`. |
-| `tests/test_pipeline_request_handler.py` | STREAM + broker + unshared store returns HTTP 400 instead of hanging. |
-| `tests/test_shared_drivers.py` | `blpop` returns the value, returns `None` on timeout, and never passes a zero timeout to the client. |
+| `tests/test_response_store_in_memory.py`  | Subclass the contract; assert `shared is False`.                                                                                                                                                                                                 |
+| `tests/test_response_store_valkey.py`     | Subclass the contract; assert `shared is True`.                                                                                                                                                                                                  |
+| `tests/test_pipeline_request_handler.py`  | STREAM + broker + unshared store returns HTTP 400 instead of hanging.                                                                                                                                                                            |
+| `tests/test_shared_drivers.py`            | `blpop` returns the value, returns `None` on timeout, and never passes a zero timeout to the client.                                                                                                                                             |
+
+
+
 
 ### The decisive cases
 
@@ -434,17 +456,17 @@ These four fail against the design as originally written and pass against it as 
 the reason each requirement exists, and each maps to a PR review finding:
 
 1. **Capability is not sharedness.** Configure a broker transport plus an explicit
-   `execution.response_store.type: in_memory`. In one test assert the factory returns an
+  `execution.response_store.type: in_memory`. In one test assert the factory returns an
    `InMemoryResponseStore`, that `supports_chunk_streaming()` is `True`, that `shared` is `False`,
    and that constructing the handler raises `AKConfigError`. The third assertion is the point.
 2. **The marker survives the hop.** An `ATTR_AGUI` input message produces output messages still
-   carrying it. Without the allowlist entry the Response Handler takes the mode branch.
+  carrying it. Without the allowlist entry the Response Handler takes the mode branch.
 3. **The envelope reaches the tools, and keeps its lifetime.** A run carrying `forwarded_props` and
-   `context`, with a stubbed agent reading both mid-run, sees both non-empty. Then assert the
+  `context`, with a stubbed agent reading both mid-run, sees both non-empty. Then assert the
    persisted session record carries neither key, and that a second run on the same `threadId` sending
    no `forwarded_props` reads `{}`. Proves they crossed the queue without becoming non-volatile.
 4. **State baseline ordering.** A run carrying inbound `state` whose agent never calls
-   `update_agui_state` emits **no** `StateSnapshotEvent` — proving `state_before` is snapshotted
+  `update_agui_state` emits **no** `StateSnapshotEvent` — proving `state_before` is snapshotted
    after the envelope is applied, not before.
 
 Supporting: a dotted-path response store declaring `supports_chunk_streaming() -> True` constructs
