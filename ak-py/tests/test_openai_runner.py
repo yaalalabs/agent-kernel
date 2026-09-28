@@ -26,6 +26,7 @@ from agentkernel.core.event import (
 from agentkernel.core.model import (
     AgentReplyAny,
     AgentReplyText,
+    AgentRequestFile,
     AgentRequestImage,
     AgentRequestText,
 )
@@ -946,3 +947,22 @@ class TestOpenAIHooksSeeTheAKSession:
             _ = [chunk async for chunk in runtime.stream(agent, session, [AgentRequestText(prompt="hi")])]
 
         assert hooks.seen == [(session, agent)]
+
+
+class TestProcessRequestsFileInput:
+    """A file request must map to exactly one content part, whichever form it arrives in."""
+
+    def test_remote_file_yields_a_single_file_url_part(self):
+        _, message_content = OpenAIRunner._process_requests([AgentRequestFile(file_data="https://example.com/doc.pdf", name="doc.pdf")])
+        parts = message_content[0]["content"]
+        assert parts == [{"type": "input_file", "file_url": "https://example.com/doc.pdf"}]
+
+    def test_base64_file_yields_a_single_file_data_part(self):
+        _, message_content = OpenAIRunner._process_requests([AgentRequestFile(file_data="cGRm", name="doc.pdf", mime_type="application/pdf")])
+        parts = message_content[0]["content"]
+        assert parts == [{"type": "input_file", "filename": "doc.pdf", "file_data": "data:application/pdf;base64,cGRm"}]
+
+    def test_data_uri_file_yields_a_single_file_data_part(self):
+        _, message_content = OpenAIRunner._process_requests([AgentRequestFile(file_data="data:application/pdf;base64,cGRm", name="doc.pdf")])
+        parts = message_content[0]["content"]
+        assert parts == [{"type": "input_file", "filename": "doc.pdf", "file_data": "data:application/pdf;base64,cGRm"}]

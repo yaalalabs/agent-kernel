@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Agent Kernel LiveKit Realtime Voice Example"
 requires-python = ">=3.12"
 dependencies = [
-    "agentkernel[livekit,openai,api] >=0.9.2"
+    "agentkernel[livekit,openai,api,nats] >=0.9.2"
 ]
 
 [dependency-groups]
@@ -17,3 +17,11 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]

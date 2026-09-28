@@ -233,11 +233,15 @@ class StreamAgentRunner(AgentRunner):
         if message.attributes.get(ATTR_INTEGRATION) and mode != ExecutionMode.REALTIME:
             return super().process(message)
 
-        request_id = self._resolve_request_metadata(message, body)
-        if not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
-            raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
-
         realtime = mode == ExecutionMode.REALTIME
+
+        request_id = self._resolve_request_metadata(message, body)
+        # The WebSocket STREAM path pushes chunks to the authenticated user's sockets, so a broker
+        # message must carry user_id. A realtime turn is delivered through the registered
+        # integration adapter (LiveKit) resolved by its integration attribute, and carries no user
+        # id, so it is exempt — without this the gate rejects every realtime chunk on a broker.
+        if not realtime and not message.attributes.get(ATTR_USER_ID) and QueueTransportFactory.resolve_type() != "in_memory":
+            raise ValueError("user_id is required in queue message attributes for STREAM mode over a broker transport")
         # A realtime turn arrives as one message per ~100 ms of audio, so the per-turn INFO lines
         # below would flood the log; only the non-realtime streaming path logs them.
         if not realtime:
@@ -294,9 +298,11 @@ class StreamAgentRunner(AgentRunner):
         self._log.info(f"[STREAM AGENT DONE] request_id={request_id}, chunks={chunk_count}")
 
     def on_permanent_failure(self, message: QueueMessage) -> None:
-        mode = AKConfig.get().execution.mode
-
-        if message.attributes.get(ATTR_INTEGRATION) and mode != ExecutionMode.REALTIME:
+        # Integration traffic — realtime included — fails through the base handler: it stamps
+        # status 500, which the Response Handler turns into ``adapter.deliver_error()`` for the
+        # platform. The realtime stream-error path below carries no integration status, so the
+        # Response Handler would treat it as a normal reply and the room would stay silent.
+        if message.attributes.get(ATTR_INTEGRATION):
             return super().on_permanent_failure(message)
 
         self._log.error(f"Permanent failure for message {message.message_id}")

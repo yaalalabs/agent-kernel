@@ -79,7 +79,10 @@ class IOHandler:
         cls._validate_topology(mode, transport_type, config, auth_validator)
 
         single_process = transport_type == "in_memory"
-        if not single_process and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME):
+        # REALTIME is deliberately absent: its replies go through the integration gateway adapter,
+        # never the WebSocket push endpoint, so it needs no shared connection store (matching
+        # ``_validate_topology``, which exempts it from the push token for the same reason).
+        if not single_process and mode in (ExecutionMode.ASYNC, ExecutionMode.STREAM):
             from .ws.push import default_connection_store
 
             # Raises on session backends without a connection store; a process-local store

@@ -157,20 +157,15 @@ class OpenAIRunner(BaseRunner):
 
                 file_url = req.file_data
                 if file_url.startswith(("http://", "https://", "s3://")):
+                    # A remote reference goes as ``file_url``; adding an inline ``file_data`` part
+                    # for it too would send the URL as if it were base64 payload.
                     message_content.append({"role": "user", "content": [{"type": "input_file", "file_url": file_url}]})
                 else:
-                    mime_type = req.mime_type
-                    if not file_url.startswith(("data:")):
+                    if not file_url.startswith("data:"):
                         if not req.mime_type:
                             raise ValueError("mime_type is missing for file input, either in the base64 or explicitly")
-                        file_url = f"data:{mime_type};base64,{file_url}"
-
-                message_content.append(
-                    {
-                        "role": "user",
-                        "content": [{"type": "input_file", "filename": req.name, "file_data": file_url}],
-                    }
-                )
+                        file_url = f"data:{req.mime_type};base64,{file_url}"
+                    message_content.append({"role": "user", "content": [{"type": "input_file", "filename": req.name, "file_data": file_url}]})
 
             elif isinstance(req, AgentRequestVoice):
                 if not req.audio_data:
@@ -403,6 +398,9 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         self._agent = None
         self._cm = None
         self._listen_task = None
+        # True once disconnect() runs; the listen loop suppresses its error callback then so a
+        # normal shutdown does not surface as a model-socket failure.
+        self._closing = False
 
     @staticmethod
     def _realtime_model(agent: BaseAgent) -> str:
@@ -427,28 +425,34 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         self._cm = client.realtime.connect(model=model)
         self._connection = await self._cm.__aenter__()
 
-        sdk_agent = getattr(agent, "agent", None)
-        instructions = getattr(sdk_agent, "instructions", None) or "You are a helpful assistant."
+        try:
+            sdk_agent = getattr(agent, "agent", None)
+            instructions = getattr(sdk_agent, "instructions", None) or "You are a helpful assistant."
 
-        tools_payload = []
-        if sdk_agent and hasattr(sdk_agent, "tools"):
-            for tool in sdk_agent.tools:
-                if type(tool).__name__ == "FunctionTool":
-                    tools_payload.append(
-                        {"type": "function", "name": tool.name, "description": tool.description, "parameters": tool.params_json_schema}
-                    )
+            tools_payload = []
+            if sdk_agent and hasattr(sdk_agent, "tools"):
+                for tool in sdk_agent.tools:
+                    if type(tool).__name__ == "FunctionTool":
+                        tools_payload.append(
+                            {"type": "function", "name": tool.name, "description": tool.description, "parameters": tool.params_json_schema}
+                        )
 
-        await self._connection.send(
-            {
-                "type": "session.update",
-                "session": {
-                    "type": "realtime",
-                    "instructions": instructions,
-                    "tools": tools_payload,
-                    "audio": {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}},
-                },
-            }
-        )
+            await self._connection.send(
+                {
+                    "type": "session.update",
+                    "session": {
+                        "type": "realtime",
+                        "instructions": instructions,
+                        "tools": tools_payload,
+                        "audio": {"input": {"turn_detection": {"type": "server_vad", "interrupt_response": True, "create_response": True}}},
+                    },
+                }
+            )
+        except Exception:
+            # A failure after the socket opened would otherwise leak it: the pool drops the
+            # RealtimeConnection, but the WebSocket would stay up until the process exits.
+            await self.disconnect()
+            raise
 
         self._listen_task = asyncio.create_task(self._listen())
 
@@ -480,6 +484,8 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
                     _log.error(f"OpenAI Realtime socket error: {getattr(event, 'error', 'unknown')}")
         except Exception as e:
             _log.error(f"OpenAI Realtime socket error: {e}")
+            if not self._closing:
+                await self._callback("error", {"message": f"OpenAI Realtime socket error: {e}"})
 
     async def append_audio(self, base64_audio: str) -> None:
         if self._connection:
@@ -523,9 +529,11 @@ class OpenAIRealtimeAdapter(BaseRealtimeRunner):
         return f"Error: Tool {name} not found"
 
     async def disconnect(self) -> None:
+        self._closing = True
         if self._listen_task:
             self._listen_task.cancel()
-        if self._connection:
+            self._listen_task = None
+        if self._connection and self._cm is not None:
             await self._cm.__aexit__(None, None, None)
             self._connection = None
 

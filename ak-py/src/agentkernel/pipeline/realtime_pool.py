@@ -22,6 +22,9 @@ from .transport.base import QueueTransportFactory
 
 _log = logging.getLogger("ak.pipeline.realtime_pool")
 
+# Bound on a consumer thread's wait for a model send to complete before the input is acked.
+_SEND_TIMEOUT_SECONDS = 10.0
+
 
 class RealtimeConnection:
     """A persistent realtime WebSocket connection for one session.
@@ -43,6 +46,9 @@ class RealtimeConnection:
         self.user_id: Optional[str] = None
         self.integration: Optional[str] = None
         self.reply_context: dict = {}
+        # Set once the model socket has failed or been closed. The pool evicts a closed
+        # connection so the next chunk reconnects instead of writing to a dead socket.
+        self.closed = False
         # One transport for the connection's lifetime: a realtime turn emits tens of chunks a
         # second, and building a transport (and its client) per chunk is pure overhead.
         self._transport = QueueTransportFactory.create()
@@ -90,6 +96,22 @@ class RealtimeConnection:
             await self._emit(StreamChunk(event=TextDelta(message_id=message_id, content=data["delta"]), delta=data["delta"]))
         elif event_type == "tool_call":
             self.loop.create_task(self._execute_tool_and_reply(data["call_id"], data["name"], data["arguments"]))
+        elif event_type == "error":
+            await self._fail(data.get("message") or "realtime model socket error")
+
+    async def _fail(self, message: str) -> None:
+        """Report a dead model socket to the edge, then mark the connection for eviction.
+
+        A dropped socket would otherwise be written to forever with every later chunk silently
+        lost, so it is surfaced as a terminal error chunk (the edge can tell the user) and
+        ``closed`` is set, which makes the pool drop it and reconnect on the next message.
+        """
+        _log.error(f"Realtime session {self.session_id} failed: {message}")
+        self.closed = True
+        if self._pacing_task:
+            self._pacing_task.cancel()
+            self._pacing_task = None
+        await self._emit(StreamChunk(error=message, done=True))
 
     async def _pacing_loop(self) -> None:
         """Emit model audio at playback rate, with control events behind their own audio.
@@ -148,7 +170,12 @@ class RealtimeConnection:
         # contextvar around ``on_invoke_tool``; ADK enters the cache the wrapper fetches from).
         ctx = ToolContext(self.runtime, self.agent, self.session, [])
         try:
-            result_str = await self.adapter.execute_tool(name, arguments, ctx, call_id)
+            # Enter the same execution scopes a unary run does, so a tool that reads
+            # Session.current()/Agent.current(), the volatile cache, or holds the session lock
+            # sees them exactly as it would on the normal path.
+            async with self.session:
+                with self.agent._activate():
+                    result_str = await self.adapter.execute_tool(name, arguments, ctx, call_id)
         except Exception as e:
             _log.exception(f"Tool execution {name} failed")
             result_str = f"Error: {e}"
@@ -174,15 +201,46 @@ class RealtimeConnection:
         """Thread-safe: convert edge-rate audio to the model's input rate, then schedule the append."""
         pcm16 = resample_pcm16(base64.b64decode(audio_data), EDGE_SAMPLE_RATE, self.adapter.input_sample_rate)
         converted = base64.b64encode(pcm16).decode("utf-8")
-        asyncio.run_coroutine_threadsafe(self.adapter.append_audio(converted), self.loop)
+        self._dispatch_send(self.adapter.append_audio(converted), "append_audio")
 
     def send_text(self, text: str) -> None:
         """Thread-safe: schedule text send on the pool's event loop."""
-        asyncio.run_coroutine_threadsafe(self.adapter.send_text(text), self.loop)
+        self._dispatch_send(self.adapter.send_text(text), "send_text")
+
+    def _dispatch_send(self, coro, action: str) -> None:
+        """Run a model-send coroutine on the pool loop and observe its result.
+
+        Called from a consumer thread, this blocks until the send finishes (bounded), so the input
+        message is not acked before the audio/text reached the model and a failed socket is
+        reported here rather than vanishing as an unobserved future exception. When already on the
+        pool loop (a direct or test call) it cannot block on itself, so the send is scheduled and
+        any failure is logged by a done-callback.
+        """
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+
+        if running is self.loop:
+            task = self.loop.create_task(coro)
+            task.add_done_callback(lambda t: self._log_send_failure(t, action))
+            return
+
+        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+        try:
+            future.result(timeout=_SEND_TIMEOUT_SECONDS)
+        except Exception as e:
+            _log.error(f"Realtime session {self.session_id}: failed to {action}: {e}")
+
+    def _log_send_failure(self, task: "asyncio.Task", action: str) -> None:
+        if not task.cancelled() and task.exception() is not None:
+            _log.error(f"Realtime session {self.session_id}: failed to {action}: {task.exception()}")
 
     async def close(self) -> None:
+        self.closed = True
         if self._pacing_task:
             self._pacing_task.cancel()
+            self._pacing_task = None
         await self.adapter.disconnect()
 
 
@@ -259,9 +317,20 @@ class RealtimeConnectionPool:
 
         Thread-safe fast path for the hot audio path: a caller resolves the agent/session (and
         the logging that comes with it) only when this returns None and it must create one.
+
+        A connection whose model socket has failed (``closed``) is evicted here, so returning None
+        makes the caller reconnect on this message rather than write to a dead socket.
         """
+        stale = None
         with self._conn_lock:
-            return self._connections.get(session_id)
+            conn = self._connections.get(session_id)
+            if conn is not None and conn.closed:
+                del self._connections[session_id]
+                stale = conn
+                conn = None
+        if stale is not None and self._loop and not self._loop.is_closed():
+            asyncio.run_coroutine_threadsafe(stale.close(), self._loop)
+        return conn
 
     def get_or_create(self, session_id: str, agent: BaseAgent, runtime: Runtime, session: Session) -> RealtimeConnection:
         """Get or create a persistent realtime connection for a session.
@@ -277,10 +346,10 @@ class RealtimeConnectionPool:
         if not self._loop_ready.wait(timeout=10):
             raise RuntimeError("RealtimeConnectionPool event loop not ready")
 
-        # Fast path: connection already exists.
+        # Fast path: a live connection already exists.
         with self._conn_lock:
             existing = self._connections.get(session_id)
-            if existing is not None:
+            if existing is not None and not existing.closed:
                 return existing
             # Reserve the slot so a concurrent caller for a different session proceeds
             # without waiting for this session's connect.

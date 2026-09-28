@@ -27,6 +27,10 @@ To install local dependencies in development mode (linking directly to your loca
 > ```bash
 > (cd ../../../ak-py && uv build --wheel) && ./build.sh local
 > ```
+>
+> **Note:** `openai/in_memory` pins `agentkernel` to this checkout in its `pyproject.toml`
+> (`[tool.uv.sources]`) because the `livekit` extra is not in a published release yet, so even its
+> plain `./build.sh` builds against the local source. Drop that override once the extra ships.
 
 ## Run
 
@@ -42,22 +46,39 @@ export AK_LIVEKIT__API_KEY="your-livekit-api-key"
 export AK_LIVEKIT__API_SECRET="your-livekit-api-secret"
 ```
 
-Start the server:
+Each variant lives in its own directory (`openai/in_memory`, `openai/kafka`, `openai/nats`,
+`openai/sqs`, `google/in_memory`); run these commands from the variant you picked.
+
+For the single-process `in_memory` example, start the server from its directory:
 
 ```bash
+cd openai/in_memory
 python server.py
 ```
+
+For the broker examples (`openai/kafka`, `openai/nats`, `openai/sqs`) the pipeline is split across
+two processes that share the queues, started from the variant's `app.py`:
+
+```bash
+cd openai/kafka        # or openai/nats, openai/sqs
+python app.py io       # LiveKit edge gateway + REST API
+python app.py runner   # Agent Runner + the per-session realtime sockets
+```
+
+Run the `runner` role as a **single replica** — its per-session socket pool is process-local — and
+run exactly one `io` process per room, since each gateway joins the room as a participant. Start
+the broker (Kafka, NATS, or LocalStack for SQS) before either process.
 
 ## Testing
 
 Once the server is running, the agent will wait in the room. You can connect a frontend client (or use the [LiveKit Agents Playground](https://agents-playground.livekit.io/)) to connect to the exact same room and start speaking to your AI!
 
-For a headless smoke test, run the bundled client in a second terminal (same `AK_LIVEKIT__*`
-environment as the server). It joins as a human participant, publishes a mic track to trigger the
-agent's greeting, and prints the transcript the agent streams back:
+To join as a human participant from the command line, mint a room token with the bundled helper
+(same `AK_LIVEKIT__*` environment as the server) and pass it to the
+[LiveKit Agents Playground](https://agents-playground.livekit.io/) or any LiveKit client:
 
 ```bash
-python test_gw.py
+python get_token.py
 ```
 
 ## How it works

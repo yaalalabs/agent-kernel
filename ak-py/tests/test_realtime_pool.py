@@ -6,7 +6,7 @@ import types
 import pytest
 
 from agentkernel import Agent, Runner, Session
-from agentkernel.core.model import AgentReplyText, ExecutionMode
+from agentkernel.core.model import AgentReplyText, ExecutionMode, StreamChunk
 from agentkernel.core.realtime import RealtimeRunner
 from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.in_memory import InMemorySessionStore
@@ -299,3 +299,138 @@ class TestRealtimePacing:
         # (it never overtakes its audio).
         assert kinds.count("audio_delta") == 3
         assert kinds[-1] == "done"
+
+
+class TestRealtimeFailureHandling:
+    """A dead model socket must be surfaced to the edge and evicted, not written to forever."""
+
+    @pytest.mark.asyncio
+    async def test_error_event_marks_closed_and_emits_terminal_error_chunk(self, monkeypatch):
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+
+        conn = _connection(loop=asyncio.get_running_loop())
+        await conn.connect()
+        await conn.handle_framework_event("error", {"message": "socket boom"})
+
+        assert conn.closed is True
+        [message] = transport.create_consumer(QueueName.OUTPUT).fetch(10, 0.5)
+        body = json.loads(message.body)
+        assert body["error"] == "socket boom"
+        assert body["done"] is True
+
+    def test_get_connection_evicts_a_closed_connection(self, monkeypatch):
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        try:
+            runtime = Runtime(InMemorySessionStore())
+            agent = _Agent()
+            conn = pool.get_or_create("s1", agent, runtime, Session("s1"))
+            conn.closed = True
+
+            assert pool.get_connection("s1") is None
+            # The next chunk reconnects rather than reusing the dead socket.
+            fresh = pool.get_or_create("s1", agent, runtime, Session("s1"))
+            assert fresh is not conn
+        finally:
+            ThreadRunner.shutdown_event.set()
+            thread.join(timeout=5)
+
+
+class TestLiveKitGatewayErrorChunk:
+    @pytest.mark.asyncio
+    async def test_error_chunk_is_surfaced_and_clears_partial_transcript(self):
+        from agentkernel.integration.livekit.adapter import LiveKitEdgeGateway
+
+        gateway = object.__new__(LiveKitEdgeGateway)
+        gateway._transcript = ["half a sentence"]
+        gateway._interrupted = False
+        gateway.audio_source = None
+        gateway._loop = None
+        gateway.room = None
+
+        delivered = []
+
+        async def fake_deliver_error(message, reply_context):
+            delivered.append(message)
+
+        gateway.deliver_error = fake_deliver_error
+
+        await gateway.deliver_chunk(StreamChunk(error="model failed", done=True), {})
+        assert delivered == ["model failed"]
+        assert gateway._transcript == []
+
+
+class TestRealtimePermanentFailure:
+    def test_integration_permanent_failure_is_stamped_status_500(self, monkeypatch):
+        """A realtime integration failure must reach ``deliver_error`` (status 500), not be treated
+        as a normal reply that leaves the room silent."""
+        from unittest.mock import MagicMock
+
+        from agentkernel.pipeline.agent_runner import StreamAgentRunner
+        from agentkernel.pipeline.envelope import ATTR_STATUS_CODE, QueueMessage
+
+        class _Input:
+            max_receive_count = 3
+
+        class _Queues:
+            input = _Input()
+
+        class _Cfg:
+            class execution:
+                mode = ExecutionMode.REALTIME
+                queues = _Queues()
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+
+        transport = InMemoryTransport()
+        runner = StreamAgentRunner(transport=transport, chat_service=MagicMock())
+        message = QueueMessage(body="{}", attributes={"request_id": "r0", "integration": "livekit"}, group_id="s1", dedup_id="d0")
+
+        runner.on_permanent_failure(message)
+
+        [out] = transport.create_consumer(QueueName.OUTPUT).fetch(10, 0.5)
+        assert out.attributes[ATTR_STATUS_CODE] == "500"
+        assert out.attributes[ATTR_INTEGRATION] == "livekit"
+
+
+class TestBrokerRealtimeUserGate:
+    def test_realtime_chunk_without_user_id_is_not_rejected_on_a_broker(self, monkeypatch):
+        """Realtime delivers through the integration adapter, not WebSocket, so the broker
+        user_id requirement that guards the STREAM path must not apply to it."""
+        from unittest.mock import MagicMock
+
+        from agentkernel.pipeline.agent_runner import StreamAgentRunner
+        from agentkernel.pipeline.envelope import QueueMessage
+
+        class _Cfg:
+            class execution:
+                mode = ExecutionMode.REALTIME
+                queues = None
+
+        monkeypatch.setattr("agentkernel.core.config.AKConfig.get", classmethod(lambda cls: _Cfg))
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda *a, **k: "kafka"))
+
+        transport = InMemoryTransport()
+        monkeypatch.setattr(QueueTransportFactory, "create", staticmethod(lambda *a, **k: transport))
+
+        handler = types.SimpleNamespace(service=types.SimpleNamespace(agent=_Agent(), runtime=Runtime(InMemorySessionStore()), session=Session("s1")))
+        chat_service = MagicMock()
+        chat_service.prepare_agent_handler.return_value = handler
+
+        pool = RealtimeConnectionPool.initialize()
+        thread = threading.Thread(target=pool.start, daemon=True)
+        thread.start()
+        try:
+            runner = StreamAgentRunner(transport=transport, chat_service=chat_service)
+            body = json.dumps({"prompt": "", "session_id": "s1", "requests": [{"type": "text", "prompt": "hi"}]})
+            # No user_id: on a broker transport this used to raise for realtime and drop every chunk.
+            runner.process(QueueMessage(body=body, attributes={"request_id": "r0", "integration": "livekit"}, group_id="s1", dedup_id="d0"))
+            assert chat_service.prepare_agent_handler.call_count == 1
+        finally:
+            ThreadRunner.shutdown_event.set()
+            thread.join(timeout=5)

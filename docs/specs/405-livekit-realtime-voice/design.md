@@ -22,13 +22,15 @@ This document describes the design as implemented on `feature/livekit-integratio
 ### Execution mode
 
 `ExecutionMode.REALTIME` is a **process-level config** (`execution.mode: realtime`), exactly like
-`stream`/`async`. It is never carried on a request body. The three groupings that several modes
-share are centralized as predicates on `ExecutionMode` (`is_realtime`, `is_streaming`,
-`is_live_delivery`) so a new mode is added in one place, not to scattered tuples.
+`stream`/`async`. It is never carried on a request body. Mode groupings stay as explicit inline
+tuples at each call site (e.g.
+`(ExecutionMode.ASYNC, ExecutionMode.STREAM, ExecutionMode.REALTIME)`) rather than `ExecutionMode`
+predicates (`is_realtime`, `is_streaming`, `is_live_delivery`): the groupings are few, and each
+site's intent reads more plainly in place than behind an indirection.
 
 ### Core contract: `RealtimeRunner`
 
-`core/base.py` adds `RealtimeRunner(Runner)`:
+`core/realtime/runner.py` adds `RealtimeRunner(Runner)` (re-exported from `agentkernel.core.realtime`):
 
 - `connect(session, agent, callback)` — open the persistent socket and bind an event callback.
 - `append_audio(base64_audio)` / `send_text(text)` — push input.

@@ -17,6 +17,10 @@ _log = logging.getLogger("ak.integration.livekit")
 INTEGRATION_NAME = "livekit"
 # Enqueue mic audio in ~100 ms batches of PCM16 mono at the edge's rate.
 _BATCH_BYTES = int(EDGE_SAMPLE_RATE * 2 * 0.1)
+# Cap on inbound requests staged for the sender task (~6 s of audio). A reachable broker drains
+# far faster than the edge produces, so this only bites when the broker is slow or down, where
+# dropping the oldest frame beats growing the queue without bound.
+_MAX_PENDING_REQUESTS = 64
 
 
 try:
@@ -80,6 +84,10 @@ class LiveKitEdgeGateway(GatewayAdapter):
         self.producer: Optional[RequestProducer] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._connected = False
+        # Bounded staging queue drained by one sender task, so inbound frames never spawn an
+        # unbounded task per frame: a slow or unreachable broker applies backpressure here.
+        self._pending: Optional["asyncio.Queue"] = None
+        self._sender_task: Optional[asyncio.Task] = None
         # Accumulated from TextDelta chunks; published as one chat message when the turn ends.
         self._transcript: list[str] = []
         self._interrupted = False
@@ -91,6 +99,8 @@ class LiveKitEdgeGateway(GatewayAdapter):
         self._loop = asyncio.get_running_loop()
         self.room = rtc.Room()
         self.producer = RequestProducer()
+        self._pending = asyncio.Queue(maxsize=_MAX_PENDING_REQUESTS)
+        self._sender_task = asyncio.create_task(self._drain_requests())
 
         @self.room.on("track_subscribed")
         def on_track_subscribed(track: "rtc.Track", publication: "rtc.RemoteTrackPublication", participant: "rtc.RemoteParticipant"):
@@ -128,6 +138,9 @@ class LiveKitEdgeGateway(GatewayAdapter):
             await asyncio.sleep(0.5)
 
         _log.info("LiveKitEdgeGateway shutting down: disconnecting from room")
+        if self._sender_task:
+            self._sender_task.cancel()
+            self._sender_task = None
         await self.room.disconnect()
         _log.info("LiveKitEdgeGateway disconnected successfully")
 
@@ -182,15 +195,34 @@ class LiveKitEdgeGateway(GatewayAdapter):
             self._enqueue(AgentRequestVoice(prompt="", audio_data=b64_audio, name=self.agent_name))
 
     def _enqueue(self, request) -> None:
-        """Push one request onto the input queue tagged for this livekit session."""
-        if self.producer is None:
+        """Stage one request for the sender task, tagged for this livekit session.
+
+        Staging (rather than spawning a fire-and-forget task per frame) bounds what a stalled
+        broker can accumulate; a full queue drops the frame with a warning instead of growing.
+        """
+        if self.producer is None or self._pending is None:
             return
         body = BaseRunRequest(prompt="", session_id=self.session_id, requests=[request])
         request_id = str(uuid.uuid4())
         attributes = {ATTR_INTEGRATION: INTEGRATION_NAME, f"{REPLY_CONTEXT_PREFIX}session_id": self.session_id}
-        asyncio.create_task(
-            asyncio.to_thread(self.producer.enqueue, body=body, request_id=request_id, attributes=attributes, group_id=self.session_id)
-        )
+        try:
+            self._pending.put_nowait((body, request_id, attributes))
+        except asyncio.QueueFull:
+            _log.warning(f"Realtime input queue is full for session {self.session_id}; dropping a frame (broker slow or unreachable?)")
+
+    async def _drain_requests(self) -> None:
+        """Send staged inbound requests to the input queue, one at a time, off the room loop.
+
+        ``producer.enqueue`` is synchronous and talks to the broker, so it runs in a worker thread
+        to keep the room's event loop responsive; doing it serially keeps the broker hop ordered.
+        """
+        assert self._pending is not None
+        while True:
+            body, request_id, attributes = await self._pending.get()
+            try:
+                await asyncio.to_thread(self.producer.enqueue, body=body, request_id=request_id, attributes=attributes, group_id=self.session_id)
+            except Exception as e:
+                _log.error(f"Failed to enqueue request for session {self.session_id}: {e}")
 
     # -- outbound: queue -> room -------------------------------------------------------------
 
@@ -199,8 +231,18 @@ class LiveKitEdgeGateway(GatewayAdapter):
 
         Audio deltas play immediately; transcript deltas are accumulated and published as one
         chat message when the turn's ``done`` chunk arrives; a barge-in ``Interrupt`` clears
-        playback and drops the partial transcript.
+        playback and drops the partial transcript; an error chunk is surfaced to the room so it
+        is never left silent.
         """
+        if chunk.error:
+            # A model/turn failure arrives as a terminal error chunk. Drop any half-accumulated
+            # transcript so a stale sentence is not published, then tell the user.
+            self._transcript.clear()
+            self._interrupted = False
+            self._clear_playback()
+            await self.deliver_error(chunk.error, reply_context)
+            return
+
         event = chunk.event
         if event is not None:
             if event.type == "audio_delta":

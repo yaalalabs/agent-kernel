@@ -743,6 +743,9 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         self._listen_task: asyncio.Task | None = None
         # call_id -> function name, needed to build the FunctionResponse Gemini expects.
         self._tool_names: dict[str, str] = {}
+        # True once disconnect() runs; the listen loop suppresses its error callback then so a
+        # normal shutdown does not surface as a model-socket failure.
+        self._closing = False
 
     @staticmethod
     def _realtime_model(agent: Any) -> str:
@@ -804,6 +807,8 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
             raise
         except Exception as e:
             self._log.error(f"Gemini Live socket error: {e}")
+            if not self._closing:
+                await self._callback("error", {"message": f"Gemini Live socket error: {e}"})
 
     async def _handle_message(self, message: types.LiveServerMessage) -> None:
         server_content = getattr(message, "server_content", None)
@@ -881,8 +886,10 @@ class GoogleADKRealtimeRunner(BaseRealtimeRunner):
         return str(result) if result is not None else ""
 
     async def disconnect(self) -> None:
+        self._closing = True
         if self._listen_task:
             self._listen_task.cancel()
+            self._listen_task = None
         if self._connection and self._cm is not None:
             await self._cm.__aexit__(None, None, None)
             self._connection = None

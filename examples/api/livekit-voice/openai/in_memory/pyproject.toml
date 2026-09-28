@@ -18,5 +18,7 @@ dev = [
 [tool.uv]
 package = false
 
+# The `livekit` extra is not in the published agentkernel release yet, so this example must build
+# against the local checkout until it ships. Drop this override once that extra is on the index.
 [tool.uv.sources]
 agentkernel = { path = "../../../../../ak-py", editable = true }
