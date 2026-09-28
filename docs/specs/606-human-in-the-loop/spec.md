@@ -413,9 +413,11 @@ an unguarded one, and warning 1 makes it visible.
 
 Detection is placed **before** the existing text extraction, never as a fallback — that ordering is
 what distinguishes this from the current silent-loss behaviour. Each adapter's `resume()` mirrors
-its `run()` envelope: `ToolContext`, `_load_framework_context`, the native call, then
-`_store_framework_context` and `PausedRunState.clear`/`add` inside the `try` after a successful
-call, never in a `finally`, so a crashed run leaves no phantom pause (the placement rule #526 set).
+its `run()` envelope: `ToolContext`, `_load_framework_context`, **`await
+agent.resolve_run_options(session, requests)` merged into the native call through
+`Runner._native_kwargs`**, the native call, then `_store_framework_context` and
+`PausedRunState.clear`/`add` inside the `try` after a successful call, never in a `finally`, so a
+crashed run leaves no phantom pause (the placement rule #526 set).
 
 **Framework-specific rejections go above the `try`.** A check inside it is swallowed by the adapter's
 own `except Exception`. This is the exception to "validation lives in `Runtime`": `Runtime` cannot
@@ -564,9 +566,17 @@ matching interruption's `kind` is `tool_call` or `confirmation`, and ignores it 
 `input_required` — a LangGraph `interrupt()` asking "which of these three?" has nothing to approve,
 and requiring a verb there would force clients to send a meaningless `approved`.
 
-**All four `resume()` implementations preserve `framework_context`.** Every `run()` loads and writes
-back the #526 context (`openai.py:206-210`, `langgraph.py:408-422`, `pydanticai.py:169-176`,
-`adk.py:184-199`); `resume()` does the same, or a resumed turn silently drops the caller's context.
+**All four `resume()` implementations preserve `framework_context` and apply the turn's run
+options.** Every `run()` loads and writes back the #526 context, and since #754 also resolves
+`agent.resolve_run_options(session, requests)` and merges it through `Runner._native_kwargs`
+(`openai.py:210,216`, `langgraph.py:463`, `pydanticai.py:185`, `adk.py:297`). `resume()` does both,
+or a resumed turn silently drops the caller's context and whatever run options they declared —
+`max_turns`, `hooks`, `recursion_limit`, `usage_limits`. Both are omissions of the same kind: the
+`resume()` envelope is written by hand alongside `run()`'s, so each adapter PR asserts them.
+
+Each adapter also re-checks its `RESERVED_RUN_OPTIONS` when `resume()` is written: a resume
+replaces a different part of the native call than a run does, so a key reserved for `run()` may
+need a resume-specific reason or a new key may need reserving.
 
 ### `integration/agui/` — the terminal interrupt outcome (PR 5)
 
@@ -598,7 +608,7 @@ Verified present at AK's **pinned** `ag-ui-protocol` 0.1.22, so no dependency bu
 |---|---|
 | `core/service.py:155` (`AgentService.run`) | Receives `AgentPausedReplyAny` through the existing `isinstance(result, AgentReplyAny)` branch and stringifies it. **Verified unchanged** — the derived `content` makes `str()` readable JSON. |
 | `guardrail/guardrail.py:113`, `guardrail/walledai.py:203` | Output guardrails now also see a paused reply. **Desirable and left as-is** — a guardrail *should* see what is being asked of a human. Cannot break a resume: the resume state lives in the session, not the reply. |
-| `chat_service.py:317`, `slack_chat.py:172`, `teams_chat.py:530` | The three stringify sites. Unchanged; a paused reply renders as its `__str__` JSON. |
+| Outbound messaging adapters | **Unchanged, and no longer a type check.** Since the messaging refactor on `develop`, each adapter's `deliver()` calls `str(reply)` unconditionally (`integration/slack/adapter.py:264`, `integration/teams/adapter.py:504`, and the same in whatsapp, telegram, messenger, instagram, gmail), so a paused reply renders as its derived-`content` JSON with no isinstance site to satisfy. |
 | `runtime.py:241`, `:279`, `:291`, `:329` | The four `AgentReply` tuple `isinstance` sites. **Unchanged** — a subclass satisfies them. |
 | `runtime.py:247` | The `AgentRequest` tuple gains `AgentResumeRequestAny`. The **one** site a union member costs. |
 | `integration/thread/recorder.py` | **Unchanged** — see Non-goals. A resume-only request records an empty user turn because `pre_run` writes `req.prompt`; a paused reply is appended like any assistant message. |
@@ -793,7 +803,11 @@ For each of OpenAI, LangGraph, Pydantic AI, ADK:
 - **`ToolContext.requests` on a resume** holds the hook-processed list containing the
   `AgentResumeRequestAny` — assert a tool can read it, since nothing else proves the list was
   threaded through;
-- `framework_context` survives a resume.
+- `framework_context` survives a resume;
+- **a declared run option reaches the native call on a resume** — assert with a real option the SDK
+  exposes (OpenAI `max_turns`, LangGraph `recursion_limit`, Pydantic AI `usage_limits`, ADK
+  `max_llm_calls`), not merely that `resolve_run_options` was called, and that an
+  Agent-Kernel-owned key still wins over a caller's.
 
 Plus, once: **more than one paused run in a session** — on OpenAI, pause twice, resume each by its
 `run_id`, and assert both complete independently and each clears only its own record. On the

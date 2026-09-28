@@ -95,7 +95,7 @@ graph LR
 
 | | |
 |---|---|
-| **New outcome** | `AgentPausedReplyAny` — a subclass of `AgentReplyAny`, so the reply union and all seven `isinstance` sites are untouched. Carries a `run_id` |
+| **New outcome** | `AgentPausedReplyAny` — a subclass of `AgentReplyAny`, so the reply union and all five `isinstance` sites are untouched. Carries a `run_id` |
 | **New request** | `AgentResumeRequestAny` — a union member naming a `run_id` and carrying `ResumeDecision`s: the human's text, a structured answer, and `approved` / `denied` / `cancelled` where there is something to approve |
 | **Where the framework state goes** | one new session key, `ak.paused_runs` — a list of `PausedRun` records in the existing non-volatile cache, already pickled and persisted by `SessionStore` |
 | **New `Runner` contract** | `supports_pause` (defaults **off**), `resume()`, `resume_stream()` |
@@ -113,9 +113,12 @@ transports and the `Runner` interface are all unchanged.
 - Add **`AgentPausedReplyAny` as a subclass of `AgentReplyAny`** (`model.py:129`), *not* as a new
   member of the `AgentReply` union. *(Decision: open question 1.)*
   - **The union is therefore unchanged** (`model.py:126`), and so is every `isinstance` tuple over
-    it: `runtime.py:241`, `:279`, `:291`, `:329`, `chat_service.py:317`, `slack_chat.py:172`,
-    `teams_chat.py:530`. A subclass satisfies `isinstance(reply, AgentReplyAny)`, so all seven
-    keep working untouched and the public type alias gains no member.
+    it: `runtime.py:241`, `:279`, `:291`, `:329` and `chat_service.py:317`. A subclass satisfies
+    `isinstance(reply, AgentReplyAny)`, so all five keep working untouched and the public type
+    alias gains no member. *(Five, not seven: the messaging-integration refactor on `develop`
+    replaced the Slack and Teams reply paths with outbound adapters that call `str(reply)`
+    unconditionally — `integration/slack/adapter.py:264`, `integration/teams/adapter.py:504` — so
+    those two type checks no longer exist.)*
   - Safe **only because `AgentReply` is never re-validated from JSON** — no `model_validate` or
     `TypeAdapter` over it anywhere in `src/`; `ResponseBuilder` stringifies replies and nothing
     parses them back. Were that not true, a subclass could not survive a serialisation round trip.
@@ -164,9 +167,9 @@ transports and the `Runner` interface are all unchanged.
   - **`payload` is where the question's own shape lives** — the options for a choice, a schema, a
     confirmation body — passed through exactly as the framework produced it. See *the answer
     channel* under the resume path.
-- **Six places already branch on `isinstance(..., AgentReplyAny)`** and will now also receive
-  pauses: `guardrail/guardrail.py:113`, `guardrail/walledai.py:203`, `core/service.py:155`, plus
-  the three stringify sites above. Acceptable and partly desirable — an output guardrail *should*
+- **Four places already branch on `isinstance(..., AgentReplyAny)`** and will now also receive
+  pauses: `guardrail/guardrail.py:113`, `guardrail/walledai.py:203`, `core/service.py:155` and
+  `chat_service.py:317`. Acceptable and partly desirable — an output guardrail *should*
   see what is being asked of a human — and it **cannot break a resume**, because the resume state
   lives in the session, not the reply. `spec.md` reviews each non-stringify site and teaches it to
   skip the pause only where the existing behaviour would be wrong.
@@ -301,7 +304,7 @@ transports and the `Runner` interface are all unchanged.
   `decisions`; `RequestBuilder` turns it into the `AgentResumeRequestAny` the union carries.
   - **Why a union member here, when the paused reply is a subclass.** The asymmetry is
     deliberate. A paused reply *should* inherit existing `AgentReplyAny` handling — guardrails,
-    `AgentService.run`, the stringify sites — and joining the reply union would cost **seven**
+    `AgentService.run`, the response builder — and joining the reply union would cost **five**
     `isinstance` sites. For a resume request the existing handling is *skip*, so inheriting it
     would be wrong, and a union member costs **one** site (`runtime.py:247`).
 
@@ -680,9 +683,19 @@ cases distinguishable to the model**:
   `GoogleADKSession` (`adk.py:59-70`), which was import-checked and pickles cleanly both empty and
   holding a live session (`research/verification.md`).
 - **Resume paths must preserve `framework_context`.** Every adapter's `run()` loads and writes back
-  the #526 context (`openai.py:206-210`, `langgraph.py:408-422`, `pydanticai.py:169-176`,
-  `adk.py:184-199`); `resume()` must do the same, or a resumed turn silently drops the caller's
+  the #526 context; `resume()` must do the same, or a resumed turn silently drops the caller's
   context.
+- **And they must apply the run options resolved for the turn.** *(Added after #754 merged.)* Every
+  adapter's `run()` now resolves `await agent.resolve_run_options(session, requests)` and merges it
+  into the native call through `Runner._native_kwargs` (`openai.py:210,216`, `langgraph.py:463`,
+  `pydanticai.py:185`, `adk.py:297`). A `resume()` that skips this silently drops whatever the
+  caller declared — an agent capped at `max_turns` pauses for approval and the resumed run is
+  uncapped. This is the same omission hazard as `framework_context` and has the same cause: the
+  adapter's `resume()` repeats `run()`'s envelope by hand.
+  - **`RESERVED_RUN_OPTIONS` is re-checked per adapter when its `resume()` is written.** A resume
+    replaces a different part of the native call than a run does — OpenAI's `input` becomes the
+    `RunState` — so a key an adapter reserves for `run()` may need a resume-specific reason, or a
+    new key may need reserving.
 - **OpenAI multimodal runs carry the SDK session** after #679 (merged, `ad189723`), so a paused
   multimodal run resumes on the same path as a text one and needs no special case.
 
@@ -883,7 +896,9 @@ Rules for the stack:
 - **Resuming from any surface except REST and AG-UI.** *(Decision.)* Slack, Teams, WhatsApp,
   Telegram, Messenger, Instagram and Gmail have no way to send a decision back; the CLI, A2A and
   MCP consume the reply object directly with no resume path. There a paused reply renders as the
-  `__str__` JSON of the interruption list (`slack_chat.py:172`, `teams_chat.py:530`) — readable,
+  `__str__` JSON of the interruption list — every outbound messaging adapter calls `str(reply)`
+  unconditionally (`integration/slack/adapter.py:264`, `integration/teams/adapter.py:504`,
+  and the same line in whatsapp, telegram, messenger, instagram and gmail) — readable,
   but not actionable. The docs must say so.
 
 ## Open questions
@@ -893,7 +908,7 @@ here and the reasoning stays where it is used.
 
 1. ~~How is a paused reply typed?~~ **A subclass, `AgentPausedReplyAny(AgentReplyAny)`** — *Core — the
    paused outcome*. Weighed against a magic key on plain `AgentReplyAny` (nothing downstream could
-   tell a pause from a genuine structured reply) and a new union member (seven `isinstance` sites).
+   tell a pause from a genuine structured reply) and a new union member (five `isinstance` sites).
 2. ~~What HTTP status does a paused response carry?~~ **`202`**, with the body's `status` key as the
    discriminator — *Presentation and transport*.
 3. ~~Do pre-hooks run on a resume?~~ **Yes, and they are not constrained on that path** — the
