@@ -256,6 +256,15 @@ class Runner(ABC):
     framework.
     """
 
+    CANCELLED_DECISION_MESSAGE: str = (
+        "A human reviewer closed this request without deciding on it, so it was not carried out. "
+        "This is not a refusal — report it as undecided rather than declined."
+    )
+    """What the model is told when a human cancels a paused run rather than denying it. Only
+    LangGraph carries a three-valued decision natively, so on the others this wording is what keeps
+    "nobody decided" apart from "refused". Override per runner if a framework needs different
+    phrasing."""
+
     def __init__(self, name: str):
         """
         Initializes a Runner instance.
