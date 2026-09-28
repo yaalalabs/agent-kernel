@@ -455,8 +455,8 @@ Around that dispatch:
     (`guardrail/guardrail.py:100-102`), so as the code stands today the human's `message` would
     reach the model **without any guardrail seeing it** — the exact hole running the chain was
     meant to close. *(Decision.)* Extend the extraction to pull `message` and string `payload`
-    values out of `AgentResumeRequestAny`. This is a `guardrail/` change belonging to **PR 2**, not
-    an adapter PR: without it, PRs 1–2 ship a stated security property they do not deliver.
+    values out of `AgentResumeRequestAny`. This is a `guardrail/` change belonging to **PR 1**, not
+    an adapter PR: without it, PR 1 ships a stated security property it does not deliver.
 - **Post-hooks, session store and volatile-cache clearing are unchanged** (`runtime.py:288-298`).
 - **`schedule` + `resume` is rejected with `ValueError` → 400.** A decision cannot be deferred to
   a cron slot and still be a decision.
@@ -473,7 +473,7 @@ Around that dispatch:
     the `messages` channel its adapter already feeds (`langgraph.py:412`). `spec.md` states that
     this is AK's encoding, not a LangGraph feature.
   - **ADK is unverified** — a `Content` can carry a text part beside the `function_response`, so
-    it is structurally possible. Established by test in PR 4, not assumed.
+    it is structurally possible. Established by test in PR 2, not assumed.
   - **OpenAI rejects it in the adapter, above the `try`.** `Runner.run`'s `input` is
     `str | list[TResponseInputItem] | RunState`, mutually exclusive, so there is nowhere for the
     prompt to go. Failing is the only honest option; silently dropping it is what this design
@@ -617,7 +617,7 @@ explicit, or an ordinary turn will delete the pending pause.
   | **OpenAI** | Supported | drain `stream_events()`, then read `RunResultStreaming.interruptions` where the adapter already writes framework context (`openai.py:268-272`) |
   | **Pydantic AI** | Supported | `DeferredToolRequestsEvent` on `run_stream_events()`, already consumed (`pydanticai.py:190+`) |
   | **LangGraph** | Supported | `astream_events(version="v2")` has no `.interrupts` (`langgraph.py:469-473`), so read graph state after the stream drains, where the adapter already calls `aget_state` (`langgraph.py:481`) |
-  | **ADK** | **Unverified — decided by test in PR 4** | as non-streaming, if it works at all |
+  | **ADK** | **Unverified — decided by test in PR 2** | as non-streaming, if it works at all |
 
   - The design does not prevent ADK streaming pause; if it works at 2.8.0, support it. Two things
     keep it an open risk: ADK's own "known limitation" comment on its two-event pause window
@@ -845,37 +845,45 @@ exist.
 
 At least one runnable example under `examples/` showing pause → decision → resume over REST.
 
-## Delivery — five stacked PRs
+## Delivery — three stacked PRs
 
 The change ships as a GitHub stack: each PR branches from the one before it and targets it as its
 base, so reviewers see only that PR's diff. The stack merges bottom-up into `develop`. This is a
-delivery shape, not implementation detail — `plan.md` (Stage 3) still owns the per-step ordering
-inside each PR.
+delivery shape, not implementation detail — `plan.md` (Stage 3) owns the per-step ordering inside
+each PR, and its ten iterations map onto these three.
 
 The cut points are chosen so **every PR leaves `develop` working and testable on its own**, and so
 that no PR needs a later one to be correct.
 
-| # | Branch | Scope | Proves it works |
-|---|---|---|---|
-| 1 | `feature/606-hitl-1-core` | The contract, purely additive. `core/model.py` types, `core/event.py`'s `RunPaused` **plus the reworded union invariant** (docstring + `test_stream_events.py`), `PausedRunState` (the `ak.paused_runs` list, the `PausedRun` record with its generated `id`, and list/get/add/clear), `Runner.supports_pause` plus the `resume()` / `resume_stream()` raising defaults, generalised picklability helper. CrewAI + smolagents need no change — they inherit the `False` default. | New types round-trip; the record survives a session-store round trip; `resume()` and `resume_stream()` raise by default; **no existing test changes** |
-| 2 | `feature/606-hitl-2-runtime` | The wiring, still with nothing that pauses. `Runtime.run`/`stream` dispatch **plus its three diagnostic warnings and the leftover-record cleanup**, the `status`-required-for-approval-kinds validation, **the paused-stream terminal sequence (boundary drain, and the warning when a post-hook drops `RunPaused`)**, `RequestBuilder` (`known_fields` += `resume`), `ChatService` validation, the `schedule`+`resume` guard run **before** `_maybe_schedule` at **all four** entry points, **the `guardrail/` text-extraction change so a resume's free text is actually guarded**, `ResponseBuilder`'s `status: PAUSED`, new-prompt-keeps-pause, the `in_memory` warning. | Driven end-to-end by a `DummyRunner` that pauses — the existing test-double pattern |
-| 3 | `feature/606-hitl-3-openai-langgraph` | First two adapters, non-streaming and streaming. Chosen together because they exercise the **two different persistence models**: OpenAI writes an opaque `RunState` blob, LangGraph writes almost nothing because AK's checkpointer already holds the state. Carries the **first framework-specific rejections — a `payload`, and a `prompt` beside a decision, on OpenAI — placed above the adapter's `try`**, since OpenAI has a channel for neither. LangGraph gains the opposite: AK's encoding of a prompt into `Command(update=...)`. | Pause → record → resume on both, including resume after a session-store round trip; the OpenAI `payload` rejection **reaches the caller** rather than being swallowed by the adapter's `except` |
-| 4 | `feature/606-hitl-4-pydanticai-adk` | Remaining two adapters. Carries the **ADK `App` + `ResumabilityConfig` change** and its documented routing/session-size effects, which is why it is last among the adapters and not bundled with a lighter one. Also the **partial-resume rejection on Pydantic AI, above the adapter's `try`**, the mapping of its `CallDeferred` requests to `kind: "input_required"` — the path the answer channel depends on there — and **ADK's prompt-beside-a-decision behaviour, established by test rather than assumed**. | Same per-adapter matrix; plus an explicit test that ADK session state survives pickling, and that the Pydantic AI partial-resume error names the missing ids rather than surfacing as the generic one |
-| 5 | `feature/606-hitl-5-agui-docs` | The AG-UI terminal-outcome surface (`AGUIRequestHandler._events`, `RunAgentInput.resume`), the runnable example, docs, and the skills/docs sync. The docs carry the per-adapter caveats this design accumulated: **on OpenAI a stale resume is undetected**, and **"I need a value" must be modelled as a question rather than a gated tool**; on ADK the **sub-agent routing change**; plus "answer it soon or lose it", and that clearing the non-volatile cache discards a pending pause. | Example runs pause → decision → resume; `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` clean |
+| # | Branch | Iterations | Scope | Proves it works |
+|---|---|---|---|---|
+| 1 | `feature/606-hitl-1-core` | 1–4 | The contract and the wiring, with nothing that pauses. `core/model.py` types, `core/event.py`'s `RunPaused` **plus the reworded union invariant** (docstring + `test_stream_events.py`), `PausedRunState` (the `ak.paused_runs` list, the `PausedRun` record with its generated `id`, and list/get/find/add/clear), the generalised picklability helper, `Runner.supports_pause` plus the `resume()` / `resume_stream()` raising defaults, `Runtime.run`/`stream` dispatch **plus its three diagnostic warnings and the leftover-record cleanup**, the `status`-required-for-approval-kinds validation, **the paused-stream terminal sequence (boundary drain, and the warning when a post-hook drops `RunPaused`)**, `RequestBuilder` (`known_fields` += `resume`), `ChatService` validation, the `schedule`+`resume` guard run **before** `_maybe_schedule` at **all four** entry points, **the `guardrail/` text-extraction change so a resume's free text is actually guarded**, `ResponseBuilder`'s `status: PAUSED`, new-prompt-keeps-pause, the `in_memory` warning. CrewAI + smolagents need no change — they inherit the `False` default. | Driven end-to-end by a `DummyRunner` that pauses — the existing test-double pattern. New types round-trip; the record survives a session-store round trip; `resume()` and `resume_stream()` raise by default |
+| 2 | `feature/606-hitl-2-adapters` | 5–8 | All four adapters, non-streaming and streaming. They exercise **three different persistence models**: OpenAI writes an opaque `RunState` blob, LangGraph writes almost nothing because AK's checkpointer already holds the state, Pydantic AI and ADK write their own message/event history. Carries the framework-specific rejections **above each adapter's `try`** — a `payload` and a `prompt` on OpenAI, a partial resume on Pydantic AI — the mapping of Pydantic AI's `CallDeferred` to `kind: "input_required"`, and the **ADK `App` + `ResumabilityConfig` change** with its documented routing and session-size effects. | The per-adapter matrix on all four; each rejection **reaches the caller** rather than being swallowed by the adapter's `except`; ADK session state survives pickling; ADK streaming pause and prompt-beside-a-decision **established by test, not predicted** |
+| 3 | `feature/606-hitl-3-agui-docs` | 9–10 | The AG-UI terminal-outcome surface (`AGUIRequestHandler._events`, `RunAgentInput.resume`), the runnable example, docs, and the skills/docs sync. The docs carry the per-adapter caveats this design accumulated: **on OpenAI a stale resume is undetected**, and **"I need a value" must be modelled as a question rather than a gated tool**; on ADK the **sub-agent routing change**; plus "answer it soon or lose it", and that clearing the non-volatile cache discards a pending pause. | Example runs pause → decision → resume; a resume with no `run_id` resolves by interruption id; `ak-dev-sync-docs-from-branch` / `ak-dev-sync-skills-from-branch` clean |
 
 Rules for the stack:
 
-- **The spec set merges on its own first, as PR #696** (`feature/606-human-in-the-loop` →
-  `develop`). *(Decision.)* That is the staged flow `ak-dev-write-spec` describes: the design is
-  reviewed and merged, `spec.md` follows in its own PR, and only then do the five implementation
-  PRs stack from a `develop` that already contains the design.
-- **PRs 1 and 2 are behaviour-neutral.** Nothing pauses until PR 3, so the contract and the wiring
-  can be reviewed without framework specifics in the diff, and a problem found in PR 3 does not
-  block merging 1 and 2.
-- **PR 3's dependency on #679 is satisfied** — merged as `ad189723`, already in this branch.
-- **Each PR carries its own tests.** Only the docs/skills sync is deferred to PR 5, because it
-  describes the finished capability. Titles follow Conventional Commits: `feat:` for 1–5, with the
-  spec commit inside PR 1 as `docs:`.
+- **Three, not five.** *(Decision — revised after PR 1's iterations were built.)* An earlier draft
+  split the contract from the wiring and the adapters into pairs. Both splits earned little: the
+  contract and the wiring are each additive with nothing pausing in either, and the four adapters
+  are one pattern applied four times, so a reviewer who has checked two skims the rest. Against
+  that, `develop` is **squash-merge only**, so every merge forces a rebase of the remaining stack —
+  five PRs means four rebases and five review cycles. Three keeps the "no unreviewable diff"
+  property at half the merge cost.
+- **The spec set merged first, as PR #696** (`feature/606-human-in-the-loop` → `develop`).
+  *(Decision.)* That is the staged flow `ak-dev-write-spec` describes: the design is reviewed and
+  merged, `spec.md` and `plan.md` follow, and only then do the implementation PRs stack from a
+  `develop` that already contains them.
+- **PR 1 is behaviour-neutral.** Nothing in the shipped product pauses until PR 2, so the contract
+  and the wiring are reviewed without framework specifics in the diff, and a problem found in PR 2
+  does not block merging 1.
+  - **Accepted cost:** PR 1 puts public types on `develop` that nothing yet produces. Only a single
+    unreviewable PR avoids that, which is the worse trade.
+- **PR 2's dependency on #679 is satisfied** — merged as `ad189723`, already in this branch. It also
+  lands after **#754**, so every `resume()` applies the run options resolved for the turn, not only
+  `framework_context`.
+- **Each PR carries its own tests.** Only the docs/skills sync is deferred to PR 3, because it
+  describes the finished capability. Titles follow Conventional Commits: `feat:` for 1–3.
 
 ## Non-goals
 

@@ -1,17 +1,20 @@
 # #606: Human-in-the-loop — durable pause, decision, and resume — Implementation Plan
 
-The order [`spec.md`](spec.md) gets built in. Iterations map onto the five stacked PRs
+The order [`spec.md`](spec.md) gets built in. Iterations map onto the three stacked PRs
 [`design.md`](design.md) defines; each leaves `develop` working and testable on its own, and no
 iteration needs a later one to be correct. Nothing in the shipped product pauses until Iteration 5.
 
 | Iteration | PR | Leaves you with |
 |---|---|---|
 | 1–2 | 1 | The contract, purely additive. Nothing pauses. |
-| 3–4 | 2 | The wiring, driven by a pausing test double. Still nothing real pauses. |
-| 5–6 | 3 | OpenAI and LangGraph pause and resume. |
-| 7–8 | 4 | Pydantic AI and ADK too. |
-| 9 | 5 | AG-UI, the example, docs and skills. |
-| 10 | 5 | Docs and skills sync. |
+| 3–4 | 1 | The wiring, driven by a pausing test double. Still nothing real pauses. |
+| 5–6 | 2 | OpenAI and LangGraph pause and resume. |
+| 7–8 | 2 | Pydantic AI and ADK too. |
+| 9 | 3 | AG-UI and the runnable example. |
+| 10 | 3 | Docs and skills sync. |
+
+An iteration is a commit-sized unit of work, not a PR: **PR 1 is iterations 1–4, PR 2 is 5–8, PR 3
+is 9–10.** Raise each PR once its last iteration's Verify passes.
 
 Two decisions must be settled **before Iteration 5**: whether an adapter appends or replaces when
 its framework cannot hold two paused runs, and sign-off on `BaseChatRequest.prompt` becoming
