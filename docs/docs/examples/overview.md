@@ -236,6 +236,7 @@ The [`use-cases/`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-ca
 ### Available Use Cases
 
 - **`waste-sorting-assistant/`**: A waste sorting advisor agent that recommends disposal categories (recycle, compost, landfill, hazardous waste) based on item material and the user's local recycling rules. Includes OpenAI Agents SDK integration, session memory for region-specific rules, and AWS Lambda deployment with DynamoDB-backed session persistence.
+- **`mathru-phm-companion/`**: A WhatsApp maternal health companion that helps expectant mothers track clinic schedules and report symptoms, and helps their assigned Public Health Midwife triage escalations. Includes multi-agent handoffs via the OpenAI Agents module, WhatsApp integration, phone-number-keyed session memory, input/output guardrails, and a SQLite-backed store for registrations and escalations.
 
 ### How to Use the Use Cases
 
