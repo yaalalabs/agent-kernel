@@ -18,8 +18,7 @@ This is an internal submodule used by the root serverless stack in `state.tf`; t
 module "agent_runner" {
   source = "./modules/agent-runner"
 
-  product_alias = "agent-kernel"
-  env_alias     = "dev"
+  prefix        = "agent-kernel-dev"
   region        = "us-east-1"
   module_type   = "python"
 
@@ -43,8 +42,7 @@ module "agent_runner" {
 
 | Name | Description |
 |------|-------------|
-| `product_alias` | Product alias used in resource names |
-| `env_alias` | Environment alias |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) |
 | `region` | AWS region |
 | `module_type` | Runtime type, `python` or `nodejs` |
 | `agent_runner` | Nested configuration for the Lambda function |

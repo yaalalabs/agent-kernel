@@ -24,8 +24,7 @@ module "websocket_api_gateway" {
   source = "./modules/websocket-api-gateway"
 
   region              = "us-east-1"
-  product_alias       = "agent-kernel"
-  env_alias           = "dev"
+  prefix              = "agent-kernel-dev"
   product_display_name = "Agent Kernel"
   stage_name          = "prod"
 
@@ -50,8 +49,7 @@ module "websocket_api_gateway" {
 | Name | Description |
 |------|-------------|
 | `region` | AWS region |
-| `product_alias` | Product alias for naming |
-| `env_alias` | Environment alias |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) |
 | `product_display_name` | Human-readable product name |
 | `stage_name` | WebSocket API stage name |
 | `route_handler_lambda_invoke_arn` | Routes handler Lambda function invoke ARN (for $default and custom routes) |

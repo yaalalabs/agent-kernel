@@ -3,25 +3,20 @@ variable "region" {
   description = "Region"
 }
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias"
-}
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 
-variable "env_alias" {
-  type        = string
-  description = "Environment alias"
+  validation {
+    condition     = var.prefix != ""
+    error_message = "prefix must be set to a non-empty value."
+  }
 }
 
 variable "product_display_name" {
   type        = string
   description = "Product display name"
   default     = "An Agent Kernel deployment"
-}
-
-variable "module_name" {
-  type        = string
-  description = "Module name"
 }
 
 variable "environment_variables" {
@@ -162,6 +157,8 @@ variable "rest_service" {
     image_uri                         = optional(string, null) # Or provide pre-built image URI
     command                           = optional(list(string), null)
     environment_variables             = optional(map(string), {})
+    alb_security_group_id             = optional(string, null) # ALB security group ID. If not provided, a new one will be created
+    ecs_service_security_group_id     = optional(string, null) # ECS service security group ID. If not provided, a new one will be created
   })
 }
 
@@ -372,6 +369,7 @@ variable "agent_runner" {
     image_uri             = optional(string, null) # Or provide pre-built image URI
     command               = optional(list(string), null)
     environment_variables = optional(map(string), {})
+    security_group_id     = optional(string, null) # Agent Runner security group ID (queue mode only). If not provided, a new one will be created
   })
   default = {
     cpu                   = 512
@@ -381,6 +379,7 @@ variable "agent_runner" {
     image_uri             = null
     command               = null
     environment_variables = {}
+    security_group_id     = null
   }
 }
 

@@ -40,7 +40,7 @@ Most agent frameworks help you build a *prototype*. **Agent Kernel is the platfo
 | ☁️ **Cloud-Agnostic** | The same agent code ships to AWS Lambda/ECS, Azure Functions/Container Apps, GCP Cloud Run, or on-prem. |
 | 🔁 **Queue-Pipeline Execution** | Every chat request runs through a queued pipeline: in-process by default (zero services, full retry/FIFO/dedup semantics locally), SQS, Kafka, and NATS JetStream transports for distributed deployments; a Helm chart ships the topology to any Kubernetes cluster. |
 | 🛡️ **Compliant by Default** | Built-in guardrails (OpenAI, AWS Bedrock), PII detection, full audit traces, jailbreak prevention. |
-| 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst). |
+| 🧠 **Stateful & Knowledge-Aware** | Pluggable session stores (Redis, Valkey, DynamoDB, Cosmos DB) + knowledge bases (ChromaDB, Neo4j, Starburst, Open Knowledge Format bundles). |
 | 💬 **Channels Built-In** | Slack, WhatsApp, Teams, Telegram, Gmail, Messenger, Instagram — out of the box. |
 | 🔍 **Production Observability** | LangFuse, OpenLLMetry, and Pydantic Logfire tracing wired in. Every agent, tool, and LLM call — visible. |
 | 🤝 **Open Standards** | Native **MCP** (Model Context Protocol), **A2A** (Agent-to-Agent), and **AG-UI** (streamed event protocol for agent-facing frontends) support. |
@@ -89,7 +89,7 @@ if __name__ == "__main__":
     CLI.main()
 ```
 
-That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps with a single Terraform module. 👉 [Get Started](https://kernel.yaala.ai/docs)
+That's it. Same code deploys to AWS Lambda, ECS, Azure Functions, or Container Apps with a single Terraform module, or to any Kubernetes cluster with the [Helm chart](#kubernetes--on-prem-with-helm). 👉 [Get Started](https://kernel.yaala.ai/docs)
 
 ---
 
@@ -109,6 +109,7 @@ Enterprises can't ship agents they can't audit. Agent Kernel makes compliance th
 
 - **Guardrails** — OpenAI and AWS Bedrock guardrails for PII detection, jailbreak prevention, content moderation.
 - **Pre/Post Execution Hooks** — Inject policy checks, RAG context, redaction, or moderation around every agent call.
+- **Framework-Native Run Options**: Pass each framework's own run arguments and lifecycle hooks (OpenAI `RunHooks` and `RunConfig`, LangGraph callbacks, ADK plugins, Pydantic AI usage limits) per agent through `Module.run_options`, statically or computed per run by a factory, with the keys Agent Kernel owns kept safe.
 - **Full Traceability** — Every agent action, tool call, and LLM invocation logged with configurable verbosity.
 - **Observability** — LangFuse, OpenLLMetry, and Pydantic Logfire tracing with a single config line.
 - **Data Residency** — Pick your cloud, your region, your storage backend. Your data stays where you need it.
@@ -145,7 +146,8 @@ Let a chat run later, or on a schedule — the platform owns the timers, the per
 | **Vector Knowledge** | ChromaDB |
 | **Graph Knowledge** | Neo4j |
 | **SQL Analytics** | Starburst Galaxy (Trino) |
-| **Custom** | Pluggable `KnowledgeBase` interface — bring any backend |
+| **Document Knowledge** | Open Knowledge Format bundles — markdown concepts served from a local directory or S3, no database required |
+| **Custom** | Pluggable `KnowledgeBase` interface — declare what your backend supports, bring any storage |
 
 ### 💬 Messaging Channels — Out of the Box
 
@@ -169,14 +171,30 @@ Build once. Ship to every channel your users live on. No bespoke bot code.
 
 ## ☁️ Deploy Anywhere
 
-Same agent code. Pick your runtime. Full Terraform modules included.
+Same agent code. Pick your runtime. Full Terraform modules and a Helm chart included.
 
 | Cloud | Serverless | Containerized |
 |---|---|---|
 | **AWS** | [Lambda](https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws) | [ECS / Fargate](https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws) |
 | **Azure** | [Functions](https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm) | [Container Apps](https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm) |
 | **GCP** | [Cloud Run Serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/serverless) | [Cloud Run Containerized](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-gcp/containerized) |
-| **On-Prem / Kubernetes** | ✅ Docker image | [Helm chart](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s) (baremetal + EKS, Kafka/NATS queue mode, KEDA autoscaling) |
+| **On-Prem / Kubernetes** | N/A | [Helm chart](https://github.com/yaalalabs/agent-kernel/tree/develop/ak-deployment/ak-k8s) (baremetal + EKS, Kafka/NATS queue mode, KEDA autoscaling) |
+
+### Kubernetes / On-Prem with Helm
+
+The chart is published as an OCI artifact at
+[`ghcr.io/yaalalabs/charts/agent-kernel`](https://github.com/yaalalabs/agent-kernel/pkgs/container/charts%2Fagent-kernel).
+Install it with Helm (the `docker pull` command GitHub shows on the package page does not apply to charts):
+
+```bash
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 \
+  -f agent-kernel/values-dev.yaml \
+  --set ioHandler.image.repository=<io image> \
+  --set agentRunner.image.repository=<runner image> --set image.tag=<tag>
+```
+
+Flavors are values files over one set of templates: `values-dev.yaml` for a local cluster, `values-baremetal.yaml` for self-hosted, `values-eks.yaml` for AWS EKS. Valkey and NATS ship as bundled dependencies, and every image the chart references is listed in the `images.txt` attached to each release for air-gapped mirroring. Full guide: [On-Prem / Kubernetes Deployment](https://kernel.yaala.ai/docs/deployment/onprem-kubernetes).
 
 ---
 

@@ -1,4 +1,2 @@
-region        = "us-east-1"
-product_alias = "ak-mm-ddb"
-env_alias     = "dev"
-module_name   = "examples"
+region = "us-east-1"
+prefix = "ak-mm-ddb-dev-examples"

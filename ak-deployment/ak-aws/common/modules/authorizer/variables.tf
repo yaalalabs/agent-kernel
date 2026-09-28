@@ -3,14 +3,9 @@ variable "region" {
   description = "AWS region"
 }
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias"
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 }
 
 variable "authorizer_info" {
@@ -21,7 +16,6 @@ variable "authorizer_info" {
     handler_path          = string
     package_path          = string
     package_type          = string
-    module_name           = string
     result_ttl_in_seconds = optional(number, 150)
     timeout               = optional(number, 30)
     memory_size           = optional(number, 128)

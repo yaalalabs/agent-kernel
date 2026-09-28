@@ -14,7 +14,7 @@ module "docker_build_from_ecr" {
   version = "7.20.0"
 
   create_ecr_repo = true
-  ecr_repo        = "${var.product_alias}-${var.env_alias}-${var.module_name}"
+  ecr_repo        = "${var.prefix}"
   ecr_repo_lifecycle_policy = jsonencode({
     "rules" : [
       {

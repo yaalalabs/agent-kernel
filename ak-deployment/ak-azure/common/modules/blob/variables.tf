@@ -1,18 +1,13 @@
 data "azurerm_subscription" "current" {}
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias"
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 }
 
 variable "region" {
   description = "Azure region (e.g., eastus, westus2)"
   type        = string
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias"
 }
 
 variable "product_display_name" {

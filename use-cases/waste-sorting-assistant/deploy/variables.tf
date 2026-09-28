@@ -4,22 +4,10 @@ variable "region" {
   default     = "us-east-1"
 }
 
-variable "product_alias" {
-  description = "Short product alias used to name AWS resources."
+variable "prefix" {
+  description = "Prefix applied to every resource name."
   type        = string
-  default     = "ak"
-}
-
-variable "env_alias" {
-  description = "Environment alias used to name AWS resources."
-  type        = string
-  default     = "dev"
-}
-
-variable "module_name" {
-  description = "Module name used to namespace AWS resources."
-  type        = string
-  default     = "waste-sorting"
+  default     = "ak-dev-waste-sorting"
 }
 
 variable "openai_api_key" {

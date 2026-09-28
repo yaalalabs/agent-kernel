@@ -14,6 +14,8 @@ from ..core.runtime import Runtime
 
 
 class RESTRequestHandler(ABC):
+    requires_pipeline: bool = False
+
     @abstractmethod
     def get_router(self) -> APIRouter:
         """

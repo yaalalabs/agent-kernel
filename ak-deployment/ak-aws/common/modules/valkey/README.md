@@ -31,9 +31,7 @@ Perfect for session storage, response storage for async execution, and applicati
 module "valkey" {
   source = "yaalalabs/ak-common/aws//modules/valkey"
 
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "cache"
+  prefix        = "myapp-prod-cache"
 
   vpc_id     = module.vpc.vpc_id
   vpc_cidr   = "10.0.0.0/16"
@@ -59,9 +57,7 @@ family must match the engine major version. Overriding only one fails at `terraf
 module "valkey" {
   source = "yaalalabs/ak-common/aws//modules/valkey"
 
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "cache"
+  prefix        = "myapp-prod-cache"
 
   vpc_id     = module.vpc.vpc_id
   vpc_cidr   = module.vpc.vpc_cidr_block
@@ -77,9 +73,7 @@ module "valkey" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
-| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
-| `module_name` | Module/service name for resource identification | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `vpc_id` | VPC ID where Valkey will be deployed | `string` | n/a | yes |
 | `vpc_cidr` | CIDR block of the VPC (for security group rules) | `string` | n/a | yes |
 | `subnet_ids` | List of private subnet IDs for Valkey deployment | `list(string)` | n/a | yes |
@@ -111,7 +105,7 @@ module "valkey" {
   (ElastiCache exposes the Valkey engine through the replication group resource;
   `aws_elasticache_cluster` only supports the `memcached` and `redis` engines). A single node
   (`node_count = 1`) yields the same single-primary topology as the Redis module.
-- **Naming Convention**: `{product_alias}-{env_alias}-{module_name}-valkey`
+- **Naming Convention**: `{prefix}-valkey`
 - **Engine Version**: Configurable via `engine_version` (default `8.0`)
 - **Parameter Group**: Configurable via `parameter_group_name` (default `default.valkey8`)
 - **Subnet Group**: Automatic subnet group creation for multi-AZ

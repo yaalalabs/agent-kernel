@@ -87,7 +87,7 @@ const DEV_FEATURE_GROUPS = [
       {
         icon: MdCloud,
         title: "Cloud Deployment",
-        body: "Pre-built Terraform modules for AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run, GCP Cloud Run Functions.",
+        body: "Pre-built Terraform modules for AWS Lambda, ECS, Azure Functions, Container Apps, GCP Cloud Run, GCP Cloud Run Functions, plus a Helm chart for on-prem Kubernetes.",
       },
       {
         icon: MdLanguage,
@@ -456,7 +456,7 @@ export default function DeveloperPage() {
                   {
                     num: "04",
                     label: "Knowledge Bases",
-                    items: ["ChromaDB", "Neo4j", "Starburst", "SQLDB"],
+                    items: ["ChromaDB", "Neo4j", "Starburst", "SQLDB", "OKF"],
                   },
                   {
                     num: "05",
@@ -473,6 +473,7 @@ export default function DeveloperPage() {
                       "Container Apps",
                       "GCP Cloud Run",
                       "GCP Cloud Run Functions",
+                      "On-Prem Kubernetes (Helm)",
                     ],
                   },
                   {

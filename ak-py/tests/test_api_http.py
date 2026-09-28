@@ -5,8 +5,11 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
+from agentkernel.api.handler import RESTRequestHandler
 from agentkernel.api.http import RESTAPI
 from agentkernel.auth.handler import AuthValidator, ValidationResult
+from agentkernel.core.util.factory import AKConfigError
+from agentkernel.pipeline.transport.base import QueueTransportFactory
 
 
 class TestRESTAPI:
@@ -480,4 +483,61 @@ class TestPipelineDelegation:
 
         with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
             RESTAPI.run()
+        mock_uvicorn.assert_called_once()
+
+
+class TestPipelineOnlyHandlerRefusal:
+    """A queue producer served by RESTAPI.run would enqueue into a queue no runner drains.
+
+    The check sits outside the `cls is RESTAPI` delegation guard, so a subclass is covered too —
+    `AWSRestAPI` and `AWSWebsocketAPI` inherit `run` and would otherwise serve one silently.
+    """
+
+    @staticmethod
+    def _pipeline_handler(name="WebhookRESTRequestHandler"):
+        handler = type(name, (RESTRequestHandler,), {"requires_pipeline": True, "get_router": lambda self: APIRouter()})
+        return handler()
+
+    def test_restapi_run_refuses_a_pipeline_only_handler(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "in_memory"))
+
+        with pytest.raises(AKConfigError) as excinfo:
+            RESTAPI.run(handlers=[self._pipeline_handler()])
+
+        message = str(excinfo.value)
+        assert "WebhookRESTRequestHandler" in message
+        assert "IOHandler.run" in message
+
+    def test_a_subclass_run_refuses_it_too(self, monkeypatch):
+        """AWSRestAPI and AWSWebsocketAPI never reach the delegation guard, only this one."""
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+        offender = self._pipeline_handler()
+
+        class _SubAPI(RESTAPI):
+            @classmethod
+            def get_default_handlers(cls):
+                return [offender]
+
+        with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            with pytest.raises(AKConfigError, match="WebhookRESTRequestHandler"):
+                _SubAPI.run()
+        mock_uvicorn.assert_not_called()
+
+    def test_the_pipeline_request_handler_is_refused_as_well(self, monkeypatch):
+        """RequestHandler declares requires_pipeline for the same reason: it is a queue producer."""
+        from agentkernel.pipeline.request_handler import RequestHandler
+
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+
+        with pytest.raises(AKConfigError, match="RequestHandler"):
+            RESTAPI.run(handlers=[RequestHandler()])
+
+    def test_an_ordinary_handler_is_served(self, monkeypatch):
+        monkeypatch.setattr(QueueTransportFactory, "resolve_type", staticmethod(lambda: "sqs"))
+        handler = Mock()
+        handler.get_router.return_value = APIRouter()
+        handler.requires_pipeline = False
+
+        with patch("agentkernel.api.http.uvicorn.run") as mock_uvicorn:
+            RESTAPI.run(handlers=[handler])
         mock_uvicorn.assert_called_once()

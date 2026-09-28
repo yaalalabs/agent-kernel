@@ -14,7 +14,7 @@ AWS Bedrock Guardrails enable:
 - **PII Detection and Redaction**: Identify and redact 30+ types of sensitive information
 - **Topic-based Blocking**: Control conversations based on denied topics
 - **Word Filters**: Block profanity and custom word lists
-- **Contextual Grounding**: Ensure responses are grounded in provided context (RAGAS)
+- **Contextual Grounding**: Ensure responses are grounded in provided context
 
 ## Installation
 

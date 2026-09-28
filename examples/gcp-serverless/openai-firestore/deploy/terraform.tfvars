@@ -1,5 +1,3 @@
-project_id    = "agent-kernel-test"
-region        = "us-central1"
-product_alias = "ak-openai-serverless"
-env_alias     = "dev"
-module_name   = "examples-firestore"
+project_id = "agent-kernel-test"
+region     = "us-central1"
+prefix     = "ak-openai-serverless-dev-examples-firestore"

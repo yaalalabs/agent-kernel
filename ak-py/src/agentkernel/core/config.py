@@ -161,6 +161,10 @@ class _SlackConfig(BaseModel):
         default="",
         description="The message to send as an acknowledgement when a Slack message is received",
     )
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Slack outbound adapter",
+    )
 
 
 class _WhatsAppConfig(BaseModel):
@@ -174,6 +178,10 @@ class _WhatsAppConfig(BaseModel):
     app_secret: str = Field(default="", description="WhatsApp app secret for signature verification")
     phone_number_id: str = Field(default="", description="WhatsApp Business phone number ID")
     api_version: str = Field(default="v24.0", description="WhatsApp API version")
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in WhatsApp outbound adapter",
+    )
 
 
 class _MessengerConfig(BaseModel):
@@ -182,6 +190,10 @@ class _MessengerConfig(BaseModel):
     access_token: str = Field(default="", description="Facebook Page access token")
     app_secret: str = Field(default="", description="Facebook app secret for signature verification")
     api_version: str = Field(default="v24.0", description="Facebook Graph API version")
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Facebook Messenger outbound adapter",
+    )
 
 
 class _InstagramConfig(BaseModel):
@@ -191,6 +203,10 @@ class _InstagramConfig(BaseModel):
     app_secret: str = Field(default="", description="Instagram app secret for signature verification")
     instagram_account_id: str = Field(default="", description="Instagram Business Account ID (IGSID)")
     api_version: str = Field(default="v21.0", description="Instagram Graph API version")
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Instagram outbound adapter",
+    )
 
 
 class _TelegramConfig(BaseModel):
@@ -198,6 +214,10 @@ class _TelegramConfig(BaseModel):
     bot_token: str = Field(default="", description="Telegram bot token from BotFather")
     webhook_secret: str = Field(default="", description="Optional secret token for webhook security")
     api_version: str = Field(default="bot", description="Telegram Bot API version prefix")
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Telegram outbound adapter",
+    )
 
 
 class _TeamsConfig(BaseModel):
@@ -212,6 +232,10 @@ class _TeamsConfig(BaseModel):
         default="",
         description="Entra ID tenant that owns the bot's app registration. Required only for a single-tenant registration, whose channel tokens must be issued by its own tenant; leave empty for a multi-tenant bot. Also the fallback tenant for the app-only token used to download attachments whose URL is not pre-authenticated, when the incoming activity carries none",
     )
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Microsoft Teams outbound adapter",
+    )
 
 
 class _GmailConfig(BaseModel):
@@ -219,6 +243,10 @@ class _GmailConfig(BaseModel):
     token_file: str = Field(default="token.pickle", description="Path to store OAuth2 token")
     poll_interval: int = Field(default=30, description="Email polling interval in seconds")
     label_filter: str = Field(default="INBOX", description="Gmail label to monitor (e.g., INBOX, UNREAD)")
+    outbound_adapter: str = Field(
+        default="",
+        description="Dotted path to an OutboundAdapter subclass replacing the built-in Gmail outbound adapter",
+    )
 
 
 class _MultimodalStorageRedisConfig(_RedisConfig):
@@ -375,6 +403,52 @@ class _ScheduleConfig(BaseModel):
     agents: Optional[list[str]] = Field(
         default=None,
         description="Agent names the schedule tools and system-prompt guidance attach to; omitted = all agents",
+    )
+
+
+class _OKFDatabaseConfig(BaseModel):
+    """One Open Knowledge Format bundle and the agents that may reach it.
+
+    Permission is per (agent, database): an agent may produce into one bundle and only consume
+    another, and both hold at once.
+
+    The three role lists default to None rather than an empty list, so an omitted role reads as
+    "not declared" rather than "declared empty". At least one of them must name an agent; that
+    rule is enforced in OKFRoleRegistry.from_config rather than here, because a field validator
+    cannot see which database key it belongs to and so could not name it in the error."""
+
+    type: str = Field(description="Document store for this bundle: 'local', 's3', or a dotted path to a DocumentStore subclass")
+    uri: str = Field(
+        description="Bundle location passed to the resolved store: a filesystem path, an s3://bucket/prefix URI, or the store's own location string"
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Human-readable description of this bundle, surfaced to the agent in its instructions and through get_schemas",
+    )
+    refresh_seconds: Optional[float] = Field(
+        default=300.0,
+        description="How stale the bundle manifest may get before the next operation re-walks the store; null disables automatic refresh",
+    )
+    consumer: Optional[list[str]] = Field(default=None, description="Agent names granted read access to this bundle")
+    producer: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names granted read and write access, instructed to add new knowledge to this bundle",
+    )
+    curator: Optional[list[str]] = Field(
+        default=None,
+        description="Agent names granted read and write access, instructed to review and maintain existing knowledge in this bundle",
+    )
+
+
+class _OKFConfig(BaseModel):
+    """Configuration for the Open Knowledge Format capability.
+
+    The presence of the block is the enablement signal; naming an agent in a role is the
+    deliberate opt-in, and the block does nothing without at least one."""
+
+    databases: dict[str, _OKFDatabaseConfig] = Field(
+        default_factory=dict,
+        description="OKF bundles keyed by backend name; the key is what agents pass as the 'backend' argument to the knowledge-base tools",
     )
 
 
@@ -884,6 +958,11 @@ class AKConfig(YamlBaseSettingsModified):
     schedule: Optional[_ScheduleConfig] = Field(
         default=None,
         description="Scheduling capability configurations (trigger provider, task store, tool scoping). Absent = the capability is disabled.",
+    )
+
+    okf: Optional[_OKFConfig] = Field(
+        default=None,
+        description="Open Knowledge Format capability configurations (bundles and the agents that consume, produce, or curate them). Absent = the capability is disabled.",
     )
 
     trace: _TraceConfig = Field(description="Tracing related configurations", default_factory=_TraceConfig)

@@ -147,19 +147,26 @@ jobs:
       - name: Install chart
         run: |
           kubectl create secret generic openai --from-literal=api-key="${{ secrets.OPENAI_API_KEY }}"
-          helm repo add valkey https://valkey-io.github.io/valkey-helm/
-          helm repo add nats https://nats-io.github.io/k8s/helm/charts/
-          helm dependency build "$CHART_DIR"
           if [[ "${{ matrix.flavor }}" == "dev" ]]; then
-            VALUES=(-f "$CHART_DIR/values-dev.yaml" -f "$CHART_DIR/ci/kind-smoke-values.yaml")
+            # The example's own install script in local mode (this checkout's chart plus the
+            # example overlay), exactly what its README documents, sized for a CI node by the
+            # kind smoke overlay. Users run the same script without "local" and get the
+            # published chart.
+            examples/k8s/openai-queue-mode/deploy/deploy.sh local \
+              -f "$CHART_DIR/ci/kind-smoke-values.yaml" --wait --timeout 600s
           else
-            VALUES=(-f "$CHART_DIR/values-${{ matrix.flavor }}.yaml" -f "ak-deployment/ak-k8s/ci/${{ matrix.flavor }}-smoke-values.yaml")
+            # The production-posture flavors are chart CI rather than the example walkthrough.
+            helm repo add valkey https://valkey-io.github.io/valkey-helm/
+            helm repo add nats https://nats-io.github.io/k8s/helm/charts/
+            helm dependency build "$CHART_DIR"
+            helm install ak "$CHART_DIR" \
+              -f "$CHART_DIR/values-${{ matrix.flavor }}.yaml" \
+              -f "ak-deployment/ak-k8s/ci/${{ matrix.flavor }}-smoke-values.yaml" \
+              --set 'extraEnv[0].name=OPENAI_API_KEY' \
+              --set 'extraEnv[0].valueFrom.secretKeyRef.name=openai' \
+              --set 'extraEnv[0].valueFrom.secretKeyRef.key=api-key' \
+              --wait --timeout 600s
           fi
-          helm install ak "$CHART_DIR" "${VALUES[@]}" \
-            --set 'extraEnv[0].name=OPENAI_API_KEY' \
-            --set 'extraEnv[0].valueFrom.secretKeyRef.name=openai' \
-            --set 'extraEnv[0].valueFrom.secretKeyRef.key=api-key' \
-            --wait --timeout 600s
 
       - name: Chat request through NATS
         run: |

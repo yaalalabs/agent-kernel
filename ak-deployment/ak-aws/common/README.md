@@ -30,9 +30,7 @@ module "ecr" {
   source = "yaalalabs/ak-common/aws//modules/ecr"
   
   region        = "us-west-2"
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "api"
+  prefix        = "myapp-prod-api"
   source_path   = "${path.module}/src"
 }
 
@@ -43,16 +41,14 @@ module "vpc" {
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
   private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
 }
 
 # Redis Module
 module "redis" {
   source = "yaalalabs/ak-common/aws//modules/redis"
   
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod"
   vpc_id        = module.vpc.vpc_id
   subnet_ids    = module.vpc.private_subnet_ids
 }
@@ -61,8 +57,7 @@ module "redis" {
 module "s3" {
   source = "yaalalabs/ak-common/aws//modules/s3"
   
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod"
   bucket_name   = "my-application-data"
 }
 
@@ -102,16 +97,14 @@ Each module has its own comprehensive documentation:
 module "vpc" {
   source = "yaalalabs/ak-common/aws//modules/vpc"
   
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
+  prefix        = var.prefix
 }
 
 # Create Redis cache
 module "redis" {
   source = "yaalalabs/ak-common/aws//modules/redis"
   
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
+  prefix        = var.prefix
   vpc_id        = module.vpc.vpc_id
   subnet_ids    = module.vpc.private_subnet_ids
 }
@@ -120,9 +113,7 @@ module "redis" {
 module "container_image" {
   source = "yaalalabs/ak-common/aws//modules/ecr"
   
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = "api"
+  prefix        = "${var.prefix}-api"
   source_path   = "${path.module}/src"
 }
 
@@ -130,8 +121,7 @@ module "container_image" {
 module "storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
   
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
+  prefix        = var.prefix
   bucket_name   = "application-data"
 }
 ```

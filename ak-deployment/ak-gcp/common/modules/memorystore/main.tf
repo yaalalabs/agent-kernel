@@ -1,7 +1,7 @@
 # Memorystore for Redis — GCP's managed Redis service
 # Equivalent of ElastiCache (AWS) or Azure Cache for Redis
 resource "google_redis_instance" "redis" {
-  name           = "${substr("${var.product_alias}-${var.env_alias}-${var.module_name}", 0, min(length("${var.product_alias}-${var.env_alias}-${var.module_name}"), 34))}-redis"
+  name           = "${substr("${var.prefix}", 0, min(length("${var.prefix}"), 34))}-redis"
   project        = var.project_id
   region         = var.region
   tier           = var.tier

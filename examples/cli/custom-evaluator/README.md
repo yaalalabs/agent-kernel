@@ -27,7 +27,7 @@ To run tests:
 ## The custom evaluator
 
 [`custom_evaluator.py`](custom_evaluator.py) implements `TokenOverlapEvaluator(AKEvaluator)` from
-scratch — no DeepEval, no RAGAS:
+scratch — no DeepEval, no Opik:
 
 - **`evaluate_by_score`**: a deterministic, offline Jaccard token-overlap ratio between the
   actual and expected text (stdlib `re` only). This is *graded* partial credit, unlike the

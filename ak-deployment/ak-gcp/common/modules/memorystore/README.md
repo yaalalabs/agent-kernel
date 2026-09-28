@@ -32,9 +32,7 @@ module "redis" {
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "cache"
+  prefix        = "myapp-prod-cache"
   network_id    = module.vpc.network_id
 }
 ```
@@ -48,9 +46,7 @@ module "redis" {
 
   project_id     = var.project_id
   region         = var.region
-  product_alias  = var.product_alias
-  env_alias      = "prod"
-  module_name    = "session"
+  prefix         = "${var.prefix}-session"
   network_id     = module.vpc.network_id
 
   tier           = "STANDARD_HA"  # High availability with replica
@@ -77,9 +73,7 @@ module "redis" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   network_id    = module.vpc.network_id
 }
 
@@ -93,9 +87,7 @@ module "redis" {
 |------|-------------|------|---------|:--------:|
 | `project_id` | GCP project ID | `string` | n/a | yes |
 | `region` | GCP region | `string` | `"us-central1"` | no |
-| `product_alias` | Short identifier for the product | `string` | n/a | yes |
-| `env_alias` | Environment identifier | `string` | n/a | yes |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `network_id` | VPC network ID for the Redis instance | `string` | n/a | yes |
 | `tier` | Service tier: BASIC or STANDARD_HA | `string` | `"BASIC"` | no |
 | `memory_size_gb` | Redis memory size in GB | `number` | `1` | no |

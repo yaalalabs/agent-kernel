@@ -19,14 +19,12 @@ module "authorizer" {
   version = "0.8.1"
   
   region        = "us-west-2"
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod"
   authorizer_info = {
     function_name         = "api-authorizer"
     handler_path          = "authorizer.handler"
     package_path          = "./authorizer"
     package_type          = "LocalZip"
-    module_name           = "auth"
     environment_variables = {
       JWT_SECRET = "your-secret-key"
       API_URL    = "https://api.example.com"
@@ -55,11 +53,9 @@ module "authorizer" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `region` | AWS region for deployment | `string` | n/a | yes |
-| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
-| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name for tagging | `string` | `"An Agent Kernel deployment"` | no |
 | `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
 | `is_production` | Enable production features (code signing) | `bool` | `false` | no |
 | `package_path` | Path to Lambda deployment package or S3 URI | `string` | n/a | yes |
 | `event_source_mapping` | Event source mapping configuration for triggers | `any` | `[]` | no |
@@ -88,7 +84,6 @@ module "authorizer" {
 | `handler_path` | Authorizer Lambda handler path | `string` | n/a | yes |
 | `package_path` | Authorizer package path | `string` | n/a | yes |
 | `package_type` | Deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | n/a | yes |
-| `module_name` | Authorizer module name | `string` | n/a | yes |
 | `result_ttl_in_seconds` | Cache TTL for authorization results | `number` | `150` | no |
 | `timeout` | Authorizer Lambda timeout in seconds | `number` | `30` | no |
 | `memory_size` | Authorizer Lambda memory size in MB | `number` | `128` | no |

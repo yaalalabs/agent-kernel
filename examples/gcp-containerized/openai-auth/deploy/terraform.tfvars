@@ -1,5 +1,3 @@
-project_id    = "agent-kernel-test"
-region        = "us-central1"
-product_alias = "ak-openai-containerized"
-env_alias     = "dvv"
-module_name   = "ex-auth"
+project_id = "agent-kernel-test"
+region     = "us-central1"
+prefix     = "ak-openai-containerized-dvv-ex-auth"

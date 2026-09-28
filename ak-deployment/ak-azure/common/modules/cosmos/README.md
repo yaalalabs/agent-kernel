@@ -17,7 +17,7 @@ It is intended to be consumed by both serverless and containerized stacks to cre
 
 ## Inputs
 Key inputs (see `variables.tf` for full list):
-- `product_alias`, `env_alias`, `module_name`, `tags`
+- `prefix`, `tags`
 - `region` (required) — Azure region for resources (account, private endpoint, and NSG all deploy here, independent of the resource group's own location)
 - `table_name` (required) — table name within the Cosmos DB account
 - `resource_group_name` (required) — Azure resource group name
@@ -45,9 +45,7 @@ Key inputs (see `variables.tf` for full list):
 module "session_table" {
   source = "yaalalabs/ak-common/azurerm//modules/cosmos"
 
-  product_alias       = var.product_alias
-  env_alias           = var.env_alias
-  module_name         = var.module_name
+  prefix              = var.prefix
   table_name          = "session_store"
   resource_group_name = var.resource_group_name
 
@@ -65,9 +63,7 @@ module "session_table" {
 module "orders_table" {
   source = "yaalalabs/ak-common/azurerm//modules/cosmos"
 
-  product_alias       = var.product_alias
-  env_alias           = var.env_alias
-  module_name         = "orders"
+  prefix              = "${var.prefix}-orders"
   table_name          = "orders_data"
   resource_group_name = var.resource_group_name
 
@@ -95,9 +91,7 @@ module "orders_table" {
 module "high_volume_table" {
   source = "yaalalabs/ak-common/azurerm//modules/cosmos"
 
-  product_alias       = var.product_alias
-  env_alias           = var.env_alias
-  module_name         = "analytics"
+  prefix              = "${var.prefix}-analytics"
   table_name          = "events"
   resource_group_name = var.resource_group_name
 

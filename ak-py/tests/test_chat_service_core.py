@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,6 +19,7 @@ from agentkernel.core.model import (
 from agentkernel.core.runtime import ACTING_USER_CACHE_KEY, Runtime
 
 ACTING_USER_AGENT = "acting-user-agent"
+INCREMENTAL_AGENT = "incremental-stream-agent"
 
 
 def _mock_handler(reply=None):
@@ -39,8 +41,13 @@ def _stream_handler(chunks):
         for chunk in chunks:
             yield chunk
 
+    def _chunks(requests, acting_user_id=None):
+        # A generator, not a list: run_stream_sync hands back an iterator now (#741), and the
+        # wrapper closes it, so a double that returns a list no longer matches the interface.
+        yield from chunks
+
     handler.run_stream_async.side_effect = _achunks
-    handler.run_stream_sync.return_value = list(chunks)
+    handler.run_stream_sync.side_effect = _chunks
     return handler
 
 
@@ -133,6 +140,21 @@ class TestExecuteSync:
             with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
                 service = ChatService()
                 service.execute_sync(BaseRunRequest(prompt="", session_id="s1"), requests=prebuilt)
+        assert handler.run_sync.call_args.args[0] is prebuilt
+
+    def test_process_chat_request_forwards_a_prebuilt_list(self):
+        """#524: the Agent Runner hands the queue body's request list straight through."""
+        prebuilt = [AgentRequestText(prompt="from the platform")]
+        handler = _mock_handler(AgentReplyText(response="ok"))
+
+        def _fail(req):
+            raise AssertionError("RequestBuilder must not run on the prebuilt path")
+
+        with patch("agentkernel.core.chat_service.RequestBuilder.from_base_request_sync", _fail):
+            with patch("agentkernel.core.chat_service.AgentHandler", return_value=handler):
+                status_code, body = ChatService().process_chat_request(BaseRunRequest(prompt="", session_id="s1"), requests=prebuilt)
+
+        assert (status_code, body["result"]) == (200, "ok")
         assert handler.run_sync.call_args.args[0] is prebuilt
 
 
@@ -397,3 +419,125 @@ class TestEnsureAgentAvailable:
                 with pytest.raises(ValueError, match="No agent available"):
                     AgentHandler().initialize("s1", "missing")
                 load.assert_not_called()
+
+
+class _IncrementalRunner(Runner):
+    """Streams like a framework SDK does: awaits between events, with a background task running.
+
+    Both halves matter to #741. The awaits are what a buffering bridge hid — every event was
+    produced before the caller saw any. The background task is the shape's standing risk: a
+    heartbeat or prefetch the SDK started must keep getting loop time while the pump is between
+    items.
+    """
+
+    def __init__(self):
+        super().__init__("IncrementalRunner")
+        self.timeline: list = []
+        self.heartbeats = 0
+        self.torn_down = False
+
+    async def run(self, agent, session, requests):
+        return AgentReplyText(response="ok")
+
+    async def stream(self, agent, session, requests):
+        async def _heartbeat():
+            while True:
+                await asyncio.sleep(0.005)
+                self.heartbeats += 1
+
+        beat = asyncio.get_running_loop().create_task(_heartbeat())
+        try:
+            yield MessageStart(message_id="incr-1")
+            for index in range(3):
+                await asyncio.sleep(0.05)
+                self.timeline.append(f"produced-{index}")
+                yield TextDelta(message_id="incr-1", content=str(index))
+            yield MessageEnd(message_id="incr-1")
+        finally:
+            beat.cancel()
+            self.torn_down = True
+
+
+class _IncrementalAgent(Agent):
+    def __init__(self, runner: _IncrementalRunner):
+        super().__init__(INCREMENTAL_AGENT, runner)
+
+    def get_description(self) -> str:
+        return "Incremental sync streaming test agent"
+
+    def get_a2a_card(self):
+        return None
+
+    def override_system_prompt(self, prompt):
+        pass
+
+    def attach_tool(self, tool):
+        pass
+
+
+class TestSyncStreamIsIncremental:
+    """The sync streaming surfaces deliver chunks mid-run, not as one burst at the end (#741).
+
+    Driven through the real Runtime rather than a mocked handler, because what is being asserted
+    is the event loop's behaviour across the sync/async bridge.
+    """
+
+    @pytest.fixture
+    def runner(self, monkeypatch):
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        AKConfig._reset()
+        streaming_runner = _IncrementalRunner()
+        agent = _IncrementalAgent(streaming_runner)
+        Runtime.current().register(agent)
+        yield streaming_runner
+        Runtime.current().deregister(agent)
+        AKConfig._reset()
+
+    def _request(self, session_id: str) -> BaseRunRequest:
+        return BaseRunRequest(prompt="hi", session_id=session_id, agent=INCREMENTAL_AGENT)
+
+    def test_execute_stream_sync_hands_over_each_chunk_before_the_next_is_produced(self, runner):
+        for chunk in ChatService().execute_stream_sync(self._request("s-incr-1")):
+            if chunk.delta:
+                runner.timeline.append(f"consumed-{chunk.delta}")
+
+        assert runner.timeline == ["produced-0", "consumed-0", "produced-1", "consumed-1", "produced-2", "consumed-2"]
+
+    def test_runner_background_work_keeps_running_across_chunks(self, runner):
+        beats = []
+        for chunk in ChatService().execute_stream_sync(self._request("s-incr-2")):
+            if chunk.delta:
+                beats.append(runner.heartbeats)
+
+        assert beats[0] > 0, "the runner's background task got no loop time before the first chunk"
+        assert beats[-1] > beats[0], "the runner's background task stopped advancing once chunks started arriving"
+
+    def test_the_run_ends_on_one_clean_done_chunk(self, runner):
+        """Pumping the run step by step must not disturb the contextvars it sets on entry and
+        resets on exit (the current session, the current agent): getting that wrong ends every
+        sync stream on a spurious error chunk after the real terminal one.
+        """
+        chunks = list(ChatService().execute_stream_sync(self._request("s-incr-4")))
+
+        assert [chunk.error for chunk in chunks if chunk.error] == []
+        assert [chunk.done for chunk in chunks].count(True) == 1
+        assert chunks[-1].done is True
+
+    def test_a_second_run_on_the_same_session_is_unaffected(self, runner):
+        """The first run's context must be fully unwound: a session left mid-context would fail
+        the next request on it, which is the durable half of the same defect."""
+        service = ChatService()
+        list(service.execute_stream_sync(self._request("s-incr-5")))
+        chunks = list(service.execute_stream_sync(self._request("s-incr-5")))
+
+        assert [chunk.error for chunk in chunks if chunk.error] == []
+
+    def test_abandoning_the_stream_tears_the_run_down_there_and_then(self, runner):
+        """A consumer that stops reading must still end the run: the runner's own cleanup, and
+        Runtime.stream's (releasing the session lock, clearing the volatile cache), have to happen
+        at close, not whenever the abandoned generator is eventually garbage collected."""
+        stream = ChatService().execute_stream_sync(self._request("s-incr-3"))
+        next(stream)
+        stream.close()
+
+        assert runner.torn_down is True

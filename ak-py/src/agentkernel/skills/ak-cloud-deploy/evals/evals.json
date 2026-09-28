@@ -1,7 +1,7 @@
 {
   "skill": "ak-cloud-deploy",
   "description": "Evaluations for the ak-cloud-deploy (AWS/Azure/GCP/Kubernetes deployment) skill with sync/async and scalable modes",
-  "version": "0.9.0",
+  "version": "0.9.3",
   "evals": [
     {
       "id": "deploy-aws-serverless",
@@ -330,6 +330,7 @@
         "app_io_handler.py",
         "app_agent_runner.py",
         "helm install",
+        "oci://ghcr.io/yaalalabs/charts/agent-kernel",
         "ak-deployment/ak-k8s",
         "values-dev.yaml"
       ],

@@ -275,7 +275,7 @@ const ORBIT_CARDS = [
     icon: <MdCloud />,
     color: '#00DDFF',
     title: 'Multi-Cloud Native',
-    desc: 'Same agent code deploys to AWS, Azure, and GCP out of the box. No other AI agent runtime offers this out of the box.',
+    desc: 'Same agent code deploys to AWS, Azure, GCP, or your own Kubernetes cluster out of the box. No other AI agent runtime offers this out of the box.',
   },
   {
     icon: <MdSpeed />,

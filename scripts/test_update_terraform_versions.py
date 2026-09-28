@@ -60,7 +60,7 @@ module "vpc" {
 module "redis" {
   source = "yaalalabs/ak-common/aws//modules/redis"
   version = "0.1.0"
-  env_alias = "prod"
+  prefix = "myapp-prod"
 }
 '''
     
@@ -184,9 +184,7 @@ module "docker_image" {
   count         = (var.package_type == "Image") ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
   version       = "0.1.2-b18"
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  product_alias = var.product_alias
+  prefix        = var.prefix
   source_path   = var.package_path
 }
 '''
@@ -221,9 +219,7 @@ module docker_image {
   count         = (var.package_type == "Image") ? 1 : 0
   source        = "yaalalabs/ak-common/aws//modules/ecr"
   version       = "0.1.2-b18"
-  env_alias     = var.env_alias
-  module_name   = var.module_name
-  product_alias = var.product_alias
+  prefix        = var.prefix
   source_path   = var.package_path
 }
 '''
@@ -257,12 +253,10 @@ module "serverless_agents" {
   source = "yaalalabs/ak-serverless/aws"
   version = "0.4.0"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
+  prefix               = var.prefix
   function_description = "Agent Kernel OpenAI Sample Lambda"
   function_name        = "openai-agents"
   handler_path         = "lambda.handler"
-  module_name          = var.module_name
   package_path         = "../dist"
   package_type         = "Image"
   memory_size          = 256

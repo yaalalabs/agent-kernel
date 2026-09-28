@@ -29,6 +29,9 @@ class DynamoDBAttachmentStore(AttachmentStore):
     for pruning.
     """
 
+    # DynamoDB is an external service, so any process with the same config reads what another wrote.
+    shared = True
+
     _log = logging.getLogger("ak.core.multimodal.storage.dynamodb")
 
     def __init__(self, session_id: str, table_name: str, ttl: int):

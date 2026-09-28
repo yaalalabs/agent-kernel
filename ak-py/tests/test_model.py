@@ -71,3 +71,58 @@ class TestAgentReplyAnyFromOutput:
         assert AgentReplyAny.from_output(42) is None
         assert AgentReplyAny.from_output(None) is None
         assert AgentReplyAny.from_output(["a", "b"]) is None
+
+
+class TestPrebuiltRequestList:
+    """#524: an integration builds its own AgentRequest list, and it has to survive the queue."""
+
+    def test_every_request_variant_round_trips(self):
+        import json
+
+        from agentkernel.core.model import (
+            AgentRequestAny,
+            AgentRequestAttachmentRef,
+            AgentRequestFile,
+            AgentRequestImage,
+            AgentRequestText,
+            BaseRunRequest,
+        )
+
+        original = BaseRunRequest(
+            prompt="hi",
+            session_id="s1",
+            requests=[
+                AgentRequestText(prompt="hi"),
+                AgentRequestImage(image_data="ZmFrZQ==", name="shot.png", mime_type="image/png"),
+                AgentRequestFile(file_data="ZmFrZQ==", name="doc.pdf", mime_type="application/pdf"),
+                AgentRequestAny(name="body", content={"raw": 1}),
+                AgentRequestAttachmentRef(attachment_id="att-1"),
+            ],
+        )
+
+        restored = BaseRunRequest.model_validate(json.loads(json.dumps(original.model_dump(exclude_none=True))))
+
+        assert [type(r).__name__ for r in restored.requests] == [
+            "AgentRequestText",
+            "AgentRequestImage",
+            "AgentRequestFile",
+            "AgentRequestAny",
+            "AgentRequestAttachmentRef",
+        ]
+        assert restored.requests[4].attachment_id == "att-1"
+
+    def test_the_field_is_typed_so_it_never_reaches_the_agent_as_context(self):
+        from agentkernel.core.chat_service import RequestBuilder
+        from agentkernel.core.model import AgentRequestText, BaseRunRequest
+
+        request = BaseRunRequest(prompt="hi", session_id="s1", requests=[AgentRequestText(prompt="hi")])
+
+        built = RequestBuilder.from_base_request_sync(request)
+
+        # An extra field would have become an AgentRequestAny named "requests".
+        assert [type(r).__name__ for r in built] == ["AgentRequestText"]
+
+    def test_the_field_defaults_to_none(self):
+        from agentkernel.core.model import BaseRunRequest
+
+        assert BaseRunRequest(prompt="hi", session_id="s1").requests is None

@@ -1,16 +1,6 @@
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "The product alias (used in ACR name and image name)"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "The environment alias (dev, staging, d, etc.)"
-}
-
-variable "module_name" {
-  type        = string
-  description = "The module name (part of ACR and image name)"
+  description = "Prefix applied to every resource name"
 }
 
 variable "region" {

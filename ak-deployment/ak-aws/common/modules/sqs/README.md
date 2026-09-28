@@ -19,9 +19,7 @@ This module creates a single AWS SQS queue with optional dead-letter queue suppo
 module "processing_queue" {
   source = "yaalalabs/ak-common/aws//modules/sqs"
 
-  product_alias        = "agent-kernel"
-  env_alias            = "dev"
-  module_name          = "processing"
+  prefix               = "agent-kernel-dev-processing"
   queue_name           = "requests"
   region               = "us-east-1"
   product_display_name = "Agent Kernel"
@@ -41,9 +39,7 @@ module "processing_queue" {
 module "chat_queue" {
   source = "yaalalabs/ak-common/aws//modules/sqs"
 
-  product_alias        = "agent-kernel"
-  env_alias            = "prod"
-  module_name          = "chat"
+  prefix               = "agent-kernel-prod-chat"
   queue_name           = "messages"
   region               = "us-east-1"
   product_display_name = "Agent Kernel"
@@ -66,9 +62,7 @@ module "chat_queue" {
 
 | Name | Description | Type |
 |------|-------------|------|
-| `product_alias` | Product alias used in resource names | `string` |
-| `env_alias` | Environment alias | `string` |
-| `module_name` | Module name used in resource names | `string` |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` |
 | `queue_name` | Queue name suffix | `string` |
 | `product_display_name` | Human-readable product name | `string` |
 | `is_production` | Production environment flag | `bool` |
@@ -123,6 +117,6 @@ module "chat_queue" {
 
 ## Notes
 
-- Queue names are generated as `<product_alias>-<env_alias>-<module_name>-<queue_name>`.
+- Queue names are generated as `<prefix>-<queue_name>`.
 - FIFO queues receive a `.fifo` suffix.
 - Producer and consumer policies are only created when the corresponding ARN lists are non-empty.

@@ -27,6 +27,7 @@ When replying to emails:
 8. Do NOT include "Subject:" in your response
 9. Do NOT add signature or closing (handler will add automatically)
 """,
+    model="openai/gpt-4.1-mini",
 )
 
 # Initialize module with agent

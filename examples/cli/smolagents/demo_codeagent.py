@@ -22,7 +22,7 @@ def get_weather(city: str) -> str:
     return f"Cannot find weather for {city}."
 
 
-model = LiteLLMModel(model_id="openai/gpt-4o")
+model = LiteLLMModel(model_id="openai/gpt-4.1-mini")
 
 code_agent = CodeAgent(
     tools=SmolagentsToolBuilder.bind([get_weather]),

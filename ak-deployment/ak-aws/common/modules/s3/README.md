@@ -31,8 +31,7 @@ module "app_storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "dev"
+  prefix               = "myapp-dev"
   product_display_name = "My Application"
   is_production        = false
 }
@@ -52,8 +51,7 @@ module "prod_storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
   product_display_name = "My Application"
   is_production        = true
   s3_kms_key_id        = aws_kms_key.s3_encryption.id
@@ -74,8 +72,7 @@ module "lambda_packages" {
   source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
   product_display_name = "Lambda Packages"
   is_production        = true
   
@@ -89,8 +86,7 @@ module "app_data" {
   source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
   product_display_name = "Application Data"
   is_production        = true
   
@@ -106,8 +102,7 @@ module "app_data" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
 | `region` | AWS region for S3 bucket deployment | `string` | n/a | yes |
-| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
-| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name for tagging | `string` | n/a | yes |
 | `is_production` | Enable production features (versioning, encryption) | `bool` | n/a | yes |
 | `s3_bucket_tags` | Additional custom tags for the bucket | `map(string)` | `{}` | no |
@@ -134,7 +129,7 @@ module "app_data" {
 
 ### 📦 Bucket Configuration
 
-- **Naming Convention**: `{product_alias}-{env_alias}-sources-{account_id}`
+- **Naming Convention**: `{prefix}-sources-{account_id}`
 - **Versioning**: Enabled by default (`enable_versioning = true`) so Lambda S3Zip redeploys are detected; always on when `is_production = true`
 - **Force Destroy**: Enabled to allow Terraform to clean up buckets
 - **Tags**: Automatic tagging with environment, product, and backup config
@@ -171,8 +166,7 @@ module "dev_storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "dev"
+  prefix               = "myapp-dev"
   product_display_name = "My App Development"
   is_production        = false  # No versioning/encryption overhead
 }
@@ -185,8 +179,7 @@ module "prod_storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
   product_display_name = "My App Production"
   is_production        = true         # Enables versioning
   s3_kms_key_id        = aws_kms_key.prod.id  # KMS encryption
@@ -215,8 +208,7 @@ module "lambda_storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
   product_display_name = "Lambda Packages"
   is_production        = true
 }
@@ -237,8 +229,7 @@ module "data_storage" {
   source = "yaalalabs/ak-common/aws//modules/s3"
 
   region               = "us-west-2"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
   product_display_name = "Application Data"
   is_production        = true
   s3_kms_key_id        = aws_kms_key.data_key.id

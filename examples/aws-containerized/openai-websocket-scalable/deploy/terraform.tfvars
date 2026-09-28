@@ -1,4 +1,2 @@
-region        = "ap-southeast-2"
-product_alias = "ak-oai-ws-scl"
-env_alias     = "dev"
-module_name   = "scalable"
+region = "ap-southeast-2"
+prefix = "ak-oai-ws-scl-dev-scalable"

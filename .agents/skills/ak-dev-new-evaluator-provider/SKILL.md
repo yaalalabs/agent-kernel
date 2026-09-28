@@ -4,7 +4,7 @@ description: >
   Step-by-step guide for adding a new built-in test evaluator provider to Agent Kernel
   (beyond DeepEval and Opik). Use this skill when you need to give the test framework's pluggable
   AKEvaluator interface a new first-party scoring/judge backend addressable by a short
-  config name (e.g. "ragas"), not a one-off bring-your-own evaluator. Covers implementing
+  config name (e.g. "trulens"), not a one-off bring-your-own evaluator. Covers implementing
   score-based and LLM-as-judge evaluation, factory registration, configuration, optional
   dependencies, and testing.
 license: Apache-2.0

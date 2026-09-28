@@ -17,9 +17,7 @@ This is an internal submodule used by the root serverless stack in `state.tf`; t
 module "queues" {
   source = "./modules/queues"
 
-  product_alias = "agent-kernel"
-  env_alias     = "dev"
-  module_name   = "scalable-openai"
+  prefix        = "agent-kernel-dev-scalable-openai"
 
   queue_config = {
     input_queue_name  = "input-queue"
@@ -33,9 +31,7 @@ module "queues" {
 
 | Name | Description |
 |------|-------------|
-| `product_alias` | Product alias used in queue names |
-| `env_alias` | Environment alias |
-| `module_name` | Module name used in queue names |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) |
 | `tags` | Resource tags |
 | `queue_config` | Nested configuration shared by both queues |
 

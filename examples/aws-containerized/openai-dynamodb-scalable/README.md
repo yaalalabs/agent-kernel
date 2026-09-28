@@ -59,9 +59,7 @@ Both modes use the same 2-image architecture (REST Service + Agent Runner) with 
     export TF_VAR_openai_api_key=<OPENAI_API_KEY>
     export TF_VAR_vpc_id=<VPC_ID>
     export TF_VAR_private_subnet_ids='["subnet-xxx","subnet-yyy"]'
-    export TF_VAR_product_alias="ak-oai-scl-ecs"
-    export TF_VAR_env_alias="dev"
-    export TF_VAR_module_name="scalable"
+    export TF_VAR_prefix="ak-oai-scl-ecs-dev-scalable"
     export TF_VAR_region="us-east-1"
     ```
 

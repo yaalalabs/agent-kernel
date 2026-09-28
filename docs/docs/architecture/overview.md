@@ -39,7 +39,7 @@ graph TB
         GR[Guardrails<br/>OpenAI · Bedrock · Walled AI]
         MM[Multimodal<br/>attachments]
         TH[Conversation Threads]
-        KB[Knowledge Bases<br/>Chroma · Neo4j · Starburst]
+        KB[Knowledge Bases<br/>Chroma · Neo4j · Starburst · OKF]
         TR[Tracing<br/>Langfuse · OpenLLMetry · Logfire]
     end
 

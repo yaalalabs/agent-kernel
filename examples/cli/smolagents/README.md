@@ -7,7 +7,7 @@ This example utilizes `CodeAgent` alongside tools to natively evaluate mathemati
 
 ## Prerequisites
 
-These demos use LiteLLM with `openai/gpt-4o`, so set your OpenAI API key before running:
+These demos use LiteLLM with `openai/gpt-4.1-mini`, so set your OpenAI API key before running:
 
     export OPENAI_API_KEY="your_openai_api_key_here"
 

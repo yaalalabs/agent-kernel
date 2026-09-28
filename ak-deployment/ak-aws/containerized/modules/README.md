@@ -131,6 +131,11 @@ rest_service = {
 }
 ```
 
+Two more top-level (not part of the `rest_service` object) variables control the ALB and ECS service
+security groups: `alb_security_group_id` and `ecs_service_security_group_id`, each `string`, default
+`null`. Unset, the module creates its own SG as before; set, the module uses the provided ID instead and
+skips creating that SG. Independent of each other.
+
 **Outputs**:
 
 - `service_arn`
@@ -231,6 +236,10 @@ scaling_config = {
 }
 ```
 
+One more top-level (not part of the `agent_runner` object) variable controls its security group:
+`security_group_id`, `string`, default `null`. Unset, the module creates its own SG as before; set, the
+module uses the provided ID instead and skips creating one.
+
 **Outputs**:
 
 - `service_name`
@@ -279,9 +288,7 @@ When `scaling_config.enabled = true`:
 module "containerized_agents" {
   source = "yaalalabs/ak-containerized/aws"
 
-  product_alias = "my-agent"
-  env_alias     = "dev"
-  module_name   = "chatbot"
+  prefix        = "my-agent-dev-chatbot"
   region        = "us-east-1"
 
   package_path = "./dist"
@@ -304,9 +311,7 @@ module "containerized_agents" {
 module "containerized_agents" {
   source = "yaalalabs/ak-containerized/aws"
 
-  product_alias = "my-agent"
-  env_alias     = "prod"
-  module_name   = "assistant"
+  prefix        = "my-agent-prod-assistant"
   region        = "us-east-1"
 
   package_path = "./dist-rest-service"

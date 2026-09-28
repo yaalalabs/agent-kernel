@@ -34,7 +34,7 @@ ak-py/                  The agentkernel PyPI package (core framework, all Python
     framework/           Adapters: openai, crewai, langgraph, adk, smolagents
     api/                 REST, MCP, A2A server layers
     deployment/          AWS (Lambda + ECS), Azure Functions, GCP Cloud Run handlers
-    integration/         Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail
+    integration/         adapter/ (the messaging seam) + Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail
     knowledgebase/       ChromaDB, Neo4j, Starburst backends
     guardrail/           OpenAI, AWS Bedrock, Walled AI guardrail providers
     trace/               Langfuse, OpenLLMetry tracing adapters
@@ -172,5 +172,3 @@ safe to run to sanity-check a change.
   asked to always be told before a commit runs.
 - Don't push, force-push, or open PRs unless explicitly asked.
 - Never edit files under `docs/versioned_docs/` — those are frozen snapshots of past releases.
-- [CODEOWNERS](CODEOWNERS) exists — check it before assuming no one needs to review a change to a
-  given path.

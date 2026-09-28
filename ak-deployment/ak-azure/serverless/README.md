@@ -24,6 +24,22 @@ Perfect for microservices, API backends, event-driven architectures, and serverl
 | Azure Provider | >= 4.57.0, < 5.0.0 |
 | Null Provider | 3.2.4 |
 
+### Naming limits
+
+`prefix` must contain **at most 10 alphanumeric characters**, not counting separators. The
+module derives the Function App's storage account name by stripping the separators out of
+`prefix` and appending 14 characters (4 characters of the subscription ID plus `deployment`),
+and Azure caps storage account names at 24 lowercase alphanumerics:
+
+```
+myapp-chat  ->  myappchat  +  a1b2  +  deployment  =  myappchata1b2deployment   (23 chars)
+```
+
+`prefix` is validated against this, so an over-long value fails at plan time rather than
+surfacing as an opaque Azure API error during apply. Because the budget is tight, the
+examples below use two-segment prefixes such as `myapp-chat` rather than the
+three-segment `product-env-module` form the other cloud modules can afford.
+
 ## 🔌 Providers
 
 This module is provider-agnostic: it declares `azurerm` in `required_providers` but does **not** configure it internally. Configure the provider in your root module and pass it explicitly via the `providers` argument. This is what lets you use `count`, `for_each`, or `depends_on` on the module block, and lets a minimal/standalone config destroy the resources it created.
@@ -54,11 +70,9 @@ module "python_api" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-api"
   product_display_name = "My Application API"
   
-  module_name          = "api"
   function_name        = "handler"
   function_description = "Main API handler"
   module_type          = "python"
@@ -113,11 +127,9 @@ module "nodejs_api" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-chat"
   product_display_name = "Node.js API"
   
-  module_name          = "chat"
   function_name        = "handler"
   function_description = "Chat API endpoint"
   module_type          = "nodejs"
@@ -156,11 +168,9 @@ module "serverless_api_redis" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-chat"
   product_display_name = "Serverless API with Redis"
   
-  module_name          = "chat"
   function_name        = "handler"
   function_description = "Chat API with Redis session storage"
   module_type          = "python"
@@ -199,11 +209,9 @@ module "serverless_api_cosmosdb" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-chat"
   product_display_name = "Serverless API with Cosmos DB"
   
-  module_name          = "chat"
   function_name        = "handler"
   function_description = "Chat API with Cosmos DB session storage"
   module_type          = "python"
@@ -248,11 +256,9 @@ module "production_api" {
 
   region               = "centralus"
   resource_group_name  = "enterprise-prod-rg"
-  product_alias        = "enterprise"
-  env_alias            = "prod"
+  prefix               = "acme-core"
   product_display_name = "Enterprise API"
   
-  module_name          = "core-api"
   function_name        = "handler"
   function_description = "Production API handler"
   module_type          = "python"
@@ -316,11 +322,9 @@ module "production_api" {
 |------|-------------|------|---------|:--------:|
 | `region` | Azure region for deployment | `string` | n/a | yes |
 | `resource_group_name` | Name of the Azure resource group | `string` | n/a | yes |
-| `product_alias` | Short identifier for the product | `string` | n/a | yes |
-| `env_alias` | Environment identifier (dev, staging, prod) | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-chat`). At most 10 alphanumeric characters, excluding separators — see [Naming limits](#naming-limits) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name | `string` | `"An Agent Kernel deployment"` | no |
 | `module_type` | Runtime type: `python` or `nodejs` | `string` | `"python"` | no |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
 | `is_production` | Enable production features (Basic APIM SKU) | `bool` | `false` | no |
 | `package_path` | Path to function ZIP package | `string` | n/a | yes |
 | `package_type` | Deployment type: `LocalZip` or `Image` | `string` | `"LocalZip"` | no |
@@ -573,7 +577,7 @@ locals {
       create_cosmosdb_cluster = true
     }
   }
-  env_config = local.config[var.env_alias]
+  env_config = local.config[var.environment]
 }
 
 module "api" {

@@ -28,16 +28,26 @@ from pydantic_ai.run import AgentRunResultEvent
 from pydantic_core import to_jsonable_python
 
 from agentkernel.core import Session
+from agentkernel.core.builder import SessionStoreBuilder
 from agentkernel.core.config import AKConfig
 from agentkernel.core.model import AgentReplyAny, AgentReplyText, AgentRequestText
+from agentkernel.core.runtime import Runtime
 from agentkernel.core.session.serde import BinarySerde
 from agentkernel.core.tool import SystemToolFactory
-from agentkernel.framework.pydanticai.pydanticai import FRAMEWORK, PydanticAIAgent, PydanticAIRunner, PydanticAISession
+from agentkernel.framework.pydanticai.pydanticai import FRAMEWORK, PydanticAIAgent, PydanticAIModule, PydanticAIRunner, PydanticAISession
 
 
 class CalendarEvent(BaseModel):
     name: str
     date: str
+
+
+def _bare_agent():
+    """A mock AK agent carrying the members every runner reads before its native call (spec #758)."""
+    mock_agent = MagicMock()
+    mock_agent.run_options = {}
+    mock_agent.resolve_run_options = AsyncMock(side_effect=lambda session, requests: dict(mock_agent.run_options))
+    return mock_agent
 
 
 def _mock_agent(output, messages=None):
@@ -49,7 +59,7 @@ def _mock_agent(output, messages=None):
     mock_run_result.output = output
     mock_run_result.all_messages = MagicMock(return_value=messages or [])
 
-    mock_agent = MagicMock()
+    mock_agent = _bare_agent()
     mock_agent.agent = MagicMock()
     mock_agent.agent.run = AsyncMock(return_value=mock_run_result)
     return mock_agent
@@ -65,7 +75,7 @@ def _mock_stream_events_agent(events, on_stream=None, messages=None):
     The events themselves are real SDK objects (see the ``_text_*`` helpers), so these tests pin the
     wire shape rather than a mock's.
     """
-    mock_agent = MagicMock()
+    mock_agent = _bare_agent()
     mock_agent.captured_deps = None
 
     @asynccontextmanager
@@ -189,7 +199,7 @@ class TestPydanticAIRunnerFrameworkContext:
             deps["cart"].append("apple")
             return mock_result
 
-        mock_agent = MagicMock()
+        mock_agent = _bare_agent()
         mock_agent.agent = MagicMock()
         mock_agent.agent.run = fake_run
 
@@ -203,7 +213,7 @@ class TestPydanticAIRunnerFrameworkContext:
         session = Session("s")
         session.set_framework_context({"cart": []})
 
-        mock_agent = MagicMock()
+        mock_agent = _bare_agent()
         mock_agent.agent = MagicMock()
         mock_agent.agent.run = AsyncMock(side_effect=Exception("boom"))
 
@@ -330,7 +340,7 @@ class TestPydanticAIRunnerErrorHandling:
         session = Session("test-session")
         requests = [AgentRequestText(prompt="test")]
 
-        mock_agent = MagicMock()
+        mock_agent = _bare_agent()
         mock_agent.agent = MagicMock()
         mock_agent.agent.run = AsyncMock(side_effect=Exception("Something went wrong"))
 
@@ -352,7 +362,7 @@ class TestPydanticAIRunnerErrorHandling:
                 super().__init__("Service temporarily unavailable")
                 self.status_code = 503
 
-        mock_agent = MagicMock()
+        mock_agent = _bare_agent()
         mock_agent.agent = MagicMock()
         mock_agent.agent.run = AsyncMock(side_effect=ServiceUnavailableError())
 
@@ -373,7 +383,7 @@ class TestPydanticAIRunnerErrorHandling:
                 super().__init__("Rate limit exceeded")
                 self.status_code = 429
 
-        mock_agent = MagicMock()
+        mock_agent = _bare_agent()
         mock_agent.agent = MagicMock()
         mock_agent.agent.run = AsyncMock(side_effect=RateLimitError())
 
@@ -830,3 +840,138 @@ class TestPydanticAIAgentDescription:
     def test_empty_when_neither_set(self):
         native = Agent(model=TestModel(), name="n")
         assert PydanticAIAgent("n", PydanticAIRunner(), native).get_description() == ""
+
+
+def _capturing_stream_agent(captured: dict):
+    """A mock agent whose run_stream_events records its keywords and yields only the terminal result event."""
+    mock_agent = _bare_agent()
+
+    @asynccontextmanager
+    async def run_stream_events(content, **kwargs):
+        captured.clear()
+        captured.update(kwargs)
+
+        async def stream():
+            result = MagicMock()
+            result.all_messages = MagicMock(return_value=[])
+            yield AgentRunResultEvent(result=result)
+
+        yield stream()
+
+    mock_agent.agent = MagicMock()
+    mock_agent.agent.run_stream_events = run_stream_events
+    return mock_agent
+
+
+class TestPydanticAIRunOptions:
+    """Declared run options reach agent.run; stream drops event_stream_handler with one warning (spec #754)."""
+
+    def test_reserved_keys(self):
+        assert set(PydanticAIAgent.RESERVED_RUN_OPTIONS) == {"user_prompt", "message_history", "deps"}
+
+    @pytest.mark.asyncio
+    async def test_options_are_forwarded_to_run_beside_the_ak_owned_keys(self):
+        runner = PydanticAIRunner()
+        usage_limits, handler = object(), object()
+        mock_agent = _mock_agent("ok")
+        mock_agent.run_options = {"usage_limits": usage_limits, "event_stream_handler": handler}
+
+        await runner.run(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])
+
+        kwargs = mock_agent.agent.run.call_args.kwargs
+        assert kwargs["usage_limits"] is usage_limits
+        assert kwargs["event_stream_handler"] is handler
+        assert set(kwargs) == {"usage_limits", "event_stream_handler", "message_history", "deps"}
+
+    @pytest.mark.asyncio
+    async def test_stream_drops_the_handler_with_one_warning_and_keeps_the_declared_dict(self, caplog):
+        runner = PydanticAIRunner()
+        usage_limits, handler = object(), object()
+        captured: dict = {}
+        mock_agent = _capturing_stream_agent(captured)
+        mock_agent.run_options = {"usage_limits": usage_limits, "event_stream_handler": handler}
+
+        with caplog.at_level(logging.WARNING, logger="ak.pydanticai.runner"):
+            _ = [e async for e in runner.stream(mock_agent, Session("s"), [AgentRequestText(prompt="hi")])]
+            first = dict(captured)
+            _ = [e async for e in runner.stream(mock_agent, Session("t"), [AgentRequestText(prompt="hi")])]
+
+        assert first["usage_limits"] is usage_limits
+        assert "event_stream_handler" not in first
+        assert set(first) == {"usage_limits", "message_history", "deps"}
+        assert mock_agent.run_options["event_stream_handler"] is handler
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "event_stream_handler" in r.getMessage()]
+        assert len(warnings) == 1
+
+    @pytest.mark.asyncio
+    async def test_run_uses_the_resolved_options_and_resolves_once_per_run(self):
+        runner = PydanticAIRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+        static_limits, run_limits = object(), object()
+        mock_agent = _mock_agent("ok")
+        mock_agent.run_options = {"usage_limits": static_limits}
+        mock_agent.resolve_run_options = AsyncMock(return_value={"usage_limits": run_limits})  # the factory-merged mapping
+
+        await runner.run(mock_agent, session, requests)
+
+        mock_agent.resolve_run_options.assert_awaited_once_with(session, requests)
+        kwargs = mock_agent.agent.run.call_args.kwargs
+        assert kwargs["usage_limits"] is run_limits
+        assert set(kwargs) == {"usage_limits", "message_history", "deps"}
+
+    @pytest.mark.asyncio
+    async def test_stream_filters_the_resolved_options_and_resolves_once_per_stream(self, caplog):
+        runner = PydanticAIRunner()
+        session = Session("s")
+        requests = [AgentRequestText(prompt="hi")]
+        run_limits, handler = object(), object()
+        captured: dict = {}
+        mock_agent = _capturing_stream_agent(captured)
+        mock_agent.run_options = {}
+        mock_agent.resolve_run_options = AsyncMock(return_value={"usage_limits": run_limits, "event_stream_handler": handler})
+
+        with caplog.at_level(logging.WARNING, logger="ak.pydanticai.runner"):
+            _ = [e async for e in runner.stream(mock_agent, session, requests)]
+
+        mock_agent.resolve_run_options.assert_awaited_once_with(session, requests)
+        assert captured["usage_limits"] is run_limits
+        assert "event_stream_handler" not in captured
+        assert set(captured) == {"usage_limits", "message_history", "deps"}
+        assert len([r for r in caplog.records if r.levelno == logging.WARNING and "event_stream_handler" in r.getMessage()]) == 1
+
+    def test_stream_run_options_takes_a_mapping_and_returns_a_filtered_copy(self):
+        runner = PydanticAIRunner()
+        handler = object()
+        options = {"usage_limits": 1, "event_stream_handler": handler}
+
+        filtered = runner._stream_run_options(options)
+
+        assert filtered == {"usage_limits": 1}
+        assert options == {"usage_limits": 1, "event_stream_handler": handler}  # the input mapping is untouched
+
+    @pytest.mark.asyncio
+    async def test_a_request_without_content_returns_before_resolving_in_both_modes(self):
+        runner = PydanticAIRunner()
+        mock_agent = _mock_agent("ok")
+
+        reply = await runner.run(mock_agent, Session("s"), [])
+        _ = [e async for e in runner.stream(mock_agent, Session("s"), [])]
+
+        assert "No valid content" in reply.response
+        mock_agent.resolve_run_options.assert_not_awaited()
+
+    def test_reserved_keys_are_rejected_at_declaration_through_the_module(self):
+        native = Agent(TestModel(), name="reserved-keys-agent")
+
+        with Runtime(SessionStoreBuilder.build()):
+            module = PydanticAIModule([native])
+
+            for key in ("user_prompt", "message_history", "deps"):
+                with pytest.raises(ValueError) as exc:
+                    module.run_options(native, **{key: object()})
+                assert f"'{key}'" in str(exc.value)
+                assert "'pydanticai'" in str(exc.value)
+
+            module.run_options(native, retries=2)
+            assert module.get_agent("reserved-keys-agent").run_options == {"retries": 2}

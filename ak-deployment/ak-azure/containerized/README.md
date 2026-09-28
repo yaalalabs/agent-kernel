@@ -54,11 +54,9 @@ module "container_app" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-api"
   product_display_name = "My Containerized App"
   
-  module_name     = "api"
   package_path    = "${path.module}/src"  # Directory with Dockerfile
   publisher_email = "admin@mycompany.com"
   
@@ -117,11 +115,9 @@ module "container_app_redis" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-stateful-api"
   product_display_name = "Stateful API"
   
-  module_name     = "stateful-api"
   package_path    = "${path.module}/app"
   publisher_email = "admin@mycompany.com"
   
@@ -158,11 +154,9 @@ module "container_app_cosmosdb" {
 
   region               = "centralus"
   resource_group_name  = "myapp-prod-rg"
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod-serverless-api"
   product_display_name = "Serverless State API"
   
-  module_name     = "serverless-api"
   package_path    = "${path.module}/app"
   publisher_email = "admin@mycompany.com"
   
@@ -198,10 +192,8 @@ module "container_app_cosmosdb" {
 |------|-------------|------|---------|:--------:|
 | `region` | Azure region for deployment | `string` | n/a | yes |
 | `resource_group_name` | Name of the Azure resource group | `string` | n/a | yes |
-| `product_alias` | Short identifier for the product | `string` | n/a | yes |
-| `env_alias` | Environment identifier (dev, staging, prod) | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `product_display_name` | Human-readable product name | `string` | `"An Agent Kernel deployment"` | no |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
 | `package_path` | Path to Docker source directory (with Dockerfile) | `string` | n/a | yes |
 | `environment_variables` | Environment variables for container | `map(string)` | `{}` | no |
 | `tags` | Additional tags for resources | `map(string)` | `{}` | no |

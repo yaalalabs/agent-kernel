@@ -19,14 +19,12 @@ This is an internal submodule used by the root serverless stack in `state.tf`; t
 module "response_handler" {
   source = "./modules/response-handler"
 
-  product_alias = "agent-kernel"
-  env_alias     = "dev"
+  prefix        = "agent-kernel-dev"
   region        = "us-east-1"
 
   response_handler = {
     function_name = "response-handler"
     handler_path  = "response_handler.handler"
-    module_name   = "scalable-openai-response-handler"
     package_type  = "LocalZip"
     package_path  = "${path.module}/dist/response-handler.zip"
   }
@@ -46,8 +44,7 @@ module "response_handler" {
 
 | Name | Description |
 |------|-------------|
-| `product_alias` | Product alias used in resource names |
-| `env_alias` | Environment alias |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) |
 | `region` | AWS region for S3 path construction |
 | `module_type` | Runtime type, `python` or `nodejs` |
 | `source_bucket` | S3 bucket used for S3 ZIP deployment |
@@ -77,7 +74,6 @@ module "response_handler" {
 | `timeout` | Response handler Lambda timeout in seconds | `number` | `45` | no |
 | `memory_size` | Response handler Lambda memory size in MB | `number` | `256` | no |
 | `handler_path` | Response handler Lambda handler path | `string` | `"response_handler.handler"` | no |
-| `module_name` | Response-handler artifact module name | `string` | `"response-handler"` | no |
 | `package_path` | Response handler deployment package path | `string` | `null` | no |
 | `package_type` | Response handler deployment type (`LocalZip`, `S3Zip`, or `Image`) | `string` | `"LocalZip"` | no |
 | `layers` | List of Lambda layer ARNs to attach | `list(string)` | `[]` | no |

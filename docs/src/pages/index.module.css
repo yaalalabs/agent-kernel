@@ -2750,12 +2750,12 @@
   margin-bottom: 0;
 }
 
-/* Grid */
+/* Grid: four tiles (AWS, Azure, GCP, on-prem Kubernetes) laid out 2 x 2 */
 .cloudGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 1.5rem;
-  max-width: 1200px;
+  max-width: 1040px;
   margin: 0 auto;
   position: relative;
   z-index: 1;

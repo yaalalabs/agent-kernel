@@ -8,9 +8,7 @@ module "containered_agents" {
   source = "../../ak-deployment/ak-aws/containerized"
 
   # Basic ECS configuration
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   container_type       = "ecs"
   region               = var.region
   product_display_name = "AK Assistant"

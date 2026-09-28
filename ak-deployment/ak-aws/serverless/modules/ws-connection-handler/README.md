@@ -15,8 +15,7 @@ The WebSocket connection handler is responsible for:
 module "ws_connection_handler" {
   source = "./modules/ws-connection-handler"
 
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod"
   region        = "us-east-1"
   module_type   = "python"
 
@@ -50,14 +49,12 @@ module "ws_connection_handler" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| `product_alias` | Product alias for resource naming | `string` | n/a | yes |
-| `env_alias` | Environment alias for resource naming | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `region` | AWS region | `string` | n/a | yes |
 | `module_type` | Module type (python or nodejs) | `string` | `"python"` | no |
 | `vpc_id` | VPC ID | `string` | `null` | no |
 | `subnet_ids` | Subnet IDs for VPC deployment | `list(string)` | `[]` | no |
 | `security_group_id` | Security group ID for Lambda | `string` | `""` | no |
-| `module_name` | Module name | `string` | `"ws-connection-handler"` | no |
 | `is_production` | Is production | `bool` | `false` | no |
 | `lambda_kms_key_arn` | KMS key ARN for Lambda encryption | `string` | `null` | no |
 | `cloudwatch_kms_key_arn` | KMS key ARN for CloudWatch logs encryption | `string` | `null` | no |
@@ -74,7 +71,6 @@ module "ws_connection_handler" {
 | `timeout` | Lambda timeout in seconds | `number` | `30` |
 | `memory_size` | Lambda memory in MB | `number` | `256` |
 | `handler_path` | Lambda handler path | `string` | `"ws_connection_handler.handler"` |
-| `module_name` | Module name for resource naming | `string` | `"ws-connection-handler"` |
 | `package_path` | Path to Lambda zip package | `string` | n/a (required) |
 | `layers` | Lambda layers ARNs | `list(string)` | `[]` |
 | `cloudwatch_logs_retention_in_days` | Log retention period | `number` | `90` |

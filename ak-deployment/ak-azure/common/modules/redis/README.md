@@ -29,7 +29,7 @@ Perfect for session storage, caching, and real-time applications requiring high-
 
 ## Inputs
 Key inputs (see `variables.tf` for full list):
-- `product_alias`, `env_alias`, `module_name`, `tags`
+- `prefix`, `tags`
 - `region` (required) — Azure region for resources (Redis instance, private endpoint, and NSG all deploy here, independent of the resource group's own location)
 - `resource_group_name` (required) — Azure resource group name
 - `vnet_name` (required) — Virtual Network name for private endpoint
@@ -52,9 +52,7 @@ Key inputs (see `variables.tf` for full list):
 module "production_redis" {
   source = "yaalalabs/ak-common/azurerm//modules/redis"
 
-  product_alias            = var.product_alias
-  env_alias                = var.env_alias
-  module_name              = var.module_name
+  prefix                   = var.prefix
   resource_group_name      = var.resource_group_name
   vnet_resource_group_name = var.vnet_resource_group_name
 

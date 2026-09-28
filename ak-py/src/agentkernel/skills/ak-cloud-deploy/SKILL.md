@@ -13,7 +13,7 @@ description: >
 license: Apache-2.0
 metadata:
   author: yaalalabs
-  version: "0.9.0"
+  version: "0.9.3"
   category: user
 ---
 
@@ -48,7 +48,7 @@ If missing, suggest `ak-init` first.
 4. Scalability (AWS serverless only): standard or queue/scalable mode?
 5. Session store: Redis, Valkey (AWS only), DynamoDB (AWS), Cosmos DB (Azure), Firestore (GCP)?
 6. Security: custom authorizer required (AWS serverless only)?
-7. Environment aliases: `product_alias`, `env_alias`, `module_name`.
+7. Resource naming: a single `prefix` applied to every resource name (e.g. `myapp-dev-chat`).
 
 ### Step 3: Choose the Correct Terraform Module
 
@@ -60,11 +60,12 @@ Use official modules:
 - GCP serverless: `yaalalabs/ak-serverless/google`
 - GCP containerized: `yaalalabs/ak-containerized/google`
 
-Use current module version (`0.9.0`) unless user requests another.
+Use current module version (`0.9.3`) unless user requests another.
 
 Kubernetes does not use Terraform: the Helm chart lives at `ak-deployment/ak-k8s/chart` in the
 Agent Kernel repository and is published as an OCI artifact
-(`oci://ghcr.io/yaalalabs/charts/agent-kernel`).
+(`oci://ghcr.io/yaalalabs/charts/agent-kernel`, versioned with each release). Install the
+published chart, as in the Kubernetes section below, not a repository checkout.
 
 All modules are provider-agnostic: they declare `required_providers` but do not configure them internally. Configure each provider (`aws`/`docker`, `azurerm`, or `google`/`google-beta`/`docker`) in the root module and pass it explicitly via the module's `providers = { ... }` argument, as shown in the examples below. Azure's containerized module builds and pushes its image via a nested submodule with its own internal `docker` provider, so no `docker` provider needs to be configured or passed by the caller there.
 
@@ -88,7 +89,7 @@ When the user selects a session store, always update both app dependencies and `
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,redis]>=0.9.0"
+  "agentkernel[openai,api,redis]>=0.9.3"
 ]
 ```
 
@@ -115,7 +116,7 @@ OSS engine. Agent Kernel treats it as a first-class session and response store b
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,valkey]>=0.9.0"
+  "agentkernel[openai,api,aws,valkey]>=0.9.3"
 ]
 ```
 
@@ -143,7 +144,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.0"
+  "agentkernel[openai,api,aws]>=0.9.3"
 ]
 ```
 
@@ -164,7 +165,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,azure]>=0.9.0"
+  "agentkernel[openai,api,azure]>=0.9.3"
 ]
 ```
 
@@ -186,7 +187,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.9.0"
+  "agentkernel[openai,api,gcp]>=0.9.3"
 ]
 ```
 
@@ -321,18 +322,15 @@ This is the single-Lambda pattern: use `request_handler` plus any `gateway_endpo
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.0"
+  version = "0.9.3"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK Serverless"
   region               = var.region
 
   execution_mode = "rest_sync"
 
   request_handler = {
-    module_name          = "request-handler"
     function_name        = "chat-handler"
     function_description = "AK request handler"
     handler_path         = "lambda.handler"
@@ -375,11 +373,9 @@ Each Lambda can use one of three `package_type` values:
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.0"
+  version = "0.9.3"
 
-  product_alias      = var.product_alias
-  env_alias          = var.env_alias
-  module_name        = var.module_name
+  prefix             = var.prefix
   region             = var.region
   product_display_name = "AK Scalable REST"
 
@@ -394,7 +390,6 @@ module "serverless_agents" {
   # create_dynamodb_schedule_table = true
 
   request_handler = {
-    module_name          = "rqst-hdlr"
     function_name        = "request-handler"
     function_description = "Receives REST requests"
     handler_path         = "lambda_request_handler.handler"
@@ -408,7 +403,6 @@ module "serverless_agents" {
   }
 
   agent_runner = {
-    module_name          = "agent-runner"
     function_name        = "agent-runner"
     function_description = "Processes queued requests"
     handler_path         = "lambda_agent_runner.handler"
@@ -422,7 +416,6 @@ module "serverless_agents" {
   }
 
   response_handler = {
-    module_name          = "response-handler"
     function_name        = "response-handler"
     function_description = "Handles async response completion"
     handler_path         = "lambda_response_handler.handler"
@@ -453,7 +446,6 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
 
 ```hcl
   request_handler = {
-    module_name      = "rqst-hdlr"
     function_name    = "request-handler"
     handler_path     = "lambda_request_handler.handler"
     package_type     = "S3Zip"
@@ -468,7 +460,6 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
   }
 
   agent_runner = {
-    module_name   = "agent-runner"
     function_name = "agent-runner"
     handler_path  = "lambda_agent_runner.handler"
     package_type  = "Image"
@@ -479,7 +470,6 @@ Build and push artifacts in CI/CD, then point Terraform at them so `terraform ap
   }
 
   response_handler = {
-    module_name      = "response-handler"
     function_name    = "response-handler"
     handler_path     = "lambda_response_handler.handler"
     package_type     = "S3Zip"
@@ -518,7 +508,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.0"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
+  "agentkernel[openai,api,aws]>=0.9.3"  # include 'redis' if using Redis, or 'valkey' if using Valkey session/response store
 ]
 ```
 
@@ -531,11 +521,9 @@ This follows the current websocket example shape: the request handler stays on t
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.0"
+  version = "0.9.3"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   product_display_name = "AK WebSocket Serverless Example"
 
@@ -546,7 +534,6 @@ module "serverless_agents" {
   create_dynamodb_response_store = true
 
   request_handler = {
-    module_name          = "request-handler"
     function_name        = "request-handler"
     function_description = "Receives WebSocket requests"
     handler_path         = "lambda_request_handler.handler"
@@ -560,7 +547,6 @@ module "serverless_agents" {
   }
 
   agent_runner = {
-    module_name          = "agent-runner"
     function_name        = "agent-runner"
     function_description = "Processes chat tasks"
     handler_path         = "lambda_agent_runner.handler"
@@ -574,7 +560,6 @@ module "serverless_agents" {
   }
 
   response_handler = {
-    module_name          = "response-handler"
     function_name        = "response-handler"
     function_description = "Sends responses to connections"
     handler_path         = "lambda_response_handler.handler"
@@ -585,7 +570,6 @@ module "serverless_agents" {
   }
 
   ws_connection_handler = {
-    module_name          = "ws-connection-handler"
     function_name        = "ws-connection-handler"
     function_description = "Handles $connect/$disconnect"
     handler_path         = "lambda_ws_connection_handler.handler"
@@ -675,7 +659,7 @@ session:
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws,redis,auth]>=0.9.0"
+  "agentkernel[openai,api,aws,redis,auth]>=0.9.3"
 ]
 ```
 
@@ -688,11 +672,9 @@ Same Terraform shape as WebSocket Async (`request_handler`, `agent_runner`, `res
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/aws"
-  version = "0.9.0"
+  version = "0.9.3"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   product_display_name = "AK Streaming WebSocket Example"
 
@@ -748,7 +730,6 @@ authorizer = {
   handler_path          = "lambda_auth.handler"
   package_path          = "../dist_auth.zip"
   package_type          = "LocalZip"
-  module_name           = "auth-module"
   result_ttl_in_seconds = 0
   environment_variables = {
     SOME_OTHER_KEY = "Some Other Value"
@@ -773,11 +754,9 @@ if __name__ == "__main__":
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.0"
+  version = "0.9.3"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   product_display_name = "AK ECS Deployment"
 
@@ -811,6 +790,10 @@ runner = ECSIOHandler.run
 if __name__ == "__main__":
     runner()
 ```
+
+Pass `auth_validator=MyAuthValidator()` to secure the REST routes: `ECSIOHandler.run` binds it
+onto every REST route via `AWSRestAPI.add_auth_handlers` (the same Bearer-token mechanism as
+`RESTAPI.add_auth_handlers` in Basic Mode); omit it to leave the REST routes unauthenticated.
 
 **`app_agent_runner.py`** (Agent Runner container entrypoint):
 
@@ -849,11 +832,9 @@ session:
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.0"
+  version = "0.9.3"
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   region        = var.region
 
   rest_service = {
@@ -911,7 +892,7 @@ module "containerized_agents" {
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,aws]>=0.9.0"
+  "agentkernel[openai,api,aws]>=0.9.3"
 ]
 ```
 
@@ -972,13 +953,11 @@ registered here, no agent definitions) and `app_agent_runner.py` (`ECSAgentRunne
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.9.0"
+  version = "0.9.3"
 
   providers = { aws = aws, docker = docker }
 
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   region        = var.region
   vpc_id        = var.vpc_id
   private_subnet_ids = var.private_subnet_ids
@@ -1034,11 +1013,9 @@ handler = AzureFunctions.handler
 ```hcl
 module "serverless_agents" {
   source  = "yaalalabs/ak-serverless/azurerm"
-  version = "0.9.0"
+  version = "0.9.3"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   resource_group_name  = var.resource_group_name
   publisher_email      = var.publisher_email
@@ -1078,11 +1055,9 @@ module "serverless_agents" {
 ```hcl
 module "containerized_agents" {
   source  = "yaalalabs/ak-containerized/azurerm"
-  version = "0.9.0"
+  version = "0.9.3"
 
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   region               = var.region
   resource_group_name  = var.resource_group_name
   publisher_email      = var.publisher_email
@@ -1122,15 +1097,13 @@ def main() -> None:
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.9.0"
+  version = "0.9.3"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK GCP Serverless"
 
   package_path = "${path.module}/../dist"
@@ -1153,15 +1126,13 @@ module "serverless_agent" {
 ```hcl
 module "serverless_agent" {
   source  = "yaalalabs/ak-serverless/google"
-  version = "0.9.0"
+  version = "0.9.3"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK GCP Serverless Firestore"
 
   package_path = "${path.module}/../dist"
@@ -1180,8 +1151,8 @@ The module injects `AK_SESSION__TYPE=firestore` and `AK_SESSION__FIRESTORE__COLL
 
 ```toml
 dependencies = [
-  "agentkernel[openai,api,gcp]>=0.9.0"      # for Firestore sessions
-  # or: "agentkernel[openai,api,redis]>=0.9.0"  # for Redis sessions
+  "agentkernel[openai,api,gcp]>=0.9.3"      # for Firestore sessions
+  # or: "agentkernel[openai,api,redis]>=0.9.3"  # for Redis sessions
 ]
 ```
 
@@ -1206,15 +1177,13 @@ def main() -> None:
 ```hcl
 module "containerized_agent" {
   source  = "yaalalabs/ak-containerized/google"
-  version = "0.9.0"
+  version = "0.9.3"
 
   providers = { google = google, google-beta = google-beta, docker = docker }
 
   project_id           = var.project_id
   region               = var.region
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   product_display_name = "AK GCP Containerized"
 
   package_path       = "${path.module}/../dist"
@@ -1294,14 +1263,19 @@ also cross-installs Linux wheels so builds work from macOS).
 **Install:**
 
 ```bash
-helm dependency build ak-deployment/ak-k8s/chart
-helm install ak ak-deployment/ak-k8s/chart -f ak-deployment/ak-k8s/chart/values-dev.yaml \
+helm pull oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 --untar   # unpacks the flavor values files
+helm install ak oci://ghcr.io/yaalalabs/charts/agent-kernel --version 0.9.3 \
+  -f agent-kernel/values-dev.yaml \
   --set ioHandler.image.repository=<io image> \
   --set agentRunner.image.repository=<runner image> --set image.tag=<tag> \
   --set 'extraEnv[0].name=OPENAI_API_KEY' \
   --set 'extraEnv[0].valueFrom.secretKeyRef.name=openai' \
   --set 'extraEnv[0].valueFrom.secretKeyRef.key=api-key'
 ```
+
+The chart version tracks the Agent Kernel release (the pin above is the current one); the
+flavor values files ship inside the chart, so no repository checkout is needed.
+`ak-deployment/ak-k8s/chart` in the repository is for developing the chart itself.
 
 - `values-dev.yaml`: micro-clusters (k3d/kind/microk8s/k3s), single replicas, auto-provisioned
   JetStream, port-forward entry; also documents the single-process profile (one pod,

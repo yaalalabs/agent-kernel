@@ -4,7 +4,7 @@ Deploy your Agent Kernel agents as Instagram Business bots that can respond to D
 
 ## Overview
 
-The `AgentInstagramRequestHandler` provides a seamless bridge between your Agent Kernel agents and Instagram Messaging. When users send a Direct Message to your Instagram Professional account (Business or Creator), their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Instagram DMs.
+The `InstagramInboundAdapter` provides a seamless bridge between your Agent Kernel agents and Instagram Messaging. When users send a Direct Message to your Instagram Professional account (Business or Creator), their messages are automatically routed to your AI agent, which processes them and sends intelligent responses back through Instagram DMs.
 
 **How it works:**
 
@@ -129,9 +129,10 @@ Here's a complete example to get your Instagram bot running:
 
 ```python
 from agents import Agent as OpenAIAgent
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.instagram import AgentInstagramRequestHandler
+from agentkernel.instagram import InstagramInboundAdapter
 
 # Create your AI agent
 instagram_agent = OpenAIAgent(
@@ -150,11 +151,24 @@ OpenAIModule([instagram_agent])
 
 # Start the server with Instagram integration
 if __name__ == "__main__":
-    handler = AgentInstagramRequestHandler()
-    RESTAPI.run([handler])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(InstagramInboundAdapter())])
 ```
 
-### Configuration File
+#
+:::note Mounting
+Integrations run on the queue execution pipeline, so they are mounted with `IOHandler.run(...)`
+rather than `RESTAPI.run(...)`. The webhook answers as soon as the message is queued; the agent
+runs behind it, so a slow model call can no longer become a platform delivery timeout.
+:::
+
+:::caution Attachments need multimodal storage
+Attachment bytes are stored before the request is queued, so a message carrying an image or a file
+requires `multimodal.enabled: true` with a shared `storage_type` (`in_memory`, `redis` or
+`dynamodb`). `session_cache` is rejected: the agent runs in a different process and would never
+see it.
+:::
+
+## Configuration File
 
 Optionally configure your agent and API settings in `config.yaml`:
 
@@ -193,68 +207,48 @@ Once your webhook is configured:
 
 ### Custom Message Handling
 
-Extend the handler to add custom logic, commands, or preprocessing:
+An adapter is a translation function, so a customisation is an override of `_to_request`: answer
+the events you want to handle yourself and return `None`, and hand everything else to the built-in
+normalisation. Nothing here runs the agent — that happens on the far side of the queue.
 
 ```python
-from agentkernel.instagram import AgentInstagramRequestHandler
+from typing import Optional
 
-class CustomInstagramHandler(AgentInstagramRequestHandler):
-    async def _handle_message(self, messaging_event: dict):
-        message = messaging_event.get("message", {})
-        message_text = message.get("text", "").strip()
-        sender_id = messaging_event.get("sender", {}).get("id")
-      
-        # Handle special commands
-        if message_text.startswith("/"):
-            await self._handle_command(message_text, sender_id)
-            return
-      
-        # Preprocess messages before sending to agent
-        processed_text = self._preprocess_message(message_text)
-      
-        # Continue with normal processing
-        await super()._handle_message(messaging_event)
-  
-    async def _handle_command(self, command: str, sender_id: str):
-        """Handle custom commands"""
-        await self._send_typing_indicator(sender_id, True)
-      
-        if command == "/help":
-            help_text = """🤖 Available Commands:
-          
-/help - Show this help message
-/start - Start a new conversation
+from agentkernel.instagram import InstagramInboundAdapter
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.integration.adapter.base import InboundRequest
+from agentkernel.pipeline import IOHandler
 
-Just send any message to chat with me!"""
-            await self._send_message(sender_id, help_text)
-        elif command == "/start":
-            await self._send_message(
-                sender_id, 
-                "👋 Hi! I'm here to help. What can I do for you today?"
-            )
-        else:
-            await self._send_message(
-                sender_id,
-                f"Unknown command. Try /help for available commands."
-            )
-      
-        await self._send_typing_indicator(sender_id, False)
-  
-    def _preprocess_message(self, text: str) -> str:
-        """Clean up or enhance user messages"""
-        # Expand common abbreviations
-        replacements = {
-            "pls": "please",
-            "thx": "thanks",
-            "u": "you"
-        }
-        words = text.split()
-        return " ".join(replacements.get(word.lower(), word) for word in words)
+COMMANDS = {
+    "/help": "🤖 Available Commands:\n\n/help - Show this help message\n/start - Start a new conversation\n\nJust send any message to chat with me!",
+    "/start": "👋 Hi! I'm here to help. What can I do for you today?",
+}
+SHORTHAND = {"pls": "please", "thx": "thanks", "u": "you"}
 
-# Use your custom handler
+
+class CustomInstagramInboundAdapter(InstagramInboundAdapter):
+    async def _to_request(self, event: dict) -> Optional[InboundRequest]:
+        sender_id = event.get("sender", {}).get("id")
+        text = (event.get("message", {}).get("text") or "").strip()
+
+        # Commands are answered here and never reach the agent.
+        if text.startswith("/"):
+            await self._api.sender_action(sender_id, "typing_on")
+            await self._api.send_message(sender_id, [COMMANDS.get(text.lower().split()[0], "Unknown command. Try /help for available commands.")])
+            await self._api.sender_action(sender_id, "typing_off")
+            return None
+
+        # Preprocess the message before the agent sees it.
+        if text:
+            expanded = " ".join(SHORTHAND.get(word.lower(), word) for word in text.split())
+            event = {**event, "message": {**event["message"], "text": expanded}}
+
+        return await super()._to_request(event)
+
+
+# Use your custom adapter
 if __name__ == "__main__":
-    handler = CustomInstagramHandler()
-    RESTAPI.run([handler])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(CustomInstagramInboundAdapter())])
 ```
 
 ### Multi-Agent Setup
@@ -262,7 +256,7 @@ if __name__ == "__main__":
 Route different types of conversations to specialized agents:
 
 ```python
-from agentkernel.instagram import AgentInstagramRequestHandler
+from agentkernel.instagram import InstagramInboundAdapter
 
 # Create specialized agents
 sales_agent = OpenAIAgent(
@@ -470,7 +464,7 @@ Instagram enforces rate limits to ensure platform stability:
 import asyncio
 from asyncio import Queue
 
-class RateLimitedInstagramHandler(AgentInstagramRequestHandler):
+class RateLimitedInstagramHandler(InstagramInboundAdapter):
     def __init__(self):
         super().__init__()
         self.message_queue = Queue()

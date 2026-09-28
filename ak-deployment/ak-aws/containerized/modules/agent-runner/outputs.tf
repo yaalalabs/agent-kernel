@@ -20,5 +20,5 @@ output "execution_role_arn" {
 
 output "security_group_id" {
   description = "Agent Runner security group ID"
-  value       = aws_security_group.agent_runner.id
+  value       = local.security_group_id
 }

@@ -49,7 +49,7 @@ Which messaging platform would you like to integrate?
 Add `slack` to the extras:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,slack]>=0.9.0",
+    "agentkernel[openai,api,slack]>=0.9.3",
 ]
 ```
 
@@ -64,12 +64,13 @@ slack:
 **3. Update the server file:**
 
 ```python
-from agentkernel.api import RESTAPI
-from agentkernel.slack import AgentSlackRequestHandler
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.slack import SlackInboundAdapter
 # ... existing agent imports and definitions ...
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentSlackRequestHandler()])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(SlackInboundAdapter())])
 ```
 
 **4. Environment variables needed:**
@@ -94,7 +95,7 @@ export SLACK_SIGNING_SECRET="..."          # App signing secret
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,whatsapp]>=0.9.0",
+    "agentkernel[openai,api,whatsapp]>=0.9.3",
 ]
 ```
 
@@ -110,12 +111,13 @@ whatsapp:
 **3. Update the server file:**
 
 ```python
-from agentkernel.api import RESTAPI
-from agentkernel.whatsapp import AgentWhatsAppRequestHandler
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.whatsapp import WhatsAppInboundAdapter
 # ... existing agent imports and definitions ...
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentWhatsAppRequestHandler()])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(WhatsAppInboundAdapter())])
 ```
 
 **4. Environment variables:**
@@ -140,7 +142,7 @@ export AK_WHATSAPP__APP_SECRET="..."           # App secret for signature verifi
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,messenger]>=0.9.0",
+    "agentkernel[openai,api,messenger]>=0.9.3",
 ]
 ```
 
@@ -155,12 +157,13 @@ messenger:
 **3. Update the server file:**
 
 ```python
-from agentkernel.api import RESTAPI
-from agentkernel.messenger import AgentMessengerRequestHandler
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.messenger import MessengerInboundAdapter
 # ... existing agent imports and definitions ...
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentMessengerRequestHandler()])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(MessengerInboundAdapter())])
 ```
 
 **4. Environment variables:**
@@ -183,7 +186,7 @@ export AK_MESSENGER__APP_SECRET="..."
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,instagram]>=0.9.0",
+    "agentkernel[openai,api,instagram]>=0.9.3",
 ]
 ```
 
@@ -198,11 +201,12 @@ instagram:
 **3. Update the server file:**
 
 ```python
-from agentkernel.api import RESTAPI
-from agentkernel.instagram import AgentInstagramRequestHandler
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.instagram import InstagramInboundAdapter
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentInstagramRequestHandler()])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(InstagramInboundAdapter())])
 ```
 
 **4. Environment variables:**
@@ -220,7 +224,7 @@ export AK_INSTAGRAM__INSTAGRAM_ACCOUNT_ID="..."
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,telegram]>=0.9.0",
+    "agentkernel[openai,api,telegram]>=0.9.3",
 ]
 ```
 
@@ -235,11 +239,12 @@ telegram:
 **3. Update the server file:**
 
 ```python
-from agentkernel.api import RESTAPI
-from agentkernel.telegram import AgentTelegramRequestHandler
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.telegram import TelegramInboundAdapter
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentTelegramRequestHandler()])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(TelegramInboundAdapter())])
 ```
 
 **4. Environment variables:**
@@ -261,7 +266,7 @@ export AK_TELEGRAM__WEBHOOK_SECRET="..."       # Your webhook secret
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,gmail]>=0.9.0",
+    "agentkernel[openai,api,gmail]>=0.9.3",
 ]
 ```
 
@@ -278,11 +283,12 @@ gmail:
 **3. Update the server file:**
 
 ```python
-from agentkernel.api import RESTAPI
-from agentkernel.gmail import AgentGmailRequestHandler
+from agentkernel.gmail import GmailInboundAdapter
+from agentkernel.integration.adapter import PollerRunner
+from agentkernel.pipeline import IOHandler
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentGmailRequestHandler()])
+    IOHandler.run(pollers=[PollerRunner(GmailInboundAdapter())])
 ```
 
 **4. Setup instructions:**
@@ -299,7 +305,7 @@ if __name__ == "__main__":
 
 ```toml
 dependencies = [
-    "agentkernel[openai,api,teams]>=0.9.0",
+    "agentkernel[openai,api,teams]>=0.9.3",
 ]
 ```
 
@@ -315,11 +321,12 @@ teams:
 **3. Update the server file:**
 
 ```python
-from agentkernel.api import RESTAPI
-from agentkernel.teams import AgentTeamsRequestHandler
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.teams import TeamsInboundAdapter
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentTeamsRequestHandler()])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(TeamsInboundAdapter())])
 ```
 
 **4. Environment variables:**
@@ -345,23 +352,26 @@ export AK_TEAMS__TENANT_ID="<tenant-id>"   # Leave empty for a multi-tenant bot
 Multiple integrations can run simultaneously:
 
 ```python
-from agentkernel.api import RESTAPI
-from agentkernel.slack import AgentSlackRequestHandler
-from agentkernel.whatsapp import AgentWhatsAppRequestHandler
-from agentkernel.telegram import AgentTelegramRequestHandler
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.slack import SlackInboundAdapter
+from agentkernel.whatsapp import WhatsAppInboundAdapter
+from agentkernel.telegram import TelegramInboundAdapter
 
 if __name__ == "__main__":
-    RESTAPI.run([
-        AgentSlackRequestHandler(),
-        AgentWhatsAppRequestHandler(),
-        AgentTelegramRequestHandler(),
-    ])
+    IOHandler.run(
+        handlers=[
+            WebhookRESTRequestHandler(SlackInboundAdapter()),
+            WebhookRESTRequestHandler(WhatsAppInboundAdapter()),
+            WebhookRESTRequestHandler(TelegramInboundAdapter()),
+        ]
+    )
 ```
 
 Update `pyproject.toml`:
 ```toml
 dependencies = [
-    "agentkernel[openai,api,slack,whatsapp,telegram]>=0.9.0",
+    "agentkernel[openai,api,slack,whatsapp,telegram]>=0.9.3",
 ]
 ```
 

@@ -9,7 +9,6 @@ locals {
   response_handler_timeout              = var.response_handler.timeout
   response_handler_memory_size          = var.response_handler.memory_size
   response_handler_handler_path         = var.response_handler.handler_path
-  response_handler_module_name          = var.response_handler.module_name
   response_handler_package_path         = try(var.response_handler.package_path, null)
   response_handler_package_type         = try(var.response_handler.package_type, "LocalZip")
   response_handler_layers               = var.response_handler.layers
@@ -63,7 +62,7 @@ data "aws_s3_object" "signed_component_code" {
 
 # IAM Role for Response Handler Lambda
 resource "aws_iam_role" "response_handler_lambda_role" {
-  name = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}-lambda-role"
+  name = "${var.prefix}-${local.response_handler_function_name}-lambda-role"
   
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -93,7 +92,7 @@ resource "aws_iam_role_policy_attachment" "response_handler_vpc_execution" {
 
 # SQS permissions for response handler
 resource "aws_iam_policy" "response_handler_sqs_policy" {
-  name = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}-sqs"
+  name = "${var.prefix}-${local.response_handler_function_name}-sqs"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -120,7 +119,7 @@ resource "aws_iam_role_policy_attachment" "response_handler_sqs_attachment" {
 # DynamoDB permissions (if DynamoDB is used)
 resource "aws_iam_policy" "response_handler_dynamodb_policy" {
   count = local.dynamodb_response_store != null ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}-dynamodb"
+  name  = "${var.prefix}-${local.response_handler_function_name}-dynamodb"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -151,7 +150,7 @@ resource "aws_iam_role_policy_attachment" "response_handler_dynamodb_attachment"
 # Websocket connections DynamoDB permissions
 resource "aws_iam_policy" "response_handler_websocket_connections_dynamodb_policy" {
   count = var.websocket_connections_dynamodb != null ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}-websocket-connections-ddb"
+  name  = "${var.prefix}-${local.response_handler_function_name}-websocket-connections-ddb"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -185,7 +184,7 @@ resource "aws_iam_role_policy_attachment" "response_handler_websocket_connection
 # WebSocket API Gateway permissions for PostToConnection
 resource "aws_iam_policy" "response_handler_websocket_api_policy" {
   count = var.websocket_mode ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-websocket-api"
+  name  = "${var.prefix}-websocket-api"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -212,7 +211,7 @@ module "response_handler_lambda" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name          = "${var.product_alias}-${var.env_alias}-${local.response_handler_module_name}-${local.response_handler_function_name}"
+  function_name          = "${var.prefix}-${local.response_handler_function_name}"
   description            = local.response_handler_function_description
   handler                = local.response_handler_handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"

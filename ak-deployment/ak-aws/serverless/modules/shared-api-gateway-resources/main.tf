@@ -3,7 +3,7 @@
 
 # IAM Role for CloudWatch integration (shared between REST and WebSocket APIs)
 resource "aws_iam_role" "cloudwatch" {
-  name = "${var.product_alias}-${var.env_alias}-api-gateway-cloudwatch-role"
+  name = "${var.prefix}-api-gateway-cloudwatch-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -22,7 +22,7 @@ resource "aws_iam_role" "cloudwatch" {
 }
 
 resource "aws_iam_role_policy" "cloudwatch" {
-  name = "${var.product_alias}-${var.env_alias}-api-gateway-cloudwatch-policy"
+  name = "${var.prefix}-api-gateway-cloudwatch-policy"
   role = aws_iam_role.cloudwatch.id
 
   policy = jsonencode({

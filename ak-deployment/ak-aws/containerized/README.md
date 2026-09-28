@@ -101,9 +101,7 @@ module "containerized_agents" {
   version   = "0.8.1"
   providers = { aws = aws, docker = docker }
 
-  product_alias = "my-agent"
-  env_alias     = "dev"
-  module_name   = "chatbot"
+  prefix        = "my-agent-dev-chatbot"
   region        = "us-east-1"
 
   # REST Service configuration
@@ -131,9 +129,7 @@ module "containerized_agents" {
   version   = "0.8.1"
   providers = { aws = aws, docker = docker }
 
-  product_alias = "my-agent"
-  env_alias     = "prod"
-  module_name   = "assistant"
+  prefix        = "my-agent-prod-assistant"
   region        = "us-east-1"
 
   # REST Service (handles HTTP requests)
@@ -198,16 +194,18 @@ module "containerized_agents" {
 
 ```hcl
 rest_service = {
-  package_path          = null         # Path to build Docker image (required)
-  cpu                   = 256          # Fargate CPU units (256, 512, 1024, etc.)
-  memory                = 512          # Fargate memory in MiB
-  desired_count         = 1            # Number of tasks
-  container_port        = 8000         # Container port
-  health_check_endpoint = "/health"    # Health check path
-  health_check_grace_period_seconds = 120 # ECS ignores ALB unhealthy signals for this long after task start
-  image_uri             = null         # Pre-built image URI (alternative to package_path)
-  command               = null         # Override Docker CMD
-  environment_variables = {}           # Service-specific env vars
+  package_path                  = null         # Path to build Docker image (required)
+  cpu                           = 256          # Fargate CPU units (256, 512, 1024, etc.)
+  memory                        = 512          # Fargate memory in MiB
+  desired_count                 = 1            # Number of tasks
+  container_port                = 8000         # Container port
+  health_check_endpoint         = "/health"    # Health check path
+  health_check_grace_period_seconds = 120      # ECS ignores ALB unhealthy signals for this long after task start
+  image_uri                     = null         # Pre-built image URI (alternative to package_path)
+  command                       = null         # Override Docker CMD
+  environment_variables         = {}           # Service-specific env vars
+  alb_security_group_id         = null         # ALB security group ID. If not provided, a new one will be created
+  ecs_service_security_group_id = null         # ECS service security group ID. If not provided, a new one will be created
 }
 ```
 
@@ -222,6 +220,7 @@ agent_runner = {
   image_uri             = null         # Or provide pre-built image URI
   command               = null         # Override Docker CMD
   environment_variables = {}           # Service-specific env vars
+  security_group_id     = null         # Agent Runner security group ID (queue mode only). If not provided, a new one will be created
 }
 ```
 
@@ -287,8 +286,8 @@ enable_api_gateway_logs = true
 ```
 
 - Off by default, matching the AWS serverless deployment. When `false`:
-  - **REST/queue modes:** no `/aws/apigateway/{product_alias}-{env_alias}-http-api` log group is created and the HTTP API stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
-  - **WebSocket modes:** no `/aws/apigateway/{product_alias}-{env_alias}-ws-api` log group is created, the WebSocket API stage carries no `access_log_settings`, and the account-level CloudWatch role (`aws_iam_role.apigw_cloudwatch` / `aws_api_gateway_account.this`) is not created; the `websocket_api_cloudwatch_log_group_arn` / `websocket_api_cloudwatch_log_group_name` outputs return `null`.
+  - **REST/queue modes:** no `/aws/apigateway/{prefix}-http-api` log group is created and the HTTP API stage carries no `access_log_settings`; the `api_gateway_cloudwatch_log_group_arn` / `api_gateway_cloudwatch_log_group_name` outputs return `null`.
+  - **WebSocket modes:** no `/aws/apigateway/{prefix}-ws-api` log group is created, the WebSocket API stage carries no `access_log_settings`, and the account-level CloudWatch role (`aws_iam_role.apigw_cloudwatch` / `aws_api_gateway_account.this`) is not created; the `websocket_api_cloudwatch_log_group_arn` / `websocket_api_cloudwatch_log_group_name` outputs return `null`.
 - When `true`, the relevant log group is created with 90-day retention (tagged with `var.tags`). REST/queue modes log request ID, source IP, request time, protocol, HTTP method, route key, status, response length, and integration error message; WebSocket modes log the same fields plus `connectionId` in place of HTTP method.
 - Unlike the serverless REST API, the HTTP API (`aws_apigatewayv2_*` with `protocol_type = "HTTP"`) does **not** require the account-level `aws_api_gateway_account` CloudWatch role for access logging, so enabling it there does not contend with other deployments in the same account/region. The WebSocket API (`protocol_type = "WEBSOCKET"`) **does** require that account-level role — it is created only when `enable_api_gateway_logs = true` in a WebSocket mode, and it is a region-wide singleton shared with any other API Gateway in the account that also enables access logging.
 - **Upgrade note:** deployments created before this toggle existed always had logging on. Applying with the new default (`false`) removes the stage's access log settings and destroys the log group (and, in WebSocket modes, the account-level CloudWatch role resources). Set `enable_api_gateway_logs = true` to keep the existing behaviour.
@@ -315,6 +314,52 @@ enable_api_gateway_logs = true
   ```
 
   Skipping this makes Terraform destroy and recreate these resources, discarding any retained logs.
+
+### Security Groups
+
+These three fields live on the `rest_service` and `agent_runner` config objects (see
+[Configuration](#configuration) above) alongside that service's other settings, rather than as
+standalone top-level variables:
+
+| Field | Object | Description | Type | Default | Required |
+|---|---|---|---|---|---|
+| `alb_security_group_id` | `rest_service` | ALB security group ID. If not provided, a new one will be created | `string` | `null` | no |
+| `ecs_service_security_group_id` | `rest_service` | ECS service security group ID. If not provided, a new one will be created | `string` | `null` | no |
+| `security_group_id` | `agent_runner` | Agent Runner security group ID (queue mode only). If not provided, a new one will be created | `string` | `null` | no |
+
+```hcl
+rest_service = {
+  package_path                  = "./dist"
+  alb_security_group_id         = "sg-0123456789abcdef0"
+  ecs_service_security_group_id = "sg-0123456789abcdef1"
+}
+
+agent_runner = {
+  security_group_id = "sg-0123456789abcdef2"
+}
+```
+
+Each of the three is independent — you may provide any subset of them and let the module create the
+rest. Useful when the deploying pipeline can't create security groups (no `ec2:CreateSecurityGroup`),
+when org policy disallows the default `0.0.0.0/0` egress these modules create, or when a downstream
+resource (e.g. RDS, ElastiCache) already has ingress rules referencing a specific, pre-approved
+security group. `agent_runner.security_group_id` only has an effect when `queue_mode = true`.
+
+A provided security group must reproduce the rules the module would otherwise create for it, since
+traffic fails at runtime (not at plan/apply) if it doesn't:
+
+- `rest_service.alb_security_group_id`: inbound TCP 80 from the VPC CIDR (the API Gateway VPC Link ENIs
+  share this SG, and in WebSocket modes the NLB reaches the ALB the same way), plus egress to the tasks
+  on `container_port`.
+- `rest_service.ecs_service_security_group_id`: inbound `container_port` from the ALB security group
+  (created or provided).
+- `agent_runner.security_group_id`: egress to SQS, DynamoDB and the model endpoints.
+
+If you provide only `rest_service.ecs_service_security_group_id`, the ALB security group is still
+module-created, so its ID isn't known until the first apply and can't be referenced up front in a
+security group you already created. Provide `rest_service.alb_security_group_id` too (using the
+`alb_security_group_id` output from a prior apply, or a pre-created SG) if you need its ID ahead of
+time.
 
 ### Scheduling (EventBridge Scheduler)
 
@@ -616,6 +661,10 @@ output "input_queue_url"            # Input queue URL (queue mode)
 output "output_queue_url"           # Output queue URL (queue mode)
 output "vpc_id"                     # VPC ID
 output "private_subnet_ids"         # Private subnet IDs
+
+output "alb_security_group_id"          # ALB security group ID (created or provided)
+output "ecs_service_security_group_id"  # ECS service security group ID (created or provided)
+output "agent_runner_security_group_id" # Agent Runner security group ID (queue mode only; created or provided)
 
 output "api_gateway_cloudwatch_log_group_arn"   # API Gateway log group ARN (null when logging disabled)
 output "api_gateway_cloudwatch_log_group_name"  # API Gateway log group name (null when logging disabled)

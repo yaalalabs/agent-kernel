@@ -6,12 +6,10 @@
 #   POST {invoke_url}/api/v1/telegram/webhook  -> /telegram/webhook  (Telegram setWebhook URL)
 module "e2e_agents" {
   source  = "yaalalabs/ak-containerized/aws"
-  version = "0.8.0"
+  version = "0.9.1"
 
   # Basic ECS configuration
-  product_alias        = var.product_alias
-  env_alias            = var.env_alias
-  module_name          = var.module_name
+  prefix               = var.prefix
   container_type       = "ecs"
   region               = var.region
   vpc_id               = var.vpc_id

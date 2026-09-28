@@ -82,6 +82,37 @@ python scripts/update_terraform_versions.py --version 0.2.0-b5 --exclude .terraf
 - Skips non-yaalalabs modules (like terraform-aws-modules)
 - Excludes `.terraform` directories by default
 
+## update_chart_versions.py
+
+Pins the published Helm chart version wherever it is installed from: every
+`oci://ghcr.io/yaalalabs/charts/agent-kernel --version X.Y.Z` reference in `.md`, `.yaml`, and `.yml` files under the examples, the chart README and `Chart.yaml` description, the docs site source, and the bundled `ak-cloud-deploy` skill, in the root `README.md` (what GitHub renders on the chart's GHCR package page), plus the `CHART_VERSION="X.Y.Z"` variable in the k8s examples' `deploy/deploy.sh` scripts (only `.sh` files that name the chart qualify). The publish workflow runs it for each release (before the wheel is built, so the skill inside it carries the new pin), so every surface installs the chart version that release publishes.
+
+**Usage:**
+```bash
+# Pin every chart reference to a version (SemVer 2, as on the release tag)
+python scripts/update_chart_versions.py --version 0.9.1
+
+# Prereleases use the hyphenated tag form, which Helm accepts (PEP 440's 1.0.0a1 is rejected)
+python scripts/update_chart_versions.py --version 1.0.0-a1
+
+# Dry run to see what would change
+python scripts/update_chart_versions.py --version 0.9.1 --dry-run
+
+# Specify custom directories to search
+python scripts/update_chart_versions.py --version 0.9.1 --directories examples
+```
+
+**Options:**
+- `--version`: New chart version to set (required; must be SemVer 2)
+- `--directories`: Directories or files to search (default: examples ak-deployment docs/docs ak-py/src/agentkernel/skills README.md)
+- `--exclude`: Path segments to exclude from search (default: .venv node_modules .terraform __pycache__ versioned_docs)
+- `--dry-run`: Show what would be changed without making modifications
+
+**What it does:**
+- Scans `.md`, `.yaml`, `.yml`, and `.sh` files in the specified directories (an entry that names a file is scanned as given)
+- Rewrites only the version token after `oci://ghcr.io/yaalalabs/charts/agent-kernel --version` (and inside `CHART_VERSION="..."` in deploy scripts that reference the chart), leaving prose, shell continuations, and comment markers as they are
+- Leaves references already at the target version, and installs from a local chart path, untouched
+
 ## Provisioning
 
 The `provision.sh` script is used to give you an idea of what should be the done before deploying the project to a cloud provider. It will check for the necessary tools and permissions, and will also check for the existence of the required resources.

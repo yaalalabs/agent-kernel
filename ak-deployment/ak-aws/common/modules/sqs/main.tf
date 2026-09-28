@@ -1,6 +1,6 @@
 locals {
-  queue_name = var.fifo_queue ? "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.queue_name}.fifo" : "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.queue_name}"
-  dlq_name   = var.fifo_queue ? "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.queue_name}-dlq.fifo" : "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.queue_name}-dlq"
+  queue_name = var.fifo_queue ? "${var.prefix}-${var.queue_name}.fifo" : "${var.prefix}-${var.queue_name}"
+  dlq_name   = var.fifo_queue ? "${var.prefix}-${var.queue_name}-dlq.fifo" : "${var.prefix}-${var.queue_name}-dlq"
 
   producer_policy_enabled = var.enable_producer_access && length(var.producer_arns) > 0
   consumer_policy_enabled = var.enable_consumer_access && length(var.consumer_role_arns) > 0

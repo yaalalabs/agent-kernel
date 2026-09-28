@@ -241,7 +241,7 @@ another user's schedules.
 **Watch an occurrence fire.** Schedule something a couple of minutes out and tail the agent runner:
 
 ```bash
-aws logs tail "/ecs/<product_alias>-<env_alias>-<module_name>-agent-runner" --follow
+aws logs tail "/ecs/<prefix>-agent-runner" --follow
 ```
 
 A fired occurrence arrives as a plain chat request carrying `scheduled_task_id`, `request_id` and

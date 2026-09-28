@@ -34,8 +34,7 @@ module "vpc" {
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
   private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
   
   tags = {
     Environment = "production"
@@ -53,8 +52,7 @@ module "vpc" {
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
   private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
-  product_alias        = "myapp"
-  env_alias            = "prod"
+  prefix               = "myapp-prod"
 }
 
 # Lambda function using VPC
@@ -72,8 +70,7 @@ resource "aws_lambda_function" "api" {
 module "redis" {
   source = "yaalalabs/ak-common/aws//modules/redis"
 
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod"
   vpc_id        = module.vpc.vpc_id
   subnet_ids    = module.vpc.private_subnet_ids
 }
@@ -89,8 +86,7 @@ module "vpc_us_west" {
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
   private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
-  product_alias        = "myapp"
-  env_alias            = "prod-us-west"
+  prefix               = "myapp-prod-us-west"
   
   tags = {
     Region = "us-west-2"
@@ -104,8 +100,7 @@ module "vpc_eu_west" {
   vpc_cidr             = "10.1.0.0/16"
   public_subnet_cidrs  = ["10.1.1.0/24", "10.1.2.0/24"]
   private_subnet_cidrs = ["10.1.3.0/24", "10.1.4.0/24"]
-  product_alias        = "myapp"
-  env_alias            = "prod-eu-west"
+  prefix               = "myapp-prod-eu-west"
   
   tags = {
     Region = "eu-west-1"
@@ -121,8 +116,7 @@ module "vpc_eu_west" {
 | `vpc_cidr` | CIDR block for the VPC | `string` | `"10.0.0.0/16"` | no |
 | `public_subnet_cidrs` | List of CIDR blocks for public subnets | `list(string)` | `["10.0.1.0/24", "10.0.2.0/24"]` | no |
 | `private_subnet_cidrs` | List of CIDR blocks for private subnets | `list(string)` | `["10.0.3.0/24", "10.0.4.0/24"]` | no |
-| `product_alias` | Short identifier for the product (e.g., "myapp") | `string` | n/a | yes |
-| `env_alias` | Environment identifier (e.g., "dev", "staging", "prod") | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `tags` | Additional tags to apply to all resources | `map(string)` | `{}` | no |
 
 ## 📤 Outputs
@@ -270,8 +264,7 @@ For production environments, consider deploying NAT Gateways in multiple AZs:
 module "vpc" {
   source = "yaalalabs/ak-common/aws//modules/vpc"
   
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod"
 }
 
 resource "aws_lambda_function" "api" {

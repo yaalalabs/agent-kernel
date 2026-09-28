@@ -9,7 +9,7 @@ attempt at this mapping passed its unit tests while showing nothing at all in a 
 Skipped unless a model is named, so the normal unit run is unaffected:
 
     AK_TEST_REASONING_MODEL=gpt-5.6 OPENAI_API_KEY=... \
-        uv run --all-extras pytest tests/test_langgraph_reasoning_live.py -q --no-cov
+        uv run --all-extras --with langchain-openai pytest tests/test_langgraph_reasoning_live.py -q --no-cov
 
 Two things this file has to get right, both of which cost an earlier attempt its verification:
 
@@ -21,10 +21,9 @@ Two things this file has to get right, both of which cost an earlier attempt its
   Using a bare graph also avoids unnecessary `langgraph.prebuilt` version coupling. The original workaround is no longer
   required since #586 lifted the `langgraph` pin.
 
-`langchain_openai` is guarded with `importorskip` because ak-py does not depend on it — it arrives only
-through `ragas`, the test-judge extra. pytest imports every test module at collection, so an unguarded
-import would fail the whole suite rather than this file if that transitive ever moves; the class-level
-`skipif` runs too late to help.
+`langchain_openai` is guarded with `importorskip` because ak-py does not depend on it, directly or
+transitively, hence the `--with` above. pytest imports every test module at collection, so an unguarded
+import would fail the whole suite rather than this file; the class-level `skipif` runs too late to help.
 """
 
 import os

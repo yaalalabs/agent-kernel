@@ -380,3 +380,16 @@ def test_response_store_accepts_dotted_path_type():
     from agentkernel.core.config import _ResponseStoreConfig
 
     assert _ResponseStoreConfig(type="my_pkg.stores.MyResponseStore").type == "my_pkg.stores.MyResponseStore"
+
+
+def test_every_messaging_platform_accepts_an_outbound_adapter_override():
+    """#524: the outbound half is resolved by name, so bring-your-own goes through config."""
+    config = AKConfig()
+    for platform in ("slack", "whatsapp", "messenger", "instagram", "telegram", "teams", "gmail"):
+        assert getattr(config, platform).outbound_adapter == "", platform
+
+
+def test_the_outbound_adapter_override_binds_from_the_environment(monkeypatch):
+    monkeypatch.setenv("AK_SLACK__OUTBOUND_ADAPTER", "my_pkg.adapters.MySlackOutbound")
+
+    assert AKConfig().slack.outbound_adapter == "my_pkg.adapters.MySlackOutbound"

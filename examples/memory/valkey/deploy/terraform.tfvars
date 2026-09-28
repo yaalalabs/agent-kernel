@@ -1,4 +1,2 @@
-region        = "ap-southeast-2"
-product_alias = "ak-mem-valkey"
-env_alias     = "dev"
-module_name   = "examples"
+region = "ap-southeast-2"
+prefix = "ak-mem-valkey-dev-examples"

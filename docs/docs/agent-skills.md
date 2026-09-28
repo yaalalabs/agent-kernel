@@ -97,7 +97,7 @@ Deploy your agent to AWS, Azure, GCP, or any Kubernetes cluster. Generates compl
 
 ### ak-add-capabilities
 
-Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, and custom adapters), MCP server, A2A server, AG-UI server, custom hooks, multimodal support, conversation thread support (in-memory, Redis, Valkey, DynamoDB, Firestore, Cosmos DB), sandbox code execution, and scheduling (deferred/recurring chat execution, agent-facing scheduling tools).
+Add advanced capabilities: guardrails (OpenAI Moderation, AWS Bedrock), tracing (Langfuse, OpenLLMetry, Logfire), session persistence (Redis, DynamoDB, Cosmos DB, Firestore), knowledge base tools (ChromaDB, Neo4j, Starburst, Open Knowledge Format bundles, and custom adapters), MCP server, A2A server, AG-UI server, custom hooks, multimodal support, conversation thread support (in-memory, Redis, Valkey, DynamoDB, Firestore, Cosmos DB), sandbox code execution, and scheduling (deferred/recurring chat execution, agent-facing scheduling tools).
 
 **Example prompts:**
 - *"Add OpenAI guardrails to my agent"*
@@ -120,10 +120,10 @@ When a contributor opens the repository in a coding assistant (Copilot, Claude C
 
 | Skill | What It Teaches Your Coding Assistant |
 |---|---|
-| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`, `AgentService`, `ChatService`), design principles, the house patterns every new feature follows (pluggable by default, reuse of existing configuration over new knobs, classes over script-style functions), adapter pattern, execution flow, the unified queue execution pipeline (`agentkernel.pipeline`: `QueueMessage`/`QueueTransport`/`ConsumerLoop`, the `in_memory` transport, `AgentRunner`/`ResponseHandler`/`RequestHandler`/`IOHandler`, the `RESTAPI.run` delegation rule, and the relocation shims), and the AWS ECS containerized deployment classes (`ECSIOHandler`, `ECSOutputConsumer`, `ECSAgentRunner`, `ECSStreamAgentRunner`, `ECSSQSConsumer`, `RawQueueConsumer`, `ThreadRunner`), everything needed to understand the codebase |
+| `ak-dev-architecture` | Core abstractions (`Session`, `Agent`, `Runner`, `Module`, `Runtime`, `AgentService`, `ChatService`), design principles, the house patterns every new feature follows (pluggable by default, reuse of existing configuration over new knobs, classes over script-style functions), adapter pattern, messaging integrations (the `integration/adapter` seam: `InboundAdapter`/`OutboundAdapter`, `WebhookRESTRequestHandler`, `PollerRunner`), execution flow, the unified queue execution pipeline (`agentkernel.pipeline`: `QueueMessage`/`QueueTransport`/`ConsumerLoop`, the `in_memory` transport, `RequestProducer`, `AgentRunner`/`ResponseHandler`/`RequestHandler`/`IOHandler`, the `RESTAPI.run` delegation rule, and the relocation shims), and the AWS ECS containerized deployment classes (`ECSIOHandler`, `ECSOutputConsumer`, `ECSAgentRunner`, `ECSStreamAgentRunner`, `ECSSQSConsumer`, `RawQueueConsumer`, `ThreadRunner`), everything needed to understand the codebase |
 | `ak-dev-new-framework-integration` | Step-by-step guide to add a new agent framework adapter (beyond OpenAI, CrewAI, LangGraph, Google ADK, Smolagents): subclass creation, dependency wiring, exports, tests |
-| `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail): handler class, webhook routes, message parsing, config |
-| `ak-dev-new-knowledgebase-integration` | How to add a new knowledge base backend (beyond ChromaDB, Neo4j, Starburst): implement `KnowledgeBase`, wire dependencies, add tests/docs/examples |
+| `ak-dev-new-messaging-integration` | How to add a new messaging platform integration (beyond Slack, WhatsApp, Messenger, Instagram, Telegram, Teams, Gmail): writing the `InboundAdapter`/`OutboundAdapter` pair, hosting it (`WebhookRESTRequestHandler` or `PollerRunner`), webhook verification, attachments, configuration, and examples |
+| `ak-dev-new-knowledgebase-integration` | How to add a new knowledge base backend (beyond ChromaDB, Neo4j, Starburst, Open Knowledge Format): declare capabilities, implement the matching `KnowledgeBase` operations, reuse `DocumentStore` for document-shaped backends, wire dependencies, add contract tests/docs/examples |
 | `ak-dev-new-guardrail-provider` | How to add a new content safety provider (beyond OpenAI, Bedrock, Walled AI): input/output guardrails, factory registration, configuration |
 | `ak-dev-new-tracing-provider` | How to add a new observability backend (beyond Langfuse, OpenLLMetry, Logfire): `BaseTrace` interface, traced runners, factory wiring |
 | `ak-dev-new-multimodal-storage` | How to add a new multimodal attachment storage backend (beyond in-memory, Redis, DynamoDB): storage interface, config wiring, tests, and docs |
@@ -177,6 +177,14 @@ The [`waste-sorting-assistant`](https://github.com/yaalalabs/agent-kernel/tree/d
 - OpenAI Agents SDK agent with custom tools
 - Agent Kernel session memory for region-specific rules
 - AWS Lambda deployment with DynamoDB-backed session persistence
+
+**Example: Mathru — Maternal Health Companion**
+
+The [`mathru-phm-companion`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/mathru-phm-companion) is a WhatsApp agent that helps expectant mothers track clinic schedules and report symptoms, and helps their assigned Public Health Midwife triage escalations. It demonstrates:
+- Multi-agent handoffs via the OpenAI Agents module, with role-based routing
+- WhatsApp integration as the sole user interface, with session memory keyed on the sender's phone number
+- Input/output guardrails for content safety
+- A SQLite-backed store for registrations and escalations
 
 See [`use-cases/README.md`](https://github.com/yaalalabs/agent-kernel/tree/develop/use-cases/README.md) for the full workflow to build your own agent from a spec file.
 

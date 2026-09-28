@@ -2,7 +2,7 @@
 
 Facebook Messenger Platform integration for Agent Kernel using webhooks.
 
-The `AgentMessengerRequestHandler` class handles conversations with agents via Facebook Messenger Platform webhooks. This integration uses the Messenger Send API (https://developers.facebook.com/docs/messenger-platform) without requiring third-party libraries beyond standard HTTP clients.
+The `MessengerInboundAdapter` class handles conversations with agents via Facebook Messenger Platform webhooks. This integration uses the Messenger Send API (https://developers.facebook.com/docs/messenger-platform) without requiring third-party libraries beyond standard HTTP clients.
 
 ## How It Works
 
@@ -85,9 +85,10 @@ The handler automatically responds to Facebook's webhook verification challenge 
 
 ```python
 from agents import Agent as OpenAIAgent
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
+from agentkernel.pipeline import IOHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.messenger import AgentMessengerRequestHandler
+from agentkernel.messenger import MessengerInboundAdapter
 
 # Create your agent
 general_agent = OpenAIAgent(
@@ -100,8 +101,7 @@ general_agent = OpenAIAgent(
 OpenAIModule([general_agent])
 
 if __name__ == "__main__":
-    handler = AgentMessengerRequestHandler()
-    RESTAPI.run([handler])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(MessengerInboundAdapter())])
 ```
 
 > **Note:** When `AK_MULTIMODAL__ENABLED=true`, the `analysis_attachments` tool is automatically attached to your agent by Agent Kernel at startup.
@@ -203,9 +203,9 @@ This assumes that you have successfully verified the Webhook URL and correct sub
 You can extend the handler for custom behavior:
 
 ```python
-from agentkernel.messenger import AgentMessengerRequestHandler
+from agentkernel.messenger import MessengerInboundAdapter
 
-class CustomMessengerHandler(AgentMessengerRequestHandler):
+class CustomMessengerHandler(MessengerInboundAdapter):
     async def _handle_message(self, messaging_event: dict):
         # Add custom preprocessing
         message = messaging_event.get("message", {})

@@ -99,6 +99,16 @@ jobs:
           echo ""
           echo "Skill metadata and documentation version references updated."
       
+      - name: Update Helm chart version references
+        run: |
+          VERSION="${{ steps.bump_version.outputs.new_version }}"
+          # The chart is versioned by the hyphenated tag (publish-chart.yaml packages it as
+          # ${TAG_NAME#v}), so install commands pin that form, not PEP 440. Runs before the
+          # build so the ak-cloud-deploy skill inside the wheel carries the new pin; the
+          # commits happen in the production-only steps below.
+          TAG_VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)([ab][0-9]+)$/\1-\2/')
+          python scripts/update_chart_versions.py --version "${TAG_VERSION}"
+      
       - name: Build package
         working-directory: ak-py
         run: |
@@ -122,9 +132,26 @@ jobs:
       - name: Commit version bump
         if: inputs.environment == 'production'
         run: |
+          # The skills tree includes the ak-cloud-deploy chart pin from update_chart_versions.py.
           git add ak-py/pyproject.toml ak-py/uv.lock ak-py/src/agentkernel/skills/
           git commit -m "chore: bump version to ${{ steps.bump_version.outputs.new_version }}"
           git push origin ${{ github.ref_name }}
+      
+      - name: Commit Helm chart version references
+        if: inputs.environment == 'production'
+        run: |
+          # The skill's pin went out with the version bump commit above; this covers the
+          # examples, the docs site source, the chart README and Chart.yaml description, and
+          # the root README (rendered on the chart's GHCR package page).
+          if git diff --quiet -- examples/ docs/docs/ ak-deployment/ README.md; then
+            echo "No Helm chart version reference changes"
+          else
+            VERSION="${{ steps.bump_version.outputs.new_version }}"
+            TAG_VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)([ab][0-9]+)$/\1-\2/')
+            git add examples/ docs/docs/ ak-deployment/ README.md
+            git commit -m "chore: update helm chart version references to ${TAG_VERSION}"
+            git push origin ${{ github.ref_name }}
+          fi
       
       - name: Update Terraform module versions
         if: inputs.environment == 'production'
@@ -197,6 +224,20 @@ jobs:
             ak-py/dist/*
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger Helm chart publish
+        if: inputs.environment == 'production'
+        # After the release exists: publish-chart.yaml attaches images.txt to it. Same
+        # dispatch pattern as the Terraform module sync above.
+        run: |
+          VERSION="${{ steps.bump_version.outputs.new_version }}"
+          TAG_VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)([ab][0-9]+)$/\1-\2/')
+          gh workflow run publish-chart.yaml \
+            --ref "v${TAG_VERSION}" \
+            -f tag_name="v${TAG_VERSION}"
+          echo "✅ Triggered Helm chart publish workflow for v${TAG_VERSION}"
+        env:
+          GH_TOKEN: ${{ secrets.MODULE_SYNC_TOKEN }}
 
       - name: Update examples with new version
         if: inputs.environment == 'production'

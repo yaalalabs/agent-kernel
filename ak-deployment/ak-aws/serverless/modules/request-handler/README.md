@@ -19,10 +19,8 @@ This is an internal submodule used by the root serverless stack in `state.tf`; t
 module "request_handler" {
   source = "./modules/request-handler"
 
-  product_alias  = "agent-kernel"
-  env_alias      = "dev"
+  prefix         = "agent-kernel-dev-scalable-openai"
   region         = "us-east-1"
-  module_name    = "scalable-openai"
   function_name  = "request-handler"
   function_description = "Public API request handler"
   handler_path   = "app.lambda_handler"
@@ -40,11 +38,9 @@ module "request_handler" {
 
 | Name | Description |
 |------|-------------|
-| `product_alias` | Product alias used in resource names |
-| `env_alias` | Environment alias |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) |
 | `region` | AWS region |
 | `module_type` | Runtime type, `python` or `nodejs` |
-| `module_name` | Module name used in resource names |
 | `function_name` | Lambda function name suffix |
 | `function_description` | Lambda function description |
 | `handler_path` | Lambda handler path |

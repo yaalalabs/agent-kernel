@@ -33,9 +33,7 @@ module "docker_image" {
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "api"
+  prefix        = "myapp-prod-api"
   source_path   = "${path.module}/src"
 }
 
@@ -61,9 +59,7 @@ module "docker_image" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   source_path   = var.package_path
 }
 
@@ -83,9 +79,7 @@ resource "google_cloudfunctions2_function" "function" {
 |------|-------------|------|---------|:--------:|
 | `project_id` | GCP project ID | `string` | n/a | yes |
 | `region` | GCP region | `string` | `"us-central1"` | no |
-| `product_alias` | Short identifier for the product | `string` | n/a | yes |
-| `env_alias` | Environment identifier | `string` | n/a | yes |
-| `module_name` | Module name for resource identification | `string` | n/a | yes |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) | `string` | n/a | yes |
 | `source_path` | Path to directory containing Dockerfile and source code | `string` | n/a | yes |
 
 ## Outputs
@@ -118,8 +112,8 @@ The repository keeps only the last 30 images. Older images are automatically del
 
 ### Naming Convention
 
-- Repository: `{product_alias}-{env_alias}-{module_name}`
-- Image URL: `{region}-docker.pkg.dev/{project_id}/{repo_name}/{module_name}:{dir_sha}`
+- Repository: `{prefix}`
+- Image URL: `{region}-docker.pkg.dev/{project_id}/{repo_name}/{prefix}:{dir_sha}`
 
 ## Source Directory Structure
 

@@ -13,7 +13,7 @@ check "scheduling_requires_queue_mode" {
 resource "aws_scheduler_schedule_group" "schedules" {
   count = var.enable_scheduling ? 1 : 0
 
-  name = "${local.prefix}-schedules"
+  name = "${var.prefix}-schedules"
 
   tags = merge(var.tags, { Type = "ScheduleGroup" })
 }
@@ -25,7 +25,7 @@ resource "aws_scheduler_schedule_group" "schedules" {
 resource "aws_iam_role" "scheduler_execution" {
   count = var.enable_scheduling ? 1 : 0
 
-  name        = "${local.prefix}-scheduler-exec-role"
+  name        = "${var.prefix}-scheduler-exec-role"
   description = "Role EventBridge Scheduler assumes to deliver scheduled triggers to the Input Queue"
 
   assume_role_policy = jsonencode({
@@ -48,7 +48,7 @@ resource "aws_iam_role" "scheduler_execution" {
 resource "aws_iam_role_policy" "scheduler_send_to_input_queue" {
   count = var.enable_scheduling ? 1 : 0
 
-  name = "${local.prefix}-scheduler-send-to-input-queue"
+  name = "${var.prefix}-scheduler-send-to-input-queue"
   role = aws_iam_role.scheduler_execution[0].id
 
   # No KMS statement: the queues use SQS-managed SSE, not a customer-managed key.

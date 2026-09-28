@@ -1,16 +1,18 @@
-from agentkernel.api import RESTAPI
+from agentkernel.integration.adapter import WebhookRESTRequestHandler
 from agentkernel.openai import OpenAIModule
-from agentkernel.slack import AgentSlackRequestHandler
+from agentkernel.pipeline import IOHandler
+from agentkernel.slack import SlackInboundAdapter
 from agents import Agent as OpenAIAgent
 
 general_agent = OpenAIAgent(
     name="general",
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and clear answers",
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([general_agent])
 
 
 if __name__ == "__main__":
-    RESTAPI.run([AgentSlackRequestHandler()])
+    IOHandler.run(handlers=[WebhookRESTRequestHandler(SlackInboundAdapter())])

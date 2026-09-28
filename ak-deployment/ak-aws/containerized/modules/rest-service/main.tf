@@ -41,13 +41,16 @@ locals {
       AK_WEBSOCKET_API__ENDPOINT_URL                 = var.websocket_endpoint_url
     } : {}
   )
+
+  alb_security_group_id         = var.alb_security_group_id != null ? var.alb_security_group_id : aws_security_group.ecs_alb[0].id
+  ecs_service_security_group_id = var.ecs_service_security_group_id != null ? var.ecs_service_security_group_id : aws_security_group.ecs_service[0].id
 }
 
 # Service Discovery
 
 resource "aws_service_discovery_http_namespace" "this" {
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}"
-  description = "CloudMap namespace for ${var.product_alias}-${var.env_alias}-${var.module_name}"
+  name        = var.prefix
+  description = "CloudMap namespace for ${var.prefix}"
   tags        = var.tags
 }
 
@@ -55,7 +58,7 @@ resource "aws_service_discovery_http_namespace" "this" {
 
 resource "aws_iam_policy" "dynamodb_policy" {
   count       = var.create_dynamodb_memory_table ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-dynamodb-policy"
+  name        = "${var.prefix}-dynamodb-policy"
   description = "Policy for DynamoDB access"
 
   policy = jsonencode({
@@ -85,7 +88,7 @@ resource "aws_iam_policy" "dynamodb_policy" {
 
 resource "aws_iam_policy" "dynamodb_thread_policy" {
   count       = var.create_dynamodb_thread_table ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-dynamodb-thread-policy"
+  name        = "${var.prefix}-dynamodb-thread-policy"
   description = "Policy for DynamoDB conversation thread table access"
 
   policy = jsonencode({
@@ -113,7 +116,7 @@ resource "aws_iam_policy" "dynamodb_thread_policy" {
 
 resource "aws_iam_policy" "dynamodb_schedule_policy" {
   count       = var.create_dynamodb_schedule_table ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-${var.module_name}-dynamodb-schedule-policy"
+  name        = "${var.prefix}-dynamodb-schedule-policy"
   description = "Policy for DynamoDB scheduled-task store access"
 
   policy = jsonencode({
@@ -142,7 +145,8 @@ resource "aws_iam_policy" "dynamodb_schedule_policy" {
 # Security Groups
 
 resource "aws_security_group" "ecs_alb" {
-  name        = "${var.product_alias}-${var.env_alias}-ecs-alb-sg"
+  count       = var.alb_security_group_id == null ? 1 : 0
+  name        = "${var.prefix}-ecs-alb-sg"
   description = "ALB SG for ECS"
   vpc_id      = var.vpc_id
   ingress {
@@ -162,14 +166,15 @@ resource "aws_security_group" "ecs_alb" {
 }
 
 resource "aws_security_group" "ecs_service" {
-  name        = "${var.product_alias}-${var.env_alias}-ecs-svc-sg"
+  count       = var.ecs_service_security_group_id == null ? 1 : 0
+  name        = "${var.prefix}-ecs-svc-sg"
   description = "ECS service SG"
   vpc_id      = var.vpc_id
   ingress {
     from_port       = var.rest_service.container_port
     to_port         = var.rest_service.container_port
     protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_alb.id]
+    security_groups = [local.alb_security_group_id]
   }
   egress {
     from_port   = 0
@@ -184,17 +189,17 @@ resource "aws_security_group" "ecs_service" {
 # Load Balancer
 
 resource "aws_lb" "app" {
-  name               = "${var.product_alias}-${var.env_alias}-${var.module_name}-alb"
+  name               = "${var.prefix}-alb"
   internal           = true
   load_balancer_type = "application"
   subnets            = var.subnet_ids
-  security_groups    = [aws_security_group.ecs_alb.id]
+  security_groups    = [local.alb_security_group_id]
 
   tags = var.tags
 }
 
 resource "aws_lb_target_group" "app" {
-  name        = "${var.product_alias}-${var.env_alias}-tg"
+  name        = "${var.prefix}-tg"
   port        = var.rest_service.container_port
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
@@ -227,7 +232,7 @@ resource "aws_lb_listener" "http" {
 # WebSocket needs VPC Link V1 (NLB-only); NLB fronts the existing ALB. WebSocket mode only.
 resource "aws_lb" "nlb" {
   count              = var.websocket_mode ? 1 : 0
-  name               = "${var.product_alias}-${var.env_alias}-${var.module_name}-nlb"
+  name               = "${var.prefix}-nlb"
   internal           = true
   load_balancer_type = "network"
   subnets            = var.subnet_ids
@@ -237,7 +242,7 @@ resource "aws_lb" "nlb" {
 
 resource "aws_lb_target_group" "nlb_to_alb" {
   count       = var.websocket_mode ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-nlb-tg"
+  name        = "${var.prefix}-nlb-tg"
   port        = 80
   protocol    = "TCP"
   vpc_id      = var.vpc_id
@@ -292,7 +297,7 @@ module "ecs_service" {
   launch_type        = "FARGATE"
   platform_version   = "LATEST"
   subnet_ids         = var.subnet_ids
-  security_group_ids = [aws_security_group.ecs_service.id]
+  security_group_ids = [local.ecs_service_security_group_id]
 
   health_check_grace_period_seconds = var.rest_service.health_check_grace_period_seconds
 
@@ -369,7 +374,7 @@ module "ecs_service" {
       log_configuration = {
         logDriver = "awslogs",
         options = {
-          awslogs-group         = "/ecs/${var.product_alias}-${var.env_alias}-${var.module_name}",
+          awslogs-group         = "/ecs/${var.prefix}",
           awslogs-region        = var.region,
           awslogs-stream-prefix = "ecs"
         }

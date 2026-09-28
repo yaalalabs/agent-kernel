@@ -271,7 +271,6 @@ Authentication infrastructure will only be created if you define an `authorizer`
 - `handler_path` - Path to the authorizer Lambda handler (e.g., `auth.handler`)
 - `package_type` - Deployment type (`Image`, `LocalZip`, or `S3Zip`)
 - `package_path` - Path to authorizer deployment package
-- `module_name` - Authorizer module name
 
 **Optional Fields**:
 - `description` - Description of the authorizer function (defaults to "API Gateway Lambda Authorizer")
@@ -355,7 +354,6 @@ module "serverless_agents" {
     handler_path          = "lambda.handler"
     package_path          = "../auth_deployment/auth_dist.zip"
     package_type          = "S3Zip"  # or "LocalZip" or "Image"
-    module_name           = "auth"
     
     # Optional authorizer settings
     # result_ttl_in_seconds = 0
@@ -371,7 +369,6 @@ module "serverless_agents" {
 - `handler_path` - Path to the authorizer handler (e.g., `lambda.handler`)
 - `package_type` - Package type (`LocalZip`, `S3Zip`, or `Image`)
 - `package_path` - Path to authorizer package (required for all package types)
-- `module_name` - Authorizer module name (required for all package types, especially S3Zip)
 
 **Optional Authorizer Fields:**
 - `description` - Description for authorizer Lambda function (default: "API Gateway Lambda Authorizer")
@@ -712,7 +709,6 @@ For production deployments, it is recommended to build and publish Lambda artifa
 
 ```hcl
 request_handler = {
-  module_name      = "rqst-hdlr"
   function_name    = "request-handler"
   handler_path     = "lambda_request_handler.handler"
   package_type     = "S3Zip"
@@ -727,7 +723,6 @@ request_handler = {
 }
 
 agent_runner = {
-  module_name   = "agent-runner"
   function_name = "agent-runner"
   handler_path  = "lambda_agent_runner.handler"
   package_type  = "Image"
@@ -738,7 +733,6 @@ agent_runner = {
 }
 
 response_handler = {
-  module_name      = "response-handler"
   function_name    = "response-handler"
   handler_path     = "lambda_response_handler.handler"
   package_type     = "S3Zip"
@@ -1139,7 +1133,6 @@ module "serverless_agents" {
     function_name        = "ws-connection-handler"
     function_description = "WebSocket connection handler Lambda for $connect and $disconnect routes"
     handler_path         = "ws_connection_handler.handler"
-    module_name          = "ws-connection-handler"
     timeout              = 30
     memory_size          = 256
     layers               = []
@@ -1487,7 +1480,7 @@ CloudWatch metrics automatically available:
 | [scalable-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/scalable-openai) | `rest_sync` / `rest_async` | Yes | REST API with SQS-backed queue processing |
 | [websocket-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/websocket-openai) | `async` | Yes | Full-response WebSocket delivery |
 | [streaming-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/streaming-openai) | `stream` | Yes | Event streaming over WebSocket with `ServerlessStreamAgentRunner` |
-| [openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai) | `rest_sync` | No | Simple single-Lambda REST deployment |
+| [openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai) | `rest_sync` | Yes | REST API with SQS-backed queue processing; also the base deployment the weekly integration test pipeline's other `aws-serverless` examples reuse the VPC/subnets/security groups of |
 | [schedule-openai](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/schedule-openai) | `rest_sync` | Yes | Deferred and recurring chats on EventBridge Scheduler with a DynamoDB schedule store |
 
 See [examples/aws-serverless](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless) for all available examples.

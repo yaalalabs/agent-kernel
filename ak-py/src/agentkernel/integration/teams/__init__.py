@@ -11,4 +11,4 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
-from .teams_chat import AgentTeamsRequestHandler
+from .adapter import TeamsInboundAdapter, TeamsOutboundAdapter

@@ -1,6 +1,6 @@
 name: Request Copilot Review
 
-# Requests a GitHub Copilot code review on every newly opened pull request.
+# Requests a GitHub Copilot code review on every newly opened pull request from a collaborator.
 #
 # Why: the Protect Develop ruleset already carries a copilot_code_review rule, but ruleset-driven
 # reviews only fire when the PR author holds a Copilot license (the review is billed to the
@@ -9,10 +9,21 @@ name: Request Copilot Review
 # a licensed maintainer, so the review is billed to that license instead. It skips PRs where
 # Copilot is already a requested reviewer, so licensed authors are not double-requested.
 #
+# Only collaborators get the automatic request: each review is a premium request billed to the
+# PAT owner's license, so it is not spent on drive-by PRs from outside the project. The author
+# is checked with the collaborators API (GET /repos/{owner}/{repo}/collaborators/{username}),
+# which answers from the repository's actual access list: outside collaborators, org members
+# with access through a team or the org's default permission, and org owners. That is preferred
+# over the event payload's author_association, which describes org membership rather than
+# repository access. Outside contributors still get a review on request: a maintainer reads the
+# PR, then runs this workflow from the Actions tab (workflow_dispatch) with the PR number. Manual
+# dispatch skips the collaborator check.
+#
 # COPILOT_REVIEW_PAT requirements:
 #   - created by a maintainer who holds a Copilot license (the request runs as that user)
 #   - resource owner: the yaalalabs organization; repository access: this repository only
-#   - repository permission "Pull requests: Read and write"
+#   - repository permission "Pull requests: Read and write" (the collaborator check needs only
+#     "Metadata: Read-only", which every fine-grained PAT with repository access carries)
 #   - approved by an org owner if the org requires fine-grained PAT approval
 # This is deliberately not COPILOT_REQUEST_TOKEN (used by auto-sync-skills-docs.yaml): that one
 # carries the account-level "Copilot Requests" permission, which GitHub only allows on
@@ -20,10 +31,10 @@ name: Request Copilot Review
 # A 403 "Resource not accessible by personal access token" from this workflow means the token
 # is user-owned, read-only, or still pending org approval.
 #
-# `pull_request_target` is used deliberately: fork PRs are common here and the plain
-# `pull_request` event does not expose secrets to them. The job never checks out or executes PR
-# code, it only calls the pulls API, so the untrusted-checkout hazard that normally comes with
-# pull_request_target does not apply. Keep it that way.
+# `pull_request_target` is used deliberately: collaborators often work from forks and the plain
+# `pull_request` event does not expose secrets to fork PRs. The job never checks out or executes
+# PR code, it only calls the pulls and collaborators APIs, so the untrusted-checkout hazard that
+# normally comes with pull_request_target does not apply. Keep it that way.
 
 on:
   pull_request_target:
@@ -43,7 +54,8 @@ jobs:
   request-review:
     # Bot-authored PRs (Dependabot bumps, agent-kernel-ci docs syncs) are skipped: a Copilot
     # review of generated output is not worth a premium request. Drop the second clause to
-    # include them. Manual dispatch always runs.
+    # include them. The collaborator check lives in the script below because it needs an API
+    # call. Manual dispatch always runs.
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     steps:
@@ -65,10 +77,33 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const pull_number = Number(process.env.PR_NUMBER);
-            // Reviewer identifier documented by GitHub for REST review requests. It shows up as
-            // login "Copilot" on the PR once requested.
+            // Reviewer identifier documented by GitHub for REST review requests. Once requested,
+            // Copilot is a Bot reviewer (login copilot-pull-request-reviewer, shown as "Copilot").
+            // REST pull request payloads list only User reviewers in requested_reviewers, so a
+            // pending Copilot request is invisible there. GraphQL's reviewRequests types Bot
+            // reviewers explicitly, so that is where the request is checked, before and after.
             const COPILOT_REVIEWER = 'copilot-pull-request-reviewer[bot]';
             const isCopilot = (login) => /copilot/i.test(login || '');
+            const copilotStatus = async () => {
+              const result = await github.graphql(
+                `query($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    pullRequest(number: $number) {
+                      reviewRequests(first: 100) {
+                        nodes { requestedReviewer { __typename ... on Bot { login } ... on User { login } } }
+                      }
+                      reviews(last: 100) { nodes { author { login } } }
+                    }
+                  }
+                }`,
+                { owner, repo, number: pull_number },
+              );
+              const node = result.repository.pullRequest;
+              return {
+                requested: node.reviewRequests.nodes.some((n) => n.requestedReviewer && isCopilot(n.requestedReviewer.login)),
+                reviewed: node.reviews.nodes.some((n) => n.author && isCopilot(n.author.login)),
+              };
+            };
 
             if (!Number.isInteger(pull_number) || pull_number <= 0) {
               core.setFailed(`Invalid pull request number: '${process.env.PR_NUMBER}'`);
@@ -81,25 +116,47 @@ jobs:
               return;
             }
 
+            // Only collaborators get the automatic request (see the header comment). Manual
+            // dispatch is a maintainer's deliberate choice, so it skips the check.
+            if (context.eventName !== 'workflow_dispatch') {
+              const username = pr.user.login;
+              try {
+                await github.rest.repos.checkCollaborator({ owner, repo, username });
+              } catch (error) {
+                if (error.status === 404) {
+                  core.info(
+                    `${username} is not a collaborator on ${owner}/${repo}; skipping the automatic Copilot review of #${pull_number}. ` +
+                      `After reading the PR, run this workflow from the Actions tab with the PR number to request one.`,
+                  );
+                  return;
+                }
+                core.setFailed(`Could not check whether ${username} is a collaborator on ${owner}/${repo} (HTTP ${error.status}): ${error.message}`);
+                return;
+              }
+              core.info(`${username} is a collaborator on ${owner}/${repo}.`);
+            }
+
             // The develop ruleset already requests Copilot for licensed authors; don't double up.
-            if ((pr.requested_reviewers || []).some((r) => isCopilot(r.login))) {
+            if ((await copilotStatus()).requested) {
               core.info(`Copilot is already a requested reviewer on #${pull_number}; nothing to do.`);
               return;
             }
 
             try {
-              const { data } = await github.rest.pulls.requestReviewers({
+              const { status } = await github.rest.pulls.requestReviewers({
                 owner,
                 repo,
                 pull_number,
                 reviewers: [COPILOT_REVIEWER],
               });
-              const logins = (data.requested_reviewers || []).map((r) => r.login);
-              if (!logins.some(isCopilot)) {
-                core.setFailed(`Request succeeded but Copilot is not among the requested reviewers of #${pull_number}: [${logins.join(', ')}]`);
+              // The REST response omits Bot reviewers, so verify through GraphQL. A review that
+              // is already submitted counts too, in case Copilot finished before this check ran.
+              const after = await copilotStatus();
+              if (!after.requested && !after.reviewed) {
+                core.setFailed(`Request returned HTTP ${status} but Copilot is not a requested reviewer of #${pull_number}. Check that Copilot code review is enabled for this repository.`);
                 return;
               }
-              core.info(`Requested Copilot review on #${pull_number}. Requested reviewers: ${logins.join(', ')}`);
+              core.info(`Requested Copilot review on #${pull_number}.`);
             } catch (error) {
               core.setFailed(
                 `Could not request a Copilot review on #${pull_number} (HTTP ${error.status}): ${error.message}. ` +

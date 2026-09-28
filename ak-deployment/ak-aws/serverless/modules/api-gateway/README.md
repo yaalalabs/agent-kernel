@@ -19,8 +19,7 @@ module "api_gateway" {
   source = "./modules/api-gateway"
 
   region              = "us-east-1"
-  product_alias       = "agent-kernel"
-  env_alias           = "dev"
+  prefix              = "agent-kernel-dev"
   product_display_name = "Agent Kernel"
   api_base_path       = "api"
   api_version         = "v1"
@@ -41,8 +40,7 @@ module "api_gateway" {
 | Name | Description |
 |------|-------------|
 | `region` | AWS region |
-| `product_alias` | Product alias for naming |
-| `env_alias` | Environment alias |
+| `prefix` | Prefix applied to every resource name (e.g. `myapp-dev-chat`) |
 | `product_display_name` | Human-readable product name |
 | `api_base_path` | Base path segment under the API root |
 | `api_version` | Version segment under the base path |

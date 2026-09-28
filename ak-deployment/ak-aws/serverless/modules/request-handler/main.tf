@@ -1,5 +1,5 @@
 resource "aws_iam_role" "lambda_role" {
-  name = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-lambda-role"
+  name = "${var.prefix}-${var.function_name}-lambda-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -31,7 +31,7 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_execution_role_attachment"
 
 resource "aws_iam_policy" "lambda_dynamodb_describe_policy" {
   count = var.create_dynamodb_memory_table == true ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-dynamodb"
+  name  = "${var.prefix}-${var.function_name}-dynamodb"
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -60,7 +60,7 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamodb_describe_attachment" 
 
 resource "aws_iam_policy" "lambda_dynamodb_multimodal_describe_policy" {
   count = var.create_dynamodb_multimodal_memory_table == true ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-ddb-mm"
+  name  = "${var.prefix}-${var.function_name}-ddb-mm"
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -92,7 +92,7 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamodb_multimodal_describe_a
 
 resource "aws_iam_policy" "lambda_dynamodb_thread_policy" {
   count = var.create_dynamodb_thread_table == true ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-ddb-thread"
+  name  = "${var.prefix}-${var.function_name}-ddb-thread"
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -123,7 +123,7 @@ resource "aws_iam_role_policy_attachment" "lambda_dynamodb_thread_attachment" {
 # Response store DynamoDB permissions
 resource "aws_iam_policy" "lambda_response_store_dynamodb_policy" {
   count = var.response_store_dynamodb != null ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-response-store-ddb"
+  name  = "${var.prefix}-${var.function_name}-response-store-ddb"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -157,7 +157,7 @@ resource "aws_iam_role_policy_attachment" "lambda_response_store_dynamodb_attach
 # Websocket connections DynamoDB permissions
 resource "aws_iam_policy" "lambda_websocket_connections_dynamodb_policy" {
   count = var.websocket_connections_dynamodb != null ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-websocket-connections-ddb"
+  name  = "${var.prefix}-${var.function_name}-websocket-connections-ddb"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -191,7 +191,7 @@ resource "aws_iam_role_policy_attachment" "lambda_websocket_connections_dynamodb
 # SQS permissions for RequestHandler Lambda (conditional on queue_mode)
 resource "aws_iam_policy" "lambda_sqs_policy" {
   count = var.queue_mode ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-sqs"
+  name  = "${var.prefix}-${var.function_name}-sqs"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -217,7 +217,7 @@ resource "aws_iam_role_policy_attachment" "lambda_sqs_attachment" {
 # Scheduling permissions (management routes: amend/cancel reach EventBridge Scheduler)
 resource "aws_iam_policy" "lambda_scheduler_policy" {
   count = var.enable_scheduling ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-scheduler"
+  name  = "${var.prefix}-${var.function_name}-scheduler"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -252,7 +252,7 @@ resource "aws_iam_role_policy_attachment" "lambda_scheduler_attachment" {
 
 resource "aws_iam_policy" "lambda_schedule_store_policy" {
   count = var.create_dynamodb_schedule_table ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}-schedule-store"
+  name  = "${var.prefix}-${var.function_name}-schedule-store"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -314,7 +314,7 @@ module "lambda_deployment" {
   source  = "terraform-aws-modules/lambda/aws"
   version = "8.0.1"
 
-  function_name          = "${var.product_alias}-${var.env_alias}-${var.module_name}-${var.function_name}"
+  function_name          = "${var.prefix}-${var.function_name}"
   description            = var.function_description
   handler                = var.handler_path
   runtime                = var.module_type == "nodejs" ? "nodejs22.x" : "python3.12"

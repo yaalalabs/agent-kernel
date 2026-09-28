@@ -1,13 +1,13 @@
 # VPC network
 resource "google_compute_network" "main" {
-  name                    = "${var.product_alias}-${var.env_alias}-vpc"
+  name                    = "${var.prefix}-vpc"
   project                 = var.project_id
   auto_create_subnetworks = false
 }
 
 # Public subnet — for resources that need external access
 resource "google_compute_subnetwork" "public" {
-  name          = "${var.product_alias}-${var.env_alias}-public-subnet"
+  name          = "${var.prefix}-public-subnet"
   project       = var.project_id
   region        = var.region
   network       = google_compute_network.main.id
@@ -16,7 +16,7 @@ resource "google_compute_subnetwork" "public" {
 
 # Private subnet — for Cloud Run, Functions, Redis, Firestore connectors
 resource "google_compute_subnetwork" "private" {
-  name                     = "${var.product_alias}-${var.env_alias}-private-subnet"
+  name                     = "${var.prefix}-private-subnet"
   project                  = var.project_id
   region                   = var.region
   network                  = google_compute_network.main.id
@@ -26,7 +26,7 @@ resource "google_compute_subnetwork" "private" {
 
 # Cloud Router — required for Cloud NAT to work
 resource "google_compute_router" "router" {
-  name    = "${var.product_alias}-${var.env_alias}-router"
+  name    = "${var.prefix}-router"
   project = var.project_id
   region  = var.region
   network = google_compute_network.main.id
@@ -34,7 +34,7 @@ resource "google_compute_router" "router" {
 
 # Cloud NAT — gives private subnet resources outbound internet access
 resource "google_compute_router_nat" "nat" {
-  name                               = "${var.product_alias}-${var.env_alias}-nat"
+  name                               = "${var.prefix}-nat"
   project                            = var.project_id
   region                             = var.region
   router                             = google_compute_router.router.name
@@ -49,7 +49,7 @@ resource "google_compute_router_nat" "nat" {
 
 # Firewall — allow internal traffic within the VPC
 resource "google_compute_firewall" "allow_internal" {
-  name    = "${var.product_alias}-${var.env_alias}-allow-internal"
+  name    = "${var.prefix}-allow-internal"
   project = var.project_id
   network = google_compute_network.main.id
 

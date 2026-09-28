@@ -21,17 +21,17 @@ locals {
 
 resource "aws_apigatewayv2_api" "ws_api" {
   count                      = local.is_websocket_mode ? 1 : 0
-  name                       = "${var.product_alias}-${var.env_alias}-ws-api-${var.region}"
+  name                       = "${var.prefix}-ws-api-${var.region}"
   protocol_type              = "WEBSOCKET"
   route_selection_expression = "$request.body.route"
-  description                = "[${var.env_alias}] ${var.product_display_name} WebSocket API"
+  description                = "[${var.prefix}] ${var.product_display_name} WebSocket API"
   tags                       = var.tags
 }
 
 # WebSocket private integrations require VPC Link V1 (NLB-backed); V2 is HTTP-API-only.
 resource "aws_api_gateway_vpc_link" "ws" {
   count       = local.is_websocket_mode ? 1 : 0
-  name        = "${var.product_alias}-${var.env_alias}-ws-vpclink"
+  name        = "${var.prefix}-ws-vpclink"
   target_arns = [module.rest_service.nlb_arn]
   tags        = var.tags
 }
@@ -64,7 +64,7 @@ resource "aws_apigatewayv2_route" "ws" {
 # CloudWatch Log Group for WebSocket API Gateway (only when access logging is enabled)
 resource "aws_cloudwatch_log_group" "ws_api" {
   count             = local.is_websocket_mode && var.enable_api_gateway_logs ? 1 : 0
-  name              = "/aws/apigateway/${var.product_alias}-${var.env_alias}-ws-api"
+  name              = "/aws/apigateway/${var.prefix}-ws-api"
   retention_in_days = 90
   tags              = var.tags
 }
@@ -72,7 +72,7 @@ resource "aws_cloudwatch_log_group" "ws_api" {
 # WebSocket access logging requires an account-level CloudWatch Logs role (region-wide singleton); else CreateStage fails.
 resource "aws_iam_role" "apigw_cloudwatch" {
   count = local.is_websocket_mode && var.enable_api_gateway_logs ? 1 : 0
-  name  = "${var.product_alias}-${var.env_alias}-apigw-cw-role-${var.region}"
+  name  = "${var.prefix}-apigw-cw-role-${var.region}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

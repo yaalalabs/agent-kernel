@@ -1,7 +1,8 @@
 """End-to-end test of the chart-deployed sandbox broker over NATS, on a kind cluster.
 
-Builds the three example images, installs the ak-k8s chart with values-dev.yaml plus this
-example's sandbox-values.yaml (sandbox worker tier + hardened namespace), and drives the
+Builds the three example images, installs the chart through deploy/deploy.sh local (this
+checkout's ak-k8s chart, values-dev.yaml plus this example's sandbox-values.yaml: sandbox
+worker tier + hardened namespace), and drives the
 README walkthrough through the REST API: a bounded-wait execution, a promotion, the
 check_sandbox_task recovery, and the default-deny egress sentinel.
 
@@ -20,7 +21,6 @@ import httpx
 import pytest
 
 HERE = Path(__file__).parent
-CHART = (HERE / "../../../ak-deployment/ak-k8s/chart").resolve()
 KIND_CLUSTER = "ak-sandbox-nats"
 KUBE_CONTEXT = f"kind-{KIND_CLUSTER}"
 IMAGES = ["ak-sbx-io-handler:dev", "ak-sbx-agent-runner:dev", "ak-sbx-sandbox-worker:dev"]
@@ -89,15 +89,12 @@ def deployment():
 
         _kubectl("delete", "secret", "openai", "--ignore-not-found")
         _kubectl("create", "secret", "generic", "openai", f"--from-literal=api-key={os.environ['OPENAI_API_KEY']}")
-        # A clean machine (CI) has no helm repo definitions; dependency build needs them
-        # even with Chart.lock present (the chart-test workflow does the same).
-        _run("helm", "repo", "add", "--force-update", "valkey", "https://valkey-io.github.io/valkey-helm/")
-        _run("helm", "repo", "add", "--force-update", "nats", "https://nats-io.github.io/k8s/helm/charts/")
-        _run("helm", "dependency", "build", str(CHART))
+        # The example's own install script in local mode: this checkout's chart, never the
+        # published one, so a branch's chart changes are what gets tested. Users run the same
+        # script without "local".
         _run(
-            "helm", "--kube-context", KUBE_CONTEXT, "upgrade", "--install", "ak", str(CHART),
-            "-f", str(CHART / "values-dev.yaml"), "-f", str(HERE / "sandbox-values.yaml"),
-            "--wait", "--timeout", "600s",
+            "./deploy.sh", "local", "--kube-context", KUBE_CONTEXT, "--wait", "--timeout", "600s",
+            cwd=HERE / "deploy",
         )  # fmt: skip
 
         port_forward = subprocess.Popen(

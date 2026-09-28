@@ -62,9 +62,12 @@ Delivery sub-modes (`execution.mode`):
 | **Async** | WebSocket frame | WebSocket `CHAT_RESPONSE` push (the pipeline's `/ws` route, or API Gateway on AWS) |
 
 :::note
-[Conversation-thread](./threads) recording does not apply in queue mode: threads are served by
-`AgentThreadRequestHandler`, which is mounted as an explicit handler and therefore executes
-inline, outside the pipeline.
+[Conversation-thread](./threads) recording works in queue mode through `ThreadRequestHandler`,
+which replaces the pipeline's chat route: `IOHandler.run(request_handler=ThreadRequestHandler())`.
+Recording is split across the queue — the user message is recorded before the request is enqueued
+and the Agent Runner appends the reply — so both processes need the same `thread` configuration.
+`AgentThreadRequestHandler` remains the direct-execution handler and does not belong in a pipeline
+topology.
 :::
 
 :::note

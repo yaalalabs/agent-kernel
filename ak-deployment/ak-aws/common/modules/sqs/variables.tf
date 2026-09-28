@@ -1,24 +1,14 @@
 data "aws_region" "current" {}
 
-variable "product_alias" {
+variable "prefix" {
   type        = string
-  description = "Product alias"
+  description = "Prefix applied to every resource name (e.g. \"myproduct-dev-agents\")"
 }
 
 variable "region" {
   type        = string
   default     = null
   description = "Region where the resource(s) will be managed. Defaults to the Region set in the provider configuration"
-}
-
-variable "env_alias" {
-  type        = string
-  description = "Environment alias"
-}
-
-variable "module_name" {
-  type        = string
-  description = "Module name for queue identification"
 }
 
 variable "queue_name" {
@@ -29,11 +19,13 @@ variable "queue_name" {
 variable "product_display_name" {
   type        = string
   description = "Product display name"
+  default     = null
 }
 
 variable "is_production" {
   type        = bool
   description = "Whether this is a production environment"
+  default     = false
 }
 
 variable "max_message_size" {

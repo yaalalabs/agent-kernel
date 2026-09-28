@@ -27,7 +27,7 @@ import {
   FaMicrosoft,
   FaDocker,
 } from "react-icons/fa";
-import { SiTerraform, SiGmail, SiGooglecloud, SiKubernetes } from "react-icons/si";
+import { SiTerraform, SiGmail, SiGooglecloud, SiKubernetes, SiHelm } from "react-icons/si";
 import { useHistory } from "@docusaurus/router";
 
 /* ─── What's New Banner ─────────────────────────────────────────────────── */
@@ -85,13 +85,12 @@ function WhatsNewBanner() {
           </svg>
         </span>
         <span ref={textRef} className={styles.whatsNewText}>
-          <strong>Agent Kernel Execution Broker</strong> - sandboxed code
-          execution for any agent: Docker, Kubernetes, E2B, Daytona, your own
-          EC2, or bring your own provider. Now queue-decoupled for executions
-          that outlast the agent turn.
+          <strong>Agent Kernel on Kubernetes</strong> - an official Helm chart
+          deploys the full pipeline to any cluster: bare metal, EKS, or
+          air-gapped.
         </span>
         <Link
-          to="/blog/agent-kernel-execution-broker"
+          to="/blog/kubernetes-on-prem-helm-chart"
           className={styles.whatsNewLink}
           ref={linkRef}
         >
@@ -918,10 +917,12 @@ function Deployment() {
       modes: ["AWS Lambda (Serverless)", "AWS ECS/Fargate (Containerized)"],
       modules: [
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "AWS Serverless",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-serverless/aws",
         },
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "AWS Containerized",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-containerized/aws",
         },
@@ -939,10 +940,12 @@ function Deployment() {
       ],
       modules: [
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "Azure Serverless",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-serverless/azurerm",
         },
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "Azure Containerized",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-containerized/azurerm",
         },
@@ -960,12 +963,34 @@ function Deployment() {
       ],
       modules: [
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "GCP Serverless",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-serverless/google",
         },
         {
+          icon: <SiTerraform className={styles.terraformIcon} />,
           name: "GCP Containerized",
           url: "https://registry.terraform.io/modules/yaalalabs/ak-containerized/google",
+        },
+      ],
+      comingSoon: false,
+    },
+    {
+      icon: <SiKubernetes className={styles.cloudIconSvg} />,
+      name: "On-Prem Kubernetes",
+      description:
+        "Official Helm chart for any Kubernetes cluster",
+      modes: [
+        "Bare Metal / Self-Hosted Cluster",
+        "AWS EKS (Pod Identity, SQS / NATS / Kafka)",
+        "KEDA autoscaling on queue depth",
+        "Air-gapped installs (mirrored images)",
+      ],
+      modules: [
+        {
+          icon: <SiHelm className={styles.terraformIcon} />,
+          name: "Helm Chart",
+          url: "https://github.com/yaalalabs/agent-kernel/pkgs/container/charts%2Fagent-kernel",
         },
       ],
       comingSoon: false,
@@ -1023,7 +1048,7 @@ function Deployment() {
                 ))}
               </ul>
 
-              {/* Terraform links — styled as "Read More" buttons */}
+              {/* Terraform module / Helm chart links, styled as "Read More" buttons */}
               <div className={styles.cloudModules}>
                 {c.modules.length > 0 ? (
                   c.modules.map((m, j) => (
@@ -1034,7 +1059,7 @@ function Deployment() {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <SiTerraform className={styles.terraformIcon} />
+                      {m.icon}
                       <span>{m.name}</span>
                     </Link>
                   ))

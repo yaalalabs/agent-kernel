@@ -9,10 +9,14 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
+from fastapi import APIRouter
 
+from agentkernel.api.handler import RESTRequestHandler
+from agentkernel.core.config import AKConfig
 from agentkernel.core.model import ExecutionMode
 from agentkernel.core.util.factory import AKConfigError
 from agentkernel.pipeline.io_handler import IOHandler
+from agentkernel.pipeline.request_handler import RequestHandler
 from agentkernel.pipeline.thread_runner import ThreadRunner
 
 
@@ -24,6 +28,7 @@ def _restore_signals_and_shutdown_state():
         signal.signal(sig, handler)
     ThreadRunner.shutdown_event.clear()
     ThreadRunner.shutdown_exit_code = 1
+    AKConfig._reset()
 
 
 def _cfg(mode=None, response_store_type=None, push_auth_token=None):
@@ -44,6 +49,7 @@ def _cfg(mode=None, response_store_type=None, push_auth_token=None):
         class api:
             host = "127.0.0.1"
             port = 8000
+            max_file_size = 10 * 1024 * 1024
 
     _Cfg.execution.mode = mode
     return _Cfg
@@ -88,6 +94,25 @@ class TestTopologyValidation:
 
     def test_in_memory_topology_passes(self):
         IOHandler._validate_topology(ExecutionMode.STREAM, "in_memory", _cfg(ExecutionMode.STREAM))
+
+
+class TestRequestHandlerValidation:
+    """request_handler replaces the pipeline's queue producer, so it has to be one."""
+
+    def test_a_direct_execution_handler_is_refused(self):
+        """Mounting one here would answer every chat request in-process while the runner idles."""
+
+        class DirectHandler(RESTRequestHandler):
+            def get_router(self):  # pragma: no cover: never reached, the mount is refused first
+                return APIRouter()
+
+        with pytest.raises(AKConfigError, match="DirectHandler is not a pipeline RequestHandler"):
+            IOHandler._validate_request_handler(DirectHandler())
+
+    def test_a_request_handler_and_none_are_accepted(self):
+        """None keeps the pipeline's own producer; a RequestHandler subclass substitutes for it."""
+        IOHandler._validate_request_handler(None)
+        IOHandler._validate_request_handler(MagicMock(spec=RequestHandler))
 
 
 class TestSignalHandlers:
@@ -170,6 +195,58 @@ class TestSigtermEndToEnd:
             if proc.poll() is None:
                 proc.kill()
                 proc.wait(timeout=10)
+
+
+class TestPollerCoHosting:
+    """Where an integration poller runs, per transport (spec #524 §7)."""
+
+    @staticmethod
+    def _capture_tasks(monkeypatch, transport_type):
+        """Run IOHandler.run far enough to see the task list, without serving anything."""
+        captured = {}
+
+        monkeypatch.setenv("AK_CONFIG_PATH_OVERRIDE", "/nonexistent/config.yaml")
+        if transport_type != "in_memory":
+            # A real broker topology: its own queues block and a shared response store.
+            monkeypatch.setenv("AK_EXECUTION__QUEUES__TYPE", transport_type)
+            monkeypatch.setenv("AK_EXECUTION__QUEUES__INPUT__URL", "https://sqs.local/input")
+            monkeypatch.setenv("AK_EXECUTION__QUEUES__OUTPUT__URL", "https://sqs.local/output")
+            monkeypatch.setenv("AK_EXECUTION__RESPONSE_STORE__TYPE", "redis")
+        AKConfig._reset()
+
+        monkeypatch.setattr("agentkernel.api.http.RESTAPI.build_app", classmethod(lambda cls, handlers=None: MagicMock()))
+        monkeypatch.setattr("agentkernel.pipeline.io_handler.uvicorn.Server", MagicMock())
+        monkeypatch.setattr(IOHandler, "_install_signal_handlers", classmethod(lambda cls, server: None))
+        monkeypatch.setattr(ThreadRunner, "run", staticmethod(lambda tasks, max_workers=None, exit_on_shutdown=True: captured.update(tasks=tasks)))
+        return captured
+
+    def _poller(self):
+        poller = MagicMock()
+        poller.adapter.name = "gmail"
+        return poller
+
+    def test_a_poller_is_co_hosted_on_the_in_memory_transport(self, monkeypatch):
+        captured = self._capture_tasks(monkeypatch, "in_memory")
+        poller = self._poller()
+
+        IOHandler.run(pollers=[poller])
+
+        names = [task.thread_name for task in captured["tasks"]]
+        assert "poller-gmail" in names
+        [task] = [task for task in captured["tasks"] if task.thread_name == "poller-gmail"]
+        task.execution_function()
+        # exit_on_shutdown=False: the outer runner owns the process exit, as for every peer loop.
+        poller.start.assert_called_once_with(exit_on_shutdown=False)
+
+    def test_pollers_are_not_started_on_a_broker_transport(self, monkeypatch, caplog):
+        captured = self._capture_tasks(monkeypatch, "sqs")
+
+        with caplog.at_level("WARNING"):
+            IOHandler.run(pollers=[self._poller()])
+
+        assert not [task for task in captured["tasks"] if task.thread_name.startswith("poller-")]
+        # Poller lifetime must not track this request-bound tier's replica count.
+        assert "PollerRunner.run" in caplog.text
 
 
 class TestNestedDrainCoordination:

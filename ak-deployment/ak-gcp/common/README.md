@@ -35,8 +35,7 @@ module "vpc" {
   region              = "us-central1"
   public_subnet_cidr  = "10.0.1.0/24"
   private_subnet_cidr = "10.0.2.0/24"
-  product_alias       = "myapp"
-  env_alias           = "prod"
+  prefix              = "myapp-prod"
 }
 
 # Memorystore Redis Module
@@ -46,9 +45,7 @@ module "redis" {
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "cache"
+  prefix        = "myapp-prod-cache"
   network_id    = module.vpc.network_id
 }
 
@@ -59,9 +56,7 @@ module "firestore" {
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "data"
+  prefix        = "myapp-prod-data"
 }
 
 # Artifact Registry Module
@@ -71,9 +66,7 @@ module "docker_image" {
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
-  product_alias = "myapp"
-  env_alias     = "prod"
-  module_name   = "api"
+  prefix        = "myapp-prod-api"
   source_path   = "${path.module}/src"
 }
 
@@ -84,8 +77,7 @@ module "storage" {
 
   project_id    = "my-gcp-project"
   region        = "us-central1"
-  product_alias = "myapp"
-  env_alias     = "prod"
+  prefix        = "myapp-prod"
   is_production = true
 }
 ```
@@ -120,8 +112,7 @@ module "vpc" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
+  prefix        = var.prefix
 }
 
 # Create Redis cache
@@ -132,9 +123,7 @@ module "redis" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   network_id    = module.vpc.network_id
 }
 
@@ -146,9 +135,7 @@ module "firestore" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
 }
 
 # Build and store container images
@@ -158,9 +145,7 @@ module "docker_image" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   source_path   = var.package_path
 }
 ```
@@ -175,8 +160,7 @@ module "vpc" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
+  prefix        = var.prefix
 }
 
 # Build and store container images
@@ -186,9 +170,7 @@ module "docker_image" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   source_path   = var.package_path
 }
 
@@ -200,9 +182,7 @@ module "redis" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
   network_id    = module.vpc.network_id
 }
 
@@ -214,9 +194,7 @@ module "firestore" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
-  module_name   = var.module_name
+  prefix        = var.prefix
 }
 
 # Create GCS for source storage
@@ -226,8 +204,7 @@ module "storage" {
 
   project_id    = var.project_id
   region        = var.region
-  product_alias = var.product_alias
-  env_alias     = var.env_alias
+  prefix        = var.prefix
   is_production = var.is_production
 }
 ```

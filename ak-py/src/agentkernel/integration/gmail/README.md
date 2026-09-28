@@ -2,7 +2,7 @@
 
 Gmail API integration for Agent Kernel using OAuth2 and email polling.
 
-The `AgentGmailHandler` class handles email conversations with agents via Gmail API. This integration uses the official Google Gmail API (https://developers.google.com/gmail/api) with OAuth2 authentication.
+The `GmailInboundAdapter` and `GmailOutboundAdapter` pair handles email conversations with agents via the Gmail API: the inbound half is hosted by `PollerRunner` and enqueues each unread message, the outbound half sends the threaded reply. This integration uses the official Google Gmail API (https://developers.google.com/gmail/api) with OAuth2 authentication.
 
 ## How It Works
 
@@ -77,9 +77,10 @@ On first run, the handler will:
 
 ```python
 from agents import Agent as OpenAIAgent
+from agentkernel.gmail import GmailInboundAdapter
+from agentkernel.integration.adapter import PollerRunner
 from agentkernel.openai import OpenAIModule
-from agentkernel.gmail import AgentGmailRequestHandler
-import asyncio
+from agentkernel.pipeline import IOHandler
 
 # Create your agent
 general_agent = OpenAIAgent(
@@ -92,18 +93,10 @@ general_agent = OpenAIAgent(
 OpenAIModule([general_agent])
 
 if __name__ == "__main__":
-    handler = AgentGmailRequestHandler()
-
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            asyncio.run(handler.start_polling())
-        else:
-            loop.run_until_complete(handler.start_polling())
-
-    except RuntimeError:
-        asyncio.run(handler.start_polling())
+    adapter = GmailInboundAdapter()
+    # Fail at startup rather than on the first poll if the OAuth token is unusable.
+    adapter.authenticate()
+    IOHandler.run(pollers=[PollerRunner(adapter)])
 ```
 
 ## Configuration Options
@@ -207,19 +200,26 @@ Message 2 (User): "Can you give an example?"
 
 You can extend the handler for custom behavior:
 
-```python
-from agentkernel.gmail import AgentGmailRequestHandler
+An adapter is a translation function, so a customisation is an override of `parse`: return an
+empty result for the mail you want ignored, and hand everything else to the built-in
+normalisation. Nothing here runs the agent — that happens on the far side of the queue.
 
-class CustomGmailHandler(AgentGmailRequestHandler):
-    async def _process_email(self, email: dict):
-        subject = email.get("subject", "")
-  
-        # Custom logic here
-        if "[AUTO-REPLY]" in subject:
-            return  # Skip auto-replies
-  
-        # Call parent handler
-        await super()._process_email(email)
+```python
+from typing import Any
+
+from agentkernel.gmail import GmailInboundAdapter
+from agentkernel.integration.adapter.base import InboundParseResult
+
+
+class CustomGmailInboundAdapter(GmailInboundAdapter):
+    async def parse(self, raw: Any) -> InboundParseResult:
+        result = await super().parse(raw)
+
+        # Skip auto-replies: they would otherwise start a loop.
+        if any("[AUTO-REPLY]" in request.prompt for request in result.requests):
+            return InboundParseResult()
+
+        return result
 ```
 
 ### Filtering Emails

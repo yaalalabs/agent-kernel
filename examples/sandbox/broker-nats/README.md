@@ -15,6 +15,7 @@ config.nats.yaml          baked in as config.yaml by package.sh (sandbox block i
 sandbox-values.yaml       chart overlay: images + sandboxWorker + hardening
 deploy/Dockerfile.*       one image per component, python:3.12-slim + staged dependencies
 deploy/package.sh         stages dependencies and builds the three images
+deploy/deploy.sh          installs the chart release: the published chart, or "local" for this checkout's chart
 app_test.py               the automated walkthrough (kind + helm; self-skips without them)
 ```
 
@@ -40,14 +41,16 @@ k3d image import -c ak ak-sbx-io-handler:dev ak-sbx-agent-runner:dev ak-sbx-sand
 
 kubectl create secret generic openai --from-literal=api-key="$OPENAI_API_KEY"
 
-helm repo add valkey https://valkey-io.github.io/valkey-helm/
-helm repo add nats https://nats-io.github.io/k8s/helm/charts/
-helm dependency build ../../../ak-deployment/ak-k8s/chart
-helm install ak ../../../ak-deployment/ak-k8s/chart \
-  -f ../../../ak-deployment/ak-k8s/chart/values-dev.yaml -f sandbox-values.yaml
+deploy/deploy.sh            # or deploy/deploy.sh local to install this checkout's chart
 kubectl rollout status deployment/ak-agent-kernel-io deployment/ak-agent-kernel-agent-runner \
   deployment/ak-agent-kernel-sandbox-worker
 ```
+
+`deploy/deploy.sh` installs the published chart (`oci://ghcr.io/yaalalabs/charts/agent-kernel`,
+pinned to the current release) with the dev flavor and this example's `sandbox-values.yaml`
+overlay, on the same contract as `build.sh` and `package.sh`: `local` switches to the chart in
+`../../../ak-deployment/ak-k8s/chart`, which is how `app_test.py` and CI run it, so unreleased
+chart changes are what gets tested.
 
 The overlay creates the `ak-sandboxes` namespace with the PSA `restricted` label, a
 default-deny egress NetworkPolicy over every sandbox pod, the worker's ServiceAccount + Role

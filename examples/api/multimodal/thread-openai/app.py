@@ -9,6 +9,7 @@ from agents import Agent
 general_agent = Agent(
     name="general",
     instructions="You provide assistance with general queries. Give short and clear answers",
+    model="openai/gpt-4.1-mini",
 )
 
 

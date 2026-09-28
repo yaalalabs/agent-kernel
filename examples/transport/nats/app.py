@@ -21,6 +21,7 @@ general_agent = Agent(
     name="general",
     handoff_description="Agent for general questions",
     instructions="You provide assistance with general queries. Give short and direct answers.",
+    model="openai/gpt-4.1-mini",
 )
 
 customer_support_agent = Agent(
@@ -34,12 +35,14 @@ customer_support_agent = Agent(
     # Agent Kernel's builder turns plain functions into this framework's tool objects, which is
     # what keeps tool.py free of any framework import.
     tools=OpenAIToolBuilder.bind([fetch_customer_activity]),
+    model="openai/gpt-4.1-mini",
 )
 
 triage_agent = Agent(
     name="triage",
     instructions="You determine which agent to use based on the user's question.",
     handoffs=[general_agent, customer_support_agent],
+    model="openai/gpt-4.1-mini",
 )
 
 OpenAIModule([triage_agent, general_agent, customer_support_agent])
