@@ -692,7 +692,7 @@ variable always wins, then the process cache, then the configured provider. A re
 the caller and never written back to the environment, so hand it to the SDK explicitly
 (`set_default_openai_key(...)`). A miss raises `SecretNotFoundError` unless a `default` is passed; a provider
 failure raises `SecretError` even with a `default`. The capability is always available — there is no
-`enabled` flag; selecting a provider other than `env` is the only opt-in. See `examples/cli/openai_secret`.
+`enabled` flag; selecting a provider other than `env` is the only opt-in. See `examples/cli/openai-secret`.
 
 - **Provider Type**
   - **Field**: `secret.provider.type`

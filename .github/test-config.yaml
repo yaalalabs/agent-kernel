@@ -15,7 +15,7 @@ e2e:
     - type: cli
       path: examples/cli/openai_context
     - type: cli
-      path: examples/cli/openai_secret
+      path: examples/cli/openai-secret
     - type: cli
       path: examples/cli/session-context
     - type: cli

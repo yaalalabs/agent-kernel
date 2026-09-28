@@ -1296,7 +1296,7 @@ failed — credentials, network, IAM; never masked by `default`), `ValueError` (
 `SecretManager.current().invalidate(key)` / `.clear()` to drop cached values. A custom provider
 subclasses `agentkernel.secret.SecretProvider`, implements `get_secret(key) -> Optional[str]`
 (return `None` on a miss), and can be checked with the `agentkernel.secret.testing.SecretProviderContract`
-pytest suite. See `examples/cli/openai_secret` (env) and `examples/aws-serverless/openai` (aws_ssm).
+pytest suite. See `examples/cli/openai-secret` (env) and `examples/aws-serverless/openai` (aws_ssm).
 
 ---
 

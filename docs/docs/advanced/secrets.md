@@ -166,7 +166,7 @@ Overwrite the parameter with `aws ssm put-parameter ... --overwrite`.
 
 ## Examples
 
-- [`examples/cli/openai_secret`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai_secret)
+- [`examples/cli/openai-secret`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/cli/openai-secret)
   — the `env` provider locally, with a required model key and an optional tool key.
 - [`examples/aws-serverless/openai`](https://github.com/yaalalabs/agent-kernel/tree/develop/examples/aws-serverless/openai)
   — the OpenAI key read from SSM on Lambda.
